@@ -3,6 +3,7 @@
   let items = ['a', 'b']
   const inc = () => { count++; items = [...items, 'x' + count] }
 </script>
+
 <div class="box">
   <h1>Counter</h1>
   <p>Count: {count}</p>

@@ -1,13 +1,17 @@
 # Reference models
 
-**The shape we think a common model should have, one file each.** Not shipped,
-not imported, not installed by anything — a catalog you read before writing a
-model that half a dozen apps have already written differently.
+**The shape we think a common model should have, one file each.** A catalog
+you read before writing a model that half a dozen apps have already written
+differently. **A model is copied; a trait is imported.** A model names a
+foreign key the host has to wire, so the file is a starting point and the
+host's copy is the truth. A trait (`Grant`, `Interval`) carries no key and no
+relation, so there is nothing to rewire and a copy is only drift:
+`import "@frontierjs/litestone/references/Grant.lite"` then `@@trait(Grant)`.
 
 The question these answer is *what columns does an `AuditEvent` actually need*,
 which is exactly the question that gets answered from memory at 11pm and then
-diverges between two apps in the same repo. Copy one into your `schema.lite` and
-edit it; that is the whole intended workflow.
+diverges between two apps in the same repo. Copy a model into your `schema.lite`
+and edit it; import a trait.
 
 ## Why they are `.lite` and not prose
 

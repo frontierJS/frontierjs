@@ -44,6 +44,7 @@
     "verify:stock": "node web/test/verify-stock.mjs",
     "verify:offline": "node web/test/verify-offline.mjs",
     "verify:shell": "node web/test/verify-shell.mjs",
+    "verify:tui": "bun web/test/verify-tui.mjs",
     "verify:widget": "node web/test/verify-widget.mjs",
     "dev:widgets": "cd widgets && vite -c config/vite.config.js",
     "build:widgets": "cd widgets && bunx sierra widgets --config config/sierra.config.js",

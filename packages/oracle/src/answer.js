@@ -336,7 +336,10 @@ export function checkAnswer(answer) {
     const because = a.why ? ` — ${a.why}` : ''
     if (pub.includes('create')) find('access', m.name, `Anyone, signed in or not, creates ${an(m.name)}: an unauthenticated write${because}.`)
     if (pub.includes('read')) find('access', m.name, `Anyone, signed in or not, reads ${a.publicWhen ? `${an(m.name)} where ${Object.entries(a.publicWhen).map(([k, v]) => `${k} is ${v}`).join(' and ')}` : `every ${m.name}`}${because}.`)
-    if (a.shared) find('access', m.name, `Every signed-in user reads every ${m.name}, and only an administrator writes one: ${a.shared}`)
+    if (a.shared) {
+      const writers = m.links.filter(l => l.to === 'User' && ACTORS[l.actor]?.may.some(op => op !== 'read')).map(l => `its ${l.name}`)
+      find('access', m.name, `Every signed-in user reads every ${m.name}, and ${writers.length ? `${writers.join(' or ')} or an administrator` : 'only an administrator'} writes one: ${a.shared}`)
+    }
     if (a.system) find('access', m.name, `Only the application writes ${an(m.name)}.`)
   }
 

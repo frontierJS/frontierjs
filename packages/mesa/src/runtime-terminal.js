@@ -129,7 +129,16 @@ export function element(tag, attrs = {}) {
   let node
   switch (spec.role) {
     case 'box':
-      node = new BoxRenderable(r, { flexDirection: spec.inline ? 'row' : 'column' })
+      node = new BoxRenderable(r, {
+        flexDirection: spec.inline ? 'row' : 'column',
+        ...(spec.indent && { paddingLeft: spec.indent }),
+        // flexBasis 0 is what makes the share equal: an auto basis starts each
+        // cell at its content's width, and the columns drift row to row.
+        ...(spec.cell && { flexGrow: 1, flexBasis: 0, paddingRight: 1 }),
+      })
+      break
+    case 'rule':
+      node = new BoxRenderable(r, { border: ['top'], height: 1 })
       break
     case 'button': {
       node = new BoxRenderable(r, { flexDirection: 'row', focusable: true })
@@ -155,7 +164,7 @@ export function element(tag, attrs = {}) {
   }
   node.__bits = bits
   node.__attrs = {}
-  node.__canFocus = spec.role !== 'box'
+  node.__canFocus = spec.role === 'button' || spec.role === 'input'
   for (const name in attrs) set_attribute(node, name, attrs[name])
   return node
 }
@@ -334,6 +343,19 @@ export function ifBlock(marker, selectFn, blocks) {
   })
 }
 
+/** Build `factory(key)` before `marker`, and rebuild it whenever `keyFn`
+ *  answers a different key — `<mesa:element this>`, whose tag is the key. */
+export function keyBlock(marker, keyFn, factory) {
+  let current, dispose = null
+  createEffect(() => {
+    const key = keyFn()
+    if (dispose && key === current) return
+    current = key
+    if (dispose) dispose()
+    dispose = mountBlock(marker, () => factory(key))
+  })
+}
+
 export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
   const rows = new Map()
   let elseDispose = null
@@ -409,6 +431,24 @@ function cycle(step) {
 
 export function focusNext() { return cycle(1) }
 export function focusPrev() { return cycle(-1) }
+
+// ─── renderers ────────────────────────────────────────────────────────
+
+/** The engine's renderer on this process's TTY, for `mount`. A caller outside
+ *  this package takes it from here: importing the engine itself from another
+ *  package's directory installs a second copy, and two copies fail
+ *  `instanceof` inside the engine's own `remove()`. */
+export function createRenderer(options = {}) {
+  return core.createCliRenderer(options)
+}
+
+/** A headless renderer of `width` x `height` cells: `{ renderer, renderOnce,
+ *  captureCharFrame, mockInput }`, for printing or asserting a frame without
+ *  a TTY. */
+export async function createHeadlessRenderer({ width = 80, height = 24 } = {}) {
+  const { createTestRenderer } = await import('@opentui/core/testing')
+  return createTestRenderer({ width, height })
+}
 
 // ─── mount ────────────────────────────────────────────────────────────
 

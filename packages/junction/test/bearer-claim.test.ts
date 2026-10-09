@@ -17,7 +17,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { createApp, createService, bearerClaim, BEARER, header, authorization, sessionGateLevel } from '../index.ts'
+import { createApp, createService, bearerClaim, BEARER, header, authorization, cookie, sessionGateLevel } from '../index.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
@@ -377,8 +377,11 @@ describe('a grant presented as Authorization: Bearer', () => {
       const sessionBody: any = await asSession.json()
       expect(sessionBody.data[0]).toEqual({ user: 'ana', rows: 0 })
 
-      // A token that is neither is still the refusal a dead link gets.
-      expect((await get('Bearer never-minted')).status).toBe(401)
+      // A token that is neither is refused, and in the words of what was sent:
+      // a machine holding a key reads nothing about a link it never had (`FJS-2161`).
+      const dead = await get('Bearer never-minted')
+      expect(dead.status).toBe(401)
+      expect(((await dead.json()) as any).message).toBe('This key does not work. It may have expired or been revoked.')
     } finally { await stopAll() }
   })
 
@@ -389,5 +392,58 @@ describe('a grant presented as Authorization: Bearer', () => {
   test('header(\'authorization\') is refused by name, pointing at authorization()', () => {
     expect(() => header('Authorization')).toThrow(/authorization\(\)/)
     expect(() => header('x-portal-link')).not.toThrow()
+  })
+})
+
+// A cookie is ambient: the browser sends it on every request to the origin, so
+// a seller who once opened a customer's portal link carries that cookie on
+// every call of their own session. Once the link is replaced the cookie is
+// dead, and a source that read it on a signed-in request refused the seller's
+// own session as a dead link for the cookie's whole life (`FJS-2175`).
+describe('a grant presented as a cookie', () => {
+  const running: Array<{ stop: () => Promise<void> }> = []
+  const stopAll = async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) }
+
+  async function served() {
+    const db = await seeded()
+    const app: any = createApp({
+      db,
+      logLevel:  'silent',
+      config:    { port: 0, services: { dir: '/nonexistent' } },
+      principal: bearerClaim({ from: cookie('portal'), model: 'portalLink', column: 'tokenHash', key: KEY, claims: { portalClientId: 'clientId' } }),
+      auth: {
+        verifySession: async (token: string) => {
+          if (token !== 'session-ana') throw new Error('bad token')
+          return { userId: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+        },
+      },
+    })
+    app.services.register(createService({
+      name: 'answers',
+      async find(ctx: ServiceContext) {
+        const rows = await (ctx.locals.db as any).formResponse.findMany({})
+        return [{ user: (ctx.auth.user as any)?.userId ?? null, rows: rows.length }]
+      },
+    }))
+    await app.start()
+    running.push(app)
+    return (headers: Record<string, string>) => fetch(`http://localhost:${app.http.port}/answers`, { headers })
+  }
+
+  test('a dead cookie on a signed-in request passes; signed out it is refused', async () => {
+    try {
+      const get = await served()
+
+      const asSession = await get({ authorization: 'Bearer session-ana', cookie: 'portal=revoked' })
+      expect(asSession.status).toBe(200)
+      expect(((await asSession.json()) as any).data[0]).toEqual({ user: 'ana', rows: 0 })
+
+      // The pair: the same cookie with no session is the refusal a dead link gets,
+      // and a live one with no session resolves.
+      expect((await get({ cookie: 'portal=revoked' })).status).toBe(401)
+      const asLink = await get({ cookie: 'portal=live-one' })
+      expect(asLink.status).toBe(200)
+      expect(((await asLink.json()) as any).data[0]).toEqual({ user: null, rows: 1 })
+    } finally { await stopAll() }
   })
 })

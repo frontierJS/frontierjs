@@ -1,0 +1,19 @@
+<script>
+  import Rows from './Rows.mesa'
+  let items = ['ant', 'bee']
+  let level = 2
+  let n = 0
+</script>
+{@render label('top')}
+<mesa:element this={'h' + level}>Title {level}</mesa:element>
+<Rows {items}>
+  {#snippet row(it, i)}<p>{i}: {it} x{n}</p>{/snippet}
+  {#snippet empty()}<p>none</p>{/snippet}
+</Rows>
+<div aria-hidden="true"><svg viewBox="0 0 1 1"><path d="M0 0" /></svg></div>
+<svg aria-hidden="true"><path d="M0 0" /></svg>
+<button on:click={() => { items = [...items, 'cat']; n++ }}>More</button>
+<button on:click={() => { level = level === 2 ? 3 : 2 }}>Level</button>
+<button on:click={() => { items = [] }}>Clear</button>
+{@render label('end')}
+{#snippet label(text)}<span>[{text}]</span>{/snippet}

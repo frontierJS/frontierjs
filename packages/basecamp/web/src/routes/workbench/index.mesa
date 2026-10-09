@@ -1,0 +1,363 @@
+---
+title: Workbench
+---
+<script>
+  // A Claude Code chat per pinned checkout, all on one screen.
+  //
+  // Each message is a `claude -p` run in that checkout with every permission,
+  // resumed from the last one (api core/workbench.ts). The run belongs to the
+  // API, not to this tab: closing the tab does not stop it, and every open tab
+  // reads the same status.
+  //
+  // The status is POLLED. A run writes its log on the API's disk and the poll
+  // reads only what is new, so a second is cheap; a transcript is refetched
+  // only when its log grew.
+  import { ago }       from '../../datetime.js'
+  import { workbench } from '../../resources/Workbench.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Dot        from '@frontierjs/ui/components/display/Dot.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+
+  const POLL_MS   = 1500
+  const SHOW_TOOLS = 4
+
+  let pins        = []
+  let status      = {}
+  let transcripts = {}
+  let drafts      = {}
+  let path        = ''
+  let error       = null
+  let offered     = true
+  let loaded      = false
+  let pinning     = false
+
+  // Sizes the transcripts were fetched at; a poll answering a bigger log is
+  // the cue to fetch again.
+  const fetchedAt = {}
+  const lastState = {}
+
+  async function loadPins() {
+    try {
+      const answer = await workbench.service.invoke('pins', null)
+      pins = answer.pins
+      status = Object.fromEntries(pins.map(p => [p.id, p.status]))
+      for (const p of pins) lastState[p.id] ??= p.status.state
+      error = null
+    } catch (err) {
+      if (err.code === 404) offered = false
+      error = err.message
+    } finally {
+      loaded = true
+    }
+    await Promise.all(pins.map(p => refreshTranscript(p.id)))
+  }
+
+  async function refreshTranscript(id) {
+    const size = status[id]?.size ?? 0
+    if (fetchedAt[id] === size && transcripts[id]) return
+    fetchedAt[id] = size
+    try {
+      const t = await workbench.service.invoke('transcript', id)
+      transcripts = { ...transcripts, [id]: t }
+      scrollToEnd(id)
+    } catch {}
+  }
+
+  function scrollToEnd(id) {
+    queueMicrotask(() => requestAnimationFrame(() => {
+      const log = document.getElementById(`chat-log-${id}`)
+      if (log) log.scrollTop = log.scrollHeight
+    }))
+  }
+
+  // ─── the poll ────────────────────────────────────────────────────────
+
+  let timer = null
+  async function poll() {
+    try {
+      const answer = await workbench.service.invoke('status', null)
+      const next = Object.fromEntries(answer.status.map(s => [s.id, s]))
+      let ended = false
+      for (const s of answer.status) {
+        if (lastState[s.id] === 'working' && s.state !== 'working') { ended = true; announce(s) }
+        lastState[s.id] = s.state
+      }
+      status = next
+      retitle()
+      await Promise.all(answer.status.map(s => refreshTranscript(s.id)))
+      // A finished run changed the tree; the branch and dirty count follow.
+      if (ended) loadPins()
+    } catch {}
+    timer = setTimeout(poll, POLL_MS)
+  }
+
+  function announce(s) {
+    const p = pins.find(x => x.id === s.id)
+    if (!p || document.hasFocus()) return
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
+        new Notification(`${p.name}: ${s.state === 'done' ? 'done' : 'stopped with an error'}`, {
+          body: s.cost != null ? `$${s.cost.toFixed(2)} · ${s.turns} turns` : '',
+          tag:  `workbench-${s.id}`,
+        })
+    } catch {}
+  }
+
+  loadPins().then(() => { timer = setTimeout(poll, POLL_MS) })
+  $.onDestroy(() => { clearTimeout(timer); document.title = baseTitle })
+
+  // The tab says how many are working and how many finished unread, so it
+  // reads from another tab.
+  const baseTitle = document.title
+  function retitle() {
+    const all     = Object.values(status)
+    const working = all.filter(s => s.state === 'working').length
+    const unread  = all.filter(s => s.unread).length
+    document.title = (working ? `● ${working} · ` : '') + (unread ? `(${unread}) ` : '') + baseTitle
+  }
+
+  // ─── actions ─────────────────────────────────────────────────────────
+
+  async function pin(e) {
+    e?.preventDefault()
+    pinning = true
+    try {
+      await workbench.service.invoke('pin', null, { path })
+      path = ''
+      error = null
+      await loadPins()
+    } catch (err) { error = err.message } finally { pinning = false }
+  }
+
+  async function act(method, p, data) {
+    try {
+      const out = await workbench.service.invoke(method, p.id, data)
+      error = null
+      return out
+    } catch (err) { error = `${p.name}: ${err.message}`; return null }
+  }
+
+  async function send(p, e) {
+    e?.preventDefault()
+    const prompt = (drafts[p.id] ?? '').trim()
+    if (!prompt) return
+    drafts = { ...drafts, [p.id]: '' }
+    if (await act('send', p, { prompt })) {
+      lastState[p.id] = 'working'
+      status = { ...status, [p.id]: { ...status[p.id], state: 'working' } }
+    }
+    askNotifications()
+  }
+
+  function keydown(p, e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send(p, e)
+  }
+
+  async function markSeen(p) {
+    if (!status[p.id]?.unread) return
+    status = { ...status, [p.id]: { ...status[p.id], unread: false } }
+    retitle()
+    await act('seen', p)
+  }
+
+  async function stop(p)   { await act('stop', p) }
+  async function fresh(p)  { if (await act('fresh', p)) { fetchedAt[p.id] = -1; await loadPins() } }
+  async function unpin(p)  {
+    if (!confirm(`Unpin ${p.name}? Its chat here is forgotten; Claude Code keeps the session.`)) return
+    if (await act('unpin', p)) await loadPins()
+  }
+  async function configure(p, form) {
+    const out = await act('configure', p, {
+      budget: Number(form.budget.value),
+      hooks:  form.hooks.checked,
+    })
+    if (out) await loadPins()
+  }
+
+  // Asked on the first send, so the prompt comes from a click the person made.
+  function askNotifications() {
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission()
+    } catch {}
+  }
+
+  // ─── drawing ─────────────────────────────────────────────────────────
+
+  const TONE  = { idle: 'muted', working: 'info', done: 'success', error: 'danger' }
+  const LABEL = { idle: 'idle', working: 'working', done: 'done', error: 'error' }
+
+  // A run is mostly tool calls; the chat shows the last few in a row and how
+  // many came before them, so the words are not lost between the calls.
+  function grouped(items = []) {
+    const out = []
+    for (const it of items) {
+      const last = out[out.length - 1]
+      if (it.kind === 'tool' && last?.kind === 'tools') { last.calls.push(it.text); continue }
+      out.push(it.kind === 'tool' ? { kind: 'tools', calls: [it.text] } : it)
+    }
+    return out
+  }
+
+  const money = (n) => n == null ? '' : `$${n.toFixed(2)}`
+</script>
+
+<div class="section-header">
+  <h1>Workbench</h1>
+  <Button variant="ghost" href="/git-activity/local/">Local repos</Button>
+</div>
+
+{#if !offered}
+  <Callout tone="muted" title="Not offered on this Basecamp">
+    <p class="text-body">
+      The workbench runs Claude Code in checkouts on the machine Basecamp runs on, so it is only
+      offered by a Basecamp on your own machine, started with <code>LOCAL_MACHINE=1</code>
+      (<code>bun run api</code> sets it) and never under <code>NODE_ENV=production</code>.
+    </p>
+    <p class="text-sm text-muted">{error}</p>
+  </Callout>
+{:else}
+  <form class="cluster" id="workbench-pin-form" on:submit={pin}>
+    <Input label="Pin a checkout" name="path" id="workbench-path" placeholder="~/code/my-app"
+           value={path} oninput={(e) => path = e.target.value}
+           hint="A git checkout on this machine — or pin one from Local repos." />
+    <Button type="submit" disabled={pinning || !path.trim()}>{pinning ? 'Pinning…' : 'Pin'}</Button>
+  </form>
+
+  <Callout tone="warning" title="Every permission, no prompts">
+    <p class="text-sm">
+      Each message runs <code>claude -p</code> in that checkout with permissions bypassed —
+      it can edit any file and run any command as you. Budget is per message.
+    </p>
+  </Callout>
+
+  {#if error}
+    <article class="alert danger" id="screen-error">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if loaded && !pins.length}
+    <EmptyState title="Nothing pinned">
+      Pin a checkout above, or star one on <a href="/git-activity/local/">Local repos</a>.
+    </EmptyState>
+  {:else}
+    <div class="grid workbench-grid" id="workbench-grid">
+      {#each pins as p (p.id)}
+        <Card>
+          <article class="stack workbench-card" id={`workbench-${p.id}`} data-state={status[p.id]?.state}
+                   on:click={() => markSeen(p)}>
+            <div class="section-header">
+              <h2 class="h5 cluster">
+                <Dot tone={status[p.id]?.unread ? 'success' : TONE[status[p.id]?.state ?? 'idle']}
+                     pulse={status[p.id]?.state === 'working'}
+                     label={LABEL[status[p.id]?.state ?? 'idle']} />
+                {p.name}
+              </h2>
+              <span class="cluster">
+                {#if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+                {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
+              </span>
+            </div>
+
+            <div class="cluster text-sm">
+              {#if p.git.branch}<code>{p.git.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
+              {#if p.git.changes}<Pill tone="warning">{p.git.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
+              {#if p.git.ahead}<Pill tone="info">↑{p.git.ahead}</Pill>{/if}
+              {#if p.git.lastCommitAt}<span class="text-muted">{ago(p.git.lastCommitAt)}</span>{/if}
+            </div>
+
+            <div class="text-sm text-muted workbench-now" aria-live="polite">
+              {#if status[p.id]?.state === 'working'}
+                {status[p.id].tool ? `› ${status[p.id].tool}` : 'thinking…'}
+              {:else if status[p.id]?.state === 'done'}
+                done {money(status[p.id].cost)}{status[p.id].turns ? ` · ${status[p.id].turns} turns` : ''}
+              {:else if status[p.id]?.state === 'error'}
+                stopped with an error
+              {:else}
+                idle
+              {/if}
+            </div>
+
+            <div class="workbench-log stack" id={`chat-log-${p.id}`}>
+              {#each grouped(transcripts[p.id]?.items) as it}
+                {#if it.kind === 'you'}
+                  <div class="workbench-you"><strong>You</strong> <span class="text-muted text-sm">{it.at ? ago(it.at) : ''}</span><div class="workbench-text">{it.text}</div></div>
+                {:else if it.kind === 'text'}
+                  <div class="workbench-text">{it.text}</div>
+                {:else if it.kind === 'tools'}
+                  <div class="text-sm text-muted workbench-tools">
+                    {#if it.calls.length > SHOW_TOOLS}<div>… {it.calls.length - SHOW_TOOLS} more</div>{/if}
+                    {#each it.calls.slice(-SHOW_TOOLS) as call}<div><code>› {call}</code></div>{/each}
+                  </div>
+                {:else if it.kind === 'result'}
+                  <div class="text-sm text-muted">{it.ok ? '✓' : '✗'} {it.stop ?? ''} {money(it.cost)}{it.turns ? ` · ${it.turns} turns` : ''}</div>
+                {:else if it.kind === 'error'}
+                  <div class="alert danger"><div class="alert-content text-sm">{it.text}</div></div>
+                {/if}
+              {/each}
+            </div>
+
+            <form class="stack" on:submit={(e) => send(p, e)}>
+              <label class="visually-hidden" for={`workbench-draft-${p.id}`}>Message to Claude in {p.name}</label>
+              <textarea class="field" rows="3" id={`workbench-draft-${p.id}`}
+                        placeholder={status[p.id]?.state === 'working' ? 'Queue a follow-up…' : 'Ask Claude to do something… (Ctrl+Enter)'}
+                        value={drafts[p.id] ?? ''}
+                        on:input={(e) => drafts = { ...drafts, [p.id]: e.target.value }}
+                        on:keydown={(e) => keydown(p, e)}></textarea>
+              <div class="cluster">
+                <Button type="submit" disabled={!(drafts[p.id] ?? '').trim()}>
+                  {status[p.id]?.state === 'working' ? 'Queue' : 'Send'}
+                </Button>
+                {#if status[p.id]?.state === 'working'}
+                  <Button variant="outlined" tone="danger" onclick={() => stop(p)}>Stop</Button>
+                {:else}
+                  <Button variant="ghost" onclick={() => fresh(p)} disabled={!p.session}>New chat</Button>
+                {/if}
+                {#if transcripts[p.id]?.resume}
+                  <CopyButton text={transcripts[p.id].resume} label="Copy resume" />
+                {/if}
+              </div>
+            </form>
+
+            <details class="text-sm">
+              <summary>Settings · <code>{p.path}</code></summary>
+              <form class="stack" on:submit={(e) => { e.preventDefault(); configure(p, e.target) }}>
+                <Input label="Budget per message (USD)" name="budget" type="number" min="1" max="500" step="1" value={String(p.budget)} />
+                <Checkbox label="Run this checkout's own hooks" name="hooks" checked={p.hooks}
+                          description="Off by default: a Stop hook that blocks spends the run's turns on itself." />
+                <div class="cluster">
+                  <Button type="submit" variant="outlined">Save</Button>
+                  <Button variant="ghost" tone="danger" onclick={() => unpin(p)}>Unpin</Button>
+                </div>
+              </form>
+            </details>
+          </article>
+        </Card>
+      {/each}
+    </div>
+  {/if}
+{/if}
+
+<style>
+  .workbench-grid { --grid-min: 28rem; gap: var(--space-lg); }
+  /* A long run would otherwise grow the card past the screen and push the
+     input out of reach. */
+  .workbench-log {
+    max-block-size: 26rem;
+    min-block-size: 6rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .workbench-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .workbench-tools code { overflow-wrap: anywhere; }
+  .workbench-now { min-block-size: 1.5em; overflow-wrap: anywhere; }
+  .workbench-card textarea { resize: vertical; inline-size: 100%; }
+</style>

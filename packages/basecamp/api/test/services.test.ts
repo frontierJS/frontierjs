@@ -3261,3 +3261,17 @@ describe('the local repository listing', () => {
       .rejects.toThrow(/LOCAL_MACHINE=1/)
   })
 })
+
+describe('the workbench', () => {
+  test('a developer is refused a run by the declared gate', async () => {
+    await expect(env.as(developer).service('workbench').call('send', 'abc', { prompt: 'hi' }))
+      .rejects.toThrow(/requires level 5/)
+  })
+
+  test('an owner is told it is not offered here, before anything is pinned or run', async () => {
+    await expect(env.as(owner).service('workbench').call('pins', undefined))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+    await expect(env.as(owner).service('workbench').call('pin', undefined, { path: '~' }))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+  })
+})

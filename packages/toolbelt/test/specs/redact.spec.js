@@ -166,3 +166,13 @@ test('redact: redactValue takes either kind', function () {
   assert.equal(redactValue(42), 42)
   assert.equal(redactValue(null), null)
 })
+
+// FJS-2183: junction runs omitBy over every response of a model with a
+// protected field, so one stored Json value deeper than the stack is a 500 on
+// every later read of that model. JSON.parse and JSON.stringify take the depth.
+test.failing('redact: omitBy walks a value nested deeper than the call stack', function () {
+  let deep = []
+  for (let i = 0; i < 20000; i++) deep = [deep]
+  const value = JSON.parse(JSON.stringify({ data: deep }))
+  omitBy(value, () => false)
+})

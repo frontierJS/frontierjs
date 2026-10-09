@@ -28,6 +28,21 @@ src/
     cli.js               `sierra routes` / `sierra widgets` / `sierra site` —
                          dispatch, --check
     routes-snapshot.js   the committed routes.snapshot.md
+    tui.js               `@frontierjs/sierra/tui`, what `fli dev:tui` runs —
+                         under BUN, from the web root: --list, --frame, --api
+
+  terminal/              — the terminal target of `web/` (`FJS-D809`): the same
+                           routes, compiled with `target: 'terminal'`
+    loader.js            a Bun plugin — `.mesa` through `prepareForCompile`,
+                         `@/` through `appSrcDir` — and `lowers(file)`, which
+                         compiles a route and its `.mesa` imports WITHOUT
+                         running them, since a route's module runs its
+                         resources at import
+    shell.js             the boot (`virtual:sierra`'s Junction + schemas half),
+                         the route list, one route mounted at a time. No
+                         router, layout or autoImport yet — each named in its
+                         header where a route would need it
+    Shell.mesa           the list screen, compiled by the same loader
 
   serve/                 — what the two static servers share
     hashed-asset.js      is this filename content-addressed? The only answer

@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-45 services · 41 routes · 17 plugins · prefix (none)
+46 services · 41 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -1086,6 +1086,33 @@ name when it declares none.
 | before | `all` | `sessionScope` |
 | before | `remove` | `requireWorkspaceRole` |
 | before | `prune` | `requireWorkspaceRole` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `workbench` · model `workbench`
+
+- **methods** — `pins`, `status`, `transcript`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`
+- **custom methods** — `pins`, `status`, `transcript`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`
+- **who may call** —
+  - `pins` — standing 5 or above — declared `gate: 5`
+  - `status` — standing 5 or above — declared `gate: 5`
+  - `transcript` — standing 5 or above — declared `gate: 5`
+  - `pin` — standing 5 or above — declared `gate: 5`
+  - `unpin` — standing 5 or above — declared `gate: 5`
+  - `configure` — standing 5 or above — declared `gate: 5`
+  - `send` — standing 5 or above — declared `gate: 5`
+  - `stop` — standing 5 or above — declared `gate: 5`
+  - `fresh` — standing 5 or above — declared `gate: 5`
+  - `seen` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

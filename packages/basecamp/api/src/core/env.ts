@@ -155,6 +155,12 @@ export const env = defineEnv({
   // reading ITS server's files, and dialing with its agent. `bun run api`
   // sets it.
   LOCAL_MACHINE: {},
+
+  // The workbench (`core/workbench.ts`) — its pins and run logs, and the
+  // Claude Code binary each run starts. Behind LOCAL_MACHINE like the rest of
+  // this block; the directory is outside db/ so `db:reset` keeps every chat.
+  WORKBENCH_DIR: {},
+  CLAUDE_BIN:    { default: 'claude' },
 })
 
 /** Why reading the operator's own machine is not offered, or null when it is. */

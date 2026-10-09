@@ -34,6 +34,17 @@ const parses = (text) => {
 
 const clone = (x) => structuredClone(x)
 
+// base44's studio, 2026-10-09: a yoga studio's classes, read by every member
+// and posted by their instructor.
+const TIMETABLE = {
+  entities: [{
+    name: 'YogaClass', rung: 'novel', why: 'a class on the timetable',
+    fields: [{ name: 'title', type: 'text', required: true }],
+    links: [{ name: 'instructor', to: 'User', actor: 'coordinator', required: true }],
+    access: { shared: 'the timetable every member books from' },
+  }],
+}
+
 describe('the catalog', () => {
   test('every field is a type the emitter has', () => {
     for (const e of ENTITIES) for (const f of e.fields) expect([e.name, f.name, TYPES[f.type] ? f.type : 'missing']).toEqual([e.name, f.name, f.type])
@@ -165,6 +176,18 @@ describe('emit', () => {
     expect(text).toContain("@@allow('read', customerId == auth().id)")
   })
 
+  test('shared opens the read only; the writes stay with the links, and an administrator holds the rest', () => {
+    const text = emit(TIMETABLE, { scaffold: SCAFFOLD }).text
+    expect(text).toContain('@@gate("4.4.4.5")')
+    expect(text).toContain("@@allow('create', instructorId == auth().id)")
+    expect(text).toContain("@@allow('update', instructorId == auth().id)")
+    expect(text).not.toContain("@@allow('read'")
+    const bare = clone(TIMETABLE)
+    bare.entities[0].links = []
+    expect(emit(bare, { scaffold: SCAFFOLD }).text).toContain('@@gate("4.5.5.5")')
+    expect(checkAnswer(TIMETABLE).findings.map(f => f.message)).toEqual(['Every signed-in user reads every YogaClass, and its instructor or an administrator writes one: the timetable every member books from'])
+  })
+
   test('public is the gate at 0, and a condition narrows it', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
     expect(text).toContain('@@gate("0.4.4.4")')
@@ -200,6 +223,26 @@ describe('emitted access, on a real client', () => {
       }
       // A draft job is nobody's but the company's; an open one is the careers page.
       expect(await env.actingAs(null).job.findMany({})).toEqual([])
+    } finally {
+      env.close()
+    }
+  })
+
+  // A shared timetable with an instructor link emitted no rule at all, so the
+  // instructor could not post a class and every member could edit every one.
+  test('every member reads a shared row, and only its instructor changes it', async () => {
+    const env = await createTestEnv({ schema: emit(TIMETABLE, { scaffold: SCAFFOLD }).text })
+    try {
+      const teacher = await env.system.user.create({ data: { email: 't@example.com' } })
+      const member = await env.system.user.create({ data: { email: 'm@example.com' } })
+      const row = await env.actingAs(teacher).yogaClass.create({ data: { title: 'Flow' } })
+      expect(row.instructorId).toBe(teacher.id)
+      expect((await env.actingAs(member).yogaClass.findMany({})).map(r => r.id)).toEqual([row.id])
+      expect(await env.actingAs(null).yogaClass.findMany({}).then(r => r.length, () => 'refused')).not.toBe(1)
+      await env.actingAs(member).yogaClass.update({ where: { id: row.id }, data: { title: 'Mine' } }).catch(() => null)
+      expect((await env.system.yogaClass.findUnique({ where: { id: row.id } })).title).toBe('Flow')
+      await env.actingAs(teacher).yogaClass.update({ where: { id: row.id }, data: { title: 'Slow flow' } })
+      expect((await env.system.yogaClass.findUnique({ where: { id: row.id } })).title).toBe('Slow flow')
     } finally {
       env.close()
     }

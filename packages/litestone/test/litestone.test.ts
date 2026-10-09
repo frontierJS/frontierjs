@@ -8474,6 +8474,13 @@ describe('GatePlugin', () => {
     expect(parseGateString('5.8.8.9')).toEqual({ read: 5, create: 8, update: 8, delete: 9 })
   })
 
+  // FJS-2187: Number('') is 0, so an empty position read as level 0. "4..6"
+  // is a legal drop box with create open to strangers, and "" is public.
+  test.failing('parseGateString refuses an empty string and an empty position', async () => {
+    const { parseGateString } = await import('../src/plugins/gate.js')
+    for (const g of ['', ' ', '4..6', '4.']) expect(() => parseGateString(g)).toThrow()
+  })
+
   test('validateGate rejects non-decreasing levels', async () => {
     const { validateGate } = await import('../src/plugins/gate.js')
     expect(() => validateGate({ read: 4, create: 2, update: 3, delete: 6 }, 'Post')).toThrow()

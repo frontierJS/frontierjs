@@ -238,7 +238,7 @@ useful.
     reach no model that did not say so and each error names one hop. `@@softDelete(cascade)`
     then desugars into one declaration per model on the walk, generated rather
     than inferred at runtime.
-- **Direction.** Only parent → children is proposed. Child → parent (Rails' `touch`)
+- ~~**Direction.**~~ **Answered 2026-10-09 (`FJS-D807`): A — parent to children only; child to parent is an aggregate and stays with `@from(relation, max:)`, which ships.** Only parent → children is proposed. Child → parent (Rails' `touch`)
   is a different rule — an aggregate — and belongs with `@from(relation, max:)`.
   - **A** — parent to children only; child to parent is an aggregate and stays with
     `@from(relation, max:)`, which ships.

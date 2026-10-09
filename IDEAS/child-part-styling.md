@@ -192,7 +192,7 @@ this feature and it is not the shape this feature takes.
      shape is stolen whole (*familiarity vs. precision*). B is what `FJS-128`
      walked away from, and C is a runtime object the compiler cannot see, which
      leaves question 2's parent-scoped resolution nowhere to happen.
-2. **Is the parent-scoped-class resolution in v1**, or does `:global()` stay for the
+2. ~~**Is the parent-scoped-class resolution in v1**~~ **Answered 2026-10-09 (`FJS-D808`): A — design-system classes only in v1; `:global()` stays for a bespoke rule.**, or does `:global()` stay for the
    bespoke-rule case and this ship as design-system-classes-only?
    - **A** — design-system classes only in v1; `:global()` stays for a bespoke
      rule.

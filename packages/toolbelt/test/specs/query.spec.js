@@ -236,3 +236,11 @@ test('query: a distance ordering survives the round trip', function () {
   const d = { $orderBy: { site: { near: { lat: 51.5074, lng: -0.1278 } } } }
   assert.deepEqual(parseQueryString(encodeQueryString(d)), d)
 })
+
+// FJS-2186: a bracket key naming an Array.prototype member reached `length`
+// and `map` on a real Array, and junction answered the query string with a 500
+// and a stack trace before any gate ran.
+test.failing('query: a bracket key named for an Array.prototype member does not throw', function () {
+  parseQueryString('?a[]=1&a[length]=5')
+  parseQueryString('?a[]=1&a[map]=x')
+})

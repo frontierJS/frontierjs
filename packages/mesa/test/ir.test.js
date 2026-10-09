@@ -144,7 +144,7 @@ describe('lower()', () => {
     expect(card.slots.actions[0]).toMatchObject({ kind: 'element', tag: 'b', attrs: [] })
     expect(card.slots.aside[0]).toMatchObject({ kind: 'if' })
     expect(card.slots.aside[0].branches[0].children[0]).toMatchObject({ tag: 'i', attrs: [] })
-    expect(card.snippets).toEqual([expect.objectContaining({ kind: 'unlowered', what: 'snippet' })])
+    expect(card.snippets).toEqual([expect.objectContaining({ kind: 'snippet', name: 'row', params: ['r'], varName: null })])
     expect(slot).toMatchObject({ kind: 'slot', name: 'tail', directives: [], fallback: [expect.objectContaining({ tag: 'p' })] })
   })
 

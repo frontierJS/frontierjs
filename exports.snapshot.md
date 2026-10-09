@@ -330,6 +330,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./widget/serve` | `src/widget/serve.js` | yes |
 | exports | `./site/serve` | `src/site/serve.js` | yes |
 | exports | `./check` | `src/build/mesa-check.js` | yes |
+| exports | `./tui` | `src/tools/tui.js` | yes |
 | bin | `sierra` | `src/tools/cli.js` | yes |
 
 - peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0`

@@ -14,7 +14,21 @@
 /// This file is a TRAIT and not a model, because the shape never stands
 /// alone: it is always spliced into the row the token stands for (the
 /// booking, the application, the page link) or into a row of its own that
-/// points at one. `@@trait(Grant)` is the whole install.
+/// points at one. The install is two lines in the host schema:
+///
+///     import "@frontierjs/litestone/references/Grant.lite"
+///
+///     model PortalLink {
+///       id         Int @id @default(autoincrement())
+///       customerId Int
+///       @@trait(Grant)
+///       @@gate("4")
+///       @@allow('create', check(customer, 'update'))
+///     }
+///
+/// A trait is IMPORTED where a reference model is copied: it carries no
+/// relation and no key, so nothing in it is the host's to rewire, and a copy
+/// is the drift this file was written against.
 ///
 /// ─── The half that is not columns ─────────────────────────────────────────
 ///
@@ -31,6 +45,16 @@
 /// trait can state it, because a trait cannot know what the host's id is
 /// called. The one instance that forgot the policy (portal `Pass`) is a
 /// table of tokens nothing reads by.
+///
+/// ─── Who may mint is the host's ──────────────────────────────────────────
+///
+/// No `@@gate` and no policy in the trait, because the host alone knows who
+/// may issue a link: `@@allow('create', check(customer, 'update'))` on the
+/// host model is that declaration, and a trait's `@@gate` would be the one in
+/// force, a second one on the host refused as a second answer. The digest is
+/// still nobody's to write by hand: junction's `bearerClaim(...).mint()` fills
+/// it on the caller's own create by naming the column in `system:`, which
+/// keeps the gate, the policy and the audit actor on the write.
 ///
 /// ─── What is deliberately NOT here ────────────────────────────────────────
 ///
@@ -67,9 +91,4 @@ trait Grant {
   /// able to rewrite their own trail. transit was the only instance to record
   /// it and the only one that could answer "was this link ever opened".
   lastUsedAt DateTime? @system
-
-  /// 8 across the board. Nothing but `asSystem()` writes a grant — the issuing
-  /// service mints the hash — and a row a bearer could create, read or edit by
-  /// its own standing would let a token issue a token.
-  @@gate("8")
 }

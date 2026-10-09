@@ -11,7 +11,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_BASH, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, askArgv, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
+import { ASK_BASH, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, WORK_BUDGET_USD, askArgv, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 const dir     = mkdtempSync(join(tmpdir(), 'fli-ask-claude-'))
@@ -55,6 +55,17 @@ describe('askArgv', () => {
   test('a follow-up resumes by id', () => {
     const argv = askArgv({ session: SESSION })
     expect(argv.slice(-2)).toEqual(['--resume', SESSION])
+  })
+
+  test('work: every tool, no prompts, the budget stated, hooks off unless asked', () => {
+    const argv = askArgv({ work: { budget: 25 } })
+    expect(argv[argv.indexOf('--permission-mode') + 1]).toBe('bypassPermissions')
+    expect(argv[argv.indexOf('--max-budget-usd') + 1]).toBe('25')
+    expect(argv).not.toContain('--tools')
+    expect(JSON.parse(argv[argv.indexOf('--settings') + 1])).toEqual({ disableAllHooks: true })
+    expect(askArgv({ work: { hooks: true } })).not.toContain('--settings')
+    expect(askArgv({ work: {} })[askArgv({ work: {} }).indexOf('--max-budget-usd') + 1]).toBe(String(WORK_BUDGET_USD))
+    expect(askArgv({ work: {}, session: SESSION }).slice(-2)).toEqual(['--resume', SESSION])
   })
 
 })

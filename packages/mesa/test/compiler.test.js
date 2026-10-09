@@ -1090,6 +1090,10 @@ function provide(n, f) { return null }
       const out = await cx(`<div style:display>x</div>`)
       expect(out).toContain("bindStyle($$el0, 'display'")
     })
+    it('shorthand reads the signal named for the property (FJS-2177)', async () => {
+      const out = await cx(`<script>let fontSize = '2px'; const b = () => fontSize = '3px'</script><div style:font-size on:click={b}>x</div>`)
+      expect(out).toContain("bindStyle($$el0, 'font-size', () => ($$runtime.get($$sig_fontSize)))")
+    })
     it('multiple on same element', async () => {
       const out = await cx(
         `<script>let size = 16; let color = 'red'</script><div style:font-size="{size}px" style:color={color}>x</div>`

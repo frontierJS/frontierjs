@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Workbench.mesa — the Resource layer for the workbench, a
+  // Claude Code chat per pinned checkout (api core/workbench.ts).
+  //
+  // No model, like Git: the pins and the chats live in a folder on the machine
+  // the API runs on, not in this app's database.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const workbench = createResource('workbench', { model: null })
+</script>

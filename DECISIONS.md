@@ -3585,6 +3585,18 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d813"></a>2026-10-09 · `FJS-D813` — What does it do about `@@fts` — Nothing in v1; content is not searchable.
+
+Asked in [`IDEAS/content-collections.md`](IDEAS/content-collections.md) § Open questions. **C** was picked over **A** (the build emits a client-side search index for the collection), **B** (the documents are written into a table so `@@fts` covers them beside the rows).
+
+The paper's recommendation, taken as written: then B once question 1's sync to a table exists, since that table is what `@@fts` indexes and one search box over products and articles needs one index. A is a second search engine with its own ranking, so the storefront would answer one query two ways.
+
+### <a id="fjs-d807"></a>2026-10-09 · `FJS-D807` — Direction — Parent to children only; child to parent is an aggregate and stays with `@from(relation, max:)`, which ships.
+
+Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **A** was picked over **B** (both directions in `@@cascade`).
+
+The paper's recommendation, taken as written: the upward case is already derivable on read, so a stored copy would restate it and could drift from it.
+
 ### <a id="fjs-d789"></a>2026-10-09 · `FJS-D789` — Does the collision scope come from the column's `@@unique`, so nothing new is declared — Yes: the suffix probe reads against exactly the columns of the unique the slug sits in. A bare `@unique` means the table, and `@@unique([tenantId, slug])` means per tenant.
 
 Asked in [`IDEAS/slug-sourcing.md`](IDEAS/slug-sourcing.md) § Open questions. **A** was picked over **B** (An explicit scope argument, `@slug(scopeBy: [tenantId])`, declared beside the unique), **C** (No suffixing: a collision stays the refusal that ships (`Post: slug "hello-world" is already taken.`), and the app picks the next value).
@@ -10650,6 +10662,36 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d815"></a>2026-10-09 · `FJS-D815` — How fine is a derived boundary — The lowest node, but boundaries in one component reveal together.
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **B** was picked over **A** (the lowest node per value, as § *The idea* states), **C** (the component root: derive the watch set, never the placement).
+
+The paper's recommendation, taken as written: if placement is derived at all (the first question's C, which it recommends only later). A gives the pending region the data region's exact shape, and a page whose regions pop in one at a time, shifting layout at each arrival. That is right about correctness and wrong about what a person sees.
+
+### <a id="fjs-d810"></a>2026-10-09 · `FJS-D810` — Does § 8's "TUI: not before core leaves alpha" still hold — Amend § 8 to admit the shell now, as a stressor: `example/web` run in a terminal, read-only routes first.
+
+Asked in [`IDEAS/terminal-surface.md`](IDEAS/terminal-surface.md) § Open questions. **B** was picked over **A** (amend § 8 to stop at components: the target keeps growing as the IR's consumer, and an app shell waits for core to leave alpha), **C** (hold the line, and stop terminal work at what exists).
+
+The paper's recommendation, taken as written: the example app is the corpus that grades the IR, and a shell turns the portability report's count into screens a person can open. Read-only first, because the form path (`bind:` on a component, `on:submit`) is the widest remaining blocker.
+
+### <a id="fjs-d809"></a>2026-10-09 · `FJS-D809` — Where does the terminal version of an app live — A target of `web/`: Sierra builds the same `web/src/routes` with `target: 'terminal'` into a shell that lists the routes and mounts one, and `fli dev:tui` runs it. No new directory; a route that does not lower says so by name.
+
+Asked in [`IDEAS/terminal-surface.md`](IDEAS/terminal-surface.md) § Open questions. **C** was picked over **A** (a new `tui/` surface beside `web/`, with its own config, port slot, `fli dev:tui` and release. Amends Invariant 3), **B** (a mode of `cli/`: the same binary, config (origin, tenant) and release that `FJS-D397` gave commands, with a screen mode beside them).
+
+The paper's recommendation, taken as written: the ask is the same app painted by another backend, and `FJS-D38` rules that a surface is a compiler backend, never a second way to write a component. A and B each start a second route tree. Shipping a terminal app to users as a binary is `cli/`'s release, and is a question for after something runs.
+
+### <a id="fjs-d808"></a>2026-10-09 · `FJS-D808` — Is the parent-scoped-class resolution in v1 — Design-system classes only in v1; `:global()` stays for a bespoke rule.
+
+Asked in [`IDEAS/child-part-styling.md`](IDEAS/child-part-styling.md) § Open questions. **A** was picked over **B** (v1 includes resolving `part:header="tight"` to `tight mHASHp` at the parent, through `resolveAsNode`).
+
+The paper's recommendation, taken as written: then B once a second `:global()` reaches into a child. The demand is one use in the repo, and Invariant 13 already says a parent styles with a tone and a treatment, which A covers whole.
+
+### <a id="fjs-d806"></a>2026-10-09 · `FJS-D806` — Whether `<Form>`'s existing answer is the model for the rest — Yes: each component asks a context at the point of use what it owes, the way a control asks `$context.form`, and the kit holds only what no context can answer.
+
+Asked in [`IDEAS/accessibility.md`](IDEAS/accessibility.md) § Open questions. **A** was picked over **B** (no: the kit is a full table for every term, and `<Form>` becomes one more reader of it).
+
+The paper's recommendation, taken as written: then the table only for what is left. Build one behavioral component (Dialog's focus trap and labelled title) the `<Form>` way first and price the kit against what remains; *cut one level simpler* says not to tabulate the kind that already derives.
+
 ### <a id="fjs-d673"></a>2026-10-09 · `FJS-D673` — Does a plain multi-line String (an address, a note) get a schema word now, or wait for a sighting — `@syntax(txt)`: plain text's file extension beside `md`, the catalog's own rule for the argument; `x-syntax: txt` → `textarea` with plain display in `displayFor` (no Markdown rendering). No new attribute, and a natural language is a syntax too. It redefines an existing answer rather than adding one: probed 2026-10-09, `controlFor({ type: 'string', 'x-syntax': 'text' })` answers `{ control: 'code', language: 'text' }` today, an unhighlighted code editor that falls through rather than a designed answer.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (wait: close the row's residue until an app declares a column that needs it, then the sighting names the shape. No code, no noun), **C** (derive from `@length`: a `maxLength` above a threshold (say 200) is `textarea`. No new word, but a magic number, and a column that is long and one-line (a URL) is misdrawn).
@@ -12751,6 +12793,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d814"></a>2026-10-09 · `FJS-D814` — Where the artefact store lives when there is no registry — Nowhere: the builder ships the bytes with `docker save | docker load`, as `deploy.builder` does today, and each target's own image store is the store.
+
+Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (A content-addressed store on the Basecamp host that every Outpost pulls from by digest, with Basecamp stated as the single point of failure for deploys), **C** (A registry: a `registry:2` container on the Basecamp host when the user has none, mirrored by `RegistryImage` and pulled by the Outpost's `/pull`).
+
+The paper's recommendation, taken as written: then C once a fleet deploy needs one artefact on many machines. A ships and needs no new infrastructure. B is a registry under another name, so when a store is owed, the existing one (`registry:2`) is the cheaper concept and the Outpost's `/pull` already speaks it.
+
+### <a id="fjs-d811"></a>2026-10-09 · `FJS-D811` — Does the non-developer audience actually get served by this — No: developer-only, and every editing concern is `foundry`'s later.
+
+Asked in [`IDEAS/content-collections.md`](IDEAS/content-collections.md) § Open questions. **A** was picked over **B** (not by an editor here, but the collection adopts `_module.md` and `__template.md` now so the editor that comes later has its two conventions), **C** (yes: ship the list, editor and save over a git service with it).
+
+The paper's recommendation, taken as written: then B's two conventions in the same piece of work as the first editor. A convention with no reader can be wrong without anything saying so, and `__template.md` has no reader until something creates a document. C waits on question 1's B.
 
 ### <a id="fjs-d579"></a>2026-10-09 · `FJS-D579` — From a framework checkout, does `fli new` default `--source local`, refuse npm when a template needs a newer feature than the published package, or keep npm — Default `local` when `fliRoot` sits in a framework checkout (`<root>/packages/junction/package.json` beside the cli), npm otherwise. A published `fli` never has that sibling, so the person the comment protects still gets npm, and the dev cli writes templates against the code those templates were written for. `--source npm` still forces it; the plan summary already names the source.
 

@@ -2929,11 +2929,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return [data, stamped]
   }
 
-  function refuseGuardedWrite(data, stamped) {
-    const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k) && !stamped?.has(k))
+  // `system: ['col']` lifts the write half of @guarded as it lifts @system: a
+  // grant's digest is required and @guarded, so without this the model was
+  // uncreatable below 8 and every app minted it as asSystem() in a second
+  // write, dropping the create policy that says who may issue a link
+  // (FJS-1749). Naming the column keeps the gate, the policies and the audit
+  // actor, and the read half stays locked.
+  function refuseGuardedWrite(data, stamped, system) {
+    const named  = new Set(Array.isArray(system) ? system : system ? [system] : [])
+    const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k) && !stamped?.has(k) && !named.has(k))
     if (denied.length) throw new AccessDeniedError(
       `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @guarded — ` +
-      `a system-context column on write as well as read. Write it through asSystem(), or leave it out of the ` +
+      `a system-context column on write as well as read. Name it on the call to write it as the application ` +
+      `(system: [${denied.map(f => `'${f}'`).join(', ')}]), write it through asSystem(), or leave it out of the ` +
       `payload. For a column some callers may write, @allow('write', …) is the tool; @guarded answers both ` +
       `halves at once, which is why the two cannot sit on one field.`,
       { model: modelName, operation: 'write' }
@@ -2956,8 +2964,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   // ── system: [...], what a call may name ─────────────────────────────────
-  // A @system column, a field whose moves are declared, or the gate
-  // (`FJS-D575`). An entry naming nothing a call lifts is refused rather than
+  // A @system column, a @guarded column (its write half), a field whose moves
+  // are declared, or the gate (`FJS-D575`). An entry naming nothing a call lifts is refused rather than
   // ignored: a misspelled or renamed column then reads as permission in review
   // and grants none, and `system: true` — transition()'s spelling, which knows
   // its own column — was accepted on a write and allowed nothing.
@@ -2978,8 +2986,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (e.startsWith('@')) throw new Error(
         `${modelName}: system: ['${e}'] — '${GATE_LIFT}' is the one guarantee a call may lift by name. ` +
         `asSystem() lifts the rest, and lifts them together.`)
-      if (!_systemWriteKeys.has(e) && !_tableTransitions?.[e]) throw new Error(
-        `${modelName}: system: ['${e}'] — "${e}" is not a @system column` +
+      if (!_systemWriteKeys.has(e) && !_guardedWriteKeys.has(e) && !_tableTransitions?.[e]) throw new Error(
+        `${modelName}: system: ['${e}'] — "${e}" is not a @system or @guarded column` +
         `${_tableTransitions ? ' or a field with declared moves' : ''}, so naming it lifts nothing.`)
     }
   }
@@ -3311,7 +3319,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // stamps injected; every caller of writeData that stamps passes one, and an
     // entry point that forgets is refused rather than let through, which is the
     // safe direction for a fail-closed rule.
-    if (!ctx.isSystem && _guardedWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) refuseGuardedWrite(data, stamped)
+    if (!ctx.isSystem && _guardedWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) refuseGuardedWrite(data, stamped, system)
 
     // ── @system, the write half ───────────────────────────────────────────
     // The column reads like any other and is written by the application, not by

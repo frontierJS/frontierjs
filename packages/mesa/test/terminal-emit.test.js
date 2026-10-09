@@ -109,10 +109,25 @@ describe('terminal target', () => {
     }
     const shape = /^\S.* at [A-Z]\.mesa:\d+:\d+ has no terminal lowering$/
 
-    it('<table>', async () => {
-      const source = `<div>\n<table><tr><td>x</td></tr></table>\n</div>\n`
-      await refusal(source, 'A.mesa', '<table> at A.mesa:2:1 has no terminal lowering')
+    it('<svg>', async () => {
+      const source = `<div>\n<svg><path d="M0 0" /></svg>\n</div>\n`
+      await refusal(source, 'A.mesa', '<svg> at A.mesa:2:1 has no terminal lowering')
       await expect(terminal(source, 'A.mesa')).rejects.toThrow(shape)
+    })
+
+    // Columns are equal shares of a row, so a spanning cell would put the
+    // row's later values under the wrong header.
+    it('colspan and rowspan on a cell, static or live', async () => {
+      await refusal(`<table><tr><td>a</td>\n<td colspan="2">x</td></tr></table>\n`, 'S.mesa',
+        'colspan on <td> at S.mesa:2:1 has no terminal lowering')
+      await refusal(`<script>let n = 2</script>\n<table><tr><th rowspan={n}>x</th></tr></table>\n`, 'R.mesa',
+        'rowspan on <th> at R.mesa:2:12 has no terminal lowering')
+    })
+
+    it('but not colspan on the only cell in its row, which fills the row already', async () => {
+      await expect(terminal(`<script>let n = 2</script>\n<table><tr>\n  <!-- empty -->\n  <td colspan={n}>none</td>\n</tr></table>\n`, 'T.mesa')).resolves.toBeTruthy()
+      await refusal(`<table><tr><td colspan="2" rowspan="2">x</td></tr></table>\n`, 'U.mesa',
+        'rowspan on <td> at U.mesa:1:12 has no terminal lowering')
     })
 
     it('bind:value', async () => {
@@ -140,8 +155,41 @@ describe('terminal target', () => {
         '<component> at F.mesa:2:1 has no terminal lowering')
     })
 
+    it('a literal <mesa:element> tag the table does not hold', async () => {
+      await refusal(`<mesa:element this="svg">x</mesa:element>\n`, 'M.mesa', '<svg> at M.mesa:1:1 has no terminal lowering')
+    })
+
     it('names the first offender only', async () => {
-      await refusal(`<table></table>\n<Foo />\n`, 'G.mesa', '<table> at G.mesa:1:1 has no terminal lowering')
+      await refusal(`<svg></svg>\n<Foo />\n`, 'G.mesa', '<svg> at G.mesa:1:1 has no terminal lowering')
+    })
+  })
+
+  // A resource file carries its model's default form (Invariant 18), and a
+  // route importing only the data half must not inherit the form's refusal.
+  describe('a refused file with a <script module> keeps its data half (FJS-2182)', () => {
+    const RESOURCE = `<script module>\n  export const things = { name: 'things' }\n</script>\n<script>\n  import Form from './Form.mesa'\n  let record\n</script>\n<Form bind:record={record} />\n`
+
+    it('exports the module half, and a default that throws the refusal when mounted', async () => {
+      const ctx = await terminal(RESOURCE, 'Thing.mesa')
+      const message = 'bind:record on <Form> at Thing.mesa:8:7 has no terminal lowering'
+      expect(ctx.terminalRefusal).toBe(message)
+      acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })
+      // The instance script's imports go with it: Form.mesa is never loaded.
+      expect(ctx.result).not.toMatch(/Form\.mesa|\$\$tui|\$\$runtime/)
+      const mod = await import(/* @vite-ignore */ `data:text/javascript,${encodeURIComponent(ctx.result)}`)
+      expect(mod.things).toEqual({ name: 'things' })
+      expect(() => mod.default()).toThrow(message)
+    })
+
+    it('a lowering file sets no refusal', async () => {
+      const ctx = await terminal(`<script module>\n  export const x = 1\n</script>\n<p>{x}</p>\n`, 'X.mesa')
+      expect(ctx.terminalRefusal).toBeUndefined()
+      expect(ctx.result).toContain('$$tui')
+    })
+
+    it('without a <script module> there is nothing to keep, and the compile throws', async () => {
+      await expect(terminal(RESOURCE.replace(/<script module>[\s\S]*?<\/script>\n/, ''), 'Thing.mesa'))
+        .rejects.toThrow('bind:record on <Form> at Thing.mesa:5:7 has no terminal lowering')
     })
   })
 
@@ -230,28 +278,63 @@ describe('terminal target', () => {
     expect(result).toContain("$$tui.slot($$m1, __block?.['actions'], null);")
   })
 
+  // The author marked it as carrying nothing a reader needs, so the terminal
+  // paints what assistive technology reads; outside one it is still refused.
+  it('drops a tag it cannot paint on or inside aria-hidden="true", and only there', async () => {
+    const { result } = await terminal(`<div aria-hidden="true"><svg><path d="M0 0" /></svg><b>*</b></div>
+<svg aria-hidden="true"><path d="M0 0" /></svg>
+<p>t</p>
+`)
+    expect(result).not.toMatch(/svg|path/)
+    expect(result).toContain("$$tui.element('b')")
+    expect(result).toContain("$$tui.element('p')")
+    await expect(terminal(`<div aria-hidden="false"><svg></svg></div>\n`, 'N.mesa')).rejects.toThrow('<svg> at N.mesa:1:26')
+  })
+
+  it('declares a body snippet before its renders, and hands each argument over as a getter', async () => {
+    const { result } = await terminal(`<script>export let action = null\nlet n = 1</script>
+{@render body(n + 1)}
+{@render action?.()}
+{#snippet body(x)}<p>{x}</p>{/snippet}
+`)
+    const decl = result.indexOf('const $$snippet_body = (__anchor, x) => {')
+    expect(decl).toBeGreaterThan(-1)
+    expect(result.indexOf('$$snippet_body($$m0, () => ($$runtime.get($$sig_n) + 1));')).toBeGreaterThan(decl)
+    expect(result).toContain('{ const $$sf = $$runtime.get($$sig_action); if ($$sf) $$sf($$m1); }')
+    expect(result).toContain('`${(x()) ?? \'\'}`')
+  })
+
+  it('passes a snippet to a component under a name of its own, and keys a <mesa:element> on its tag', async () => {
+    const { result } = await terminal(`<script>import T from './T.mesa'\nlet l = 2</script>
+<T>{#snippet row(r)}<p>{r}</p>{/snippet}</T>
+<T>{#snippet row(r)}<b>{r}</b>{/snippet}</T>
+<mesa:element this={'h' + l}>x</mesa:element>
+`)
+    expect(result).toContain('T($$m0, {row: $$snip0_row}, null);')
+    expect(result).toContain('T($$m1, {row: $$snip1_row}, null);')
+    expect(result).toContain("$$tui.keyBlock($$m2, () => ('h' + $$runtime.get($$sig_l)), ($$tag) => {")
+    expect(result).toContain('$$tui.element($$tag);')
+  })
+
   it('terminalOffenses lists every offender in document order, grouped by shape', async () => {
     const { ir } = await compile(`<script>import Foo from './Foo.mesa'
   let v = ''
   let x = 'a'
 </script>
-<table><tr><td class={x}>{v}</td></tr></table>
+<table><tr><td class={x} colspan={x}>{v}</td><td>z</td></tr></table>
 <input bind:value={v} bind:checked={v} />
 {#if v}<button on:click|once={() => {}} on:submit={() => {}}>b</button>{/if}
-{#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><td>{#snippet s()}x{/snippet}</td></Foo>{/each}
+{#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><svg>{#snippet s()}x{/snippet}</svg></Foo>{/each}
 <slot name="a" title="t" />
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
     expect(terminalOffenses(ir).map((o) => [o.what, o.shape, o.loc])).toEqual([
-      ['<table>',      '<table>',           'H.mesa:5:1'],
-      ['<tr>',         '<tr>',              'H.mesa:5:8'],
-      ['<td>',         '<td>',              'H.mesa:5:12'],
+      ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
       ['bind:value',   'bind:',             'H.mesa:6:8'],
       ['bind:checked', 'bind:',             'H.mesa:6:23'],
       ['on:click|once', 'on:…|once',        'H.mesa:7:16'],
       ['on:submit',    'on:submit',         'H.mesa:7:41'],
       ['bind:x on <Foo>', 'bind: on a component', 'H.mesa:8:29'],
-      ['<td>',         '<td>',              'H.mesa:8:59'],
-      ['{#snippet}',   '{#snippet}',        'H.mesa:8:63'],
+      ['<svg>',        '<svg>',             'H.mesa:8:59'],
       ['title on <slot>', 'attribute on <slot>', 'H.mesa:9:16'],
     ])
   })

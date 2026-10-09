@@ -1,0 +1,17 @@
+<script>
+  let rows = [{ name: 'Widget', qty: 3 }]
+  const add = () => { rows = [...rows, { name: 'Gadget long name', qty: rows.length * 10 }] }
+</script>
+<div>
+  <table>
+    <thead><tr><th>Name</th><th>Qty</th></tr></thead>
+    <tbody>
+      {#each rows as r (r.name)}
+        <tr><td>{r.name}</td><td>{r.qty}</td></tr>
+      {/each}
+    </tbody>
+  </table>
+  <hr />
+  <dl><dt>Term</dt><dd>meaning</dd></dl>
+  <p>Press <kbd>Enter</kbd> on <button on:click={add}>Add</button></p>
+</div>

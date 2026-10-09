@@ -378,7 +378,7 @@ was written to apply.
 
 ## Open questions
 
-- **Where the artefact store lives when there is no registry.** On the Basecamp host
+- ~~**Where the artefact store lives when there is no registry.**~~ **Answered 2026-10-09 (`FJS-D814`): A — Nowhere: the builder ships the bytes with `docker save | docker load`, as `deploy.builder` does today, and each target's own image store is the store.** On the Basecamp host
   is the obvious answer and makes Basecamp a single point of failure for deploys —
   acceptable for a control plane, but it should be stated rather than discovered.
   - **A** — Nowhere: the builder ships the bytes with `docker save | docker load`,

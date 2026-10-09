@@ -67,3 +67,48 @@ describe('reference models', () => {
     })
   }
 })
+
+// ─── A trait is imported ─────────────────────────────────────────────────────
+//
+// The catalog's own rule: a model is copied, a trait is imported. The first app
+// to try `@@trait(Grant)` got *unknown trait*, because the folder was neither
+// exported nor read by anything (FJS-2176). A host schema under test/fixtures
+// installs it the way the README says, and a gated caller mints a row through
+// its own create policy with the digest named in `system:` — the shape the
+// trait exists for.
+
+import { parseFile }    from '../src/core/parser.js'
+import { createClient } from '../src/index.js'
+
+describe('Grant is installed by import, and minted by the caller', () => {
+  const host = join(import.meta.dir, 'fixtures', 'references', 'grant-host.lite')
+
+  it('@@trait(Grant) resolves through the package export', () => {
+    const { schema, errors } = parseFile(host)
+    expect((errors ?? []).map((e: any) => e.message ?? String(e))).toEqual([])
+    const link = schema.models.find((m: any) => m.name === 'PortalLink')
+    expect(link.fields.map((f: any) => f.name)).toEqual(
+      expect.arrayContaining(['tokenHash', 'expiresAt', 'revokedAt', 'lastUsedAt']))
+    // The host's gate is the one in force — the trait states none.
+    expect(link.attributes.filter((a: any) => a.kind === 'gate')).toHaveLength(1)
+  })
+
+  it('a caller the create policy admits writes the @guarded digest by naming it', async () => {
+    const db: any = await createClient({ schema: host, db: ':memory:', claims: ['customerId'] })
+    await db.asSystem().customer.create({ data: { id: 1, name: 'Acme' } })
+    await db.asSystem().customer.create({ data: { id: 2, name: 'Other' } })
+
+    const me = db.$setAuth({ id: 7, role: 'member', customerId: 1 })
+    // Without the name the column is locked, which is the FJS-1749 trap.
+    await expect(me.portalLink.create({ data: { customerId: 1, tokenHash: 'd1' } }))
+      .rejects.toThrow(/"tokenHash" is @guarded/)
+    const row = await me.portalLink.create({ data: { customerId: 1, tokenHash: 'd1' }, system: ['tokenHash'] })
+    expect(row.customerId).toBe(1)
+    // The read half stays locked.
+    expect('tokenHash' in row).toBe(false)
+    // The policy still grades the write: somebody else's customer is refused.
+    await expect(me.portalLink.create({ data: { customerId: 2, tokenHash: 'd2' }, system: ['tokenHash'] }))
+      .rejects.toThrow()
+    expect(await db.asSystem().portalLink.count()).toBe(1)
+  })
+})

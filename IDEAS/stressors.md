@@ -66,6 +66,7 @@ than started.
 | 23 | **Quo** (formerly OpenPhone) — a team phone: one number many people answer, texts and calls in one inbox, on Telnyx | a counterparty's webhook whose signature has no secret; a status moved by somebody else, out of order; a live call whose state the vendor holds; a WebSocket a VENDOR dials | `inbound-integrations.md` ([`FJS-D177`](../DECISIONS.md#fjs-d177)) · `conduit-connectors.md` row 5 · `compliance-from-the-seed.md` · #5 |
 | 24 | **ELA** — a live legacy-FJS lawn-care operations app, maid.tech's sibling, being ported | a system of record the app does not own, mirrored and polled; money mirrored rather than originated; a wall-clock day as a key, in a composite foreign key | `conversion-ela.md` · `conversion-maid-tech.md` · #2 · #7 · #21 · #23 |
 | 25 | **SSTime** — a live Laravel + Ember time clock, ELA's, being ported | a punch accepted and classified by device and position rather than refused; a PIN on a wall kiosk as the attestation; the employee held by two apps kept in step | `conversion-sstime.md` · #2 · #13 · #23 · #24 |
+| 26 | **serpgrid** — local SEO for agencies: a rank grid scanned on a schedule, beside the client's CRM and Google profile | an outbound call that costs money; one agency's Google grant spent by many client tenants; one scan fanned into N vendor tasks that finish out of order; a webhook signed by a JWT checked against published keys | `third-party-credentials.md` · `conduit-batteries.md` · `geo.md` · `bearer-access.md` · #21 · #23 · #24 |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -981,6 +982,31 @@ untrusted device or the wrong place is not refused. It is stored as
 that is not the principal. Second is the seam with #24: ELA and SSTime each hold
 the employee and keep each other in step. That makes it the first real caller
 of #13's question about one app creating a principal in another.
+
+### 26. serpgrid — the bill arrives with every send
+
+*Added 2026-10-09. A mockup (Hono, SQLite, a React prototype) is in
+`fjs-prototypes/serpgrid/mockup`; nothing is built on FJS. The V1, its
+connectors and its questions are that folder's `PLAN.md`.*
+
+**What it is.** A geo-grid rank tracker in the shape of Local Falcon, with
+the agency's CRM and each client's Google Business Profile in the same app.
+No product found on 2026-10-09 does all three in one place. GoHighLevel comes
+closest by renting Search Atlas's heatmaps, at 1,000 grid points a month. The
+CRM half is maid.tech's and is reused, so the run spends itself on the half no
+stressor has touched.
+
+**What it breaks first is spend.** Every DataForSEO send costs money, and the
+vendor reports the cost in its answer. Estimating before a send, capping it
+per tenant and reconciling it afterwards have no owner. The per-target rate
+limiter in `conduit-batteries.md` is parked until an app asks, and this app is
+asking. Next comes **one agency's Google grant, spent by every client tenant
+the agency serves**. That is leg three of `third-party-credentials.md`: a
+resolver with no principal, a token with no expiry, and no OAuth target. Then
+**one scan fanned into N vendor tasks** that come back partly failed, by
+callback or poll, with progress shown live on a map.
+
+Built under the rule #21 set: its fixes land in FJS and its code never does.
 
 ## Not on this list, with reasons
 

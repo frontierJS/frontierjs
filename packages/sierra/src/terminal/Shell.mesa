@@ -1,0 +1,23 @@
+<script>
+  // Shell.mesa — the terminal shell's route list: a button per route that
+  // lowers, and one line saying how many do not. Compiled for the terminal by
+  // the loader that compiles the app, so it is held to the same table.
+  //
+  // The refused routes are a count rather than a list: one line each overflows
+  // a screen with no scrolling, and `fli dev:tui --list` prints them whole.
+  export let app     = ''
+  export let routes  = []
+  export let refused = 0
+  export let onopen  = null
+</script>
+
+<h1>{app}</h1>
+<p>Tab moves, Enter opens, Esc comes back, Ctrl+C quits</p>
+{#each routes as r (r.path)}
+  <button on:click={() => onopen?.(r)}>{r.path}</button>
+{:else}
+  <p>No route lowers yet.</p>
+{/each}
+{#if refused}
+  <p>{refused} more do not lower yet: fli dev:tui --list names the first blocker of each.</p>
+{/if}

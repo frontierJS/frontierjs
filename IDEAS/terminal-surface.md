@@ -214,10 +214,11 @@ refuse explicitly, because it is the default outcome.
 3. **The verb column and the diagnostic renderer.** `fli make:*` and `fli check` are
    the two consumers that already exist.
 4. **`--json` on every reporting command.**
-5. **TUI: not before core leaves alpha.** `FJS-D14` parked `oracle` and `orion` on
-   exactly this reasoning — an interesting build that is not a gap in the framework.
-   What is owed before then is only the decision in §9, so that steps 1–4 do not
-   foreclose it.
+5. **TUI: the app shell is a stressor, admitted now (`FJS-D810`).** `example/web`
+   runs in a terminal as a target of `web/` (`FJS-D809`), read-only routes first,
+   because it is the corpus that grades the IR. Shipping a terminal app to users
+   is still not before core leaves alpha — `FJS-D14`'s reasoning, unchanged for
+   anything past the stressor.
 
 ---
 
@@ -241,6 +242,45 @@ anyone counted. The ruling took that price knowingly, and named the half it does
 not buy: the AUTHORING is derived across targets, the RUNTIME is not, because
 there is no renderer abstraction for it to be derived from. The first non-markup
 target builds that seam or proves it unnecessary.
+
+---
+
+## 10. Open questions
+
+Raised 2026-10-09, once single components ran on the terminal target
+(`IDEAS/mesa-ir.md` § 6 step 3) and the next ask was the example app in a
+terminal, `fli dev:tui`.
+
+- ~~**Where does the terminal version of an app live?**~~ **Answered 2026-10-09 (`FJS-D809`): C — a target of `web/`: Sierra builds the same `web/src/routes` with `target: 'terminal'` into a shell that lists the routes and mounts one, and `fli dev:tui` runs it. No new directory; a route that does not lower says so by name.** `FJS-D397` made `cli/` a
+  surface for commands, and Invariant 3 lists the surfaces. A terminal
+  rendering of an app's screens is none of them yet.
+  - **A** — a new `tui/` surface beside `web/`, with its own config, port slot,
+    `fli dev:tui` and release. Amends Invariant 3.
+  - **B** — a mode of `cli/`: the same binary, config (origin, tenant) and
+    release that `FJS-D397` gave commands, with a screen mode beside them.
+  - **C** — a target of `web/`: Sierra builds the same `web/src/routes` with
+    `target: 'terminal'` into a shell that lists the routes and mounts one, and
+    `fli dev:tui` runs it. No new directory; a route that does not lower says so
+    by name.
+  - **Recommend C** — the ask is the same app painted by another backend, and
+    `FJS-D38` rules that a surface is a compiler backend, never a second way to
+    write a component. A and B each start a second route tree. Shipping a
+    terminal app to users as a binary is `cli/`'s release, and is a question for
+    after something runs.
+
+- ~~**Does § 8's "TUI: not before core leaves alpha" still hold?**~~ **Answered 2026-10-09 (`FJS-D810`): B — amend § 8 to admit the shell now, as a stressor: `example/web` run in a terminal, read-only routes first.** The terminal
+  target exists as the IR's second consumer, so the line is already passed at
+  the component level. An app shell is Sierra work: a terminal router, the
+  resource client under Bun, and `autoImport` on the terminal path.
+  - **A** — amend § 8 to stop at components: the target keeps growing as the
+    IR's consumer, and an app shell waits for core to leave alpha.
+  - **B** — amend § 8 to admit the shell now, as a stressor: `example/web`
+    run in a terminal, read-only routes first.
+  - **C** — hold the line, and stop terminal work at what exists.
+  - **Recommend B** — the example app is the corpus that grades the IR, and a
+    shell turns the portability report's count into screens a person can open.
+    Read-only first, because the form path (`bind:` on a component,
+    `on:submit`) is the widest remaining blocker.
 
 ---
 

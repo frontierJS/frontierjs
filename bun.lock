@@ -398,6 +398,16 @@
         "@frontierjs/toolbelt": "workspace:*",
       },
     },
+    "packages/print-kit": {
+      "name": "@frontierjs/print-kit",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@frontierjs/mesa": "workspace:*",
+      },
+      "peerDependencies": {
+        "@frontierjs/mesa": "^0.1.0",
+      },
+    },
     "packages/sierra": {
       "name": "@frontierjs/sierra",
       "version": "0.1.7",
@@ -679,6 +689,8 @@
     "@frontierjs/orion": ["@frontierjs/orion@workspace:packages/orion"],
 
     "@frontierjs/outpost": ["@frontierjs/outpost@workspace:packages/outpost"],
+
+    "@frontierjs/print-kit": ["@frontierjs/print-kit@workspace:packages/print-kit"],
 
     "@frontierjs/sierra": ["@frontierjs/sierra@workspace:packages/sierra"],
 

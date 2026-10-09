@@ -24,7 +24,8 @@
     "./widget": "./src/widget/index.js",
     "./widget/serve": "./src/widget/serve.js",
     "./site/serve": "./src/site/serve.js",
-    "./check": "./src/build/mesa-check.js"
+    "./check": "./src/build/mesa-check.js",
+    "./tui": "./src/tools/tui.js"
   },
   "bin": {
     "sierra": "./src/tools/cli.js"

@@ -23,25 +23,18 @@
  * - Mesa flushes on a microtask, so every key helper waits a tick and renders
  *   once before returning; a spec that reads the frame straight after a
  *   mockInput call of its own sees the previous state.
- * - A compiled fixture is written under a temp dir and imported from there.
- *   Its two runtime specifiers are rewritten to file URLs of `src/`, and each
- *   `./X.mesa` it imports is compiled the same way and pointed at, so every
- *   fixture and the spec share one runtime instance and one signal graph; the
- *   `@frontierjs/mesa` package name would resolve to the copy under
- *   `node_modules/.bun/`, a stale snapshot of this tree.
- * - A compile's output is acorn-parsed before it is written (Invariant 15).
+ * - A fixture is compiled with its imports by `scripts/terminal-tree.js`,
+ *   which `bun run tui` shares; its header carries the module traps.
  */
-import { readdirSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { readdirSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import * as acorn from 'acorn'
 import { createTestRenderer } from '@opentui/core/testing'
 import * as runtime from '../../src/runtime.js'
 import * as tui from '../../src/runtime-terminal.js'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
-const SRC  = fileURLToPath(new URL('../../src/', import.meta.url))
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`
 const red   = (s) => `\x1b[31m${s}\x1b[0m`
@@ -74,7 +67,10 @@ function makeT(rows, tmp) {
 
     /** Compile `fixtures/<name>.mesa` for the terminal and import the module. */
     compile: async (name) => {
-      const mod = await import(await compileFixture(name, tmp, new Map()))
+      // Loaded here rather than at the top: a compiler that fails to import
+      // fails the spec that asked for it, not the drive and every spec in it.
+      const { compileTree } = await import('../../scripts/terminal-tree.js')
+      const mod = await import(await compileTree(join(HERE, 'fixtures', `${name}.mesa`), tmp))
       return mod.default
     },
 
@@ -138,33 +134,6 @@ function makeT(rows, tmp) {
     },
   }
   return t
-}
-
-/**
- * Compile `fixtures/<name>.mesa` and every `./X.mesa` it imports, children
- * first, and answer the file URL of the module written. A child's specifier
- * is rewritten to its compiled file, as the runtime imports are, so a parent
- * and its children share one runtime instance.
- */
-async function compileFixture(name, tmp, done) {
-  if (done.has(name)) return done.get(name)
-  // Loaded here rather than at the top: a compiler that fails to import
-  // fails the spec that asked for it, not the drive and every spec in it.
-  const { compile } = await import('../../src/compiler.js')
-  const src = await Bun.file(join(HERE, 'fixtures', `${name}.mesa`)).text()
-  const ctx = await compile(src, { target: 'terminal', filename: `${name}.mesa` })
-  let code = ctx.result
-    .replace("'@frontierjs/mesa/runtime.js'", JSON.stringify(pathToFileURL(join(SRC, 'runtime.js')).href))
-    .replace("'@frontierjs/mesa/runtime/terminal.js'", JSON.stringify(pathToFileURL(join(SRC, 'runtime-terminal.js')).href))
-  for (const [spec, child] of [...code.matchAll(/from '\.\/(\w+)\.mesa'/g)].map((m) => [m[0], m[1]])) {
-    code = code.replace(spec, `from ${JSON.stringify(await compileFixture(child, tmp, done))}`)
-  }
-  acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' })
-  const out = join(tmp, `${name}.${Date.now()}.mjs`)
-  writeFileSync(out, code)
-  const url = pathToFileURL(out).href
-  done.set(name, url)
-  return url
 }
 
 /** A renderable in a failure detail is its class and id, not a walk of the

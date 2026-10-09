@@ -276,7 +276,7 @@ solved it is weak evidence that it is not the first thing anyone reaches for.
     would be a severable seam around nothing yet, and an existing owner beats a
     new name. C scatters the list of collections across the tree with nothing
     that enumerates them; it is worth measuring again if the editor arrives.
-- **Does the non-developer audience actually get served by this?** The answer
+- ~~**Does the non-developer audience actually get served by this?**~~ **Answered 2026-10-09 (`FJS-D811`): A — no: developer-only, and every editing concern is `foundry`'s later.** The answer
   here was *no, that is `foundry` territory and a much larger project*, and the
   second half of that is **measured wrong**: the CMS in § *Evidence from a CMS…*
   serves 100 sites and 9,355 documents from **14 files and 2,460 lines** of editing
@@ -294,7 +294,7 @@ solved it is weak evidence that it is not the first thing anyone reaches for.
     first editor. A convention with no reader can be wrong without anything
     saying so, and `__template.md` has no reader until something creates a
     document. C waits on question 1's B.
-- **What does it do about `@@fts`?** The storefront search finding a product and
+- ~~**What does it do about `@@fts`?**~~ **Answered 2026-10-09 (`FJS-D813`): C — nothing in v1; content is not searchable.** The storefront search finding a product and
   not a help article is the concrete symptom, and it is the strongest argument for
   content-as-rows.
   - **A** — the build emits a client-side search index for the collection.

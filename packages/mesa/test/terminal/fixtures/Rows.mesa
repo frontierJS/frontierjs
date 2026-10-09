@@ -1,0 +1,12 @@
+<script>
+  export let items = []
+  export let row   = null
+  export let empty = null
+</script>
+<div>
+  {#each items as it, i}
+    {@render row?.(it, i)}
+  {:else}
+    {@render empty?.()}
+  {/each}
+</div>

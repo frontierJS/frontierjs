@@ -232,7 +232,7 @@ Open, and the reason this is a note rather than a proposal:
   - **Recommend B** — and C only once a real screen wants finer reveal than hand
     placement gives. B closes the `undefined` flash with no new concept. C is
     then an optimization over B, and the next three questions are its price.
-- **How fine is a derived boundary?**
+- ~~**How fine is a derived boundary?**~~ **Answered 2026-10-09 (`FJS-D815`): B — the lowest node, but boundaries in one component reveal together.**
   - **A** — the lowest node per value, as § *The idea* states.
   - **B** — the lowest node, but boundaries in one component reveal together.
   - **C** — the component root: derive the watch set, never the placement.

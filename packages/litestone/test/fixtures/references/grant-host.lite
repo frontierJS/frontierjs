@@ -1,0 +1,20 @@
+// A host schema installing the shipped Grant trait the way the catalog says:
+// imported, never copied. Read by test/references.test.ts.
+import "@frontierjs/litestone/references/Grant.lite"
+
+model Customer {
+  id    Int          @id @default(autoincrement())
+  name  String
+  links PortalLink[]
+  @@gate("4")
+  @@allow('update', id == auth().customerId)
+}
+
+model PortalLink {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id])
+  @@trait(Grant)
+  @@gate("4")
+  @@allow('create', check(customer, 'update'))
+}

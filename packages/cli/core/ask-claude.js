@@ -24,6 +24,12 @@
 // rather than accepted by whatever mode the account defaults to. The one
 // `Edit(<dir>/**)` rule covers Write too — measured, for each tool the call
 // inside the scope landed and the one beside it came back as a denial.
+//
+// WORK is the opposite end, for Basecamp's workbench: a build session in a
+// checkout its operator pinned, every tool and every permission. Nothing above
+// holds there — it is the account's own Claude Code, minus the prompts — so
+// the two levers left are what this file still owns: the budget, and whether
+// the repo's own hooks run (a Stop hook that blocks spends the run's turns).
 
 import { spawn, spawnSync } from 'node:child_process'
 
@@ -84,7 +90,22 @@ export function shareBudget(lengths, total = EDIT_MAX_HTML) {
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function askArgv({ session = null, edit = null } = {}) {
+// A work run builds rather than answers; the operator sets it per checkout.
+export const WORK_BUDGET_USD = 10
+
+export function askArgv({ session = null, edit = null, work = null } = {}) {
+  if (work) {
+    const argv = [
+      '-p',
+      '--output-format',  'stream-json',
+      '--verbose',
+      '--permission-mode', 'bypassPermissions',
+      '--max-budget-usd', String(Number(work.budget) > 0 ? Number(work.budget) : WORK_BUDGET_USD),
+    ]
+    if (!work.hooks) argv.push('--settings', JSON.stringify({ disableAllHooks: true }))
+    if (session) argv.push('--resume', session)
+    return argv
+  }
   if (edit) {
     const argv = [
       '-p',

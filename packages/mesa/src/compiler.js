@@ -17,7 +17,7 @@
 
 import * as acorn from 'acorn'
 import { lower } from './ir.js'
-import { buildTerminal } from './terminal/emit.js'
+import { buildTerminal, terminalRefusal } from './terminal/emit.js'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -6049,7 +6049,7 @@ function splitArgs(src) {
  * item; a snippet does not. So the destructuring moves into the READ, and each
  * bound name keeps its own subscription.
  */
-function snippetParam(raw, index, snippetName) {
+export function snippetParam(raw, index, snippetName) {
   const src = raw.trim()
   if (/^[A-Za-z_$][\w$]*$/.test(src)) return { param: src, reads: { [src]: `${src}()` } }
 
@@ -6176,25 +6176,34 @@ export function makeSnippet(data) {
  *      → const $$v = get($$sig_name); if ($$v) $$v(anchor, args)
  *   3. Optional-chained form name?.() → treat as (2) unconditionally
  */
+/**
+ * `{@render name(args)}`, `{@render name?.(args)}` or `{@render name}`, taken
+ * apart: the callee's name, whether it is optional-chained, the raw argument
+ * text and each argument. One owner for the DOM builder and for `lower()`.
+ */
+export function parseRenderTag(value) {
+  const expr = value.slice('@render '.length).trim()
+  const callMatch = expr.match(/^(\w+)\s*(\??\.)?\s*\((.*)\)$/s)
+  const rawArgs = callMatch ? callMatch[3].trim() : ''
+  return {
+    expr,
+    name: callMatch ? callMatch[1] : expr.replace(/\??\.\(\)$/, '').trim(),
+    optional: expr.includes('?.'),
+    rawArgs,
+    args: rawArgs ? splitArgs(rawArgs) : [],
+  }
+}
+
 export function makeRenderTag(data, label) {
   const ctx = this
-  // Strip "@render " prefix
-  const expr = data.value.slice('@render '.length).trim()
-
-  // Parse: name(args) or name?.(args) or just name
-  const callMatch = expr.match(/^(\w+)\s*(\??\.)?\s*\((.*)\)$/s)
-  const snippetName = callMatch ? callMatch[1] : expr.replace(/\??\.\(\)$/, '').trim()
-  const isOptional = expr.includes('?.')
-  const rawCallArgs = callMatch ? callMatch[3].trim() : ''
+  const { expr, name: snippetName, optional: isOptional, rawArgs: rawCallArgs, args } = parseRenderTag(data.value)
 
   // Rewrite any reactive variable reads in the args, then hand each one over as
   // a GETTER — see makeSnippet. A value read here would be read once, when the
   // snippet's DOM is built, and never again.
-  const callArgs = rawCallArgs
-    ? splitArgs(rawCallArgs)
-        .map(a => `() => (${ctx.accessors ? rewriteExpr(a, ctx.accessors) : a})`)
-        .join(', ')
-    : ''
+  const callArgs = args
+    .map(a => `() => (${ctx.accessors ? rewriteExpr(a, ctx.accessors) : a})`)
+    .join(', ')
 
   ctx.detectDependency(rawCallArgs || expr)
 
@@ -6789,6 +6798,22 @@ export function routeSlots(node, preserveComments) {
   for (const name of routed.keys()) if (name !== 'default') keep(name)
   keep('default')
   return { slots, snippets, mixed }
+}
+
+/**
+ * What `style:prop` reads, in its three spellings: bare reads the variable
+ * named for the property (`style:font-size` reads `fontSize`), `{expr}` the
+ * expression, and a quoted value with holes is a template (`template: true`,
+ * `raw` the text to `parseText`). `bindProp` and `lowerAttributes` (`ir.js`)
+ * both read it. Every `raw` goes through the accessors like any expression:
+ * a bare name emitted as written is a ReferenceError when it names a signal.
+ */
+export function styleSource(attr, prop) {
+  if (!attr.value) return { raw: toCamelCase(prop), template: false }
+  if (attr.type === 'exp' || (attr.value.startsWith('{') && attr.value.endsWith('}'))) {
+    return { raw: unwrapExp(attr.value), template: false }
+  }
+  return { raw: attr.value, template: true }
 }
 
 /**
@@ -7429,26 +7454,15 @@ export function bindProp(prop, node, element) {
   // style:prop={expr}
   if (name.startsWith('style:')) {
     const styleProp = name.slice(6)
-
-    // Determine the expression for the style value.
-    // Three cases:
-    //   style:display          — no value, use CSS property name as boolean toggle
-    //   style:color={expr}     — pure expression, unwrap directly
-    //   style:font-size="{n}px" — mixed template literal, parse and rewrite
+    const src = styleSource(prop, styleProp)
     let exp
-    if (!prop.value) {
-      // style:display — shorthand, toggles the property by its camelCase name
-      exp = toCamelCase(styleProp)
-    } else if (prop.type === 'exp' || (prop.value.startsWith('{') && prop.value.endsWith('}'))) {
-      // Pure expression: style:color={expr}
-      const rawExp = unwrapExp(prop.value)
-      exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors) : rawExp
-      this.detectDependency(rawExp)
-    } else {
-      // Mixed template literal: style:font-size="{size}px"
-      const pe = parseText(prop.value)
+    if (src.template) {
+      const pe = parseText(src.raw)
       exp = ctx.accessors ? rewriteTextResult(pe, ctx.accessors) : pe.result
       this.detectDependency(pe)
+    } else {
+      exp = ctx.accessors ? rewriteExpr(src.raw, ctx.accessors) : src.raw
+      this.detectDependency(src.raw)
     }
 
     return {
@@ -10482,11 +10496,18 @@ export async function compile(source, config = {}) {
 
   // ── Build runtime (the template block, per target) ────────────────────────
   await hook('runtime:before')
+  // A refused file with a <script module> keeps its data half: a route that
+  // imports `orders` from Order.mesa needs none of that file's form, and the
+  // DOM path pays nothing for an unmounted default export either (`FJS-2182`).
+  // The default throws the refusal when mounted; `ctx.terminalRefusal` lets an
+  // importer graph refuse anything that takes the default without running it.
   use_context(ctx, () => {
-    if (config.target === 'terminal') {
-      buildHead.call(ctx)
-      buildTerminal(ctx)
-    } else buildRuntime.call(ctx)
+    if (config.target !== 'terminal') return buildRuntime.call(ctx)
+    const refused = terminalRefusal(ctx.ir)
+    if (refused && !ctx.scriptModuleNodes[0]) throw new Error(refused)
+    if (refused) return void (ctx.terminalRefusal = refused)
+    buildHead.call(ctx)
+    buildTerminal(ctx)
   })
   await hook('runtime')
 
@@ -10511,7 +10532,13 @@ export async function compile(source, config = {}) {
     // only at `vite build`, having run fine in dev.
     const _compName = safeComponentIdent(_displayName, ctx)
 
-    const root = xNode('root', (w) => {
+    const root = ctx.terminalRefusal ? xNode('root', (w) => {
+      ctx.scriptModuleNodes[0].content.trim().split('\n').forEach(line => w.write(true, line))
+      w.write(true, '')
+      w.write(true, `export default function ${_compName}() {`)
+      w.write(true, `  throw new Error(${JSON.stringify(ctx.terminalRefusal)});`)
+      w.write(true, '}')
+    }) : xNode('root', (w) => {
       w.write(true, `import * as $$runtime from '@frontierjs/mesa/runtime.js';`)
       if (config.target === 'terminal')
         w.write(true, `import * as $$tui from '@frontierjs/mesa/runtime/terminal.js';`)

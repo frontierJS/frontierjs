@@ -41,6 +41,27 @@ globalThis.test = function (name, fn) {
   results.push({ file, name, ok: true })
 }
 
+// A filed defect's repro, kept red on purpose: it passes while the defect
+// stands and FAILS the run once the defect is fixed, so a fix cannot land
+// without whoever made it dropping `.failing` and closing the row it cites.
+globalThis.test.failing = function (name, fn) {
+  const file = current
+  const fixed = () => results.push({ file, name, ok: false, error: 'passes now: drop .failing and close the row it cites' })
+  const stands = () => results.push({ file, name, ok: true })
+  let out
+  try {
+    out = fn()
+  } catch {
+    stands()
+    return
+  }
+  if (out && typeof out.then === 'function') {
+    pending.push(out.then(fixed, stands))
+    return
+  }
+  fixed()
+}
+
 globalThis.assert = {
   ok(v, msg) {
     if (!v) throw new Error(msg || 'expected truthy, got ' + JSON.stringify(v))

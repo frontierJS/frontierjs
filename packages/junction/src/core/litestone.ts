@@ -3367,8 +3367,33 @@ async function applySchemaClaims(ctx: ServiceContext, db: unknown): Promise<void
   if (Object.keys(claims).length) mergeClaims(ctx, db, claims)
 }
 
-async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: PrincipalResolver): Promise<PrincipalClaims> {
-  const claims  = await principal(ctx, ctx.auth?.user ?? null)
+/** What `createApp({ principal })` takes: one resolver, or a list run in order
+ *  with the results merged (`FJS-D522`). */
+export type PrincipalSetting = PrincipalResolver | PrincipalResolver[]
+
+const resolverName = (fn: PrincipalResolver) => fn.name || 'anonymous'
+
+async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: PrincipalSetting): Promise<PrincipalClaims> {
+  const list   = Array.isArray(principal) ? principal : [principal]
+  const claims: PrincipalClaims = {}
+  const origin = new Map<string, string>()
+  for (const resolver of list) {
+    const got = await resolver(ctx, ctx.auth?.user ?? null)
+    for (const [name, value] of Object.entries(got ?? {})) {
+      // Refused rather than last-wins: a claim two sources both emit is a
+      // precedence the app has to state, and silently taking the later one
+      // hands the tenant claim to whichever resolver happened to be listed
+      // second. A precedence is a plain function that applies it (`FJS-D694`);
+      // the list is for sources whose claims are disjoint.
+      if (origin.has(name)) throw new Error(
+        `Two principal resolvers answered '${name}' on one request — ${origin.get(name)} and ` +
+        `${resolverName(resolver)}. One claim, one origin: a precedence between them is a plain ` +
+        `function that applies it and carries its own describe() (FJS-D694); the principal list is ` +
+        `for sources whose claims are disjoint (FJS-D522).`)
+      origin.set(name, resolverName(resolver))
+      claims[name] = value
+    }
+  }
   const sources = ((db as LitestoneClient)?.$schema as { claimSources?: Record<string, { model: string }> } | undefined)?.claimSources ?? {}
   const clash   = Object.keys(claims ?? {}).filter(k => k in sources)
   if (clash.length) throw new Error(
@@ -3381,7 +3406,7 @@ async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: Pri
 
 export function withLitestoneDb(
   db:         unknown,
-  principal?: PrincipalResolver,
+  principal?: PrincipalSetting,
   system?:    { userId?: string | number } | null,
 ): import('./hooks.ts').AroundHook {
   return async (ctx, next) => {
@@ -3656,6 +3681,8 @@ export type BearerSource = ((ctx: ServiceContext) => string | null) & {
    *  preflight and the socket frame allow-list both need it, and without it the
    *  app restates the name in `http.callHeaders` or the preflight drops it. */
   readonly headerName?: string
+  /** The cookie this source reads, where it reads one — what `redeem()` sets. */
+  readonly cookieName?: string
 }
 
 /**
@@ -3722,7 +3749,13 @@ export function authorization(): BearerSource {
 
 /** Read the token from a cookie — what a redeemed link leaves behind. */
 export function cookie(name: string): BearerSource {
-  return (ctx) => {
+  const source = (ctx: ServiceContext) => {
+    // A cookie is ambient — the browser sends it on every request to the origin
+    // — so a seller who once opened a customer's link carries it on every call
+    // of their own session, and once that link is replaced, reading it refuses
+    // the seller as a dead link for the cookie's life (`FJS-2175`). A session
+    // and a grant are not held together (`FJS-D344`); the session wins.
+    if (ctx.auth?.user) return null
     const direct = (ctx as { cookies?: Record<string, string> }).cookies?.[name]
                 ?? (ctx.caller as { cookies?: Record<string, string> } | undefined)?.cookies?.[name]
     if (typeof direct === 'string' && direct) return direct
@@ -3742,6 +3775,7 @@ export function cookie(name: string): BearerSource {
     }
     return null
   }
+  return Object.assign(source, { cookieName: name })
 }
 
 export interface BearerClaimOptions {
@@ -3788,6 +3822,21 @@ export interface ResolvedBearer {
   subject: unknown
   /** The row itself, so nothing has to read it twice. */
   row:     Record<string, unknown>
+  /** The grant model's accessor — which of several grants this is. */
+  model:   string
+}
+
+/**
+ * The grant a NAMED resolver resolved on this call, or null.
+ *
+ * `ctx.locals[BEARER]` is one slot and a principal list may carry two bearers
+ * (a widget's grant beside a survey link, both live on one request), so the
+ * slot keeps the FIRST in the app's stated order — the one the trail names as
+ * the actor — and each grant is also parked under its model, which is what a
+ * service for that model reads.
+ */
+export function bearerOf(ctx: ServiceContext, model: string): ResolvedBearer | null {
+  return (ctx.locals?.[`${BEARER}:${model}`] as ResolvedBearer | undefined) ?? null
 }
 
 export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
@@ -3847,15 +3896,24 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
     // revoked one and an expired one are one answer on purpose — *this link does
     // not work* is all a bearer may learn, or the refusal becomes an oracle for
     // which tokens once existed.
+    // The words are the sender's: an API key rides Authorization, a link rides a
+    // cookie or a header of the app's own, and a machine holding a key reads
+    // nothing about a link it never had (`FJS-2161`). `header()` refuses the name
+    // `authorization`, so that name is `authorization()` and nothing else.
     if (!row || !isLive(row, (db as { $now?: () => Date } | undefined)?.$now)) throw new Unauthorized(
-      `This link does not work. It may have expired or been withdrawn.`,
+      opts.from.headerName === 'authorization'
+        ? `This key does not work. It may have expired or been revoked.`
+        : `This link does not work. It may have expired or been withdrawn.`,
     )
 
-    ctx.locals[BEARER] = {
+    const held = {
       id:      row.id ?? null,
       subject: opts.subject ? row[opts.subject] ?? null : null,
       row,
+      model:   opts.model,
     } satisfies ResolvedBearer
+    ctx.locals[`${BEARER}:${opts.model}`] = held
+    ctx.locals[BEARER] ??= held
 
     return Object.fromEntries(
       Object.entries(opts.claims).map(([claim, column]) => [
@@ -3910,11 +3968,51 @@ function isLive(row: Record<string, unknown>, clock?: () => Date): boolean {
 }
 
 /** A resolver that can say what it is — `junction principal` reads this, and an
- *  app writing its own may carry one. */
-export type DescribedResolver = PrincipalResolver & { describe: () => PrincipalDescription }
+ *  app writing its own may carry one. A plain function that applies a
+ *  PRECEDENCE between two sources answers a LIST, one entry per source it
+ *  composes (`FJS-D694`). */
+export type DescribedResolver = PrincipalResolver & { describe: () => PrincipalDescription | PrincipalDescription[] }
+
+/** Every description an installed principal carries: each element of a list,
+ *  and each entry a plain function's own `describe()` answers. A function with
+ *  none describes nothing, which is reported rather than invented. */
+export function describedOf(principal: PrincipalSetting | undefined): Array<{ name: string; described: PrincipalDescription[] }> {
+  if (!principal) return []
+  return (Array.isArray(principal) ? principal : [principal]).map(fn => {
+    const d = typeof (fn as Partial<DescribedResolver>).describe === 'function'
+      ? (fn as DescribedResolver).describe() : null
+    return { name: resolverName(fn), described: d == null ? [] : Array.isArray(d) ? d : [d] }
+  })
+}
+
+/**
+ * The static half of the list's one rule, graded at `createApp`: two elements
+ * that DESCRIBE the same claim name will collide on the first request that
+ * makes both emit it, so the boot says so rather than the request.
+ */
+export function checkPrincipalSetting(principal: PrincipalSetting | undefined): void {
+  if (!principal) return
+  const list = Array.isArray(principal) ? principal : [principal]
+  for (const fn of list) if (typeof fn !== 'function') throw new Error(
+    `createApp({ principal }) takes a resolver or a list of resolvers, and an element is ${typeof fn}.`)
+  if (!Array.isArray(principal)) return
+  const origin = new Map<string, string>()
+  for (const { name, described } of describedOf(principal))
+    for (const d of described) for (const claim of d.claims) {
+      if (origin.has(claim) && origin.get(claim) !== name) throw new Error(
+        `createApp({ principal: [...] }): '${claim}' is described by both ${origin.get(claim)} and ${name}. ` +
+        `A claim name emitted by two resolvers is refused on the request (FJS-D522); a precedence between ` +
+        `them is a plain function that applies it and carries its own describe() list (FJS-D694).`)
+      origin.set(claim, name)
+    }
+}
 
 /** What a principal resolver can say about itself to a tool that writes it down. */
 export interface PrincipalDescription {
+  /** `membership` reads a row the session points at; `bearer` reads a grant
+   *  row the token digests to; `signature` verifies the request's own proof —
+   *  a blind signature, a signed assertion — and reads no row at all. An
+   *  app-written resolver may say any of the three, or its own word. */
   kind:     string
   model:    string | null
   subject:  string | null
@@ -3944,9 +4042,8 @@ export interface PrincipalDescription {
 export function declaredCallHeaders(app: unknown, config?: { http?: unknown }): string[] {
   const listed = ((config ?? (app as { config?: { http?: unknown } })?.config)?.http as
     { callHeaders?: string[] } | undefined)?.callHeaders ?? []
-  const resolver = (app as Record<symbol, unknown> | null)?.[PRINCIPAL_RESOLVER] as
-    Partial<DescribedResolver> | undefined
-  const read = typeof resolver?.describe === 'function' ? resolver.describe().headers ?? [] : []
+  const installed = (app as Record<symbol, unknown> | null)?.[PRINCIPAL_RESOLVER] as PrincipalSetting | undefined
+  const read = describedOf(installed).flatMap(r => r.described.flatMap(d => d.headers ?? []))
   const seen = new Set<string>()
   return [...listed, ...read].filter(h => !seen.has(h.toLowerCase()) && !!seen.add(h.toLowerCase()))
 }
@@ -3975,7 +4072,11 @@ export function declaredCallHeaders(app: unknown, config?: { http?: unknown }): 
 /** The tenancy claim's own name and how a request names its tenant. */
 export interface PrincipalRealm {
   tenancy:   { strategy: string; column: string | null; claim: string | null; resolve: string | null } | null
-  resolver:  { name: string; described: PrincipalDescription | null } | null
+  /** One entry per installed resolver — a list's elements in order, or the one
+   *  function — each with every description it answers. Null when none is
+   *  installed; an entry with no descriptions is a hand-written resolver that
+   *  describes nothing. */
+  resolvers: Array<{ name: string; described: PrincipalDescription[] }> | null
   /** Models the schema exempts from tenancy by name. */
   exempt:    string[]
   /** Models scoped through a parent rather than a column of their own. */
@@ -3994,8 +4095,7 @@ export interface PrincipalRealm {
 }
 
 export function describePrincipalRealm(app: unknown, db: unknown): PrincipalRealm | null {
-  const resolverFn = (app as Record<symbol, unknown>)?.[PRINCIPAL_RESOLVER] as
-    (PrincipalResolver & { describe?: () => PrincipalDescription }) | undefined
+  const installed = (app as Record<symbol, unknown>)?.[PRINCIPAL_RESOLVER] as PrincipalSetting | undefined
 
   // Two sources and they are not interchangeable. `createApp({ db })` has one
   // client and the declaration is on it; `createApp({ tenants })` has none — a
@@ -4011,9 +4111,13 @@ export function describePrincipalRealm(app: unknown, db: unknown): PrincipalReal
   // which is also the honest answer: that strategy scopes nothing by predicate,
   // so there is no per-model rule to break down.
   const schema = (db as { $schema?: { models?: ModelLike[]; enums?: EnumLike[] } })?.$schema ?? null
-  if (!t && !resolverFn) return null
+  if (!t && !installed) return null
 
-  const described = typeof resolverFn?.describe === 'function' ? resolverFn.describe() : null
+  const resolvers = installed ? describedOf(installed) : null
+  // The standing is one column on one row, so the first description that
+  // names one is the one graded — two memberships on one app is a shape
+  // nothing here has met.
+  const described = resolvers?.flatMap(r => r.described).find(d => d.standing && d.model) ?? null
 
   const exempt: string[] = []
   const delegated: string[] = []
@@ -4045,7 +4149,7 @@ export function describePrincipalRealm(app: unknown, db: unknown): PrincipalReal
   return {
     tenancy:  t ? { strategy: t.strategy, column: t.column ?? null, claim: t.claim ?? null,
                     resolve: t.resolve ? describeResolution(t.resolve) : null } : null,
-    resolver: resolverFn ? { name: resolverFn.name || 'anonymous', described } : null,
+    resolvers,
     hasSchema: !!schema,
     tenantConfigKeys: (app as { tenantConfig?: { keys?: string[] } | null })?.tenantConfig?.keys ?? null,
     exempt, delegated, scoped, standing,
@@ -4706,7 +4810,7 @@ function tapTenantWrites(app: unknown, client: unknown, tenantId: string): void 
  * than composing with it — an app has one `ctx.locals.db` and two hooks
  * assigning it is a race decided by hook order.
  */
-export function withTenantDb(registry: TenantRegistryLike, principal?: PrincipalResolver): import('./hooks.ts').AroundHook {
+export function withTenantDb(registry: TenantRegistryLike, principal?: PrincipalSetting): import('./hooks.ts').AroundHook {
   return async function withTenantDb(ctx, next) {
     const dataPrincipal = ctx.auth?.user ? toDataPrincipal(ctx.auth.user) : null
     const headers   = (ctx.caller?.headers ?? {}) as Record<string, unknown>

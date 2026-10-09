@@ -101,11 +101,13 @@
     },
     "./external-ref": {
       "import": "./src/plugins/external-ref.js"
-    }
+    },
+    "./references/*": "./references/*"
   },
   "main": "./src/index.js",
   "files": [
     "src/",
+    "references/",
     "README.md",
     "AGENTS.md",
     "catalog.snapshot.md",

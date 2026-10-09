@@ -11,6 +11,7 @@ title: Local repositories
   import { comparatorFor } from '@frontierjs/junction/client'
   import { ago }  from '../../datetime.js'
   import { git }  from '../../resources/Git.mesa'
+  import { workbench } from '../../resources/Workbench.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -64,6 +65,24 @@ title: Local repositories
 
   if (remembered()) scan()
 
+  // Pinned to the workbench, by path. A failure leaves every row unpinned
+  // rather than hiding the listing it sits beside.
+  let pinned = {}
+  async function loadPins() {
+    try {
+      const answer = await workbench.service.invoke('pins', null)
+      pinned = Object.fromEntries(answer.pins.map(p => [p.path, p.id]))
+    } catch {}
+  }
+  async function togglePin(r) {
+    try {
+      if (pinned[r.path]) await workbench.service.invoke('unpin', pinned[r.path])
+      else await workbench.service.invoke('pin', null, { path: r.path })
+      await loadPins()
+    } catch (err) { error = err.message }
+  }
+  loadPins()
+
   $: repos = (answer?.repos ?? []).filter(r => (!frontierOnly || r.frontier) && (!search
     || r.relative.toLowerCase().includes(search.toLowerCase())
     || (r.remote ?? '').toLowerCase().includes(search.toLowerCase())))
@@ -84,7 +103,10 @@ title: Local repositories
 
 <div class="section-header">
   <h1>Local repositories</h1>
-  <Button variant="ghost" href="/git-activity/">Git activity</Button>
+  <span class="cluster">
+    <Button variant="ghost" href="/workbench/">Workbench</Button>
+    <Button variant="ghost" href="/git-activity/">Git activity</Button>
+  </span>
 </div>
 
 {#if !offered}
@@ -139,6 +161,10 @@ title: Local repositories
           {#snippet row(r)}
             <tr>
               <td>
+                <Button variant="ghost" size="xs" square
+                        aria-label={pinned[r.path] ? `Unpin ${r.name} from the workbench` : `Pin ${r.name} to the workbench`}
+                        aria-pressed={pinned[r.path] ? 'true' : 'false'}
+                        onclick={() => togglePin(r)}>{pinned[r.path] ? '★' : '☆'}</Button>
                 <strong>{r.name}</strong>
                 {#if r.frontier}<Pill tone="info">FrontierJS</Pill>{/if}
                 <div class="text-sm text-muted"><code>{r.relative}</code></div>

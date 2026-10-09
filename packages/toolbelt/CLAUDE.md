@@ -7,9 +7,9 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/bearer`, `/cron`, `/datetime`, `/frontmatter`, `/gate`, `/geo`, `/glow`, `/inflect`,
-`/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`,
-`/query`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
+**One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
+`/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/mime`,
+`/predicate`, `/query`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -108,6 +108,11 @@ src/frontmatter/     what a `---` block MEANS — a declared YAML subset
                      files — two readers answered two objects for one ksite
                      menu (`FJS-1541`). `frontmatterValue` is the writer's
                      half: plain where plain reads back, otherwise quoted
+src/cells/           one cell of a file somebody else wrote, read as the type
+                     its column declares or a reason it cannot be — never a
+                     guess, and a reason never quotes the cell, since the text
+                     may be what the column protects. Litestone's seeder and
+                     its query reader
 src/history/         `occurrenceKey` — the one definition of *this unit of work
                      already happened*
 src/match/           does this record still belong in that query's results.
@@ -494,7 +499,9 @@ license.
   that lets litestone and mesa import this package at all.
 - **A spec body may be async, and the harness had to learn it.** `test(name,
   fn)` awaits a returned promise now; before that a rejection inside an async
-  spec was an unhandled rejection reported as a PASS.
+  spec was an unhandled rejection reported as a PASS. `test.failing(name, fn)`
+  is a filed defect's repro: it passes while `fn` throws and fails the run once
+  it does not, so the fix drops `.failing` and closes the row it cites.
 - **A highlighter fails silently or not at all.** It drops a character, the
   output still looks like code, and the reader copies a sample that does not
   work. The round-trip test over the whole corpus is the only one that matters;

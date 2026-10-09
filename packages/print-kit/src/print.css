@@ -1,0 +1,31 @@
+/*
+ * print.css — what a document needs on paper that a screen does not (DL R3).
+ *
+ * After the app's own stylesheet, so it wins where they meet. The page's size
+ * and margin boxes are printDocument()'s, from data; this is what is true of
+ * every printed report.
+ */
+
+/* A chart is its fill. Without this, Chrome drops backgrounds and every
+   column of a bar chart prints white on white. */
+html { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+
+/* The print frame, as `.app` is the screen's: @frontierjs/css has no bare
+   body rule, so without this, text outside a component prints in the
+   browser's serif. Not `.app` itself, which paints the sunken app ground and
+   a 100vh floor that paper has no use for. The page's margin is @page's. */
+body.print { margin: 0; background: var(--surface); color: var(--ink); font-family: var(--font-primary); }
+
+/* The margin boxes are text the page context draws, and it inherits from the
+   root, so the kit's tokens reach it. */
+@page { font-family: var(--font-primary); font-size: 8pt; color: var(--ink-mute); }
+
+/* A group starts a page: the banded report's group break (R3). The first
+   group shares the page with the report's header. */
+.page-group + .page-group { break-before: page; }
+
+/* A table broken across pages repeats its header on each, and no row is cut
+   in half. A chart or a figure is never cut. */
+thead { display: table-header-group; }
+tr, figure, svg, .keep { break-inside: avoid; }
+h1, h2, h3 { break-after: avoid; }

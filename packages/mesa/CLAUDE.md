@@ -43,10 +43,15 @@ src/
   terminal/emit.js     — the terminal emitter, the stage compile() runs for
                          target: 'terminal' (FJS-D699): ctx.ir → calls on $$tui
                          written into ctx.module.body. Refuses, never approximates
+                         — except a tag it cannot paint on or inside a static
+                         aria-hidden="true", which it leaves out (`terminalDropped`)
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
                          `$$tui`, a cell tree over @opentui/core (optional peer,
-                         pinned exact while 0.x — FJS-D698). Bun only
+                         pinned exact while 0.x — FJS-D698). Bun only. Also the
+                         one place another package gets a renderer from
+                         (`createRenderer`, `createHeadlessRenderer`) — its own
+                         engine import would be a second copy
   render-component.js  — renderComponent(): a component → HTML, at build time
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)
@@ -101,6 +106,13 @@ scripts/
   portability.js       — the report's counting, pure: a file lowers only when
                          every component it imports lowers. A tally change is
                          graded by test/portability.test.js, not by eye
+  terminal-tree.js     — compileTree(): a .mesa file and its imports compiled
+                         for the terminal against this tree's src/. The drive
+                         and `tui` share it
+  tui.mjs              — bun run tui <file.mesa>: one file live in a real
+                         terminal (--frame prints one and exits, --props=JSON).
+                         Paths are relative to packages/mesa; from elsewhere
+                         call `bun packages/mesa/scripts/tui.mjs <path>`
 ```
 
 **The Vite plugin is a subpath, not a package.** A `package.json` of its own

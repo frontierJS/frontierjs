@@ -81,6 +81,7 @@
     "serve": "npx serve ../..",
     "bench": "node bench/run.mjs",
     "corpus": "bun scripts/corpus.mjs",
+    "tui": "bun scripts/tui.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {

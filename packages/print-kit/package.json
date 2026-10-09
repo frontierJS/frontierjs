@@ -1,0 +1,32 @@
+{
+  "name": "@frontierjs/print-kit",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "One headless-Chromium render worker behind one seam: an HTML document to a PDF, an element to a PNG, over @frontierjs/mesa/drive",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./print.css": "./src/print.css",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "bun test test",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/mesa": "^0.1.0"
+  },
+  "devDependencies": {
+    "@frontierjs/mesa": "workspace:*"
+  },
+  "files": ["index.js", "index.d.ts", "src", "README.md"],
+  "license": "MIT",
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/print-kit"
+  }
+}

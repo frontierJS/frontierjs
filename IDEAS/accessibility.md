@@ -129,7 +129,7 @@ and pretending otherwise would be a check that fails open.
     so the noun is discovered rather than coined. B stretches it over the
     page-level kind the first question gives to sierra, and C is the home
     § *Why not `css/vocabulary.js`* already rules out.
-- **Whether `<Form>`'s existing answer is the model for the rest.** It is the one
+- ~~**Whether `<Form>`'s existing answer is the model for the rest.**~~ **Answered 2026-10-09 (`FJS-D806`): A — yes: each component asks a context at the point of use what it owes, the way a control asks `$context.form`, and the kit holds only what no context can answer.** It is the one
   kind that derives today and it works: label, constraints and server error all
   resolved from `$context.form`, with `novalidate` and a named case it cannot
   cover. If the other three kinds can be made to look like that, the kit is

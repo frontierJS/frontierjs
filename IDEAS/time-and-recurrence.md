@@ -459,6 +459,13 @@ is which subset earns a name.
     path argument; B's recompute-on-write is the real fix for the Azores case, but it
     is a derived-column mechanism the language does not yet have, and deserves its own
     ruling.
+  - **The commitment half (`FJS-2170`)** — `readBy(kind, by, timeZone)` in
+    `litestone/src/core/commitment.js` reads a day-kind `by` in one zone per `due()` call,
+    so lago's `on: periodEnd + graceDays` fires 9 h late for Tokyo and 7 h early for Los
+    Angeles from one sweep. Under A the `@zoned(path)` on the `@date` is what `dueSql`
+    reads per row, with `due()` grouping by zone; the alternative is a `zone:` argument on
+    `@@commitment` itself, a second place to say the same binding. Red assertion owed:
+    `due({ by: '2026-10-03T15:00Z' })` holds the Tokyo invoice and not the Los Angeles one.
 
 ## See also
 

@@ -401,3 +401,23 @@ test('createDatetime: the zone and the clock are required up front', function ()
   assert.throws(() => createDatetime({ timeZone: 'UTC' }), /needs now/)
   assert.throws(() => createDatetime({ timeZone: 'UTC', now: () => 'yesterday' }).relativeToNow(NOW), /now\(\) "yesterday" is not an instant/)
 })
+
+// FJS-2184: litestone's zoned groupBy hands offsetSpans the MIN and MAX of a
+// column, so one row dated 9999 makes a request read the zone every twelve
+// hours for eight thousand years. A refusal by name passes; a read count
+// that grows with the range does not.
+test.failing('datetime: offsetSpans reads the zone a bounded number of times over any range', function () {
+  const real = Intl.DateTimeFormat.prototype.formatToParts
+  let reads = 0
+  Intl.DateTimeFormat.prototype.formatToParts = function (...a) {
+    if (++reads > 5000) throw new Error('offsetSpans read the zone more than 5000 times')
+    return real.apply(this, a)
+  }
+  try {
+    offsetSpans('2020-01-01T00:00:00Z', '9999-12-31T00:00:00Z', 'America/Denver')
+  } catch (e) {
+    if (/5000 times/.test(e.message)) throw e
+  } finally {
+    Intl.DateTimeFormat.prototype.formatToParts = real
+  }
+})

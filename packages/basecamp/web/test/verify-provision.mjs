@@ -116,6 +116,24 @@ writeFileSync(join(ALPHA, 'frontier.config.js'), 'export default {}')
 gitIn(ALPHA, 'add', '.'); gitIn(ALPHA, 'commit', '-q', '-m', 'first commit')
 gitIn(ALPHA, 'remote', 'add', 'origin', 'https://me:tok_secret@example.test/alpha.git')
 writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
+// …and the Claude Code the workbench runs, as a stand-in: the real one costs
+// money and needs a login. It answers in stream-json, slowly enough that the
+// card's WORKING state is on screen for a poll or two, and leaves a file in
+// the checkout so the card's dirty count has something to follow.
+const WORKBENCH = join(SCRATCH, 'workbench')
+const FAKE_CLAUDE = join(SCRATCH, 'fake-claude')
+writeFileSync(FAKE_CLAUDE, `#!/usr/bin/env node
+const fs = require('fs')
+const input = fs.readFileSync(0, 'utf8')
+const out = l => process.stdout.write(JSON.stringify(l) + '\\n')
+out({ type: 'system', subtype: 'init', session_id: '5acea7bb-3850-44cf-81dc-97688510acda' })
+out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'bun test' } }] } })
+setTimeout(() => {
+  fs.writeFileSync('claude-was-here.txt', input)
+  out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Done: ' + input }] } })
+  out({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.42, num_turns: 3 })
+}, /slow/.test(input) ? 20000 : 3000)
+`, { mode: 0o755 })
 
 console.log('\nBasecamp — provisioning a machine\n')
 console.log(`  seeding ${DB}`)
@@ -188,6 +206,8 @@ const api = spawn('bun', ['api/index.ts'], {
     PORT:             String(API_PORT),
     LOCAL_MACHINE:    '1',
     HOME:             SSH_HOME,
+    WORKBENCH_DIR:    WORKBENCH,
+    CLAUDE_BIN:       FAKE_CLAUDE,
   },
 })
 children.push(api)
@@ -929,6 +949,68 @@ try {
   await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => /absolute/.test(t),
     'a relative folder was not refused')
   check('a relative folder is refused by name', true)
+
+  // ─── The workbench ─────────────────────────────────────────────────────
+  // A checkout starred on the listing becomes a card with a chat. A message is
+  // a run of the stand-in claude above, in that checkout; the card says it is
+  // working while it is, says done when it ends, and the tab says so too.
+  console.log('\n  /workbench/ — a Claude Code chat per pinned checkout')
+  await fill({ root: '~/code' })
+  await evaluate(`document.querySelector('#local-repos-form button[type=submit]').click()`)
+  await until(`document.querySelectorAll('#local-repos-list [aria-label^="Pin alpha"]').length`, n => n === 1,
+    'the listing offered no pin for alpha')
+  await click('#local-repos-list [aria-label^="Pin alpha"]')
+  await until(`document.querySelectorAll('#local-repos-list [aria-label^="Unpin alpha"]').length`, n => n === 1,
+    'starring alpha did not turn into an unpin')
+  check('a checkout on the listing pins to the workbench', true)
+
+  await goto('/workbench/')
+  await until(`document.querySelectorAll('#workbench-grid article[data-state]').length`, n => n === 1,
+    'the pinned checkout never became a card')
+  const card = `document.querySelector('#workbench-grid article[data-state]')`
+  check('the card shows the checkout, its branch and its dirty count',
+    await evaluate(`/alpha/.test(${card}.textContent) && /main/.test(${card}.textContent) && /1 changed/.test(${card}.textContent)`),
+    (await evaluate(`${card}.textContent`)).replace(/\s+/g, ' ').slice(0, 200))
+  check('and starts idle', (await evaluate(`${card}.dataset.state`)) === 'idle')
+
+  await evaluate(`(() => { const t = ${card}.querySelector('textarea')
+    t.value = 'add a readme'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await evaluate(`${card}.querySelector('form button[type=submit]').click()`)
+  await until(`${card}.dataset.state`, s => s === 'working', 'the card never said it was working')
+  check('a message turns the card to working', true)
+  await until(`${card}.querySelector('.workbench-now')?.textContent ?? ''`, t => /Bash bun test/.test(t),
+    'the card never showed the tool call in progress')
+  check('and it shows what the run is doing now', true)
+  check('the dot pulses while it works', await evaluate(`!!${card}.querySelector('.pulse, [class*="pulse"]')`),
+    await evaluate(`${card}.querySelector('h2').innerHTML.slice(0, 200)`))
+  check('and the tab title counts it', /^● 1/.test(await evaluate('document.title')), await evaluate('document.title'))
+
+  await until(`${card}.dataset.state`, s => s === 'done', 'the run never finished', 15_000)
+  const chat = await evaluate(`${card}.querySelector('.workbench-log').textContent`)
+  check('when it ends the chat holds the message, the tool call and the answer',
+    /add a readme/.test(chat) && /› Bash bun test/.test(chat) && /Done: add a readme/.test(chat), chat.replace(/\s+/g, ' ').slice(0, 300))
+  check('and what it cost', /\$0\.42/.test(await evaluate(`${card}.textContent`)))
+  check('an unread finish is marked new', /\bnew\b/.test(await evaluate(`${card}.querySelector('.section-header').textContent`)))
+  await until(`${card}.textContent`, t => /2 changed/.test(t), 'the dirty count never followed the run')
+  check('the dirty count follows what the run changed', true)
+  check('the run happened in the checkout', /add a readme/.test(
+    spawnSync('cat', [join(ALPHA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout))
+  check('the resume command is offered for a terminal',
+    await evaluate(`[...${card}.querySelectorAll('button')].some(b => /Copy resume/.test(b.textContent))`))
+
+  await click('#workbench-grid article[data-state]')
+  await until(`${card}.querySelector('.section-header').textContent`, t => !/\bnew\b/.test(t), 'opening the card did not mark it seen')
+  check('clicking the card marks it seen', true)
+
+  await evaluate(`(() => { const t = ${card}.querySelector('textarea')
+    t.value = 'slow one'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await evaluate(`${card}.querySelector('form button[type=submit]').click()`)
+  await until(`${card}.dataset.state`, s => s === 'working', 'the second message never started')
+  await until(`[...${card}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Stop')`, v => v, 'no Stop while working')
+  await evaluate(`[...${card}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Stop').click()`)
+  await until(`${card}.dataset.state`, s => s === 'error', 'stop did not end the run')
+  check('Stop ends a run and the chat says it was stopped',
+    /Stopped\./.test(await evaluate(`${card}.querySelector('.workbench-log').textContent`)))
 
   // ─── The other act ─────────────────────────────────────────────────────
   // The screen this one was split from. Asserted because the split is only a

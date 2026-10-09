@@ -224,6 +224,14 @@ with the terminal backend as its second consumer, not ahead of it.
    copy (`FJS-2169`). No component-call double is left between the two
    targets; the value of each prop is still lowered per target, which is
    lowering rather than classifying.
+   *`style:` moved 2026-10-09:* `styleSource(attr, prop)`, beside
+   `bindProp`, is the one reading of `style:`'s three spellings (bare, which
+   reads the variable named for the property, `{expr}`, and a quoted
+   template). `bindProp` and `lowerAttributes` both call it. The two copies
+   already disagreed: the IR read a bare `style:font-size` through the
+   accessors, while the DOM path emitted `fontSize` unread, a ReferenceError
+   when it names a signal (`FJS-2177`). The corpus stayed identical, since no
+   file uses the bare spelling.
 2. **The portability report** (§ 3), per target, as a report rather than a
    refusal until a target exists. It runs over the same corpus and says how much
    of `example/` and `packages/ui` would lower to a terminal today.
@@ -262,6 +270,16 @@ with the terminal backend as its second consumer, not ahead of it.
    alone (it always sits beside an element spread or a `bind:`). Greedily
    next: `style:` (+18), `{@render}` (+7), `bind:` (+5), `<mesa:portal>`
    (+6), `<mesa:window>` (+7), `class:` (+5).
+   *Fifth report 2026-10-09, after `style:` lowered:* 180 of 515 (35%), +18
+   from the corpus as predicted, plus the slice's two fixtures; `packages/ui`
+   is 16 of 135. Greedily next: `{@render}` (+7), `bind:` (+5), `class:`
+   (+5), `<mesa:portal>` (+5). `class:` is the same ruling as `style:`.
+   *Sixth report 2026-10-09, after the table tags lowered:* 201 of 516 (39%),
+   +20 from the corpus plus the slice's fixture; `packages/ui` is 19 of 135,
+   `example/web` 27 of 69. None of `example/web`'s 30 routes lowers yet; the
+   nearest carry six shapes, and `{#snippet}`, `<svg>` and `{@render}` are in
+   every one. Greedily next: `{@render}` (+10), `class:` (+6), `bind:` (+5),
+   `<mesa:portal>` (+6), `<mesa:window>` (+7).
 3. **The terminal backend**: an emitter from the IR to a runtime over the
    bought engine (§ 8). The first slice is a fixture with static elements, a
    text binding, a handler, `{#if}` and `{#each}`, mounted in the engine's
@@ -316,6 +334,138 @@ with the terminal backend as its second consumer, not ahead of it.
    `specs/spread-element.spec.mjs`. Stacking the handler fails 2 of 6, and
    keeping a dropped key fails 2 of 6; merging the spread over the written
    props fails 2 of 4.
+   *Fifth slice 2026-10-09, `style:`:* the IR lowers `style:prop` to the
+   element's `styles` (`{ prop, expr, loc }`), apart from its attributes, so
+   a target that paints CSS reads them and one that does not skips them
+   without parsing names. The terminal paints none of them, as it paints no
+   static `style`, no `class` and no scoped rule, and emits no code for them.
+   Mapping a closed set onto the engine (`gap`, `flex-direction`, hiding on
+   `display: none`) was the other design. It was not built because the
+   corpus's `style:` is almost all rem gaps and sizes, which have no cell
+   meaning, and because a mapped `style:` beside an unmapped `class="stack"`
+   would make the terminal's layout depend on which spelling the author
+   chose. The cost is named: a `style:display` of `none` shows its content
+   here, as a `.hidden` class already does. `style:x` on a component was a
+   prop named `"style:x"` that no child reads, and is now refused with
+   `class:` and `part:` (`FJS-2178`). Proved by `specs/style.spec.mjs`, which
+   compares the frame against `Unstyled.mesa`, the same markup with no
+   `style:`, before and after a click moves the live values. Mapping
+   `flex-direction` fails 2 of its 4 assertions.
+   *The nine for slice 5, answered late:* inert was chosen before the first
+   edit, and the `styleSource` owner came from question 1 after the IR half
+   was written. (1) origin: one fewer, because the three spellings had two
+   readers that disagreed. (2) concept: none new, since `styles` is a field
+   and not a noun. (3) complexity: the problem's, and less than a mapping
+   table. (4) predictability: on a terminal, CSS is inert in every spelling,
+   and on a component `style:` is refused as its siblings are. (5) derived:
+   both targets read `styleSource`. (6) owner: `styleSource` sits beside
+   `bindProp`, and the terminal runtime gains no member, because there is
+   nothing to own. (7) boundary: `styles` is apart from `attrs`, so no target
+   has to recognize a name to skip it. (8) failure: inert rather than
+   refused. *Ergonomics vs. strictness* decides by cost: an ignored style
+   loses layout and destroys nothing, and refusing it would hold 18 files
+   over spacing. On a component it is a warning, the tier `class:` already
+   has. (9) must stay true: `style:` paints nothing on the terminal, and both
+   targets read the same expression for it. What fails: `style.spec.mjs`
+   (frame equality with the twin), `ir.test.js`, the shorthand case in
+   `compiler.test.js`, `component-class-part-refused.test.js` and the corpus
+   diff. An inert attribute name and an inert spread key are still asserted
+   by nothing (`none`). Tier: Assessment.
+   *Sixth slice 2026-10-09, tables and the cheap tags:* `dl`, `dt`, `dd`,
+   `table`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td`, `hr`, `kbd` and `sup`
+   joined the tag table. A cell takes an equal share of its row (`flexBasis:
+   0`), which is what lines columns up, since a terminal has no auto table
+   layout; `hr` is a new role, `rule`, a top border across the parent's width.
+   `rowspan` is refused, and so is `colspan`, except on the only cell in its
+   row: that cell fills the row already, and it is the empty-state row every
+   table in the corpus carries. Proved by `specs/tags.spec.mjs`, which reads
+   the columns off the frame before and after a live row wider than its
+   header. An auto flex basis fails 2 of its 5 assertions.
+   `scripts/terminal-tree.js` is now the one compile of a `.mesa` tree for
+   the terminal, read by the drive and by `bun run tui`, which runs one file
+   live in a real terminal. The frame showed `FJS-2179`: a `<p>` of text and
+   inline tags paints one piece per row.
+   *The nine for slice 6, answered before the first edit; the sole-cell
+   exception came after the corpus run named `colspan` as a blocker:* (1)
+   origin: the tag table stays the one, and the refusal reads it. (2)
+   concept: `rule` is a role value and `cell`, `indent` and `refuses` are
+   fields, with no new noun. (3) complexity: the problem's, since a terminal
+   has no table layout and equal shares are the least that aligns. (4)
+   predictability: a table reads as a table, while widths differ as every CSS
+   size already does here. (5) derived: roles are read from the table. (6)
+   owner: `tags.js`, `element()` and `terminalOffenses`, all existing. (7)
+   boundary: the fields are documented in the table's header and graded by
+   the spec. (8) failure: *ergonomics vs. strictness*, decided by cost. Equal
+   widths lose layout, and a spanning cell beside others puts values under
+   the wrong header, so that one is refused at compile time with its line.
+   (9) must stay true: columns align across rows, and no spanning cell shares
+   a row. What fails: `tags.spec.mjs` and the two refusal cases in
+   `terminal-emit.test.js`. A row whose cell count differs from its header's
+   (an `{#each}` of cells) misaligns with nothing to say so (`none`).
+   Tier: Assessment.
+   *Seventh slice 2026-10-09, snippets, `<mesa:element>` and hidden icons:*
+   the three shapes all 30 `example/web` routes carried. `{#snippet}` lowers
+   to a function of an anchor and one getter per argument, as on the DOM
+   path; a body's snippets are declared before anything in it, and one passed
+   to a component gets a name of its own. `{@render}` resolves the way
+   `makeRenderTag` does, through `parseRenderTag`, now the one parse both read.
+   `<mesa:element this>` is a `dynamic-element` rebuilt under `$$tui.keyBlock`
+   when its tag moves; a literal tag is checked at compile time and a read one
+   by `element()` when built. A tag the table lacks, on or inside a static
+   `aria-hidden="true"`, is left out rather than refused (`terminalDropped`,
+   read by the report and the emitter alike), so the terminal paints what
+   assistive technology reads. Report: 201 → 238 of 516 (46%), ui 19 → 34 of
+   135, `example/web` 28 of 69, and `/reports/` is the first route to lower
+   whole. Proved by `specs/snippets.spec.mjs`; a `keyBlock` that does not
+   dispose fails 2 of its 7.
+   *The nine for slice 7, answered before the IR edit:* (1) origin: one fewer,
+   since the render parse moved out of `makeRenderTag` and `snippetParam` is
+   exported rather than copied. (2) concept: `dynamic-element`, `snippet` and
+   `render` are IR kinds, not nouns; the drop reads ARIA's own word. (3)
+   complexity: the problem's. (4) predictability: a snippet's arguments are
+   getters on both targets. (5) derived: the drop is derived from what the
+   author wrote, never from a terminal-only attribute. (6) owner:
+   `parseRenderTag` and `snippetParam` in the compiler, `TERMINAL_TAGS` for a
+   dynamic tag. (7) boundary: the three kinds are in `eachNode`, and
+   `terminalOffenses` and the emitter switch on them. (8) failure: *ergonomics
+   vs. strictness* by cost. A hidden icon costs a reader nothing, and an `<svg>`
+   anywhere else is still refused with its line. A read tag the table lacks
+   throws when built, naming the tag. (9) must stay true: nothing outside a
+   static `aria-hidden` is dropped. What fails: the two drop cases in
+   `terminal-emit.test.js` and the snippets spec. A dynamic `aria-hidden` is
+   not read, so its subtree is refused rather than dropped, and nothing says
+   which (`none`). Tier: Assessment.
+   *The shell, 2026-10-09, after `FJS-D809` and `FJS-D810`:* `fli dev:tui`
+   runs `@frontierjs/sierra/tui` from `web/`. A Bun plugin compiles each
+   `.mesa` through `prepareForCompile` for the terminal, `lowers()` walks a
+   route's `.mesa` imports without running them, and `Shell.mesa`, compiled by
+   the same loader, lists the routes that open. The boot is `virtual:sierra`'s
+   Junction and schema half. Not yet: the router (`page` keeps its defaults,
+   so a route taking a param is listed as refused), layouts and `autoImport`.
+   `--list` says 1 of 34 routes lowers and names the first blocker of each.
+   The widest blocker in `--list` is a resource file's markup: `/` and
+   `/orders/create/` import `orders` from `Order.mesa` and are refused for
+   that file's form (`FJS-2182`). Proved by `example`'s `verify:tui`, which
+   runs `--list`, `--frame /reports/` and the shell under a pty, and checks
+   that Ctrl+C both gives the terminal back and exits. That second check fails
+   without the destroy hook, because the socket's reconnect timers kept the
+   process up.
+   *The nine for the shell, answered late, after `verify:tui` was green:* (1)
+   origin: none new. Preparation is `prepareForCompile`, `@` is `appSrcDir`
+   and the schemas are `generateSchemas`, and one compile cache serves both
+   the plugin and `lowers()`. (2) concept: none, since *shell* is § 10's word.
+   (3) complexity: the problem's. (4) predictability: a route opens here when
+   it lowers, and the three gaps (router, layout, `autoImport`) are named in
+   `shell.js`'s header. (5) derived: the list comes from the scanner and each
+   refusal from the compiler. (6) owner: `src/terminal/` in Sierra, classified
+   as host beside `virtual`. The renderer comes from mesa's terminal runtime,
+   the engine's one importer. (7) boundary: `@frontierjs/sierra/tui` and
+   `fli dev:tui`. (8) failure: a configured `autoImport` is refused at boot
+   rather than left to paint undefined names, and a route that throws while
+   mounting goes back to the list with the error. (9) must stay true: a route
+   listed as lowering mounts, and Ctrl+C exits. What fails: `verify:tui`. A
+   route whose non-`.mesa` import throws under Bun is listed as lowering and
+   fails only when opened (`none`). Tier: Assessment.
    *The nine for slice 4 and the props move, answered late:* (1) one fewer
    origin. (2) none new. (3) the problem's. (4) an attribute that reaches no
    child now says so, as `on:` and `class:` already did. (5) both targets

@@ -30,6 +30,7 @@ const AXES = {
   'resource':   'Resource — createResource, the field rules, the session, the list, offline',
   'virtual':    'host — virtual:sierra, the boot',
   'theme':      'host — the theme switch (FJS-D453)',
+  'terminal':   'host — the terminal shell, virtual:sierra’s boot for target terminal (FJS-D809)',
 }
 
 /** Batteries: reached by subpath, never imported by an axis. */

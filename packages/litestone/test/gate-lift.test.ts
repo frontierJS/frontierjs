@@ -205,9 +205,23 @@ describe('an entry that lifts nothing is refused by name', () => {
   it('a column that is not @system, or not there at all', async () => {
     const db = await client()
     await expect(db.$setAuth(USER).shipment.create({ data: { reference: 'R' }, system: ['note'] }))
-      .rejects.toThrow(/"note" is not a @system column/)
+      .rejects.toThrow(/"note" is not a @system or @guarded column/)
     await expect(db.$setAuth(USER).shipment.create({ data: { reference: 'R' }, system: ['trackingCod'] }))
-      .rejects.toThrow(/"trackingCod" is not a @system column/)
+      .rejects.toThrow(/"trackingCod" is not a @system or @guarded column/)
+  })
+
+  it('a @guarded column is named the same way, and only its write half opens', async () => {
+    // A required @guarded digest left a grant model uncreatable below 8, so
+    // every app minted it as asSystem() in a second write and lost the create
+    // policy that says who may issue a link (FJS-1749, FJS-D814).
+    const db = await client()
+    await expect(db.$setAuth(USER).invoice.create({ data: { ownerId: 1, number: 'G-1', token: 'by-hand' }, system: ['@@gate'] }))
+      .rejects.toThrow(/"token" is @guarded/)
+    const row = await db.$setAuth(USER).invoice.create({ data: { ownerId: 1, number: 'G-1', token: 'by-hand' }, system: ['@@gate', 'token'] })
+    expect('token' in row).toBe(false)
+    expect((await db.asSystem().invoice.findUnique({ where: { id: row.id } })).token).toBe('by-hand')
+    // Naming it on one call does not open a read on the next.
+    await expect(db.$setAuth(USER).invoice.findMany({ where: { token: 'by-hand' } })).rejects.toThrow()
   })
 
   it('the gate, on a model with none', async () => {

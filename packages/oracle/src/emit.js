@@ -26,7 +26,8 @@
 // An op nobody holds is raised to gate 8 rather than left at a signed-in
 // level with no policy, which is the shape that read every tenant's rows in
 // the freehand run. `shared` and `public` are the two ways to say otherwise,
-// and `checkAnswer` lists each as a finding.
+// and `checkAnswer` lists each as a finding. `shared` says it of the read
+// alone: the writes follow the links above, and one nobody holds is level 5's.
 //
 // The first owner/author/coordinator column is stamped `@default(auth().id)`,
 // so a create through the API names its caller without being told — except
@@ -296,8 +297,6 @@ function accessFor(m, of, backs) {
   const a = m.access
   const pub = a.public ?? []
 
-  if (a.shared) return { gate: [4, 5, 5, 5], policies: [] }
-
   // A parent read at gate 0 carries its public clause through `check(parent)`,
   // so a child of a published shop is read by everybody who reads the shop.
   // Its private rows are reached through whoever may change it instead, and
@@ -352,6 +351,11 @@ function accessFor(m, of, backs) {
   const gate = []
   const policies = []
   for (const op of OPS) {
+    // `shared` opens the read to every signed-in caller and nothing else: a
+    // write stays with the actor links that hold it, and one no link holds is
+    // an administrator's. It once returned before the links were read, so an
+    // instructor could not post the class every member reads.
+    if (a.shared && op === 'read') { gate.push(4); continue }
     // On a container, `system` is the onboarding that creates it and the
     // teardown that deletes it; renaming it stays with its members.
     const system = a.system && op !== 'read' && !(m.members && op === 'update')
@@ -362,7 +366,7 @@ function accessFor(m, of, backs) {
       if (op === 'create' && createParent) expr = or ? `${createParent} && (${or})` : createParent
       else expr = or
     }
-    gate.push(system ? 8 : pub.includes(op) ? 0 : expr ? 4 : 8)
+    gate.push(system ? 8 : pub.includes(op) ? 0 : expr ? 4 : a.shared ? 5 : 8)
     if (expr) policies.push([op, expr])
   }
   return { gate, policies }
