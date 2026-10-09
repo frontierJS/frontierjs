@@ -30,7 +30,8 @@
  * without the other.
  */
 
-import { TK } from './tokenize.js'
+import { TK, tokenize, holeEnd, ParseError } from './tokenize.js'
+import { unitInfo, MEASURE_UNITS } from '../units/units.js'
 
 // The token names this grammar reads. The table is the lexer's.
 export const TOKEN = TK
@@ -49,10 +50,38 @@ function sourceHint(node) {
     case 'field':   return node.name
     case 'auth':    return node.field ? `auth().${node.field}` : 'auth()'
     case 'now':     return 'now()'
+    case 'shift':   return `now() ${node.sign > 0 ? '+' : '-'} ${node.value}${node.unit}`
     case 'literal': return typeof node.value === 'string' ? `'${node.value}'` : String(node.value)
     case 'compare': return `${sourceHint(node.left)} ${node.op} ${sourceHint(node.right)}`
     default:        return '…'
   }
+}
+
+// `now() + 2d`, `now() - 1wk`: the instant moved by a whole number of a duration
+// unit, the literal `@@commitment(on: createdAt + 14d)` reads. Only `now()` takes
+// one — a column plus a duration is a type question the schema validator owns —
+// and the node is its own type, so an interpreter that does not know it throws
+// where one that read `now` and dropped the offset would answer the wrong rows.
+// `-` against a digit arrives as a negative NUMBER, so `now() -2d` is read too.
+function durationOffset(p, base) {
+  let sign = 0
+  if (p.maybeEat(TK.PLUS))       sign = 1
+  else if (p.maybeEat(TK.MINUS)) sign = -1
+  else if (p.check(TK.NUMBER) && p.peek().value < 0) sign = -1
+  if (!sign) return base
+
+  const numAt = p.peek()
+  if (!p.check(TK.NUMBER)) throw p.fail(
+    `'${sign > 0 ? '+' : '-'}' after now() takes a duration — 2d, 90min, 1wk`, numAt)
+  const value = Math.abs(p.eat(TK.NUMBER).value)
+  if (!Number.isInteger(value)) throw p.fail(
+    `an offset is a whole number of a unit — write 90min, not 1.5h`, numAt)
+  const unitAt = p.peek()
+  const unit   = p.check(TK.IDENT) ? p.eat(TK.IDENT).value : null
+  if (!unit || unitInfo(unit)?.dimension !== 'duration') throw p.fail(
+    `'${value}${unit ?? ''}' is not a duration. ` +
+    `Write the number and a unit together: ${MEASURE_UNITS.duration.map(u => `${value}${u}`).join(', ')}`, unitAt)
+  return { type: 'shift', expr: base, sign, value, unit }
 }
 
 // ─── grammar ──────────────────────────────────────────────────────────────────
@@ -64,10 +93,11 @@ function sourceHint(node) {
 //   not      ::= '!' not | primary
 //   primary  ::= operand [compOp operand]
 //   operand  ::= '(' expr ')' | value
-//   value    ::= auth() [.field] | now() | check(field [,op]) | null | bool | string | number
+//   value    ::= auth() [.field] | now() [('+' | '-') duration] | check(field [,op]) | null | bool | string | number
 //              | '[' literal (',' literal)* ']'
 //              | ident | ident '.' ident   (one relation hop — FJS-D221)
 //              | ident '.' 'some' '(' expr ')'   (any row of a to-many — FJS-D566)
+//              | template | '{' [key ':' expr (',' key ':' expr)*] '}'   (a flow only — FJS-D513)
 //   compOp   ::= '==' | '!=' | '<' | '>' | '<=' | '>=' | 'in'
 
 // The policy dialect: a condition over one record, which is what a schema takes.
@@ -252,6 +282,9 @@ function value(p, ctx) {
       return { type: 'call', name: t.value, args }
     }
 
+    if (t.type === TK.TEMPLATE) { p.eat(TK.TEMPLATE); return template(p, ctx, t) }
+    if (t.type === TK.LBRACE)   return object(p, ctx)
+
     // A lambda's own parameter, and anything under it.
     if (t.type === TK.IDENT && ctx.scope.has(t.value)) {
       p.eat(TK.IDENT)
@@ -280,7 +313,7 @@ function value(p, ctx) {
   if (t.type === TK.IDENT && t.value === 'now') {
     p.eat(TK.IDENT)
     p.eat(TK.LPAREN); p.eat(TK.RPAREN)
-    return { type: 'now' }
+    return durationOffset(p, { type: 'now' })
   }
 
   // check(field) or check(field, 'operation')
@@ -376,7 +409,94 @@ function value(p, ctx) {
     return { type: 'path', rel: t.value, name: field }
   }
 
+  // The two forms a flow assembles a value with (`FJS-D513`). A policy asks a
+  // question of a record, so a template or an object there would parse and have
+  // no meaning in the SQL half.
+  if (t.type === TK.TEMPLATE || t.type === TK.LBRACE)
+    throw p.fail(
+      `${t.type === TK.TEMPLATE ? 'A template literal' : 'An object'} builds a value, and a policy ` +
+      `asks a question — it is written in a flow expression only.`, t)
+
   throw p.fail(`Expected a value in policy expression, got '${t.value ?? t.type}'`, t)
+}
+
+// `` `Hello ${$.lead.name}!` `` — the text between the holes is literal and each
+// hole is a full expression in the dialect it sits in, so a lambda's parameter is
+// in scope inside one. The tokenizer finds where each hole ends (a `}` inside a
+// string or a nested template does not close it) and `raw` keeps `\${` apart
+// from `${`, which the unescaped value cannot.
+function template(p, ctx, t) {
+  const raw   = t.raw
+  const parts = []
+  let text = ''
+  const flush = () => { if (text) parts.push({ type: 'literal', value: text }); text = '' }
+
+  for (let i = 0; i < raw.length;) {
+    if (raw[i] === '\\') { text += raw[i + 1] ?? ''; i += 2; continue }
+    if (raw[i] === '$' && raw[i + 1] === '{') {
+      const end = holeEnd(raw, i + 2)
+      flush()
+      parts.push(hole(p, ctx, raw.slice(i + 2, end), t))
+      i = end + 1
+      continue
+    }
+    text += raw[i++]
+  }
+  flush()
+  return { type: 'template', parts }
+}
+
+// One `${…}`: its source parsed on a cursor of its own, whose positions would be
+// relative to the hole, so a failure is re-raised at the template's token.
+function hole(p, ctx, src, at) {
+  const fail = (msg) => p.fail(`${msg.replace(/ \(line \d+, col \d+\)$/, '')} (inside \${…} of a template)`, at)
+  let tokens
+  try { tokens = tokenize(src) } catch (err) { throw fail(err.message) }
+  let pos = 0
+  const sub = {
+    peek:     (n = 0) => tokens[pos + n],
+    advance:  () => tokens[pos++],
+    check:    (type) => tokens[pos]?.type === type,
+    maybeEat: (type) => (tokens[pos]?.type === type ? tokens[pos++] : undefined),
+    eat(type) {
+      const tok = tokens[pos]
+      if (!tok || tok.type !== type) throw sub.fail(`Expected ${type}, got '${tok?.value ?? 'end of expression'}'`, tok)
+      return tokens[pos++]
+    },
+    fail: (msg, tok) => new ParseError(msg, tok),
+  }
+  if (sub.check(TK.EOF)) throw fail('a hole holds an expression — it is empty')
+  try {
+    const node = ternary(sub, ctx)
+    if (!sub.check(TK.EOF)) throw sub.fail(`Unexpected '${sub.peek().value}' after the expression`, sub.peek())
+    return node
+  } catch (err) {
+    if (err instanceof ParseError) throw fail(err.message)
+    throw err
+  }
+}
+
+// `{ title: `Lead ${$.name}`, n: $.count }` — keys are names or quoted strings,
+// values are full expressions. A repeated key is refused, because the second
+// would silently replace the first.
+function object(p, ctx) {
+  p.eat(TK.LBRACE)
+  const properties = []
+  while (!p.check(TK.RBRACE)) {
+    const k = p.peek()
+    if (k.type !== TK.IDENT && k.type !== TK.STRING)
+      throw p.fail(`An object key is a name or a quoted string — got '${k.value ?? k.type}'`, k)
+    p.advance()
+    if (!p.check(TK.COLON))
+      throw p.fail(`The key '${k.value}' needs a value — { ${k.value}: … }`, p.peek())
+    p.eat(TK.COLON)
+    if (properties.some(e => e.key === k.value))
+      throw p.fail(`The key '${k.value}' is written twice in one object`, k)
+    properties.push({ key: k.value, value: ternary(p, ctx) })
+    if (!p.maybeEat(TK.COMMA)) break
+  }
+  p.eat(TK.RBRACE)
+  return { type: 'object', properties }
 }
 
 // `members.some(userId == auth().id)` — does ANY row of a to-many relation

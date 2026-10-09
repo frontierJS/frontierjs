@@ -29,7 +29,7 @@ export const db = await createClient({
     endpoint:        process.env.R2_ENDPOINT,    // https://<account>.r2.cloudflarestorage.com
     accessKeyId:     process.env.R2_ACCESS_KEY,
     secretAccessKey: process.env.R2_SECRET_KEY,
-    keyPattern:      ':model/:id/:field/:uuid.:ext',
+    keyPattern:      ':model/:field/:uuid.:ext',
     dev:             'local',   // falls back to ./storage/ in development
   })]
 })

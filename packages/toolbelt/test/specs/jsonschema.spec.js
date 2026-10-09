@@ -230,3 +230,16 @@ test('jsonschema: fieldShapes is what matchesQuery needs off a column', function
   const shapes = fieldShapes({ properties: { id: { type: 'integer' } } })
   assert.equal(shapes.id.type, 'integer')
 })
+
+test('jsonschema: a nullable column the server stamps is left out, because a seeded null beats the stamp', function () {
+  // `inspectorId String? @default(auth().id)` (FJS-2108): nullable, so the
+  // `required` test cannot see it is server-filled, and the foreign-key null
+  // reached the boundary as a stated value.
+  const properties = {
+    note:        { type: ['string', 'null'] },
+    inspectorId: { type: ['string', 'null'], 'x-litestone-kind': 'stamped' },
+    crewId:      { type: 'integer' },
+  }
+  const make = createMakeFromSchema(properties, { foreignKeys: ['inspectorId', 'crewId'], required: ['crewId'] })
+  assert.deepEqual(make(), { note: '', crewId: null })
+})

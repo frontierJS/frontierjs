@@ -301,6 +301,12 @@ function buildAggHaving(expr, cond, params) {
 // construction.md` § 7.2 — a plan stays internal).
 export const PLAN = Symbol.for('litestone.plan')
 
+// The seam a many-to-many write announces its OTHER side through:
+// `tbl[JOINED](key)`. A join row is the only thing a connect writes, so the
+// joined row's own columns never change and no table event names it — a live
+// list filtered by that relation kept the row until a reload (`FJS-2013`).
+export const JOINED = Symbol.for('litestone.joined')
+
 // ─── rows changed ─────────────────────────────────────────────────────────────
 // bun:sqlite's `.changes` is a total-changes delta, so it counts what TRIGGERS
 // and FOREIGN KEY actions wrote as well as the rows the statement named: one
@@ -2067,7 +2073,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
-  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null, ids: readIds = null, system = null } = {}) {
+  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null, ids: readIds = null, system = null, written = null } = {}) {
     const lifted = liftsGate(system) ? [GATE_LIFT] : null
     if (!tableHasLogWork) return          // ← fast exit for unlogged tables
     if (operation !== 'read' && (tableAnonymous || tableLogsWrites) && tx.owns()) {
@@ -2092,12 +2098,30 @@ function makeTable(readDb, writeDb, shape, ctx) {
           if (isReadOp  && !reads)  continue
           if (isWriteOp && !writes) continue
 
+          // A write of the ROW is a write of this field only where the data
+          // named it: otherwise creating an account with no password logs
+          // `create · account · saPassword`, and so does an update of its time
+          // zone (FJS-2048). The returned row can't say, since read() strips a
+          // guarded or hashed field; `written` is the data as it was bound.
+          // A path with no `written` logs the field as it always did. One
+          // entry per row (upsertMany, createMany) narrows the records to the
+          // rows that named it.
+          let records = ids
+          if (written && (operation === 'create' || operation === 'update')) {
+            const names = operation === 'create'
+              ? d => d?.[field] != null
+              : d => field in d || Object.keys(d).some(k => k.startsWith(`${field}.`))
+            const given = written.flatMap((d, i) => names(d) ? [i] : [])
+            if (!given.length) continue
+            if (given.length < written.length && rows.length === written.length) records = extractIds(given.map(i => rows[i]))
+          }
+
           emitLog(db, {
             operation,
             model:   tableName,
             field,
             transition,
-            records: ids,
+            records,
             before:  beforeMap ? redactValue(field, beforeMap[field] ?? null) : null,
             after:   afterMap  ? redactValue(field, afterMap[field]  ?? null) : null,
             lifted,
@@ -2148,6 +2172,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, rows, ctx)
       if (tableHasLogWork) emitLogs('delete', rows)
     },
+    // A retention sweep deletes this table's rows raw, so it asks what the
+    // cascade takes under them before its DELETE does (FJS-2097).
+    doomedUnder: rows => cascadeDoomed(readAll(rows)),
+    cascadeRemoved: doomed => cascadeRemoved(doomed),
     // `onDelete: SetNull` is an UPDATE SQLite makes inside the same DELETE: the
     // row stays and its key column is cleared (FJS-1505). One line a row, since
     // each row's before and after are its own.
@@ -4315,28 +4343,21 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const offsetFrag  = offset != null ? sqlFragment(` OFFSET ${Number(offset)}`) : null
 
     // ── Window functions ──────────────────────────────────────────────────
-    // Inject as a wrapping subquery so LIMIT/OFFSET applies after window computation.
-    // Without the wrap, LIMIT would reduce rows before RANK() etc. are evaluated.
+    // The window columns lead the SELECT list, so their binds lead the
+    // statement. SQL evaluates a window over the filtered rows before ORDER BY
+    // and LIMIT, so pagination needs no wrapping subquery — and a wrap would
+    // repeat the ORDER BY text without its binds, and with joins with `t.`
+    // prefixes that do not resolve against the wrapper.
     if (windowSpec) {
       const winParams  = []
       const windowCols = buildWindowCols(windowSpec, winParams)
       if (windowCols.length) {
         const windowExpr = windowCols.join(', ')
-        if (limit == null && offset == null) {
-          // No pagination — inline window functions directly in SELECT, no subquery needed.
-          // This avoids materializing a full subquery when scanning the whole table.
-          const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag], '')
-          return { sql: stmt.sql.replace(/^SELECT /, `SELECT ${windowExpr}, `), params: [...stmt.params, ...winParams] }
+        const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag, limitFrag, offsetFrag], '')
+        return {
+          sql:    stmt.sql.replace(/^SELECT (DISTINCT )?/, (_, d) => `SELECT ${d ?? ''}${windowExpr}, `),
+          params: [...winParams, ...stmt.params],
         }
-        // With LIMIT/OFFSET: wrap in subquery so pagination applies AFTER window computation.
-        // Without the wrap, LIMIT would reduce rows before RANK() etc. are evaluated.
-        const inner = sqlJoin([head, joinsFrag, whereClause, orderFrag], '')
-        const outer = sqlJoin([
-          sqlFragment(`SELECT *, ${windowExpr} FROM (`), inner, sqlFragment(') _w', winParams),
-          orderSql ? sqlFragment(` ORDER BY ${orderSql}`) : null,
-          limitFrag, offsetFrag,
-        ], '')
-        return { sql: outer.sql, params: outer.params }
       }
     }
 
@@ -4580,17 +4601,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // made data, and a verb a set leaves out is a hole this file can see:
   //   - the app's and the plugins' scopes narrow a READ and never a write,
   //     which is what the grid asserts today;
-  //   - `recursive` is findMany's tree walk, and neither scope reaches it — an
-  //     anchor the global filter hides is still walked (the family of
-  //     `FJS-216`); the row is here so the omission is named rather than silent;
+  //   - `recursive` is findMany's tree walk, and both scopes reach it at every
+  //     level: a hidden row ends the walk, so a visible descendant is never
+  //     reached by a hidden path (`FJS-2010`);
   //   - `restore` takes no widening flag, so folding the template and window
   //     rules into it would make a removed template or an expired row
   //     unrestorable with no spelling to ask for it.
   const READ_VERBS = Object.freeze(['findMany', 'findFirst', 'findUnique', 'findManyAndCount', 'count', 'exists', 'aggregate', 'groupBy', 'findManyCursor', 'search'])
-  const NOT_RESTORE = Object.freeze([...READ_VERBS, 'recursive', 'update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany'])
+  const WALKS = Object.freeze([...READ_VERBS, 'recursive'])
+  const NOT_RESTORE = Object.freeze([...WALKS, 'update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany'])
   const READ_RULES = Object.freeze([
-    { name: 'globalFilter',  verbs: READ_VERBS,  scope: () => resolveGlobalFilter() },
-    { name: 'pluginFilters', verbs: READ_VERBS,  scope: () => plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : null },
+    { name: 'globalFilter',  verbs: WALKS,       scope: () => resolveGlobalFilter() },
+    { name: 'pluginFilters', verbs: WALKS,       scope: () => plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : null },
     { name: 'softDelete',    verbs: '*',         where: (where, args) => applySdFilter(where, args) },
     { name: 'templates',     verbs: NOT_RESTORE, where: (where, args) => applyHtFilter(where, htMode(args)) },
     { name: 'effective',     verbs: NOT_RESTORE, where: (where, args) => applyEffFilter(where, args) },
@@ -4764,6 +4786,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
         const sk = rel.selfKey    // join col for this model
         const tk = rel.targetKey  // join col for target model
         const tpk = rel.targetPk ?? 'id'   // the target's @id COLUMN, not the word "id"
+        // Target keys whose membership in this relation changed. A created or
+        // deleted target announces itself; one only joined or left has no write
+        // of its own, so it is announced after the join rows land.
+        const joined = new Set()
 
         // A join row is written with INSERT OR IGNORE so connecting twice is
         // idempotent — which also means a NULL key is ignored rather than
@@ -4789,7 +4815,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) throw new Error(`m2m connect on "${fieldName}": no "${rel.targetModel}" found`)
-            writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
+            const res = writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
+            if (res.changes) joined.add(keyOf(target))
           }
         }
         if (ops.disconnect) {
@@ -4797,7 +4824,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) continue
-            writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, keyOf(target))
+            const res = writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ? AND "${tk}" = ?`, parentPk, keyOf(target))
+            if (res.changes) joined.add(keyOf(target))
           }
         }
         if (ops.delete) {
@@ -4811,14 +4839,21 @@ function makeTable(readDb, writeDb, shape, ctx) {
         }
         if (ops.set) {
           // Replace entire relation — DELETE all join rows, INSERT new ones
+          const before = new Set(writeDb.query(`SELECT ${ident(tk).sql} AS k FROM ${ident(jt).sql} WHERE ${ident(sk).sql} = ?`).all(parentPk).map(r => r.k))
           writeDb.run(`DELETE FROM "${jt}" WHERE "${sk}" = ?`, parentPk)
           const wheres = Array.isArray(ops.set) ? ops.set : [ops.set]
+          const after = new Set()
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) throw new Error(`m2m set on "${fieldName}": no "${rel.targetModel}" found matching ${JSON.stringify(where)}`)
             writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
+            after.add(keyOf(target))
           }
+          // Only a row that crossed the relation's edge changed membership.
+          for (const k of before) if (!after.has(k)) joined.add(k)
+          for (const k of after) if (!before.has(k)) joined.add(k)
         }
+        for (const key of joined) await tbl[JOINED](key)
         continue
       }
 
@@ -5127,6 +5162,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return tx.wrapExclusive(() => writeUnit(plan)).catch(async e => { throw await nameBlockerForCaller(e) })
   }
 
+  // The data each statement bound, for a create or an update — what a field
+  // log asks to tell a write of the field from a write of its row. Null where
+  // a statement carries none, so the trail over-logs rather than drops.
+  function writtenOf(plan) {
+    if (plan.op !== 'create' && plan.op !== 'update') return null
+    return plan.statements.every(s => s.data) ? plan.statements.map(s => s.data) : null
+  }
+
   // What the write tells the world, after its unit has committed. A row
   // result is shaped here — includes, then the caller's select — and the
   // shaped row is what the event and the plugins get; the trail gets the row.
@@ -5158,7 +5201,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           const b = LOG_BEFORE[plan.op]
           emitLogs(LOG_OP[plan.op], [row], {
             before: b === 'prefetch' ? plan.before : b === 'row' ? row : b === 'undeleted' ? { ...row, deletedAt: null } : null,
-            after: LOG_AFTER[plan.op] ? row : null, transition: name, system: plan.system,
+            after: LOG_AFTER[plan.op] ? row : null, transition: name, system: plan.system, written: writtenOf(plan),
           })
         }
       }
@@ -5166,7 +5209,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return select === false ? null : final
     }
     if (affected.length) await plugins.afterDelete(modelName, affected, ctx)
-    if (plan.logs && rows?.length) emitLogs(LOG_OP[plan.op], rows, { system: plan.system })
+    if (plan.logs && rows?.length) emitLogs(LOG_OP[plan.op], rows, { system: plan.system, written: writtenOf(plan) })
     if (doomed) await cascadeRemoved(doomed)
     if (plan.announce) announceBulk({ ...plan.announce, count, rows })
     return { count }
@@ -6055,6 +6098,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const planner = PLANNERS[verb]
       if (!planner) throw new Error(`${modelName}[PLAN](${verb}): not a planned write — one of ${Object.keys(PLANNERS).join(', ')}`)
       return planner(args)
+    },
+
+    // This row's membership in a relation changed through a join table, so it
+    // announces an update with nothing else written. Read fresh rather than
+    // handed over: the caller's own read may have been narrowed by a field policy.
+    [JOINED](key) {
+      if (!hasAudience()) return
+      const raw = writeDb.query(`SELECT * FROM ${T.sql} WHERE ${ident(col(idField)).sql} = ?`).get(key)
+      if (raw) fireRowEvent('update', 'update', read(raw, { mode: 'single', hydrateFrom: true }))
     },
 
     // ── findMany ────────────────────────────────────────────────────────────
@@ -7425,6 +7477,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // update for others, and the log entry says which. Only computed on a
       // logged model: it costs one SELECT over the batch's conflict keys.
       let _usCreated = null, _usUpdated = null
+      // What each logged row was given, aligned with the two lists above: the
+      // bound row for an insert, the columns ON CONFLICT set for an update.
+      let _usCreatedW = null, _usUpdatedW = null
       const _nt = needsTiming()
       const _usT0 = _nt ? performance.now() : 0
       // Whole batch (incl. @sequence bumps) inside one transaction — see createMany.
@@ -7488,7 +7543,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           for (const row of rows) {
             if (lookup.get(...target.map(c => row[c] ?? null))) present.add(keyOf(row))
           }
-          if (_usNeedRows) { _usCreated = []; _usUpdated = [] }
+          if (_usNeedRows) { _usCreated = []; _usUpdated = []; _usCreatedW = []; _usUpdatedW = [] }
         }
 
         // The INSERT half, refused whole like `createMany`'s — a batch is one
@@ -7562,14 +7617,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // RETURNING on a logged model, so the entry names rows by their real id —
           // see createMany. ON CONFLICT DO NOTHING returns nothing for a skipped row.
           if (_usNeedRows) s += ` RETURNING *`
-          entry = { cols, sql: s, stmt: writeDb.prepare(s) }
+          entry = { cols, updateCols, sql: s, stmt: writeDb.prepare(s) }
           stmts.set(key, entry)
           return entry
         }
 
         for (const [_i, row] of rows.entries()) {
           if (_usHidden[_i]) throw asBatchRowError(_usHidden[_i], count, rows.length, row)
-          const { cols, stmt } = stmtFor(Object.keys(row))
+          const { cols, updateCols, stmt } = stmtFor(Object.keys(row))
           const _usSeal = sealInsertGuard(row)
           // The guard's params bind LAST, because `ON CONFLICT … WHERE` is the
           // tail of the statement — after the VALUES and after the seal's own
@@ -7582,7 +7637,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             if (_usNeedRows) {
               const written = stmt.get(...args)
               const _usUpd  = written && present.has(keyOf(row))
-              if (written) (_usUpd ? _usUpdated : _usCreated).push(written)
+              if (written) {
+                (_usUpd ? _usUpdated : _usCreated).push(written)
+                ;(_usUpd ? _usUpdatedW : _usCreatedW).push(_usUpd ? Object.fromEntries(updateCols.map(c => [c, true])) : row)
+              }
               else if (_usSeal || _usGuardSql) _usWrote = false
               // A later row repeating this key conflicts with the row just written.
               if (written) present.add(keyOf(row))
@@ -7612,8 +7670,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       })
       fireQuery({ operation: 'upsertMany', args: { data, conflictTarget, update: updateFields }, sql, params: null, duration: _nt ? performance.now() - _usT0 : 0, rowCount: count })
       if (tableHasLogWork) {
-        if (_usCreated?.length) emitLogs('create', _usCreated, { system })
-        if (_usUpdated?.length) emitLogs('update', _usUpdated, { system })
+        if (_usCreated?.length) emitLogs('create', _usCreated, { system, written: _usCreatedW })
+        if (_usUpdated?.length) emitLogs('update', _usUpdated, { system, written: _usUpdatedW })
       }
       // At the `rows` tier the split is known, so each half announces truthfully.
       // The COLLECTION form has to pick one for the whole batch and picks
@@ -7738,7 +7796,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // Un-deleting is a write and belongs in the trail. It logs as 'update' —
       // the entry vocabulary is create|update|delete|read, and a restored row is
       // a row that changed state, not one that was created.
-      if (tableHasLogWork && restored.length) emitLogs('update', restored)
+      if (tableHasLogWork && restored.length) {
+        emitLogs('update', restored, { written: [Object.fromEntries(['deletedAt', ..._stampCols].map(c => [c, null]))] })
+      }
       // The rows, shaped — not `{ count }`. Three sources claimed three
       // different answers here (index.d.ts said one row, CLAUDE.md said an
       // array, the code returned a count), so the TypeScript declaration
@@ -9043,8 +9103,11 @@ function makeLockPrimitive(rawWriteDb) {
   // raw DELETE leaves in the store for ever (FJS-1921).
   async function _runRetention({ jsonl = true } = {}) {
     const gone  = []
-    const swept = _sweepRetention({ jsonl, onRemoved: pluginRunner.hasPlugins ?(model, rows) => gone.push([model, rows]) : null })
-    for (const [model, rows] of gone) await pluginRunner.afterDelete(model, rows, ctx)
+    const swept = _sweepRetention({ jsonl, onRemoved: pluginRunner.hasPlugins ? (model, rows, doomed) => gone.push([model, rows, doomed]) : null })
+    for (const [model, rows, doomed] of gone) {
+      await pluginRunner.afterDelete(model, rows, ctx)
+      await sharedCtx.cascadeSinkFor(model)?.cascadeRemoved(doomed)
+    }
     return swept
   }
 
@@ -9054,7 +9117,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (!conn.retention && !conn.maxSize) continue
 
       if (conn.driver === 'sqlite' && conn.retention && conn.rawWriteDb) {
-        for (const r of runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, pluralizeTableNames, now, onRemoved))
+        for (const r of runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, pluralizeTableNames, now, onRemoved, (model, rows) => sharedCtx.cascadeSinkFor(model)?.doomedUnder(rows)))
           swept.push({ database: dbName, driver: 'sqlite', ...r })
         continue
       }
@@ -9788,9 +9851,6 @@ function makeLockPrimitive(rawWriteDb) {
   // Init plugins — runs onInit for all plugins with schema + ctx
   pluginRunner.init(schema, ctx)
 
-  // The boot pass waits for the plugins, since a swept row's files are theirs.
-  await _runRetention({ jsonl: false })
-
   // Track jsonl table instances so _closeAll can close their index dbs
   const jsonlTables = []
 
@@ -9803,7 +9863,7 @@ function makeLockPrimitive(rawWriteDb) {
     const conn   = dbRegistry[dbName] ?? dbRegistry.main
     if (conn.driver === 'jsonl' || conn.driver === 'trail') {
       const filePath = jsonlFilePath(conn.absPath, model.name)
-      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now, conn.busyTimeout)
+      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now, conn.busyTimeout, stampClock)
       jsonlTableCache[model.name] = table
       jsonlTables.push(table)
     }
@@ -10081,6 +10141,10 @@ function makeLockPrimitive(rawWriteDb) {
 
   // Expose tables on ctx so makeTable can do recursive nested writes
   ctx.tables = tables
+
+  // The boot pass waits for the plugins, since a swept row's files are theirs,
+  // and for the tables: the cascade sinks it reads children through are theirs.
+  await _runRetention({ jsonl: false })
 
   // ── Scopes ─────────────────────────────────────────────────────────────────
   // Reusable named query fragments registered by the app at createClient time.

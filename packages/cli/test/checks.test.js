@@ -2295,12 +2295,44 @@ describe('service-as-system', () => {
     expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
-  test('no tenancy block means there is no claim to lose', () => {
+  // FJS-1791. With no tenancy block there is no claim to keep, so the request's
+  // own client is no safer than the app's: either one crosses every user. The
+  // generated apps declare no tenancy (theirs is membership policies), and the
+  // rule skipping them is how four elevations went unreported.
+  test('no tenancy block: every elevation in a service crosses every user', () => {
     const root = tree('sas-none', svc('export default (app) => createService({\n' +
-      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n', ''))
-    const { findings, skipped } = only(root, 'service-as-system')
-    expect(findings).toEqual([])
-    expect(skipped[0].why).toMatch(/no tenancy block/)
+      '  find:  () => app.data.asSystem().lead.findMany({ where: {} }),\n' +
+      '  place: () => $.db.asSystem().lead.create({ data: {} }),\n' +
+      '  get:   (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n', ''))
+    const { findings } = only(root, 'service-as-system')
+    expect(findings.map(f => f.line)).toEqual([3, 4, 5])
+    expect(findings[1].message).toMatch(/\$\.db\.asSystem\(\)/)
+    expect(findings[1].message).toMatch(/no row tenancy/)
+  })
+
+  test('no tenancy block: the module client inside a service is seen too', () => {
+    // notifications' README § Sending shows `db.asSystem().user.findUnique(…)`
+    // in an `after` hook. service-module-db's pattern cannot match it by design.
+    const root = tree('sas-none-db', svc('import { db } from "../core/db.ts"\n' +
+      'export default () => createService({\n' +
+      '  after: { create: async () => { await db.asSystem().user.findUnique({ where: { id: 1 } }) } },\n})\n', ''))
+    const { findings } = only(root, 'service-as-system')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/^db\.asSystem\(\)/)
+  })
+
+  test('no tenancy block: a job is still not inside a call', () => {
+    const root = tree('sas-none-job', {
+      ...svc('export default () => createService({})\n', ''),
+      'api/src/jobs/sweep.job.ts': 'export default (app) => app.data.asSystem().lead.findMany({ where: {} })\n',
+    })
+    expect(only(root, 'service-as-system').findings).toEqual([])
+  })
+
+  test('no tenancy block and no elevation is quiet', () => {
+    const root = tree('sas-none-clean', svc('export default () => createService({\n' +
+      '  find: () => $.db.lead.findMany({ where: {} }),\n})\n', ''))
+    expect(only(root, 'service-as-system').findings).toEqual([])
   })
 
   test('strategy database is skipped — one client is one file', () => {

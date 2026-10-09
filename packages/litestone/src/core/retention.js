@@ -93,10 +93,13 @@ export function parseSize(str) {
 // @param models      array of model AST nodes belonging to this database
 // @param retention   duration string e.g. '30d', '90d', '1y'
 // @param pluralize   the client's table-name rule — see below
-// @param onRemoved   (modelName, rows) — the rows each table lost, when given
+// @param onRemoved   (modelName, rows, doomed) — the rows each table lost, when
+//                     given, and what `doomedUnder` said the cascade would take
+// @param doomedUnder  (modelName, rows) — the children a cascade removes under
+//                     those rows, read before the DELETE takes them
 // @returns [{ model, table, removed }] for every table it touched
 
-export function runSqliteRetention(rawWriteDb, models, retention, pluralize = false, now = Date.now, onRemoved = null) {
+export function runSqliteRetention(rawWriteDb, models, retention, pluralize = false, now = Date.now, onRemoved = null, doomedUnder = null) {
   const ms = parseDuration(retention)
   if (!ms) return []
 
@@ -135,13 +138,18 @@ export function runSqliteRetention(rawWriteDb, models, retention, pluralize = fa
       // A row can hold what SQLite does not: a File column's object lives in a
       // store, and only the plugins can release it. A bare DELETE kept every
       // swept row's bytes for ever (FJS-1921), so when someone is listening the
-      // sweep reads back what it removed and hands it over.
-      const sql = `DELETE FROM ${quoteIdent(table)} WHERE "createdAt" < ?`
+      // sweep reads back what it removed and hands it over. It reads BEFORE the
+      // DELETE: a foreign key's `onDelete: Cascade` removes the children inside
+      // that statement, and RETURNING names only the parent's rows, so the
+      // children's objects stayed in the store (FJS-2097).
+      const where = `FROM ${quoteIdent(table)} WHERE "createdAt" < ?`
       if (onRemoved) {
-        const rows = rawWriteDb.prepare(`${sql} RETURNING *`).all(cutoff)
-        if (rows.length) onRemoved(model.name, rows)
+        const rows   = rawWriteDb.prepare(`SELECT * ${where}`).all(cutoff)
+        const doomed = rows.length ? doomedUnder?.(model.name, rows) ?? null : null
+        rawWriteDb.prepare(`DELETE ${where}`).run(cutoff)
+        if (rows.length) onRemoved(model.name, rows, doomed)
       } else {
-        rawWriteDb.prepare(sql).run(cutoff)
+        rawWriteDb.prepare(`DELETE ${where}`).run(cutoff)
       }
       // sqlite3_changes(), not bun's `.changes` — the latter counts what the
       // FTS and cascade triggers wrote too, so the line said 17 rows removed

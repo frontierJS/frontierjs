@@ -53,7 +53,7 @@ Covered: **18 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| `fli check` | `service-as-system` | asSystem() off the app client crosses tenants; off the request client it does not |
+| `fli check` | `service-as-system` | asSystem() off the app client crosses tenants; with no row tenancy, any asSystem() in a service crosses users |
 | `fli check` | `gate-unreachable` | a declared @@gate level something can actually reach |
 | test | `packages/sierra/test/static-safety-real.mjs` | the prerender half — a published route proves its reads against the model's own `@@gate`, against a real Litestone client |
 

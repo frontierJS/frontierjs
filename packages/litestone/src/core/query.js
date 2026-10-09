@@ -2395,18 +2395,22 @@ export function buildWindowCols(windowSpec, filterParams = null) {
     const expr = _buildWindowExpr(alias, spec)
     const over = _buildOverClause(spec)
 
-    // FILTER (WHERE ...) — optional, only valid on aggregate window functions
+    // FILTER (WHERE ...) — optional, only valid on aggregate window functions.
+    // Only a sql`` tag result is text for the pattern; a string is refused for
+    // the reason a named aggregate's filter refuses it.
     let filterClause = ''
     if (spec.filter) {
-      if (isRawClause(spec.filter)) {
-        filterClause = ` FILTER (WHERE ${spec.filter.sql})`
-        if (filterParams) filterParams.push(...spec.filter.params)
-      } else if (typeof spec.filter === 'string') {
-        filterClause = ` FILTER (WHERE ${spec.filter})`
-      }
+      if (!isRawClause(spec.filter))
+        throw new ValidationError([{
+          path:    [alias, 'filter'],
+          message: `Window ${alias} filter must be a sql\`\` tag result — ` +
+                   `a plain string cannot be bound and is how an injected fragment arrives`,
+        }])
+      filterClause = ` FILTER (WHERE ${spec.filter.sql})`
+      if (filterParams) filterParams.push(...spec.filter.params)
     }
 
-    cols.push(`${expr}${filterClause} OVER ${over} AS "${alias}"`)
+    cols.push(`${expr}${filterClause} OVER ${over} AS ${quoteIdent(alias)}`)
   }
 
   return cols

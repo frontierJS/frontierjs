@@ -25,7 +25,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/query` | what a query string MEANS — types, structure, both directions | shipping |
 | `/redact` | is this key a credential, and redacting a value by that answer | shipping |
 | `/search` | ranking a corpus nobody indexed | shipping |
-| `/signature` | what a signed machine-to-machine request is | shipping |
+| `/signature` | what a signed machine-to-machine request is, and a short signed token for an address | shipping |
 | `/units` | a magnitude with a unit, as a person reads it | shipping |
 
 The whole package holds to one rule:

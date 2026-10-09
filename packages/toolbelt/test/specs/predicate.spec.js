@@ -26,7 +26,7 @@
  *     must not give
  */
 
-import { evaluate, compare, truth, and3, or3, not3 } from '../../src/predicate/predicate.js'
+import { evaluate, shiftInstant, compare, truth, and3, or3, not3, parseText, assertValues, evaluateValues, ParseError } from '../../src/predicate/predicate.js'
 
 // The AST shapes here are hand-written, because toolbelt depends on nothing and
 // cannot reach litestone's parser to build one. What holds them to what the
@@ -256,4 +256,49 @@ test('predicate: an unknown node type THROWS rather than answering true', functi
   let threw = false
   try { evaluate({ type: 'nosuchnode' }, { record: {} }) } catch { threw = true }
   assert.ok(threw, 'an unknown node must refuse')
+})
+
+test('predicate: now() + a duration moves the instant, and a month overflows as SQLite does', function () {
+  const NOW = '2026-01-31T12:00:00.000Z'
+  const shift = (sign, value, unit) => ({ type: 'shift', expr: { type: 'now' }, sign, value, unit })
+  assert.equal(evaluate(shift(1, 2, 'd'),    { now: NOW }), '2026-02-02T12:00:00.000Z')
+  assert.equal(evaluate(shift(-1, 90, 'min'), { now: NOW }), '2026-01-31T10:30:00.000Z')
+  assert.equal(evaluate(shift(1, 1, 'wk'),   { now: NOW }), '2026-02-07T12:00:00.000Z')
+  assert.equal(evaluate(shift(1, 1, 'mo'),   { now: NOW }), '2026-03-03T12:00:00.000Z')
+  assert.equal(evaluate(shift(1, 1, 'yr'),   { now: NOW }), '2027-01-31T12:00:00.000Z')
+  assert.equal(evaluate(shift(1, 2, 'd'),    { now: null }), null)
+  assert.equal(shiftInstant('not a date', { sign: 1, value: 1, unit: 'd' }), null)
+})
+
+// ── a value template: text in, values out (FJS-1998) ─────────────────────────
+
+const NAMES = { contact: ['name', 'email'], agent: ['name'] }
+const DATA  = { contact: { name: 'Ada', email: null }, agent: { name: 'Sam' } }
+const refuses = (fn, said) => assert.throws(() => { try { fn() } catch (e) { assert.equal(e instanceof ParseError, true); throw e } }, said)
+const valueOf = (src) => { const ast = parseText(src); assertValues(ast, NAMES); return evaluateValues(ast, DATA) }
+
+test('values: text parses without a caller-written cursor, and a ternary over names answers', function () {
+  assert.equal(valueOf('contact.name'), 'Ada')
+  assert.equal(valueOf("contact.email ? contact.email : 'none'"), 'none')
+  assert.equal(valueOf("contact.name == 'Ada' && agent.name == 'Sam'"), true)
+})
+
+test('values: text with a token left over is refused, not run as its first half', function () {
+  refuses(() => parseText("contact.name 'x'"), /after the expression/)
+})
+
+test('values: auth(), now(), check(), .some() and a bare name are refused by name', function () {
+  const cases = [['auth().id', /auth\(\)/], ['now()', /now\(\)/], ['now() + 2d', /now\(\)/], ['check(contact)', /check\(\)/], ['contact.some(name == 1)', /some/], ['name', /bare name/]]
+  for (const [src, said] of cases) refuses(() => assertValues(parseText(src), NAMES), said)
+})
+
+test('values: a name outside the closed list is refused, own keys only', function () {
+  refuses(() => assertValues(parseText('contact.phone'), NAMES), /contact.phone is not a name/)
+  refuses(() => assertValues(parseText('constructor.constructor'), NAMES), /not a name/)
+  refuses(() => assertValues(parseText('toString.name'), NAMES), /not a name/)
+})
+
+test('values: evaluateValues re-refuses what assertValues would, so a skipped save check cannot render it', function () {
+  refuses(() => evaluateValues(parseText('auth().id'), DATA), /auth\(\)/)
+  refuses(() => evaluateValues(parseText('constructor.name'), DATA), /not a name/)
 })

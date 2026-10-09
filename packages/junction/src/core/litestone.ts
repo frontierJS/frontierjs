@@ -3774,7 +3774,13 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
     if (!token) return {}
 
     const db  = ctx.locals.db as LitestoneClient | undefined
-    const sys = typeof db?.asSystem === 'function' ? db.asSystem() : db
+    // `$setAuth(null)` first: `$setAuth(u).asSystem()` keeps `u` (`FJS-519`),
+    // and under row tenancy `u`'s tenant claim still filters the lookup — so a
+    // signed-in member of account B holding account A's link read no grant at
+    // all, where the same token signed out did. Who ELSE the holder is must not
+    // decide whether the grant is found (`FJS-2091`).
+    const bare = typeof db?.$setAuth === 'function' ? db.$setAuth(null) : db
+    const sys  = typeof bare?.asSystem === 'function' ? bare.asSystem() : bare
 
     // asSystem(), for `membershipClaim`'s reason one step further: a grant is
     // what DECIDES this caller's access, and the caller holding it has no
@@ -3806,13 +3812,16 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
       ...(relations.length ? { include: Object.fromEntries(relations.map(r => [r, true])) } : {}),
     }) as Record<string, unknown> | null
 
-    // No row is no claim, and it is the same answer as an expired one on
-    // purpose: *this link does not work* is all a bearer may learn, or the
-    // refusal becomes an oracle for which tokens once existed.
-    if (!row || !isLive(row)) {
-      ctx.locals[NO_CLAIM] = { reason: 'refused', namedBy: opts.namedBy } satisfies NoClaim
-      return {}
-    }
+    // A token that was PRESENTED and does not work is refused, not answered as
+    // anonymity: a stranger's list is 200 of nothing and their write a 403 from
+    // the rule, so the holder of a dead link could not be told it is dead
+    // (`FJS-1999`; the same refusal a dead session gets, `FJS-1830`). No row, a
+    // revoked one and an expired one are one answer on purpose — *this link does
+    // not work* is all a bearer may learn, or the refusal becomes an oracle for
+    // which tokens once existed.
+    if (!row || !isLive(row, (db as { $now?: () => Date } | undefined)?.$now)) throw new Unauthorized(
+      `This link does not work. It may have expired or been withdrawn.`,
+    )
 
     ctx.locals[BEARER] = {
       id:      row.id ?? null,
@@ -3858,12 +3867,15 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
  * treated as EXPIRED. The alternative reading is *live*, which turns a column
  * nobody can parse into a grant that never dies.
  */
-function isLive(row: Record<string, unknown>): boolean {
+function isLive(row: Record<string, unknown>, clock?: () => Date): boolean {
   if ('revokedAt' in row && row.revokedAt != null) return false
 
   if ('expiresAt' in row && row.expiresAt != null) {
     const at = new Date(row.expiresAt as string | number | Date).getTime()
-    if (!Number.isFinite(at) || at <= Date.now()) return false
+    // The client's clock, which `createClient({ now })` moves: a deadline that
+    // reads the wall clock beside it is the one a drive cannot reach.
+    const now = clock ? clock().getTime() : Date.now()
+    if (!Number.isFinite(at) || at <= now) return false
   }
 
   return true

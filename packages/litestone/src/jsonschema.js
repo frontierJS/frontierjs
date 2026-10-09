@@ -281,6 +281,7 @@ export function generateJsonSchema(schema, options = {}) {
       'x-litestone-file': true,
       properties: {
         key:        { type: 'string',              description: 'Object storage key' },
+        name:       { type: 'string',              description: 'Original filename, as the bytes arrived' },
         bucket:     { type: 'string',              description: 'Bucket name' },
         provider:   { type: 'string', enum: ['r2', 's3', 'b2', 'minio', 'local'], description: 'Storage provider' },
         endpoint:   { type: ['string', 'null'],    description: 'S3-compatible endpoint URL' },
@@ -655,6 +656,16 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       fieldSchema.readOnly = true
       fieldSchema['x-litestone-kind'] = tenancyStamped ? 'tenancy' : 'system'
     }
+
+    // A column `@default(auth().x)` fills when the caller leaves it out. Still
+    // writable, since a caller may name someone else, so the kind is all that
+    // says the SERVER owns the blank. A nullable one cannot be told from
+    // `String?` otherwise, and a `make()` that seeds it sends a stated null,
+    // which beats the stamp (`FJS-2032`) and records no author (`FJS-2108`).
+    const authDefault = field.attributes.find(a => a.kind === 'default')
+    if (mode !== 'update' && !isSystemWritten &&
+        authDefault?.value?.kind === 'call' && authDefault.value.fn === 'auth')
+      fieldSchema['x-litestone-kind'] = 'stamped'
 
     // @immutable — readOnly in the UPDATE schema and writable in every other
     // mode, which is the one keyword pair that says *written once*. A create

@@ -300,15 +300,16 @@ try {
   //
   // `id` is stored as `{ type: 'ref', path: '$.trigger.record.id' }` and the
   // grammar can spell that, so the field is one line of the same language the
-  // edge conditions are written in. `data` is an `object` expression and the
-  // shared grammar has no syntax for one, so it stays the document it was —
-  // which is the honest half and is asserted rather than left to be noticed.
+  // edge conditions are written in. So is `data`, an `object` expression
+  // (`FJS-D513`).
 
   t('expression.aRefIsShownAsTheLanguage', await evaluate(`
     return document.querySelector('[data-config-field="id"] input')?.value ?? ''
   `), '$.trigger.record.id')
-  t('expression.andAShapeWithNoTextFormStaysADocument',
-    await exists('[data-config-field="data"] textarea'), true)
+  t('expression.anObjectIsShownAsTheLanguageToo', await evaluate(`
+    const v = document.querySelector('[data-config-field="data"] input')?.value ?? ''
+    return v.startsWith('{ notes: ') && v.endsWith(', version: $.trigger.record.version }')
+  `), true)
 
   // The refusal is the PARSER's own sentence, with the position it failed at —
   // a second wording on this side would be a second grammar.

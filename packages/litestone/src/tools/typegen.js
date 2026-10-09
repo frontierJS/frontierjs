@@ -149,6 +149,7 @@ export function generateTypeScript(schema, opts = {}) {
       ``,
       `export interface FileRef {`,
       `  key:        string`,
+      `  name?:      string`,
       `  bucket:     string`,
       `  provider:   string`,
       `  size:       number`,

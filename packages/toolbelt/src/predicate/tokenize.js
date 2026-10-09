@@ -150,16 +150,21 @@ export function tokenize(src) {
     // `@generated("…")` is SQL and `@generated(`…`)` is a template. Accepting a
     // backtick as an ordinary string would make every other attribute take one
     // and mean nothing by it.
+    // `value` is the text with escapes taken; `raw` is the source between the
+    // backticks, which is what a flow reads `${…}` holes out of (`FJS-D513`) —
+    // after the escapes are taken, `\${` and `${` are the same characters.
     if (src[i] === '`') {
+      const start = i + 1
+      const end   = templateEnd(src, start)
+      if (end < 0) throw new ParseError('Unterminated template literal — no closing `', { ...pos })
       advance()
       let str = ''
-      while (i < src.length && src[i] !== '`') {
+      while (i < end) {
         if (src[i] === '\\') { advance(); str += src[i] } else { str += src[i] }
         advance()
       }
-      if (i >= src.length) throw new ParseError('Unterminated template literal — no closing `', { ...pos })
       advance() // closing backtick
-      tokens.push({ type: TK.TEMPLATE, value: str, ...pos })
+      tokens.push({ type: TK.TEMPLATE, value: str, raw: src.slice(start, end), ...pos })
       continue
     }
 
@@ -235,6 +240,48 @@ function pickCharHint(code) {
     case 0x200D: case 0xFEFF: return 'Looks like an invisible Unicode character. Re-type the line.'
     default:                  return null
   }
+}
+
+// ─── Template extent ────────────────────────────────────────────────────────────
+//
+// A template's closing backtick is the first one OUTSIDE a `${…}` hole, because
+// a hole holds an expression and an expression may hold a template. Stopping at
+// the first backtick would end `a ${`b`} c` inside its own hole. Both answer the
+// index of what closes them, or -1 when the source runs out first.
+
+function templateEnd(src, i) {
+  while (i < src.length) {
+    if (src[i] === '\\') { i += 2; continue }
+    if (src[i] === '`') return i
+    if (src[i] === '$' && src[i + 1] === '{') {
+      i = holeEnd(src, i + 2)
+      if (i < 0) return -1
+    }
+    i++
+  }
+  return -1
+}
+
+// Quoted strings are skipped whole, so a `}` inside one does not close the hole.
+export function holeEnd(src, i) {
+  let depth = 0
+  while (i < src.length) {
+    const c = src[i]
+    if (c === "'" || c === '"') {
+      i++
+      while (i < src.length && src[i] !== c) i += src[i] === '\\' ? 2 : 1
+    } else if (c === '`') {
+      i = templateEnd(src, i + 1)
+      if (i < 0) return -1
+    } else if (c === '{') {
+      depth++
+    } else if (c === '}') {
+      if (!depth) return i
+      depth--
+    }
+    i++
+  }
+  return -1
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────

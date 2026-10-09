@@ -16,8 +16,8 @@
   //
   // ─── What it does when there is no text ───────────────────────────────────
   //
-  // The grammar is a SUBSET of what the engine runs — a template, an object, a
-  // pipeline and three more have no syntax (`FJS-1209`) — so `expressionToText`
+  // The grammar is a SUBSET of what the engine runs — an array, a pipeline, a
+  // let and a match have no syntax (`FJS-1209`) — so `expressionToText`
   // answers text or a reason, and a shape with no text form is edited as the
   // document it already was. Nothing is hidden and nothing is guessed at.
 

@@ -1040,6 +1040,18 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       return presenceByUser(userId)
     },
 
+    // Who holds a live socket right now. Presence answers a different
+    // question -- who announced themselves on a channel -- so a signed-in user
+    // with an open socket and no subscribe is `presenceOf() === []` but
+    // connected. This process's sockets only; a second instance has its own.
+    connectionsOf(userId: string | number): Connection[] {
+      const out: Connection[] = []
+      for (const conn of connections.values()) {
+        if (conn.user?.userId === userId && conn.socket.readyState === 1) out.push(conn)
+      }
+      return out
+    },
+
     // ── Internal — used by the subscribe message handler in the plugin ────
     // Not part of the public API — prefixed with _ to signal intent.
     _presenceGet(channelId: string, connId: string): PresenceMember | undefined {

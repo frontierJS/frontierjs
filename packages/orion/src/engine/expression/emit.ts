@@ -7,16 +7,12 @@
 //
 // ── The grammar is a SUBSET of the Expression union, and that is the design ───
 //
-// Thirteen forms compile and seven parse. `template`, `array`, `object`,
-// `pipe`, `let` and `match` are shapes the engine runs and the shared text
-// grammar has no syntax for — a backtick token is even tokenized and read by
-// no parser — so this answers `{ text: null, reason }` for them rather than
-// inventing syntax. Widening the grammar is not this file's to do: it is
-// `@frontierjs/toolbelt/predicate`, which litestone parses `.lite` policies
-// with, and one language is the whole of `FJS-D271`.
-//
-// Measured over every flow definition in this repo: 427 of 471 expression
-// nodes have a text form. The gap is named in `FJS-1209`.
+// `array`, `pipe`, `let` and `match` are shapes the engine runs and the shared
+// text grammar has no syntax for, so this answers `{ text: null, reason }` for
+// them rather than inventing syntax. Widening the grammar is not this file's
+// to do: it is `@frontierjs/toolbelt/predicate`, which litestone parses `.lite`
+// policies with, and one language is the whole of `FJS-D271`. `template` and
+// `object` are in it (`FJS-D513`), and a policy refuses both by name.
 //
 // ── Precedence, which is the only way this can be quietly wrong ──────────────
 //
@@ -124,18 +120,47 @@ function emit(expr: Expression, min: number): string {
 
     case "predicate": return predicate(expr.ast, min)
 
-    // The six the grammar has no syntax for. Named one at a time rather than
+    case "template": return wrap(template(expr.parts), VALUE, min)
+    case "object":   return wrap(object(expr.properties), VALUE, min)
+
+    // The four the grammar has no syntax for. Named one at a time rather than
     // as a default, so a form ADDED to the union arrives here as a TypeScript
     // error instead of as a sentence about a shape nobody has considered.
-    case "template": return refuse("a template has no text form yet — it is edited as a document")
     case "array":    return refuse("an array of expressions has no text form yet — a list in the grammar holds literals")
-    case "object":   return refuse("an object has no text form yet — it is edited as a document")
-    case "pipe":     return refuse("a pipeline has no text form yet — it is edited as a document")
+    case "pipe":    return refuse("a pipeline has no text form yet — it is edited as a document")
     case "let":      return refuse("a let has no text form yet — it is edited as a document")
     case "match":    return refuse("a match has no text form yet — it is edited as a document")
   }
 
   return refuse(`there is no text form for a '${(expr as { type: string }).type}' expression`)
+}
+
+// The text between holes is a string literal part; anything else is a hole. A
+// string part directly after another would re-parse as ONE part, so it is
+// written as a hole too and the tree comes back as it went in.
+function template(parts: Expression[]): string {
+  let out = ""
+  let afterText = false
+  for (const part of parts) {
+    if (part.type === "literal" && typeof part.value === "string" && part.value !== "" && !afterText) {
+      out += part.value.replace(/[\\`]|\$(?=\{)/g, m => `\\${m}`)
+      afterText = true
+    } else {
+      out += `\${${emit(part, TERNARY)}}`
+      afterText = false
+    }
+  }
+  return `\`${out}\``
+}
+
+// A key is bare when the grammar would read it back as a name. `true` and
+// `false` tokenize as booleans, so they are quoted.
+function object(properties: Record<string, Expression>): string {
+  const entries = Object.entries(properties).map(([key, value]) => {
+    const name = IDENT.test(key) && key !== "true" && key !== "false" ? key : quote(key)
+    return `${name}: ${emit(value, TERNARY)}`
+  })
+  return entries.length ? `{ ${entries.join(", ")} }` : "{}"
 }
 
 // A lambda's parameter, and the one place the emitter is deliberately less

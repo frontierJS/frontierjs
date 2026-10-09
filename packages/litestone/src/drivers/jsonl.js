@@ -199,11 +199,15 @@ const FIELD_TYPES = { Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER', DateTim
 
 // ─── Default resolution ───────────────────────────────────────────────────────
 
-function resolveDefault(field) {
+// `stamp` is the client's write clock (`stampClock` in core/client.js): a
+// `now()` read off the wall clock here ignores `createClient({ now })`, so a
+// row written after the client's clock moved is dated before it and the next
+// retention sweep removes it.
+function resolveDefault(field, stamp) {
   const def = field.attributes.find(a => a.kind === 'default')
   if (!def) return undefined
   const v = def.value
-  if (v.kind === 'call'    && v.fn === 'now')  return new Date().toISOString()
+  if (v.kind === 'call'    && v.fn === 'now')  return new Date(stamp()).toISOString()
   // A jsonl table has no DDL, so every generated default is filled here — where
   // a SQLite table gets uuid() from its column DEFAULT and the other three from
   // the client's insert path (core/ids.js is the shared owner).
@@ -217,7 +221,7 @@ function resolveDefault(field) {
 
 // ─── Table factory ────────────────────────────────────────────────────────────
 
-export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null, now = Date.now, busyTimeout = null) {
+export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null, now = Date.now, busyTimeout = null, stamp = () => new Date()) {
   // Run compaction immediately if retention or maxSize is configured.
   // This happens once when createClient() opens — before any queries are served.
   if (retention || maxSize) {
@@ -425,7 +429,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
       if (data[field.name] !== undefined) {
         record[field.name] = data[field.name]
       } else {
-        const def = resolveDefault(field)
+        const def = resolveDefault(field, stamp)
         record[field.name] = def !== undefined ? def : null
       }
     }

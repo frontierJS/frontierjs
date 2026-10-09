@@ -81,6 +81,7 @@ Detail: `references/auth-and-the-principal.md`
 
 - **`IAuth.sessionFor(userId)` is how a principal is rebuilt without a credential**
 - **A bearer token is the credentials list's last entry: `verifySession`, then `verifyApiKey` when that answers null**
+- **`bearerClaim` refuses a presented token that does not work (401); no token stays anonymous**
 
 ## Jobs and the clock
 Detail: `references/jobs-and-the-clock.md`

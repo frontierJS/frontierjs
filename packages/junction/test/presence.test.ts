@@ -248,3 +248,27 @@ describe('presence — leave', () => {
     alice.close()
   })
 })
+
+// FJS-2001: presence is what a connection announced on a channel; whether a
+// person holds a socket is a different question and has its own answer.
+describe('connectionsOf — is this person connected', () => {
+  it('answers for a user whose socket joined no channel, and drops on close', async () => {
+    const alice = client('tok-alice')
+    await alice.ready
+    await alice.waitFor('presence:sync')
+
+    // Leave every channel: presence is now empty, the socket is still open.
+    const conn = app.channels.connectionsOf('alice')[0]
+    app.channel(ROOM).leave(conn)
+    expect(app.presenceOf('alice')).toEqual([])
+    expect(app.channels.connectionsOf('alice').map((c: any) => c.id)).toEqual([conn.id])
+    expect(app.channels.connectionsOf('bob')).toEqual([])
+
+    alice.close()
+    const deadline = Date.now() + 2000
+    while (app.channels.connectionsOf('alice').length && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 15))
+    }
+    expect(app.channels.connectionsOf('alice')).toEqual([])
+  })
+})

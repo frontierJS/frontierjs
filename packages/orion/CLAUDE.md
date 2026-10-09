@@ -185,12 +185,12 @@ the plan, module by module, and the rulings it rests on are
   mistake has to arrive as they type; `ExpressionField.mesa` imports those two
   and nothing else under `src/`. Anything that holds state, opens a client or
   touches a run stays the server's.
-- **The text grammar is a SUBSET of the Expression union**: seven of thirteen
-  forms parse, so `expressionToText` answers `{ text }` or
-  `{ text: null, reason }` and a `template`, an `object` or a `pipe` is edited
-  as its document ([`FJS-1209`](../../ISSUES.md#fjs-1209)). The grammar is
-  `@frontierjs/toolbelt/predicate`, which litestone parses `.lite` policies
-  with, so widening it is a ruling and not an edit (`FJS-D271`).
+- **The text grammar is a SUBSET of the Expression union**: `array`, `pipe`,
+  `let` and `match` have no syntax, so `expressionToText` answers `{ text }` or
+  `{ text: null, reason }` and those are edited as their document. `template`
+  and `object` parse (`FJS-D513`) and a `.lite` policy refuses both by name. The
+  grammar is `@frontierjs/toolbelt/predicate`, so widening it is a ruling and
+  not an edit (`FJS-D271`).
 - **A screen reaches nothing through `@`.** A mounted route is compiled in the
   HOST's Vite root, where `@` is the host's `src/`, so every import in `web/` is
   relative or a package name. The services are reached by their default names,

@@ -142,19 +142,33 @@ describe('bearerClaim', () => {
     expect((seen.grant as any).row.scope).toBe('full')
   })
 
-  test('a revoked grant and an expired one are refused, exactly as an unknown token is', async () => {
+  test('a revoked grant and an expired one are refused 401, exactly as an unknown token is', async () => {
     // One sentence for all three on purpose: *this link does not work* is all a
     // bearer may learn, or the refusal is an oracle for which tokens existed.
+    // A refusal and not an empty principal (`FJS-1999`): answered as a stranger,
+    // a list is 200 of nothing and a write a 403 from the rule, and a page
+    // cannot say the link is dead.
     const db = await seeded()
     const { app } = await appWith(db)
 
     for (const token of ['revoked', 'expired', 'never-minted']) {
-      const rows = rowsOf(await holding(token, () => app.service('answers').find({})))
-      expect(rows).toEqual([])
+      await expect(holding(token, () => app.service('answers').find({}))).rejects.toMatchObject({ code: 401 })
+      await expect(holding(token, () => app.service('answers').create({ clientId: 1, answer: 'x' })))
+        .rejects.toMatchObject({ code: 401 })
     }
 
     // The pair: the same schema, the same service, a grant that is live.
     expect(rowsOf(await holding('live-one', () => app.service('answers').find({}))).length).toBe(1)
+  })
+
+  test('the grant\'s deadline is read off the client\'s clock, as every other deadline is', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA, claims: ['portalClientId', 'portalScope'], now: () => new Date('2030-01-01T00:00:00Z') })
+    await db.asSystem().portalLink.create({
+      data: { clientId: 1, tokenHash: await digestOf('soon'), expiresAt: '2029-06-01T00:00:00.000Z' },
+    })
+    const { app } = await appWith(db)
+    // Live by the wall clock, dead by the database's.
+    await expect(holding('soon', () => app.service('answers').find({}))).rejects.toMatchObject({ code: 401 })
   })
 
   test('a caller carrying no token at all reaches nothing', async () => {
@@ -259,7 +273,56 @@ describe('a claim column may name a relation path', () => {
 
     // A token that resolves to nothing reads no claim through the relation either.
     const none = { locals: { db }, headers: { 'x-share-link': 'nope' }, caller: { headers: { 'x-share-link': 'nope' } } }
-    expect(await enterRequest({ origin: 'http', headers: none.headers, caller: none.caller } as never,
-      () => (nested as any)(none, null))).toEqual({})
+    await expect(enterRequest({ origin: 'http', headers: none.headers, caller: none.caller } as never,
+      () => (nested as any)(none, null))).rejects.toMatchObject({ code: 401 })
+  })
+})
+
+// A grant is what DECIDES this caller's access, so which account the holder
+// already belongs to cannot decide whether it is found. Under row tenancy the
+// scoped client's asSystem() keeps the tenant, and a signed-in member of
+// account 2 holding account 1's link read no claim while the same token signed
+// out read it (`FJS-2091`).
+describe('a grant is found whoever else the holder is', () => {
+  const TENANTED = `
+    tenancy { strategy row  column accountId  claim accountId }
+
+    model SurveyGrant {
+      id        Int    @id @default(autoincrement())
+      accountId Int
+      surveyId  Int
+      tokenHash String @unique(global) @guarded
+      @@gate("8")
+    }
+  `
+  const grant = bearerClaim({
+    from:   header('x-survey-token'),
+    model:  'surveyGrant',
+    column: 'tokenHash',
+    key:    KEY,
+    claims: { grantSurveyId: 'surveyId', grantAccountId: 'accountId' },
+  })
+
+  async function open(as: unknown) {
+    const db: any = await createClient({ db: ':memory:', schema: TENANTED, claims: ['grantSurveyId', 'grantAccountId'] })
+    await db.asSystem().surveyGrant.create({
+      data: { accountId: 1, surveyId: 9, tokenHash: await fingerprint('tok', { key: KEY, purpose: 'surveyGrant.tokenHash' }) },
+    })
+    const headers = { 'x-survey-token': 'tok' }
+    const scoped = as ? db.$setAuth(as) : db
+    const ctx = { locals: { db: scoped, ...(as ? { tenantId: String((as as any).accountId) } : {}) }, headers, caller: { headers } }
+    return enterRequest({ origin: 'http', headers, caller: { headers } } as never, () => (grant as any)(ctx, null))
+  }
+
+  test('signed out, the token resolves', async () => {
+    expect(await open(null)).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
+  })
+
+  test('a member of ANOTHER account holding the token resolves it too', async () => {
+    expect(await open({ userId: 'u2', accountId: 2 })).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
+  })
+
+  test('a member of the grant\'s own account resolves it', async () => {
+    expect(await open({ userId: 'u1', accountId: 1 })).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
   })
 })

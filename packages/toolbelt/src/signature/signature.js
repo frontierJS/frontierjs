@@ -359,3 +359,109 @@ function timingSafeEqual(a, b) {
   for (let i = 0; i < n; i++) diff |= (x.charCodeAt(i) ^ y.charCodeAt(i)) || 0
   return diff === 0
 }
+
+/*
+ * A TOKEN — the other thing this file signs.
+ *
+ * `signRequest` authenticates an HTTP request, and a token that has to live in
+ * an e-mail address is a different object: `support+<token>@acme.com` was
+ * hand-rolled in a stressor because nothing here fit (`FJS-1941`). The address
+ * forces the whole shape.
+ *
+ *   - A local part is at most 64 octets (RFC 5321 § 4.5.3.1.1). `support+`, a
+ *     ULID (26) and a full HMAC-SHA256 in base64url (43) is 78, so the MAC is
+ *     cut to 80 bits (16 characters) and the token names ONE id: two ULIDs do
+ *     not fit beside any MAC.
+ *   - A receiving server may keep or fold a local part's case (§ 2.4). A
+ *     base64url MAC would then verify nowhere, so everything is lower-case
+ *     Crockford base32, which a ULID already is. Reading is case-insensitive.
+ *   - The MAC covers `purpose:id`, so a token minted for a reply address does
+ *     not verify as an unsubscribe link under the same secret.
+ *   - A ULID carries the instant it was minted, so `ttlSeconds` costs no bits
+ *     and no lookup: the id's own time is the expiry.
+ *
+ * `now` is the caller's, in seconds, for the reason it is in `verifyRequest`.
+ */
+
+const CROCKFORD = '0123456789abcdefghjkmnpqrstvwxyz'
+const TOKEN_MAC_CHARS = 16
+const ULID_LENGTH = 26
+
+function base32(bytes) {
+  let out = '', bits = 0, value = 0
+  for (const b of bytes) {
+    value = (value << 8) | b
+    bits += 8
+    while (bits >= 5) { out += CROCKFORD[(value >>> (bits - 5)) & 31]; bits -= 5 }
+  }
+  if (bits > 0) out += CROCKFORD[(value << (5 - bits)) & 31]
+  return out
+}
+
+async function tokenMac(secret, purpose, id, macChars) {
+  const key = await crypto.subtle.importKey(
+    'raw', ENCODER.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const digest = new Uint8Array(await crypto.subtle.sign('HMAC', key, ENCODER.encode(`${purpose}:${id}`)))
+  return base32(digest).slice(0, macChars)
+}
+
+/** The instant a ULID was minted, in seconds; NaN when it is not one. */
+function ulidSeconds(id) {
+  if (id.length !== ULID_LENGTH) return Number.NaN
+  let ms = 0
+  for (const c of id.slice(0, 10)) ms = ms * 32 + CROCKFORD.indexOf(c)
+  return ms / 1000
+}
+
+/**
+ * Mint the token for one id: the id, lower-cased, then a truncated MAC over
+ * `purpose:id`. `purpose` and `secret` are required for the reason `fingerprint`
+ * requires them. `macChars` defaults to 16 (80 bits) — the most that fits
+ * beside a ULID in a plus-address.
+ *
+ * @param {{ id: string, secret: string, purpose: string, macChars?: number }} opts
+ * @returns {Promise<string>}
+ */
+export async function mintToken({ id, secret, purpose, macChars = TOKEN_MAC_CHARS }) {
+  if (!secret)  throw new TypeError('mintToken: secret is required')
+  if (!purpose) throw new TypeError('mintToken: purpose is required — what this token is FOR, so one secret does not mint the same token in two places')
+  if (!id)      throw new TypeError('mintToken: id is required')
+  const lower = String(id).toLowerCase()
+  if (![...lower].every(c => CROCKFORD.includes(c)))
+    throw new TypeError(`mintToken: id '${id}' is not Crockford base32 — a token has to survive a server folding its case, and only that alphabet does`)
+  return lower + await tokenMac(secret, purpose, lower, macChars)
+}
+
+/**
+ * Read a token back. Answers `{ ok: true, id }` (lower-case, as minted) or
+ * `{ ok: false, reason }` with `reason` one of `malformed` (cannot be a token),
+ * `forged` (the MAC does not match) or `expired` (older than `ttlSeconds` by
+ * the id's ULID time). Forged is graded before expired, so an old token with a
+ * wrong MAC is not reported as merely old.
+ *
+ * `ttlSeconds` needs `now`, and an id that is not a ULID cannot carry a time:
+ * it reads as `malformed` rather than as the epoch.
+ *
+ * @param {string} token
+ * @param {{ secret: string, purpose: string, macChars?: number, now?: number, ttlSeconds?: number }} opts
+ * @returns {Promise<{ ok: true, id: string } | { ok: false, reason: 'malformed'|'forged'|'expired' }>}
+ */
+export async function readToken(token, { secret, purpose, macChars = TOKEN_MAC_CHARS, now, ttlSeconds } = {}) {
+  if (!secret)  throw new TypeError('readToken: secret is required')
+  if (!purpose) throw new TypeError('readToken: purpose is required')
+  if (ttlSeconds != null) {
+    if (!Number.isFinite(now)) throw new TypeError('readToken: now is required with ttlSeconds — seconds, from the caller\'s clock')
+    const wrongUnit = refuseMilliseconds('now', now)
+    if (wrongUnit) throw new TypeError(`readToken: ${wrongUnit}`)
+  }
+
+  const t = String(token ?? '').toLowerCase()
+  if (t.length <= macChars || ![...t].every(c => CROCKFORD.includes(c))) return { ok: false, reason: 'malformed' }
+  const id = t.slice(0, t.length - macChars)
+  if (ttlSeconds != null && Number.isNaN(ulidSeconds(id))) return { ok: false, reason: 'malformed' }
+
+  if (!timingSafeEqual(t.slice(id.length), await tokenMac(secret, purpose, id, macChars)))
+    return { ok: false, reason: 'forged' }
+  if (ttlSeconds != null && now - ulidSeconds(id) > ttlSeconds) return { ok: false, reason: 'expired' }
+  return { ok: true, id }
+}

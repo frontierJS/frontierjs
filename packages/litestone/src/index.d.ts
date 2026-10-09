@@ -247,6 +247,8 @@ export interface LogRequestContext {
 
 export interface FileRef {
   key:        string
+  /** The name the bytes arrived under; absent for a Buffer or Blob that had none. */
+  name?:      string
   bucket:     string | null
   provider:   string
   endpoint:   string | null
@@ -937,7 +939,7 @@ export interface VerifyResult {
 export declare function create(db: unknown, parseResult: ParseResult, label?: string, dir?: string, opts?: { pluralize?: boolean }): CreateMigrationResult
 export declare function apply(db: unknown, dir?: string): Promise<ApplyResult>
 export declare function status(db: unknown, dir?: string): MigrationRow[]
-export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean }): VerifyResult
+export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean; dbName?: string }): VerifyResult
 /** An object the live database and the schema disagree about in a way the differ cannot name. */
 export interface SchemaResidue {
   type:     'table' | 'index' | 'trigger'

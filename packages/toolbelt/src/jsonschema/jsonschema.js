@@ -155,6 +155,11 @@ export function createMakeFromSchema(properties, opts = {}) {
     // it read and puts it on the patch itself.
     if (def.readOnly) continue
 
+    // The server fills it when the key is absent, and a nullable one cannot be
+    // told from any other by `required` below. A seeded null is a stated value
+    // that beats the stamp, so the row records no author (`FJS-2108`).
+    if (def['x-litestone-kind'] === 'stamped' || raw['x-litestone-kind'] === 'stamped') continue
+
     // An explicit default wins over everything below.
     if ('default' in def) {
       fieldDefaults[key] = def.default

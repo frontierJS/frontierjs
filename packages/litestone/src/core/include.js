@@ -407,12 +407,21 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         if (cntWin.to)   { effExtra += ` AND ("${cntWin.to}" IS NULL OR "${cntWin.to}" > ?)`;      cntBinds.push(at) }
       }
 
+      // The caller's where is about the TARGET's columns, on either kind.
+      let whereExtra = ''
+      /** @type {any[]} */
+      const whereParams = []
+      if (where) {
+        const ws = buildWhere(where, whereParams, null, null, null, null, shapes[rel.targetModel].fieldKinds)
+        if (ws) whereExtra = ` AND (${ws})`
+      }
+
       if (rel.kind === 'manyToMany') {
-        // M2M: count via join table — where filters not supported on join table, skip.
         // A join row outlives its target's removal, expiry and turn into a
-        // template, so any of those joins through to the target the way the
-        // policy does — the count otherwise counts what the include leaves out.
-        const targetExtra = `${sdExtra}${htExtra}${effExtra}${countPolicy ? ` AND (${countPolicy.sql})` : ''}`
+        // template, and carries none of the target's columns, so any of those
+        // and the where join through to the target the way the policy does —
+        // the count otherwise counts what the include leaves out.
+        const targetExtra = `${sdExtra}${htExtra}${effExtra}${whereExtra}${countPolicy ? ` AND (${countPolicy.sql})` : ''}`
         sql = targetExtra
           ? `SELECT j."${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" j ` +
             `WHERE j."${rel.selfKey}" IN (${ph}) ` +
@@ -420,16 +429,8 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
             `GROUP BY j."${rel.selfKey}"`
           : `SELECT "${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" WHERE "${rel.selfKey}" IN (${ph}) GROUP BY "${rel.selfKey}"`
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,
-          [...pkValues, ...cntBinds, ...(countPolicy?.params ?? [])])
+          [...pkValues, ...cntBinds, ...whereParams, ...(countPolicy?.params ?? [])])
       } else {
-        // Build optional where filter using buildWhere
-        let whereExtra = ''
-        /** @type {any[]} */
-        const whereParams = []
-        if (where) {
-          const ws = buildWhere(where, whereParams, null, null, null, null, shapes[rel.targetModel].fieldKinds)
-          if (ws) whereExtra = ` AND (${ws})`
-        }
         const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
         sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE "${rel.foreignKey}" IN (${ph})${sdExtra}${htExtra}${effExtra}${whereExtra}${polExtra} GROUP BY "${rel.foreignKey}"`
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,

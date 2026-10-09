@@ -156,6 +156,31 @@ describe('the jsonl half', () => {
     expect(readFileSync(file, 'utf8')).not.toContain('"old"')
   })
 
+  // `@default(now())` on a jsonl model read the wall clock, so a row written
+  // after the client's clock moved was stamped in the past of that clock and
+  // the next sweep removed it with the old one (`FJS-1922`).
+  test('@default(now()) is stamped from the client clock', async () => {
+    const dir = tmp()
+    let at = Date.now()
+    const db  = await createClient({
+      schema: `
+        database main { path "${join(dir, 'app.db')}" }
+        database logs { path "${join(dir, 'logs/')}"  driver jsonl  retention 30d }
+        model Entry { id Int @id @default(autoincrement())  body String  createdAt DateTime @default(now())  @@db(logs) }
+      `,
+      now: () => new Date(at),
+    })
+    const sys = db.asSystem()
+    await sys.entry.create({ data: { body: 'old' } })
+    at += 31 * 86_400_000
+    const fresh = await sys.entry.create({ data: { body: 'new' } })
+    expect(new Date(fresh.createdAt).getTime()).toBe(at)
+
+    const swept = await sys.$retain()
+    expect(swept.find((r: { model: string }) => r.model === 'Entry')?.removed).toBe(1)
+    expect((await sys.entry.findMany()).map((r: { body: string }) => r.body)).toEqual(['new'])
+  })
+
   // The compaction rewrites the file, so every byte offset the companion index
   // holds is wrong. It used to answer that by DELETING the index — and SQLite
   // marks a connection readonly when its file is unlinked underneath, so the
@@ -260,6 +285,82 @@ describe('a swept row takes its files with it', () => {
     const db: any = await open(dir)
     expect(await db.asSystem().batch.count()).toBe(0)
     expect(stored(dir)).toEqual([])
+    db.$close()
+  })
+})
+
+// The rows a foreign key's `onDelete: Cascade` takes are removed by SQLite inside
+// the parent's own DELETE, so the sweep's RETURNING named the parent and nothing
+// under it, and the child's object stayed in the store (FJS-2097). The ORM path
+// reads the doomed children first through the cascade sinks (FJS-1497).
+describe('a swept row takes its cascaded children\'s files with it', () => {
+  const CASCADE_SCHEMA = (dir: string) => `
+    database main { path "${join(dir, 'app.db')}"  retention 30d }
+    model Batch {
+      id Int @id @default(autoincrement())
+      docs Doc[]
+      createdAt DateTime @default(now())
+    }
+    model Doc {
+      id Int @id @default(autoincrement())
+      batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+      batchId Int
+      body File
+    }
+  `
+  const stored = (dir: string) => {
+    const root = join(dir, 'objects')
+    if (!existsSync(root)) return []
+    return (readdirSync(root, { recursive: true }) as string[])
+      .filter(f => statSync(join(root, f)).isFile())
+      .map(f => readFileSync(join(root, f), 'utf8')).sort()
+  }
+
+  test('$retain() removes the object of a child the cascade deleted', async () => {
+    const dir = tmp()
+    const { FileStorage } = await import('../src/storage/file-storage.js')
+    const files = FileStorage({ provider: 'local', localPath: join(dir, 'objects') })
+    const db: any = await createClient({ schema: CASCADE_SCHEMA(dir), plugins: [files] })
+    const sys = db.asSystem()
+    const old   = await sys.batch.create({ data: { createdAt: ago(40) } })
+    const fresh = await sys.batch.create({ data: { createdAt: ago(1) } })
+    await sys.doc.create({ data: { batchId: old.id,   body: Buffer.from('old-doc') } })
+    await sys.doc.create({ data: { batchId: fresh.id, body: Buffer.from('fresh-doc') } })
+    expect(stored(dir)).toEqual(['fresh-doc', 'old-doc'])
+
+    await sys.$retain()
+    expect(await sys.doc.count()).toBe(1)
+    expect(stored(dir)).toEqual(['fresh-doc'])
+    db.$close()
+  })
+})
+
+describe('the startup pass takes cascaded files too', () => {
+  test('a reopened client has swept the child object', async () => {
+    const dir = tmp()
+    const { FileStorage } = await import('../src/storage/file-storage.js')
+    const open = () => createClient({
+      schema: `
+        database main { path "${join(dir, 'app.db')}"  retention 30d }
+        model Batch { id Int @id @default(autoincrement())  docs Doc[]  createdAt DateTime @default(now()) }
+        model Doc {
+          id Int @id @default(autoincrement())
+          batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+          batchId Int
+          body File
+        }`,
+      plugins: [FileStorage({ provider: 'local', localPath: join(dir, 'objects') })],
+    }) as any
+    const first = await open()
+    const b = await first.asSystem().batch.create({ data: { createdAt: ago(40) } })
+    await first.asSystem().doc.create({ data: { batchId: b.id, body: Buffer.from('old-doc') } })
+    first.$close()
+
+    const db = await open()
+    expect(await db.asSystem().doc.count()).toBe(0)
+    const root = join(dir, 'objects')
+    const left = existsSync(root) ? (readdirSync(root, { recursive: true }) as string[]).filter(f => statSync(join(root, f)).isFile()) : []
+    expect(left).toEqual([])
     db.$close()
   })
 })

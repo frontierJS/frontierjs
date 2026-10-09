@@ -591,7 +591,7 @@ export async function createTestEnv(opts = {}) {
           } catch (err) {
             mismatches.push({
               ...row, got: 'error', thrown: err.message,
-              message: `${row.model}.${row.op} at level ${row.level} (${row.label}) — no fixture could be built, so the gate was never asked: ${err.message}`,
+              message: `${row.model}.${row.op} at level ${row.level} (${row.label}) — no fixture could be built, so the gate was never asked: ${err.message}. The auto factory knows field rules, not model ones; createTestEnv({ factories }) overrides it for this model`,
             })
             continue
           }
@@ -2145,6 +2145,7 @@ export function generateFactory(schema, modelName, options = {}) {
           break
       }
     }
+    _orderByChecks(model, out)
     return out
   }
 }
@@ -3580,6 +3581,36 @@ function _timeSample(seq, seconds) {
 
 function _matchesRegex(pattern, value) {
   try { return new RegExp(pattern).test(String(value)) } catch { return false }
+}
+
+/**
+ * Make a row satisfy a `@@check("endAt > startAt")` between two of its own
+ * columns. Every DateTime (and every Int) in a row is drawn from the same seq,
+ * so an interval check refused every row the factory invented and the model
+ * could not be given a fixture at all. Only the plain `<column> <op> <column>`
+ * form is read; anything richer is the caller's `factories` override.
+ */
+function _orderByChecks(model, out) {
+  const ORDERED = { DateTime: 86_400_000, Int: 1, Float: 1 }
+  const column  = n => {
+    const f = model.fields.find(x => x.name === n)
+    return f && !f.type.array && f.type.kind === 'scalar' && f.type.name in ORDERED && out[n] != null ? f : null
+  }
+  for (const attr of model.attributes ?? []) {
+    if (attr.kind !== 'check') continue
+    const m = /^\s*([A-Za-z_]\w*)\s*(>=|<=|>|<)\s*([A-Za-z_]\w*)\s*$/.exec(attr.expr)
+    if (!m) continue
+    const [, a, op, b] = m
+    const [hi, lo] = op[0] === '>' ? [a, b] : [b, a]
+    const fh = column(hi), fl = column(lo)
+    if (!fh || !fl || fh.type.name !== fl.type.name) continue
+    const date = fh.type.name === 'DateTime'
+    const val  = v => date ? new Date(v).getTime() : v
+    const ok   = op.length === 2 ? val(out[hi]) >= val(out[lo]) : val(out[hi]) > val(out[lo])
+    if (ok) continue
+    const next = val(out[lo]) + ORDERED[fh.type.name]
+    out[hi] = date ? new Date(next).toISOString() : next
+  }
 }
 
 /** One element for an array field, typed by the element's scalar type. */

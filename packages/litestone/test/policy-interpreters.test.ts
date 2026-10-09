@@ -134,6 +134,54 @@ describe('one predicate, two interpreters', () => {
     expect(await agree(DOC(`openUntil > now()`), rows, { id: 'u1' })).toEqual([])
   })
 
+  // FJS-2135: `now() + <duration>` in a row policy. The offset moves the bound
+  // instant in SQL and the evaluated one in JS, and both must land on the same
+  // rows or a row create allows is one read then hides.
+  it('agrees about the clock moved by a duration', async () => {
+    const at = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString()
+    const rows = [
+      { id: 'overdue', openUntil: at(-30) },
+      { id: 'soon',    openUntil: at(24) },
+      { id: 'later',   openUntil: at(24 * 4) },
+      { id: 'month',   openUntil: at(24 * 40) },
+      { id: 'year',    openUntil: at(24 * 400) },
+      { id: 'none',    openUntil: null },
+    ]
+    const readable = async (expr: string) =>
+      (await verdicts(DOC(expr), rows, { id: 'u1' })).readable
+    for (const expr of [
+      `openUntil > now() && openUntil < now() + 2d`,
+      `openUntil < now() - 1d`,
+      `openUntil < now() + 1mo`,
+      `openUntil < now() + 1yr`,
+      `openUntil >= now() + 90min`,
+    ]) {
+      expect({ expr, disagreed: await agree(DOC(expr), rows, { id: 'u1' }) }).toEqual({ expr, disagreed: [] })
+    }
+    expect([...await readable(`openUntil > now() && openUntil < now() + 2d`)]).toEqual(['soon'])
+    expect([...await readable(`openUntil < now() - 1d`)]).toEqual(['overdue'])
+    expect([...await readable(`openUntil < now() + 1mo`)].sort()).toEqual(['later', 'overdue', 'soon'])
+  })
+
+  it('a duration offset works in @@scope and in a field @allow', async () => {
+    const at = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString()
+    const db: any = await createClient({ db: ':memory:', schema: `
+model Task {
+  id    Int       @id
+  dueAt DateTime?
+  note  String?   @allow('read', dueAt != null && dueAt < now() + 2d)
+  @@scope(soon, dueAt > now() && dueAt < now() + 2d)
+}` })
+    const sys = db.asSystem()
+    await sys.task.create({ data: { id: 1, dueAt: at(24),     note: 'a' } })
+    await sys.task.create({ data: { id: 2, dueAt: at(24 * 4), note: 'b' } })
+
+    expect((await sys.task.findMany({ where: { $scope: 'soon' } })).map((r: any) => r.id)).toEqual([1])
+    const seen = await db.$setAuth({ id: 'u1' }).task.findMany({ orderBy: { id: 'asc' } })
+    expect(seen.map((r: any) => [r.id, r.note ?? null])).toEqual([[1, 'a'], [2, null]])
+    db.$close()
+  })
+
   it('agrees through a check() delegation, in both directions', async () => {
     const schema = `
 model Team {

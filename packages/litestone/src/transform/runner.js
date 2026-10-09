@@ -31,7 +31,13 @@ const rowCount = (before, after) => {
 const queryRows = (db, tableName) =>
   db.query(`SELECT * FROM "${tableName}"`).all()
 
-function rebuildTable(db, tableName, rows, columns, foreignKeys = []) {
+// A NULL cannot go into a NOT NULL column, and a @unique one rejects a constant,
+// so a required column's redaction is the row's ordinal: unrelated to the value
+// it replaces, distinct per row, and numeric where the column is (FJS-2063).
+const NUMERIC_TYPE = /INT|REAL|FLOA|DOUB|NUM|DEC|BOOL/i
+const redactedPlaceholder = (type, n) => NUMERIC_TYPE.test(type ?? '') ? n : `[redacted-${n}]`
+
+function rebuildTable(db,tableName, rows, columns, foreignKeys = []) {
   // Read indexes before we drop the table — filter out any that reference dropped columns
   const existingColNames = new Set(columns.map(c => c.name))
   const indexes = db.query(
@@ -56,10 +62,18 @@ function rebuildTable(db, tableName, rows, columns, foreignKeys = []) {
     .filter(fk => existingColNames.has(fk.from))
     .map(fk => `FOREIGN KEY ("${fk.from}") REFERENCES "${fk.table}"("${fk.to}")`)
 
-  const allDefs = [...colDefs, ...fkDefs].join(', ')
+  // A UNIQUE written inside CREATE TABLE is an autoindex with NULL sql, so the
+  // carry-over above never sees it; it and STRICT are read from the pragmas.
+  const uniqueDefs = db.query(`SELECT name FROM pragma_index_list(?) WHERE origin = 'u'`).all(tableName)
+    .map(ix => db.query(`SELECT name FROM pragma_index_info(?) ORDER BY seqno`).all(ix.name).map(c => c.name))
+    .filter(cols => cols.length > 0 && cols.every(c => existingColNames.has(c)))
+    .map(cols => `UNIQUE (${cols.map(c => `"${c}"`).join(', ')})`)
+  const strict = db.query(`SELECT strict FROM pragma_table_list(?) WHERE schema = 'main'`).get(tableName)?.strict === 1
+
+  const allDefs = [...colDefs, ...uniqueDefs, ...fkDefs].join(', ')
 
   db.run(`DROP TABLE IF EXISTS "${tableName}__new"`)
-  db.run(`CREATE TABLE "${tableName}__new" (${allDefs})`)
+  db.run(`CREATE TABLE "${tableName}__new" (${allDefs})${strict ? ' STRICT' : ''}`)
 
   if (rows.length > 0) {
     const colNames     = columns.map(c => c.name)
@@ -269,9 +283,10 @@ function applyOpsToTable(db, tableName, ops, schema) {
     else if (op._type === 'redactBlock') {
       const targets = resolveRedactColumns(op.mode, op.cfg, tableName).filter(n => columns.find(col => col.name === n))
       if (targets.length === 0) continue
-      rows = rows.map(r => {
+      const required = new Map(columns.filter(c => targets.includes(c.name) && c.notnull).map(c => [c.name, c.type]))
+      rows = rows.map((r, i) => {
         const patched = { ...r }
-        for (const n of targets) patched[n] = null
+        for (const n of targets) patched[n] = required.has(n) ? redactedPlaceholder(required.get(n), i + 1) : null
         return patched
       })
       const label = op.mode ? op.mode : 'SECRETS+PERSONAL'

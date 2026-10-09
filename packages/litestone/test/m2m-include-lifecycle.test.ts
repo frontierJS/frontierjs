@@ -98,3 +98,34 @@ test('an m2m _count counts what the include returns', async () => {
   expect(m._count).toEqual({ tasks: 1, holds: 1, forms: 1 })
   db.$close()
 })
+
+// FJS-2096: the count takes the relation's where, as the has-many count does.
+test('an m2m _count takes its where, alone and beside the lifecycle', async () => {
+  const { db } = await makeTestClient(`
+model Message {
+  id    Int    @id
+  tasks Task[]
+}
+
+model Task {
+  id        Int       @id
+  title     String
+  deletedAt DateTime?
+  messages  Message[]
+  @@softDelete
+}
+`)
+  await db.task.create({ data: { id: 1, title: 'a' } })
+  await db.task.create({ data: { id: 2, title: 'b' } })
+  await db.task.create({ data: { id: 3, title: 'a' } })
+  await db.message.create({ data: { id: 1, tasks: { connect: [{ id: 1 }, { id: 2 }, { id: 3 }] } } })
+  const count = async (spec: any) => {
+    const [m] = await db.message.findMany({ include: { _count: { select: spec } } }) as any[]
+    return m._count
+  }
+  expect(await count({ tasks: { where: { title: 'a' } } })).toEqual({ tasks: 2 })
+  expect(await count({ tasks: true, onlyA: { relation: 'tasks', where: { title: 'a' } } })).toEqual({ tasks: 3, onlyA: 2 })
+  await db.task.remove({ where: { id: 3 } })
+  expect(await count({ tasks: { where: { title: 'a' } } })).toEqual({ tasks: 1 })
+  db.$close()
+})

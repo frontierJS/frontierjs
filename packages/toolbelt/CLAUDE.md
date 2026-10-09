@@ -137,7 +137,11 @@ src/bearer/          what a bearer secret looks like at rest — `fingerprint`
                      and cost the hot path (`FJS-D339`). Ships a `.d.ts` —
                      junction's resolver is TypeScript
 src/signature/       what a signed machine-to-machine request is — canonical
-                     string, sign, verify. Three signers existed and no verifier
+                     string, sign, verify. Three signers existed and no verifier.
+                     Also `mintToken`/`readToken`: a short, case-safe token over
+                     ONE id for a plus-address — lower-case Crockford base32, an
+                     80-bit MAC over `purpose:id`, expiry read from the id's ULID
+                     (`FJS-1941`)
 src/trace/           what a W3C `traceparent` says — `parseTraceparent`.
                      Junction derives a request's correlation id from it and
                      conduit continues the trace with it, so a header one
@@ -172,7 +176,14 @@ src/predicate/       the `.lite` expression language, whole. `tokenize.js` is th
                      `@frontierjs/ui` may reach litestone's internals.
                      `compileSql` and this are still the two halves an oracle
                      holds together, so a second CALLER is not `FJS-195`'s third
-                     compilation (`FJS-D259`)
+                     compilation (`FJS-D259`). `values.js` is the same language
+                     as TEXT that yields VALUES (a stored template's `{{ … }}`):
+                     `parseText` makes the cursor and refuses trailing tokens,
+                     `assertValues` refuses `auth()`, `now()`, `check()`,
+                     `.some()` and any name off the caller's closed list (own
+                     keys only), and `evaluateValues` grades again before it
+                     answers, because `evaluate`'s resolver defaults are a
+                     policy's (`FJS-1998`)
 src/search/          ranked fuzzy matching, adapted from quick-score (MIT,
                      `LICENSE` beside it). Two callers, both in @frontierjs/ui:
                      CommandPalette and MultiSelect. `rank`'s `words` and

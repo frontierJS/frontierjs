@@ -3,8 +3,8 @@
 // named `stripeKey` into the copy untouched, and nulled a company's public
 // `email` that is nobody's personal data.
 //
-// Every redacted column here is optional: redact() writes NULL, and a required
-// one fails the copy's NOT NULL (FJS-2063).
+// An optional column redacts to NULL; a required one to a per-row placeholder
+// (FJS-2063).
 
 import { describe, test, expect, beforeAll } from 'bun:test'
 import { Database } from 'bun:sqlite'
@@ -101,5 +101,50 @@ describe('redact() reads the schema', () => {
     await expect(execute(configWith('pii', `$.all.redact()`, `export const redact = { PII: ['email'] }\n`),
       { verbose: false, outputPath: join(TMP, 'pii.db'), schemaPath }, run))
       .rejects.toThrow(/"PII" is not a mode/)
+  })
+})
+
+// FJS-2063: under FJS-D657 the commonest target is a REQUIRED @unique column.
+describe('redact() over a required column', () => {
+  const REQUIRED = `
+    model Member {
+      id    Int    @id
+      email String @personal @unique
+      age   Int    @personal
+      name  String
+    }
+  `
+  const reqSchemaPath = join(TMP, 'required.lite')
+  const reqDbPath     = join(TMP, 'required-source.db')
+
+  beforeAll(() => {
+    writeFileSync(reqSchemaPath, REQUIRED)
+    const r = parse(REQUIRED)
+    if (!r.valid) throw new Error(r.errors.join('\n'))
+    const db = new Database(reqDbPath)
+    for (const s of splitStatements(generateDDL(r.schema))) if (!s.startsWith('PRAGMA')) db.run(s)
+    db.run(`INSERT INTO member (id, email, age, name) VALUES (1, 'a@person.test', 31, 'Ann'), (2, 'b@person.test', 44, 'Bo')`)
+    db.close()
+  })
+
+  test('a NOT NULL column gets a placeholder that survives @unique, and the real value is gone', async () => {
+    const out = join(TMP, 'required.db')
+    const cfg = join(TMP, 'required.js')
+    writeFileSync(cfg,
+      `import { $ } from '${FRAMEWORK}'\n` +
+      `export const db = '${reqDbPath}'\n` +
+      `export const pipeline = [$.all.redact()]\n`)
+    await execute(cfg, { verbose: false, outputPath: out, schemaPath: reqSchemaPath }, run)
+    const db = new Database(out, { readonly: true })
+    const rows = db.query('SELECT * FROM member ORDER BY id').all() as any[]
+    db.close()
+    expect(rows.length).toBe(2)
+    expect(rows[0].email).not.toBe(null)
+    expect(rows[0].email).not.toBe(rows[1].email)
+    expect(JSON.stringify(rows)).not.toContain('person.test')
+    expect(rows.map(r => r.age)).not.toContain(31)
+    expect(rows.map(r => r.age)).not.toContain(44)
+    expect(rows.every(r => r.age != null)).toBe(true)
+    expect(rows.map(r => r.name)).toEqual(['Ann', 'Bo'])
   })
 })

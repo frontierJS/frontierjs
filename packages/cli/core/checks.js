@@ -126,7 +126,7 @@ export const RULES = [
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a service reads the request-scoped client, not the module one' },
   { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: 6,
-    title: 'asSystem() off the app client crosses tenants; off the request client it does not' },
+    title: 'asSystem() off the app client crosses tenants; with no row tenancy, any asSystem() in a service crosses users' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
   { id: 'battery-raw-secret',   scope: 'app',  severity: 'warn',  invariant: null,
@@ -2045,18 +2045,23 @@ const CHECKS = {
   // inside a request, where the symptom is silent: rows from every tenant with
   // a 200.
   'service-as-system': ({ root }) => {
-    // Only under `strategy row`. With no tenancy block there is no claim to
-    // lose, and under `strategy database` one client IS one file, so a system
-    // context physically cannot reach a second tenant — the hazard does not
-    // exist and every finding would be noise. `example` is that case.
+    // Under `strategy database` one client IS one file, so a system context
+    // physically cannot reach a second tenant — the hazard does not exist and
+    // every finding would be noise. `example` is that case.
+    //
+    // With no tenancy block there is no claim for any client to keep, so the
+    // request's own client is no safer than the app's: every elevation in a
+    // service crosses every user, and is reported whichever client it names.
+    // Generated apps declare none (their scoping is membership policies), and
+    // skipping them left every elevation in them unseen.
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
     // Comments blanked first. basecamp's own schema explains the feature in a
     // doc comment — *declared once in the `tenancy { }` block below* — and a
     // raw match reads that empty pair as the declaration and skips the app.
     const block = readCode(schema.path).match(/\btenancy\s*\{[^}]*\}/s)
-    if (!block)                            return { skipped: 'no tenancy block — nothing to scope' }
-    if (!/\bstrategy\s+row\b/.test(block[0])) return { skipped: 'strategy database — one client is one tenant' }
+    const untenanted = !block
+    if (block && !/\bstrategy\s+row\b/.test(block[0])) return { skipped: 'strategy database — one client is one tenant' }
 
     // Everything under `services/`, not just `*.service.*`. A helper module
     // beside a service runs in the same call scope and carries the identical
@@ -2103,11 +2108,23 @@ const CHECKS = {
       for (const m of code.matchAll(/\.asSystem\s*\(/g)) {
         const recv = receiverAt(code, m.index)
         if (!recv) continue
-        if (REQUEST.test(recv) || local.has(recv)) continue
+        if (!untenanted && (REQUEST.test(recv) || local.has(recv))) continue
 
         const line = lineOf(code, m.index)
         if (seen.has(line)) continue
         seen.add(line)
+        if (untenanted) {
+          findings.push({
+            file: path, line,
+            message: `${recv}.asSystem() lifts the caller's gate and every row policy, and this app ` +
+                     `declares no row tenancy, so nothing keeps the result inside the caller's rows: it ` +
+                     `reads and writes EVERY user's, with a 200. If the step is bounded and meant — a ` +
+                     `write on the caller's own behalf that their grade cannot make — this is correct and ` +
+                     `this warning is the place to say so. Otherwise read through the caller's own client ` +
+                     `with the policies on, and elevate the one step that needs it.`,
+          })
+          continue
+        }
         findings.push({
           file: path, line,
           message: `${recv}.asSystem() elevates a client that carries no principal, so it carries no ` +

@@ -15,7 +15,7 @@ const db = await createClient({
     endpoint:        process.env.S3_ENDPOINT,
     accessKeyId:     process.env.S3_KEY,
     secretAccessKey: process.env.S3_SECRET,
-    keyPattern:      ':model/:id/:field/:uuid.:ext',  // object key template
+    keyPattern:      ':model/:field/:uuid.:ext',  // object key template
     dev:             'local',   // fallback to ./storage/ when no endpoint
   })]
 })

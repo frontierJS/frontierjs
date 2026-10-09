@@ -783,13 +783,13 @@ export function status(db, dir = './migrations') {
 // Diffs live db against pristine schema.
 // Returns: { state: 'in-sync' | 'pending' | 'drift', ... }
 
-export function verify(db, parseResult, dir = './migrations', { pluralize = false } = {}) {
+export function verify(db, parseResult, dir = './migrations', { pluralize = false, dbName = 'main' } = {}) {
   const pristineDb     = openDatabase(':memory:')
-  const pristineSchema = buildPristine(pristineDb, parseResult)
+  const pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
   pristineDb.close()
 
   const liveSchema = introspect(db)
-  const diffResult = diffSchemas(pristineSchema, liveSchema, parseResult, 'main', { pluralize })
+  const diffResult = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
 
   // A residue is not drift the migration system can resolve, so the state stays
   // `in-sync` and the leftovers ride along — a caller that does not read them

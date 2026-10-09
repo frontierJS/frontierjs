@@ -9,7 +9,7 @@ export interface FileStorageOptions {
   accessKeyId?:     string
   secretAccessKey?: string
   publicBase?:      string
-  keyPattern?:      string   // default: ':model/:id/:field/:date-:filename'
+  keyPattern?:      string   // default: ':model/:field/:uuid.:ext'
   region?:          string
   // provider: 'local' — read by storage/providers/local.js and undeclared
   // here, so the local branch of every dev config was a type error.

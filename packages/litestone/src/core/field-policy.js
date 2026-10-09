@@ -3,7 +3,7 @@
 // the value withheld or refused, per row, for the caller asking.
 
 import { ValidationError } from './validate.js'
-import { referencesRow, evalJs } from './policy.js'
+import { referencesRow, evalJs, atOneInstant } from './policy.js'
 import { decryptField } from './encryption.js'
 
 // ─── Field policy ─────────────────────────────────────────────────────────────
@@ -157,8 +157,11 @@ export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'l
       // the context, which is one principal — `$setAuth` builds a NEW ctx
       // rather than reassigning `auth` — and is keyed by `ctx.auth` anyway, so
       // a context that ever did reassign it invalidates instead of going stale.
+      //
+      // The interpreter reads the clock off the context it is handed, and a
+      // bare one has none: `now()` answered NULL and the field vanished.
       visible = hoistedFieldRead(ctx, allow.read) ?? allow.read.some(expr =>
-        evalJs(expr, ctx, out, modelName, 'read')
+        evalJs(expr, atOneInstant(ctx), out, modelName, 'read')
       )
     }
 

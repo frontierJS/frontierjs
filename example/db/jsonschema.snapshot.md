@@ -311,7 +311,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `description` | `string`? | — | — | — | — |
 | `status` | `FlowStatus` = `"draft"` | — | — | — | — |
 | `currentVersion` | `integer`? | — | — | `x-litestone-write-policy` | — |
-| `ownerId` | `string` | — | — | — | — |
+| `ownerId` | `string` | — | — | `x-litestone-kind` | — |
 | `runsPerMinute` | `integer`? | — | — | `minimum: 1` | — |
 | `maxWrites` | `integer` = `1000` | — | — | `minimum: 0` | — |
 
@@ -329,7 +329,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `flowId` | `string` | yes | — | — | — |
 | `version` | `integer` | yes | — | — | — |
 | `definition` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `authorId` | `string`? | — | — | — | — |
+| `authorId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `flowId`, `version`, `definition` · not accepted — `id`
 
@@ -1325,6 +1325,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `key` | `string` | yes | — | — | — |
+| `name` | `string` | — | — | — | — |
 | `bucket` | `string` | yes | — | — | — |
 | `provider` | `string` | yes | — | — | — |
 | `endpoint` | `string`? | — | — | — | — |

@@ -49,6 +49,24 @@ const SOURCES = [
   'filter($.cart.items, i => gt(i.qty, 0))',
   'reduce($.cart.items, 0, (acc, i) => add(acc, mul(i.price, i.qty)))',
 
+  // the two value-assembling forms (`FJS-D513`)
+  '``',
+  '`plain`',
+  '`Release failed: ${$.trigger.record.toImage}`',
+  '`${$.a}${$.b}`',
+  "`${'x'}${'y'}`",
+  "`${$.a > 1 ? 'big' : 'small'} and ${upper($.name)}`",
+  '`a \\${not a hole} and a \\` backtick and a \\\\ backslash`',
+  '`outer ${`inner ${$.a}`} end`',
+  "`brace in a string ${'}'} still closes`",
+  '`${5}`',
+  '{}',
+  '{ title: `Lead ${$.lead.name}`, n: $.lead.score }',
+  "{ 'a key': 1, b: { c: $.x } }",
+  "map($.items, i => { id: i.id, label: `#${i.id}` })",
+  '$.a == 1 ? { a: 1 } : { a: 2 }',
+  '$.a > 1 && `x` == `x`',
+
   // ternaries, including the nesting the grammar's right-associativity buys
   "$.lead.data.tier == 'gold' ? 'vip' : 'standard'",
   "$.a > 3 ? 'high' : $.a > 1 ? 'mid' : 'low'",
@@ -130,11 +148,9 @@ describe('a dropped bracket changes the answer, which is what the trip is for', 
 describe('what has no text form says so rather than guessing', () => {
   const none = (expr: unknown) => expressionToText(expr as never)
 
-  test('the six shapes the shared grammar has no syntax for', () => {
+  test('the four shapes the shared grammar has no syntax for', () => {
     for (const [expr, word] of [
-      [{ type: 'template', parts: [] },        'template'],
       [{ type: 'array',    items: [] },        'array'],
-      [{ type: 'object',   properties: {} },   'object'],
       [{ type: 'pipe',     steps: [] },        'pipeline'],
       [{ type: 'let',      bindings: {}, body: { type: 'literal', value: 1 } }, 'let'],
       [{ type: 'match',    value: { type: 'literal', value: 1 }, cases: [] },   'match'],
@@ -188,11 +204,31 @@ describe('what a stored definition actually holds', () => {
     })).toEqual({ text: "eq($.trigger.record.status, 'failed')" })
   })
 
-  test('and the template beside them does not, which is the gap FJS-1209 names', () => {
-    const answered = expressionToText({
+  test('and so does the template beside them (FJS-D513)', () => {
+    expect(expressionToText({
       type: 'template',
       parts: [{ type: 'literal', value: 'Release failed: ' }, { type: 'ref', path: '$.trigger.record.toImage' }],
-    })
-    expect(answered.text).toBe(null)
+    })).toEqual({ text: '`Release failed: ${$.trigger.record.toImage}`' })
+  })
+
+  test('an object writes its keys bare when it can and quoted when it must', () => {
+    expect(expressionToText({
+      type: 'object',
+      properties: { title: { type: 'literal', value: 'x' }, 'a key': { type: 'ref', path: '$.a' } },
+    })).toEqual({ text: "{ title: 'x', 'a key': $.a }" })
+  })
+
+  test('a template part that would merge with its neighbor stays a hole', () => {
+    expect(expressionToText({
+      type: 'template',
+      parts: [{ type: 'literal', value: 'a' }, { type: 'literal', value: 'b' }],
+    })).toEqual({ text: "`a${'b'}`" })
+  })
+
+  test('an empty key is quoted, since a bare one is not a name', () => {
+    expect(expressionToText({
+      type: 'object',
+      properties: { '': { type: 'literal', value: 1 } },
+    }).text).toBe("{ '': 1 }")
   })
 })

@@ -78,6 +78,12 @@ function compile(ast: Ast): Expression {
     case 'ref':      return { type: 'ref', path: ast.path }
     case 'ternary':  return { type: 'cond', if: compile(ast.cond), then: compile(ast.then), else: compile(ast.else) }
     case 'call':     return call(ast)
+    case 'template': return { type: 'template', parts: ast.parts.map(compile) }
+    case 'object':
+      return {
+        type: 'object',
+        properties: Object.fromEntries(ast.properties.map((e: Ast) => [e.key, compile(e.value)])),
+      }
     default:
       throw new Error(`orion: cannot compile expression node "${ast.type}"`)
   }

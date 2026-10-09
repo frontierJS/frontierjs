@@ -1079,7 +1079,7 @@ async function cmdVerify(cfg) {
     for (const { name, rawDb, migrationsDir } of dbs) {
       if (multi) console.log(`  ${cyan(name)}`)
 
-      const result = verify(rawDb, parseResult, migrationsDir)
+      const result = verify(rawDb, parseResult, migrationsDir, { dbName: name, pluralize: cfg.pluralize })
 
       if (result.state === 'in-sync') {
         console.log(`  ${green('✓')}  ${multi ? name + ': ' : ''}${result.message}\n`)

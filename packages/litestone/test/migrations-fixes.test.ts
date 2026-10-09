@@ -936,3 +936,32 @@ model Post {
     expect((await apply(db, dir)).failed).toBeUndefined()
   })
 })
+
+// FJS-2124 — verify() compared every database against main's models.
+describe('verify on a secondary database', () => {
+  const schemaText = `
+    database main { path ":memory:" }
+    database sync { path ":memory:" }
+    model Doc  { id Int @id  n String  @@db(main) }
+    model Pull { id Int @id  at String @@db(sync) }
+  `
+
+  test('a fully migrated secondary database is in sync, and drift in it is still drift', async () => {
+    const { parse } = await import('../src/core/parser.js')
+    const { createForDatabase, apply, verify } = await import('../src/core/migrations.js')
+    const result = parse(schemaText)
+    const dir    = tempDir('verify-secondary')
+    const db     = new Database(':memory:')
+
+    createForDatabase(db, result, 'sync', 'init', dir)
+    await apply(db, dir)
+
+    expect(verify(db, result, dir, { dbName: 'sync' }).state).toBe('in-sync')
+
+    db.run('ALTER TABLE pull ADD COLUMN extra TEXT')
+    const v = verify(db, result, dir, { dbName: 'sync' })
+    expect(v.state).toBe('drift')
+    expect(v.diff).not.toContain('doc')
+    db.close()
+  })
+})

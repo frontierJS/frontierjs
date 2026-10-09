@@ -137,3 +137,66 @@ describe('the compiled shape', () => {
     })
   })
 })
+
+// `FJS-D513`: the two value-assembling forms of the shared grammar.
+describe('template and object', () => {
+  test('a template interpolates any expression, and a number or a ternary reads as text', () => {
+    expect(run('`Hello, ${$.lead.data.tier}!`', CART)).toBe('Hello, gold!')
+    expect(run('`${$.trigger.body.amount} units`', CART)).toBe('120 units')
+    expect(run("`tier: ${$.lead.data.tier == 'gold' ? 'vip' : 'standard'}`", CART)).toBe('tier: vip')
+    expect(run('`${upper(trim($.trigger.body.email))}`', CART)).toBe('ADA@EXAMPLE.COM')
+  })
+
+  test('a template compiles to the node the resolver already runs', () => {
+    expect(compileExpression('`a ${$.x} b`')).toEqual({
+      type: 'template',
+      parts: [
+        { type: 'literal', value: 'a ' },
+        { type: 'ref', path: '$.x' },
+        { type: 'literal', value: ' b' },
+      ],
+    })
+    expect(compileExpression('``')).toEqual({ type: 'template', parts: [] })
+  })
+
+  test('escapes: a backslash, a backtick and a dollar-brace are text', () => {
+    expect(run('`a \\${b} \\` \\\\`')).toBe('a ${b} ` \\')
+    expect(run('`$5 and {x}`')).toBe('$5 and {x}')
+  })
+
+  test('a template nests, and a brace inside a string does not close a hole', () => {
+    expect(run('`o ${`i ${$.lead.data.tier}`} e`', CART)).toBe('o i gold e')
+    expect(run("`${'}'}`")).toBe('}')
+  })
+
+  test('an unclosed hole is refused with the position', () => {
+    expect(() => compileExpression('`a ${$.x`')).toThrow(/Unterminated|unclosed/i)
+    expect(() => compileExpression('`a ${}`')).toThrow(/line 1/)
+    expect(() => compileExpression('`a ${$.x $.y}`')).toThrow(/line 1/)
+  })
+
+  test('an object builds from expressions, keys bare or quoted', () => {
+    expect(run('{ title: `Lead ${$.lead.data.tier}`, n: $.trigger.body.amount, \'a key\': true }', CART))
+      .toEqual({ title: 'Lead gold', n: 120, 'a key': true })
+    expect(run('{}')).toEqual({})
+    expect(compileExpression('{ a: 1 }')).toEqual({
+      type: 'object',
+      properties: { a: { type: 'literal', value: 1 } },
+    })
+  })
+
+  test('an object refuses a repeated key and a key with no value', () => {
+    expect(() => compileExpression('{ a: 1, a: 2 }')).toThrow(/'a'.*twice|repeated|duplicate/i)
+    expect(() => compileExpression('{ a }')).toThrow(/line 1/)
+  })
+
+  test('an object may be a lambda body and a ternary branch', () => {
+    expect(run('map($.cart.items, i => { total: mul(i.price, i.qty) })', CART))
+      .toEqual([{ total: 600 }, { total: 0 }, { total: 100 }])
+    expect(run("$.lead.data.tier == 'gold' ? { vip: true } : { vip: false }", CART)).toEqual({ vip: true })
+  })
+
+  test('inside a condition they are values the resolver fills', () => {
+    expect(run("`x${$.lead.data.tier}` == 'xgold'", CART)).toBe(true)
+  })
+})

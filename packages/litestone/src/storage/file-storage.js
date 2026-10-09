@@ -15,7 +15,7 @@
 //       endpoint:        process.env.S3_ENDPOINT,
 //       accessKeyId:     process.env.S3_KEY,
 //       secretAccessKey: process.env.S3_SECRET,
-//       keyPattern:      ':model/:id/:field/:uuid.:ext',
+//       keyPattern:      ':model/:field/:uuid.:ext',
 //       dev:             'local',
 //     })]
 //   })
@@ -125,10 +125,19 @@ function isFileValue(v) {
 
 // ─── Extract bytes from any file value ───────────────────────────────────────
 
+// The name the bytes arrived under, kept on the ref for a Content-Disposition.
+// The key cannot carry it (it keeps [a-z0-9_-]), and a name is the sender's
+// string: a path or a control character in it would reach a download header.
+function displayName(raw) {
+  if (typeof raw !== 'string') return undefined
+  const name = raw.split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 255)
+  return name || undefined
+}
+
 async function readValue(value, fieldName, model) {
   if (typeof File !== 'undefined' && value instanceof File) {
     const bytes = new Uint8Array(await value.arrayBuffer())
-    return { bytes, mime: value.type || 'application/octet-stream', filename: value.name || fieldName, size: bytes.length }
+    return { bytes, mime: value.type || 'application/octet-stream', filename: value.name || fieldName, name: displayName(value.name), size: bytes.length }
   }
   if (value instanceof Blob) {
     const bytes = new Uint8Array(await value.arrayBuffer())
@@ -146,7 +155,7 @@ async function readValue(value, fieldName, model) {
     const { path } = value
     if (!existsSync(path)) throw new Error(`@file: file not found: ${path}`)
     const bytes = readFileSync(path)
-    return { bytes, mime: guessMime(path), filename: basename(path), size: bytes.length }
+    return { bytes, mime: guessMime(path), filename: basename(path), name: displayName(basename(path)), size: bytes.length }
   }
   if (typeof value === 'string') {
     const err = new Error(
@@ -163,7 +172,9 @@ async function readValue(value, fieldName, model) {
 
 // ─── Key pattern resolution ───────────────────────────────────────────────────
 
-function resolveKey(pattern = ':model/:id/:field/:uuid.:ext', { model, id, field, filename, type }) {
+// No `:id`: a create's row has none when the object is written, so the token
+// filed every created object under `new` (FJS-2098). `:uuid` is the identity.
+function resolveKey(pattern = ':model/:field/:uuid.:ext', { model, field, filename, type }) {
   const now  = new Date()
   // UTC: `:date` becomes part of the stored KEY, so a host-local reading files
   // an upload made at 23:30 on the 31st under the next month or the previous
@@ -182,7 +193,6 @@ function resolveKey(pattern = ':model/:id/:field/:uuid.:ext', { model, id, field
   const uuid = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
   return pattern
     .replace(':model',    model)
-    .replace(':id',       String(id ?? 'new'))
     .replace(':field',    field)
     .replace(':date',     date)
     .replace(':filename', `${name}${ext}`)
@@ -227,6 +237,13 @@ class FileStoragePlugin extends ExternalRefPlugin {
   onInit(schema, ctx) {
     super.onInit(schema, ctx)
 
+    if (/:id\b/.test(this.config.keyPattern ?? '')) {
+      throw new Error(
+        'FileStorage: keyPattern cannot name :id — a create has no id when the object is written, ' +
+        'so every created object would land under "new". Use :uuid, or :date for grouping.'
+      )
+    }
+
     const cfg = { ...this.config }
     if (!cfg.provider && !cfg.endpoint) {
       if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
@@ -246,17 +263,18 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // serialize: Buffer/File/fromPath → upload → return ref object
   async serialize(value, { field, model, id, ctx }) {
     const fieldOpts = this._fieldMap[model]?.[field] ?? {}
-    const { bytes, mime, filename, size } = await readValue(value, field, model)
+    const { bytes, mime, filename, name, size } = await readValue(value, field, model)
     // The stored type is the evidence and never the claim: `mime` is what the
     // client or the filename SAID, and it is also what gets persisted on the ref
     // and handed to the provider as `contentType`, which is what a public bucket
     // later serves under. Both must be the same answer, so it is resolved once.
     const { type, evidence } = resolveType(mime, bytes)
     checkAccept(type, fieldOpts.accept, model, field, evidence ? mime : null)
-    const key = resolveKey(this.config.keyPattern, { model, field, id, filename, type })
+    const key = resolveKey(this.config.keyPattern, { model, field, filename, type })
     await this._provider.put(key, bytes, { contentType: type, size })
     return {
       key,
+      ...(name ? { name } : {}),
       bucket:     this.config.bucket,
       provider:   this.config.provider ?? 'local',
       endpoint:   this.config.endpoint ?? null,

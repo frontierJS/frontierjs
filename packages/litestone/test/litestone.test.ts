@@ -2636,6 +2636,26 @@ describe('window functions', () => {
     expect(math.every((r: any) => r.best === 90)).toBe(true)
   })
 
+  // FJS-1992: the window's bind sits first in the text, ahead of the where's
+  test('a $raw filter binds in text order — inline', async () => {
+    const rows = await db.score.findMany({
+      where:   { category: 'math' },
+      orderBy: { id: 'asc' },
+      window:  { n: { count: 'id', partitionBy: ['category'], filter: sql`value > ${80}` } },
+    })
+    expect(rows.map((r: any) => r.n)).toEqual([2, 2, 2])
+  })
+
+  test('a $raw filter binds in text order — with limit', async () => {
+    const rows = await db.score.findMany({
+      where:   { category: 'math' },
+      orderBy: { value: 'desc' },
+      limit:   2,
+      window:  { n: { count: 'id', partitionBy: ['category'], filter: sql`value > ${80}` } },
+    })
+    expect(rows.map((r: any) => [r.id, r.n])).toEqual([[1, 2], [3, 2]])
+  })
+
   test('throws on unknown window function', async () => {
     await expect(
       db.score.findMany({ window: { x: { unknown: true } as any } })

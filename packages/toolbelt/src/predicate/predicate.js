@@ -57,6 +57,9 @@
 
 export { parseExpression, parseFlowExpression, TOKEN, OPERATORS } from './parse.js'
 export { tokenize, TK, ParseError }         from './tokenize.js'
+export { parseText, assertValues, evaluateValues } from './values.js'
+
+import { unitInfo } from '../units/units.js'
 
 // ─── three-valued logic ───────────────────────────────────────────────────────
 //
@@ -68,6 +71,27 @@ export const truth = (v) => (v === null || v === undefined ? null : Boolean(v))
 export const and3  = (l, r) => (l === false || r === false ? false : l === null || r === null ? null : true)
 export const or3   = (l, r) => (l === true  || r === true  ? true  : l === null || r === null ? null : false)
 export const not3  = (v)    => (v === null ? null : !v)
+
+// ─── the clock moved ──────────────────────────────────────────────────────────
+//
+// `now() + 2d` is the one instant a policy evaluation holds, moved. Both halves
+// get it from here -- the evaluator below, and litestone's SQL compiler as a
+// bound parameter -- so they cannot land on different rows. `mo` and `yr` are
+// calendar months and years, and a month past a short month's end overflows
+// (Jan 31 + 1mo is Mar 3), which is what SQLite's modifier does and so what a
+// `@derived` field reading the same expression already answers.
+export function shiftInstant(iso, { sign, value, unit }) {
+  if (iso === null || iso === undefined) return null
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return null
+  const info = unitInfo(unit)
+  if (info?.dimension !== 'duration') throw new Error(`Unknown duration unit in a policy offset: ${unit}`)
+  if (info.factor === null) {
+    at.setUTCMonth(at.getUTCMonth() + sign * value * (unit === 'yr' ? 12 : 1))
+    return at.toISOString()
+  }
+  return new Date(at.getTime() + sign * value * info.factor * 1000).toISOString()
+}
 
 // ─── SQLite's comparison, in the interpreter that has JavaScript's ────────────
 //
@@ -211,6 +235,7 @@ export function evaluate(node, env = {}) {
     case 'check':   return resolveCheck(node)
     case 'some':    return resolveSome(node)
     case 'now':     return now
+    case 'shift':   return shiftInstant(ev(node.expr), node)
 
     case 'auth':
       return node.field ? claimOf(node.field) : auth

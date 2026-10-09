@@ -28,9 +28,12 @@
 //             or a filter answers `upsert` with `UniqueConflictError`, as
 //             `create` does: the insert collides and the update reaches
 //             nothing, which answered `null` having written nothing (FJS-2029)
-//   -         the verb cannot be formed against this rule (says why)
+//   -         the verb does not meet this rule, by design. `softDelete` ×
+//             `delete`/`deleteMany`: a hard delete is the purge hatch and
+//             reaches soft-deleted rows (internals.md § Reads)
 //   ###:on    known defect FJS-### — asserted STILL BROKEN, so a fix turns this
-//             file red and says to promote the cell
+//             file red and says to promote the cell. `D###:OFF` is the same
+//             for an open ruling (`FJS-D685`: a write ignores the global filter)
 //
 // ─── why one schema per RULE ──────────────────────────────────────────────────
 //
@@ -66,9 +69,9 @@ const GRID = `
 rule         | findMany findFirst findUnique findFirstOrThrow findUniqueOrThrow count exists findManyAndCount aggregate groupBy findManyCursor select update upsert remove delete updateMany upsertMany removeMany deleteMany
 gate         | on       on        on         on                on                on    on     on               on        on      on             on     on     on     on     on     on         on         on         on
 policy       | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         on         on         on
-softDelete   | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         ref        on         on
-templates    | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         on         on         on
-globalFilter | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         on         on         on
+softDelete   | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     -      on         ref        on         -
+templates   | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         on         on         on
+globalFilter | on       on        on         on                on                on    on     on               on        on      on             on     D685:OFF ref  D685:OFF D685:OFF D685:OFF D685:OFF D685:OFF D685:OFF
 `
 
 // ─── the fixtures ─────────────────────────────────────────────────────────────
@@ -185,9 +188,9 @@ function parseGrid(text: string) {
     if (vals.length !== verbs.length)
       throw new Error(`grid row "${rule}" has ${vals.length} cells for ${verbs.length} verbs`)
     vals.forEach((v, i) => {
-      const m = v.match(/^(\d+):(on|ref)$/)
+      const m = v.match(/^(D?\d+):(on|ref|OFF)$/)
       cells.set(`${rule}.${verbs[i]}`, m
-        ? { code: m[2] as 'on' | 'ref', issue: `FJS-${m[1]}` }
+        ? { code: m[2] as Cell['code'], issue: `FJS-${m[1]}` }
         : { code: v as Cell['code'] })
     })
   }
@@ -199,10 +202,13 @@ const { verbs, cells } = parseGrid(GRID)
 /** What actually happened, in the grid's own vocabulary. */
 async function observe(db: any, rule: Rule, verb: string): Promise<Cell['code'] | string> {
   const sys  = db.asSystem()
-  const wide = { ...(rule.soft ? { withDeleted: true } : {}), ...(rule.tmpl ? { withTemplates: true } : {}) }
-  await sys.doc.deleteMany({ where: {}, ...wide })
+  // The snapshot is raw SQL: `asSystem()` lifts neither the soft-delete, the
+  // template nor the app's global filter, so a snapshot through an accessor is
+  // blind to exactly the row a rule hides and every write cell reads `on`.
+  await sys.sql`DELETE FROM doc`
   for (const r of rule.rows) await sys.doc.create({ data: r })
-  const snap = async () => (await sys.doc.findMany(wide)).map((r: any) => ({ title: r.title, live: !r.deletedAt }))
+  const snap = async () =>
+    (await sys.sql`SELECT * FROM doc ORDER BY id`).map((r: any) => ({ id: r.id, title: r.title, live: !r.deletedAt }))
   const before = await snap()
 
   try {
@@ -216,9 +222,15 @@ async function observe(db: any, rule: Rule, verb: string): Promise<Cell['code'] 
     await w.run(rule.caller(db).doc)
     if (rule.refuses) return 'OFF'
     const after = await snap()
+    // A row is `live`, `dead` (soft-deleted) or absent; a removal is any step
+    // down that ladder, so a hard delete of an already-soft-deleted row counts.
+    const state = (rows: typeof before, id: number) => {
+      const r = rows.find(x => x.id === id)
+      return r ? (r.live ? 2 : 1) : 0
+    }
     const moved = w.gone
-      ? before.filter(r => r.live).length - after.filter(r => r.live).length
-      : after.filter(r => r.title === 'zzz').length - before.filter(r => r.title === 'zzz').length
+      ? before.filter(r => state(after, r.id) < state(before, r.id)).length
+      :after.filter(r => r.title === 'zzz').length - before.filter(r => r.title === 'zzz').length
     return w.aim === 'hidden'
       ? (moved === 0 ? 'on' : 'OFF')
       : (moved === 1 ? 'on' : moved === 2 ? 'OFF' : `?${moved}`)

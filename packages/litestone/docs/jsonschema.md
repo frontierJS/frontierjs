@@ -188,7 +188,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-sortable` | field | **ABSENT means sortable.** A string says why not: `array` \| `json` \| `file` \| `encrypted` \| `hashed` \| `computed` \| `transient` | a generated table header |
 | `x-filterable` | field | **ABSENT means filterable.** A string says why not: `computed` \| `transient` \| `encrypted` | a generated filter bar |
 | `x-litestone-file` | `FileRef` def | `true` — marks the def as a file ref, not a user `type` | junction (maps it to `any`), `fli` |
-| `x-litestone-kind` | field | `'version'` \| `'computed'` \| `'generated'` \| `'from'` \| `'system'` \| `'transient'` | junction (`liftTransient`), tests |
+| `x-litestone-kind` | field | `'version'` \| `'computed'` \| `'generated'` \| `'from'` \| `'system'` \| `'transient'` \| `'stamped'` | junction (`liftTransient`), toolbelt `make()` (`'stamped'` — a writable `@default(auth().x)` column, left out of a blank record so the stamp applies; `FJS-2108`), tests |
 | `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)` | nothing yet |
 | `x-litestone-accept` | field | the `@accept("image/png,image/jpeg")` **string**, verbatim — not an array | tests only |
 | `x-litestone-policies` | model | `true` when the model has any `@@allow`/`@@deny` | nothing yet |

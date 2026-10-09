@@ -314,3 +314,101 @@ async function assertRejects(fn, pattern) {
   assert.ok(threw, 'expected a rejection, got none')
   assert.match(threw.message, pattern)
 }
+
+// ── A token in a plus-address ────────────────────────────────────────────────
+// FJS-1941: `support+<token>@` must fit a 64-octet local part and survive a
+// server folding its case, which a signed HTTP request does neither of.
+
+import { mintToken, readToken } from '../../src/signature/signature.js'
+
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+/** A ULID minted at `ms`: ten time characters, sixteen fixed ones. */
+function ulidAt(ms) {
+  let t = '', n = ms
+  for (let i = 0; i < 10; i++) { t = CROCKFORD[n % 32] + t; n = Math.floor(n / 32) }
+  return t + '0123456789ABCDEF'
+}
+const MINT_MS = 1_700_000_000_000
+const ULID    = ulidAt(MINT_MS)
+const TOK     = { secret: 'a-reply-secret', purpose: 'mail.reply-token.v1' }
+
+test('token: a minted token reads back as the id it names', async function () {
+  const token = await mintToken({ id: ULID, ...TOK })
+  assert.deepEqual(await readToken(token, TOK), { ok: true, id: ULID.toLowerCase() })
+})
+
+test('token: 26 + 16 characters, so `support+` fits a 64-octet local part with room', async function () {
+  const token = await mintToken({ id: ULID, ...TOK })
+  assert.equal(token.length, 42)
+  assert.ok(('support+' + token).length <= 64)
+})
+
+test('token: the alphabet is lower-case Crockford, and a server that folds case still verifies it', async function () {
+  const token = await mintToken({ id: ULID, ...TOK })
+  assert.ok(/^[0-9a-hjkmnp-tv-z]+$/.test(token), token)
+  assert.equal((await readToken(token.toUpperCase(), TOK)).ok, true)
+})
+
+test('token: the MAC is the digest truncated, and is pinned so a change to it fails here', async function () {
+  assert.equal(
+    await mintToken({ id: '01hf0000000000000000000000', ...TOK }),
+    '01hf0000000000000000000000' + PINNED_MAC,
+  )
+})
+
+test('token: one flipped character anywhere is forged, never a different record', async function () {
+  const token = await mintToken({ id: ULID, ...TOK })
+  for (const i of [0, 12, 25, 26, 41]) {
+    const flipped = token.slice(0, i) + (token[i] === '0' ? '1' : '0') + token.slice(i + 1)
+    const out = await readToken(flipped, TOK)
+    assert.equal(out.ok, false, `position ${i}`)
+    assert.equal(out.reason, 'forged', `position ${i}`)
+  }
+})
+
+test('token: another secret or another purpose does not verify (purpose separation)', async function () {
+  const token = await mintToken({ id: ULID, ...TOK })
+  assert.equal((await readToken(token, { ...TOK, secret: 'other' })).reason, 'forged')
+  assert.equal((await readToken(token, { ...TOK, purpose: 'mail.unsubscribe.v1' })).reason, 'forged')
+})
+
+test('token: a string that cannot be one is malformed, not forged', async function () {
+  for (const bad of ['', 'abc', 'u'.repeat(42), 'support+x', ULID.toLowerCase() + '!'.repeat(16)]) {
+    const out = await readToken(bad, TOK)
+    assert.equal(out.reason, 'malformed', JSON.stringify(bad))
+  }
+})
+
+test('token: with a ttl the id\'s own ULID time is the expiry, and now is the caller\'s', async function () {
+  const token = await mintToken({ id: ULID, ...TOK })
+  const mintedS = MINT_MS / 1000
+  const day = 86_400
+  assert.equal((await readToken(token, { ...TOK, now: mintedS + 29 * day, ttlSeconds: 30 * day })).ok, true)
+  const late = await readToken(token, { ...TOK, now: mintedS + 31 * day, ttlSeconds: 30 * day })
+  assert.deepEqual(late, { ok: false, reason: 'expired' })
+})
+
+test('token: a forged token is forged even when it is also old', async function () {
+  const token = await mintToken({ id: ULID, ...TOK })
+  const out = await readToken(token.slice(0, 41) + (token[41] === '0' ? '1' : '0'), { ...TOK, now: MINT_MS / 1000 + 10 ** 7, ttlSeconds: 1 })
+  assert.equal(out.reason, 'forged')
+})
+
+test('token: refuses what it cannot make safe — no secret, no purpose, an id outside the alphabet, a ttl with no clock', async function () {
+  await assertRejects(() => mintToken({ id: ULID, purpose: 'p' }), /secret is required/)
+  await assertRejects(() => mintToken({ id: ULID, secret: 's' }), /purpose is required/)
+  await assertRejects(() => mintToken({ id: 'has space', ...TOK }), /Crockford/)
+  await assertRejects(() => mintToken({ id: '', ...TOK }), /id is required/)
+  const token = await mintToken({ id: ULID, ...TOK })
+  await assertRejects(() => readToken(token, { ...TOK, ttlSeconds: 60 }), /now is required/)
+  await assertRejects(() => readToken(token, { ...TOK, ttlSeconds: 60, now: Date.now() }), /milliseconds/)
+})
+
+test('token: a ttl on an id that is not a ULID is refused, not read as time zero', async function () {
+  const token = await mintToken({ id: 'abc123', ...TOK })
+  const out = await readToken(token, { ...TOK, now: 1_700_000_000, ttlSeconds: 60 })
+  assert.equal(out.ok, false)
+  assert.equal(out.reason, 'malformed')
+})
+
+const PINNED_MAC = 'adn7te721mqg4pgz'

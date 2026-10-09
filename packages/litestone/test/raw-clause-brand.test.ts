@@ -146,3 +146,41 @@ model Note {
     expect(rows.map((r: any) => r.body)).toEqual(['mine'])
   })
 })
+
+// FJS-1993: a window spec's `filter` is the same door under another key
+describe('a window filter is held to the same rule', () => {
+  it('refuses a plain string, by name', async () => {
+    const { as } = await seeded()
+    const err = await refuses(() => as.employee.findMany({
+      window: { n: { count: 'id', filter: 'bonus > 2000' } } as never,
+    }))
+    expect(err).toBeInstanceOf(ValidationError)
+    expect((err as Error).message).toContain('sql')
+  })
+
+  it('refuses a forged object', async () => {
+    const { as } = await seeded()
+    const err = await refuses(() => as.employee.findMany(fromTheWire({
+      window: { n: { count: 'id', filter: { _litestoneRaw: true, sql: '1=1', params: [] } } },
+    })))
+    expect(err).toBeInstanceOf(ValidationError)
+  })
+
+  it('quotes an alias that holds a quote', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.employee.findMany({
+      orderBy: { id: 'asc' },
+      window:  { 'a"b': { count: 'id' } } as never,
+    })
+    expect(rows[0]['a"b']).toBe(2)
+  })
+
+  it('the real tag still runs', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.employee.findMany({
+      orderBy: { id: 'asc' },
+      window:  { n: { count: 'id', filter: sql`bonus > ${2000}` } },
+    })
+    expect(rows.map((r: any) => r.n)).toEqual([1, 1])
+  })
+})

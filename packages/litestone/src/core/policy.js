@@ -38,7 +38,7 @@ import { NOW_SQL, rawClause }  from './query.js'
 // compilation: `compileSql` below and this are still the two halves an oracle
 // holds together (`verifyRowPolicies`, `test/policy-interpreters.test.ts`), and
 // the browser runs these same bytes.
-import { evaluate as evalPredicate, compare, truth, and3, or3, not3 } from '@frontierjs/toolbelt/predicate'
+import { evaluate as evalPredicate, compare, truth, and3, or3, not3, shiftInstant } from '@frontierjs/toolbelt/predicate'
 
 // ─── Debug logger ─────────────────────────────────────────────────────────────
 // policyDebug: true     — logs SQL filters + denials
@@ -78,6 +78,7 @@ export function policyExprToString(node) {
     case 'ternary': return `${child(node.cond)} ? ${policyExprToString(node.then)} : ${policyExprToString(node.else)}`
     case 'auth':    return node.field ? `auth().${node.field}` : 'auth()'
     case 'now':     return 'now()'
+    case 'shift':   return `now() ${node.sign > 0 ? '+' : '-'} ${node.value}${node.unit}`
     // The generated delegation asks the parent's TENANCY and nothing else, and
     // printing it as `check(rel, 'read')` would claim the parent's whole read
     // rule — the conflation FJS-1319 was. It has no source spelling.
@@ -449,6 +450,22 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
 
 const DERIVED_SQL_OPS = { '==': '=', '!=': '!=', '<': '<', '>': '>', '<=': '<=', '>=': '>=' }
 
+// `now() + 2d` as a SQLite date modifier on the same clock NOW_SQL reads. The
+// value is a whole number the grammar parsed and the unit comes from a closed
+// table, so the modifier is spliced as a literal: a derived field is static SQL
+// and has no parameters to bind it to. `mo` and `yr` are SQLite's calendar
+// months and years, which clamp nothing -- Jan 31 + 1mo is Mar 3.
+const SQLITE_MODIFIER = {
+  ms: ['seconds', 0.001], s: ['seconds', 1], min: ['minutes', 1], h: ['hours', 1],
+  d: ['days', 1], wk: ['days', 7], mo: ['months', 1], yr: ['years', 1],
+}
+
+function nowShifted(n) {
+  const [unit, per] = SQLITE_MODIFIER[n.unit]
+  const amount = +(n.sign * n.value * per).toFixed(3)
+  return `strftime('%Y-%m-%dT%H:%M:%fZ','now','${amount > 0 ? '+' : ''}${amount} ${unit}')`
+}
+
 export function compileDerived(model, fieldName, node) {
   const bad = (msg) => {
     throw new Error(`${model.name}.${fieldName}: ${msg} — in @derived(${policyExprToString(node)})`)
@@ -461,6 +478,7 @@ export function compileDerived(model, fieldName, node) {
       case 'not':     return `(NOT ${walk(n.expr)})`
       case 'ternary': return `CASE WHEN ${walk(n.cond)} THEN ${walk(n.then)} ELSE ${walk(n.else)} END`
       case 'now':     return NOW_SQL
+      case 'shift':   return nowShifted(n)
       case 'field': {
         const f = model.fields.find(x => x.name === n.name)
         if (!f) bad(`'${n.name}' is not a field on this model`)
@@ -532,7 +550,7 @@ function inferType(model, schema, n) {
   if (!n || typeof n !== 'object') return null
   switch (n.type) {
     case 'and': case 'or': case 'not': case 'compare': return 'Boolean'
-    case 'now': return 'DateTime'
+    case 'now': case 'shift': return 'DateTime'
     case 'literal':
       if (n.value === null) return null
       if (typeof n.value === 'boolean') return 'Boolean'
@@ -1242,6 +1260,7 @@ function scalarOperand(node, ctx, modelName) {
     case 'auth':    return claimValue(ctx, node.field, modelName)
     case 'literal': return node.value
     case 'now':     return ctx._now
+    case 'shift':   return shiftInstant(ctx._now, node)
     default:        return null
   }
 }
@@ -1372,6 +1391,13 @@ function compileSql(node, params, ctx, modelName, op, visited) {
 
     case 'now':
       params.push(ctx._now)
+      return '?'
+
+    // The moved instant is bound like the instant itself, computed by the
+    // function the JS interpreter calls, so the halves cannot land on different
+    // rows.
+    case 'shift':
+      params.push(shiftInstant(ctx._now, node))
       return '?'
 
     // CASE WHEN … THEN … ELSE … END. Params are pushed in emission order —

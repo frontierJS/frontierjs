@@ -1364,8 +1364,16 @@ model Task {
 
   overdue Boolean @derived(dueAt < now() && completedAt == null)
   urgency Int     @derived(priority > 8 ? 3 : priority > 5 ? 2 : 1)
+  dueSoon Boolean @derived(dueAt >= now() && dueAt < now() + 2d && completedAt == null)
 }
 ```
+
+`now()` takes a duration offset, `+` or `-`, in the literal `@@commitment` reads:
+a whole number and a unit — `ms`, `s`, `min`, `h`, `d`, `wk`, `mo`, `yr`. Only
+`now()` takes one. It works in `@derived`, `@@allow`, `@@scope` and a field
+`@allow` alike — `@@scope(soon, dueAt < now() + 2d)` is a per-caller "due
+within 2 days". `mo` and `yr` are calendar months, so Jan 31 + 1mo is Mar 3 in
+all of them.
 
 ```js
 db.task.findMany({ where: { overdue: true }, orderBy: { urgency: 'desc' } })
