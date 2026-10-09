@@ -80,8 +80,8 @@ describe('a shared cache still answers per caller', () => {
     const svc = app.service('docs')
     // FRESH principal objects, which is what a request is — and the shape that
     // made every cache miss before. Two callers, one cache entry, two answers.
-    const a = await svc.find({}, { auth: { user: { id: 1 } } })
-    const b = await svc.find({}, { auth: { user: { id: 2 } } })
+    const a = await svc.find({}, { auth: { user: { userId: 1 } } } as never)
+    const b = await svc.find({}, { auth: { user: { userId: 2 } } } as never)
     expect(a.data.map((r: any) => r.title)).toEqual(['alice'])
     expect(b.data.map((r: any) => r.title)).toEqual(['bob'])
   })
@@ -91,14 +91,14 @@ describe('a shared cache still answers per caller', () => {
     // `_gateFor` is one of the caches being shared. If a gate answer were
     // cached per PRINCIPAL rather than per model this would pass anyway, so the
     // order is deliberate: the refused caller goes first.
-    await expect(svc.remove(1, { auth: { user: { id: 1 } } })).rejects.toThrow()
-    await expect(svc.remove(1, { auth: { user: { id: 1, isAdmin: true } } })).resolves.toBeDefined()
+    await expect(svc.remove(1, { auth: { user: { userId: 1 } } } as never)).rejects.toThrow()
+    await expect(svc.remove(1, { auth: { user: { userId: 1, isAdmin: true } } } as never)).resolves.toBeDefined()
   })
 
   test('validation still refuses, per call, on a fresh principal each time', async () => {
     const svc = app.service('docs')
     for (let i = 0; i < 3; i++)
-      await expect(svc.create({ ownerId: 1 } as never, { auth: { user: { id: 1, isAdmin: true } } }))
+      await expect(svc.create({ ownerId: 1 } as never, { auth: { user: { userId: 1, isAdmin: true } } } as never))
         .rejects.toThrow(/title/)
   })
 })
@@ -122,14 +122,14 @@ describe('the key is the schema, not the client', () => {
 
   test('a write on a fresh principal costs what a reused one costs', async () => {
     const svc = app.service('docs')
-    const admin = { id: 1, isAdmin: true }
+    const admin = { userId: 1, isAdmin: true }
     const time = async (mk: () => any, n: number) => {
       for (let i = 0; i < 3; i++) await svc.create({ title: 'w', ownerId: 1 }, { auth: { user: mk() } })
       const t0 = Bun.nanoseconds()
       for (let i = 0; i < n; i++) await svc.create({ title: 'w', ownerId: 1 }, { auth: { user: mk() } })
       return (Bun.nanoseconds() - t0) / n / 1e6
     }
-    const fresh  = await time(() => ({ id: 1, isAdmin: true }), 20)
+    const fresh  = await time(() => ({ userId: 1, isAdmin: true }), 20)
     const reused = await time(() => admin, 20)
 
     // A RATIO, not a budget: absolute numbers move with the machine and the

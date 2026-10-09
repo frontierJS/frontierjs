@@ -33,7 +33,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { spawnSync }                                                  from 'child_process'
-import { join, relative, basename, extname }               from 'path'
+import { join, relative, basename, extname, resolve, dirname } from 'path'
 
 import { singularize, modelName, camel } from '@frontierjs/toolbelt/inflect'
 import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatter'
@@ -92,7 +92,7 @@ export const RULES = [
   { id: 'file-column-storage', scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a File column has a FileStorage to store it' },
   { id: 'app-layout',           scope: 'app',  severity: 'warn',  invariant: 3,
-    title: 'db/ at the app root, and each surface a directory beside it' },
+    title: 'db/ at the app root, each surface a directory beside it, and each file in its kind\'s folder' },
   { id: 'surface-config',       scope: 'app',  severity: 'warn',  invariant: 3,
     title: 'a surface keeps its configuration in config/' },
   { id: 'mesa-compiles',        scope: 'app',  severity: 'error', invariant: null,
@@ -1058,6 +1058,8 @@ const CHECKS = {
         }
       }
     }
+
+    findings.push(...srcLayoutFindings(root))
 
     return { findings }
   },
@@ -3440,6 +3442,121 @@ function isAppRoot(root) {
   if (existsSync(join(root, 'db', 'schema.lite'))) return true
   const manifest = ['package.json', '.fli.json'].some(f => existsSync(join(root, f)))
   return manifest && SURFACES.some(d => existsSync(join(root, d)))
+}
+
+// ─── the src/ layout (FJS-D625, FJS-D626, FJS-D627) ───────────────────────────
+
+// Files `fli new` writes loose in web/src. A declaration file is not a module.
+const WEB_SRC_LOOSE_OK = new Set(['main.js', 'main.ts', 'datetime.js'])
+const WEB_SRC_KINDS    = new Set(['routes', 'resources', 'components'])
+// A surface folded into web/ is reported once already, by name, above.
+const WEB_SRC_REPORTED = new Set(['Embeds', 'harbor'])
+const LOADED_SUFFIX    = { services: /\.service\.(ts|js|mjs)$/, jobs: /\.job\.(ts|js|mjs)$/, notifications: /\.notification\.(ts|js|mjs)$/ }
+const IMPORT_RE        = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"`](\.{1,2}\/[^'"`\n]*)['"`]/g
+
+const rel = (root, p) => relative(root, p).split('\\').join('/')
+const stem = p => p.replace(/\.(d\.)?(ts|js|mjs|mts|cjs|cts|mesa)$/, '')
+
+/** The paths a file's relative imports resolve to, each with its stem. */
+function relativeImports(file) {
+  let text = ''
+  try { text = stripComments(readFileSync(file, 'utf8')) } catch { return [] }
+  return [...text.matchAll(IMPORT_RE)].map(m => resolve(dirname(file), m[1]))
+}
+
+/**
+ * Where `src/` puts things, graded as a warning. Kind first, area second
+ * (`FJS-D625`): a file goes in the folder named for its kind, so these are the
+ * ways a file is in the wrong one. Every check is a path or an import; none
+ * reads what the code means, which is why a file can still be moved by a person
+ * who disagrees, and why a baseline allowance (`FJS-D508`) is the answer rather
+ * than a pragma.
+ */
+function srcLayoutFindings(root) {
+  const findings = []
+  const warn = (file, message) => findings.push({ file: join(root, file), message })
+
+  // web/src: loose modules and misplaced .mesa files.
+  const webSrc = join(root, 'web', 'src')
+  for (const name of safeRead(webSrc)) {
+    const full = join(webSrc, name)
+    let st
+    try { st = statSync(full) } catch { continue }
+    if (!st.isFile() || WEB_SRC_LOOSE_OK.has(name) || name.endsWith('.d.ts')) continue
+    if (name === 'App.mesa' || extname(name) === '.mesa' || !SCRIPT_EXT.has(extname(name))) continue
+    warn(rel(root, full), `a module loose in web/src/. Every JavaScript module that is not a route, resource or ` +
+      `component goes in web/src/lib/<area>/ (state only the browser has: web/src/stores/). main.js and ` +
+      `App.mesa are the files \`fli new\` writes here, and the rest are found by kind, not by being beside them (FJS-D625).`)
+  }
+  for (const file of sources(root, ['.mesa'], 'web/src')) {
+    const parts = relative(webSrc, file).split(/[\\/]/)
+    if (parts.length === 1 && parts[0] === 'App.mesa') continue
+    if (parts.length > 1 && (WEB_SRC_KINDS.has(parts[0]) || WEB_SRC_REPORTED.has(parts[0]))) continue
+    warn(rel(root, file), `a .mesa file outside routes/, resources/ and components/. Every .mesa file that is ` +
+      `not a route or a resource goes in web/src/components/<area>/ (FJS-D625, FJS-D382).`)
+  }
+
+  const apiSrc  = join(root, 'api', 'src')
+  const apiJs   = scripts(root, 'api/src')
+  const inside  = (dir, file) => !relative(dir, file).startsWith('..')
+
+  // A raw route belongs where its path is its URL (FJS-D626).
+  const routesDir = join(apiSrc, 'routes')
+  for (const file of apiJs) {
+    if (inside(routesDir, file)) continue
+    let text = ''
+    try { text = stripComments(readFileSync(file, 'utf8')) } catch { continue }
+    if (!/\bapp\.(get|post)\s*\(\s*['"`]\//.test(text)) continue
+    warn(rel(root, file), `a raw route outside api/src/routes/. \`app.get\` and \`app.post\` live in ` +
+      `api/src/routes/, where a file's path is the URL it answers and an outsider can read a webhook's ` +
+      `address off the tree (FJS-D626).`)
+  }
+
+  // A helper in a loader's folder is private to the files beside it (FJS-D625).
+  const imported = new Map()
+  for (const file of apiJs) for (const target of relativeImports(file)) {
+    if (!imported.has(target)) imported.set(target, [])
+    imported.get(target).push(file)
+  }
+  for (const [kind, loaded] of Object.entries(LOADED_SUFFIX)) {
+    for (const file of apiJs) {
+      if (!inside(join(apiSrc, kind), file) || loaded.test(file)) continue
+      const base = stem(file)
+      const importers = [...imported].filter(([target]) => stem(target) === base || (basename(base) === 'index' && target === dirname(file)))
+        .flatMap(([, from]) => from).filter(from => dirname(from) !== dirname(file))
+      if (!importers.length) continue
+      warn(rel(root, file), `a helper in ${kind}/ imported from another folder (${rel(root, importers[0])}). A file ` +
+        `without the loaded suffix is private to the files beside it; once another folder imports it, it is ` +
+        `domain logic and moves to api/src/domain/<area>/ (FJS-D625).`)
+    }
+  }
+
+  // core/ sets up what the framework ships; a plugin the app wrote is not that.
+  for (const file of apiJs) {
+    if (!inside(join(apiSrc, 'core'), file)) continue
+    let text = ''
+    try { text = stripComments(readFileSync(file, 'utf8')) } catch { continue }
+    const typed = /import\s*(type\s*)?\{[^}]*\bPlugin(Fn|Input)?\b[^}]*\}\s*from\s*['"]@frontierjs\/junction/.test(text)
+    const shaped = /export\s+(const|function)\s+\w+\s*(=\s*)?\(?\s*app\s*:\s*App\b/.test(text)
+    if (!/\bexport\b/.test(text) || !(typed || shaped)) continue
+    warn(rel(root, file), `a core/ file that exports a plugin. core/ sets up what the framework ships; a plugin ` +
+      `the app wrote goes in api/src/plugins/, which app.ts installs one by one because order matters (FJS-D625).`)
+  }
+
+  // A surface never imports another by relative path (FJS-D627).
+  for (const surface of SURFACES) {
+    for (const file of sources(root, [...SCRIPT_EXT, '.mesa'], `${surface}/src`)) {
+      for (const target of relativeImports(file)) {
+        const other = SURFACES.find(s => s !== surface && inside(join(root, s), target))
+        if (!other) continue
+        warn(rel(root, file), `${surface}/ imports ${other}/ by relative path. Surfaces are peers (Invariant 3): ` +
+          `the side that runs the file owns it, and the other surface gets its output through a service (FJS-D627).`)
+        break
+      }
+    }
+  }
+
+  return findings
 }
 
 /** Every file of the given extensions under the named directories, in tree order. */

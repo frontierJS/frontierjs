@@ -4,6 +4,10 @@
 
 `FileStorage` moved from litestone's main entry to its storage subpath, and the comment in `src/doubles.ts` that names where it comes from now says so.
 
+## 2026-10-07 — `env.as(row)` is refused, naming `session()` (`FJS-1890`)
+
+`env.as(user)` binds whatever it is given. Handed a User row, it ran every call with the caller's id at `id`, where every service reads `$.me.userId`. Junction now refuses a principal with no `userId` at the one place an internal call's principal is resolved, so the binder needs no check of its own. `test/testing.test.ts` pins that the refusal reaches a test and names `session({ userId })`.
+
 ## 2026-09-20 — the bun floor is `1.4.0`
 
 `engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range

@@ -1015,8 +1015,10 @@ export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
     }
 
     if (n.type === 'Identifier') {
-      // Skip non-computed property names (obj.name) but NOT computed keys (obj[name])
-      const skip = parentKey === 'key'
+      // Skip non-computed property names (obj.name, { name: v }) but NOT computed
+      // keys (obj[name], { [name]: v }) — a skipped computed key keys the object
+      // by the signal itself, '[object Object]', with no error (FJS-1917).
+      const skip = (parentKey === 'key' && !n._isComputedProp)
                || parentKey === 'params'
                || (parentKey === 'property' && !n._isComputedProp)
       if (!skip) {
@@ -1033,6 +1035,12 @@ export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
     // Mark computed MemberExpression property identifiers before walking them
     if (n.type === 'MemberExpression' && n.computed && n.property?.type === 'Identifier') {
       n.property._isComputedProp = true
+    }
+    if (
+      (n.type === 'Property' || n.type === 'MethodDefinition' || n.type === 'PropertyDefinition') &&
+      n.computed && n.key?.type === 'Identifier'
+    ) {
+      n.key._isComputedProp = true
     }
 
     for (const k of Object.keys(n)) {

@@ -32,7 +32,7 @@ Covered: **18 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| `fli check` | `app-layout` | db/ at the app root, and each surface a directory beside it |
+| `fli check` | `app-layout` | db/ at the app root, each surface a directory beside it, and each file in its kind's folder |
 | `fli check` | `surface-config` | a surface keeps its configuration in config/ |
 | `fli check` | `surface-src` | a surface keeps its source in src/, and only its entry beside it |
 

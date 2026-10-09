@@ -581,3 +581,31 @@ describe('a call that has ended (FJS-687)', () => {
     expect(before).toBe(during)
   })
 })
+
+describe('$.me — one spelling of the caller', () => {
+  // A principal handed in as a User row put the id at `id`, where a session
+  // puts it at `userId`. A service reading `$.me.userId` got null for every
+  // such caller and passed every test written with a session (`FJS-1890`).
+  const echo = () => createService({
+    name: 'whoami', methods: ['find'],
+    find() { return [{ userId: ($.me as any)?.userId ?? null }] },
+  } as never)
+
+  test('an internal call made as a session reads $.me.userId', async () => {
+    const res: any = await app(echo()).service('whoami').find({}, { auth: { user: alice } })
+    expect(res.data[0].userId).toBe('alice')
+  })
+
+  test('a principal with no userId is refused by name, never run as a caller with no id', async () => {
+    const a = app(echo())
+    await expect(a.service('whoami').find({}, { auth: { user: { id: 'u1', role: 'user' } } } as never))
+      .rejects.toThrow(/auth\.user has no 'userId'/)
+    await expect(a.service('whoami').call('find', null, null, { auth: { user: { id: 'u1' } } } as never))
+      .rejects.toThrow(/session\(\{ userId \}\)/)
+  })
+
+  test('null still means as nobody, and absent still inherits', async () => {
+    const res: any = await app(echo()).service('whoami').find({}, { auth: { user: null } })
+    expect(res.data[0].userId).toBe(null)
+  })
+})

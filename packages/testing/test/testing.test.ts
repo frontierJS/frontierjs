@@ -158,6 +158,16 @@ describe('createTestEnv — the API tier', () => {
     await e.close()
   })
 
+  test('a User row bound as the principal is refused, naming session()', async () => {
+    // A row puts the caller's id at `id` and a session at `userId`; bound as
+    // given, every service reading `$.me.userId` saw no caller while the gate
+    // and the row policy saw one (`FJS-1890`).
+    const e = await env()
+    await expect(e.as({ id: 'u-member', role: 'member' }).service('leads').find())
+      .rejects.toThrow(/auth\.user has no 'userId'[\s\S]*session\(\{ userId \}\)/)
+    await e.close()
+  })
+
   test('OPTS_AT covers every method Junction`s caller actually has', async () => {
     // The table is a hand copy of a signature list in another package, which is
     // the shape that drifts. This is the assertion that notices — it asks a real
