@@ -40,8 +40,9 @@ answer that drifts.
 ```
 
 **A stated prop always wins, including a falsy one** — `required={false}` beats
-a schema that says required, and `label=""` suppresses the label. Only
-`undefined` means *not stated*.
+a schema that says required, and `label=""` suppresses the label. `undefined`
+and `null` both mean *not stated*, so a nullable column handed straight to a
+prop falls back to the schema; `''`, `false` and `0` are answers.
 
 ---
 

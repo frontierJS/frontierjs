@@ -93,6 +93,12 @@ beforeAll(async () => {
     api: ({ db, path }: any) => buildBasecampApp({ db, dbPath: path }),
   })
   app = env.app
+  // Every step of a provision and a destroy is driven by hand below. With the
+  // queue running, `servers.provision` and `servers.destroy` also dispatch the
+  // jobs that drive the same steps: they race the assertions, and a provision
+  // asleep in its 5 s poll at `env.close` outlasts caravan's shutdown grace and
+  // the hook's timeout together (FJS-1173).
+  app.jobs.queue('fleet').pause({ reason: 'compute.test drives the steps itself' })
 
   const sys  = env.system as any
   const uniq = Math.random().toString(36).slice(2, 8)

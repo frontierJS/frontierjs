@@ -1,7 +1,8 @@
 <script>
   // ConfirmationPopover.mesa
   // Inline confirmation before a destructive action, anchored to the trigger.
-  // Portaled to body so it works inside overflow:hidden containers.
+  // Portaled out of the trigger's tree so it works inside overflow:hidden
+  // containers — into the open <dialog> around it, or <body>.
   //
   // The panel itself is `ConfirmPanel.mesa`, shared with `ConfirmProvider` —
   // this file is the trigger and the open/closed state, and nothing else.

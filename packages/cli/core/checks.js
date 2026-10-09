@@ -1578,6 +1578,9 @@ const CHECKS = {
       }
 
       if (!/\bcreateBaseService\b/.test(code)) continue
+      // `model: null` is junction's word for "there is none" (FJS-D628): the
+      // derived layer is the method gates alone, so there is no @@gate to miss.
+      if (/\bmodel\s*:\s*null\b/.test(code)) continue
       if (resolves(service)) continue
 
       // No edit: a model the schema holds under this name would have resolved,

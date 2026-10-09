@@ -293,6 +293,23 @@ await check(
   },
 )
 
+// `null` and `undefined` are unstated; every other falsy value is an answer
+// (`FJS-1441`). `optionsError=""` is therefore how a caller says *no error*
+// over a control's own fetch, and AGENTS.md says so.
+{
+  const { stated } = await import('../utils.js')
+  const answers = {
+    'null falls through':             stated(null, 'own') === 'own',
+    'undefined falls through':        stated(undefined, 'own') === 'own',
+    'a falsy value is stated':        stated(false, true) === false && stated(0, 1) === 0 && stated('', 'x') === '',
+    'nothing stated is undefined':    stated(undefined, null) === undefined,
+  }
+  for (const [what, ok] of Object.entries(answers)) {
+    cases++
+    if (!ok) { console.error(`✗ stated()\n    ${what}`); failed++ }
+  }
+}
+
 // ── Standing alone, nothing changes ─────────────────────────────────────────
 
 await check(

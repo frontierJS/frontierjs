@@ -227,6 +227,11 @@ export let quantity = 1        // parent writes, component reads and writes
 export let selected            // no default — undefined until parent provides
 ```
 
+**`undefined` means not given, so the declared default applies; an explicit `null` is how a
+caller clears it.** `<Logo source={settings.image} />` with no `image` renders the default,
+at mount and on every later push, in the browser and in a server render — the split
+Invariant 9 makes for a patch. It holds for `export let`, `export const` and `export var`.
+
 ### 3.2 `export const` — Immutable Prop
 
 What `export let` compiles to, minus the setter: the same tracked signal, with the
@@ -1338,8 +1343,11 @@ which is a parameterized slot and the only form that can take parameters:
   const tipId = 'tip-' + crypto.randomUUID()
 </script>
 <div id={tipId} role="tooltip">{@render children?.(tipId)}</div>
+```
 
+```html
 <!-- Parent -->
+<script>import Tooltip from './Tooltip.mesa'</script>
 <Tooltip>
   {#snippet children(tipId)}<button aria-describedby={tipId}>?</button>{/snippet}
 </Tooltip>
@@ -1488,7 +1496,10 @@ export function increment() { count++ }
 
 ```html
 <!-- Parent -->
-<script>let counterRef</script>
+<script>
+  import Counter from './Counter.mesa'
+  let counterRef
+</script>
 <Counter bind:this={counterRef} />
 
 <!-- After mount: -->
@@ -1937,6 +1948,8 @@ that is not a form submit needs no hand-kept `busy`/`error` pair:
 
 ```html
 <script>
+  import Button from './Button.mesa'
+  import Alert from './Alert.mesa'
   async function remove(id) {
     await users.service.remove(id)
     goto('/users/')

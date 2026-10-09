@@ -9,11 +9,11 @@
   //
   // Give it a resource and it does all four:
   //
-  //   <Form {leads} ondone={r => goto(`/leads/${r.id}`)}>
-  //     <Input name="name" />
-  //     <Input name="email" />
-  //     <Button type="submit">Save</Button>
-  //   </Form>
+  //   <Form resource={leads} ondone={r => goto(`/leads/${r.id}`)} />
+  //
+  // A form with children writes the record only through the callbacks its
+  // controls are handed (`oninput`, `onvalue`, …): a bare `<Input name="email" />`
+  // shows the typing and submits the seed `make()` left there.
   //
   // Nothing above says what a Lead is. `createResource('leads')` read that from
   // db/schema.lite, so:
@@ -232,7 +232,13 @@
   // that is what the CHECK will see and because the person may have just picked
   // the status that makes the column required. So this one re-derives on every
   // keystroke and the one above must not.
-  $: _required = resource?.requiredFields?.(record) ?? []
+  //
+  // The write mode goes with it: on a patch a non-null column with a default is
+  // necessary too, because blanking it is refused (`FJS-2065`).
+  $: _required = resource?.requiredFields?.(
+    record,
+    method === 'patch' || (method === 'auto' && record?.[idField] != null) ? 'patch' : 'create',
+  ) ?? []
 
   // A parent that re-pushes its props sends `record: undefined` a second time —
   // which is *not stated*, not *cleared* (the same distinction Invariant 9 makes

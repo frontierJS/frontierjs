@@ -49,37 +49,65 @@ async function mountPair(childSrc, parentSrc) {
 
 const CHILD = `<script>
   export let record = {}
+  function edit() { record = { ...record, notes: 'c1' } }
 </script>
-<span class="child">{record.notes}</span>`
+<span class="child">{record.notes}</span><b on:click={edit}>edit</b>`
 
 const parentWith = ({ watch, bind }) => `<script>
   import Child from './Child.mesa'
   let draft = { notes: 'n0' }
-  let seen = 'none'
-  ${watch ? "$: draft.notes, () => { seen = draft.notes }" : ''}
+  let seen = []
+  ${watch ? '$: draft.notes, () => { seen = [...seen, draft.notes] }' : ''}
   function set() { draft = { ...draft, notes: 'n1' } }
 </script>
 <button on:click={set}>go</button>
 <p class="own">{draft.notes}</p>
-<i class="seen">{seen}</i>
+<i class="seen">{seen.join(',')}</i>
 <Child ${bind ? 'bind:record={draft}' : 'record={draft}'} />`
 
-describe('a reassigned let that is both watched by path and bound down', () => {
+/** Every console.error and console.warn while `fn` runs — the cycle guard reports there. */
+async function reported(fn) {
+  const out = []
+  const { error, warn } = console
+  console.error = console.warn = (...a) => out.push(a.map(String).join(' '))
+  try { await fn() } finally { Object.assign(console, { error, warn }) }
+  return out
+}
+
+describe('a reassigned let that is both watched by path and passed down', () => {
   for (const [label, opts] of [
     ['watch + bind:', { watch: true, bind: true }],
-    ['watch alone', { watch: true, bind: false }],
+    ['watch + a plain prop', { watch: true, bind: false }],
     ['bind: alone', { watch: false, bind: true }]
   ]) {
-    it(`${label}: the handler's reassignment renders, in parent and child`, async () => {
-      const m = await mountPair(CHILD, parentWith(opts))
-      expect.soft(m.q('.own').textContent).toBe('n0')
-      // Mounted without mount(), so there is no delegation root to dispatch to.
-      m.q('button').__click()
-      runtime.flushSync()
-      expect.soft(m.q('.own').textContent).toBe('n1')
-      expect.soft(m.q('.child').textContent).toBe('n1')
-      if (opts.watch) expect.soft(m.q('.seen').textContent).toBe('n1')
+    it(`${label}: a handler's reassignment reaches the parent, the child and the watch once`, async () => {
+      let m
+      const errors = await reported(async () => {
+        m = await mountPair(CHILD, parentWith(opts))
+        expect(m.q('.own').textContent).toBe('n0')
+        // Mounted without mount(), so there is no delegation root to dispatch to.
+        m.q('button').__click()
+        runtime.flushSync()
+      })
+      expect(errors).toEqual([])
+      expect(m.q('.own').textContent).toBe('n1')
+      expect(m.q('.child').textContent).toBe('n1')
+      if (opts.watch) expect(m.q('.seen').textContent).toBe('n1')
       m.destroy()
     })
   }
+
+  it('a child reassigning its bound prop reaches the parent and the watch', async () => {
+    let m
+    const errors = await reported(async () => {
+      m = await mountPair(CHILD, parentWith({ watch: true, bind: true }))
+      m.q('b').__click()
+      runtime.flushSync()
+    })
+    expect(errors).toEqual([])
+    expect(m.q('.own').textContent).toBe('c1')
+    expect(m.q('.child').textContent).toBe('c1')
+    expect(m.q('.seen').textContent).toBe('c1')
+    m.destroy()
+  })
 })

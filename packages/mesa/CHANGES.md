@@ -1,5 +1,45 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-08 — a `.md` file's `data-fjs-loc` names a line of the file (`FJS-1711`)
+
+An 11-line `x.md` was stamped `x.md:12:1`: the stamp is the position in the Mesa template the Markdown compiles to, which has frontmatter, the script block and remark's own newlines in front of it. `compileMd` now adds a last rehype plugin when `loc` is on that stamps each element with `line:column` from its hast position, offset by the lines ahead of the body; the compiler sees an element that arrives already stamped, prefixes the file name (`ctx.locIn`) and does not stamp it again, or drops the stamp when `loc` is off. Raw inline HTML and component tags in prose are not hast elements and still carry the template position.
+
+Proof: `test/md-loc.test.js` — heading `x.md:8:1`, paragraph, list, `{#if}` content and `strong` at their file lines past frontmatter and a script block; red at HEAD (`x.md:11:1`).
+
+## 2026-10-08 — the REPL styles its class example with scoped CSS, not Tailwind utilities (`FJS-1776`)
+
+The `tailwindStyling` example carried 22 Tailwind utility classes and told the reader utility classes work in the REPL; the Play CDN is gone from `index.html`, so it rendered unstyled. It is now `classStyling` (`ClassStyling.mesa`): the same `class:liked={liked}` toggle, `class="cta {variant}"` interpolation and `bind:value` select, styled by a scoped `<style>` with semantic class names (Invariant 13 — an example in the shop window advertises no utility layer). The `@apply` passthrough example is untouched.
+
+Proof: `test/repl.test.js` "style without a utility framework", red at HEAD on every utility class of `tailwindStyling`, green now; the existing compile-and-mount sweep covers the new source.
+
+## 2026-10-08 — `class:x` and `part:x` on a component tag are a compile error (`FJS-1929`)
+
+`<Card class:header="tight">` compiled to a prop literally named `class:header` that no component reads, so the style vanished without a word. On an element `class:x={cond}` is still the toggle; on a component both spellings are now refused in `analysis.errors`, naming `class="…"` passthrough (the child's `{class}`) as what works today and `IDEAS/child-part-styling.md` as the plan. The check sits in `makeComponent`'s prop loop, before `inspectProp`.
+
+Proof: `test/component-class-part-refused.test.js`, red at HEAD for `class:`, `part:` and the `{expr}` toggle form, with the element and plain-`class` cases pinned legal.
+
+## 2026-10-08 — a prop passed as `undefined` is not given, so the declared default applies (`FJS-1538`, `FJS-1136`)
+
+`<Logo source={settings.image} />` with no `image` rendered an empty logo. The first render read the default correctly, but the effect the parent emits right after it (`pushProps`) wrote the parent's current value into the child's signal, and `undefined` there replaced the default. A server render runs that same effect, which is why `FJS-1136` saw the two paths disagree on a literal `m={undefined}`; the browser build only looked right because the initializer read happens first.
+
+The prop registry now carries each prop's fallback: `makeExternalProperty(name, get, set, fallback)` for a default that can be written at registration, and `propDefault(name, fn)` from step 5b for one that reads the script's own declarations. `pushProps`, `$push` and `$apply` resolve `undefined` through it, untracked; `null` is still a value and clears.
+
+Proof: `test/prop-undefined-default.test.js`, red at HEAD for `let`, `const` and a deferred default over `{cfg.image}` and a literal `{undefined}`, and for the live given → `undefined` → `null` sequence. `docs/VISION.md` § 3.1 states the rule.
+
+## 2026-10-08 — a component tag that names nothing in the file is a compile error (`FJS-1495`)
+
+`<Hero />` with no import compiled clean to `Hero($$el0, …)` against an undeclared identifier. A browser threw a ReferenceError, and a prerender failed with a hint written for a browser global (`Guard the read with typeof Hero !== 'undefined'`), which ships the page with the block silently missing. `checkComponentTagsBound` in `compiler.js` now runs once the scripts and template are parsed and pushes an error naming the tag, its position and the two ways to bind it, an import or `autoImport` (Sierra injects those as real imports before the compile, so they count as bound). A name is bound when it appears as a word in either script or in the header of an `{#each}`, `{#snippet}`, `{#await}` or `{@const}`; the test is generous on purpose, because a false refusal breaks a working component and a miss only falls back to the runtime error. A member tag (`<Kit.Hero />`) is judged by its root.
+
+Proof: `test/compile-errors.test.js` § a component tag must name a binding, red at HEAD for the three refusals and green for thirteen ways of binding a name. Three `VISION.md` examples used a component without importing it; each now does, and `docs-fences` grades them. `render-component.test.js`'s negative control now expects the new message. The mesa, ui and sierra suites pass; `example`'s `verify` fails the checks `FJS-2028` already names.
+
+## 2026-10-08 — a handler that closes its own portal fires once when the portal sits inside the app (`FJS-1983`)
+
+Every delegation root worked out which nodes it owned by asking the root registry which roots lay below it on the event's path. A portal into `<body>` sits above the app's root, so this never came up. A portal into a modal `<dialog>` sits inside it, and that is the only place a panel opened from a Drawer or Modal can be seen. Then the click ran the button's handler at the dialog's root, the handler closed the portal, and the flush released that root. When the event reached the app's root, the registry no longer listed the dialog, so the button's handler ran a second time. `_makeDelegatedHandler` now keeps the set of nodes each event has been delivered to, in a `WeakMap` keyed by the event, and a root delivers to the nodes below it that are not in the set. Bubbling reaches the nearest root first, so ownership is unchanged and `FJS-833`'s wrapper between two roots still fires. Proof: `test/browser/runtime/specs/nested-portal.spec.mjs`, which counted 2 per click before the change and 1 after. `nested-roots` and `delegation` stay green.
+
+## 2026-10-08 — a path-watched let passed to a child follows its reassignment (`FJS-2093`)
+
+A `let` with a `$:` path watch compiled to `let $$proxy_x`, which an effect reassigned when the signal changed, and every read of `x` became a read of that variable. A path read (`x.notes`) went through the proxy and subscribed to the path's signal, but a bare read subscribed to nothing. That covers a prop pushed to a child, `{x}` and `$inspect(x)`. So `<Child record={draft} />` kept the object from before `draft = { ...draft, notes }`. With `bind:` the child then wrote that stale object back, and this is how ela's inspection form saw the parent "never re-render" and its watch read the old value. The proxy is now a memo over the let's signal (`$$proxy_x()`), so every read follows a reassignment. The effect beside it only fires the path signals, which a watch group still subscribes through alone. A watch handler reads its value untracked, so a reassignment runs it once and not once per subscription. `bindProp` unwraps a watch proxy to its raw target before calling the parent's setter. Otherwise the echo of the proxy the parent handed down was wrapped into a new proxy and pushed down again, until the cycle guard abandoned the flush. Proof: `test/watch-bind-reassign.test.js`, whose three cases with a watch fail on the pre-fix compiler and runtime. 460 `.mesa` files in packages and example compile and parse, and 5 of them take the new shape.
+
 ## 2026-10-08 — a const reading a member of a call's handle warns that it is read once (`FJS-1969`)
 
 `const list = r.list()` stays eager under FJS-D212, so a static `const` over one of its members (`[...list.rows]`, `list.loading && …`, `list.rows[0]`) is computed once at setup. The handle's getters read signals, so ela's board sat on "Loading" with its rows present, and its settings page said a row was missing that was there. Nothing said so. `analyzeScript` now warns for each top-level `const` that is not derived and reads, outside any function, a member of a binding whose initializer's value is a call. The warning names `$: x = …` to follow the value. It also names destructuring at the call (`const { port } = load()`) for when one read is meant, which is the quiet spelling: that form names no handle to read through. A call through the handle is already derived and stays quiet, and so does a handle that is itself derived. Over the 1149 `.mesa` files in packages, example and fjs-prototypes it fires 4 times, all in prototypes and all the read-once shape. Proof: `test/const-promotion.test.js` § a const reading a member of a call-result handle, whose first case fails at HEAD.

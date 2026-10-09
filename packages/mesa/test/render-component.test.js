@@ -648,7 +648,7 @@ describe('renderComponent — options.transformSource', () => {
     const src = "<script>\n  import Page from './Page.mesa'\n</script>\n<Page />\n"
     await expect(renderComponent(src, {
       cwd: DIR, filename: path.join(DIR, 'Entry2.mesa'),
-    })).rejects.toThrow(/Leaf is not defined/)
+    })).rejects.toThrow(/<Leaf> names nothing in this file/)
   })
 })
 

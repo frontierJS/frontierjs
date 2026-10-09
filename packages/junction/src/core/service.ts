@@ -2053,7 +2053,8 @@ export function createBaseService(
         })() as HookMap['around'],
         before: (() => {
           const out: Record<string, unknown[]> = { ...(hooks.before as Record<string, unknown[]> ?? {}) }
-          for (const [method, fns] of Object.entries(derivedHooks.before!)) {
+          // Over no model the layer is the gate alone, and has no `before`.
+          for (const [method, fns] of Object.entries(derivedHooks.before ?? {})) {
             out[method] = [
               ...(out[method] ?? []),
               ...(fns as Hook[]).filter(h => !alreadyDerived(out[method], h.name)),

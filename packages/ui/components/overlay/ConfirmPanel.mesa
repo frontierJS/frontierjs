@@ -32,6 +32,14 @@
 
   const titleId = uid('confirm-title')
 
+  // Inside the anchor's open <dialog> when it has one, <body> otherwise. A
+  // modal Drawer or Modal sits in the top layer and makes the rest of the
+  // document inert, so a panel in <body> is drawn beneath it and a click at
+  // its confirm button lands on the drawer (`FJS-1983`). Still `fixed`: an
+  // open `.dialog`/`.drawer` is `transform: none`, so the viewport stays the
+  // containing block and `placeAgainst` coordinates stay right.
+  const host = anchor?.closest?.('dialog[open]') ?? document.body
+
   const panelAnim = $.entrance({
     in:  el => el.animate(
       [{ opacity: 0, transform: 'scale(0.95) translateY(-4px)' },
@@ -86,7 +94,7 @@
 
 <mesa:window on:keydown={(e) => { if (e.key === 'Escape') oncancel?.() }} />
 
-<mesa:portal to={document.body}>
+<mesa:portal to={host}>
   <div
     bind:this={panelEl}
     class="popover stack"

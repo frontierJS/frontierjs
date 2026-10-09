@@ -1,0 +1,35 @@
+<script>
+  // confirm-in-drawer.mesa -- both confirmations opened from inside a Drawer,
+  // the place an app most often asks one: Remove card, Archive board.
+  //
+  // A Drawer is a modal <dialog> in the top layer and makes the rest of the
+  // document inert, so a panel that lands outside it is drawn beneath and
+  // cannot be clicked (FJS-1983).
+  import Drawer              from '../../../components/overlay/Drawer.mesa'
+  import ConfirmProvider     from '../../../components/overlay/ConfirmProvider.mesa'
+  import ConfirmationPopover from '../../../components/overlay/ConfirmationPopover.mesa'
+  import Button              from '../../../components/forms/Button.mesa'
+
+  let open = false
+  let ran  = []
+
+  const did = (what) => { ran = [...ran, what] }
+</script>
+
+<ConfirmProvider />
+
+<Button id="open-drawer" onclick={() => open = true}>Open</Button>
+
+<Drawer bind:open={open} title="Card">
+  <button type="button" id="remove" class="btn danger" data-confirm="Remove this card?"
+          on:click={() => did('remove')}>Remove card</button>
+
+  <ConfirmationPopover title="Archive board?" confirmLabel="Archive"
+                       onconfirm={() => did('archive')}>
+    {#snippet trigger()}
+      <Button id="archive" variant="ghost">Archive board</Button>
+    {/snippet}
+  </ConfirmationPopover>
+</Drawer>
+
+<output id="ran">{ran.join('|')}</output>

@@ -1,0 +1,25 @@
+<script>
+  // nested-portal.mesa -- a portal whose target is INSIDE this component's own
+  // root, and a button in it that closes the portal.
+  //
+  // The portal target is a delegation root nested in the app's. The click runs
+  // the button's handler at the inner root, the flush tears the portal down and
+  // releases that root, and the event then bubbles to the outer root -- which
+  // no longer sees a root below it and owns the button again. A modal <dialog>
+  // is the real shape: a confirm panel opened inside a Drawer (FJS-1983).
+  let open = false
+  let hits = 0
+  let hostEl
+</script>
+
+<button type="button" id="portal-open" on:click={() => open = true}>open</button>
+
+<div id="portal-host" bind:this={hostEl}></div>
+
+{#if open}
+  <mesa:portal to={hostEl}>
+    <button type="button" id="portal-close" on:click={() => { hits++; open = false }}>close</button>
+  </mesa:portal>
+{/if}
+
+<output id="portal-hits">{hits}</output>

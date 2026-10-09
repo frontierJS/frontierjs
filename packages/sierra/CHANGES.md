@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-08 — a list that must not repeat is refused in the browser (`FJS-1441`)
+
+`@uniqueItems` reached the schema and stopped there: `buildFieldRules` did not carry `uniqueItems`, so a repeated tag passed the form and came back from the API as a 400. The rule now carries it (a control resolver sees it beside `items`), and `validateAgainstFields` compares with `String(item)`, the same equality Litestone's validator uses. `field-rules-unique-items.test.js` builds the rules from a real `.lite`. The other halves of the row had already landed with `FJS-1822`: `items` is carried, `String[]` answers `multiselect`, and a `@default([])` list is not create-required.
+
+## 2026-10-08 — a non-null column with a default is required on a patch (`FJS-2065`)
+
+`schema.required` is the create-required set, so `extraHours Float @default(0)` was never `required` while not being `nullable` either: an edit form badged it "(Optional)" and then refused a blank, "must be a number". `blankRefused(rule, mode)` is the one answer, a patch to a non-nullable, non-`readOnly` column. `requiredFor(rule, record, mode)` reads it, `resource.requiredFields(record, mode)` lists it, and `validateAgainstFields` refuses a `null` or a blank number on a patch as "is required" instead of passing the null to a server 400. A create is unchanged. `test/field-rules-patch-required.test.js`.
+
 ## 2026-10-08 — a resource's reconnect hook is `onReconnected` (`FJS-D661`)
 
 Junction's client renamed `resync` to `reconnected`; the resource adapter's `onResync` is `onReconnected`, and the list's jitter constant is `RECONNECT_JITTER_MS`.

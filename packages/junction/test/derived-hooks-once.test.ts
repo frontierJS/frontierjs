@@ -139,3 +139,22 @@ describe('the derived layer installs once', () => {
     expect(find.every(isDerivedHook)).toBe(true)
   })
 })
+
+describe('a service over no model, through the loader', () => {
+  // `model: null` derives only the gate, so its layer has no `before` map. The
+  // loader's re-spread merged `derivedHooks.before` unguarded, and every
+  // `createBaseService({ model: null })` file threw at boot — reported as
+  // "threw while loading … Object.entries requires that input parameter not be
+  // null or undefined", and its service answered 404.
+  const noModel = () => createBaseService({
+    model: null,
+    hello: async () => 'hi',
+    methods: [{ method: 'hello', gate: 0 }],
+  } as never)
+
+  test('registers, with its gate once', () => {
+    const svc = createService({ name: 'greetings', ...(noModel() as object) } as never)
+    expect(derivedCounts(svc)['around.all']).toEqual({ gateAuth: 1 })
+    expect(Object.values(hooksOf(svc)).flat().filter(isDerivedHook)).toEqual([])
+  })
+})

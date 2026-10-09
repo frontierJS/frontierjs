@@ -1,0 +1,51 @@
+<script>
+  // form-patch-required.mesa — a non-null column with a default, on an edit.
+  //
+  // `extraHours Float @default(0)` is not in the schema's `required` list (a
+  // create may leave it to the default) and is not nullable either. The edit
+  // form must call it required, because blanking it is refused (`FJS-2065`).
+  // `buildFieldRules` is the real call `createResource` makes; what is stubbed
+  // is the network alone.
+  import Form from '../../../components/forms/Form.mesa'
+  import { buildFieldRules, formFieldList, coerceToSchema, requiredFor, blankRefused } from '@frontierjs/sierra/field-rules'
+
+  const MODEL = {
+    type: 'object',
+    required: [],
+    properties: {
+      id:         { type: 'integer', readOnly: true, title: 'Id' },
+      extraHours: { type: 'number', title: 'Extra hours', default: 0 },
+      note:       { type: ['string', 'null'], title: 'Note' },
+    },
+  }
+
+  const FIELDS = buildFieldRules(MODEL)
+
+  const RESOURCE = {
+    context: { model: 'UserDaily', service: 'userDailies', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ extraHours: 0, note: '' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    sealedFields: () => [],
+    declined: () => ({}),
+    // The same walk `createResource` does, over the same rule module.
+    requiredFields: (record, mode) =>
+      Object.entries(FIELDS)
+        .filter(([, r]) => (r['x-litestone-required-where'] || blankRefused(r, mode)) && requiredFor(r, record, mode))
+        .map(([n]) => n),
+    save: (data) => Promise.resolve(data),
+    service: {},
+  }
+
+  const ROW = { id: 1, extraHours: 2, note: 'hello' }
+</script>
+
+<div id="edit">
+  <Form resource={RESOURCE} record={{ ...ROW }} />
+</div>
+<div id="create">
+  <Form resource={RESOURCE} method="create" />
+</div>

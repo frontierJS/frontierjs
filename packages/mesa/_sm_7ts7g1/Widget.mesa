@@ -1,0 +1,10 @@
+<script>
+  function explode(reason) {
+    throw new Error('boom: ' + reason)
+  }
+
+  function trigger() {
+    explode('from the body')
+  }
+</script>
+<button>{trigger()}</button>

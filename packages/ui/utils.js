@@ -125,9 +125,11 @@ export function withheldBy(form, name) {
 /**
  * Pick the first value that was actually stated.
  *
- * `undefined` means "not stated" and everything else is a real answer,
- * including `false` and `0` — so `required={false}` beats a schema that says
- * required, and `??` is the operator rather than `||`.
+ * `undefined` and `null` mean "not stated" and everything else is a real
+ * answer, including `false`, `0` and `''` — so `required={false}` beats a
+ * schema that says required, and `??` is the operator rather than `||`. `null`
+ * is unstated so a nullable column handed to a prop falls back to the schema;
+ * `optionsError=""` is how a caller states *no error*.
  */
 export function stated(...values) {
   for (const v of values) if (v !== undefined && v !== null) return v

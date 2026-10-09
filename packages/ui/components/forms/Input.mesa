@@ -17,13 +17,15 @@
   // Shorthand (Field implicit):
   //   <Input label="Email" name="email" type="email" bind:value={email} {errors} />
   //
-  // Inside <Form>, name is enough — everything else comes from the schema:
-  //   <Form {resource}>
-  //     <Input name="email" bind:value={email} />
+  // Inside <Form>, name is enough for everything but the value — that comes
+  // from the schema, and the value is written back by the callback:
+  //   <Form {resource} bind:record={draft}>
+  //     <Input name="email" value={draft.email} oninput={(e) => write('email', e.target.value)} />
   //   </Form>
   //
-  // `bind:` takes a writable top-level `let` in the caller, so it is the local
-  // and not `record.email` — a member expression there is a compile error.
+  // `bind:value` on a local would move the box and not the form's record, which
+  // is why it is not the shape here. `bind:` takes a writable top-level `let`,
+  // never `record.email` — a member expression there is a compile error.
   //
   // `email` there gets its label, `required`, `maxlength`/`minlength` and
   // `type="email"` from db/schema.lite, and its server error from the form.
@@ -260,7 +262,7 @@
     Field reads the same rule off the same form and resolves them once. Two
     components resolving the same fact from the same source is how they drift.
     `|| undefined` because '' is a real answer here — it suppresses the label —
-    and only `undefined` means "not stated".
+    and only `undefined` and `null` mean "not stated".
   -->
   <Field
     id={inputId}

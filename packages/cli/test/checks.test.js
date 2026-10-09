@@ -2008,6 +2008,16 @@ describe('service-model', () => {
     })
     expect(only(root, 'service-model').findings).toEqual([])
   })
+
+  test('model: null is a service saying it has no model, and is judged on nothing', () => {
+    // junction's own spelling for "there is none" (FJS-D628): its derived layer
+    // is the method gates alone, so no @@gate is looked for and none is missed.
+    const root = tree('sm-null', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/ela.service.ts': base("{ model: null, methods: [{ method: 'hello', gate: 0 }] }"),
+    })
+    expect(only(root, 'service-model').findings).toEqual([])
+  })
 })
 
 

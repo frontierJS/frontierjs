@@ -95,7 +95,7 @@ function extractScript(body) {
     return ''
   })
 
-  return { script, body: rest, errors }
+  return { script, body: rest, errors, bodyStart: lead ? lead[0].length : 0 }
 }
 
 /**
@@ -167,7 +167,7 @@ const _defaultProcessor = unified()
  *   - a function (the plugin itself)
  *   - [plugin, options]  (plugin with options)
  */
-function buildProcessor(remarkPlugins = [], rehypePlugins = []) {
+function buildProcessor(remarkPlugins = [], rehypePlugins = [], lineBase = null) {
   let p = unified()
     .use(remarkParse)
     .use(remarkGfm)
@@ -185,13 +185,79 @@ function buildProcessor(remarkPlugins = [], rehypePlugins = []) {
     p = opts !== undefined ? p.use(plugin, opts) : p.use(plugin)
   }
 
+  // Last, so it stamps what the user's plugins left standing.
+  if (lineBase !== null) p = p.use(() => (tree) => stampLoc(tree, lineBase))
+
   return p.use(rehypeStringify, { allowDangerousHtml: true })
 }
 
-async function markdownToHTML(src, { remarkPlugins, rehypePlugins, path } = {}) {
+// Mesa's own `data-fjs-loc` names a line of the TEMPLATE the Markdown compiles
+// to, which is not a line of the file, so alt-click on prose opened the wrong
+// one (FJS-1711). The line of the file is only known here, from the hast
+// positions; the compiler makes the `line:column` file-relative.
+function stampLoc(node, lineBase) {
+  if (node.type === 'element' && node.position) {
+    const { line, column } = node.position.start
+    node.properties = { ...node.properties, [LOC_ATTR_PROP]: `${line + lineBase}:${column}` }
+  } else if (node.type === 'raw' && node.position) {
+    node.value = stampRawTags(node.value, node.position.start, lineBase)
+  }
+  for (const child of node.children ?? []) stampLoc(child, lineBase)
+}
+
+// Raw HTML in prose reaches the Mesa compiler as text, so its tags get the
+// template's line unless they say otherwise. Each lowercase opening tag is
+// stamped with its own place in the raw text; a component tag makes no element
+// to stamp, and a `>` inside a quoted value or a `{}` expression does not end
+// a tag.
+function stampRawTags(value, start, lineBase) {
+  let out = ''
+  let i = 0
+  while (i < value.length) {
+    if (value.startsWith('<!--', i)) {
+      const end = value.indexOf('-->', i)
+      const to = end < 0 ? value.length : end + 3
+      out += value.slice(i, to)
+      i = to
+      continue
+    }
+    if (value[i] !== '<' || !/[a-z]/.test(value[i + 1] ?? '')) {
+      out += value[i++]
+      continue
+    }
+    const name = /^<[a-z][\w:-]*/.exec(value.slice(i))[0]
+    let j = i + name.length
+    let quote = null
+    let depth = 0
+    for (; j < value.length; j++) {
+      const c = value[j]
+      if (quote) { if (c === quote) quote = null }
+      else if (c === '"' || c === "'") quote = c
+      else if (c === '{') depth++
+      else if (c === '}') depth--
+      else if (c === '>' && depth <= 0) break
+    }
+    const tag = value.slice(i, j)
+    if (/\sdata-fjs-loc[=\s>/]/.test(tag + '>')) {
+      out += name + value.slice(i + name.length, j)
+    } else {
+      const before = value.slice(0, i)
+      const nl = before.lastIndexOf('\n')
+      const line = start.line + lineBase + (before.split('\n').length - 1)
+      const column = nl < 0 ? start.column + i : i - nl
+      out += `${name} ${LOC_ATTR_PROP_NAME}="${line}:${column}"${value.slice(i + name.length, j)}`
+    }
+    i = j
+  }
+  return out
+}
+const LOC_ATTR_PROP_NAME = 'data-fjs-loc'
+const LOC_ATTR_PROP = 'dataFjsLoc'
+
+async function markdownToHTML(src, { remarkPlugins, rehypePlugins, path, lineBase = null } = {}) {
   const hasPlugins = (remarkPlugins?.length ?? 0) + (rehypePlugins?.length ?? 0) > 0
-  const processor = hasPlugins
-    ? buildProcessor(remarkPlugins, rehypePlugins)
+  const processor = hasPlugins || lineBase !== null
+    ? buildProcessor(remarkPlugins, rehypePlugins, lineBase)
     : _defaultProcessor
   // A bare string leaves `file.path` undefined, and a plugin cannot key on the
   // file it is compiling.
@@ -335,7 +401,16 @@ export async function compileMd(source, config = {}) {
   }
 
   // 2. Script block
-  const { script: scriptBlock, body: mdBody, errors: scriptErrors } = extractScript(afterFm)
+  const { script: scriptBlock, body: mdBody, errors: scriptErrors, bodyStart } = extractScript(afterFm)
+
+  // Lines of the file ahead of the Markdown body, so a hast position becomes a
+  // line of the file. Null when `loc` is off: the stamp is dev-only, and a
+  // custom processor is not worth building for nothing.
+  const locOn = config.loc ?? !!config.dev
+  const fmEnd = source.endsWith(afterFm) ? source.length - afterFm.length : Math.max(0, source.indexOf(afterFm))
+  const lineBase = locOn
+    ? source.slice(0, fmEnd + bodyStart).split('\n').length - 1
+    : null
   const innerScript = scriptBlock
     ? fixUninitialized(
         scriptBlock
@@ -355,6 +430,7 @@ export async function compileMd(source, config = {}) {
     remarkPlugins: config.remarkPlugins,
     rehypePlugins: config.rehypePlugins,
     path: config.filename ?? config.path,
+    lineBase,
   })
 
   // 5. Restore

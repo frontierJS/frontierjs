@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-08 — `compute.test.ts` pauses the `fleet` queue (`FJS-1173`, `FJS-1612`)
+
+The file drives every provision and destroy step by hand, but `servers.provision` and `servers.destroy` also dispatched the real jobs onto a running queue. They raced the assertions, and a provision asleep in its 5 s poll at `env.close` outran both caravan's shutdown grace and bun's hook timeout, which is the unnamed `afterAll` failure. `beforeAll` now pauses `fleet`, so no job runs in this file. The file passes 101/101 three times at load 10–14 and logs no job lines.
+
 ## 2026-10-08 — the retention job awaits `$retain()` (`FJS-1921`)
 
 `$retain()` resolves now, once the plugins have released what the swept rows held, so `api/src/jobs/retention.job.ts` awaits it before counting what it removed.

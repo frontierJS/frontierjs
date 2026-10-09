@@ -402,3 +402,48 @@ describe('a construct from another framework is refused by name', () => {
     expect(errors).toEqual([])
   })
 })
+
+// ─── FJS-1495 · a tag that names nothing in scope ────────────────────────────
+
+describe('a component tag must name a binding', () => {
+  // It compiled to `Hero($$el0, …)` against an undeclared identifier. The dev
+  // server shipped a ReferenceError at runtime and a prerender told the author
+  // to guard a browser global with `typeof`, which ships the page with the block
+  // silently missing.
+  it('refuses <Hero /> with no import, naming the tag and both ways to bind it', async () => {
+    const { errors } = await cx('<Hero />')
+    const msg = errors.join('\n')
+    expect(msg).toContain('<Hero>')
+    expect(msg).toContain('import Hero from')
+    expect(msg).toContain('autoImport')
+  })
+
+  it('names the tag nested in an element and inside a block', async () => {
+    const { errors } = await cx('<script>let xs = [1]</script><main>{#if xs.length}<Card />{/if}</main>')
+    expect(errors.join('\n')).toContain('<Card>')
+  })
+
+  it('names the root of a member tag', async () => {
+    const { errors } = await cx('<Menu.Item />')
+    expect(errors.join('\n')).toContain('<Menu.Item>')
+  })
+
+  it('accepts every way a name is bound', async () => {
+    const bound = [
+      "<script>import Hero from './Hero.mesa'</script><Hero />",
+      "<script module>import Hero from './Hero.mesa'</script><Hero />",
+      '<script module>export const Hero = () => {}</script><Hero />',
+      '<script>const Hero = () => {}</script><Hero />',
+      '<script>function Hero() {}</script><Hero />',
+      '<script>let { Hero } = $.props()</script><Hero />',
+      '<script>let xs = []</script>{#each xs as Item}<Item />{/each}',
+      '<script>let xs = []</script>{#each xs as x, Idx}<Idx />{/each}',
+      '{#snippet row(Cell)}<Cell />{/snippet}',
+      '{#snippet Row()}<b>x</b>{/snippet}<Row />',
+      '<script>let o = {}</script>{@const K = o.k}<K />',
+      '<script>let p = 1</script>{#await p}a{:then V}<V />{/await}',
+      "<script>import * as Kit from './kit.js'</script><Kit.Hero />",
+    ]
+    for (const src of bound) expect(await cx(src).then((r) => r.errors), src).toEqual([])
+  })
+})

@@ -2691,62 +2691,75 @@ anything that changes at runtime.`,
 <button on:click={() => bold = !bold}>Toggle bold</button>`,
   },
 
-  tailwindStyling: {
-    file: 'TailwindStyling.mesa',
+  classStyling: {
+    file: 'ClassStyling.mesa',
     group: 'Basics',
     src: `<script>
-  // Mesa's REPL includes the Tailwind Play CDN — utility classes work out of the box.
-  // Use class: directives for conditional classes.
+  // Conditional classes: class:name={cond} toggles one class, and a class
+  // attribute may interpolate an expression. Styles are scoped to the component.
 
   let liked   = false
   let count   = 0
   let variant = 'primary'
-
-  const variants = {
-    primary:  'bg-blue-600 hover:bg-blue-700 text-white',
-    success:  'bg-green-600 hover:bg-green-700 text-white',
-    danger:   'bg-red-600 hover:bg-red-700 text-white',
-  }
 </script>
 
-<div class="p-6 max-w-sm font-sans">
-  <div class="rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-    <div class="bg-gradient-to-br from-indigo-500 to-purple-600 h-32"></div>
+<div class="demo">
+  <div class="tile">
+    <div class="banner"></div>
 
-    <div class="p-4">
-      <h3 class="text-lg font-semibold text-gray-900">Mesa Component</h3>
-      <p class="text-sm text-gray-500 mt-1">Tailwind utility classes work in the REPL.</p>
+    <div class="body">
+      <h3>Mesa Component</h3>
+      <p class="note">Classes toggle with the state below.</p>
 
-      <div class="flex items-center justify-between mt-4">
+      <div class="controls">
         <button
-          class="flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border transition-colors"
-          class:border-pink-400={liked}
-          class:text-pink-600={liked}
-          class:border-gray-200={!liked}
-          class:text-gray-500={!liked}
+          class="like"
+          class:liked={liked}
           on:click={() => { liked = !liked; if (liked) count++ }}
         >
           {liked ? '♥' : '♡'} {count}
         </button>
 
-        <select
-          class="text-sm border border-gray-200 rounded px-2 py-1"
-          bind:value={variant}
-        >
+        <select bind:value={variant}>
           <option value="primary">Primary</option>
           <option value="success">Success</option>
           <option value="danger">Danger</option>
         </select>
       </div>
 
-      <button
-        class="mt-3 w-full py-2 rounded-lg text-sm font-medium transition-colors {variants[variant]}"
-      >
+      <button class="cta {variant}">
         {variant.charAt(0).toUpperCase() + variant.slice(1)} Button
       </button>
     </div>
   </div>
-</div>`,
+</div>
+
+<style>
+  .demo   { padding: 24px; max-width: 24rem; }
+  .tile   { border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
+            box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  .banner { height: 8rem; background: linear-gradient(135deg, #6366f1, #9333ea); }
+  .body   { padding: 16px; }
+  h3      { margin: 0; font-size: 1.125rem; font-weight: 600; color: #111827; }
+  .note   { margin: 4px 0 0; font-size: .875rem; color: #6b7280; }
+  .controls { display: flex; align-items: center; justify-content: space-between;
+              margin-top: 16px; }
+
+  .like { padding: 6px 12px; border: 1px solid #e5e7eb; border-radius: 999px;
+          background: none; color: #6b7280; font-size: .875rem; cursor: pointer;
+          transition: color .15s, border-color .15s; }
+  .like.liked { border-color: #f472b6; color: #db2777; }
+
+  select { padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 4px;
+           font-size: .875rem; }
+
+  .cta { width: 100%; margin-top: 12px; padding: 8px; border: 0;
+         border-radius: 8px; color: #fff; font-size: .875rem; font-weight: 500;
+         cursor: pointer; transition: background .15s; }
+  .primary { background: #2563eb; }  .primary:hover { background: #1d4ed8; }
+  .success { background: #16a34a; }  .success:hover { background: #15803d; }
+  .danger  { background: #dc2626; }  .danger:hover  { background: #b91c1c; }
+</style>`,
   },
 
   // ── Shared State ─────────────────────────────────────────────────────────────

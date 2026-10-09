@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-10-08 — `AGENTS.md` says what `stated()` does with `null` (`FJS-1441`)
+
+`AGENTS.md` and the `utils.js` comment said only `undefined` means *not stated*; the function treats `null` the same, and 57 call sites rely on it so a nullable column handed to a prop falls back to the schema. The documents now say that, and that `optionsError=""` is how a caller states *no error* over a control's own fetch. `test/form.mjs` pins the contract.
+
+## 2026-10-08 — the first `<Form>` example no longer submits what `make()` seeded (`FJS-1135`)
+
+The README's `<Form resource={leads}>` held two bare `<Input name>` and called it working; `Input.mesa`'s header showed `bind:value` on a local. Neither writes the record: a control inside a form resolves its label, rules and error from the schema, and the typed value reaches the record only through the callback it is handed. The README now leads with the generated form and shows the wired shape for a hand-written one; the `Form` and `Input` headers say the same. No mechanism was added: a form that wrote `e.target.value` for any named control would serve the four controls whose callback is an event and misfile the eleven whose value is not the element's. `test/docs-form-wiring.mjs` refuses a named control with no callback inside a `<Form>` span in the README and the `forms/` headers.
+
+## 2026-10-08 — an edit form no longer badges a non-null defaulted column "(Optional)" (`FJS-2065`)
+
+`<Form>` asks `resource.requiredFields(record, mode)` with the write mode it will make, so on a patch a column that cannot be blank is required for the badge and the control, where it read the create rule. `form-patch-required.spec`.
+
+
+## 2026-10-08 — a confirmation asked inside a Drawer or Modal opens on top of it (`FJS-1983`)
+
+`ConfirmPanel` was portaled to `<body>`. A Drawer and a Modal are modal `<dialog>`s in the top layer, and they make the rest of the document inert, so the panel was drawn beneath them. A click aimed at its confirm button hit the drawer, click-away cancelled, and nothing ran. This hit `data-confirm` and `ConfirmationPopover` alike, and ela's Remove card and Archive board found it. The panel now portals into the anchor's nearest open `<dialog>`, and into `<body>` when there is none. It stays `position: fixed`, because an open `.dialog`/`.drawer` is `transform: none` and so leaves the viewport as the containing block. Moving the panel there exposed a mesa defect: `ConfirmationPopover`'s `onconfirm` ran twice, because the portal's delegation root was released mid-click. That is fixed in mesa under the same id. Proof: `test/browser/specs/confirm-in-drawer.spec.mjs`, which had 4 of 8 red before the change. `Popover` and `DropdownMenu` still portal to `<body>`.
 
 ## 2026-10-08 — the drive reads `@frontierjs/sierra/field-rules` from sierra's `exports` (`FJS-D652`)
 

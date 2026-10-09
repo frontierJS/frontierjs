@@ -1746,29 +1746,29 @@ export function addGlobalEvent(target, event, fn, opts) {
 
 const _delegatedEventTypes = new Set()   // all event types across all components
 const _delegateRoots = new Map()          // container → Set<eventType>
+const _delivered = new WeakMap()          // event → the nodes whose handler it has run
 
 function _makeDelegatedHandler(root) {
   return function _delegatedHandler(event) {
     const prop = '__' + event.type
     const path = event.composedPath()
 
-    // Ownership is decided per NODE, not per event. The nearest registered
-    // root at or above a node owns that node's handler, so this root owns
-    // everything between itself and the deepest root below it on the path.
+    // Ownership is decided per NODE, not per event: the nearest root at or
+    // above a node delivers to it, and bubbling reaches the nearest root
+    // first. So a root delivers to every node below it the event has not
+    // already been delivered to.
     //
     // Roots nest whenever two mounted trees sit at different depths — an app
-    // at the page container, an island inside it — and the event bubbles
-    // through both. Abandoning the dispatch at the first inner root stopped
-    // the double fire (one click, two increments) and killed every handler
-    // written on a wrapper BETWEEN the two, for ever: a handler is stored on
-    // the element it was written on, and no root nearer than this one exists
-    // for it (`FJS-833`).
+    // at the page container, an island inside it, a portal into a modal
+    // <dialog> — and the event bubbles through both. Abandoning the dispatch
+    // at the first inner root killed every handler written on a wrapper
+    // BETWEEN the two (`FJS-833`). Asking the registry which roots lie below
+    // fired twice instead whenever the handler closed a portal: the flush
+    // released its root before the event reached this one (`FJS-1983`).
     let rootIndex = path.indexOf(root)
     if (rootIndex < 0) rootIndex = path.length
-    let floor = -1
-    for (let i = rootIndex - 1; i >= 0; i--) {
-      if (_delegateRoots.has(path[i])) { floor = i; break }
-    }
+    let delivered = _delivered.get(event)
+    if (!delivered) _delivered.set(event, delivered = new Set())
 
     // `currentTarget` is the element the handler is WRITTEN on, which is what
     // it means under addEventListener and what every handler assumes. One
@@ -1778,10 +1778,11 @@ function _makeDelegatedHandler(root) {
     // per node and dropped again after, so a native listener further up the
     // same dispatch still reads its own.
     try {
-      for (let i = floor + 1; i < rootIndex; i++) {
+      for (let i = 0; i < rootIndex; i++) {
         const node = path[i]
         const handler = node[prop]
-        if (handler) {
+        if (handler && !delivered.has(node)) {
+          delivered.add(node)
           Object.defineProperty(event, 'currentTarget', { configurable: true, get: () => node })
           batch(() => handler(event))
           if (event.cancelBubble) break
@@ -2437,7 +2438,7 @@ export function makeComponent(init) {
         batch(() => {
           for (const name in props) {
             const p = registry.get(name)
-            if (p) p.set(props[name])
+            if (p) p.set(givenProp(p, props[name]))
           }
         })
       },
@@ -2454,7 +2455,7 @@ export function makeComponent(init) {
         if (!source) return
         batch(() => {
           for (const [name, p] of registry) {
-            if (name in source) p.set(source[name])
+            if (name in source) p.set(givenProp(p, source[name]))
           }
         })
       },
@@ -5506,7 +5507,15 @@ export function bindProp(anchor, name, setParent) {
     )
     return
   }
-  createEffect(() => { setParent(prop.get()) })
+  // A parent whose `let` has path watches hands down its watch proxy. Echoed
+  // back as-is, the signal took the proxy, the proxy was wrapped again into a
+  // new object and pushed down again, until the cycle guard abandoned the
+  // flush (`FJS-2093`). Its raw target is what the parent holds, so the echo
+  // stops at the signal's equality check.
+  createEffect(() => {
+    const v = prop.get()
+    setParent(_proxyTarget.get(v) ?? v)
+  })
 }
 
 export function pushProps(anchor, newProps) {
@@ -5533,8 +5542,9 @@ export function pushProps(anchor, newProps) {
       // pushProps always delivers a plain value, never an updater function.
       // Without this, passing a snippet function as a prop calls it with the
       // current signal value as __anchor → TypeError: can't read before.
-      if (p.directWrite) p.directWrite(newProps[name])
-      else p.set(newProps[name])
+      const value = givenProp(p, newProps[name])
+      if (p.directWrite) p.directWrite(value)
+      else p.set(value)
     }
   })
 }
@@ -6149,7 +6159,7 @@ export function bindClassPassthrough(el, fn) {
 
 // ── Updated makeExternalProperty — accepts track() objects or v1 fn getters ──
 
-export function makeExternalProperty(name, getter, setter) {
+export function makeExternalProperty(name, getter, setter, fallback) {
   const readFn = typeof getter === 'function'
     ? getter
     : getter?._isMemo ? () => getter._memo() : () => getter._read()
@@ -6161,9 +6171,29 @@ export function makeExternalProperty(name, getter, setter) {
   // "function as updater" logic. Uses track()'s _directWrite if available —
   // that wraps function values in () => v so createSignal stores them correctly.
   const directWrite = getter?._directWrite ?? ((v) => setter(v))
-  const prop = { get: readFn, set: (v) => setter(v), directWrite }
+  const prop = { get: readFn, set: (v) => setter(v), directWrite, fallback }
   if (_propRegistry) _propRegistry.set(name, prop)
   return prop
+}
+
+/**
+ * A prop's declared default, for a default that cannot be written when the prop
+ * is registered because it reads something declared later in the script.
+ */
+export function propDefault(name, fallback) {
+  const prop = _propRegistry?.get(name)
+  if (prop) prop.fallback = fallback
+}
+
+/**
+ * What a parent's `undefined` means: not given, so the declared default
+ * applies and only an explicit `null` clears it. The first render already read
+ * the default; this is every later write, which used to put `undefined` in the
+ * signal and blank `<Logo source={settings.image} />` one effect after mount
+ * (`FJS-1538`).
+ */
+function givenProp(prop, value) {
+  return value === undefined && prop.fallback ? untrack(prop.fallback) : value
 }
 
 export const version = '1.1.0'

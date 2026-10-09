@@ -153,18 +153,35 @@ form needs beyond its inputs — whether it is in flight, whether anything
 changed, what the server said about each field, and not submitting twice:
 
 ```svelte
-<Form resource={leads} ondone={r => goto(`/leads/${r.id}`)}>
-  <Input name="name" />
-  <Input name="email" />
+<Form resource={leads} ondone={r => goto(`/leads/${r.id}`)} />
+```
+
+Nothing there states what a Lead is. `createResource('leads')` read that from
+`db/schema.lite`, so the form generates its fields: `email` arrives labeled,
+`required`, `type="email"`, with its `@length` as `maxlength` — and if the write
+is rejected, the message lands under that control without anyone routing it
+there. The form puts the rules and the error map in context; each control
+resolves its own.
+
+**A hand-written form writes the record itself.** Controls inside `<Form>` get
+their label, rules and error from the schema, but the typed value reaches the
+record only through the callback you hand them; an `Input` given a `name` and nothing
+else shows the typing and submits what `make()` seeded:
+
+```svelte
+<script>
+  let draft = leads.make()
+  const write = (name, value) => { draft = { ...draft, [name]: value } }
+</script>
+
+<Form resource={leads} bind:record={draft} ondone={r => goto(`/leads/${r.id}`)}>
+  <Input name="email" value={draft.email} oninput={(e) => write('email', e.target.value)} />
   <Button type="submit">Save</Button>
 </Form>
 ```
 
-Nothing there states what a Lead is. `createResource('leads')` read that from
-`db/schema.lite`, so `email` arrives labeled, `required`, `type="email"`, with
-its `@length` as `maxlength` — and if the write is rejected, the message lands
-under that control without anyone routing it there. The form puts the rules and
-the error map in context; each control resolves its own.
+Each control's callback is different — `oninput` hands the event, `onvalue` a
+value — and `AGENTS.md` § Forms tabulates them.
 
 **A form can save itself.** `autosave` turns on a quiet window — `true` for the
 kit's own, or a number of ms — and the form writes once the typing stops:

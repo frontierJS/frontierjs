@@ -5455,8 +5455,18 @@ export function buildBlock(data, option = {}) {
           if (b?.bind) binds.push(b.bind)
         })
         n.classes.forEach((c) => el.class.add(c))
-        const _loc = ctx.locOf(n.start)
-        if (_loc) el.attributes.push({ name: LOC_ATTR, value: _loc })
+        // An element that arrives already stamped came out of Markdown, whose
+        // template lines are not the file's: its value is the file's
+        // `line:column` and only the file name is missing (FJS-1711).
+        const _own = el.attributes.findIndex((a) => a.name === LOC_ATTR)
+        if (_own >= 0) {
+          const _at = ctx.locIn(el.attributes[_own].value)
+          if (_at) el.attributes[_own].value = _at
+          else el.attributes.splice(_own, 1)
+        } else {
+          const _loc = ctx.locOf(n.start)
+          if (_loc) el.attributes.push({ name: LOC_ATTR, value: _loc })
+        }
         el.voidTag = n.voidTag
         if (!n.closedTag) {
           const ns = ctx.namespace
@@ -6504,6 +6514,50 @@ function stripInnerSlotAttrs(node) {
   }
 }
 
+/**
+ * A PascalCase tag that names nothing in the file is a component call against
+ * an undeclared identifier: it compiled clean, threw a ReferenceError in a
+ * browser, and failed a prerender with a hint written for a browser global
+ * (`FJS-1495`). The binding set is generous on purpose -- a name mentioned as a
+ * word in either script, or in the header of an each/snippet/await/`{@const}`,
+ * counts as bound -- because a false refusal breaks a working component and a
+ * missed one only falls back to the runtime error.
+ */
+function checkComponentTagsBound(ctx, instanceSrc) {
+  const headers = []
+  const tags = []
+  ;(function walk(v) {
+    if (!v || typeof v !== 'object') return
+    if (Array.isArray(v)) return v.forEach(walk)
+    if (v.type === 'node') {
+      if (/^[A-Z]/.test(v.name ?? '')) tags.push(v)
+    } else if (['each', 'snippet', 'await', 'systag'].includes(v.type)) {
+      headers.push(v.value, v.name, v.rawArgs, v.parts?.thenValue, v.parts?.catchValue)
+      headers.push(v.thenValue, v.catchValue)
+    }
+    for (const k of Object.keys(v)) if (k !== 'attributes') walk(v[k])
+  })(ctx.DOM)
+  if (!tags.length) return
+
+  const haystack = [
+    instanceSrc,
+    ...ctx.scriptModuleNodes.map((s) => s.content),
+    ...headers,
+  ].filter((s) => typeof s === 'string').join('\n')
+  const seen = new Set()
+  for (const n of tags) {
+    const root = n.name.split('.')[0]
+    if (seen.has(n.name)) continue
+    if (new RegExp(`(^|[^\\w$.])${root.replace(/\$/g, '\\$')}(?![\\w$])`).test(haystack)) continue
+    seen.add(n.name)
+    const at = n.start != null ? ctx.posOf(n.start) : null
+    ctx.analysis.errors.push(
+      `<${n.name}> names nothing in this file. Bind it with \`import ${root} from './${root}.mesa'\` ` +
+      `or let the app resolve it through \`autoImport\`.` + (at ? ` — ${at}` : '')
+    )
+  }
+}
+
 export function makeComponent(node, option = {}) {
   const ctx = this
   // If the component name is a reactive variable (derived const, let signal, etc.),
@@ -6600,6 +6654,19 @@ export function makeComponent(node, option = {}) {
         reactiveProps.push({ name: propName, value: readExpr })
         // …and child → parent through bindProp.
         twoWayProps.push({ name: propName, setter })
+        return
+      }
+
+      // On an element `class:x={cond}` toggles a class; on a component it
+      // would become a prop literally named "class:x" that no child reads, and
+      // the style vanished with no word. `part:x` has no compiler yet.
+      if (prop.name.startsWith('class:') || prop.name.startsWith('part:')) {
+        const at = node.start != null ? ctx.posOf(node.start) : null
+        ctx.analysis.errors.push(
+          `<${node.name} ${prop.name}> -- \`${prop.name.split(':')[0]}:\` does not reach into a component, so the style would be dropped. ` +
+          `\`class="…"\` on the tag passes through as the component's \`{class}\`; styling a child's part is planned (IDEAS/child-part-styling.md).` +
+          (at ? ` — ${at}` : '')
+        )
         return
       }
 
@@ -8170,7 +8237,12 @@ export function emitScript(ctx) {
     }
 
     // Register with the component instance so $push/$apply work end-to-end.
-    mod.head.push(xNode.raw(`$$runtime.makeExternalProperty('${v.name}', ${sigR}, ${sigW});`))
+    // The fallback is what a later `undefined` from the parent resolves to; a
+    // default that reads the script's own declarations is registered in step 5b.
+    const fallback = v.initRaw && !hasReactiveDeps
+      ? `, () => ${rewriteExpr(v.initRaw, ctx.accessors)}`
+      : ''
+    mod.head.push(xNode.raw(`$$runtime.makeExternalProperty('${v.name}', ${sigR}, ${sigW}${fallback});`))
     if (ctx.config?.dev) {
       mod.head.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'prop');`))
     }
@@ -8207,9 +8279,12 @@ export function emitScript(ctx) {
       )
     )
     }
+    const fallback = v.initRaw && !defaultNeedsDeferring(v, ctx)
+      ? `, () => ${rewriteExpr(v.initRaw, ctx.accessors)}`
+      : ''
     mod.head.push(
       xNode.raw(
-        `$$runtime.makeExternalProperty('${v.name}', ${sigR}, () => { throw new Error("[Mesa] '${v.name}' is declared \`export const\` — a read-only prop (RULE 56)."); });`
+        `$$runtime.makeExternalProperty('${v.name}', ${sigR}, () => { throw new Error("[Mesa] '${v.name}' is declared \`export const\` — a read-only prop (RULE 56)."); }${fallback});`
       )
     )
     if (ctx.config?.dev) {
@@ -8708,6 +8783,7 @@ export function emitScript(ctx) {
     mod.code.push(
       xNode.raw(`if ($$option.props?.${name} === undefined) ${write};`)
     )
+    if (!varName) mod.code.push(xNode.raw(`$$runtime.propDefault('${name}', () => ${defaultExpr});`))
   })
 
   // ── 5c. Context provides ─────────────────────────────────────────────────
@@ -8786,9 +8862,10 @@ export function emitScript(ctx) {
           // subscribe the memo as well, and a reassignment, which also fires
           // the path signal, ran the handler twice.
           const declared = requireWatchSig(sigVar, dep)
+          const value = rewriteExpr(dep, ctx.accessors)
           return declared
-            ? { subscribe: `$$runtime.get(${declared})`, value: `$$runtime.untrack(() => ${rewriteExpr(dep, ctx.accessors)})` }
-            : { subscribe: null, value: rewriteExpr(dep, ctx.accessors) }
+            ? { subscribe: `$$runtime.get(${declared})`, value: acc.endsWith('()') ? `$$runtime.untrack(() => ${value})` : value }
+            : { subscribe: null, value }
         }
         if (acc) return { subscribe: acc, value: acc }
         return { subscribe: null, value: dep }
@@ -9539,6 +9616,10 @@ export async function compile(source, config = {}) {
       // over came from; without it the editor opens a line or two off.
       return `${_locFile}:${config.locLines?.[line - 1] ?? line}:${column}`
     },
+    /** `File.mesa:line:column` for a `line:column` the caller already worked out, or null when off. */
+    locIn(lineColumn) {
+      return _locate && _locFile ? `${_locFile}:${lineColumn}` : null
+    },
     /**
      * The same, for an error message rather than for `data-fjs-loc`. It does
      * not consult `config.loc`: that switch is a dev affordance and a
@@ -9954,6 +10035,8 @@ export async function compile(source, config = {}) {
       ctx.analysis.errors.push(at ? `${e.message} — ${at}` : e.message)
     })
   }
+
+  checkComponentTagsBound(ctx, rawScript)
 
   // A <style> block is extracted from the TOP LEVEL of the component only (the
   // filter above does not recurse). One nested inside a block — a {#snippet},

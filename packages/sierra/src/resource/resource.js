@@ -139,7 +139,7 @@ import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, declinedFields, requiredFor, withheldFields,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, declinedFields, requiredFor, blankRefused, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined,
 } from './field-rules.js'
@@ -2090,11 +2090,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * because the boundary grades it there; this is graded against what is about
    * to be written, because that is what the CHECK will see and because the
    * person may have just picked the status that makes the column required.
+   *
+   * `mode` is the write the form will make. On a patch a non-null column with
+   * a default is necessary too, since blanking it is refused (`FJS-2065`).
    */
-  function requiredFields(record) {
+  function requiredFields(record, mode) {
     const out = []
     for (const [name, rule] of Object.entries(fields))
-      if (rule?.['x-litestone-required-where'] && requiredFor(rule, record)) out.push(name)
+      if ((rule?.['x-litestone-required-where'] || blankRefused(rule, mode)) && requiredFor(rule, record, mode)) out.push(name)
     return out
   }
 

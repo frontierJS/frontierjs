@@ -412,3 +412,29 @@ describe('the REPL loads nothing from the network', () => {
     expect(INDEX).toContain("new Function('$$runtime', ...names, code)")
   })
 })
+
+describe('REPL examples style without a utility framework', () => {
+  // The Tailwind Play CDN is gone from index.html, so a utility class in an
+  // example renders unstyled while the example claims it works (FJS-1776).
+  // @frontierjs/css is the styling language (Invariant 13); an example styles
+  // with a semantic class and a scoped <style>.
+  const UTILITY = /^(?:(?:hover|focus|md|lg|dark):)?(?:p[xytblr]?|m[xytblr]?|mt|mb|gap|space-[xy]|w|h|max-w|min-h|text|bg|border|rounded|shadow|font|flex|grid|items|justify|from|to|via|transition|overflow)(?:-[\w./[\]]+)?$/
+
+  it('has no Tailwind utility class and no Tailwind claim', () => {
+    const offenders = []
+    for (const [key, ex] of Object.entries(EXAMPLES)) {
+      const srcs = [ex.src, ...(ex.files ?? []).map((f) => f.content)]
+      for (const src of srcs) {
+        if (/tailwind play|utility classes work/i.test(src)) offenders.push(`${key}: claims Tailwind`)
+        const tokens = [
+          ...[...src.matchAll(/\bclass="([^"]*)"/g)].flatMap((m) => m[1].replace(/\{[^}]*\}/g, ' ').split(/\s+/)),
+          ...[...src.matchAll(/\bclass:([^\s={]+)/g)].map((m) => m[1]),
+        ].filter(Boolean)
+        for (const t of tokens) {
+          if (t.includes('-') && UTILITY.test(t)) offenders.push(`${key}: ${t}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+})

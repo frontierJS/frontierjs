@@ -38,7 +38,7 @@ export { derefFieldSchema }
 const _CARRIED = [
   'format', 'pattern', 'minLength', 'maxLength',
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
-  'minItems', 'maxItems', 'default', 'description',
+  'minItems', 'maxItems', 'uniqueItems', 'default', 'description',
   // `readOnly` is what a computed / generated / `@from` / `@version` field
   // carries, and `x-syntax` is `@syntax(lang)`. Both are read by the control
   // table below and by nothing else — a form has to know that a value is not
@@ -1612,6 +1612,9 @@ function _checkConstraints(name, rule, value, errors) {
   if (Array.isArray(value)) {
     if (rule.minItems != null && value.length < rule.minItems) say('minItems', `${label} must have at least ${rule.minItems} items`)
     if (rule.maxItems != null && value.length > rule.maxItems) say('maxItems', `${label} must have at most ${rule.maxItems} items`)
+    // Litestone's own comparison (`String(item)`), so the two boundaries agree
+    // about which lists repeat.
+    if (rule.uniqueItems && new Set(value.map(String)).size !== value.length) say('uniqueItems', `${label} must have unique items`)
   }
 }
 
@@ -1655,7 +1658,14 @@ export function validateAgainstFields(fields, data, mode = 'create') {
     if (value == null) {
       // An explicit null on a required field is the enum case: make() leaves a
       // required enum unset because no blank value is a member of it.
-      if (rule.required) errors.push({ field: name, message: _required(name, rule) })
+      if (rule.required || blankRefused(rule, mode)) errors.push({ field: name, message: _required(name, rule) })
+      continue
+    }
+
+    // A number box cannot say "nothing": blank is `''`, which would be named
+    // "must be a number" for a column the badge now calls required.
+    if (value === '' && rule.type !== 'string' && blankRefused(rule, mode)) {
+      errors.push({ field: name, message: _required(name, rule) })
       continue
     }
 
@@ -1994,6 +2004,17 @@ export function sealedFor(rule, record) {
 }
 
 /**
+ * Is a blank refused on this column in this write mode?
+ *
+ * A patch to a column that is not nullable: there is no default to fall back
+ * on, so `null` is a 400 whatever the create rule said. A `readOnly` column is
+ * not the person's to fill, so it is never asked for.
+ */
+export function blankRefused(rule, mode) {
+  return (mode === 'patch' || mode === 'update') && rule?.nullable === false && !rule.readOnly
+}
+
+/**
  * Does this column need a value FOR THIS ROW?
  *
  * `@required(where: …)` is required in the rows a predicate admits, so the
@@ -2027,11 +2048,18 @@ export function sealedFor(rule, record) {
  * re-asks as the record changes, which is what makes the affordance track the
  * status the person just picked.
  *
+ * **A patch adds a second source: `blankRefused`.** `schema.required` is the
+ * CREATE-required set, so a non-null column with a default is never in it and
+ * a create may leave it to the default. An edit has no default to fall back
+ * on, and blanking the box sends `null` to a column that cannot hold one
+ * (`FJS-2065`).
+ *
  * @param {object} rule     a field rule from buildFieldRules
  * @param {object} [record] the record as it stands now
+ * @param {'create'|'patch'|'update'} [mode]
  */
-export function requiredFor(rule, record) {
-  if (rule?.required) return true
+export function requiredFor(rule, record, mode) {
+  if (rule?.required || blankRefused(rule, mode)) return true
   const where = rule?.['x-litestone-required-where']
   if (!where || !record) return false
   try {
