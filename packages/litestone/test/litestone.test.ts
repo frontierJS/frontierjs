@@ -8474,11 +8474,25 @@ describe('GatePlugin', () => {
     expect(parseGateString('5.8.8.9')).toEqual({ read: 5, create: 8, update: 8, delete: 9 })
   })
 
-  // FJS-2187: Number('') is 0, so an empty position read as level 0. "4..6"
-  // is a legal drop box with create open to strangers, and "" is public.
-  test.failing('parseGateString refuses an empty string and an empty position', async () => {
+  // Number('') is 0, so an empty position would read as level 0: "4..6" a drop
+  // box with create open to strangers, and "" public.
+  test('parseGateString refuses an empty string and an empty position by name', async () => {
     const { parseGateString } = await import('../src/plugins/gate.js')
-    for (const g of ['', ' ', '4..6', '4.']) expect(() => parseGateString(g)).toThrow()
+    for (const g of ['', ' ', '4..6', '4.']) expect(() => parseGateString(g)).toThrow(/@@gate: empty/)
+    expect(() => parseGateString('4..6')).toThrow(/empty create level/)
+    expect(() => parseGateString('')).toThrow(/empty read level/)
+  })
+
+  test('an @@gate with an empty position does not boot', async () => {
+    for (const g of ['4..6', '']) {
+      await expect(makeGateDb(`
+        model Drop {
+          id   Int    @id
+          body String
+          @@gate("${g}")
+        }
+      `, `gate-empty-${g.length}`, () => 0)).rejects.toThrow(/@@gate: empty/)
+    }
   })
 
   test('validateGate rejects non-decreasing levels', async () => {
@@ -18614,6 +18628,15 @@ describe('query() dispatcher', () => {
     const rows = await db.order.query({ orderBy: { id: 'asc' }, limit: 2, offset: 1 })
     expect(rows).toHaveLength(2)
     expect(rows[0].id).toBe(2)
+  })
+
+  // FJS-2247: SQLite's grammar puts OFFSET after LIMIT only.
+  test('offset with no limit skips rows rather than a syntax error', async () => {
+    const all  = await db.order.findMany({ orderBy: { id: 'asc' } })
+    const rows = await db.order.findMany({ orderBy: { id: 'asc' }, offset: 1 })
+    expect(rows.map((r: any) => r.id)).toEqual(all.slice(1).map((r: any) => r.id))
+    const grouped = await db.order.groupBy({ by: ['id'], _count: true, orderBy: { id: 'asc' }, offset: 1 })
+    expect(grouped.map((r: any) => r.id)).toEqual(all.slice(1).map((r: any) => r.id))
   })
 
   test('named aggregates route to aggregate', async () => {

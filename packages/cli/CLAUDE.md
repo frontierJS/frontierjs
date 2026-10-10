@@ -26,11 +26,13 @@ core/
                 lifted <script> or the body — the offset alone covers the body
                 Frontmatter is `@frontierjs/toolbelt/frontmatter`'s, and a
                 refused block throws naming the file — never a reader here
-  flags.js      what a declared flag permits and how it is written — the
-                `--no-push` spelling of a boolean that defaults on, `choices`
-                and `min`/`max`, and the declarations refused on every run. A
-                leaf: `fli list`, `--help` and completion read it on the startup
-                path, and `getConfig` is the one place a value is graded
+  flags.js      what a declared flag or argument permits and how it is
+                written — the `--no-push` spelling of a boolean that defaults
+                on, `choices` and `min`/`max`, `kind` (what a value names, read
+                only by completion), the flags every command has, and the
+                declarations refused on every run. A leaf: `fli list`, `--help`
+                and completion read it on the startup path, and `getConfig` is
+                the one place a value is graded
   effects.js    `effects` and `confirm: human` — graded where flags are, and
                 enforced in `Command()` before the body runs. `fli gui` runs a
                 command in process, so a run with `emit` is never a terminal
@@ -656,8 +658,10 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `test/project-root.test.js` holds that. The workspace copy is always writable,
   so nothing here can see the install shape that is not.
 - `core/ports.js` is the scheme itself — the formula, the category map, the
-  `PROJECTS` registry, and the dev slots `fli dev` gives every app the registry
-  does not name (§ Dev slots). `packages/jetty/src/dev/fjs-ports.js` owns only the
+  `PROJECTS` registry, the dev slots `fli dev` gives every app the registry
+  does not name (§ Dev slots), and the branch block a linked worktree takes —
+  +N×10000 on every port a surface reads from its variable (§ Branches,
+  `FJS-D841`). `packages/jetty/src/dev/fjs-ports.js` owns only the
   extension slice within it (8400–8499 dev, 7400–7499 test).
 - **`ws:exports` writes the published-surface snapshot, and it asks the packer.**
   `bun pm pack --dry-run` per publishable package, then every `exports` subpath,

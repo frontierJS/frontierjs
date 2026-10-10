@@ -1,4 +1,4 @@
-import { parseQueryString, encodeQueryString } from '@frontierjs/toolbelt/query'
+import { parseQueryString, encodeQueryString, QueryLimitError } from '@frontierjs/toolbelt/query'
 
 /**
  * router/match.js — URL pattern matching
@@ -302,7 +302,13 @@ function isEmptyContainer(v) {
  * @returns {Record<string, unknown>}
  */
 export function parseQueryParams(search) {
-  return parseQueryString(search)
+  // Past a limit the parser refuses (400 at the server). A router has nowhere
+  // to show that, and a throw here would take the navigation down with it, so
+  // the page reads no query; its data call is refused by the server.
+  try { return parseQueryString(search) } catch (err) {
+    if (err instanceof QueryLimitError) return {}
+    throw err
+  }
 }
 
 /**

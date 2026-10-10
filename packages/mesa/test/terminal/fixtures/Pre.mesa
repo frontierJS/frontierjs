@@ -1,0 +1,17 @@
+<script>
+  let text = 'fn main() {\n    let  x = 1\n}\n'
+  let html = '<span class="k">let</span>  a &lt; b<br>next'
+  let prose = '<p>One   <b>two</b></p><p>third</p><svg><title>icon</title></svg>'
+  const swap = () => { prose = prose.startsWith('<p>') ? 'plain &amp; simple' : '<p>One   <b>two</b></p><p>third</p>' }
+</script>
+
+<p>top</p>
+<pre>
+static one
+  two &amp; three
+</pre>
+<pre><code>{text}</code></pre>
+<pre class="code">{@html html}</pre>
+<div>{@html prose}</div>
+<span>a <del>gone</del> <ins>new</ins> <dfn>term</dfn></span>
+<button on:click={swap}>swap</button>

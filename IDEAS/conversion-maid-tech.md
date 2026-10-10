@@ -16,7 +16,8 @@ responses), so adoption figures are real rather than illustrative. Nothing here
 may be cited as behavior of either system — see `VERIFYING.md`.
 
 The schema conversion to `.lite` was already done before this reading. This file
-is everything *else*.
+is everything *else*. Stressor #27 in `stressors.md` points here; the port is
+`fjs-prototypes/maidtech` and its `PLAN.md` is the handoff (Phase 0, 2026-10-09).
 
 ---
 
@@ -267,7 +268,9 @@ bar over one model.
 
 ## Running the port
 
-*Added 2026-09-12. Nothing here has been started.*
+*Added 2026-09-12. Started 2026-10-09 as stressor #27: the repository is
+`fjs-prototypes/maidtech`, scaffolded as below, with the import committed under
+`db/import/`. The order and the thin slice are now that repo's `PLAN.md`.*
 
 ### The schema is a command, not a file
 
@@ -286,13 +289,13 @@ decisions above has been applied to it, and every one of its 26 `noted` rows
 ### The repository
 
 **A fresh repository, scaffolded, never assembled by hand.** It sits outside both
-trees (`~/code/KOBAMI/maid-fjs`), so the framework repo carries no client code
-and the running application's history is left alone. Scaffold with THIS
+trees (`fjs-prototypes/maidtech`, beside the other stressors), so the framework
+repo carries no client code and the running application's history is left alone. Scaffold with THIS
 workspace's `fli` and local sources, so a framework fix reaches the app with no
 publish in between:
 
 ```
-bun ~/code/FRONTIER/frontierjs/packages/cli/bin/fli.js new maid-fjs --source local
+cd ~/code/FRONTIER/fjs-prototypes && fli new maidtech --source local --full --widgets --auth --yes
 ```
 
 A globally installed `fli` is a different build of the command (see
@@ -305,7 +308,7 @@ to deploy.
 **Start Claude in the new repository and add the other two as directories:**
 
 ```
-claude --add-dir ~/code/FRONTIER/frontierjs --add-dir ~/code/KOBAMI/my.maid.tech
+cd ~/code/FRONTIER/fjs-prototypes/maidtech && claude --add-dir ~/code/FRONTIER/frontierjs --add-dir ~/code/KOBAMI/my.maid.tech
 ```
 
 The framework's hazard skills live in `frontierjs/.claude/skills/`. Whether an

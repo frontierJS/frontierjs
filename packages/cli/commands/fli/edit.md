@@ -9,6 +9,7 @@ examples:
 args:
   -
     name: command
+    kind: command
     description: Command title or alias to edit
     required: true
 flags:

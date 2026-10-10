@@ -122,7 +122,10 @@ writeFileSync(join(ALPHA, 'packages', 'cli', 'core', 'done.js'), `export functio
     drives: [{ changed: 'a screen', tier: 'path', on: [], run: ['cd web && bun run verify'] }] }
 }
 `)
+writeFileSync(join(ALPHA, '.gitignore'), '.env\n')
 gitIn(ALPHA, 'add', '.'); gitIn(ALPHA, 'commit', '-q', '-m', 'first commit')
+// Ignored, so only the copy list carries it into a branch.
+writeFileSync(join(ALPHA, '.env'), 'SECRET=alpha\n')
 gitIn(ALPHA, 'remote', 'add', 'origin', 'https://me:tok_secret@example.test/alpha.git')
 writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
 // …and the Claude Code the workbench runs, as a stand-in: the real one costs
@@ -1101,9 +1104,13 @@ try {
   check('…naming its parent, its git branch and the uncommitted files it carried',
     /branch of alpha/.test(branchText) && /wb\/try/.test(branchText) && /carried 2 uncommitted files/.test(branchText), branchText.slice(0, 300))
   check('…and saying its first message forks the chat', /forks its chat/.test(branchText))
+  check('…and what the copy list carried that git does not', /copied 1 ignored path · no install/.test(branchText), branchText.slice(0, 400))
   const TREE = join(WORKBENCH, 'trees')
-  check('the tree is outside the repository, holding the parent\'s uncommitted file',
-    spawnSync('cat', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'try', 'dirty.txt')], { encoding: 'utf8' }).stdout === 'y')
+  const inTree = (file) => spawnSync('cat', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'try', file)], { encoding: 'utf8' }).stdout
+  check('the tree is outside the repository, holding the parent\'s uncommitted file', inTree('dirty.txt') === 'y')
+  check('…and its ignored .env', inTree('.env') === 'SECRET=alpha\n')
+  check('a branch\'s settings have no copy list, since a branch is not forked',
+    !(await evaluate(`!!${branch}.querySelector('textarea[name=copy]')`)) && await evaluate(`!!${card}.querySelector('textarea[name=copy]')`))
 
   await evaluate(`(() => { const t = ${branch}.querySelector('textarea')
     t.value = 'in the branch'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)

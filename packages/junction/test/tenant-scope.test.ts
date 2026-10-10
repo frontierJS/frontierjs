@@ -265,3 +265,52 @@ describe('a job runs IN a tenant', () => {
       app.service('docs').find({}))).rejects.toThrow(/names no 'workspaceId'/)
   })
 })
+
+// ─── the two readers of the tenant, in a person's request ────────────────────
+//
+// `FJS-2244`: under `strategy row` an HTTP call's tenant is a claim resolved per
+// call and lands on `locals.tenantId`, while `requestMeta().tenant` holds only
+// what the work STATED — a job's. Code below a service that read the meta (a
+// conduit credential resolver, handed a ref and nothing else) failed closed in
+// a request and worked in a job.
+
+describe('requestMeta().tenant versus app.tenant() in a request', () => {
+
+  test('app.tenant() answers a request under strategy row, where the request meta holds none', async () => {
+    const db  = await seeded()
+    const { membershipClaim, requestMeta } = await import('../index.ts')
+    const { enterRequest } = await import('../src/transport/bridge.ts')
+    const auth = {
+      async sessionFor(userId: string) {
+        return { userId, userType: 'user', authMethod: 'created' } as unknown as SessionContext
+      },
+    } as any
+    const app = createApp({
+      db, auth,
+      principal: membershipClaim({
+        tenantFrom: (ctx: ServiceContext) => (ctx.caller?.headers?.['x-workspace-id'] as string) ?? null,
+        model: 'member', subject: 'userId', tenant: 'workspaceId', namedBy: 'the X-Workspace-Id header',
+      }),
+    })
+    const seen: Record<string, unknown> = {}
+    app.services.register(createService({
+      name: 'docs',
+      async find() {
+        seen.app  = app.tenant()
+        seen.meta = requestMeta()?.tenant
+        return []
+      },
+    }))
+    const headers = { 'x-workspace-id': '2' }
+    await enterRequest({ origin: 'http', headers, caller: { headers } } as never, () =>
+      app.service('docs').find({}, { auth: { user: { userId: 'u1' } as unknown as SessionContext }, headers, caller: { headers } } as never))
+
+    expect(seen.app).toBe('2')
+    expect(seen.meta ?? null).toBeNull()
+
+    // A job states its tenant, so both readers answer.
+    await app.runAs('u1', { tenant: '2' }, () => app.service('docs').find({}))
+    expect(seen.app).toBe('2')
+    expect(seen.meta).toBe('2')
+  })
+})

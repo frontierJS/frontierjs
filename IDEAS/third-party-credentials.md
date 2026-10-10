@@ -24,6 +24,11 @@ in that order. One piece of the refresh is behavior since 2026-10-07 (`FJS-1905`
 re-mints it once for every send racing it, in-process. That covers a login-minted
 session. A rotating refresh token still needs the expiry and the principal.
 
+**First consumer with rows (2026-10-09): stressor #27, `fjs-prototypes/maidtech`
+Q11** — 63 MaidCentral logins, 8 Jobber, a Cloudflare token per client, each a
+tenant's own, spent by one declared target. Leg one is what that phase builds
+or files against.
+
 Claims about the current tree were probed rather than read (`VERIFYING.md`) and the
 evidence is named inline. One defect was found while probing and is carried at the
 end.
@@ -277,11 +282,14 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
 
 **The credential seam**
 
-- Does `get(ref)` gain a principal argument, or is a per-caller resolver a second
+- **FJS-D848 — How does a resolver learn whose credential a send spends, so `withCache` cannot key two callers onto one ref?** Does `get(ref)` gain a principal argument, or is a per-caller resolver a second
   interface? A second interface keeps the process-scoped case exactly as it is.
+  Forced by [`FJS-2232`](../ISSUES.md#fjs-2232): a resolver reading the tenant from an AsyncLocalStorage, wrapped in `withCache`, answers `get('DATAFORSEO')` in agency B with agency A's login (`inB === 'Basic A'`, probed 2026-10-09). Phase 2 widens it: an agency connects several Google accounts, so the identity is a per-call **grant**, neither the tenant nor the principal, and serpgrid names it with its own `withGrant(connectionId, fn)` around each send. Whatever the per-caller interface receives must carry that grant too, and `withCache` keys on all of it.
   - **A** — `get(ref, principal?)`: one interface, an optional second argument a process-scoped resolver ignores.
   - **B** — a second interface beside it, `getFor(ref, principal)`, and a target that declares per-caller auth refuses at boot unless the installed resolver has it; `get(ref)` and `FJS-D219`'s structural `{ get(ref) }` shape stay exactly as they are.
   - **C** — no argument: auth's resolver reads the principal from junction's ambient `$` itself, and `get(ref)` is unchanged.
+  - **D** — `get(ref)` unchanged, and a resolver that reads ambient state says so with a flag `withCache` refuses to wrap: the leak becomes a throw at composition, but a resolver that omits the flag leaks exactly as today, and the flag restates what the target could declare.
+  - *Under B, `who` is `{ tenant, principal, grant }`*: the grant is a per-send option, since a send is the only point that knows which of an agency's Google accounts it spends. `withCache` keys on `ref` plus all three, so serpgrid's own `withGrant` ALS goes away.
   - **Recommend B** — A lets a process-scoped resolver ignore the principal and hand every caller the machine token, and C does the same inside `withCache`, which keys on `ref` alone and would hand one person's token to the next; both are wrong without anything saying so. B leaves the shape `FJS-D219` made every battery depend on untouched and turns a missing per-caller resolver into a boot refusal.
   - *First measured caller, 2026-10-09:* serpgrid's DataForSEO resolver ([`index.ts`](../../fjs-prototypes/serpgrid/api/src/providers/dataforseo/index.ts)) is C in practice — `get(ref)` reads the agency from the ambient call — and its header says it may never be wrapped in `withCache`, because the ref is one string for every agency and the first agency's login would be sent for the next one's scans (`api/test/dataforseo.test.ts` measures it). The vendor is HTTP Basic, which `TargetAuth` has no type for ([`FJS-2233`](../ISSUES.md#fjs-2233)).
 - What does the resolver return once expiry matters — a string plus an expiry, or a

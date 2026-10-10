@@ -9,6 +9,9 @@
  *   PROJECT  0-9  (assigned in PROJECTS below; every other app is 0)
  *   SERVICE  0-9  (project 0's dev slot — one per app, see § Dev slots)
  *
+ * A second checkout of an app — a linked git worktree — puts a BRANCH digit in
+ * front: branch N adds N×10000, so branch 1's 8120 is 18120 (§ Branches).
+ *
  * A surface that is both WRITTEN against and SERVED as its own origin takes
  * two categories rather than two service slots. `widgets/` and `site/` are
  * both that shape: while one is being written it is a dev server, and once it
@@ -32,9 +35,9 @@
 
 import net from 'net'
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, openSync, writeSync, closeSync, unlinkSync, readdirSync } from 'fs'
-import { execSync } from 'child_process'
+import { execSync, execFileSync } from 'child_process'
 import { homedir } from 'os'
-import { basename, dirname, join } from 'path'
+import { basename, dirname, join, relative } from 'path'
 
 // ─── Schema maps ──────────────────────────────────────────────────────────────
 
@@ -131,13 +134,15 @@ export function port(category, { env, projectId, serviceId = 0 }) {
 
 /** Decode a port number back into its components */
 export function decode(p) {
+  const branch = Math.floor(p / BRANCH_STEP)
+  p = p % BRANCH_STEP
   const envDigit     = Math.floor(p / 1000)
   const catDigit     = Math.floor((p % 1000) / 100)
   const projectDigit = Math.floor((p % 100) / 10)
   const serviceDigit = p % 10
   const env      = Object.keys(ENV).find(k => ENV[k] === envDigit) ?? `unknown(${envDigit})`
   const category = Object.keys(CAT).find(k => CAT[k] === catDigit) ?? `unknown(${catDigit})`
-  return { env, category, projectId: projectDigit, serviceId: serviceDigit }
+  return { env, category, projectId: projectDigit, serviceId: serviceDigit, branch }
 }
 
 /** An ASSIGNED global port. A free slot inside the reserved block is not one. */
@@ -212,18 +217,20 @@ export function projectIdFor(name, dirName) {
  * servers it starts, and `tutor` for the app it runs — so a preflight that
  * ignored them would probe a port nothing is about to use. Otherwise the port
  * is the formula at `slot`, which for an app `PROJECTS` does not name is the
- * slot `fli dev` last gave this root, and 0 for every other app.
+ * slot `fli dev` last gave this root, and 0 for every other app — moved by
+ * `branch`, the number `fli dev` last gave this root's worktree (§ Branches).
  *
  * @param {string} appRoot
  * @param {{name?: string, scripts?: object, env?: 'test'|'dev'|'prod',
- *          exists?: (p: string) => boolean, slot?: number}} [opts]
+ *          exists?: (p: string) => boolean, slot?: number, branch?: number}} [opts]
  * @returns {{port: number, surface: string, label: string, script: string|null,
  *            category: string, env: string|null}[]}
  */
-export function appPorts(appRoot, { name, scripts, env = 'dev', exists, slot } = {}) {
+export function appPorts(appRoot, { name, scripts, env = 'dev', exists, slot, branch } = {}) {
   const here      = exists ?? ((p) => existsSync(p))
   const projectId = projectIdFor(name, basename(appRoot))
   const serviceId = projectId !== PROJECTS.scaffold ? 0 : (slot ?? slotFor(appRoot, { env }) ?? 0)
+  const offset    = (branch ?? branchFor(appRoot) ?? 0) * BRANCH_STEP
 
   const out = []
   for (const s of SURFACE_PORTS) {
@@ -236,7 +243,7 @@ export function appPorts(appRoot, { name, scripts, env = 'dev', exists, slot } =
       : s.scripts[0]
 
     out.push({
-      port:     stated ? Number(stated) : port(s.category, { env, projectId, serviceId: s.env ? serviceId : 0 }),
+      port:     stated ? Number(stated) : port(s.category, { env, projectId, serviceId: s.env ? serviceId : 0 }) + (s.env ? offset : 0),
       surface:  s.dir,
       label:    s.label,
       script,
@@ -594,24 +601,31 @@ export async function claimSession(appRoot, opts = {}) {
   const busy      = opts.busy ?? busyPorts
   const movable   = opts.movable ?? ((row) => readsPortVar(appRoot, row))
   const projectId = projectIdFor(name, basename(appRoot))
-  const rowsAt    = (slot) => devPorts(appRoot, { ...opts, env, slot })
+  const tree      = opts.worktree !== undefined ? opts.worktree : worktreeOf(appRoot)
+  const rowsAt    = (slot, branch = 0) => devPorts(appRoot, { ...opts, env, slot, branch })
 
   const guard = acquireLock(lockFile)
   try {
     const sessions = readLock(lockFile)
     const mine     = sessions[appRoot]
+    const moves    = rowsAt(0).every(movable)
 
-    let slot = 0
-    if (projectId === PROJECTS.scaffold && rowsAt(0).every(movable)) {
+    let slot = 0, branch = 0
+    if (tree && moves) {
+      // Every digit keeps its parent's meaning, the slot included.
+      const parent = sessions[join(tree.main, relative(tree.top, appRoot))]
+      if (projectId === PROJECTS.scaffold && parent?.env === env && Number.isInteger(parent.slot)) slot = parent.slot
+      branch = Number.isInteger(mine?.branch) && mine.branch > 0 ? mine.branch : freeBranch(sessions, appRoot, tree)
+    } else if (projectId === PROJECTS.scaffold && moves) {
       slot = mine?.env === env && Number.isInteger(mine.slot)
         ? mine.slot
         : await freeSlot(sessions, appRoot, env, rowsAt, busy)
     }
 
-    const rows = rowsAt(slot)
+    const rows = rowsAt(slot, branch)
     const vars = {}
     for (const r of rows) if (r.env) vars[r.env] = String(r.port)
-    if (dry) return { projectId, slot, rows, vars }
+    if (dry) return { projectId, slot, branch, rows, vars }
 
     const ports = {}
     for (const r of rows) (ports[r.category] ??= []).push(r.port)
@@ -620,13 +634,14 @@ export async function claimSession(appRoot, opts = {}) {
       root:      appRoot,
       projectId,
       slot,
+      ...(branch ? { branch, repo: tree.repo, worktree: tree.top } : {}),
       env,
       pid:       process.pid,
       ports,
       startedAt: new Date().toISOString(),
     }
     writeLock(sessions, lockFile)
-    return { projectId, slot, rows, vars }
+    return { projectId, slot, branch, rows, vars }
   } finally {
     try { unlinkSync(guard) } catch {}
   }
@@ -659,12 +674,72 @@ async function freeSlot(sessions, appRoot, env, rowsAt, busy) {
   )
 }
 
-/** Forget a root's slot. */
+// ─── Branches ─────────────────────────────────────────────────────────────────
+//
+// A second checkout of an app is a linked git worktree — a Workbench branch, or
+// one made by hand — and it runs beside the first. A slot cannot separate them:
+// a fixed project spends its service digit on its own servers (basecamp's 8121
+// mail sink), so the next digit is the parent's sink. So the whole block moves:
+// branch N adds N×10000 to every port a surface reads from its variable, and
+// every digit keeps its meaning — 18120 is 8120 in branch 1 (`FJS-D841`).
+//
+// N is the lowest of 1–5 no other worktree of the same repository holds in the
+// lock, remembered per worktree like a slot, so every app in one worktree shares
+// it. Five is the ceiling: a sixth puts 8120 at 68120. 3–5 sit in Linux's
+// ephemeral range, where an outgoing socket can hold a port; `strictPort` then
+// refuses loudly, and lowest-free reaches them only when 1 and 2 are taken.
+//
+// A port a surface writes as a literal does not move, and the app's drives do
+// (`FJS-2277`). A branch whose surfaces ignore the variable gets no number, so
+// the refusal names the port the server will really take.
+
+export const BRANCH_STEP = 10000
+export const MAX_BRANCH  = 5
+
+/**
+ * The linked worktree `appRoot` sits in — `{ repo, top, main }`: the shared git
+ * directory, this worktree's top and the main checkout's — or null for a main
+ * checkout, a directory git does not know, or no git at all.
+ */
+export function worktreeOf(appRoot) {
+  let out
+  try {
+    out = execFileSync('git', ['-C', appRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir', '--git-dir', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split('\n')
+  } catch { return null }
+  const [repo, gitDir, top] = out
+  if (!repo || !top || repo === gitDir) return null
+  return { repo, top, main: dirname(repo) }
+}
+
+/** The branch number this root's worktree was last given, or null. */
+export function branchFor(appRoot, { lockFile = LOCK_FILE } = {}) {
+  const s = readLock(lockFile)[appRoot]
+  return Number.isInteger(s?.branch) && s.branch > 0 ? s.branch : null
+}
+
+function freeBranch(sessions, appRoot, tree) {
+  const held = new Set()
+  for (const [root, s] of Object.entries(sessions)) {
+    if (root === appRoot || !s.branch || s.repo !== tree.repo) continue
+    if (s.worktree === tree.top) return s.branch
+    held.add(s.branch)
+  }
+  for (let n = 1; n <= MAX_BRANCH; n++) if (!held.has(n)) return n
+  throw new Error(
+    `All ${MAX_BRANCH} branch port blocks of this repository are held by other worktrees. ` +
+    'Archive a branch, or forget an idle one with `fli ports:status --clean`.'
+  )
+}
+
+/** Forget a root's slot — and every app root inside it, so a removed worktree
+ *  gives its branch number back whichever of its apps ran. */
 export function releaseSession(appRoot, { lockFile = LOCK_FILE } = {}) {
   const guard = acquireLock(lockFile)
   try {
     const sessions = readLock(lockFile)
-    delete sessions[appRoot]
+    for (const root of Object.keys(sessions))
+      if (root === appRoot || root.startsWith(appRoot + '/')) delete sessions[root]
     writeLock(sessions, lockFile)
   } finally {
     try { unlinkSync(guard) } catch {}

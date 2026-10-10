@@ -5,41 +5,93 @@ description: Shell tab completion for fli — bash, zsh, and fish
 
 <script>
 
-// Default flags present on every fli command
-const DEFAULT_FLAGS = ['--dry', '-d', '--test', '-t']
+// What the query answers where a path or a directory goes. Each generated
+// script turns it into that shell's own completion — a list of names printed
+// from here would lose tilde expansion, escaping and the trailing slash.
+const ANSWER = { path: '__fli_path__', dir: '__fli_dir__' }
 
-// What the query answers where a positional argument goes. Each generated
-// script turns it into that shell's own path completion — a list of names
-// printed from here would lose tilde expansion, escaping and the trailing slash.
-const FILES = '__fli_files__'
+const core = (file) => import(new URL('file://' + global.fliRoot + '/core/' + file))
+
+// One candidate per line, its description after a tab. Bash drops the
+// description; zsh and fish print it beside the candidate.
+const described = (value, description) => {
+  const text = String(description ?? '').replace(/\s+/g, ' ').trim()
+  return text ? `${value}\t${text}` : String(value)
+}
+
+const takesValue = (def) => Boolean(def?.type) && def.type !== 'boolean'
 
 // ─── Load completions ────────────────────────────────────────────────────────
-// Asks the registry rather than scanning for .md files a second time. This used
-// to be its own scanner, its own mtime fingerprint and its own cache file, none
-// of which ever ran: the script referenced `join`, `homedir`, `existsSync` and
-// `statSync` without importing any of them, so every completion command threw
-// `join is not defined` and Tab produced nothing. The registry answers the same
-// question and caches the same parse, so there is one owner of both now.
+// Asks the registry rather than scanning for .md files a second time; the
+// registry caches the same parse.
 const loadCompletions = async () => {
-  const { buildRegistry, uniqueCommands } = await import(
-    new URL('file://' + global.fliRoot + '/core/registry.js')
-  )
-  const { flagSpelling } = await import(new URL('file://' + global.fliRoot + '/core/flags.js'))
+  const { buildRegistry, uniqueCommands } = await core('registry.js')
+  const { flagSpelling, DEFAULT_FLAGS }   = await core('flags.js')
 
   return uniqueCommands(buildRegistry()).map((meta) => {
-    const flags = [...DEFAULT_FLAGS]
-    for (const [name, def] of Object.entries(meta.flags || {})) {
-      flags.push(flagSpelling(name, def))
-      if (def?.char) flags.push(`-${def.char}`)
+    const flags = []
+    for (const name of new Set([...Object.keys(DEFAULT_FLAGS), ...Object.keys(meta.flags || {})])) {
+      const def = { ...DEFAULT_FLAGS[name], ...meta.flags?.[name] }
+      flags.push({ spelling: flagSpelling(name, def), def })
+      if (def.char) flags.push({ spelling: `-${def.char}`, def })
     }
     return {
       name:        meta.title,
       alias:       meta.alias || null,
       description: meta.description || '',
-      args:        (meta.args || []).length,
+      args:        meta.args || [],
       flags,
     }
   })
+}
+
+const commandLines = (commands) => commands.flatMap(c =>
+  [c.name, c.alias].filter(Boolean).map(n => described(n, c.description)))
+
+// ─── What a value can be ─────────────────────────────────────────────────────
+// `choices` first, then the declared `kind` (KINDS in core/flags.js), then
+// nothing: an argument that does not say what it names offers no guess.
+const valuesFor = async (def, commands) => {
+  if (Array.isArray(def.choices)) return def.choices.map(String)
+  switch (def.kind) {
+    case 'path': return [ANSWER.path]
+    case 'dir':  return [ANSWER.dir]
+    case 'model': {
+      const { appSchemaModels } = await core('app-schema.js')
+      return appSchemaModels(global.projectRoot)
+        .map(m => described(m.name, m.origin === 'app' ? '' : m.origin))
+    }
+    case 'package': {
+      const { findWorkspaceRoot } = await core('utils.js')
+      const { workspaceDeps }     = await core('runnables.js')
+      const root = findWorkspaceRoot(process.cwd())
+      return root ? [...workspaceDeps(root)].map(([folder, m]) => described(folder, m.name)) : []
+    }
+    case 'command': return commandLines(commands)
+  }
+  return []
+}
+
+// What goes at the cursor once `cmd` is on the line: `after` is the words
+// typed since it, `cur` the word being typed.
+const answerFor = (cmd, after, cur, commands) => {
+  const flagLines = () => cmd.flags.map(f => described(f.spelling, f.def.description))
+  const flagNamed = (word) => cmd.flags.find(f => f.spelling === word)
+
+  if (cur.startsWith('-')) return flagLines()
+
+  const prev = flagNamed(after.at(-1))
+  if (prev && takesValue(prev.def)) return valuesFor(prev.def, commands)
+
+  // A flag's value is not a positional, or `--shell zsh foo` counts zsh as one.
+  let position = 0
+  for (let i = 0; i < after.length; i++) {
+    if (!after[i].startsWith('-')) { position++; continue }
+    if (takesValue(flagNamed(after[i])?.def)) i++
+  }
+  const last = cmd.args.at(-1)
+  const def  = cmd.args[position] ?? (last?.variadic ? last : null)
+  return def ? valuesFor(def, commands) : flagLines()
 }
 </script>
 
@@ -57,7 +109,9 @@ After running `fli completion:install`, restart your shell (or `source ~/.zshrc`
 
 ## How it works
 
-`fli completion:install` adds one line to your shell config that sources the completion script. The script defines a completion function. Every time you press Tab, the shell calls `fli completion:query` with the current command line, which asks the registry what commands and flags exist. Where the command takes an argument and the word does not start with `-`, the answer is a path, completed by the shell itself.
+`fli completion:install` adds one line to your shell config that sources the completion script. The script defines a completion function. Every time you press Tab, the shell calls `fli completion:query` with the current command line, which asks the registry what commands and flags exist. zsh and fish show each one's description beside it.
+
+What goes where an argument or a flag's value is typed comes from its declaration: `choices` offers those values, and `kind` names what the value is — `path` and `dir` hand over to the shell's own completion, `model` offers the app's models, `package` the workspace's packages, `command` fli's commands. An argument that declares neither offers nothing. A word starting with `-` always offers flags.
 
 ## Cache
 

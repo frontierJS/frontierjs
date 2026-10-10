@@ -100,6 +100,19 @@ function durationOffset(p, base) {
 //              | template | '{' [key ':' expr (',' key ':' expr)*] '}'   (a flow only — FJS-D513)
 //   compOp   ::= '==' | '!=' | '<' | '>' | '<=' | '>=' | 'in'
 
+// Every way back into the grammar (a group, a list, a call, a negation, a
+// ternary branch) passes through `ternary` or `not`, so counting those bounds
+// the stack. `!` x 50k or `(` x 20k otherwise escaped as RangeError, which no
+// caller catches as a ParseError. The parse is synchronous, so one counter does.
+const MAX_NESTING = 100
+let nesting = 0
+
+function nested(p, fn) {
+  if (nesting >= MAX_NESTING) throw p.fail(`nested more than ${MAX_NESTING} deep`, p.peek())
+  nesting++
+  try { return fn() } finally { nesting-- }
+}
+
 // The policy dialect: a condition over one record, which is what a schema takes.
 const POLICY = Object.freeze({ flow: false, scope: null })
 
@@ -126,6 +139,10 @@ export function parseFlowExpression(p) {
 // compileSql, `?:` in evaluate. A form in one and not the other is FJS-195
 // repeating.
 function ternary(p, ctx) {
+  return nested(p, () => ternaryAt(p, ctx))
+}
+
+function ternaryAt(p, ctx) {
   const cond = or(p, ctx)
   if (!p.check(TK.QUESTION)) return cond
   p.eat(TK.QUESTION)
@@ -150,8 +167,8 @@ function and(p, ctx) {
 }
 
 function not(p, ctx) {
-  if (p.check(TK.BANG)) { p.eat(TK.BANG); return { type: 'not', expr: not(p, ctx) } }
-  return primary(p, ctx)
+  if (!p.check(TK.BANG)) return primary(p, ctx)
+  return nested(p, () => { p.eat(TK.BANG); return { type: 'not', expr: not(p, ctx) } })
 }
 
 function primary(p, ctx) {
@@ -482,6 +499,7 @@ function hole(p, ctx, src, at) {
 function object(p, ctx) {
   p.eat(TK.LBRACE)
   const properties = []
+  const seen = new Set()
   while (!p.check(TK.RBRACE)) {
     const k = p.peek()
     if (k.type !== TK.IDENT && k.type !== TK.STRING)
@@ -490,8 +508,9 @@ function object(p, ctx) {
     if (!p.check(TK.COLON))
       throw p.fail(`The key '${k.value}' needs a value — { ${k.value}: … }`, p.peek())
     p.eat(TK.COLON)
-    if (properties.some(e => e.key === k.value))
+    if (seen.has(k.value))
       throw p.fail(`The key '${k.value}' is written twice in one object`, k)
+    seen.add(k.value)
     properties.push({ key: k.value, value: ternary(p, ctx) })
     if (!p.maybeEat(TK.COMMA)) break
   }

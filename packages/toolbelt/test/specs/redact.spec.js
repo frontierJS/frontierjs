@@ -34,6 +34,19 @@ test('redact: one entry covers every spelling of a header', function () {
     assert.equal(isSecretKey(ordinary), false, ordinary)
 })
 
+// FJS-2191: a credential is usually a compound, and the compound is judged by
+// its LAST word — `currentPassword` is a password, `passwordResetAt` is when.
+test('redact: a compound name is a credential by its last word', function () {
+  for (const name of [
+    'currentPassword', 'newPassword', 'new_password', 'passwordHash', 'password-hash',
+    'apiToken', 'accessKey', 'secretKey', 'AWS_SECRET_ACCESS_KEY', 'AWSSecretKey',
+    'otp', 'totp', 'x-amz-security-token', 'csrfToken', 'clientSecret', 'dbPassword',
+  ]) assert.equal(isSecretKey(name), true, name)
+
+  for (const name of ['sortKey', 'cacheKey', 'partitionKey', 'tokenCount', 'passwordResetAt', 'secretaryName', 'commitHash', 'keyboard'])
+    assert.equal(isSecretKey(name), false, name)
+})
+
 test('redact: the set is normalized, so no entry can be unreachable', function () {
   // An entry written with a capital or an underscore would never match, because
   // the lookup normalizes the QUERY. This asserts the stored form.
@@ -149,8 +162,22 @@ test('redact: a MALFORMED url is the case it exists for', function () {
   assert.equal(redactUrl('redis://:onlypass@cache:6379'), `redis://:${REDACTED}@cache:6379`)
 })
 
+test('redact: redactUrl is linear on text with no credential in it', function () {
+  // At 80 KB the pattern-per-start version took 8 s. Linear is a millisecond
+  // or two; the ceiling is two orders above that so a slow runner cannot fail it.
+  for (const text of ['a:'.repeat(80000), 'a'.repeat(160000), 'a:'.repeat(80000) + '@', 'a:@'.repeat(60000)]) {
+    const t0 = performance.now()
+    redactUrl(text)
+    assert.ok(performance.now() - t0 < 500, 'redactUrl took ' + Math.round(performance.now() - t0) + ' ms on ' + text.length + ' chars')
+  }
+
+  // Greedy to the last `@` that still leaves a host, per whitespace-separated token.
+  assert.equal(redactUrl('a:b:c@d@e f:g@h'), `a:${REDACTED}@e f:${REDACTED}@h`)
+  assert.equal(redactUrl('x:y@ z:w@h'), `x:y@ z:${REDACTED}@h`)
+})
+
 test('redact: an env var name is matched per segment, not whole', function () {
-  for (const n of ['STRIPE_SECRET_KEY', 'DATABASE_PASSWORD', 'GITHUB_TOKEN', 'AUTH_SECRET', 'X_API_KEY'])
+  for (const n of ['STRIPE_SECRET_KEY', 'DATABASE_PASSWORD', 'GITHUB_TOKEN', 'AUTH_SECRET', 'X_API_KEY', 'SMTP_PASS', 'KEY_PASSPHRASE', 'ADMIN_OTP'])
     assert.equal(isSecretEnvName(n), true, n)
 
   // `KEY` alone is too broad, and these are the names it would have caught.
@@ -192,4 +219,43 @@ test('redact: a sparse array keeps its holes and a sibling is not a cycle', func
   assert.equal(1 in out.sparse, false)
   assert.deepEqual(out.x, { a: 1 })
   assert.deepEqual(out.y, { a: 1 })
+})
+
+// FJS-2190: a password may hold a `/` or a space, and an https userinfo may be a token alone.
+test('redact: redactUrl takes a password holding / or whitespace, and a token-only userinfo', function () {
+  assert.equal(redactUrl('postgres://admin:pa/ss@db/x'), `postgres://admin:${REDACTED}@db/x`)
+  assert.equal(redactUrl('postgres://admin:Zm9v/YmFy+Zg==@db:5432/x'), `postgres://admin:${REDACTED}@db:5432/x`)
+  assert.equal(redactUrl('redis://:my pass@h'), `redis://:${REDACTED}@h`)
+  assert.equal(redactUrl('connect failed: redis://u:my pass@h:6379 refused'), `connect failed: redis://u:${REDACTED}@h:6379 refused`)
+  assert.equal(redactUrl('https://ghp_abc@github.com'), `https://${REDACTED}@github.com`)
+  assert.equal(redactUrl('https://ghp_abc@github.com/org/repo.git'), `https://${REDACTED}@github.com/org/repo.git`)
+  assert.equal(redactUrl('a://u:p@h1 b://u2:p2@h2'), `a://u:${REDACTED}@h1 b://u2:${REDACTED}@h2`)
+
+  // not credentials: a username-only ssh url, a path holding an @, a port, an address after a url
+  assert.equal(redactUrl('ssh://git@github.com/org/repo'), 'ssh://git@github.com/org/repo')
+  assert.equal(redactUrl('https://example.com/feed/@alice'), 'https://example.com/feed/@alice')
+  assert.equal(redactUrl('https://example.com:8080/feed/@alice'), 'https://example.com:8080/feed/@alice')
+  assert.equal(redactUrl('failed https://host:8080 for bob@x.com'), 'failed https://host:8080 for bob@x.com')
+  assert.equal(redactUrl('see https://example.com/a, mail me@x.com'), 'see https://example.com/a, mail me@x.com')
+  assert.equal(redactUrl('https://u:pw@h/feed/@alice'), `https://u:${REDACTED}@h/feed/@alice`)
+})
+
+test('redact: redactUrl stays linear on repeated schemes', function () {
+  for (const text of ['a://'.repeat(60000), 'a://x:'.repeat(40000), 'a://x y '.repeat(30000), 'a://x/'.repeat(40000) + '@h']) {
+    const t0 = performance.now()
+    redactUrl(text)
+    assert.ok(performance.now() - t0 < 500, 'redactUrl took ' + Math.round(performance.now() - t0) + ' ms on ' + text.length + ' chars')
+  }
+})
+
+// FJS-2192: an own `__proto__` member is data, and `out[k] = v` makes it the copy's prototype.
+test('redact: an own __proto__ member survives the walk as a member', function () {
+  const body = JSON.parse('{"a":1,"__proto__":{"isAdmin":true},"list":[{"__proto__":{"x":1},"a":2}]}')
+  for (const out of [omitBy(body, (k) => k === 'a'), redactBy(body, (k) => k === 'a')]) {
+    assert.equal(Object.getPrototypeOf(out), Object.prototype)
+    assert.equal(out.isAdmin, undefined)
+    assert.deepEqual(Object.keys(out).filter((k) => k === '__proto__'), ['__proto__'])
+    assert.deepEqual(Object.getOwnPropertyDescriptor(out, '__proto__').value, { isAdmin: true })
+    assert.deepEqual(Object.getOwnPropertyDescriptor(out.list[0], '__proto__').value, { x: 1 })
+  }
 })

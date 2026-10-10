@@ -7,9 +7,10 @@ dated: 2026-10-09
 # Idea — a branch per chat in the Workbench
 
 **Status: PARTIAL.** Item 6 of [`workbench.md`](workbench.md). The owner took every
-recommendation below on 2026-10-09; the port scheme is ruled in `FJS-D841`. **Slice A
-is built** (2026-10-09) — `core/workbench-branch.ts` in basecamp, `fork` in
-`askArgv`; slice B and `FJS-2277` are not. Verified against a stand-in claude only.
+recommendation below on 2026-10-09; the port scheme is ruled in `FJS-D841`. **Slices A
+and B are built** (2026-10-09) — `core/workbench-branch.ts` in basecamp, `fork` in
+`askArgv`, the branch block in `claimSession`; `FJS-2277` is not. Verified against a
+stand-in claude only.
 
 A pin is one checkout today, and two chats in one repo share one working tree. This
 gives a chat its own tree: **Fork** on a pin makes a git branch in a linked worktree,
@@ -108,7 +109,7 @@ that starts a branch's dev server, automatic cleanup.
 - **A — branches.** 1–4, 7, 8, 9: snapshot, worktree, fork with the chat, Land,
   Archive, grouping. Useful alone: parallel chats on one repo stop sharing a tree.
 - **B — runnable branches.** 5 and 6: the copy list, then the port offset in
-  `ports.js` with its tests and `docs/PORTS.md`.
+  `ports.js` with its tests and `docs/PORTS.md`. Built.
 - Then `FJS-2277`, a drive reading its port, which is the larger job and what lets
   a branch run `fli prove`.
 
@@ -122,9 +123,29 @@ carries `forkOf` beside `session` — the session the first message forks, clear
 parent's budget, hooks and review settings. Unpinning a branch is refused (Archive
 is the way out), and forking a branch is refused (fork its parent).
 
+**Slice B as built, where it differs.** The copy list matches `git ls-files --others
+--ignored --exclude-standard --directory`, so a directory git ignores whole is ONE
+entry — `**/.env` never reaches a `.env` inside `node_modules`, and naming a whole
+ignored directory copies it. The install is `bun install --no-save`, run only where
+the tree has `bun.lock`/`bun.lockb`: a saving install rewrites the lockfile and the
+next Land carries it. Fork AWAITS the setup (copy, then install) before it answers,
+so the branch's card arrives set up and no first message can race it; a failure is a
+plain line in the branch's log and the pin's `setup` says `failed`, and the branch
+stays. Only a parent carries a copy list (a branch is never forked); it is a
+textarea in Settings. **Ports:** a branch of a scaffolded app keeps its PARENT's slot,
+read off the lock entry of the same path in the main checkout, so the slot digit
+keeps its meaning too; an app whose surfaces ignore their variable gets no branch
+number, as it gets no slot; `releaseSession(root)` now drops every app root inside
+`root`, so Archive gives the number back whichever of the worktree's apps ran.
+basecamp's API and SPA read `FLI_PORT_BE`/`FLI_PORT_FE` beside their own `PORT`/
+`API_PORT`/`UI_PORT`, without which the offset reached nothing; `example`'s API reads
+neither yet, so it takes no number.
+
 **Proved by** basecamp's workbench tests against a real temp repo (fork, a dirty
-parent, Land with and without a conflict, Archive), the `verify:provision` drive
-for the card, and cli's ports tests for the offset.
+parent, Land with and without a conflict, Archive, the copy list and an install that
+succeeds and one that fails, Archive releasing the port block), the `verify:provision`
+drive for the card, and cli's ports tests for the offset and `worktreeOf` against a
+real linked worktree.
 
 ## The nine, for 1–3 and 7–9
 
@@ -159,3 +180,25 @@ points at; forking a branch is refused, since the grid draws one level. **Silenc
 — the deleted-misread is caught by the land test asserting an empty diff after a
 land; fork-once by the argv test. No § IV adjudication is in tension. Tier:
 Assessment.
+
+**Slice B, graded LATE** — after building. **Origin** — the copy list is the pin's
+own setting; the branch number is the lock's, beside the slot, never on the pin.
+**Concept** — *branch number* is the ruling's N; *setup* is `{ copied, install }` on
+the pin, no new noun. **Complexity** — the problem's: a worktree has no ignored
+files and no `node_modules`. **Predictability** — one seam: Fork answers after the
+install, so a cold install makes Fork slow rather than the first message; and
+`releaseSession` now forgets roots nested under the one named, for its other two
+callers too (`ports:status --clean`, the gui), where app roots do not nest.
+**Derived** — `worktreeOf` asks git each claim; the number is stored because a
+lowest-free answer moves when another worktree goes. **Owner** — `claimSession`
+owns the number, `copyIgnored` the copy, `setUp` the order. **Boundary** — a copy
+glob starting `/` or holding `..` is refused, and a glob only ever matches paths git
+listed inside the checkout. **Failure** — a failed install leaves the branch and
+says so in its log; past five numbers `claimSession` refuses naming the way out.
+**Silence** — what must stay true: a branch's ports are never its parent's, and
+`bun install` in a branch never rewrites the lockfile. What fails when it stops:
+cli's ports tests (the block, the shared number, the parent's slot, the ceiling) and
+the workbench setup test asserting `bun.lock` byte-identical and an empty diff. An
+app that ignores `FLI_PORT_*` lands on its parent's port and `fli dev`'s busy check
+refuses it there. No § IV
+adjudication is in tension. Tier: Assessment.

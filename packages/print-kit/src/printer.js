@@ -31,6 +31,9 @@
  */
 import { createNetwork, findChrome, openChrome } from '@frontierjs/mesa/drive'
 
+/** The browser is gone or wedged: the drive's 30 s bound fired, or its socket is down. */
+const unanswered = (/** @type {unknown} */ e) => /did not answer|WebSocket|not open/i.test(String(/** @type {Error} */ (e)?.message))
+
 /** @param {{ windowSize?: string, find?: () => string | null }} [opts] */
 export function createPrinter({ windowSize = '1280,900', find = findChrome } = {}) {
   /** @type {any} */
@@ -101,7 +104,14 @@ export function createPrinter({ windowSize = '1280,900', find = findChrome } = {
     tab ??= await freshTab(b)
     tab.jobs++
     try { return await fn(tab.page) }
-    catch (e) { await closeTab(b); throw e }   // a job that failed leaves no tab in a state the next one inherits
+    catch (e) {
+      // A job that failed leaves no tab in a state the next one inherits. A
+      // browser that did not answer is not asked to close it: that call waits
+      // out its own 30 s, and the queue behind it waits too.
+      if (unanswered(e)) tab = null
+      else await closeTab(b)
+      throw e
+    }
   }
 
   async function ensure() {
@@ -114,11 +124,17 @@ export function createPrinter({ windowSize = '1280,900', find = findChrome } = {
 
   // A crashed or wedged renderer answers nothing, ever again. Drop the
   // browser so the next job starts a fresh one rather than queueing behind it.
-  async function discard() {
+  // The drive's close asks the browser to close its tab before it kills it,
+  // and a wedged one spends 30 s not answering: a job that failed that way
+  // does not wait for it, and `close()` does.
+  /** @type {Promise<void>} */
+  let dropping = Promise.resolve()
+  function discard() {
     const b = browser
     browser = null
     tab = null
-    if (b) await b.close().catch(() => {})
+    if (b) dropping = Promise.all([dropping, b.close().catch(() => {})]).then(() => {})
+    return dropping
   }
 
   /** @template T @param {(page: any) => Promise<T>} job @returns {Promise<T>} */
@@ -127,7 +143,7 @@ export function createPrinter({ windowSize = '1280,900', find = findChrome } = {
       const b = await ensure()
       try { return await inTab(b, job) }
       catch (e) {
-        if (/did not answer|WebSocket|not open/i.test(String(/** @type {Error} */ (e)?.message))) await discard()
+        if (unanswered(e)) discard()
         throw e
       }
       finally { counts.jobs++ }

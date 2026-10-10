@@ -137,7 +137,7 @@ const TOP = [
     'schema',
     'declare',
     '<name> { path · driver · replication · retention · maxSize · model }',
-    'A named database. `driver` is sqlite (default), jsonl or logger; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.',
+    'A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.',
     'database logs {\n  path   env("LOGS_PATH", "./logs.db")\n  driver jsonl\n}',
     {
       seeAlso: ['db', 'trail'],

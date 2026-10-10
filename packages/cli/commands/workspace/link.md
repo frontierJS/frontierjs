@@ -9,10 +9,12 @@ examples:
 args:
   -
     name: from
+    kind: package
     description: Package to add as a dependency (the one being depended on)
     required: true
   -
     name: to
+    kind: package
     description: Package that will depend on it (the consumer)
     required: true
 flags:

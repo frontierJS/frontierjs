@@ -5,7 +5,7 @@ seam: a document to a PDF, an element to a PNG. Sits above mesa exactly as
 `email-kit` does; imports nothing from junction.
 
 `bun run test` — bun's runner, **needs Chrome and `pdftotext`**; the tests
-that need either skip by name when it is missing, so 11 pass with 0 skipped
+that need either skip by name when it is missing, so 12 pass with 0 skipped
 is the only green.
 
 ---
@@ -27,9 +27,11 @@ test/            the suite, against a real Chrome
 
 - **One tab serves 25 jobs, then is replaced.** Node ids a tagged table names
   count up across the jobs a tab has run, so a consumer must not keep one.
-- **A call that goes unanswered for 30 s discards the browser.** Once in six
-  runs the two jobs after a wedge wedged the same way, so a failed print is
-  not yet proven to stay a single failure (`FJS-2230`).
+- **A call that goes unanswered for 30 s discards the browser, and nothing
+  more is asked of it** — not to close the tab, and the job does not wait for
+  the drive's close. Each of those calls waits out its own 30 s against a
+  wedged browser, which held the queue 93 s and failed the two jobs behind it
+  (`FJS-2230`). The job queued behind a wedge still waits the 30 s.
 - **The print page is offline under `createNetwork`** — a template that
   fetches a font or an image from a URL gets nothing, by design. Inline it.
 - **`printerPlugin` must not import junction.** It exports the plugin

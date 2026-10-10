@@ -192,7 +192,7 @@ there and not refused here.
   language, emitted into the SELECT. Filterable and sortable, because it is SQL.
   The language is comparisons, `and`/`or`/`not`, a ternary, `now()` and
   literals, and that is all: `@derived(qty * price)` does not parse, and neither
-  does any SQL function call (`compileDerived`, `src/core/policy.js:188`). It is
+  does any SQL function call (`compileDerived` in `src/core/policy.js`). It is
   for *is this row overdue*, not *what is this row's total*.
 - **`@generated("sql expr")`** — a real column, `GENERATED ALWAYS AS`, so it
   takes arbitrary SQL and is the answer whenever the derivation is a **value**
@@ -261,7 +261,7 @@ policy, and a field attribute cannot express it.
 
 ## Should this id be a uuid or an `Int`?
 
-**`Int @id` with no default is SQLite's rowid alias** (`src/core/client.js:4244`) —
+**`Int @id` with no default is SQLite's rowid alias** (an `INTEGER PRIMARY KEY`) —
 that column is not stored as a column at all, it is the table's own b-tree key.
 A `String @id @default(uuid())` costs 36 bytes of TEXT per row *and* a second
 index, because a non-INTEGER primary key cannot be the rowid, so SQLite keeps a
@@ -294,7 +294,7 @@ one — `@frontierjs/toolbelt/history` exists for that.
 **It works, and it is still usually not what you want.**
 
 Two fields carrying `@id` produce a correct composite `PRIMARY KEY (a, b)` in the
-DDL (`src/core/ddl.js:217`), and the client addresses it properly: `findUnique`
+DDL (`tableConstraints` in `src/core/ddl.js`), and the client addresses it properly: `findUnique`
 with the full key answers one row, `findUnique` with a partial key **throws**
 `returned more than one row` rather than answering the first match, and
 `update`/`delete` reach exactly the intended row. Measured, not assumed.
@@ -321,7 +321,7 @@ to carry in two columns is a tax on every model that points at it.
 
 A `Json` column holding ids is a foreign key with no constraint: nothing can
 tell a live id from a typo, and deleting the target leaves every holder silently
-pointing at nothing. `packages/basecamp/db/schema.lite:1503` records one that
+pointing at nothing. `model AlertRuleChannel` in `packages/basecamp/db/schema.lite` records one that
 had to be reversed — `AlertRule.channels` became `AlertRuleChannel`, because a
 dead channel id meant an alert was never delivered and nobody was told.
 

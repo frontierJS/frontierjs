@@ -56,6 +56,7 @@ Detail: `references/transitions.md`
 - **A move asked for BY NAME is not the same question as an update carrying the column** (`FJS-611`)
 - **A row that stops counting at a date and is also MOVED at that date has two answers until the move fires, and the date is the one to read** (`FJS-D353`)
 - **`asSystem()` holds the machine, and a row starts at its `@default`** (`FJS-D502`, `FJS-D470`)
+- **A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name** (`FJS-2231`)
 
 ## `@immutable` and encryption
 Detail: `references/immutable-and-encryption.md`

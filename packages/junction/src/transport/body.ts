@@ -82,7 +82,9 @@ export class BodyTooLargeError extends Error {
   readonly limit: number
   readonly size:  number
   constructor(limit: number, size: number) {
-    super(`Request body exceeds ${limit} bytes`)
+    // Names the setting, because the reader of a 413 is the one who has to
+    // raise it: a file sent inline over JSON meets this bound (FJS-D666).
+    super(`Request body exceeds ${limit} bytes; an app that takes larger bodies raises http.maxBodySize`)
     this.name  = 'BodyTooLargeError'
     this.limit = limit
     this.size  = size

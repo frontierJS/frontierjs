@@ -97,7 +97,7 @@ Reads happen through `asSystem()`, deliberately: a caller-scoped read of a
 nothing wrong, so the walk would pass most confidently on exactly the models
 whose rows are most protected.
 
-`jsonl` and `logger` models are skipped by name — there are no migrations and no
+`jsonl` and `trail` models are skipped by name — there are no migrations and no
 declared shape there to hold a row to.
 
 ## The report

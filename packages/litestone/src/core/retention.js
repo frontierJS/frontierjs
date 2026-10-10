@@ -20,7 +20,7 @@
 
 import { existsSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, openSync, readSync, closeSync } from '#host'
 import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex } from '../drivers/jsonl-index.js'
-import { modelToTableName } from './ddl.js'
+import { modelToTableName, fieldToColumnName } from './ddl.js'
 import { quoteIdent }       from './query.js'
 
 // ─── Duration parser ──────────────────────────────────────────────────────────
@@ -89,17 +89,32 @@ export function parseSize(str) {
 // not a day boundary anywhere. Stated rather than fixed — a calendar-aligned
 // window needs a zone, which the seed has no way to say yet (`FJS-D143`).
 //
+// The pass is RETENTION_BATCH rows per statement, yielding to the event loop
+// between them. One DELETE over a year of rows held the write lock for minutes,
+// grew the WAL to the size of what it removed, and froze every request in the
+// process until it returned (FJS-2288).
+//
 // @param rawWriteDb  raw Bun Database handle
 // @param models      array of model AST nodes belonging to this database
 // @param retention   duration string e.g. '30d', '90d', '1y'
-// @param pluralize   the client's table-name rule — see below
-// @param onRemoved   (modelName, rows, doomed) — the rows each table lost, when
-//                     given, and what `doomedUnder` said the cascade would take
-// @param doomedUnder  (modelName, rows) — the children a cascade removes under
-//                     those rows, read before the DELETE takes them
+// @param opts.pluralize    the client's table-name rule — see below
+// @param opts.now          the client's clock
+// @param opts.hears        (modelName) → whether anything hears this model's
+//                           deletes; absent, onRemoved alone decides
+// @param opts.onRemoved    async (modelName, rows, doomed) — each batch's rows,
+//                           and what `doomedUnder` said the cascade would take
+// @param opts.doomedUnder  (modelName, rows) — the children a cascade removes
+//                           under those rows, read before the DELETE takes them
+// @param opts.batches      most batches per table; the boot pass takes one
+// @param opts.stopped      () → true once the client closed, checked between batches
 // @returns [{ model, table, removed }] for every table it touched
 
-export function runSqliteRetention(rawWriteDb, models, retention, pluralize = false, now = Date.now, onRemoved = null, doomedUnder = null) {
+export const RETENTION_BATCH = 1000
+
+export async function runSqliteRetention(rawWriteDb, models, retention, {
+  pluralize = false, now = Date.now, hears = null, onRemoved = null, doomedUnder = null,
+  batches = Infinity, stopped = null,
+} = {}) {
   const ms = parseDuration(retention)
   if (!ms) return []
 
@@ -111,11 +126,12 @@ export function runSqliteRetention(rawWriteDb, models, retention, pluralize = fa
   const swept  = []
 
   for (const model of models) {
+    if (stopped?.()) break
     // Only models with a createdAt DateTime field
-    const hasCreatedAt = model.fields.some(
+    const createdAt = model.fields.find(
       f => f.name === 'createdAt' && f.type.name === 'DateTime'
     )
-    if (!hasCreatedAt) continue
+    if (!createdAt) continue
 
     // The TABLE, not the model. `DELETE FROM "AuditEvent"` names nothing — the
     // table is `audit_event` — and the throw landed in a catch commented *table
@@ -134,42 +150,56 @@ export function runSqliteRetention(rawWriteDb, models, retention, pluralize = fa
       .get(table)
     if (!exists) continue
 
-    try {
-      // A row can hold what SQLite does not: a File column's object lives in a
-      // store, and only the plugins can release it. A bare DELETE kept every
-      // swept row's bytes for ever (FJS-1921), so when someone is listening the
-      // sweep reads back what it removed and hands it over. It reads BEFORE the
-      // DELETE: a foreign key's `onDelete: Cascade` removes the children inside
-      // that statement, and RETURNING names only the parent's rows, so the
-      // children's objects stayed in the store (FJS-2097).
-      const where = `FROM ${quoteIdent(table)} WHERE "createdAt" < ?`
-      if (onRemoved) {
-        const rows   = rawWriteDb.prepare(`SELECT * ${where}`).all(cutoff)
-        const doomed = rows.length ? doomedUnder?.(model.name, rows) ?? null : null
-        rawWriteDb.prepare(`DELETE ${where}`).run(cutoff)
-        if (rows.length) onRemoved(model.name, rows, doomed)
-      } else {
-        rawWriteDb.prepare(`DELETE ${where}`).run(cutoff)
+    // A row can hold what SQLite does not: a File column's object lives in a
+    // store, and only the plugins can release it. A bare DELETE kept every
+    // swept row's bytes for ever (FJS-1921), so when someone is listening the
+    // sweep reads back what it removed and hands it over. It reads BEFORE the
+    // DELETE: a foreign key's `onDelete: Cascade` removes the children inside
+    // that statement, and RETURNING names only the parent's rows, so the
+    // children's objects stayed in the store (FJS-2097). Nobody listening, it
+    // reads nothing: a gate has no delete to hear, and installing one read
+    // every doomed row of a year into memory (FJS-2288).
+    const listens = !!onRemoved && (hears?.(model.name) ?? true)
+    const these   = `FROM ${quoteIdent(table)} WHERE rowid IN (SELECT value FROM json_each(?))`
+    let removed = 0
+    let error   = null
+    for (let n = 0; n < batches && !stopped?.(); n++) {
+      let ids, rows = null, doomed = null
+      // The pick, the read and the DELETE run with no await between them, so
+      // no other write lands inside a batch and no row is handed over twice.
+      try {
+        ids = rawWriteDb
+          .prepare(`SELECT rowid AS r FROM ${quoteIdent(table)} WHERE ${quoteIdent(fieldToColumnName(createdAt))} < ? LIMIT ${RETENTION_BATCH}`)
+          .all(cutoff).map(x => x.r)
+        if (!ids.length) break
+        const list = JSON.stringify(ids)
+        if (listens) {
+          rows   = rawWriteDb.prepare(`SELECT * ${these}`).all(list)
+          doomed = doomedUnder?.(model.name, rows) ?? null
+        }
+        rawWriteDb.prepare(`DELETE ${these}`).run(list)
+        // sqlite3_changes(), not bun's `.changes` — the latter counts what the
+        // FTS and cascade triggers wrote too, so the line said 17 rows removed
+        // for one (FJS-320).
+        removed += rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
+      } catch (err) {
+        // A table that exists and will not sweep is worth saying out loud: the
+        // whole point of the declaration is rows going away.
+        error = String((err && err.message) || err)
+        console.warn(`[litestone] retention: could not sweep '${table}' — ${error}`)
+        break
       }
-      // sqlite3_changes(), not bun's `.changes` — the latter counts what the
-      // FTS and cascade triggers wrote too, so the line said 17 rows removed
-      // for one (FJS-320).
-      const removed = rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
-      swept.push({ model: model.name, table, removed })
+      if (rows?.length) await onRemoved(model.name, rows, doomed)
+      if (ids.length < RETENTION_BATCH) break
+      await new Promise(resolve => setTimeout(resolve, 0))
+    }
+    swept.push(error ? { model: model.name, table, removed, error } : { model: model.name, table, removed })
 
-      if (removed > 0) {
-        console.log(
-          `[litestone] retention: removed ${removed} row${removed === 1 ? '' : 's'}` +
-          ` from '${table}' (older than ${retention})`
-        )
-      }
-    } catch (err) {
-      // A table that exists and will not sweep is worth saying out loud: the
-      // whole point of the declaration is rows going away.
-      console.warn(
-        `[litestone] retention: could not sweep '${table}' — ${(err && err.message) || err}`
+    if (removed > 0) {
+      console.log(
+        `[litestone] retention: removed ${removed} row${removed === 1 ? '' : 's'}` +
+        ` from '${table}' (older than ${retention})`
       )
-      swept.push({ model: model.name, table, removed: 0, error: String((err && err.message) || err) })
     }
   }
 

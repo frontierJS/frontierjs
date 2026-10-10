@@ -479,7 +479,7 @@ describe('the move is graded, not bypassed', () => {
     // state machine and its from-state lock. So a gate above the app's
     // standing refuses the move, and the refusal is counted and retried — a
     // row that is owed a move and cannot get one must not look settled.
-    const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate("0.0.9.0")')
+    const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate("0.0.7.7")')
     const { app, db, queue, advance, status } = await started(gated)
     const order = await db.asSystem().order.create({ data: {} })
 
@@ -555,6 +555,41 @@ describe('under tenancy { strategy database }', () => {
     for (const t of ['acme', 'globex'])
       await until(`${t}'s order to be abandoned`, async () =>
         (await (await registry.get(t)).asSystem().order.findUnique({ where: { id: ids[t] } })).status === 'cancelled')
+  })
+})
+
+describe('under tenancy { strategy row }', () => {
+
+  // Every tenant shares one file, so the database has no tenant to dispatch
+  // under: the fire must carry the ROW's, which is what the app's own
+  // principal then holds as its claim (FJS-2231).
+  it('each fire is dispatched in its row\'s tenant and moves the row as the app', async () => {
+    const schema = `
+tenancy { strategy row  column workspaceId  claim workspaceId }
+${SCHEMA.replace('database main { path "./app.db" }', '').replace('  @@db(main)\n', '')
+  .replace('createdAt + 14d', 'createdAt - 1d')
+  .replace('  id        Int ', '  workspaceId String\n  id        Int ')}
+`
+    const db: any = await createClient({ db: ':memory:', schema })
+    closers.push(() => db.$close())
+    const app = createApp({ db, system: { userId: 'system', role: 'system' } as any }) as any
+    const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+    app.configure(queue)
+    app.configure(commitments({ cron: '0 0 1 1 *' }))
+    closers.push(() => queue.stop())
+    await app._startForTest()
+
+    const ids: Record<string, number> = {}
+    for (const t of ['acme', 'globex'])
+      ids[t] = (await db.asSystem().order.create({ data: { workspaceId: t } })).id
+
+    expect(await app.commitments.sweep()).toEqual({ due: 2 })
+    expect(fires(queue).map(j => j.tenant_id).sort()).toEqual(['acme', 'globex'])
+
+    const status = async (id: number) => (await db.asSystem().order.findUnique({ where: { id } })).status
+    for (const t of ['acme', 'globex'])
+      await until(`${t}'s order to be abandoned`, async () => (await status(ids[t]!)) === 'cancelled')
+    expect(metrics(app).failed).toBe(0)
   })
 })
 

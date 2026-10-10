@@ -29,17 +29,17 @@ There is no `ILIKE` in SQLite. Litestone's `contains`, `startsWith`, `endsWith` 
 
 ```js
 // This silently returns nothing — json_extract returns integer, not string
-db.events.findMany({
+db.event.findMany({
   where: { $raw: sql`json_extract(meta, '$.userId') = ${'123'}` }
 })
 
 // Correct — cast to TEXT first
-db.events.findMany({
+db.event.findMany({
   where: { $raw: sql`CAST(json_extract(meta, '$.userId') AS TEXT) = ${'123'}` }
 })
 
 // Or compare to integer directly
-db.events.findMany({
+db.event.findMany({
   where: { $raw: sql`json_extract(meta, '$.userId') = ${123}` }
 })
 ```
@@ -239,11 +239,11 @@ SELECT id FROM vault WHERE blob IS NOT NULL;   -- then read each back through th
 
 ## Audit log reads lag writes within a session
 
-The logger driver buffers and flushes on a **~1s timer and on process exit**. Immediately after a write, `auditTrail.findMany()` returns 0 rows and the `.jsonl` file may not exist yet — the next process sees everything. Measured on a fresh database: 1 write → 0 rows, no file; +2s → 1 row; +50 more writes in the same process → still 1 row; next process → 51 rows.
+The trail **defers one event-loop tick**: `fireLog()` schedules with `setImmediate`, so a read in the same tick as the write returns 0 rows and the `.jsonl` file may not exist yet. Yield once — `await new Promise(r => setImmediate(r))` — and every entry is there. There is no timed buffer to wait out.
 
-**Nothing is lost.** This is visibility lag, not data loss, and it is why reading the trail immediately after writing (as several examples do) reports an empty log.
+**Nothing is lost.** This is visibility lag, not data loss, and it is why reading the trail on the line after a write reports an empty log.
 
-Related: every relative `database { path }` — the logger's included — resolves against the **process CWD** by default, so where the trail lands depends on where you launch from. `createClient({ path, resolveFrom: 'schema' })` anchors it to the app root instead, and a schema assembled in memory says where it would have lived: pass the file as `path:` beside the string, or a directory as `resolveFrom`. Litestone says so when it CREATES a directory for a database — the one signal every instance of `FJS-449` had in common. See § *Where a relative database path lands*.
+Related: every relative `database { path }` — the trail's included — resolves against the **process CWD** by default, so where the trail lands depends on where you launch from. `createClient({ path, resolveFrom: 'schema' })` anchors it to the app root instead, and a schema assembled in memory says where it would have lived: pass the file as `path:` beside the string, or a directory as `resolveFrom`. Litestone says so when it CREATES a directory for a database — the one signal every instance of `FJS-449` had in common. See § *Where a relative database path lands*.
 
 ## Where a relative `database { path }` lands
 

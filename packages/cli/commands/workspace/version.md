@@ -10,6 +10,7 @@ examples:
 args:
   -
     name: bump
+    choices: [patch, minor, major, prerelease]
     description: "Version bump: patch | minor | major | prerelease"
     defaultValue: patch
 flags:

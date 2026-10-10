@@ -26,7 +26,14 @@
  * over the screen by `showModal()`, the rest of the screen dimmed and
  * unreachable until it closes, as a browser's backdrop makes it. A progress's children are the fallback a browser shows only when
  * it cannot draw the bar, so the terminal never builds them. The optional
- * style hints are terminal cell attributes, never colors (Invariant 13).
+ * style hints are terminal cell attributes, never colors (Invariant 13), each
+ * the one a browser's default stylesheet gives the tag: `<del>` struck
+ * through, `<ins>` underlined, `<dfn>` in italics.
+ *
+ * A `<pre>` is a plain box: the compiler keeps the whitespace in its text,
+ * and the emitter drops the two newlines a browser drops. A line too long
+ * for the screen wraps, where a browser scrolls the block, because no
+ * terminal node scrolls and clipping would hide the end of the line.
  *
  * Layout hints: `inline` lays a box's children side by side; `indent` is
  * columns of left padding; `cell` takes an equal share of its row, which is
@@ -83,12 +90,16 @@ export const TERMINAL_TAGS = {
   em:       { role: 'box', inline: true, italic: true },
   i:        { role: 'box', inline: true, italic: true },
   code:     { role: 'box', inline: true },
+  pre:      { role: 'box' },
   kbd:      { role: 'box', inline: true, bold: true },
   sup:      { role: 'box', inline: true },
   small:    { role: 'box', inline: true, dim: true },
   a:        { role: 'box', inline: true, underline: true },
   output:   { role: 'box', inline: true },
   mark:     { role: 'box', inline: true, inverse: true },
+  del:      { role: 'box', inline: true, strike: true },
+  ins:      { role: 'box', inline: true, underline: true },
+  dfn:      { role: 'box', inline: true, italic: true },
   img:      { role: 'image', requires: ['alt'] },
   progress: { role: 'progress' },
   dialog:   { role: 'dialog' },
@@ -105,7 +116,8 @@ export const TERMINAL_TAGS = {
  * DOM event names with a terminal meaning, and whether each bubbles as it
  * does in a browser. A listener on an ancestor hears a descendant's event by
  * that rule: `<form on:input>` sees every field under it, and `focus`/`blur`
- * reach an ancestor only through a `|capture` listener.
+ * reach an ancestor only through a `|capture` listener, where `focusin` and
+ * `focusout` are their bubbling twins, sent after each.
  *
  * `scroll` is heard and never sent. No terminal node scrolls, so a handler
  * waits as it does on a page whose element never overflows; a role that
@@ -139,6 +151,8 @@ export const TERMINAL_EVENTS = {
   drop:      { bubbles: true },
   focus:   { bubbles: false },
   blur:    { bubbles: false },
+  focusin:  { bubbles: true },
+  focusout: { bubbles: true },
   cancel:  { bubbles: false },
   close:   { bubbles: false }
 }

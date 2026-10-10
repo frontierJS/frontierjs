@@ -842,3 +842,31 @@ describe('advise --strict', () => {
     expect(exitOf(SUGGESTS, '--strict')).toBe(0)
   })
 })
+
+// A retention sweep is createdAt < cutoff; with no index leading with createdAt
+// a sweep with nothing due scanned 34M rows every night (FJS-2288).
+describe('retention-without-an-index', () => {
+  const ID = 'retention-without-an-index'
+  const src = (model: string, retention = 'retention 90d') => `
+    database main { path "./app.db"  ${retention} }
+    ${model}
+  `
+  test('a swept model with no index on createdAt is told to declare one', () => {
+    const f = findings(src(`model Reading { id Int @id  v Int  createdAt DateTime @default(now()) }`), ID)
+    expect(f).toHaveLength(1)
+    expect(f[0].message).toContain('@@index([createdAt])')
+  })
+  test('an index leading with createdAt answers it, and one trailing with it does not', () => {
+    expect(findings(src(`model Reading { id Int @id  v Int  createdAt DateTime @default(now())  @@index([createdAt, v]) }`), ID)).toHaveLength(0)
+    expect(findings(src(`model Reading { id Int @id  v Int  createdAt DateTime @default(now())  @@index([v, createdAt]) }`), ID)).toHaveLength(1)
+  })
+  test('a database with no window, or a model with no createdAt, is not swept', () => {
+    expect(findings(src(`model Reading { id Int @id  v Int  createdAt DateTime @default(now()) }`, ''), ID)).toHaveLength(0)
+    expect(findings(src(`model Reading { id Int @id  v Int }`), ID)).toHaveLength(0)
+  })
+  test('a @@softDelete model\'s @@index is partial, so it does not count', () => {
+    const f = findings(src(`model Reading { id Int @id  v Int  createdAt DateTime @default(now())  deletedAt DateTime?  @@softDelete  @@index([createdAt]) }`), ID)
+    expect(f).toHaveLength(1)
+    expect(f[0].message).toContain('partial')
+  })
+})

@@ -250,7 +250,7 @@ framework does not have.
 
 ## Open questions
 
-- **How does a streaming method DECLARE itself, and what does a transport that
+- ~~****How does a streaming method DECLARE itself, and what does a transport that**~~ **Answered 2026-10-10 (`FJS-D853`): A — an option on the method definition, and a non-streaming transport buffers the frames and answers one ordinary envelope.**
   cannot stream answer?**
   - **A** — an option on the method definition, and a non-streaming transport
     buffers the frames and answers one ordinary envelope.
@@ -260,7 +260,7 @@ framework does not have.
     down both transports still compares), and a refusal moves a transport
     limitation into every caller. It costs one honest sentence: under a
     non-streaming transport the tokens arrive together.
-- **Does a frame go through the after-hook chain, or only through `protect()`?**
+- ~~**Does a frame go through the after-hook chain, or only through `protect()`?**~~ **Answered 2026-10-10 (`FJS-D854`): B — `protect()` per frame, the after chain once on the final record.**
   - **A** — the full after chain per frame, consistent with `announce()`.
   - **B** — `protect()` per frame, the after chain once on the final record.
   - **Recommend B** — an after-hook that announces, enqueues or invalidates would

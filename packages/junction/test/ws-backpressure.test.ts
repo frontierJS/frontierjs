@@ -111,10 +111,11 @@ describe('the send queue — a dropped frame is held, not lost', () => {
     expect(queuedFrames(ws)).toBe(1)
 
     expect(wsSend(ws, 'x'.repeat(600))).toBe('closed')
-    // 1013 Try Again Later. The client rejects every pending call on close and
-    // reconnects — a caller learns the truth instead of waiting on a frame that
-    // is never coming.
-    expect(ws.closed?.code).toBe(1013)
+    // No close code is claimed: a socket whose send buffer is full cannot carry
+    // a close frame, so the peer sees 1006 whatever is passed here (FJS-2145).
+    // The client rejects every pending call on any close and reconnects.
+    expect(ws.closed).not.toBeNull()
+    expect(ws.closed?.code).toBeUndefined()
     setMaxQueuedBytes(undefined)
   })
 

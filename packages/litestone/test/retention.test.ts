@@ -364,3 +364,193 @@ describe('the startup pass takes cascaded files too', () => {
     db.$close()
   })
 })
+
+// A sweep was one DELETE over every doomed row, run by createClient before the
+// app listened, and it first read every one of those rows into memory whenever
+// ANY plugin was installed — a gate included, which has nothing to do with a
+// delete. A year of rankings took 22.8 minutes to boot and 28 GB resident
+// (FJS-2288).
+describe('a sweep is batches that yield', () => {
+  const BIG = (dir: string) => `
+    database main { path "${join(dir, 'app.db')}"  retention 30d }
+    model Reading { id Int @id @default(autoincrement())  v Int  createdAt DateTime @default(now()) }
+  `
+  // Rows straight into the file, since a backlog is what an existing table holds
+  // the first time a window is declared over it.
+  async function backlog(dir: string, n: number) {
+    const db: any = await createClient({ schema: BIG(dir) })
+    db.$close()
+    const { Database } = await import('bun:sqlite')
+    const raw = new Database(join(dir, 'app.db'))
+    const ins = raw.prepare('INSERT INTO reading (v, createdAt) VALUES (?, ?)')
+    raw.transaction(() => { for (let i = 0; i < n; i++) ins.run(i, ago(40)) })()
+    ins.run(-1, ago(1))
+    raw.close()
+  }
+
+  test('createClient does not wait for a backlog, and $retain() finishes it', async () => {
+    const { RETENTION_BATCH } = await import('../src/core/retention.js')
+    const dir = tmp()
+    await backlog(dir, RETENTION_BATCH * 5 + 7)
+    const db: any = await createClient({ schema: BIG(dir) })
+    const sys = db.asSystem()
+    // The boot's batch and the drain's first ran before createClient resolved;
+    // the drain yields a macrotask between batches, so no third has yet.
+    expect(await sys.reading.count()).toBeGreaterThanOrEqual(RETENTION_BATCH * 3)
+    await sys.$retain()
+    expect(await sys.reading.count()).toBe(1)
+    db.$close()
+  })
+
+  test('a client closed while the backlog drains stops sweeping, quietly', async () => {
+    const { RETENTION_BATCH } = await import('../src/core/retention.js')
+    const dir = tmp()
+    await backlog(dir, RETENTION_BATCH * 3)
+    const warned: unknown[] = []
+    const warn = console.warn
+    console.warn = (...a: unknown[]) => { warned.push(a) }
+    try {
+      const db: any = await createClient({ schema: BIG(dir) })
+      db.$close()
+      await new Promise(r => setTimeout(r, 50))
+    } finally { console.warn = warn }
+    expect(warned).toEqual([])
+  })
+
+  test('each batch is its own statement, and the event loop runs between them', async () => {
+    const { runSqliteRetention, RETENTION_BATCH } = await import('../src/core/retention.js')
+    const { parse } = await import('../src/core/parser.js')
+    const { Database } = await import('bun:sqlite')
+    const raw = new Database(':memory:')
+    raw.run('CREATE TABLE reading (id INTEGER PRIMARY KEY, v INT, createdAt TEXT)')
+    const ins = raw.prepare('INSERT INTO reading (v, createdAt) VALUES (?, ?)')
+    raw.transaction(() => { for (let i = 0; i < RETENTION_BATCH * 2 + 5; i++) ins.run(i, ago(40)) })()
+    const models = parse(BIG('/tmp')).schema.models
+
+    const heard: number[] = []
+    let ticks = 0
+    const timer = setInterval(() => { ticks++ }, 0)
+    const swept = await runSqliteRetention(raw, models, '30d', {
+      onRemoved: async (_m: string, rows: unknown[]) => { heard.push(rows.length) },
+    })
+    clearInterval(timer)
+    expect(swept[0].removed).toBe(RETENTION_BATCH * 2 + 5)
+    expect(heard).toEqual([RETENTION_BATCH, RETENTION_BATCH, 5])
+    expect(ticks).toBeGreaterThan(0)
+    raw.close()
+  })
+
+  test('rows are read only for a model something hears the delete of', async () => {
+    const { runSqliteRetention } = await import('../src/core/retention.js')
+    const { parse } = await import('../src/core/parser.js')
+    const { Database } = await import('bun:sqlite')
+    const raw = new Database(':memory:')
+    raw.run('CREATE TABLE reading (id INTEGER PRIMARY KEY, v INT, createdAt TEXT)')
+    raw.prepare('INSERT INTO reading (v, createdAt) VALUES (?, ?)').run(1, ago(40))
+    const models = parse(BIG('/tmp')).schema.models
+    const seen: string[] = []
+    const spy = new Proxy(raw, { get: (t, k) => k === 'prepare' || k === 'query'
+      ? (sql: string) => { seen.push(sql); return (t as any)[k](sql) }
+      : (t as any)[k]?.bind?.(t) ?? (t as any)[k] })
+    let called = 0
+    await runSqliteRetention(spy, models, '30d', { hears: () => false, onRemoved: async () => { called++ } })
+    expect(called).toBe(0)
+    expect(seen.filter(s => /SELECT \*/.test(s))).toEqual([])
+    expect(raw.query('SELECT count(*) AS n FROM reading').get()).toEqual({ n: 0 })
+    raw.close()
+  })
+
+  test('a plugin hears deletes only when it answers them — the gate does not', async () => {
+    const { PluginRunner, Plugin } = await import('../src/core/plugin.js')
+    const { GatePlugin } = await import('../src/plugins/gate.js')
+    class Listens extends Plugin { async onAfterDelete() {} }
+    expect(new PluginRunner([new GatePlugin()]).hearsDeletes).toBe(false)
+    expect(new PluginRunner([new Plugin()]).hearsDeletes).toBe(false)
+    expect(new PluginRunner([new GatePlugin(), new Listens()]).hearsDeletes).toBe(true)
+    expect(new PluginRunner([{ onAfterDelete: async () => {} }]).hearsDeletes).toBe(true)
+  })
+})
+
+// A cascade sink used to hear whenever ANY plugin was installed, and the gate is
+// one that answers neither a delete nor a write — so an ORM delete under a gate
+// read every cascaded child to hand it to no one (FJS-2292).
+describe('an ORM delete reads cascaded children only for what hears them', () => {
+  const childReads = async (plugins: (Plugin: any) => unknown[]) => {
+    const { Database } = await import('bun:sqlite')
+    const { Plugin } = await import('../src/core/plugin.js')
+    const db: any = await createClient({
+      schema: `
+        database main { path "${join(tmp(), 'app.db')}" }
+        model Batch { id Int @id @default(autoincrement())  docs Doc[] }
+        model Doc {
+          id Int @id @default(autoincrement())
+          batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+          batchId Int
+        }
+      `,
+      plugins: plugins(Plugin) as any,
+    })
+    const sys = db.asSystem()
+    const batch = await sys.batch.create({ data: {} })
+    await sys.doc.create({ data: { batchId: batch.id } })
+    const seen: string[] = []
+    const { query, prepare } = Database.prototype
+    Database.prototype.query = function (this: unknown, sql: string) { seen.push(sql); return query.call(this, sql) }
+    Database.prototype.prepare = function (this: unknown, sql: string) { seen.push(sql); return prepare.call(this, sql) }
+    try { await sys.batch.delete({ where: { id: batch.id } }) } finally { Object.assign(Database.prototype, { query, prepare }) }
+    db.$close()
+    return seen.filter(s => /SELECT \* FROM "doc"/.test(s)).length
+  }
+
+  test('the gate alone is not a listener', async () => {
+    const { GatePlugin } = await import('../src/plugins/gate.js')
+    expect(await childReads(() => [new GatePlugin()])).toBe(0)
+  })
+
+  test('a plugin answering a delete is', async () => {
+    expect(await childReads(P => [new (class extends P { async onAfterDelete() {} })()])).toBe(1)
+  })
+
+  test('a plugin answering a write is, since SetNull is an update it hears', async () => {
+    expect(await childReads(P => [new (class extends P { async onAfterWrite() {} })()])).toBe(1)
+  })
+})
+
+// The delete's OWN-row prefetch fired for any installed plugin, so a bulk delete
+// under a gate selected the rows it handed to no listener (FJS-2293).
+describe('an ORM delete reads its own rows only for what hears them', () => {
+  const ownReads = async (plugins: (Plugin: any) => unknown[], cascade = false) => {
+    const { Database } = await import('bun:sqlite')
+    const { Plugin } = await import('../src/core/plugin.js')
+    const db: any = await createClient({
+      schema: `
+        database main { path "${join(tmp(), 'app.db')}" }
+        model Batch { id Int @id @default(autoincrement())  docs Doc[] }
+        model Doc {
+          id Int @id @default(autoincrement())
+          batch Batch @relation(fields: [batchId], references: [id], ${cascade ? 'onDelete: Cascade' : 'onDelete: Restrict'})
+          batchId Int
+        }
+      `,
+      plugins: plugins(Plugin) as any,
+    })
+    const sys = db.asSystem()
+    const batch = await sys.batch.create({ data: {} })
+    const seen: string[] = []
+    const { query, prepare } = Database.prototype
+    Database.prototype.query = function (this: unknown, sql: string) { seen.push(sql); return query.call(this, sql) }
+    Database.prototype.prepare = function (this: unknown, sql: string) { seen.push(sql); return prepare.call(this, sql) }
+    try { await sys.batch.deleteMany({ where: { id: batch.id } }) } finally { Object.assign(Database.prototype, { query, prepare }) }
+    db.$close()
+    return seen.filter(s => /^\s*SELECT .* FROM "batch"/.test(s)).length
+  }
+
+  test('the gate alone is not a listener', async () => {
+    const { GatePlugin } = await import('../src/plugins/gate.js')
+    expect(await ownReads(() => [new GatePlugin()])).toBe(0)
+  })
+
+  test('a plugin answering a delete is', async () => {
+    expect(await ownReads(P => [new (class extends P { async onAfterDelete() {} })()])).toBe(1)
+  })
+})

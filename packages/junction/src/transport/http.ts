@@ -171,7 +171,7 @@ export interface HttpTransportOptions {
   trustProxy?:  TrustProxy
   /**
    * How many bytes junction will hold for one socket that is not draining,
-   * before closing it with 1013 rather than growing without bound. Default 8MB
+   * before closing it rather than growing without bound. Default 8MB
    * — see send-queue.ts, which is also where the reason a frame needs holding at
    * all is written down.
    *
@@ -799,11 +799,22 @@ export class HttpTransport {
     if (principal === REFUSE) return new Response('Unauthorized', { status: 401 })
     user = principal
 
-    // Parse query once and pass to _buildContext to avoid double parsing
-    const query = parseQuery(url.search)
+    // Parse query once and pass to _buildContext to avoid double parsing.
+    // Past a limit the parser throws QueryLimitError (status 400); a filter cut
+    // short would be a different filter, so it is refused rather than run.
+    // Nothing before the context exists can reach the try below, and Bun's
+    // server-level handler answers a bare 500 with no status mapping, so this
+    // window answers for itself.
+    let ctx: TransportContext
+    try {
+      const query = parseQuery(url.search)
 
-    // ── Build transport context ────────────────────────────────────
-    const ctx = this._buildContext(req, url, query, headers, parsed, match.params, user, clientIP)
+      // ── Build transport context ──────────────────────────────────
+      ctx = this._buildContext(req, url, query, headers, parsed, match.params, user, clientIP)
+    } catch (err) {
+      this._opts.onError?.(err)
+      return errorResponse(err)
+    }
 
     // ── Track method stats ─────────────────────────────────────────
     this._trackMethod(method)
@@ -1198,7 +1209,8 @@ export class HttpTransport {
 
     this.stats.request.websocket++
 
-    const query   = parseQuery(url.search)   // reuse the URL already parsed in _handle
+    let query: Record<string, unknown>
+    try { query = parseQuery(url.search) } catch (err) { return errorResponse(err) }   // over a limit: refused at the upgrade
     const headers = Object.fromEntries(req.headers.entries())
 
     // Read once here and taken off the headers the socket keeps: those become

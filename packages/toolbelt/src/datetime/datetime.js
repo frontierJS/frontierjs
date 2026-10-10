@@ -411,19 +411,24 @@ export function dueAt(commitment, row) {
   const off = commitment.offset
   const n   = !off ? 0 : off.field ? row[off.field] : off.value
   if (n == null) return null
-  if (commitment.kind === 'instant') {
-    let ms
-    try { ms = toEpoch(anchor, commitment.on) } catch { return null }
-    return new Date(ms + (off ? off.sign * n * unitInfo(off.unit).factor * 1000 : 0)).toISOString()
-  }
-  const date = String(anchor).slice(0, 10)
-  if (!off) return date
-  const k = off.sign * n
-  return addToDate(date,
-      off.unit === 'd'  ? { days: k }
-    : off.unit === 'wk' ? { weeks: k }
-    : off.unit === 'mo' ? { months: k }
-    :                     { years: k })
+  // A screen asks this of the row it holds while somebody types, so an offset
+  // or anchor mid-edit is not owed yet rather than a throw.
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null
+  try {
+    if (commitment.kind === 'instant') {
+      const ms = toEpoch(anchor, commitment.on)
+      return new Date(ms + (off ? off.sign * n * unitInfo(off.unit).factor * 1000 : 0)).toISOString()
+    }
+    const date = String(anchor).slice(0, 10)
+    if (!off) return addToDate(date, { days: 0 })
+    const k = off.sign * n
+    const due = addToDate(date,
+        off.unit === 'd'  ? { days: k }
+      : off.unit === 'wk' ? { weeks: k }
+      : off.unit === 'mo' ? { months: k }
+      :                     { years: k })
+    return /^\d{4}-/.test(due) ? due : null   // past year 9999 is no 'YYYY-MM-DD'
+  } catch { return null }
 }
 
 // ─── format ───────────────────────────────────────────────────────────────

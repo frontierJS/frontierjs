@@ -212,8 +212,8 @@ Key index patterns:
 ```js
 // All writes inside a transaction share one SQLite BEGIN/COMMIT
 await db.$transaction(async tx => {
-  await tx.accounts.create({ data: {...} })
-  await tx.users.create({ data: {...} })
+  await tx.account.create({ data: {...} })
+  await tx.user.create({ data: {...} })
   // rolled back automatically on throw
 })
 ```

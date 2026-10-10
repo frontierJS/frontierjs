@@ -24,6 +24,13 @@
 // parent's tree (`core/workbench-branch.ts`), cuts `wb/<slug>` from it into a
 // worktree and pins that; Land applies the branch's work back to the parent's
 // tree, uncommitted; Archive removes the worktree and keeps the branch.
+// A new branch is SET UP before its first message: the gitignored paths the
+// parent's copy list names are copied across (a worktree has no `.env`), then
+// `bun install --no-save` where the tree has a bun lockfile — no-save, or the
+// install rewrites the lockfile and the next Land carries it. A failure is a
+// plain line in the branch's log, which the transcript draws as an error. Its
+// ports are `fli dev`'s (`claimSession` gives a linked worktree its own block),
+// and Archive gives the block back.
 //
 // When a run ends with nothing queued behind it, two follow-ups may start:
 // the CHECKS — the checkout's own `fli done` (`core/workbench-check.ts`), only
@@ -54,7 +61,7 @@ import { basename, join }              from 'node:path'
 import { fileURLToPath }               from 'node:url'
 import { resolveRoot }                 from './local-git.ts'
 import { readDiff }                    from './workbench-diff.ts'
-import { addWorktree, branchName, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
+import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
 
 export type Pin = {
   id:       string
@@ -83,6 +90,11 @@ export type Pin = {
   /** What the snapshot held beyond the parent's HEAD — files a run there had
    *  not committed, which a concurrent session may have been halfway through. */
   carried:  { total: number, files: string[] } | null
+  /** Globs over the gitignored paths a new branch copies from this checkout. */
+  copy:     string[]
+  /** What a branch was given before its first message: the paths copied, and
+   *  whether `bun install` ran, failed, or had no bun lockfile to run on. */
+  setup:    { copied: string[], install: 'ran' | 'failed' | 'none' } | null
 }
 
 export type Item =
@@ -140,6 +152,15 @@ const MAX_ITEMS = 400
 
 const DEFAULT_BUDGET = 10
 
+/** What an app keeps out of git and cannot start without. A dev database is
+ *  the app's call — copy a small one, seed a large one. */
+export const DEFAULT_COPY = ['**/.env']
+
+const MAX_COPY = 20
+
+/** A cold install of a large tree; past this the branch is left without one. */
+const INSTALL_MS = 10 * 60_000
+
 const freshFold = (): Folded => ({
   offset: 0, partial: '', items: [], session: null,
   run: { state: 'idle', tool: null, cost: null, turns: null, at: null }, byDay: {},
@@ -188,6 +209,10 @@ function alive(pid: number | null): boolean {
 
 // The cli is a devDependency and the image installs none, so it is reached
 // only on a machine where the workbench is offered at all.
+type Ports = { releaseSession: (root: string, o?: { lockFile?: string }) => void }
+let ports: Promise<Ports> | null = null
+const loadPorts = () => ports ??= import('@frontierjs/cli/core/ports.js') as Promise<Ports>
+
 type AskClaude = {
   askArgv:       (o?: { session?: string | null, fork?: boolean, work?: { budget?: number, hooks?: boolean } }) => string[]
   readAskEvent:  (event: unknown) => Array<Record<string, any>>
@@ -199,9 +224,12 @@ const loadAskClaude = () => askClaude ??= import('@frontierjs/cli/core/ask-claud
 
 export type Workbench = ReturnType<typeof createWorkbench>
 
-export function createWorkbench({ dir, bin = 'claude', env = {} }: {
+export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   dir?: string
   bin?: string
+  /** `fli dev`'s sessions lock, where a branch's port block is held; the
+   *  cli's own default when unset. */
+  portsLock?: string
   /** Variables taken OUT of a run's environment — this API's own, so a dev
    *  server the run starts does not bind this API's PORT. */
   env?: Record<string, unknown>
@@ -219,7 +247,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
   function readPins(): Pin[] {
     let pins: Array<Partial<Pin>>
     try { pins = JSON.parse(readFileSync(pinsFile, 'utf8')).pins ?? [] } catch { return [] }
-    return pins.map(p => ({ review: false, reviewPid: null, from: null, base: null, branch: null, forkOf: null, carried: null, ...p }) as Pin)
+    return pins.map(p => ({ review: false, reviewPid: null, from: null, base: null, branch: null, forkOf: null, carried: null, copy: DEFAULT_COPY, setup: null, ...p }) as Pin)
   }
 
   // Through a rename, so a crash mid-write cannot leave half a file that reads
@@ -258,6 +286,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
       budget: DEFAULT_BUDGET, hooks: false, review: false,
       pinnedAt: new Date().toISOString(), seenAt: null, pid: null, reviewPid: null,
       from: null, base: null, branch: null, forkOf: null, carried: null,
+      copy: DEFAULT_COPY, setup: null,
     }
     writePins([...pins, next])
     return { pin: next }
@@ -297,7 +326,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
    * and untracked files included, in a worktree of its own, pinned beside it.
    * Where the parent has a chat the branch's first message forks it.
    */
-  function fork(id: string, input: { slug?: unknown } = {}): { pin: Pin } | { refused: string } {
+  async function fork(id: string, input: { slug?: unknown } = {}): Promise<{ pin: Pin } | { refused: string }> {
     const parent = getPin(id)
     if (!parent) return { refused: `no pinned checkout '${id}'` }
     if (parent.from) return { refused: `${parent.name} is itself a branch — fork its parent` }
@@ -316,13 +345,43 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
 
     const pinned = pin(path)
     if ('refused' in pinned) return pinned
-    return {
-      pin: updatePin(pinned.pin.id, {
-        name: `${parent.name} · ${slug}`, from: parent.id, base: cut.base, branch: named.branch,
-        forkOf: parent.session, carried: cut.carried,
-        budget: parent.budget, hooks: parent.hooks, review: parent.review,
-      }),
-    }
+    const b = updatePin(pinned.pin.id, {
+      name: `${parent.name} · ${slug}`, from: parent.id, base: cut.base, branch: named.branch,
+      forkOf: parent.session, carried: cut.carried,
+      budget: parent.budget, hooks: parent.hooks, review: parent.review,
+    })
+    return { pin: updatePin(b.id, { setup: await setUp(parent, b) }) }
+  }
+
+  /** The parent's copy list carried across, then the install. Never refuses:
+   *  the branch exists either way, and what went wrong is in its log. */
+  async function setUp(parent: Pin, b: Pin): Promise<NonNullable<Pin['setup']>> {
+    mkdirSync(join(root, 'logs'), { recursive: true })
+    let copied: string[] = []
+    try { copied = await copyIgnored(parent.path, b.path, parent.copy) }
+    catch (e) { appendFileSync(logFile(b.id), `copying the parent's ignored files failed: ${(e as Error).message}\n`) }
+    if (!['bun.lock', 'bun.lockb'].some(f => existsSync(join(b.path, f)))) return { copied, install: 'none' }
+    const out = await installIn(b.path)
+    if (out.ok) return { copied, install: 'ran' }
+    appendFileSync(logFile(b.id), `bun install failed in the branch (${out.why}):\n${out.tail}\n`)
+    return { copied, install: 'failed' }
+  }
+
+  function installIn(cwd: string): Promise<{ ok: true } | { ok: false, why: string, tail: string }> {
+    return new Promise(done => {
+      let out = ''
+      const child = spawn(process.execPath, ['install', '--no-save'], { cwd, env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
+      const keep  = (b: Buffer) => { out = (out + b.toString('utf8')).slice(-4000) }
+      child.stdout.on('data', keep)
+      child.stderr.on('data', keep)
+      const timer = setTimeout(() => child.kill('SIGTERM'), INSTALL_MS)
+      const tail  = () => out.trim().split('\n').slice(-20).join('\n')
+      child.on('error', e => { clearTimeout(timer); done({ ok: false, why: e.message, tail: '' }) })
+      child.on('close', (code, signal) => {
+        clearTimeout(timer)
+        done(code === 0 ? { ok: true } : { ok: false, why: signal ? `stopped after ${INSTALL_MS / 60_000} minutes` : `exit ${code}`, tail: tail() })
+      })
+    })
   }
 
   /** The branch's work since its base, into the parent's tree, uncommitted. */
@@ -347,7 +406,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
    * `wb/<slug>` stays, holding what was committed there. Work not yet landed
    * is refused by count unless `discard` says to lose it.
    */
-  function archive(id: string, { discard = false }: { discard?: unknown } = {}): { archived: string } | { refused: string, pending?: number } {
+  async function archive(id: string, { discard = false }: { discard?: unknown } = {}): Promise<{ archived: string } | { refused: string, pending?: number }> {
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
     const parent = p.from ? getPin(p.from) : null
@@ -360,10 +419,11 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
     try { removeWorktree(parent?.path ?? p.path, p.path) }
     catch (e) { return { refused: `git refused to remove the worktree: ${(e as Error).message}` } }
     forget(id)
+    try { (await loadPorts()).releaseSession(p.path, { lockFile: portsLock }) } catch {}
     return { archived: p.branch }
   }
 
-  function configure(id: string, patch: { name?: unknown, budget?: unknown, hooks?: unknown, review?: unknown }): Pin | { refused: string } {
+  function configure(id: string, patch: { name?: unknown, budget?: unknown, hooks?: unknown, review?: unknown, copy?: unknown }): Pin | { refused: string } {
     const out: Partial<Pin> = {}
     if (patch.name !== undefined) {
       const name = String(patch.name).trim()
@@ -377,6 +437,13 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
     }
     if (patch.hooks !== undefined)  out.hooks  = patch.hooks === true
     if (patch.review !== undefined) out.review = patch.review === true
+    if (patch.copy !== undefined) {
+      const list = (Array.isArray(patch.copy) ? patch.copy : String(patch.copy).split('\n')).map(g => String(g).trim()).filter(Boolean)
+      if (list.length > MAX_COPY) return { refused: `the copy list holds at most ${MAX_COPY} globs` }
+      const bad = list.find(g => g.length > 200 || g.startsWith('/') || g.split('/').includes('..'))
+      if (bad) return { refused: `'${bad}' is not a glob inside the checkout` }
+      out.copy = list
+    }
     return updatePin(id, out)
   }
 

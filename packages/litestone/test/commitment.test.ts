@@ -122,6 +122,32 @@ describe('@@commitment — parse', () => {
       .toEqual([['subscription.lapse', 'subscription', 'lapse'], ['subscription.cancel', 'subscription', 'cancel']])
   })
 
+  // FJS-1994: the fire is a caller, and no caller grades 8 or 9, so the move
+  // is refused every time and the queue retries it to failure.
+  test('a move no caller can make is refused at parse, whichever model carries the gate', () => {
+    const ungated = (src) => src.replace('  @@commitment(abandon', '  @@gate("4.8.8.8")\n  @@commitment(abandon')
+    expect(errorsOf(ungated(ORDERS)))
+      .toContain("Model 'Order': @@commitment(abandon, …) moves Order, whose update gate is 8")
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("4.6.9")\n  @@commitment(abandon')))
+      .toContain('whose update gate is 9')
+    // The update position cascades from the left when it is not written.
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("1.8")\n  @@commitment(abandon')))
+      .toContain('whose update gate is 8')
+    // The model that DECLARES it is not the model that moves.
+    const hopped = DUNNING.replace('model Subscription {', 'model Subscription {\n  @@gate("4.8.8.8")')
+    expect(errorsOf(hopped)).toContain('moves Subscription, whose update gate is 8')
+    // A level a caller can hold, and a gate that never reaches update, are fine.
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("4.6.7")\n  @@commitment(abandon'))).toBe('')
+    expect(errorsOf(ORDERS.replace('  @@commitment(abandon', '  @@gate("4.6.7.8")\n  @@commitment(abandon'))).toBe('')
+  })
+
+  test('a move whose own @gate admits no caller is refused too', () => {
+    expect(errorsOf(ORDERS.replace('abandon: pending -> cancelled @system', 'abandon: pending -> cancelled @gate(8)')))
+      .toContain("@@commitment(abandon, …) the move 'abandon' is @gate(8)")
+    expect(errorsOf(ORDERS.replace('abandon: pending -> cancelled @system', 'abandon: pending -> cancelled @system @gate(7)')))
+      .toBe('')
+  })
+
   test('the hop is refused where it cannot name one row', () => {
     expect(errorsOf(DUNNING.replace('@@commitment(subscription.lapse', '@@commitment(subscriptin.lapse')))
       .toContain("'subscriptin' names no relation of this model")
@@ -293,6 +319,53 @@ describe('@@commitment — due()', () => {
       { transition: 'abandon', id: old.id,  dueAt: '2025-12-15T00:00:00.000Z', target: target(old.id) },
       { transition: 'abandon', id: edge.id, dueAt: '2026-01-01T00:00:00.000Z', target: target(edge.id) },
     ])
+    env.close?.()
+  })
+
+  // Every tenant's rows share one table, so the row is the only place a fire
+  // can learn which tenant to move it in (FJS-2231).
+  test('under row tenancy each due row answers its own tenant', async () => {
+    const schema = `tenancy { strategy row  column workspaceId  claim workspaceId }\n` +
+      ORDERS.replace('  label     String', '  label     String\n  workspaceId String')
+    const env = await createTestEnv({ schema, now: T0 })
+    const sys = env.db.asSystem()
+    for (const w of ['acme', 'globex'])
+      await sys.order.create({ data: { label: w, workspaceId: w, createdAt: '2025-12-01T00:00:00.000Z' } })
+    expect((await sys.order.due()).map(d => d.tenant).sort()).toEqual(['acme', 'globex'])
+    env.close?.()
+  })
+
+  // A model scoped through its parent holds no tenant column, so its tenant is
+  // the parent's, read along the relation the generated deny follows (FJS-2284).
+  test('under row tenancy a model scoped through its parent answers the parent’s tenant', async () => {
+    const schema = `tenancy { strategy row  column workspaceId  claim workspaceId }
+enum OrderStatus { pending paid cancelled }
+
+model Project {
+  id          Int    @id
+  workspaceId String
+  orders      Order[]
+}
+
+model Order {
+  id        Int         @id
+  projectId Int
+  project   Project     @relation(fields: [projectId], references: [id])
+  status    OrderStatus @default(pending)
+  createdAt DateTime    @default(now())
+  @@transitions(status,
+    pay:     pending -> paid,
+    abandon: pending -> cancelled @system)
+  @@commitment(abandon, on: createdAt + 14d)
+}
+`
+    const env = await createTestEnv({ schema, now: T0 })
+    const sys = env.db.asSystem()
+    for (const [i, w] of ['acme', 'globex'].entries()) {
+      await sys.project.create({ data: { id: i + 1, workspaceId: w } })
+      await sys.order.create({ data: { projectId: i + 1, createdAt: '2025-12-01T00:00:00.000Z' } })
+    }
+    expect((await sys.order.due()).map(d => d.tenant).sort()).toEqual(['acme', 'globex'])
     env.close?.()
   })
 

@@ -5752,7 +5752,7 @@ function validate(schema) {
     // maxSize only valid on jsonl
     if (db.maxSize && db.driver !== 'jsonl')
       errors.push(`database '${db.name}': maxSize is only valid for jsonl databases`)
-    // replication not valid on jsonl or logger
+    // replication not valid on jsonl or trail
     if (db.replication && (db.driver === 'jsonl' || db.driver === 'trail'))
       errors.push(`database '${db.name}': replication is not supported for ${db.driver} databases`)
     // `model` names the trail's own table. On a trail database it is optional
@@ -5763,7 +5763,7 @@ function validate(schema) {
     // rather than in a directory of jsonl.
     if (db.trailModel && db.driver === 'jsonl')
       errors.push(`database '${db.name}': model key is not valid for jsonl databases — it names an audit trail's own table, and a jsonl database that is not 'driver trail' is ordinary storage`)
-    // maxSize not valid on logger
+    // maxSize not valid on trail
     if (db.maxSize && db.driver === 'trail')
       errors.push(`database '${db.name}': maxSize is not valid for trail databases — use retention instead`)
   }
@@ -5813,6 +5813,18 @@ function validate(schema) {
           errors.push(`Model '${model.name}', field '${field.name}': @sequence is not supported on jsonl databases`)
         if (field.attributes.some(a => a.kind === 'encrypted'))
           errors.push(`Model '${model.name}', field '${field.name}': @encrypted is not supported on jsonl databases`)
+      }
+    }
+
+    // A trail model's `@@gate` is graded (FJS-2139), but the jsonl reader
+    // compiles no row policy, so a declared one let every caller read every row.
+    if (dbAttr && trailNames.has(dbAttr.name)) {
+      for (const kind of ['allow', 'deny']) {
+        if (model.attributes.some(a => a.kind === kind))
+          errors.push(
+            `Model '${model.name}': @@${kind} on '${dbAttr.name}', which is 'driver trail' — that driver runs ` +
+            `no row policy, so every caller the @@gate admits would read every row. Gate it with @@gate, or ` +
+            `put the trail in a sqlite database with a model key, where @@${kind} is enforced.`)
       }
     }
 
@@ -7526,7 +7538,7 @@ function validate(schema) {
   // ── Trail database validation ────────────────────────────────────────────────
   for (const db of schema.databases) {
     if (db.driver === 'jsonl') continue
-    if (!db.trailModel) continue   // logger auto mode — no model to validate
+    if (!db.trailModel) continue   // trail auto mode — no model to validate
 
     // User-defined mode: trailModel must reference a declared model
     if (!modelNames.has(db.trailModel))
@@ -8020,6 +8032,22 @@ function validate(schema) {
         `Model '${model.name}': ${label} is declared twice — a transition is owed at one time. ` +
         `Two deadlines for one outcome are the earlier one`)
       seen.add(c.name)
+
+      // The fire makes its move as a caller: the gate, row policies and the
+      // move's own @gate all grade it, and 8 and 9 are sentinels no principal
+      // holds. The sweep dispatches it and the job fails on every retry, with
+      // the sweep still counting the row as owed (`FJS-1994`).
+      const gateAttr = target.attributes.find(a => a.kind === 'gate')
+      const parts    = gateAttr ? String(gateAttr.value).split('.').map(p => Number(p.trim())) : []
+      const update   = parts[2] ?? parts[1] ?? parts[0]
+      if (update === 8 || update === 9) errors.push(
+        `Model '${model.name}': ${label} moves ${target.name}, whose update gate is ${update} — no principal ` +
+        `grades ${update}, so the fire is refused and retried to failure. Lower the update level to 7 and admit ` +
+        `the createApp({ system }) principal with a row policy, or drop the @@commitment`)
+      const move = moves.get(c.transition)
+      if (move.gate === 8 || move.gate === 9) errors.push(
+        `Model '${model.name}': ${label} the move '${c.transition}' is @gate(${move.gate}), which admits no ` +
+        `caller, and the fire is one. Mark it @system for a move the application makes, or lower the gate`)
 
       const field = model.fields.find(f => f.name === c.on.field)
       let kind = null

@@ -47,7 +47,11 @@ export interface SignedRequestOptions {
   window?:    number
   /** Header prefix — `X-Fjs` reads `X-Fjs-Signature`. */
   prefix?:    string
-  /** The replay half: true when this nonce was already used inside the window. */
+  /**
+   * The replay half: true when this nonce was already used inside the window.
+   * Default is an in-process memory per caller, kept twice the window — enough
+   * for one process; a fleet of them passes a shared store.
+   */
   seenNonce?: (nonce: string) => boolean | Promise<boolean>
   /** Seconds, the receiver's clock. Injectable for tests. */
   now?:       () => number
@@ -58,6 +62,25 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
   const prefix = opts.prefix ?? 'X-Fjs'
   const header = `${prefix}-Signature`.toLowerCase()
   const now    = opts.now ?? (() => Math.floor(Date.now() / 1000))
+  const window = opts.window ?? 300
+  // Refused at boot: verifyRequest refuses it per request, which is a 500 on
+  // every signed call instead of one error at startup.
+  if (!Number.isFinite(window) || window < 0)
+    throw new TypeError('signedRequest: window must be a finite number of seconds, zero or more')
+  // Without a memory a captured request replays for the whole window, and a
+  // WebSocket upgrade authenticates every frame after it, whatever method each
+  // frame names. TWICE the window, because a timestamp accepted at the limit
+  // ahead of this clock stays fresh for another full window (FJS-1833). Insertion
+  // order is expiry order, so a sweep stops at the first live entry.
+  const seen = new Map<string, number>()
+  const remember = (caller: string) => (nonce: string): boolean => {
+    const t = now()
+    for (const [k, until] of seen) { if (until > t) break; seen.delete(k) }
+    const id = `${caller}\n${nonce}`
+    if (seen.has(id)) return true
+    seen.set(id, t + 2 * window)
+    return false
+  }
   return async function signedRequest(req) {
     // No signature header at all is not this credential; the bearer path may
     // still own the request. A signature header that fails is refused.
@@ -67,8 +90,8 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
     const verdict = await verifyRequest({
       secret: key.secret, method: req.method, path: req.path, query: req.query,
       body: req.body, headers: req.headers, prefix,
-      toleranceSeconds: opts.window ?? 300, now: now(),
-      seenNonce: opts.seenNonce ?? null,
+      toleranceSeconds: window, now: now(),
+      seenNonce: opts.seenNonce ?? remember(String(key.session.userId)),
     })
     return verdict.ok ? key.session : REFUSE
   }

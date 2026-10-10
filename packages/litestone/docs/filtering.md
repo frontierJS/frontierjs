@@ -151,8 +151,8 @@ equivalent write changed nothing while reporting "no such row".
 
 ## What cannot be filtered
 
-A key can be a real field and still be unfilterable, and the two cases fail the
-same way — no rows, no error:
+A key can be a real field and still be unfilterable. Both cases are refused by
+name, because unrefused each would answer wrong with no error:
 
 | | why |
 | --- | --- |
@@ -188,13 +188,8 @@ db.post.findMany({ where: { comp: 'A' } })
 // in JS after the row is read, so SQLite cannot filter by it. …
 ```
 
-An **unknown** key still only warns on a read (and throws on a write, as it
-always did). The two are treated differently on purpose: a typo returns fewer
-rows and leaves the caller something to notice, while a key that is real and
-spelled correctly leaves nothing at all — `{ comp: 'A' }` answers `[]`, which
-reads as *no data*, and `{ comp: 'comp' }` answers **every row**, because SQLite
-compares two string constants. A filter that returns rows not matching it cannot
-be reported by a warning in a log nobody is reading.
+An **unknown** key throws the same way, with a *Did you mean*, and so does an
+unknown operator (`{ email: { contians: 'a' } }`) and an `in` given a string.
 
 ### Refused before the first query
 
@@ -269,7 +264,7 @@ db.order.findMany({
 })
 
 // Date arithmetic
-db.subscriptions.findMany({
+db.subscription.findMany({
   where: { $raw: sql`julianday('now') - julianday(createdAt) > ${30}` }
 })
 
@@ -355,10 +350,10 @@ When using `$setAuth(user)`, `@@allow` and `@@deny` policies are automatically i
 const userDb = db.$setAuth({ id: 1, accountId: 5, role: 'member' })
 
 // @@allow('read', accountId == auth().accountId) → WHERE "accountId" = 5
-const posts = await userDb.posts.findMany()
+const posts = await userDb.post.findMany()
 
 // Bypass all policies
-const all = await db.asSystem().posts.findMany()
+const all = await db.asSystem().post.findMany()
 ```
 
 See [access-control.md](./access-control.md) for the full policy syntax.

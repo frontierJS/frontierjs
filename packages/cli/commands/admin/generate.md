@@ -10,6 +10,7 @@ examples:
 args:
   -
     name: model
+    kind: model
     description: Generate routes for a single model only — model name or service name, any case. Omit for all models.
     defaultValue: ''
 flags:

@@ -1378,11 +1378,11 @@ try {
   const bot = await (async () => {
     for (let i = 0; i < 40; i++) {
       const m = await evaluate(`
-        fetch('/workspaces/${homeWs}', { method: 'POST', headers: {
-          accept: 'application/json', 'content-type': 'application/json', 'x-service-method': 'members',
+        fetch('/api-keys', { method: 'POST', headers: {
+          accept: 'application/json', 'content-type': 'application/json', 'x-service-method': 'owners',
           authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
           'x-workspace-id': ${JSON.stringify(homeWs)} }, body: '{}' }).then(r => r.json())`)
-      const b = (m?.data ?? []).find(x => x.user?.kind === 'bot' && /Drive CI/.test(x.user?.displayName ?? x.user?.name ?? ''))
+      const b = (m?.data ?? []).find(x => /Drive CI/.test(x.name ?? ''))
       if (b) return b
       await sleep(250)
     }

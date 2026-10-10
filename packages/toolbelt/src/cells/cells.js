@@ -117,7 +117,7 @@ function readDateTime(t) {
   if (month < 1 || month > 12 || day < 1 || day > daysIn(year, month) || hour > 23 || minute > 59 || second > 59)
     return fail('not a date on the calendar')
   const ms = Number(((frac ?? '') + '000').slice(0, 3))
-  let at = Date.UTC(year, month - 1, day, hour, minute, second, ms)
+  let at = utc(year, month - 1, day, hour, minute, second, ms)
   if (zone.toUpperCase() !== 'Z') {
     const z = /^([+-])(\d{2}):?(\d{2})$/.exec(zone)
     const off = (+z[2] * 60 + +z[3]) * (z[1] === '+' ? 1 : -1)
@@ -128,7 +128,16 @@ function readDateTime(t) {
 }
 
 function daysIn(year, month) {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return new Date(utc(year, month, 0)).getUTCDate()
+}
+
+// Date.UTC maps years 0-99 onto 1900-1999, so Go's zero time loads as 1901 and
+// 0004-02-29 is graded as a leap day of 1904. setUTCFullYear takes the year as written.
+function utc(year, monthIndex, day, hour = 0, minute = 0, second = 0, ms = 0) {
+  const d = new Date(0)
+  d.setUTCFullYear(year, monthIndex, day)
+  d.setUTCHours(hour, minute, second, ms)
+  return d.getTime()
 }
 
 // Exact, and case counts: `PAID` is not `paid`, because a status column is

@@ -389,11 +389,11 @@ Everything above is loud. These are not.
   SQLite. The way out is `restore()`, or `update({ …, withDeleted: true })` to
   move the value aside. A fixed fixture key therefore makes a test single-use.
 
-- **A `where` typo below the API boundary warns to stderr and returns no rows.**
-  Over HTTP it is a 400 naming the key; a service building its own filter gets
-  silence.
+- **A `where` typo throws `ValidationError`**, naming the key with a *Did you
+  mean* — an unknown field, an unknown operator, an `in` given a string, and a
+  real key SQLite cannot filter (`@computed`, `@encrypted`). Over HTTP it is a 400.
 
-- **The audit logger defers one event-loop tick.** A read in the same tick sees
+- **The audit trail defers one event-loop tick.** A read in the same tick sees
   0 rows. Yield once; do not wait.
 
 ---
@@ -430,6 +430,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **@@label names a column that may be null** (warn). @@label is what a picker SHOWS for a foreign key, and the options query sorts by that column and matches it with contains. A null there is a blank row in the list, sorted together at one end and matching no search — which reads as a broken picker rather than as a row with no name.
 - **@unique on an optional column admits any number of nulls** (info). SQLite treats NULLs as distinct in a UNIQUE index, so an optional unique column permits unlimited rows holding null. Usually what was wanted — an external id most rows do not have — and worth saying once, because "at most one row may have no value" is what people read the declaration as saying.
 - **an index a longer one already answers** (info). SQLite uses an index for any PREFIX of its columns, so @@index([a]) beside @@index([a, b]) is never chosen and @@index([email]) on a column that is already @unique duplicates the index the constraint built. Each one is a second B-tree written on every insert and update for no read it can serve. A @@softDelete model is exempt and that is not a hedge: there ddl.js emits every @@index WHERE deletedAt IS NULL and every UNIQUE in full, so the short one is a different, smaller index rather than a duplicate.
+- **a retention window over a model no index orders by createdAt** (warn). A database block's retention sweeps every model in it with a createdAt column, by createdAt < cutoff, at startup and on every $retain(). With no index leading with createdAt each sweep scans the whole table, whether or not anything is due — measured at 22.8 s a pass over 34M rows, against 0.6 ms with the index. A @@index on a @@softDelete model, or one with a where, is partial, and the sweep reads soft-deleted rows too.
 - **a declaration nothing references** (info). An enum, type, trait, function, valueset or claim nothing names. Usually a rename that left the old declaration behind, but a type may legitimately exist for an API payload the seed never stores, which is reported as external rather than as a finding.
 - **a materialized view is rebuilt in full on every row written to its sources** (info). @@refreshOn installs INSERT, UPDATE and DELETE triggers on each source table, and each one runs DELETE + the whole @@sql again. SQLite fires a row trigger per row, so the cost is one full recomputation per row written, inside the writing transaction.
 - **a queued write references a model whose id only the server can assign** (warn). @@sync says a write may be made with no server reachable. Two of them in one session is the ordinary case — a parent and then its children — and the child has to name a parent that has no id yet, because the id is assigned by the INSERT that has not happened. Unless the parent declares an id the client can mint, there is nothing to write in the foreign key.
@@ -482,7 +483,7 @@ import "./auth.lite" into auth
 
 tier: **essential** · see also: `db`, `trail`
 
-A named database. `driver` is sqlite (default), jsonl or logger; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.
+A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.
 
 ```lite
 database logs {

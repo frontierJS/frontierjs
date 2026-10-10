@@ -90,7 +90,8 @@ try {
 
 if (session.rows.length) {
   const where = session.rows.map(r => `${r.label} ${r.port}`).join(' · ')
-  log.info(session.slot ? `slot ${session.slot} — ${where}` : where)
+  const at = [session.branch && `branch ${session.branch}`, session.slot && `slot ${session.slot}`].filter(Boolean).join(' · ')
+  log.info(at ? `${at} — ${where}` : where)
 }
 
 if (flag.check) {

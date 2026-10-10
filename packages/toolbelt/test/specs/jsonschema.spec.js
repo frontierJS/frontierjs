@@ -243,3 +243,12 @@ test('jsonschema: a nullable column the server stamps is left out, because a see
   const make = createMakeFromSchema(properties, { foreignKeys: ['inspectorId', 'crewId'], required: ['crewId'] })
   assert.deepEqual(make(), { note: '', crewId: null })
 })
+
+// FJS-2192: `make(spec)` copies own members as data; `__proto__` must not become the prototype.
+test('jsonschema: make() keeps an own __proto__ member from becoming the instance prototype', function () {
+  const make = createMakeFromSchema({ note: { type: 'string' } }, {})
+  const out = make(JSON.parse('{"__proto__":{"isAdmin":true},"note":"x"}'))
+  assert.equal(out.isAdmin, undefined)
+  assert.equal(Object.getPrototypeOf(out), Object.prototype)
+  assert.equal(out.note, 'x')
+})

@@ -114,3 +114,34 @@ describe('what the trail gate does not reach', () => {
     }
   })
 })
+
+// The jsonl reader compiles no row policy, so a trail model's @@allow or
+// @@deny parsed and admitted every caller to every row (FJS-2148).
+describe('a row policy on a trail model is refused by name', () => {
+
+  for (const rule of [`@@allow('read', auth().id == actorId)`, `@@deny('read', auth().id != actorId)`]) {
+    test(rule.slice(0, 7), async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'fjs-trail-gate-'))
+      const schema = `
+        database main  { path ":memory:" }
+        database audit { path "${dir}/audit/" driver trail model AuditRow }
+        model AuditRow {
+          id        String   @id @default(uuid())
+          operation String
+          model     String
+          actorId   String?
+          createdAt DateTime @default(now())
+          @@db(audit)
+          @@gate("2")
+          ${rule}
+        }
+        model Note { id Int @id  body String  @@trail(audit) }
+      `
+      try {
+        await expect(createClient({ schema, resolveFrom: dir })).rejects.toThrow(/'driver trail'.*no row policy/)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+  }
+})

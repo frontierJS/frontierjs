@@ -57,7 +57,7 @@ export function renderDdlSnapshot(schema, { source = 'schema.lite', pluralize = 
     out.push(rule(`database ${database.name} · ${driver}`))
 
     if (driver !== 'sqlite') {
-      // jsonl and logger have no tables at all — an empty section here would
+      // jsonl and trail have no tables at all — an empty section here would
       // read as "litestone stopped emitting these".
       out.push(`-- No DDL — a ${driver} database has no schema. ${models.length} model(s)` +
                (models.length ? `: ${models.map(m => m.name).join(', ')}` : ''))

@@ -357,9 +357,8 @@ function guardedArgsError(found, accessorName, method) {
 // refused while the target's read policy applies to this caller, as a gated
 // target's is (FJS-1646). Which aggregates those are is `shape.policiedAggregates`,
 // so a relation hop and an include are walked the same way a guarded column is;
-// this only says whether any model has one, so a schema with none pays nothing.
-/** @param {Ctx} ctx */
-const anyPoliciedAggregate = (ctx) => Object.values(ctx.shapes).some(s => s.policiedAggregates.size > 0)
+// `ctx.hasPoliciedAggregates` only says whether any model has one, so a schema
+// with none pays nothing.
 
 /** @param {Found[]} found @param {string} accessorName @param {string} method @param {Ctx} ctx */
 function policiedAggregateError(found, accessorName, method, ctx) {
@@ -1235,7 +1234,7 @@ export function withArgValidation(table, model, ctx) {
       const found = collectGuardedArgs(args, modelName, 'guardedKeys', ctx.shapes)
       if (found.length) throw guardedArgsError(found, modelName, method)
     }
-    if (anyPoliciedAggregate(ctx) && args && typeof args === 'object') {
+    if (ctx.hasPoliciedAggregates && args && typeof args === 'object') {
       /** @type {Found[]} */
       const found = []
       walkGuardedWhere(args.where, modelName, 'policiedAggregates', ctx.shapes, found)

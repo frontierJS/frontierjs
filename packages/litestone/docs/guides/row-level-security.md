@@ -81,20 +81,20 @@ const db = await createClient({ path: './schema.lite', plugins: [gate] })
 
 For a viewer reading posts:
 
-1. `getLevel(viewer, 'posts')` → `VISITOR` (1)
+1. `getLevel(viewer, 'Post')` → `VISITOR` (1)
 2. Gate check: `@@gate("1.3.4.5")` → read requires level 1 → ✓ passes
 3. SQL injected: `WHERE (status = 'published' OR authorId = ?) AND deletedAt IS NULL`
 4. Returns only published posts (viewer can't see drafts they don't own)
 
 For an unauthenticated user:
 
-1. `getLevel(null, 'posts')` → `STRANGER` (0)
+1. `getLevel(null, 'Post')` → `STRANGER` (0)
 2. Gate check: `@@gate("1...")` → read requires level 1 → ✗ blocked immediately
 3. No SQL runs — `AccessDeniedError` thrown
 
 For an editor trying to update an archived post:
 
-1. `getLevel(editor, 'posts')` → `CREATOR` (3)
+1. `getLevel(editor, 'Post')` → `CREATOR` (3)
 2. Gate check: `@@gate("1.3.4.5")` → update requires level 4 → ✗ blocked
 3. `AccessDeniedError` thrown before policy check even runs
 
@@ -117,7 +117,7 @@ const posts = await req.db.post.findMany()
 
 ```js
 // Cron job — runs without a user context, needs full access
-const allPosts = await db.asSystem().posts.findMany({ withDeleted: true })
+const allPosts = await db.asSystem().post.findMany({ withDeleted: true })
 // → all posts, including soft-deleted, no policy filtering
 ```
 

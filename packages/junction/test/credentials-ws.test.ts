@@ -90,6 +90,16 @@ describe('credentials on the WebSocket upgrade', () => {
     s.ws.close()
   })
 
+  // FJS-2209 — the upgrade authenticates every later frame, so a captured one
+  // replayed is a socket that may call any method.
+  test('a captured upgrade replayed closes 4001', async () => {
+    const headers = await signedHeaders()
+    const first = open(headers)
+    expect(await whoami(first)).toBe('outpost:op-1')
+    first.ws.close()
+    expect(await open(headers).closed).toBe(4001)
+  })
+
   test('a signature made with the wrong secret closes 4001', async () => {
     const s = open(await signedHeaders('not-the-secret'))
     expect(await s.closed).toBe(4001)

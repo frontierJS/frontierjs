@@ -120,7 +120,7 @@ buffer for sequential scans and MySQL midpoint insertion for the same reason.
 ### JSONL and trail databases are NOT per-tenant
 
 A tenant's file holds every **sqlite** database the schema declares. `jsonl` and
-`logger` databases stay schema-global — one audit trail for the fleet — and the
+`trail` databases stay schema-global — one audit trail for the fleet — and the
 registry says so at startup. Per-tenant audit is an application decision, not a
 default.
 
@@ -244,7 +244,7 @@ Four ways to answer it:
 workspaceId Int                 // declare the column and it is scoped like the rest
 ```
 
-A model in a `jsonl` or `logger` database is never scoped — there is no policy
+A model in a `jsonl` or `trail` database is never scoped — there is no policy
 engine there, so a rule would read as enforcement and not be it.
 
 ### Scoped through a parent

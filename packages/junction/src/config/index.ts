@@ -103,7 +103,7 @@ export interface AppConfig {
     // requests complete. Default 5000ms.
     drainTimeout?: number
     // How much junction holds for a WebSocket that is not draining before it
-    // closes it with 1013. Default 8MB. Past Bun's own buffer a frame is
+    // closes it. Default 8MB. Past Bun's own buffer a frame is
     // DROPPED rather than queued, and that drop is silent — FJS-139.
     wsMaxQueued?: number
     // Caller-varied headers this app reads off a request — a basket token, a

@@ -246,7 +246,7 @@ failure it exists to find.
 Runs as SYSTEM: the question is enforcement, and a `@@gate` refusing the write
 first would answer *rejected* for every case including the ones nothing
 validates. Rolls its rows back, so it is safe to call mid-suite. Models nothing
-can write to — `@@external`, `jsonl`, `logger` — are skipped.
+can write to — `@@external`, `jsonl`, `trail` — are skipped.
 
 **Three outcomes.** A write that fails for an unrelated reason is `error`, never
 `rejected`; calling it a refusal makes a broken validator look enforced. It is
@@ -800,7 +800,7 @@ class BaseSeeder extends Seeder {
   async run(db) {
     await this.once(db, 'base-v1', async () => {
       // runs once and never again, even across deploys
-      await db.plans.createMany({ data: [...] })
+      await db.plan.createMany({ data: [...] })
     })
   }
 }
@@ -940,7 +940,7 @@ emitter renames a column in an app that never touched its schema — and that
 app's own tests go through the client that changed with it, which is why nothing
 there can see it.
 
-One section per declared database, in declaration order. A `jsonl` or `logger`
+One section per declared database, in declaration order. A `jsonl` or `trail`
 database is named and skipped: absent DDL and an absent database have to read
 differently. Fragments an app merges at runtime are not in the file.
 

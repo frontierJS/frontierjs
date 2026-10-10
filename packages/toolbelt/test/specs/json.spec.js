@@ -12,7 +12,7 @@
  */
 
 import {
-  accessorPath, arrayKind, classify, coerceLike, convertTo, diffDocs, expandToDepth, format, getIn,
+  MAX_DEPTH, exceedsDepth, accessorPath, arrayKind, classify, coerceLike, convertTo, diffDocs, expandToDepth, format, getIn,
   insertIn, isContainer, jsonPointer, keepUnchanged, markRuns, mergeKeys, patchText, pathKey, preview, removeIn, renameKey,
   sameValue, searchDoc, setIn, summarize, treeRows, tryParse,
 } from '../../src/json/json.js'
@@ -755,4 +755,49 @@ test('patchText: over random writes the text parses to next, and a formatted one
     if (!emptyRoot) assert.equal(out, JSON.stringify(next, null, indent || undefined))
     assert.equal(patchText(out, next, next), out)
   }
+})
+
+// ── depth ─────────────────────────────────────────────────────────────────────
+
+const nested = (n, leaf = 1) => { let v = leaf; for (let i = 0; i < n; i++) v = { a: v }; return v }
+const nestedText = (n) => '{"a":'.repeat(n) + '1' + '}'.repeat(n)
+
+test('json: every walker refuses a document nested past MAX_DEPTH by name, quickly', function () {
+  // A path key is O(depth) long and a walk builds one per ancestor, so work
+  // grew with the cube of the depth (20 s at 2000) and the stack ran out at
+  // 100k. One author of a Json column could freeze whoever opened it.
+  const deep = nested(100000)
+  const other = nested(100000, 2)
+  const started = Date.now()
+  const refused = (fn) => {
+    let error
+    try { fn() } catch (e) { error = e }
+    assert.ok(error instanceof RangeError && /nested more than \d+ deep/.test(error.message), String(error))
+  }
+  refused(() => diffDocs(deep, other))
+  refused(() => searchDoc(deep, '1'))
+  refused(() => sameValue(deep, other))
+  refused(() => keepUnchanged(deep, nested(100000)))
+  refused(() => expandToDepth(deep, Infinity))
+  refused(() => treeRows(deep, { expanded: new Set(Array.from({ length: 300 }, (_, i) => pathKey(Array(i + 1).fill('a')))) }))
+  refused(() => patchText(nestedText(100000), deep, other))
+  assert.ok(Date.now() - started < 2000, 'refusal must not walk the document')
+})
+
+test('json: a document at MAX_DEPTH still walks', function () {
+  const doc = nested(MAX_DEPTH - 1)
+  const next = nested(MAX_DEPTH - 1, 2)
+  assert.equal(diffDocs(doc, next).count.changed, 1)
+  assert.equal(searchDoc(doc, '1').count, 1)
+  assert.equal(sameValue(doc, next), false)
+  assert.equal(expandToDepth(doc, Infinity).size, MAX_DEPTH - 2)
+})
+
+test('json: tryParse reports a document nested past MAX_DEPTH instead of handing it on', function () {
+  const out = tryParse(nestedText(100000))
+  assert.equal(out.ok, false)
+  assert.match(out.error, /nested more than \d+ deep/)
+  assert.equal(exceedsDepth(nested(100000)), true)
+  assert.equal(exceedsDepth(nested(MAX_DEPTH - 1)), false)
+  assert.equal(tryParse(nestedText(MAX_DEPTH - 1)).ok, true)
 })

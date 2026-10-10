@@ -115,6 +115,19 @@ describe('getConfig — flags', () => {
     }
   })
 
+  test('an argument takes `choices` and `kind` with the meaning a flag gives them', () => {
+    const meta = base({ args: [{ name: 'bump', choices: ['patch', 'minor'], defaultValue: 'patch' }] })
+    expect(getConfig(meta, ['minor'], {}).arg.bump).toBe('minor')
+    expect(getConfig(meta, [], {}).arg.bump).toBe('patch')
+    expect(() => getConfig(meta, ['majr'], {})).toThrow()
+
+    const paths = base({ args: [{ name: 'paths', variadic: true, choices: ['a', 'b'] }] })
+    expect(() => getConfig(paths, ['a', 'z'], {})).toThrow()
+
+    expect(() => getConfig(base({ args: [{ name: 'file', kind: 'fiel' }] }), [], {})).toThrow()
+    expect(getConfig(base({ args: [{ name: 'file', kind: 'path' }] }), ['x'], {}).arg.file).toBe('x')
+  })
+
   test('a flag is named for what it does: `no-x` is refused, and `--no-x` turns `x` off', () => {
     expect(() => getConfig(base({ flags: { 'no-push': { type: 'boolean' } } }), [], {})).toThrow()
 

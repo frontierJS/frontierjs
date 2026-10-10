@@ -55,6 +55,8 @@ src/
                          one place another package gets a renderer from
                          (`createRenderer`, `createHeadlessRenderer`) — its own
                          engine import would be a second copy
+  entities.js          — htmlEntitiesToText(): character references as text,
+                         read by the compiler and the terminal runtime's {@html}
   render-component.js  — renderComponent(): a component → HTML, at build time
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)

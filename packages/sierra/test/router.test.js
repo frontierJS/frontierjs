@@ -190,6 +190,11 @@ describe('parseQueryParams', () => {
     expect(parseQueryParams(null)).toEqual({})
   })
 
+  test('a URL past a query limit reads as no query rather than throwing', () => {
+    const qs = '?' + Array.from({ length: 1001 }, (_, i) => `k${i}=1`).join('&')
+    expect(parseQueryParams(qs)).toEqual({})
+  })
+
   test('coerces numbers', () => {
     const result = parseQueryParams('?page=2&limit=50')
     expect(result.page).toBe(2)

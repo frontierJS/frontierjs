@@ -985,7 +985,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // Only then, because a server-assigned key answers *does this row exist* by
   // being present at all and this set would grow one entry per row of every
   // page for nothing.
+  //
+  // A row the DEVICE answered counts: it was the server's once, and missing it
+  // sent a save of a row opened offline as a create, refused at replay by a
+  // service with no `create` and a duplicate on one with it (`FJS-2254`).
   const _seen = new Set()
+
+  function _sawRows(rows) {
+    if (!callerSuppliedId) return
+    for (const row of rows) if (row?.[idField] != null) _seen.add(row[idField])
+  }
 
   // The row a write was ANSWERED with goes into its node, so the writer's own
   // screen moves on the answer and the broadcast only confirms it. Without it a
@@ -1592,6 +1601,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         : null
 
       if (local?.length) {
+        _sawRows(local)
         if (stamp === _loadIssued) {
           junctionResource.store.set(local)
           _cachedAt = Date.now()
@@ -1607,6 +1617,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         if (local) return local
         throw err
       }
+      _sawRows(hit.rows)
       if (stamp === _loadIssued) {
         // Into the same store the live layer writes, so the screen renders it
         // the way it renders anything. A second path would be a second shape of

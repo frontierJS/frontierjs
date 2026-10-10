@@ -9,6 +9,7 @@ examples:
 args:
   -
     name: paths
+    kind: path
     description: Prove only these files' changes — the rest of a shared tree is another change's
     variadic: true
 flags:

@@ -250,9 +250,14 @@ an integer `unit_amount` beside a `unit_amount_decimal` string of at most twelve
 places. Here the rate is `@scale(9)` and the total is the application's, rounded
 once — which is the same split, said in one column fewer.
 
-**Aggregating across currencies is not prevented.** `SUM` over a `@money(field:)`
-column adds unlike things, and the schema cannot see it. Group by the currency
-column.
+**Aggregating across currencies is refused by name.** A `_sum`, `_avg`, `_min` or
+`_max` over a `@money(field: currency)` column — in `aggregate`, a named
+aggregate, or a `groupBy`'s select, `having` or `orderBy` — needs the currency to
+be one: a `by` naming `currency`, or a `where` pinning it (`'USD'`,
+`{ equals: 'USD' }`, `{ in: ['USD'] }`, inside `AND` too). Otherwise $49, €45 and
+¥7,000 would answer a bare 16,400. A named aggregate's `filter` is a `sql`
+fragment and is not read for a pin. `@money(USD)` is one currency already
+(`FJS-2171`).
 
 ## `@unit(symbol)` — what the number counts
 

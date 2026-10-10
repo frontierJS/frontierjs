@@ -12,6 +12,7 @@ examples:
 args:
   -
     name: target
+    kind: dir
     description: Folder to zip (defaults to current directory)
     defaultValue: '.'
 flags:

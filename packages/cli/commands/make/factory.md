@@ -9,6 +9,7 @@ examples:
 args:
   -
     name: model
+    kind: model
     description: Model name (PascalCase and singular, as schema.lite declares it)
     required: true
 flags:

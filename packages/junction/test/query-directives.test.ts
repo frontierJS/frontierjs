@@ -177,3 +177,22 @@ describe('$wrap is tri-state', () => {
     expect(body).toHaveLength(2)
   })
 })
+
+// A filter cut short is a different filter: a pair dropped past the 1000th
+// never applies, and `notIn` minus its last id answers a row it excludes
+// (FJS-2194). The transport refuses by name instead.
+describe('a query past a limit is refused, not truncated', () => {
+  test('1001 parameters answer 400', async () => {
+    const app = await createTestApp({ services: [() => echoService()] })
+    const qs  = '?' + Array.from({ length: 1001 }, (_, i) => `k${i}=1`).join('&')
+    const res = await request(app).get(`/things${qs}`)
+    expect(res.status).toBe(400)
+  })
+
+  test('an array of 1001 answers 400', async () => {
+    const app = await createTestApp({ services: [() => echoService()] })
+    const qs  = '?' + Array.from({ length: 1001 }, (_, i) => `id[notIn][]=${i}`).join('&')
+    const res = await request(app).get(`/things${qs}`)
+    expect(res.status).toBe(400)
+  })
+})

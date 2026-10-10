@@ -37,8 +37,8 @@
 - [geo.md](geo.md) — `@point`: a coordinate indexed as two columns and read as one, with bounding-box pruning (`FJS-D316`, `FJS-D317`)
 - [vectors.md](vectors.md) — `@vector`: a float32 embedding column, compared by angle — where the comparison runs differs on a server and in a browser
 - [file-storage.md](file-storage.md) — FileStorage plugin, S3/R2/local, autoResolve, fileUrl, ExternalRefPlugin
-- [audit-logging.md](audit-logging.md) — @trail, @@trail, logger driver, onLog callback
-- [multi-database.md](multi-database.md) — database blocks, drivers (sqlite/jsonl/logger), @@db, @@external
+- [audit-logging.md](audit-logging.md) — @trail, @@trail, trail driver, onLog callback
+- [multi-database.md](multi-database.md) — database blocks, drivers (sqlite/jsonl/trail), @@db, @@external
 - [sequences.md](sequences.md) — @sequence per-scope auto-increment
 - [edge-fields.md](edge-fields.md) — @edge / @scoped: per-relationship & per-viewer values, scopedBy binder, eject-to-model
 

@@ -187,7 +187,7 @@ export function pluralize(word) {
      `s$`, and the table said otherwise in vain. */
   const lower = word.toLowerCase()
   if (INVARIANT.has(lower)) return word
-  if (lower in IRREGULAR) return matchCase(word, IRREGULAR[lower])
+  if (Object.hasOwn(IRREGULAR, lower)) return matchCase(word, IRREGULAR[lower])
 
   if (/[^aeiou]y$/i.test(word))     return word.slice(0, -1) + 'ies'  // category → categories
   if (/(?:s|x|z|ch|sh)$/i.test(word)) return word + 'es'              // bus → buses, box → boxes
@@ -208,7 +208,7 @@ export function singularize(word) {
 
   const lower = word.toLowerCase()
   if (INVARIANT.has(lower)) return word
-  if (lower in SINGULAR_OF) return matchCase(word, SINGULAR_OF[lower])
+  if (Object.hasOwn(SINGULAR_OF, lower)) return matchCase(word, SINGULAR_OF[lower])
 
   const [prefix, head] = headOf(word)
   if (prefix) return INVARIANT.has(head.toLowerCase()) ? word : prefix + rules(head)

@@ -724,7 +724,7 @@ export async function cmdStudio(cfg) {
           const stats     = getDbStats()
           const counts    = await getRowCounts()
           // Use db.$schema — the augmented schema that includes auto-generated
-          // logger models (e.g. auditTrail) and view stubs. parseResult.schema
+          // trail models (e.g. auditTrail) and view stubs. parseResult.schema
           // is the raw parsed result and is missing these synthetic models.
           const liveSchema = activeDb.$schema
           const multiDb   = liveSchema.databases.some(db => !db.driver || db.driver === 'sqlite')
@@ -1435,7 +1435,7 @@ export async function cmdStudio(cfg) {
         }
 
         // ── Maintenance actions ─────────────────────────────────────────────
-        // Each iterates the open sqlite connections (skips jsonl/logger).
+        // Each iterates the open sqlite connections (skips jsonl/trail).
 
         if (path === '/api/maint/backup') {
           const { vacuum = false } = body

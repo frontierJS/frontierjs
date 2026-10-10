@@ -24,7 +24,7 @@ const alice = await db.user.findUnique({ where: { email: 'alice@example.com' } }
 // → { id: 1, email: 'alice@example.com', ... } | null
 
 // Throw if not found
-db.user.findFirstOrThrow({ where })   // throws { code: 'NOT_FOUND', model: 'users' }
+db.user.findFirstOrThrow({ where })   // throws { code: 'NOT_FOUND', model: 'user' }
 db.user.findUniqueOrThrow({ where })
 
 // Count

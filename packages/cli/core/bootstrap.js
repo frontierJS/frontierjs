@@ -27,7 +27,7 @@ loadEnv(resolve(global.projectRoot, '.env'), { override: true })
 
 
 // ─── Internal flags hidden from help/listing ─────────────────────────────────
-// These are added by the runtime (defaultFlags) for cross-cutting behavior;
+// These are added by the runtime (DEFAULT_FLAGS in flags.js) for cross-cutting behavior;
 // users don't pass them by name in command help so we hide them from listings.
 const INTERNAL_FLAGS = new Set(['dry', 'test', 'step', 'debug', 'verbose', 'project', '_spec'])
 
@@ -204,8 +204,10 @@ function printHelp(meta, filePath) {
     logger('\n  Arguments:', 'info')
     for (const arg of meta.args) {
       const required = arg.required ? chalk.yellow(' (required)') : ''
+      const bound    = flagConstraint(arg)
+      const choices  = bound ? chalk.dim(` (${bound})`) : ''
       const def      = arg.defaultValue !== undefined ? chalk.dim(` [default: ${arg.defaultValue}]`) : ''
-      logger(`    ${arg.name.padEnd(20)} ${arg.description ?? ''}${required}${def}`, 'info')
+      logger(`    ${arg.name.padEnd(20)} ${arg.description ?? ''}${required}${choices}${def}`, 'info')
     }
   }
 

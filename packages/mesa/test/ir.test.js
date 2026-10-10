@@ -126,6 +126,19 @@ describe('lower()', () => {
     expect(global.handlers[0].expr.code).toMatch(/preventDefault\(\)/)
   })
 
+  it('lowers {@html} to an html node reading its expression', async () => {
+    const tree = await ir(`<script>
+  let markup = '<b>x</b>'
+</script>
+<pre>{@html markup}</pre>
+`, 'H.mesa')
+    const [pre] = tree.children.filter((c) => c.kind === 'element')
+    expect(pre.children).toEqual([
+      { kind: 'html', loc: 'H.mesa:4:6', value: expect.objectContaining({ raw: 'markup' }) },
+    ])
+    expect(pre.children[0].value.code).not.toBe('markup')
+  })
+
   it('lowers a component call: props, binds, refusals, slots routed as the DOM path routes them', async () => {
     const tree = await ir(`<script>
   import Card from './Card.mesa'

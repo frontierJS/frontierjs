@@ -22,7 +22,7 @@ If you need horizontal write scaling, multi-region replication, or Postgres-spec
 
 Bun has a native SQLite driver built in — `bun:sqlite`. It's significantly faster than `better-sqlite3` (Node's best SQLite driver) because it's implemented in Zig and runs synchronously inside the JS thread without going through libuv. No native addon compilation, no platform binary, no WASM.
 
-Litestone uses Bun's native SQLite directly. This is why it has zero npm dependencies. A Litestone project installs in under a second.
+Litestone uses Bun's native SQLite directly. This is why it has no third-party npm dependencies — its one dependency is `@frontierjs/toolbelt`, pure functions from the same repo with none of their own (`FJS-D26`). A Litestone project installs in under a second.
 
 Bun also has fast test runner, native TypeScript, native `.env`, and a built-in bundler. The whole toolchain is faster.
 
@@ -40,13 +40,13 @@ Schema-first is better when:
 - You want the schema to drive code generation beyond TypeScript (JSON Schema, form validation, API docs)
 - You prefer a declarative DSL over TypeScript imports for model definitions
 
-## Why zero dependencies?
+## Why no third-party dependencies?
 
-Every npm dependency is a supply-chain risk, a breakage surface, and a source of version conflicts. Litestone ships one package that does everything: schema parsing, migrations, queries, encryption, file storage, FTS, access control.
+Every npm dependency is a supply-chain risk, a breakage surface, and a source of version conflicts. Litestone and the first-party `@frontierjs/toolbelt` beneath it do everything: schema parsing, migrations, queries, encryption, file storage, FTS, access control.
 
-There's no Rust binary to compile on your CI machine. No WASM bundle adding 500kb to your lambda. No `node_modules/prisma/query-engine-darwin-arm64` file that doesn't exist on Linux.
+There's no Rust binary to compile on your CI machine. On a server there is no WASM bundle adding 500kb to your lambda — SQLite's wasm build is only what the browser client runs over. No `node_modules/prisma/query-engine-darwin-arm64` file that doesn't exist on Linux.
 
-`bun add @frontierjs/litestone` — one package, runs immediately.
+`bun add @frontierjs/litestone` — runs immediately.
 
 ## Why row-level policies as SQL?
 

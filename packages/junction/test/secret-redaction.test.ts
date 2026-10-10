@@ -142,3 +142,24 @@ describe('one walker, two predicates', () => {
     expect((redactProtected({ d }, {}) as any).d).toBe(d)
   })
 })
+
+// FJS-2192: the predicate asks whether a key is a protected COLUMN, and a plain
+// read of the column map answers for Object.prototype's names too.
+describe('a key named for an inherited member is not a protected column', () => {
+  const stored = { constructor: 'a', toString: 'b', valueOf: 'c', ok: 1 }
+
+  test('withholdProtected keeps them, at any depth', async () => {
+    const { withholdProtected } = await import('../src/transport/bridge.ts')
+    const db = { $protectedFields: () => ({ ssn: 'encrypted' }) }
+    const ctx: any = { model: 'Lead', service: 'leads', locals: { db } }
+    const out: any = withholdProtected({ data: { ...stored, ssn: 'x', nested: { ...stored } } }, ctx)
+    expect(out.data).toMatchObject({ constructor: 'a', toString: 'b', valueOf: 'c', ok: 1 })
+    expect(out.data.ssn).toBeUndefined()
+    expect(out.data.nested).toEqual(stored)
+  })
+
+  test('redactProtected keeps them', () => {
+    const out: any = redactProtected({ ...stored, ssn: 'x' }, { ssn: 'encrypted' })
+    expect(out).toMatchObject({ ...stored, ssn: '[redacted]' })
+  })
+})

@@ -2,7 +2,7 @@
 
 **Schema-first SQLite ORM for Bun.**
 
-A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behavior, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded, fast, and dependency-free.
+A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behavior, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded and fast, with no third-party dependency.
 
 ```
 // schema.lite
@@ -97,7 +97,7 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Relation-based policy checks** | ✓ | ✗ | ✗ | ✓ |
 | **Level-based access control** (GatePlugin) | ✓ | ✗ | ✗ | ✗ |
 | **Field-level encryption at rest** (`@encrypted` / `@secret`) | ✓ | ✗ | ✗ | ✗ |
-| **Hidden / guarded fields** (`@guarded`, `@guarded`) | ✓ | ✗ | ✗ | ✗ |
+| **Guarded fields** (`@guarded`) | ✓ | ✗ | ✗ | ✗ |
 | **System-mode bypass** (`asSystem()`) | ✓ | ✗ | ✗ | partial ⁶ |
 
 ### Lifecycle — what happens automatically over a row's life
@@ -164,7 +164,7 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **A graded gap report on adoption** (`changed` / `lost` / `noted`, per line) | ✓ | ✗ | ✗ | ✗ |
 | **Schema mutation testing** (`litestone mutate` — a survivor is a hole) | ✓ | ✗ | ✗ | ✗ |
 | **Auto-generated API / tRPC hooks** | ✗ | ✗ | ✗ | ✓ |
-| **Zero npm dependencies** | ✓ | ✓ | ✗ | ✗ |
+| **No third-party npm dependencies** | ✓ | ✓ | ✗ | ✗ |
 
 ### Platform reach (a tradeoff, not a feature)
 
@@ -333,8 +333,8 @@ model User {
 @omit(all)                       excluded everywhere
 @system                          the application writes it, its caller does not. Readable by
                                  anyone, refused by name on every write. See below
-@guarded                         excluded unless asSystem() — and refused on write, too
-@guarded                    the same; an explicit select cannot unlock the read
+@guarded                         excluded unless asSystem() — refused on write too, and an
+                                 explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
                                  still WRITABLE by a non-system caller
 @encrypted(deterministic: true)  encrypted equality search, and the value still reads back
@@ -442,13 +442,13 @@ const db = await createClient({ path: './schema.lite' })
 
 await db.pageView.create({ data: { path: '/home', duration: 142 } })  // → analytics.db
 await db.apiRequest.create({ data: { method: 'GET', path: '/', status: 200 } })  // → logs/
-await db.auditTrail.findMany({ where: { model: 'User' } })  // → audit/ (auto-created by logger driver)
+await db.auditTrail.findMany({ where: { model: 'user' } })  // → audit/ (auto-created by trail driver)
 ```
 
 **Drivers:**
 - `sqlite` (default) — standard SQLite file with full ORM support
 - `jsonl` — append-only log files, one `.jsonl` per model, `findMany` supported
-- `logger` — auto-schema audit log, receives `@trail` / `@@trail` entries; queries via `db.auditTrail`
+- `trail` — auto-schema audit log, receives `@trail` / `@@trail` entries; queries via `db.auditTrail`
 
 ---
 
@@ -493,7 +493,7 @@ model Invoice { id Int @id  accountId Int  @@tenant(column: "accountId") }
 ```
 
 A model declaring neither is **reported by name at parse**, once. `jsonl` and
-`logger` models are never scoped — there is no policy engine there — and those
+`trail` models are never scoped — there is no policy engine there — and those
 databases stay schema-global under `strategy database` too.
 
 **Every reader asks one resolution** — `resolveTenancy(schema)`, reachable as
@@ -625,7 +625,7 @@ const db = await createClient({ path: './schema.lite',
 `database main`, so `db: ':memory:'` is the in-memory test client — but a
 *second* declared database keeps its declared path regardless.
 `databases: ':memory:'` is the shorthand that moves every one of them, jsonl and
-logger included. Most specific wins:
+trail included. Most specific wins:
 `databases: ':memory:'` > `databases: { main: { path } }` > `db` > the declaration.
 
 **`encryptionKey` is parsed as hex**, so 64 *characters* is not necessarily 32
@@ -1088,9 +1088,9 @@ column, which is `hasSome`. **Prisma reads it as an exact match**, so a schema
 ported from there filters wider than it did. The exact, ordered comparison is
 `{ equals: [...] }`.
 
-**A `where` typo below the HTTP boundary warns to stderr and returns no rows.**
-Over the wire an unknown key is a 400 naming it; a service building its own filter
-gets silence. `db.$checkWhere(accessor, where)` is how to ask first.
+**A `where` typo throws `ValidationError`** naming the key, with a *Did you mean*
+— on every flavor of client, so a service building its own filter hears it too.
+Over the wire it is a 400. `db.$checkWhere(accessor, where)` is how to ask first.
 
 ### Sorting
 
@@ -1241,7 +1241,7 @@ stop()
 
 `@@trail(audit)` covers **writes**, which means the events an application most
 wants are exactly the ones it cannot see. A sign-in is not a write to `User`, and
-a *failed* one is not a write at all — so nothing the logger can observe names the
+a *failed* one is not a write at all — so nothing the trail can observe names the
 actor or the attempt.
 
 `db.$audit()` is the one way to put a row there by hand:
@@ -1270,7 +1270,7 @@ what it held. That is what makes `@secret`'s expansion safe: it implies
 every secret field, and without redaction that writes plaintext beside a correctly
 encrypted row. `null` is preserved rather than redacted.
 
-**The logger defers one event-loop tick.** `fireLog()` schedules with
+**The trail defers one event-loop tick.** `fireLog()` schedules with
 `setImmediate` and the jsonl driver appends synchronously, so a read in the same
 tick sees 0 rows and the `.jsonl` may not exist yet. Yield once; do not wait —
 there is no timed buffer and no flush on exit.
@@ -1336,10 +1336,9 @@ An unknown accessor answers `[]` — *I cannot judge this* is not *this is wrong
 Both live on **every** flavor of client: filterability is a fact about the
 schema, and auth has no bearing on it.
 
-The two differ in strictness on purpose. **A bad sort key throws**, where a bad
-filter key warns to stderr and returns no rows — a wrong filter returns fewer
-rows, which is visible, and a wrong sort returns the right rows in the wrong
-order, which is not.
+**A bad key throws in both**, with a *Did you mean* — a wrong filter answers the
+wrong rows and a wrong sort the right rows in the wrong order, and neither is
+visible in the result.
 
 ---
 
@@ -2288,7 +2287,7 @@ litestone edge eject <Model>.<field> promote an @edge/@scoped field to a real mo
 litestone optimize [table]           merge FTS5 index segments
 litestone transform [config.js]      anonymize / shard pipeline (dev only)
 
-litestone backup [dest]              back up every database (SQLite + JSONL/logger)
+litestone backup [dest]              back up every database (SQLite + JSONL/trail)
                                        --vacuum  compact first
 litestone replicate [config.js]      stream every SQLite WAL to S3/R2 via litestream
                                        (restore is `litestream restore`, by hand,

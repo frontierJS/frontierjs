@@ -382,14 +382,14 @@ on the call, so a create policy naming one is answerable.
 // Scope client to a user — policies apply to all queries
 const userDb = db.$setAuth(req.user)
 
-const posts = await userDb.posts.findMany()   // only returns allowed posts
-await userDb.posts.create({ data: {...} })    // checked against @@allow('create', ...)
+const posts = await userDb.post.findMany()   // only returns allowed posts
+await userDb.post.create({ data: {...} })    // checked against @@allow('create', ...)
 
 // Bypass all policies
-const all = await db.asSystem().posts.findMany()
+const all = await db.asSystem().post.findMany()
 
 // Debug which policy blocked a query
-const result = await userDb.posts.findMany({ policyDebug: true })
+const result = await userDb.post.findMany({ policyDebug: true })
 ```
 
 ### Reaching a model through `include`

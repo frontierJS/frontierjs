@@ -201,7 +201,7 @@ router.post('/tenants', requireSuperAdmin, async (req, res) => {
   const db = await tenants.get(id)
 
   // Seed initial admin user
-  await db.asSystem().users.create({
+  await db.asSystem().user.create({
     data: { email: req.body.adminEmail, role: 'admin' }
   })
 

@@ -138,8 +138,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           show there too. core/workbench-branch.ts is a BRANCH: Fork snapshots
           the parent's tree through a temporary index (its real index and HEAD
           are only read), cuts wb/<slug> into a worktree under WORKBENCH_DIR/trees
-          and pins it; Land is `git apply --check` then apply, into the parent's
-          working tree only. verify:provision
+          and pins it, then sets it up before it answers — the parent's copy
+          list (gitignored globs, default **/.env) copied across and
+          `bun install --no-save`; Land is `git apply --check` then apply, into the
+          parent's working tree only. A branch's ports are `fli dev`'s
+          (FJS-D841, +N×10000), which is why the API and SPA read FLI_PORT_BE/FE;
+          Archive releases them. verify:provision
           drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
           or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
           services/api-keys/scopes.ts, proved by verify:mcp

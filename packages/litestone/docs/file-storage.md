@@ -46,6 +46,14 @@ const user = await db.user.create({
 import { fromPath } from '@frontierjs/litestone/storage'
 await db.user.update({ where: { id: 1 }, data: { avatar: fromPath('./seed/alice.jpg') } })
 
+// Over JSON (a JSON body, an /mcp tool call), the bytes go inline: a base64
+// data URL, or { name, type, data } with base64 data (FJS-D666). A stored ref
+// is never sent — the server writes it. The create and update JSON Schemas
+// describe this value as `FileInput`; the bound is junction's http.maxBodySize
+// (256KB by default, and base64 adds a third), so an app taking photos raises it.
+await db.user.update({ where: { id: 1 }, data: { avatar: 'data:image/png;base64,iVBORw0KGgo…' } })
+await db.user.update({ where: { id: 1 }, data: { avatar: { name: 'me.png', type: 'image/png', data: 'iVBORw0KGgo…' } } })
+
 // Update file — old object deleted automatically (unless @keepVersions)
 const updated = await db.user.update({
   where: { id: 1 },

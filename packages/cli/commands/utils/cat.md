@@ -11,6 +11,7 @@ examples:
 args:
   -
     name: paths
+    kind: path
     description: Markdown files or folders — and, after one file, a section of it by heading, dotted path or line
     variadic: true
 flags:

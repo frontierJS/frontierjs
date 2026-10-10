@@ -79,7 +79,15 @@ export { LEVELS, levelPasses, levelName }
 // Missing positions cascade from left (less dangerous → more dangerous)
 
 export function parseGateString(str) {
-  const parts = String(str).split('.').map(Number)
+  const raw = String(str).split('.')
+
+  // Number('') is 0, so an empty position would read as PUBLIC: "4..6" booted
+  // with create open to strangers, and "" booted a public model.
+  const empty = raw.findIndex(p => p.trim() === '')
+  if (empty !== -1)
+    throw new Error(`@@gate: empty ${['read', 'create', 'update', 'delete'][empty] ?? `position ${empty + 1}`} level in "${str}" — write the level, or drop the trailing dot to inherit`)
+
+  const parts = raw.map(Number)
 
   if (parts.some(isNaN))
     throw new Error(`@@gate: invalid value "${str}" — expected numbers separated by dots`)

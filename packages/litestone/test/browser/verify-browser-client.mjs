@@ -198,6 +198,13 @@ window.boot = (async () => {
 })()
 </script>`
   writeFileSync(join(OUT, 'index.html'), page)
+
+  // The same database file under the next deploy's schema, in which Shelf has
+  // gained a column. A device never runs a migration, so this is the page that
+  // finds a table one column short.
+  const grown = SCHEMA.replace('  label  String\n', '  label  String\n  aisle  String?\n')
+  if (grown === SCHEMA) throw new Error('the grown schema did not grow -- SCHEMA changed shape')
+  writeFileSync(join(OUT, 'grown.html'), page.replace(JSON.stringify(SCHEMA), JSON.stringify(grown)))
 }
 
 // ─── serve ────────────────────────────────────────────────────────────────
@@ -389,6 +396,22 @@ async function main() {
      catch (err) { return err.message.slice(0, 120) }`,
     v => typeof v === 'string' && v !== 'allowed')
 
+  // ── the next deploy ──
+  // A device never migrates, so a table kept from the last schema refuses every
+  // write-through naming the new column and the device holds nothing. It holds
+  // a window of the server's rows, so the file is discarded instead and the
+  // next online read refills it.
+  await b.navigate(`http://localhost:${PORT}/grown.html`)
+  await t(b, 'a schema that grew a column opens the same file',
+    `return await window.boot`, v => v?.engine?.startsWith('sqlite-wasm'))
+  await t(b, 'and a write naming the new column lands',
+    `await db.shelf.upsertMany({ data: [{ id: 'grown-1', label: 'B2', aisle: '3' }] })
+     return (await db.shelf.findUnique({ where: { id: 'grown-1' } }))?.aisle`,
+    v => v === '3')
+  await t(b, 'the rows built for the old schema are gone',
+    `return { shelves: await db.shelf.count(), counts: await db.count.count() }`,
+    v => v?.shelves === 1 && v.counts === 0)
+
   // ── the schema a real app will actually send ──
   //
   // Not `.lite` text. A projection of the PARSED tree is how a device gets the
@@ -408,6 +431,19 @@ async function main() {
      const w = await db.shelf.findMany({ include: { counts: true } })
      return { shelves: w.length, counts: w[0].counts.length }`,
     v => v?.shelves === 1 && v.counts === 2)
+
+  // ── a single write is not a journal cycle ──
+  // The pool VFS has no shared memory, so `journal_mode = WAL` is refused in
+  // silence and every autocommit write was a rollback-journal cycle — 12 ms a
+  // row in this browser. The engine declares PERSIST with synchronous OFF
+  // (0.11 ms): the journal still rolls back a killed tab, and only a power loss
+  // mid-commit can cost the file, which holds rows the server has. The budget
+  // is ~10x the measured time and a fifth of the old one.
+  await t(b, 'thirty single creates take well under a journal cycle each',
+    `const t0 = performance.now()
+     for (let i = 0; i < 30; i++) await db.shelf.create({ data: { label: 'one-' + i } })
+     return (performance.now() - t0) / 30`,
+    v => typeof v === 'number' && v < 2.5)
 
   // ── the app's own schema, in a browser ──
   //

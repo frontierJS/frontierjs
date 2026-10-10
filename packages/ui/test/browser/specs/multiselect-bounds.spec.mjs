@@ -109,4 +109,26 @@ export async function run(t) {
   } else {
     t.ok(false, 'no second option was reachable in the single-mode dropdown')
   }
+
+  /* ── a click outside closes the dropdown, a click inside does not ─────── */
+
+  // The listener is a window capture, so it hears the click before anything
+  // under it can stop it; the inside half catches a `contains` that answers
+  // false for the control's own box and closes on every click.
+  const isOpen = (id) => `return !!document.querySelector('${id} .fjs-multiselect-box[data-open]')`
+  await t.evaluate(`
+    document.querySelector('#below-floor input').focus();
+    await waitSettled('body');
+  `)
+  t.ok(await t.evaluate(isOpen('#below-floor')), 'focusing the control opens its dropdown')
+  await t.evaluate(`
+    document.querySelector('#below-floor .fjs-multiselect-box').click();
+    await waitSettled('body');
+  `)
+  t.ok(await t.evaluate(isOpen('#below-floor')), 'a click inside the control leaves it open')
+  await t.evaluate(`
+    document.querySelector('#state').click();
+    await waitSettled('body');
+  `)
+  t.ok(!(await t.evaluate(isOpen('#below-floor'))), 'a click outside the control closes it')
 }

@@ -31,7 +31,7 @@ const CEILING: Record<string, number> = {
   'parser.js':        20,
   'plugin.js':        2,
   'policy.js':        39,
-  'query.js':         75,
+  'query.js':         62,
   'schema-maps.js':   20,
   'stamps.js':        3,
   'validate.js':      3,

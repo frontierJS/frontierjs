@@ -100,9 +100,9 @@ Analyze schema and database health: missing FK indexes, large tables without cov
 
 ```bash
 litestone types [out.d.ts]
-litestone types --only=users,posts
+litestone types --only=User,Post
 ```
-Generate TypeScript declarations from your schema. Outputs `<model>Where`, `<model>Create`, `<model>Update`, `<model>OrderBy` types for every model. `--only` limits output to specified models.
+Generate TypeScript declarations from your schema. Outputs `<Model>` (the row), `<Model>Create`, `<Model>Update`, `<Model>Where` and `<Model>OrderBy` for every model — `User`, `UserCreate`, … `--only` takes model names and refuses one that names no model.
 
 ## Schema tools
 

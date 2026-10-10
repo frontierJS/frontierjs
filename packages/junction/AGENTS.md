@@ -81,6 +81,12 @@ call. **Outside a call it throws** — at module scope, in a job handler, and in
 `setTimeout` that fires after the call has finished. Capture what a deferred
 callback needs before the call ends.
 
+**Code below a service that holds no `ctx` — a conduit credential resolver, a
+cache key — reads the tenant with `app.tenant()`, never `requestMeta().tenant`.**
+Under `strategy row` a person's HTTP call resolves its tenant per call onto
+`ctx.locals.tenantId`, so the request meta's `tenant` is empty there and set only
+for a job or `runAs` that stated one. `app.tenant()` is right in both.
+
 **Outside a call, say who the work is for.** A job handler calls
 `ctx.app.service('orders')…`, which runs as the job's actor; other code states who
 with `app.runAs(userId, () => …)`, and `app.withDb(db => …)` inside it is the

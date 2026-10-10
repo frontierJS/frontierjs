@@ -117,13 +117,14 @@ export async function runHooks(list, ctx) {
  */
 export async function runAroundHooks(list, ctx, inner) {
   if (!list?.length) return inner()
-  let i = 0
-  async function next() {
-    const hook = list[i++]
+  // The index is bound per call: a hook that calls next() twice (a retry) re-enters
+  // every hook below it, where one shared cursor would jump straight to inner().
+  function at(i) {
+    const hook = list[i]
     if (!hook) return inner()
-    return hook(ctx, next)
+    return hook(ctx, () => at(i + 1))
   }
-  return next()
+  return at(0)
 }
 
 /** One phase for one method: `phase.all` first, then `phase[method]`. */

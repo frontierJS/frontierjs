@@ -293,6 +293,11 @@ export async function verifyRequest({
   // pass one would silently grade every timestamp against zero.
   if (!Number.isFinite(now)) throw new TypeError('verifyRequest: now is required — seconds, from the receiver\'s clock')
 
+  // `skew > NaN` is false, so a tolerance read from an unset variable would
+  // verify a request of any age.
+  if (typeof toleranceSeconds !== 'number' || !Number.isFinite(toleranceSeconds) || toleranceSeconds < 0)
+    throw new TypeError('verifyRequest: toleranceSeconds must be a finite number of seconds, zero or more')
+
   const get = name => headerValue(headers, `${prefix}-${name}`)
 
   const signature = get('Signature')

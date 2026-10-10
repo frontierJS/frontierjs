@@ -9,11 +9,12 @@ import { API_PATHS, WS_PATH } from './api-paths.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
-// The literals are the dev slot and the env is what a drive sets — the shape
-// `example` has. A drive pinned to 8020/8120 cannot run while somebody's dev
-// server holds them, and one that refuses to run is one nobody runs.
-const API_PORT = process.env.API_PORT ?? '8120'
-const UI_PORT  = Number(process.env.UI_PORT ?? 8020)
+// The literals are the dev slot, `API_PORT`/`UI_PORT` are what a drive sets, and
+// `FLI_PORT_*` is what `fli dev` hands a second checkout (18020 in branch 1). A
+// drive pinned to 8020/8120 cannot run while somebody's dev server holds them,
+// and one that refuses to run is one nobody runs.
+const API_PORT = process.env.API_PORT ?? process.env.FLI_PORT_BE ?? '8120'
+const UI_PORT  = Number(process.env.UI_PORT ?? process.env.FLI_PORT_FE ?? 8020)
 const API  = `http://localhost:${API_PORT}`
 const UI   = resolve(HERE, '../../../ui')
 

@@ -163,6 +163,8 @@ interface DueRow {
   transition: string
   id:         unknown
   dueAt:      string
+  /** The row's tenancy column, answered under `strategy row` only. */
+  tenant?:    string | null
   target:     { accessor: string; transition: string; id: unknown }
 }
 
@@ -266,6 +268,9 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
       for (const accessor of new Set(db.$commitments.map(d => d.accessor))) {
         for (const row of await sys[accessor].due({ by, timeZone })) {
           count++
+          // Under row tenancy the database is every tenant's and names none;
+          // the row's own tenant is what the fire's principal holds as its claim.
+          const rowTenant = row.tenant !== undefined ? row.tenant : tenant
           // A day kind answers `YYYY-MM-DD`, which Date.parse reads as UTC
           // midnight — the fire would run hours early or late anywhere else.
           const at = row.dueAt.length === 10 ? startOfDay(row.dueAt, timeZone) : Date.parse(row.dueAt)
@@ -273,9 +278,9 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
             { accessor, transition: row.transition, id: row.id, dueAt: row.dueAt, timeZone } satisfies FirePayload, {
               queue,
               delay:  Math.max(0, at - now),
-              unique: `commitment:${tenant ?? ''}:${accessor}:${row.transition}:${String(row.id)}:${row.dueAt}`,
+              unique: `commitment:${rowTenant ?? ''}:${accessor}:${row.transition}:${String(row.id)}:${row.dueAt}`,
               actor:  null,
-              tenant,
+              tenant: rowTenant,
             })
         }
       }

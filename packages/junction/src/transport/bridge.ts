@@ -359,7 +359,7 @@ function boundaryOptions(ctx?: ServiceContext) {
 export function withholdProtected(value: unknown, ctx?: Pick<ServiceContext, 'locals' | 'model' | 'service'>): unknown {
   const fields = protectedFieldsFor(ctx as ServiceContext)
   if (!Object.keys(fields).length) return value
-  const omit = (v: unknown) => omitBy(v, (k) => Boolean(fields[k]))
+  const omit = (v: unknown) => omitBy(v, (k) => Object.hasOwn(fields, k))
   // An envelope's `data` is the answer, not a column. Walked by key name, a
   // model with a protected column called `data` answered every list with the
   // rows removed and `total` still counting them.

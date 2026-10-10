@@ -1253,6 +1253,18 @@ function vectorOrderSql(field, col, val, vectorInfo, sqlDistanceFn, outParams) {
 }
 
 /**
+ * The LIMIT/OFFSET tail of a statement. SQLite's grammar has OFFSET only after
+ * LIMIT, so a caller paging by offset alone gets `LIMIT -1` (no cap) rather
+ * than a syntax error at prepare.
+ * @param {any} limit
+ * @param {any} offset
+ */
+export function pageSql(limit, offset) {
+  if (limit == null && offset == null) return ''
+  return ` LIMIT ${limit == null ? -1 : Number(limit)}` + (offset == null ? '' : ` OFFSET ${Number(offset)}`)
+}
+
+/**
  * @param {any} orderBy
  * @param {any[]} [outParams]
  * @param {Record<string, string> | null} [columnMap]
@@ -2384,16 +2396,75 @@ export function serializeBooleans(data, boolFields) {
 // All support: partitionBy (field | field[]), orderBy ({ field: dir }), rows ([start, end])
 // rows: [-2, 0] → ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
 //        [null, null] → ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+//
+// A window names columns in the SELECT the way an aggregate does and never
+// builds a row, so `read()` strips nothing from what it answers and SQLite reads
+// an unknown double-quoted name as a string constant (FJS-2296). The client
+// holds every name `windowColumnNames` lists to the aggregate key check before
+// this runs; here every name is quoted and every number and keyword is refused
+// unless it is one, because each is spliced into the pattern.
 
-/** @param {any} windowSpec @param {any[] | null} [filterParams] */
-export function buildWindowCols(windowSpec, filterParams = null) {
+const WINDOW_VALUE_FNS = ['lag', 'lead', 'firstValue', 'lastValue', 'nthValue', 'sum', 'avg', 'min', 'max', 'count']
+
+/**
+ * The column names a window spec carries: `values` are read out of the column,
+ * `names` only partition or order by it.
+ * @param {any} windowSpec
+ */
+export function windowColumnNames(windowSpec) {
+  /** @type {unknown[]} */ const values = []
+  /** @type {unknown[]} */ const names  = []
+  for (const spec of Object.values(windowSpec ?? {})) {
+    if (!spec || typeof spec !== 'object') continue
+    for (const fn of WINDOW_VALUE_FNS) {
+      if (spec[fn] == null) continue
+      if (fn === 'count' && (spec.count === '*' || spec.count === true)) continue
+      values.push(spec[fn])
+    }
+    if (spec.partitionBy) names.push(...[spec.partitionBy].flat())
+    if (spec.orderBy) for (const item of [spec.orderBy].flat())
+      if (item && typeof item === 'object') names.push(...Object.keys(item))
+  }
+  return { values, names }
+}
+
+/** @param {string} alias @param {string} key @param {string} message */
+function _windowRefusal(alias, key, message) {
+  return new ValidationError([{ path: ['window', alias, key], message: `Window ${alias} ${key} ${message}` }])
+}
+
+/**
+ * @param {string} alias @param {string} key @param {unknown} name
+ * @param {Record<string, string> | null} columnMap
+ */
+function _windowCol(alias, key, name, columnMap) {
+  if (typeof name !== 'string' || !name)
+    throw _windowRefusal(alias, key, `must name a field, got ${JSON.stringify(name)}`)
+  return quoteIdent(columnMap?.[name] ?? name)
+}
+
+/** @param {string} alias @param {string} key @param {unknown} val @param {number} min */
+function _windowInt(alias, key, val, min) {
+  if (!Number.isInteger(val) || /** @type {number} */ (val) < min)
+    throw _windowRefusal(alias, key, `must be an integer of at least ${min}, got ${JSON.stringify(val)}`)
+  return String(val)
+}
+
+/**
+ * @param {any} windowSpec
+ * @param {any[] | null} [filterParams]
+ * @param {Record<string, string> | null} [columnMap]  field name → stored column, for `@map`
+ */
+export function buildWindowCols(windowSpec, filterParams = null, columnMap = null) {
   if (!windowSpec || !Object.keys(windowSpec).length) return []
 
   const cols = []
 
   for (const [alias, spec] of Object.entries(windowSpec)) {
-    const expr = _buildWindowExpr(alias, spec)
-    const over = _buildOverClause(spec)
+    if (!spec || typeof spec !== 'object')
+      throw _windowRefusal(alias, 'spec', 'must be an object naming one window function')
+    const expr = _buildWindowExpr(alias, spec, columnMap)
+    const over = _buildOverClause(alias, spec, columnMap)
 
     // FILTER (WHERE ...) — optional, only valid on aggregate window functions.
     // Only a sql`` tag result is text for the pattern; a string is refused for
@@ -2416,8 +2487,13 @@ export function buildWindowCols(windowSpec, filterParams = null) {
   return cols
 }
 
-/** @param {string} alias @param {any} spec */
-function _buildWindowExpr(alias, spec) {
+/**
+ * @param {string} alias @param {any} spec
+ * @param {Record<string, string> | null} columnMap
+ */
+function _buildWindowExpr(alias, spec, columnMap) {
+  const col = (/** @type {string} */ key) => _windowCol(alias, key, spec[key], columnMap)
+
   // Positional functions
   if (spec.rowNumber)   return 'ROW_NUMBER()'
   if (spec.rank)        return 'RANK()'
@@ -2426,84 +2502,103 @@ function _buildWindowExpr(alias, spec) {
   if (spec.percentRank) return 'PERCENT_RANK()'
 
   // Offset functions
-  if (spec.lag != null) {
-    const offset = spec.offset ?? 1
-    const def    = spec.default != null ? `, ${_sqlLit(spec.default)}` : ''
-    return `LAG("${spec.lag}", ${offset}${def})`
+  for (const [key, fn] of [['lag', 'LAG'], ['lead', 'LEAD']]) {
+    if (spec[key] == null) continue
+    const offset = _windowInt(alias, 'offset', spec.offset ?? 1, 0)
+    const def    = spec.default != null ? `, ${_sqlLit(alias, spec.default)}` : ''
+    return `${fn}(${col(key)}, ${offset}${def})`
   }
-  if (spec.lead != null) {
-    const offset = spec.offset ?? 1
-    const def    = spec.default != null ? `, ${_sqlLit(spec.default)}` : ''
-    return `LEAD("${spec.lead}", ${offset}${def})`
-  }
-  if (spec.firstValue != null) return `FIRST_VALUE("${spec.firstValue}")`
-  if (spec.lastValue  != null) return `LAST_VALUE("${spec.lastValue}")`
-  if (spec.nthValue   != null) return `NTH_VALUE("${spec.nthValue}", ${spec.n ?? 1})`
-  if (spec.ntile      != null) return `NTILE(${spec.ntile})`
+  if (spec.firstValue != null) return `FIRST_VALUE(${col('firstValue')})`
+  if (spec.lastValue  != null) return `LAST_VALUE(${col('lastValue')})`
+  if (spec.nthValue   != null) return `NTH_VALUE(${col('nthValue')}, ${_windowInt(alias, 'n', spec.n ?? 1, 1)})`
+  if (spec.ntile      != null) return `NTILE(${_windowInt(alias, 'ntile', spec.ntile, 1)})`
 
   // Aggregate window functions
-  if (spec.sum   != null) return `SUM("${spec.sum}")`
-  if (spec.avg   != null) return `AVG("${spec.avg}")`
-  if (spec.min   != null) return `MIN("${spec.min}")`
-  if (spec.max   != null) return `MAX("${spec.max}")`
+  if (spec.sum   != null) return `SUM(${col('sum')})`
+  if (spec.avg   != null) return `AVG(${col('avg')})`
+  if (spec.min   != null) return `MIN(${col('min')})`
+  if (spec.max   != null) return `MAX(${col('max')})`
   if (spec.count != null) {
-    return spec.count === '*' || spec.count === true ? 'COUNT(*)' : `COUNT("${spec.count}")`
+    return spec.count === '*' || spec.count === true ? 'COUNT(*)' : `COUNT(${col('count')})`
   }
 
   throw new Error(`window "${alias}": unrecognized window function spec. Use rowNumber, rank, denseRank, lag, lead, sum, avg, min, max, count, firstValue, lastValue.`)
 }
 
-/** @param {any} spec */
-function _buildOverClause(spec) {
+const WINDOW_DIRS  = new Set(['ASC', 'DESC'])
+const WINDOW_NULLS = new Set(['FIRST', 'LAST'])
+
+/** @param {string} alias @param {string} key @param {unknown} val @param {Set<string>} allowed */
+function _windowKeyword(alias, key, val, allowed) {
+  const word = typeof val === 'string' ? val.toUpperCase() : null
+  if (!word || !allowed.has(word))
+    throw _windowRefusal(alias, key, `must be one of ${[...allowed].map(w => w.toLowerCase()).join(', ')}, got ${JSON.stringify(val)}`)
+  return word
+}
+
+/**
+ * @param {string} alias @param {any} spec
+ * @param {Record<string, string> | null} columnMap
+ */
+function _buildOverClause(alias, spec, columnMap) {
   const parts = []
 
   // PARTITION BY
   if (spec.partitionBy) {
-    const cols = Array.isArray(spec.partitionBy) ? spec.partitionBy : [spec.partitionBy]
-    parts.push(`PARTITION BY ${cols.map((/** @type {string} */ c) => `"${c}"`).join(', ')}`)
+    const cols = [spec.partitionBy].flat()
+    parts.push(`PARTITION BY ${cols.map(c => _windowCol(alias, 'partitionBy', c, columnMap)).join(', ')}`)
   }
 
   // ORDER BY
   if (spec.orderBy) {
-    const items = Array.isArray(spec.orderBy) ? spec.orderBy : [spec.orderBy]
-    const exprs = items.flatMap((/** @type {any} */ item) =>
-      Object.entries(item).map(([col, dir]) => {
+    const items = [spec.orderBy].flat()
+    const exprs = items.flatMap((/** @type {any} */ item) => {
+      if (!item || typeof item !== 'object')
+        throw _windowRefusal(alias, 'orderBy', 'must be { field: direction } or a list of them')
+      return Object.entries(item).map(([field, dir]) => {
+        const c = _windowCol(alias, 'orderBy', field, columnMap)
         if (dir !== null && typeof dir === 'object') {
-          const d = dir.dir?.toUpperCase() ?? 'ASC'
-          const n = dir.nulls ? ` NULLS ${dir.nulls.toUpperCase()}` : ''
-          return `"${col}" ${d}${n}`
+          const d = _windowKeyword(alias, 'orderBy', dir.dir ?? 'asc', WINDOW_DIRS)
+          const n = dir.nulls ? ` NULLS ${_windowKeyword(alias, 'nulls', dir.nulls, WINDOW_NULLS)}` : ''
+          return `${c} ${d}${n}`
         }
-        return `"${col}" ${dir.toUpperCase()}`
+        return `${c} ${_windowKeyword(alias, 'orderBy', dir, WINDOW_DIRS)}`
       })
-    )
+    })
     parts.push(`ORDER BY ${exprs.join(', ')}`)
   }
 
   // ROWS / RANGE frame
-  if (spec.rows) {
-    const [start, end] = spec.rows
-    parts.push(`ROWS BETWEEN ${_frameBound(start, 'PRECEDING')} AND ${_frameBound(end, 'FOLLOWING')}`)
-  } else if (spec.range) {
-    const [start, end] = spec.range
-    parts.push(`RANGE BETWEEN ${_frameBound(start, 'PRECEDING')} AND ${_frameBound(end, 'FOLLOWING')}`)
+  for (const [key, kw] of [['rows', 'ROWS'], ['range', 'RANGE']]) {
+    if (!spec[key]) continue
+    if (!Array.isArray(spec[key]) || spec[key].length !== 2)
+      throw _windowRefusal(alias, key, 'must be [start, end]')
+    const [start, end] = spec[key]
+    parts.push(`${kw} BETWEEN ${_frameBound(alias, key, start, 'PRECEDING')} AND ${_frameBound(alias, key, end, 'FOLLOWING')}`)
+    break
   }
 
   return `(${parts.join(' ')})`
 }
 
-/** @param {any} val @param {string} defaultDir */
-function _frameBound(val, defaultDir) {
+/** @param {string} alias @param {string} key @param {any} val @param {string} defaultDir */
+function _frameBound(alias, key, val, defaultDir) {
   if (val === null || val === undefined) return `UNBOUNDED ${defaultDir}`
+  if (!Number.isInteger(val))
+    throw _windowRefusal(alias, key, `bounds must be integers or null, got ${JSON.stringify(val)}`)
   if (val === 0)  return 'CURRENT ROW'
   if (val < 0)    return `${Math.abs(val)} PRECEDING`
   return `${val} FOLLOWING`
 }
 
-/** @param {unknown} val */
-function _sqlLit(val) {
+/** @param {string} alias @param {unknown} val */
+function _sqlLit(alias, val) {
   if (val === null) return 'NULL'
   if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`
-  return String(val)
+  if (typeof val === 'boolean') return val ? '1' : '0'
+  if (typeof val === 'number' && Number.isFinite(val)) return String(val)
+  if (typeof val === 'bigint') return String(val)
+  throw _windowRefusal(alias, 'default', `must be a string, a finite number, a boolean or null, got ${JSON.stringify(val)}`)
 }
 
 // ─── which keys a caller may name ─────────────────────────────────────────────

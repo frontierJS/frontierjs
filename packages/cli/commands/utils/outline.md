@@ -11,6 +11,7 @@ examples:
 args:
   -
     name: file
+    kind: path
     description: A .js/.ts (jsx, mjs, cjs, mts, cts), .md, .lite or .mesa file
     required: true
   -

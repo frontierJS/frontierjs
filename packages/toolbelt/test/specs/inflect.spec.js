@@ -464,3 +464,11 @@ test('inflect: humanize answers empty for what is not a string, never [object Ob
   assert.equal(humanize(''), '')
   assert.equal(humanize('   '), '')
 })
+
+// FJS-2192: a word is a map key, and `in` answers for Object.prototype's names.
+test('inflect: a word named for an inherited member inflects as an ordinary word', function () {
+  assert.equal(pluralize('Constructor'), 'Constructors')
+  assert.equal(pluralize('toString'), 'toStrings')
+  assert.equal(singularize('constructors'), 'constructor')
+  assert.equal(singularize('valueOf'), 'valueOf')
+})

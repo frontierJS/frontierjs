@@ -226,7 +226,11 @@ export function tryParse(text) {
   }
 
   try {
-    return { ok: true, value: JSON.parse(text) }
+    const value = JSON.parse(text)
+    // Every walker below refuses this, so text a person typed is where it is
+    // reported, beside the other reasons a document is not usable.
+    if (exceedsDepth(value)) return { ok: false, error: `nested more than ${MAX_DEPTH} deep`, position: null }
+    return { ok: true, value }
   } catch (e) {
     const message = (e && e.message) || String(e)
     // V8 and JavaScriptCore both name a position and word it differently.
@@ -315,6 +319,42 @@ export function coerceLike(original, next) {
  */
 export function pathKey(path) {
   return JSON.stringify(Array.isArray(path) ? path : [])
+}
+
+// ── Depth ─────────────────────────────────────────────────────────────────────
+
+/**
+ * How deep a document may nest before a walker refuses it, as `frontmatter`
+ * and `query` refuse rather than truncate.
+ *
+ * A path key is as long as the path, and a walk makes one per ancestor of every
+ * marked row, so the work grows with the cube of the depth (20 s at 2000) and
+ * the stack runs out at 100k — from one stored value, opened by someone else.
+ */
+export const MAX_DEPTH = 100
+
+function tooDeep(who) {
+  throw new RangeError(`${who}: nested more than ${MAX_DEPTH} deep`)
+}
+
+/**
+ * Is this document nested past MAX_DEPTH — for a view to ask before it walks,
+ * since a walker refuses by throwing. Iterative, so asking cannot overflow.
+ */
+export function exceedsDepth(value) {
+  const stack = [value, 0]
+  while (stack.length) {
+    const level = stack.pop()
+    const node = stack.pop()
+    if (!isContainer(node)) continue
+    if (level >= MAX_DEPTH) return true
+    for (const child of Array.isArray(node) ? node : Object.values(node)) stack.push(child, level + 1)
+  }
+  return false
+}
+
+function assertShallow(who, value) {
+  if (exceedsDepth(value)) tooDeep(who)
 }
 
 /*
@@ -523,6 +563,7 @@ export function treeRows(value, { expanded = new Set() } = {}) {
     })
 
     if (!open) return
+    if (level >= MAX_DEPTH) tooDeep('treeRows')
 
     const nextSeen = new Set(seen).add(node)
     if (Array.isArray(node)) {
@@ -570,6 +611,7 @@ export function expandToDepth(value, depth = 1) {
   // caller would spell `depth: 0`.
   const walk = (node, path, level, seen) => {
     if (!isContainer(node) || seen.has(node)) return
+    if (level >= MAX_DEPTH) tooDeep('expandToDepth')
     if (level >= 0) {
       if (level >= depth) return
       open.add(pathKey(path))
@@ -599,6 +641,10 @@ export function expandToDepth(value, depth = 1) {
  * would be a second answer to a question this kit already scopes.
  */
 export function sameValue(a, b) {
+  return same(a, b, 0)
+}
+
+function same(a, b, level) {
   if (a === b) return true
 
   const ka = classify(a)
@@ -606,16 +652,20 @@ export function sameValue(a, b) {
 
   if (ka === 'date') return a.getTime() === b.getTime()
 
+  if (ka === 'array' || ka === 'object') {
+    if (level >= MAX_DEPTH) tooDeep('sameValue')
+  }
+
   if (ka === 'array') {
     if (a.length !== b.length) return false
-    return a.every((item, i) => sameValue(item, b[i]))
+    return a.every((item, i) => same(item, b[i], level + 1))
   }
 
   if (ka === 'object') {
     const keys = Object.keys(a)
     if (keys.length !== Object.keys(b).length) return false
     return keys.every(k =>
-      Object.prototype.hasOwnProperty.call(b, k) && sameValue(a[k], b[k]))
+      Object.prototype.hasOwnProperty.call(b, k) && same(a[k], b[k], level + 1))
   }
 
   return false
@@ -638,20 +688,25 @@ export function sameValue(a, b) {
  * only order a JSON object has.
  */
 export function keepUnchanged(prev, next) {
+  return keep(prev, next, 0)
+}
+
+function keep(prev, next, level) {
   if (prev === next) return prev
   const kind = classify(next)
   if (kind !== classify(prev)) return next
+  if ((kind === 'array' || kind === 'object') && level >= MAX_DEPTH) tooDeep('keepUnchanged')
 
   if (kind === 'array') {
     const n = prev.length
     const m = next.length
     const out = new Array(m)
     let head = 0
-    while (head < n && head < m && (out[head] = keepUnchanged(prev[head], next[head])) === prev[head]) head++
+    while (head < n && head < m && (out[head] = keep(prev[head], next[head], level + 1)) === prev[head]) head++
     if (head === n && n === m) return prev
     let tail = 0
     while (tail < n - head && tail < m - head) {
-      const v = keepUnchanged(prev[n - 1 - tail], next[m - 1 - tail])
+      const v = keep(prev[n - 1 - tail], next[m - 1 - tail], level + 1)
       if (v !== prev[n - 1 - tail]) break
       out[m - 1 - tail] = v
       tail++
@@ -660,7 +715,7 @@ export function keepUnchanged(prev, next) {
     // already compared by the first run.
     for (let t = head; t < m - tail; t++) {
       if (t === head && head < n) continue
-      out[t] = t < n - tail ? keepUnchanged(prev[t], next[t]) : next[t]
+      out[t] = t < n - tail ? keep(prev[t], next[t], level + 1) : next[t]
     }
     return out
   }
@@ -672,14 +727,14 @@ export function keepUnchanged(prev, next) {
     const out = {}
     for (let i = 0; i < after.length; i++) {
       const k = after[i]
-      const v = Object.hasOwn(prev, k) ? keepUnchanged(prev[k], next[k]) : next[k]
+      const v = Object.hasOwn(prev, k) ? keep(prev[k], next[k], level + 1) : next[k]
       if (before[i] !== k || v !== prev[k]) same = false
       put(out, k, v)
     }
     return same ? prev : out
   }
 
-  return sameValue(prev, next) ? prev : next
+  return same(prev, next, level) ? prev : next
 }
 
 // ── Writing a change back into the text ───────────────────────────────────────
@@ -713,6 +768,8 @@ export function keepUnchanged(prev, next) {
  */
 export function patchText(text, prev, next) {
   if (prev === next) return text
+  assertShallow('patchText', prev)
+  assertShallow('patchText', next)
   if (JSON.stringify(next) === undefined) {
     throw new TypeError('patchText: the next document is not a value JSON can hold')
   }
@@ -1031,9 +1088,11 @@ export function diffDocs(before, after) {
     const bothArrays  = kb === 'array'  && ka === 'array'
 
     if (!bothObjects && !bothArrays) {
-      if (!sameValue(b, a)) mark(path, 'changed', b)
+      if (!same(b, a, path.length)) mark(path, 'changed', b)
       return a
     }
+
+    if (path.length >= MAX_DEPTH) tooDeep('diffDocs')
 
     let touched = false
     const merged = bothArrays ? [] : {}
@@ -1232,6 +1291,7 @@ export function searchDoc(value, term) {
 
     let any = selfHit
     if (container) {
+      if (path.length >= MAX_DEPTH) tooDeep('searchDoc')
       const entries = Array.isArray(v)
         ? v.map((child, i) => [i, child])
         : Object.entries(v)

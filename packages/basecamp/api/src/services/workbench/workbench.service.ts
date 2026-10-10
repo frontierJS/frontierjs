@@ -15,11 +15,11 @@
 //   POST /workbench/:id           send        { prompt } — queued behind a run in progress
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
-//   POST /workbench/:id           fork        { slug? } — a branch: the tree snapshotted into a worktree, pinned
+//   POST /workbench/:id           fork        { slug? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run
 //   POST /workbench/:id           land        a branch's work into its parent's tree, uncommitted
 //   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept
 //   POST /workbench/:id           stop · fresh · seen · unpin
-//   POST /workbench/:id           configure   { name?, budget?, hooks?, review? }
+//   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy? }
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
@@ -104,7 +104,7 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async fork() {
       const p = pinned()
-      const r = wb.fork(p.id, { slug: body().slug })
+      const r = await wb.fork(p.id, { slug: body().slug })
       if ('refused' in r) throw new Conflict(r.refused)
       return r.pin
     },
@@ -118,7 +118,7 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async archive() {
       const p = pinned()
-      const r = wb.archive(p.id, { discard: body().discard })
+      const r = await wb.archive(p.id, { discard: body().discard })
       if ('refused' in r) throw new Conflict(r.refused, { pending: r.pending ?? 0 })
       return r
     },

@@ -222,7 +222,7 @@ export function createMakeFromSchema(properties, opts = {}) {
       continue
     }
 
-    fieldDefaults[key] = type in TYPE_DEFAULTS ? TYPE_DEFAULTS[type] : null
+    fieldDefaults[key] = Object.hasOwn(TYPE_DEFAULTS, type) ? TYPE_DEFAULTS[type] : null
   }
 
   return function make(spec) {
@@ -234,6 +234,11 @@ export function createMakeFromSchema(properties, opts = {}) {
         ? []
         : (val !== null && typeof val === 'object') ? {} : val
     }
-    return Object.assign(instance, spec ?? {})
+    // Own members as DATA: `Object.assign` writes `__proto__` through its
+    // setter, so a parsed body carrying one became the instance's prototype.
+    for (const k of Object.keys(spec ?? {})) {
+      Object.defineProperty(instance, k, { value: spec[k], writable: true, enumerable: true, configurable: true })
+    }
+    return instance
   }
 }

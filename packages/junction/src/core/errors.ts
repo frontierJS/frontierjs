@@ -329,7 +329,7 @@ export function redactProtected(
   // PREDICATE, which is the only half that is this file's business. The logger
   // puts the credential name list through the same function, and two walkers is
   // how the cycle guard comes to exist in one of them and not the other.
-  return redactBy(value, (k) => Boolean(fields[k]), seen)
+  return redactBy(value, (k) => Object.hasOwn(fields, k), seen)
 }
 
 /** Is this app allowed to say what actually went wrong? */

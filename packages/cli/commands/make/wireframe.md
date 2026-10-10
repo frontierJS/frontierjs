@@ -7,6 +7,7 @@ examples:
 args:
   -
     name: file
+    kind: path
     description: The wireframe — { screen, names?, models?, tree }, every node a vocabulary term
     required: true
 ---

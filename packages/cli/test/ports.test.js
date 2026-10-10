@@ -9,13 +9,14 @@
  */
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
-         readLock, readsPortVar } from '../core/ports.js'
+         readLock, readsPortVar, decode, worktreeOf } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -335,6 +336,92 @@ describe('claimSession — each app its own dev slot', () => {
     expect(rows.map(r => [r.root, r.slot, r.alive])).toEqual([['/x/one/app', 0, true], ['/x/two/app', 1, true]])
     releaseSession('/x/one/app', { lockFile })
     expect(Object.keys(readLock(lockFile))).toEqual(['/x/two/app'])
+  })
+})
+
+describe('claimSession — a linked worktree takes a branch block', () => {
+  const tree  = treeOf('web', 'api')
+  const free  = async () => []
+  const reads = () => true
+  const REPO  = { repo: '/m/.git', main: '/m' }
+  const wt    = (top, repo = REPO) => ({ ...repo, top })
+  let dir, lockFile
+  const claim = (root, opts = {}) =>
+    claimSession(root, { exists: tree, busy: free, movable: reads, lockFile, worktree: null, ...opts })
+
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'fli-branch-')); lockFile = join(dir, 'sessions.lock') })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test("branch 1 is the parent's ports with a leading 1", async () => {
+    const b = await claim('/t/one/packages/basecamp', { name: '@frontierjs/basecamp', worktree: wt('/t/one') })
+    expect(b.branch).toBe(1)
+    expect(b.rows.map(r => r.port).sort()).toEqual([18020, 18120])
+    expect(b.vars).toEqual({ FLI_PORT_FE: '18020', FLI_PORT_BE: '18120' })
+    expect(readLock(lockFile)['/t/one/packages/basecamp']).toMatchObject({ branch: 1, repo: '/m/.git', worktree: '/t/one' })
+  })
+
+  test('the next worktree of the repository takes 2; one app beside it in the same worktree shares 1', async () => {
+    await claim('/t/one/packages/basecamp', { name: '@frontierjs/basecamp', worktree: wt('/t/one') })
+    const two = await claim('/t/two/packages/basecamp', { name: '@frontierjs/basecamp', worktree: wt('/t/two') })
+    const ex  = await claim('/t/one/example', { name: '@frontierjs/example', worktree: wt('/t/one') })
+    expect(two.branch).toBe(2)
+    expect(two.rows.map(r => r.port).sort()).toEqual([28020, 28120])
+    expect(ex.branch).toBe(1)
+    expect(ex.rows.map(r => r.port).sort()).toEqual([18010, 18110])
+  })
+
+  test('another repository counts from 1 again, and a number is remembered', async () => {
+    await claim('/t/one/app', { name: 'app', worktree: wt('/t/one') })
+    const other = await claim('/u/one/app', { name: 'app', worktree: wt('/u/one', { repo: '/n/.git', main: '/n' }) })
+    expect(other.branch).toBe(1)
+    await claim('/t/two/app', { name: 'app', worktree: wt('/t/two') })
+    expect((await claim('/t/one/app', { name: 'app', worktree: wt('/t/one') })).branch).toBe(1)
+  })
+
+  test("a scaffolded app in a branch keeps its parent's slot", async () => {
+    await claim('/m/a', { name: 'a' })
+    await claim('/m/b', { name: 'b' })
+    const b = await claim('/t/one/b', { name: 'b', worktree: wt('/t/one') })
+    expect([b.slot, b.branch]).toEqual([1, 1])
+    expect(b.rows.map(r => r.port).sort()).toEqual([18001, 18101])
+  })
+
+  test('an app whose configs ignore the variable gets no number, so the refusal names its real port', async () => {
+    const b = await claim('/t/one/legacy', { name: 'legacy', worktree: wt('/t/one'), movable: () => false })
+    expect(b.branch).toBe(0)
+    expect(b.rows.map(r => r.port).sort()).toEqual([8000, 8100])
+  })
+
+  test('five held: refused naming the way out; archiving one frees its number', async () => {
+    for (let n = 1; n <= 5; n++) await claim(`/t/${n}/app`, { name: 'app', worktree: wt(`/t/${n}`) })
+    await expect(claim('/t/6/app', { name: 'app', worktree: wt('/t/6') })).rejects.toThrow(/ports:status --clean/)
+    releaseSession('/t/3', { lockFile })
+    expect((await claim('/t/6/app', { name: 'app', worktree: wt('/t/6') })).branch).toBe(3)
+  })
+
+  test('decode reads the branch digit and leaves the rest as the parent reads it', () => {
+    expect(decode(18120)).toEqual({ env: 'dev', category: 'be', projectId: 2, serviceId: 0, branch: 1 })
+    expect(decode(8120).branch).toBe(0)
+    expect(apiContainerName('basecamp', 17120)).toBe('basecamp-api-test')
+  })
+})
+
+describe('worktreeOf — is this a second checkout', () => {
+  let dir
+  const git = (cwd, ...argv) => execFileSync('git', ['-C', cwd, ...argv], { stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  beforeEach(() => { dir = realpathSync(mkdtempSync(join(tmpdir(), 'fli-wt-'))) })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('a main checkout is null and a linked worktree names its repository, its top and the main checkout', () => {
+    const main = join(dir, 'main')
+    mkdirSync(join(main, 'app'), { recursive: true })
+    git(main, 'init', '-q')
+    git(main, 'commit', '-q', '--allow-empty', '-m', 'x')
+    git(main, 'worktree', 'add', '-q', join(dir, 'linked'))
+    mkdirSync(join(dir, 'linked', 'app'))
+    expect(worktreeOf(join(main, 'app'))).toBeNull()
+    expect(worktreeOf(join(dir, 'linked', 'app'))).toEqual({ repo: join(main, '.git'), top: join(dir, 'linked'), main })
+    expect(worktreeOf(join(dir, 'nowhere'))).toBeNull()
   })
 })
 

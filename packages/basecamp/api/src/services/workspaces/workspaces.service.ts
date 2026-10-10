@@ -209,20 +209,26 @@ export function createWorkspacesService(app: BasecampApp) {
     },
 
     // ── members ───────────────────────────────────────────────────────
-    // asSystem: User is auth's model. Even with gates absent today, member
-    // listing is a membership question and reads as one.
+    // asSystem: membership is what decides access, so it is not read through
+    // the caller it is deciding about.
     //
     // The read is a system one for ANY id, so membership is checked first and
     // answers like `get` does — without it any signed-in account read another
     // workspace's roster, whole User rows included (`FJS-1087`).
+    //
+    // A colleague is shown by name, address and face and nothing more
+    // (`FJS-D619`). The read is a system one, so the User read policy that
+    // keeps a viewer to their own row never runs, and a whole row handed every
+    // viewer `isSystemAdmin`, `status` and `accountId` of everybody in the team.
     async members() {
+      $.dispatch = false          // a read — do not announce it on a channel
       const user = sessionOf()
       const mine = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
       if (!mine) throw new NotFound(`Workspace '${$.id}' not found`)
 
       const rows = await members().findMany({
         where:   { workspaceId: $.id as string },
-        include: { user: true },
+        include: { user: { select: { id: true, name: true, displayName: true, email: true, avatarUrl: true } } },
         orderBy: { createdAt: 'asc' },
       })
       return { total: rows.length, data: rows }

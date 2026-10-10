@@ -355,6 +355,12 @@ license.
   question over a pair of documents** — equal, different, and *which nodes of
   `next` may be `prev`'s own*. A view keyed on `===` needs the last one after
   every re-parse of text a person is editing (`FJS-1619`).
+- **Every `/json` walker REFUSES a document nested past `MAX_DEPTH` (100) with a
+  `RangeError`, and `tryParse` reports it as `{ok: false}`.** A path key is as
+  long as the path and a walk makes one per ancestor, so work was cubic in the
+  depth and 100k deep overflowed the stack (`FJS-2198`). A view of a stored Json
+  value asks `exceedsDepth(value)` first and says so, as `Json.mesa` does. The
+  predicate parser bounds nesting the same way, as a `ParseError`.
 - **`patchText(text, prev, next)` is the way back to TEXT, and `format()` of the
   whole document is the wrong one.** It replaces only the changed spans, so a
   hand-formatted document, a condensed one and `78.0` survive a cell edit

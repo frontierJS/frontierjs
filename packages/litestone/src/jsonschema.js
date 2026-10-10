@@ -292,7 +292,31 @@ export function generateJsonSchema(schema, options = {}) {
       },
       required: ['key', 'bucket', 'provider', 'size', 'mime', 'uploadedAt'],
       additionalProperties: false,
-    }
+    },
+    // What a writer SENDS, which is never the ref: the server is a ref's only
+    // author (FJS-D666). Described here because a create tool's input is lifted
+    // from this document, and over JSON these are the only file values there
+    // are; a browser's File goes as multipart and is not described by either.
+    ...(fileDefFor(mode) === 'FileInput' ? { FileInput: {
+      title: 'FileInput',
+      description: 'A file\'s bytes, sent inline: a base64 data URL, or { name, type, data } with base64 data. ' +
+        'The stored reference is written by the server and is never sent. The type the bytes are found to be wins over the one claimed.',
+      'x-litestone-kind': 'type',
+      'x-litestone-file': true,
+      oneOf: [
+        { type: 'string', pattern: '^data:[^,]*;base64,', description: 'A data URL: data:<type>;base64,<data>' },
+        {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'The file\'s name, kept for a download' },
+            type: { type: 'string', description: 'The MIME type claimed for the bytes' },
+            data: { type: 'string', contentEncoding: 'base64', description: 'The bytes, base64' },
+          },
+          required: ['data'],
+          additionalProperties: false,
+        },
+      ],
+    } } : {}),
   } : {}
 
   // Assemble top-level schema
@@ -309,6 +333,12 @@ export function generateJsonSchema(schema, options = {}) {
   }
 
   return root
+}
+
+// A File column READ is the stored ref; WRITTEN it is the bytes. One shape for
+// both handed a create tool the ref, which the ORM refuses (FJS-2062).
+function fileDefFor(mode) {
+  return mode === 'create' || mode === 'update' ? 'FileInput' : 'FileRef'
 }
 
 // ─── Per-model schema ─────────────────────────────────────────────────────────
@@ -421,6 +451,7 @@ function viewToJsonSchema(view, schema, enumDefs, typeDefs, opts) {
 
 function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   const { mode, includeDeletedAt, includeTimestamps, inlineEnums, audience } = opts
+  const fileDef   = fileDefFor(mode)
   const queryable = queryabilityFor(model)
   const properties = {}
   const required   = []
@@ -447,7 +478,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const fromAttr = field.attributes.find(a => a.kind === 'from')
     if (fromAttr) {
       if (mode !== 'create' && mode !== 'update') {
-        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
+        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
         properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'from',
           'x-litestone-from': { target: fromAttr.target, op: fromAttr.op } }
       }
@@ -466,7 +497,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const derivedAttr = field.attributes.find(a => a.kind === 'derived')
     if (derivedAttr) {
       if (mode !== 'create' && mode !== 'update') {
-        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
+        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
         properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'derived' }
         if (dependsOnClock(derivedAttr.expr)) properties[field.name]['x-litestone-volatile'] = 'clock'
       }
@@ -480,7 +511,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // instead of rendering a number input, and never required on create.
     if (field.attributes.some(a => a.kind === 'version')) {
       if (mode !== 'create') {
-        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
+        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
         properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'version' }
       }
       continue
@@ -508,7 +539,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const isGenerated = field.attributes.find(a => a.kind === 'generated' || a.kind === 'funcCall')
     if (isComputed || isGenerated) {
       if (mode !== 'create' && mode !== 'update') {
-        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
+        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
         const kind = isComputed ? 'computed' : 'generated'
         properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': kind }
       }
@@ -547,7 +578,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const isGuarded = field.attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
     if (isGuarded && audience === 'client') continue
 
-    const fieldSchema = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
+    const fieldSchema = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
 
     // @hashed — writable, never readable. `writeOnly` is the standard keyword for
     // exactly this, and it is the one protection where the read side cannot be
@@ -1077,7 +1108,7 @@ function applyPresentation(fieldSchema, field) {
   return fieldSchema
 }
 
-function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audience = 'client', typeDefs = null) {
+function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audience = 'client', typeDefs = null, fileDef = 'FileRef') {
   const { name, type, attributes } = field
   const result = {}
 
@@ -1096,7 +1127,7 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
     typeSchema = { '$ref': `#/$defs/${typeAttr.name}` }
   } else {
     // Base type schema
-    typeSchema = typeToJsonSchema(type, schema, enumDefs, inlineEnums)
+    typeSchema = typeToJsonSchema(type, schema, enumDefs, inlineEnums, fileDef)
   }
 
   // Apply validators from attributes
@@ -1146,7 +1177,7 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
 
 // ─── Type mapping ─────────────────────────────────────────────────────────────
 
-function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
+function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false, fileDef = 'FileRef') {
   if (type.kind === 'enum') {
     // inlineEnums: true → emit values directly so consumers don't need $ref resolution
     // Inlining exists so a consumer need not resolve a $ref, so it has to
@@ -1166,6 +1197,10 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
     return type.array ? { type: 'array', items: item } : item
   }
 
+  // A File[] holds files, and each item is the same value a File column is.
+  // Read as `string[]` it named no file at all, so a form drew a text list.
+  if (type.array && type.name === 'File') return { type: 'array', items: { '$ref': `#/$defs/${fileDef}` } }
+
   // Array types — String[] / Int[]
   if (type.array) {
     const itemType = type.name === 'Int' ? 'integer' : 'string'
@@ -1180,7 +1215,7 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
     case 'DateTime': return { type: 'string', format: 'date-time' }
     case 'Json':     return {}   // any JSON value — no type constraint
     case 'Bytes':     return { type: 'string', contentEncoding: 'base64' }
-    case 'File':     return { '$ref': '#/$defs/FileRef' }  // shared ref — see FileRef definition below
+    case 'File':     return { '$ref': `#/$defs/${fileDef}` }  // FileRef read, FileInput written — see fileDefFor
     default:         return { type: 'string' }
   }
 }

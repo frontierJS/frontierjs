@@ -15,13 +15,13 @@ import { buildSealMap } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
 import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols } from './ddl.js'
 import {
-  buildWhere, buildOrderBy, buildRelationOrderBy, buildWindowCols, rawClause, isNamedAgg,
+  buildWhere, buildOrderBy, buildRelationOrderBy, buildWindowCols, windowColumnNames, rawClause, isNamedAgg,
   buildNamedAggExpr, extractNamedAggs, parseSelectArg, trimAllToSelect, vectorOrderPlan,
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
   aggregatableKeysFor, LIKE_SQL, likePattern,
-  sqlFragment, ident, and, join as sqlJoin,
+  sqlFragment, ident, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { validate, applyTransforms, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
@@ -45,7 +45,7 @@ import { backupSqliteTo } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { isServerAssignedId, isServerFilled } from './ids.js'
-import { runSqliteRetention, compactJsonl } from './retention.js'
+import { runSqliteRetention, compactJsonl, RETENTION_BATCH } from './retention.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {
   TransitionViolationError, TransitionConflictError, VersionRequiredError,
@@ -306,6 +306,11 @@ export const PLAN = Symbol.for('litestone.plan')
 // joined row's own columns never change and no table event names it — a live
 // list filtered by that relation kept the row until a reload (`FJS-2013`).
 export const JOINED = Symbol.for('litestone.joined')
+
+// Whether any read rule adds to a read of this table for its flavor:
+// `tbl[NARROWED]()`. hiddenParents asks it of a PARENT's table, whose rules
+// only that table's closure knows.
+export const NARROWED = Symbol.for('litestone.narrowed')
 
 // ─── rows changed ─────────────────────────────────────────────────────────────
 // bun:sqlite's `.changes` is a total-changes delta, so it counts what TRIGGERS
@@ -717,6 +722,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
     catch (e) { if (e instanceof AccessDeniedError) return false; throw e }
   }
 
+  // A parent no read rule narrows hides a row from the caller only by the
+  // gate refusing the whole model, which needs no query to ask. Without this,
+  // every write naming a foreign key paid one exists() per key on a schema
+  // with nothing to hide.
+  async function hidesNothing(tbl, target) {
+    if (tbl[NARROWED]?.() !== false) return false
+    try { if (plugins?.hasPlugins) await plugins.beforeRead(target, {}, ctx); return true }
+    catch (e) { if (e instanceof AccessDeniedError) return false; throw e }
+  }
+
   // Graded before the write and THROWN where SQLite's own refusal of a missing
   // parent would land — after validation, at the row's place in a batch — so
   // the two answers differ in nothing, order included. Only a parent that
@@ -744,6 +759,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const tbl  = ctx.tables?.[modelToAccessor(p.target)]
       const sink = ctx.cascadeSinkFor?.(p.target)
       if (!tbl || !sink) continue
+      if (await hidesNothing(tbl, p.target)) continue
       const verdict = new Map()
       for (const [i, row] of rows.entries()) {
         if (!row || typeof row !== 'object' || !p.fields.every(f => f in row)) continue
@@ -977,6 +993,57 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
     }
     return out
+  }
+
+  // ─── one currency per aggregate ─────────────────────────────────────────
+  // A @money(field: f) column holds each row's amount in that row's own
+  // currency, so SUM over $49, €45 and ¥7,000 answered a bare 16,400 that a
+  // dashboard printed as $164.00 (FJS-2171). An amount is aggregated only
+  // where the currency is one: a `by` naming f, or a where pinning f to one
+  // value. @money(USD) is one by declaration and never reaches this.
+  const _perRowCurrency = new Map((shape.model?.fields ?? []).flatMap(f => {
+    const m = f.attributes?.find(a => a.kind === 'money')
+    return m?.field ? [[f.name, m.field]] : []
+  }))
+
+  function pinsOneValue(where, f) {
+    if (!where || typeof where !== 'object') return false
+    if (f in where) {
+      const v = where[f]
+      if (v !== null && typeof v !== 'object') return true
+      if (Array.isArray(v)) return v.length === 1
+      if (v && 'equals' in v && v.equals !== null && typeof v.equals !== 'object') return true
+      if (v && Array.isArray(v.in) && v.in.length === 1) return true
+    }
+    const and = where.AND
+    return Array.isArray(and) ? and.some(w => pinsOneValue(w, f)) : pinsOneValue(and, f)
+  }
+
+  // `args` is aggregate's or groupBy's; `extra` is the `having`/`orderBy`
+  // objects, which name a value aggregate without selecting it.
+  function refuseMixedCurrency(op, args, by = [], extra = []) {
+    if (!_perRowCurrency.size) return
+    const reads = []
+    for (const src of [args, ...extra]) {
+      if (!src || typeof src !== 'object') continue
+      for (const agg of ['_sum', '_avg', '_min', '_max'])
+        if (src[agg] && typeof src[agg] === 'object')
+          for (const [name, on] of Object.entries(src[agg])) if (on) reads.push(name)
+    }
+    // A named aggregate's `filter` is a sql`` fragment, which cannot be read
+    // for a pin; its currency is pinned by the where or the `by` like any other.
+    for (const [, spec] of extractNamedAggs(args)) {
+      if (!spec || typeof spec !== 'object') continue
+      for (const fn of ['sum', 'avg', 'min', 'max'])
+        if (typeof spec[fn] === 'string') reads.push(spec[fn])
+    }
+    for (const name of reads) {
+      const cur = _perRowCurrency.get(name)
+      if (!cur || by.includes(cur) || pinsOneValue(args.where, cur)) continue
+      throw new ValidationError([{ path: [op, name], message:
+        `Cannot ${op} '${name}' on ${modelName} across currencies — it is @money(field: ${cur}), so each row's ` +
+        `amount is in that row's ${cur}. Group by: ['${cur}'], or pin where: { ${cur}: '<code>' }` }])
+    }
   }
 
   // @@hasTemplates marker column name, or null if this model doesn't opt in.
@@ -2159,7 +2226,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // exclusive unit as its DELETE, then hands each child table its own.
   ctx.registerCascadeSink?.(modelName, {
     idField,
-    hears: !!plugins?.hasPlugins || tableHasLogWork,
+    hears: !!(plugins?.hearsDeletes || plugins?.hearsWrites) || tableHasLogWork,
     rowsWhere(fk, keys) {
       const out = []
       for (let i = 0; i < keys.length; i += 500) {
@@ -2176,6 +2243,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // cascade takes under them before its DELETE does (FJS-2097).
     doomedUnder: rows => cascadeDoomed(readAll(rows)),
     cascadeRemoved: doomed => cascadeRemoved(doomed),
+    cascadeHeard: () => cascadeHeard(),
     // `onDelete: SetNull` is an UPDATE SQLite makes inside the same DELETE: the
     // row stays and its key column is cleared (FJS-1505). One line a row, since
     // each row's before and after are its own.
@@ -3201,6 +3269,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
         throw new ValidationError([{ path: [k], message: `${k} was given a function — you probably forgot to call it` }])
       if (typeof v === 'symbol')
         throw new ValidationError([{ path: [k], message: `${k} was given a symbol — symbols cannot be stored` }])
+      // FileStorage takes every file value before this, so an object left on a
+      // File column is one it does not read, a stored ref most often. A ref is
+      // the server's to write (FJS-D666), and the operators below are not what
+      // a caller holding a file needs to hear about.
+      if (v !== null && typeof v === 'object' && !Array.isArray(v) && _fileFields.includes(k))
+        throw new ValidationError([{ path: [k], message:
+          `${k} is a File column and was given an object that is not a file. A stored reference is written by the ` +
+          `server, never sent. Send the bytes: a data URL (data:<type>;base64,<data>) or { name, type, data } with base64 data` }])
       if (v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && !ArrayBuffer.isView(v))
         throw new ValidationError([{ path: [k], message:
           `${k} was given an object where a value was expected. The atomic operators — ` +
@@ -4200,59 +4276,44 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _fromBoolFields = _hasFrom
     ? new Set(_fromEntries.filter(([,{isBool}]) => isBool).map(([n]) => n))
     : null
-  // Pre-compute the ultra-common case: findMany({}) on a soft-delete table with no policy/filter
-  // Disabled for @@hasTemplates and windowed models — both need an
-  // additional predicate on every read (`isTemplate = 0`, and a window against
-  // a value that changes between two calls), which combinatorially expands
-  // fast-path SQL variants. The slow build-SQL path handles them correctly.
-  const _fastFindManySql = (softDelete && !hasTemplates && !effective && !ctx.hasPolicies && !_staticGlobalFilter && !_dynamicGlobalFilter && !plugins?.hasPlugins)
+  // The two fast paths below are one precompiled statement each, so they hold
+  // only while no read rule but soft delete adds to the where — their SQL
+  // carries that one. Which rules add something is READ_RULES' own `narrows`,
+  // asked per call (`readNarrowed`), because a plugin's read filter depends on
+  // the caller. A client-wide `hasPolicies`/`hasPlugins` here turned both paths
+  // off in every model of an app that gated one.
+  //
+  // findMany({}) on a soft-delete table.
+  const _fastFindManySql = softDelete
     ? `${_baseSqlWithFrom} WHERE "${col('deletedAt')}" IS NULL`
     : null
 
-  // Is a transaction open? The two fast paths below hold statements prepared
-  // against the read connection, which cannot observe uncommitted writes, so both
-  // stand down while one is. `inTx` is absent on plain/read-only connections.
-  const _inTx = () => readDb.inTx?.() === true
-
-  // Pre-cache the prepared statement for the most common query pattern.
-  // Eliminates Map lookup in wrapDb on every findMany({}) call.
-  // Try-guarded for @@external tables that don't exist at createClient time.
-  let _fastStmt = null
+  // Prepared once here only to learn whether the table exists — an @@external
+  // one may not at createClient time. Each call fetches the statement from
+  // readDb again: wrapDb's LRU finalizes what it evicts, so a statement held in
+  // this closure throws 'Statement has finalized' on every call once 500 other
+  // shapes have run.
+  let _fastFindMany = false
   if (_fastFindManySql) {
-    try { _fastStmt = readDb.query(_fastFindManySql) }
-    catch { _fastStmt = null }
+    try { readDb.query(_fastFindManySql); _fastFindMany = true }
+    catch {}
   }
 
-  // Fast path #2: findUnique({ where: { <pk>: value } })
-  // The single most common query in any app: lookup-by-id. Skip buildSQL entirely.
-  // Conditions: no policies, no global filter, no plugins, no field encryption,
-  //             no @from fields (would need subquery in SELECT). Soft-delete fine
-  //             (we add the deletedAt clause in the precomputed SQL).
-  // The PK field name is derived from `idField` already computed below; we need
-  // to compute it earlier here. Find it inline.
+  // findUnique({ where: { <pk>: value } }) — lookup by id, the most common
+  // read an app makes. Not with a field policy or a @from field, whose read
+  // the slow path shapes.
   const _pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? null
-  const _canFastFindUnique = (
-    _pkField &&
-    !ctx.hasPolicies &&
-    !_staticGlobalFilter && !_dynamicGlobalFilter &&
-    !plugins?.hasPlugins &&
-    !hasFieldPolicy &&
-    !_hasFrom &&
-    !hasTemplates &&
-    !effective
-  )
+  const _canFastFindUnique = _pkField && !hasFieldPolicy && !_hasFrom
   const _fastFindUniqueSql = _canFastFindUnique
     ? (softDelete
         ? `SELECT ${_starCols()} FROM "${tableName}" WHERE "${col(_pkField)}" = ? AND "${col('deletedAt')}" IS NULL LIMIT 2`
         : `SELECT ${_starCols()} FROM "${tableName}" WHERE "${col(_pkField)}" = ? LIMIT 2`)
     : null
-  // External (@@external) tables may not exist at createClient time — preparing
-  // a statement against them throws. Skip the fast path in that case; the
-  // regular findUnique path will resolve at query time.
-  let _fastFindUniqueStmt = null
+  // Probed and fetched per call for the reasons _fastFindMany is.
+  let _fastFindUnique = false
   if (_fastFindUniqueSql) {
-    try { _fastFindUniqueStmt = readDb.query(_fastFindUniqueSql) }
-    catch { _fastFindUniqueStmt = null }
+    try { readDb.query(_fastFindUniqueSql); _fastFindUnique = true }
+    catch {}
   }
 
   // `verb` is the fold's name for the caller and `args` its own flags; the
@@ -4260,7 +4321,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // statement whose precondition is the RAW where being empty.
   function buildSQL({ verb = 'findMany', where, args, orderBy, limit, offset, parsedSelect, distinct = false, windowSpec = null, withVectors = false } = {}) {
     // ── Ultra-fast path: no where, no order, no limit, live mode, no policy/filters ──
-    if (_fastFindManySql && !withVectors && !where && !orderBy && limit == null && offset == null && !parsedSelect && !windowSpec && !distinct && sdMode(args) === 'live') {
+    // `narrows` speaks for a READ, so a write verb's fold is never skipped here.
+    if (_fastFindManySql && VERBS[verb] === 'read' && !readNarrowed('softDelete') && !withVectors && !where && !orderBy && limit == null && offset == null && !parsedSelect && !windowSpec && !distinct && sdMode(args) === 'live') {
       return { sql: _fastFindManySql, params: [] }
     }
 
@@ -4367,8 +4429,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // when both are present and emits the one alone otherwise.
     const whereAll    = and(whereFrag, policyFrag)
     const whereClause = whereAll ? sqlFragment(` WHERE ${whereAll.sql}`, whereAll.params) : null
-    const limitFrag   = limit  != null ? sqlFragment(` LIMIT ${Number(limit)}`)   : null
-    const offsetFrag  = offset != null ? sqlFragment(` OFFSET ${Number(offset)}`) : null
+    const pageText    = pageSql(limit, offset)
+    const pageFrag    = pageText ? sqlFragment(pageText) : null
 
     // ── Window functions ──────────────────────────────────────────────────
     // The window columns lead the SELECT list, so their binds lead the
@@ -4378,10 +4440,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // prefixes that do not resolve against the wrapper.
     if (windowSpec) {
       const winParams  = []
-      const windowCols = buildWindowCols(windowSpec, winParams)
+      const windowCols = buildWindowCols(windowSpec, winParams, columnMap)
       if (windowCols.length) {
         const windowExpr = windowCols.join(', ')
-        const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag, limitFrag, offsetFrag], '')
+        const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag, pageFrag], '')
         return {
           sql:    stmt.sql.replace(/^SELECT (DISTINCT )?/, (_, d) => `SELECT ${d ?? ''}${windowExpr}, `),
           params: [...winParams, ...stmt.params],
@@ -4389,7 +4451,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
     }
 
-    const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag, limitFrag, offsetFrag], '')
+    const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag, pageFrag], '')
     return { sql: stmt.sql, params: stmt.params }
   }
 
@@ -4638,14 +4700,33 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const READ_VERBS = Object.freeze(['findMany', 'findFirst', 'findUnique', 'findManyAndCount', 'count', 'exists', 'aggregate', 'groupBy', 'findManyCursor', 'search'])
   const WALKS = Object.freeze([...READ_VERBS, 'recursive'])
   const NOT_RESTORE = Object.freeze([...WALKS, 'update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany'])
+  //
+  // `narrows` answers whether the rule can add anything to a READ of this
+  // model for this flavor — true when unsure. The fast paths and
+  // hiddenParents skip the fold on its answer, so a rule added here without
+  // one is refused at load rather than skipped by them.
   const READ_RULES = Object.freeze([
-    { name: 'globalFilter',  verbs: WALKS,       scope: () => resolveGlobalFilter() },
-    { name: 'pluginFilters', verbs: WALKS,       scope: () => plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : null },
-    { name: 'softDelete',    verbs: '*',         where: (where, args) => applySdFilter(where, args) },
-    { name: 'templates',     verbs: NOT_RESTORE, where: (where, args) => applyHtFilter(where, htMode(args)) },
-    { name: 'effective',     verbs: NOT_RESTORE, where: (where, args) => applyEffFilter(where, args) },
-    { name: 'policy',        verbs: '*',         policy: (op) => ctx.hasPolicies ? buildPolicyFilter(modelName, op, ctx) : null },
+    { name: 'globalFilter',  verbs: WALKS,       narrows: () => !!(_staticGlobalFilter || _dynamicGlobalFilter),
+      scope: () => resolveGlobalFilter() },
+    { name: 'pluginFilters', verbs: WALKS,       narrows: () => !!plugins?.hasPlugins && plugins.getReadFilters(modelName, ctx).length > 0,
+      scope: () => plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : null },
+    { name: 'softDelete',    verbs: '*',         narrows: () => !!softDelete,
+      where: (where, args) => applySdFilter(where, args) },
+    { name: 'templates',     verbs: NOT_RESTORE, narrows: () => !!hasTemplates,
+      where: (where, args) => applyHtFilter(where, htMode(args)) },
+    { name: 'effective',     verbs: NOT_RESTORE, narrows: () => !!effective,
+      where: (where, args) => applyEffFilter(where, args) },
+    { name: 'policy',        verbs: '*',         narrows: () => !!(ctx.hasPolicies && shape.policy.read),
+      policy: (op) => ctx.hasPolicies ? buildPolicyFilter(modelName, op, ctx) : null },
   ])
+  for (const rule of READ_RULES) if (typeof rule.narrows !== 'function')
+    throw new Error(`READ_RULES.${rule.name} states no narrows — the fast paths and hiddenParents read it`)
+
+  // Whether any read rule but `except` adds to a read of this model.
+  function readNarrowed(except = null) {
+    for (const rule of READ_RULES) if (rule.name !== except && rule.narrows()) return true
+    return false
+  }
 
   // Every verb the fold may be asked for, and the policy op each one is graded
   // as. `upsert` and `upsertMany` are not here: they build no WHERE to fold
@@ -5101,9 +5182,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // cost otherwise — or when the prefetch IS the row result, because the
     // statement carries no RETURNING.
     const wantRow = !!plan.result && !returning && plan.prefetch
-    const hears = plan.prefetch && (plugins?.hasPlugins || cascadeHeard())
+    // A plugin hears these rows only by answering a delete — the gate is
+    // installed on every gated app and answers none (FJS-2293).
+    const hearsOwn = !!(plan.prefetch && plugins?.hearsDeletes)
+    const hears = hearsOwn || (plan.prefetch && cascadeHeard())
     const sel = hears || wantRow ? selectWhere(where) : null
-    const affected = sel && (plugins?.hasPlugins || wantRow) ? readAll(readDb.query(sel.sql).all(...sel.params)) : []
+    const readOwn = hearsOwn || wantRow
+    const affected = sel && readOwn ? readAll(readDb.query(sel.sql).all(...sel.params)) : []
     let rows = returning ? [] : null
     let count = 0
     let doomed = null
@@ -5126,7 +5211,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (notes.before) noteCardinalityBySql(wSql, wBinds)
     if (plan.exclusion) { noteExclusionBySql(wSql, wBinds); noteExclusion(plan.exclusion) }
     const moves = plan.moves ? movesOnto(plan.moves, wSql, wBinds) : false
-    if (sel && cascadeHeard()) doomed = cascadeDoomed(plugins?.hasPlugins ? affected : readAll(readDb.query(sel.sql).all(...sel.params)))
+    if (sel && cascadeHeard()) doomed = cascadeDoomed(readOwn ? affected : readAll(readDb.query(sel.sql).all(...sel.params)))
 
     // The prefetch that is the row result was read under this same lock by
     // the statement's own WHERE, so it is also the statement's count: no row
@@ -6131,6 +6216,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // This row's membership in a relation changed through a join table, so it
     // announces an update with nothing else written. Read fresh rather than
     // handed over: the caller's own read may have been narrowed by a field policy.
+    [NARROWED]() { return readNarrowed() },
+
     [JOINED](key) {
       if (!hasAudience()) return
       const raw = writeDb.query(`SELECT * FROM ${T.sql} WHERE ${ident(col(idField)).sql} = ?`).get(key)
@@ -6297,22 +6384,31 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         return roots
       }
 
-      // ── Inline fast path: findMany() / findMany({}) with no plugins/hooks/logging ──
-      // Skipped inside a transaction: this statement was prepared against the
-      // READ connection at table-build time, so it cannot see uncommitted writes.
-      // The normal path goes through readDb.query(), which routes to the write
-      // connection while a transaction is open.
-      if (_fastStmt && !_inTx() && !args.where && !args.orderBy && !args.limit && !args.offset && !args.select && !args.include && !args.withDeleted && !args.onlyDeleted && !args.window && !args.distinct && !plugins?.hasPlugins && !tableHasLogWork) {
-        const _needsTiming = ctx.onQuery || ctx._queryListeners.size
-        const _t0 = _needsTiming ? performance.now() : 0
-        const rows = readAll(_fastStmt.all(), { mode: 'list' })
-        if (_needsTiming) fireQuery({ operation: 'findMany', args, sql: _fastFindManySql, params: [], duration: performance.now() - _t0, rowCount: rows.length })
-        return rows
+      // ── Inline fast path: findMany() / findMany({}) ──
+      // A plugin's beforeRead may rewrite the args, so the shape is asked again
+      // after it, and the slow path is told the hook has run.
+      const _plainFindMany = () => !args.where && !args.orderBy && !args.limit && !args.offset && !args.select && !args.include && !args.withDeleted && !args.onlyDeleted && !args.window && !args.distinct && !args.scopedBy
+      let _readChecked = false
+      if (_fastFindMany && !tableHasLogWork && !_edgeNamespaces.size && _plainFindMany() && !readNarrowed('softDelete')) {
+        if (plugins?.hasPlugins) { await plugins.beforeRead(modelName, args, ctx); _readChecked = true }
+        if (_plainFindMany()) {
+          const _needsTiming = ctx.onQuery || ctx._queryListeners.size
+          const _t0 = _needsTiming ? performance.now() : 0
+          const rows = readAll(readDb.query(_fastFindManySql).all(), { mode: 'list' })
+          if (_needsTiming) fireQuery({ operation: 'findMany', args, sql: _fastFindManySql, params: [], duration: performance.now() - _t0, rowCount: rows.length })
+          if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, {})
+          return rows
+        }
       }
-      if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
+      if (plugins?.hasPlugins && !_readChecked) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, orderBy, limit, offset, select, distinct, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
       const windowSpec      = args.window ?? null
+      if (windowSpec) {
+        const { values, names } = windowColumnNames(windowSpec)
+        refuseAggregateKeys('window', values)
+        refuseAggregateKeys('window', names, false)
+      }
       const ps              = parseArgs(select, include)
       const psLog           = logReadParse(select, include, ps, distinct)
 
@@ -6427,32 +6523,33 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       refuseRecursive('findUnique', args)
       // ── Ultra-fast path: findUnique({ where: { <pk>: value } }) ──
       // Skip buildSQL, parseArgs, soft-delete filter assembly entirely.
-      // Bypass conditions are pre-checked at table-build time (_canFastFindUnique).
-      // Same reason as the findMany fast path: prepared against the read connection.
-      if (_fastFindUniqueStmt && !_inTx() && !_edgeNamespaces.size) {
+      // The args are asked again after beforeRead for the reason findMany's are.
+      const _pkValue = () => {
         const w = args.where
-        if (w && !args.include && !args.select && !args.withDeleted && !args.onlyDeleted) {
-          // Single-key object pointing at the PK with a scalar value
-          const keys = Object.keys(w)
-          if (keys.length === 1 && keys[0] === _pkField) {
-            const v = w[_pkField]
-            if (v !== null && (typeof v !== 'object' || v instanceof Date)) {
-              const _nt = needsTiming()
-              const _t0 = _nt ? performance.now() : 0
-              const rows = readAll(_fastFindUniqueStmt.all(v), { mode: 'single' })
-              if (_nt) fireQuery({ operation: 'findUnique', args, sql: _fastFindUniqueSql, params: [v], duration: _nt ? performance.now() - _t0 : 0, rowCount: rows.length })
-              if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
-              // The plugin hooks are not skipped here — `_canFastFindUnique`
-              // requires there to be none. The LOG is a separate question: a
-              // table can declare `@@trail` with no plugin installed anywhere.
-              if (tableHasLogWork && rows[0]) emitLogs('read', [rows[0]])
-              return rows[0] ?? null
-            }
-          }
+        if (!w || args.include || args.select || args.withDeleted || args.onlyDeleted || args.scopedBy) return undefined
+        const keys = Object.keys(w)
+        if (keys.length !== 1 || keys[0] !== _pkField) return undefined
+        const v = w[_pkField]
+        return v !== null && (typeof v !== 'object' || v instanceof Date) ? v : undefined
+      }
+      let _readChecked = false
+      if (_fastFindUnique && !_edgeNamespaces.size && _pkValue() !== undefined && !readNarrowed('softDelete')) {
+        if (plugins?.hasPlugins) { await plugins.beforeRead(modelName, args, ctx); _readChecked = true }
+        const v = _pkValue()
+        if (v !== undefined) {
+          const _nt = needsTiming()
+          const _t0 = _nt ? performance.now() : 0
+          const rows = readAll(readDb.query(_fastFindUniqueSql).all(v), { mode: 'single' })
+          if (_nt) fireQuery({ operation: 'findUnique', args, sql: _fastFindUniqueSql, params: [v], duration: _nt ? performance.now() - _t0 : 0, rowCount: rows.length })
+          if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
+          const row = rows[0] ?? null
+          if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, {})
+          if (tableHasLogWork && row) emitLogs('read', [row])
+          return row
         }
       }
 
-      if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
+      if (plugins?.hasPlugins && !_readChecked) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, select, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
       const ps              = parseArgs(select, include)
@@ -6646,6 +6743,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       ])
       if (_count && typeof _count === 'object' && _count.distinct)
         refuseAggregateKeys('aggregate', [_count.distinct], false)
+      refuseMixedCurrency('aggregate', args)
       const params = []
       // A SELECT-list value (a _stringAgg separator, a named aggregate's
       // filter) is bound before the WHERE's, because it comes first in the
@@ -6771,6 +6869,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       ])
       if (_count && typeof _count === 'object' && _count.distinct)
         refuseAggregateKeys('groupBy', [_count.distinct], false)
+      refuseMixedCurrency('groupBy', args, by, [having, orderBy])
 
       // ── Interval / date truncation ───────────────────────────────────────
       // interval: { createdAt: 'month' }
@@ -7203,8 +7302,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (orderParts.length) sql += ` ORDER BY ${orderParts.join(', ')}`
       }
 
-      if (limit  != null) sql += ` LIMIT ${Number(limit)}`
-      if (offset != null) sql += ` OFFSET ${Number(offset)}`
+      sql += pageSql(limit, offset)
 
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
@@ -8207,8 +8305,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       ftsSql += ` ORDER BY rank`
 
       if (!ordered) {
-        if (limit  != null) ftsSql += ` LIMIT ${Number(limit)}`
-        if (offset)         ftsSql += ` OFFSET ${Number(offset)}`
+        ftsSql += pageSql(limit, offset || null)
       }
 
       const _nt = needsTiming()
@@ -8266,8 +8363,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (ordered) {
         const orderSql = buildOrderBy(orderBy, baseParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
         if (orderSql) baseSql += ` ORDER BY ${orderSql}`
-        if (limit != null) baseSql += ` LIMIT ${Number(limit)}`
-        if (offset)        baseSql += ` OFFSET ${Number(offset)}`
+        baseSql += pageSql(limit, offset || null)
       }
 
       const baseRows = readAll(readDb.query(baseSql).all(...baseParams), { computedFields: ps?.requestedFields })
@@ -8388,6 +8484,36 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         `${modelName} owes no commitment named '${transition}' — declared: ${decls.map(d => d.name).join(', ')}` }])
 
       const at = by ?? nowISO(ctx.now)
+      // Under row tenancy every tenant's rows share this table, so the sweep
+      // has no tenant to fire in but the row's own; without it the fire's
+      // principal holds no claim and the tenancy deny hides the row it moves.
+      const t = ctx.schema?.tenancy
+      // A model scoped through its parent carries no column; its tenant is the
+      // parent's, read along the relation its generated tenancy deny follows.
+      const carries = (m) => t?.strategy === 'row' && ctx.models?.[m]?.fields?.some(f => f.name === t.column)
+      const tenantPath = (m, seen = new Set([m])) => {
+        if (carries(m)) return []
+        for (const a of ctx.models?.[m]?.attributes ?? []) {
+          const ref = a.generated === 'tenancy' && a.expr?.type === 'not' && a.expr.expr?.type === 'check' ? a.expr.expr : null
+          const target = ref && ctx.models[m].fields.find(f => f.name === ref.field)?.type.name
+          if (!target || seen.has(target)) continue
+          const rest = tenantPath(target, new Set([...seen, target]))
+          if (rest) return [ref.field, ...rest]
+        }
+        return null
+      }
+      const tenantRel = t?.strategy === 'row' ? tenantPath(modelName) : null
+      const nest = (path) => path.length
+        ? { [path[0]]: { select: nest(path.slice(1)) } }
+        : { [t.column]: true }
+      const graft = (into, from) => {
+        for (const [k, v] of Object.entries(from)) {
+          into[k] = into[k] && typeof v === 'object' && typeof into[k] === 'object'
+            ? { select: graft({ ...into[k].select }, v.select) }
+            : v
+        }
+        return into
+      }
       const out = []
       for (const d of chosen) {
         const limit = readBy(d.kind, at, timeZone)
@@ -8413,11 +8539,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const keep = [idField, d.on, ...(d.offset?.field ? [d.offset.field] : [])]
         const select = Object.fromEntries(keep.map(k => [k, true]))
         if (d.via) select[d.via] = { select: { [targetId]: true } }
+        if (tenantRel) graft(select, nest(tenantRel))
         const rows = await this.findMany({ where: { AND: cond }, select })
         for (const row of rows) out.push({
           transition: d.name,
           id:         row[idField],
           dueAt:      dueAt(d, row),
+          ...(tenantRel ? { tenant: [...tenantRel, t.column].reduce((v, k) => v?.[k], row) ?? null } : {}),
           target:     { model: d.target, accessor: modelToAccessor(d.target), transition: d.transition,
                         id: d.via ? row[d.via][targetId] : row[idField] },
         })
@@ -8753,7 +8881,7 @@ export async function createClient({
 
   // ── Build working schema ──────────────────────────────────────────────────
   // Start from the parsed schema, then augment with:
-  //   • auto logger models (<dbName>Trail) for driver:trail databases in auto mode
+  //   • auto trail models (<dbName>Trail) for driver:trail databases in auto mode
   //   • view-as-model stubs so ctx.models[viewName] works inside makeTable
   const rawSchema     = parseResult.schema
   const autoLogModels = rawSchema.databases
@@ -9093,8 +9221,18 @@ function makeLockPrimitive(rawWriteDb) {
         const ddl = hasDbBlocks
           ? ddlMods.generateDDLForDatabase(schema, dbName, { foreignKeys: true, pluralize: pluralizeTableNames })
           : ddlMods.generateDDL(schema, { foreignKeys: true, pluralize: pluralizeTableNames })
-        for (const stmt of ddlMods.splitStatements(ddl)) {
-          if (!stmt.startsWith('PRAGMA')) conn.rawWriteDb.run(stmt)
+        // One transaction, as tenants.create() builds a file: autocommit is a
+        // commit per statement, and a statement that throws would leave the
+        // tables before it for the next boot to take as built.
+        conn.rawWriteDb.run('BEGIN IMMEDIATE')
+        try {
+          for (const stmt of ddlMods.splitStatements(ddl)) {
+            if (!stmt.startsWith('PRAGMA')) conn.rawWriteDb.run(stmt)
+          }
+          conn.rawWriteDb.run('COMMIT')
+        } catch (err) {
+          try { conn.rawWriteDb.run('ROLLBACK') } catch {}
+          throw err
         }
       }
     }
@@ -9139,23 +9277,30 @@ function makeLockPrimitive(rawWriteDb) {
   // A swept row is a deleted row, and the plugins hear it the way they hear an
   // ORM delete: FileStorage releases the objects a File column held, which a
   // raw DELETE leaves in the store for ever (FJS-1921).
-  async function _runRetention({ jsonl = true } = {}) {
-    const gone  = []
-    const swept = _sweepRetention({ jsonl, onRemoved: pluginRunner.hasPlugins ? (model, rows, doomed) => gone.push([model, rows, doomed]) : null })
-    for (const [model, rows, doomed] of gone) {
-      await pluginRunner.afterDelete(model, rows, ctx)
-      await sharedCtx.cascadeSinkFor(model)?.cascadeRemoved(doomed)
-    }
-    return swept
+  // Rows are read only for a model whose deletes something hears — a plugin
+  // that answers onAfterDelete, or a cascade child with a listener of its own.
+  let _retentionStopped = false
+  let _retentionDrain   = null
+  const _retentionHears = model => pluginRunner.hearsDeletes || !!sharedCtx.cascadeSinkFor(model)?.cascadeHeard()
+  async function _retentionRemoved(model, rows, doomed) {
+    if (pluginRunner.hearsDeletes) await pluginRunner.afterDelete(model, rows, ctx)
+    await sharedCtx.cascadeSinkFor(model)?.cascadeRemoved(doomed)
   }
 
-  function _sweepRetention({ jsonl, onRemoved }) {
+  async function _runRetention({ jsonl = true, batches = Infinity } = {}) {
     const swept = []
     for (const [dbName, conn] of Object.entries(dbRegistry)) {
       if (!conn.retention && !conn.maxSize) continue
 
       if (conn.driver === 'sqlite' && conn.retention && conn.rawWriteDb) {
-        for (const r of runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, pluralizeTableNames, now, onRemoved, (model, rows) => sharedCtx.cascadeSinkFor(model)?.doomedUnder(rows)))
+        const opts = {
+          pluralize: pluralizeTableNames, now, batches,
+          hears:       _retentionHears,
+          onRemoved:   _retentionRemoved,
+          doomedUnder: (model, rows) => sharedCtx.cascadeSinkFor(model)?.doomedUnder(rows),
+          stopped:     () => _retentionStopped,
+        }
+        for (const r of await runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, opts))
           swept.push({ database: dbName, driver: 'sqlite', ...r })
         continue
       }
@@ -9204,6 +9349,7 @@ function makeLockPrimitive(rawWriteDb) {
     // Stamped so *is the sweep running at all* is answerable. A retention job
     // that stopped firing removes nothing and reports nothing, which is the
     // same silence `FJS-327` and `FJS-328` were about one realm over.
+    if (_retentionDrain) await _retentionDrain
     const out = await _runRetention()
     ctx._logStats.lastRetainAt = new Date().toISOString()
     return out
@@ -9835,6 +9981,9 @@ function makeLockPrimitive(rawWriteDb) {
     // copy created for itself was one the declaring table's write never cleared.
     extDecl:       new Map(),
     hasPolicies:   Object.keys(policyMap).length > 0,
+    // Every verb's argument check reads it; scanned there, it is linear in the
+    // model count per call. Shapes are frozen, so once is enough.
+    hasPoliciedAggregates: Object.values(shapes).some(s => s.policiedAggregates.size > 0),
     policyDebug,
     // A CELL, not a value. Every derived context — asSystem(), $setAuth(),
     // $scopedBy() — is a spread of this one, and a spread copies a string by
@@ -10199,7 +10348,15 @@ function makeLockPrimitive(rawWriteDb) {
 
   // The boot pass waits for the plugins, since a swept row's files are theirs,
   // and for the tables: the cascade sinks it reads children through are theirs.
-  await _runRetention({ jsonl: false })
+  // It takes one batch a table and drains a backlog after the client resolves,
+  // since the first boot after a window is declared over a year of rows took
+  // 22.8 minutes to listen, and a health-checked deploy rolls back long before
+  // (FJS-2288).
+  const _booted = await _runRetention({ jsonl: false, batches: 1 })
+  if (_booted.some(r => r.removed >= RETENTION_BATCH))
+    _retentionDrain = _runRetention({ jsonl: false })
+      .catch(err => console.warn(`[litestone] retention: the sweep after startup stopped — ${err?.message ?? err}`))
+      .finally(() => { _retentionDrain = null })
 
   // ── Scopes ─────────────────────────────────────────────────────────────────
   // Reusable named query fragments registered by the app at createClient time.
@@ -11983,6 +12140,7 @@ function makeLockPrimitive(rawWriteDb) {
   }
 
   function _closeAll() {
+    _retentionStopped = true
     flushPendingLogs()   // a queued audit line appends before its table closes
     stopCrossProcessWatch()
     for (const a of _attached) {

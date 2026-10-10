@@ -1,6 +1,6 @@
 # Audit Logging
 
-Litestone provides field-level and model-level audit logging via the `logger` database driver. Every write produces a structured log entry with before/after images, actor attribution, and optional custom metadata.
+Litestone provides field-level and model-level audit logging via the `trail` database driver. Every write produces a structured log entry with before/after images, actor attribution, and optional custom metadata.
 
 ## Setup
 
@@ -128,23 +128,26 @@ model Candidate {
 
 ## onLog — enrich log entries
 
-The `onLog` callback on `createClient` adds actor attribution and custom metadata:
+`actorId` and `actorType` are filled from the principal already (`ctx.auth.id`,
+`ctx.auth.type`, else `user`/`system`/`bearer`). The `onLog` callback on
+`createClient` overrides them and adds `meta`; it may return only those three keys.
 
 ```js
 const db = await createClient({
-  path:  './schema.lite',
-  onLog: (entry, ctx) => ({
-    actorId:   ctx.auth?.id,
-    actorType: ctx.auth?.type ?? 'system',
-    meta: {
-      requestId: ctx.requestId,
-      ip:        ctx.ip,
-    },
-  }),
+  path:       './schema.lite',
+  logContext: () => requestStore.getStore() ?? null,
+  onLog:      (entry, ctx) => ({ meta: { plan: ctx.auth?.plan } }),
 })
 ```
 
-The return value is merged into the log entry. Fires asynchronously via `setImmediate` — never blocks the calling operation.
+**`ctx` is the client's, not the request's** (`FJS-D03`): `ctx.auth` is the
+principal that scoped it, and there is no `ctx.requestId` or `ctx.ip`. Where the
+write came from — `correlationId`, `ip`, `userAgent`, `origin`, `source`,
+`tenant` — is `logContext`'s to supply, and lands in the entry's own columns.
+Junction installs one itself; elsewhere, return what your request store holds.
+
+`onLog` runs synchronously inside the write and a throw in it is swallowed; the
+entry is then appended one event-loop tick later, never blocking the caller.
 
 ## Querying logs
 
@@ -153,14 +156,16 @@ synthesized model is `@@gate("8")`, as the auth models are, because a row holds
 the before- and after-image of a write in any tenant. A service that shows a
 caller their own history reads through `asSystem()` and narrows the `where`
 itself. A trail model the schema declares (`driver trail model AuditRow`)
-carries whatever `@@gate` it declares.
+carries whatever `@@gate` it declares; an `@@allow` or `@@deny` there is refused
+at parse, because the jsonl reader compiles no row policy — a trail that must be
+filtered per row goes in a SQLite database with a `model` key.
 
 ```js
 const trail = db.asSystem().auditTrail
 
-// All writes to users table
+// All writes to the user table
 const writes = await trail.findMany({
-  where:   { model: 'users' },
+  where:   { model: 'user' },
   orderBy: { createdAt: 'desc' },
   limit:   50,
 })
@@ -255,6 +260,17 @@ row policy and no `@@softDelete`; every other flavor of client refuses it by nam
 answers one row per table it touched — `{ model, table, removed }`, plus `error` where a
 table would not sweep, which is worth logging: a declared policy quietly not applying is
 the failure the whole declaration exists to prevent.
+
+**A SQLite sweep is batches of a thousand rows, yielding to the event loop between
+them**, so requests keep being served while it runs. The startup pass takes ONE batch a
+table and drains any backlog after `createClient` resolves — the first boot after a
+window is declared over an existing table would otherwise not listen until it finished
+(`FJS-2288`); `$retain()` waits for that drain, then sweeps. Rows are read back only
+where something hears the delete — a plugin answering `onAfterDelete`, or a cascade
+child with one. **Index `createdAt`**: the sweep is `createdAt < cutoff`, and without
+`@@index([createdAt])` every pass scans the table whether or not anything is due;
+`litestone advise` reports it as `retention-without-an-index`. The freed pages stay in
+the file — nothing vacuums.
 
 The cutoff is a **rolling instant** rather than a day boundary — `Date.now()` minus the
 duration, with `d` a flat 24 hours and `y` a flat 365 days — so *ninety days* is measured

@@ -35,7 +35,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (92)
+### A service hook runs in front of the body (93)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -54,6 +54,7 @@ name, and is as unread as the body.
 | `api-keys.restore` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `api-keys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole` |
 | `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
+| `api-keys.owners` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole` |
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.fromBlueprint` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
@@ -219,12 +220,13 @@ name when it declares none.
 
 ### `api-keys` · model `ApiKey`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`
-- **custom methods** — `revoke`, `scopes`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`, `owners`
+- **custom methods** — `revoke`, `scopes`, `owners`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole`
   - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
+  - `owners` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -236,6 +238,7 @@ name when it declares none.
 | before | `patch` | `requireWorkspaceRole` → `autoValidate` |
 | before | `remove` | `requireWorkspaceRole` |
 | before | `revoke` | `requireWorkspaceRole` |
+| before | `owners` | `requireWorkspaceRole` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |

@@ -7,6 +7,7 @@ examples:
 args:
   -
     name: model
+    kind: model
     description: Model name (PascalCase)
     required: true
 flags:

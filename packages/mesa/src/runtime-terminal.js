@@ -24,9 +24,10 @@
  *   component builds its tree in an array before the final `append(__anchor,
  *   …)`. Nodes placed before such a marker go into the array at the marker's
  *   position and ride into the real parent with it.
- * - Text attributes (`bold`, `italic`, `dim`, `underline` in the tag table)
- *   are cell attributes on a TextRenderable, so a box carries its bits and
- *   stamps every text that lands under it, through boxes appended later.
+ * - Text attributes (`bold`, `italic`, `dim`, `underline`, `inverse` and
+ *   `strike` in the tag table) are cell attributes on a TextRenderable, so a
+ *   box carries its bits and stamps every text that lands under it, through
+ *   boxes appended later.
  * - A button paints as `[ label ]` on one row rather than a bordered box: a
  *   bordered box fills the parent's width and three rows, which in a 40x12
  *   frame is a quarter of the screen per button.
@@ -54,6 +55,7 @@
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
 import { TERMINAL_TAGS, TERMINAL_EVENTS } from './terminal/tags.js'
+import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
 // live, where `runtime.js` left to itself takes a process with no `document`
@@ -210,7 +212,7 @@ function needRenderer(what) {
 
 // ─── attributes ───────────────────────────────────────────────────────
 
-const BITS = { bold: 'BOLD', italic: 'ITALIC', dim: 'DIM', underline: 'UNDERLINE', inverse: 'INVERSE' }
+const BITS = { bold: 'BOLD', italic: 'ITALIC', dim: 'DIM', underline: 'UNDERLINE', inverse: 'INVERSE', strike: 'STRIKETHROUGH' }
 
 function bitsOf(spec) {
   let bits = 0
@@ -355,6 +357,10 @@ export function element(tag, attrs = {}) {
   // A handler written for the DOM reads `e.target.name`, and the engine has
   // no `name` of its own; `value` it already has on a field.
   Object.defineProperty(node, 'name', { get: () => node.__attrs.name, configurable: true })
+  // A click-away handler asks whether the click landed inside it. Inclusive,
+  // as the DOM's is, and through `up`, so a lifted dialog is still inside the
+  // component that wrote it.
+  node.contains = (other) => { for (let n = other; n; n = up(n)) if (n === node) return true; return false }
   if (field) inputSource(node)
   if (spec.role === 'button') activatable(node)
   else if (node.__canFocus) focusSource(node)
@@ -447,6 +453,27 @@ export function spread(node, fn) {
 
 export function text(value) {
   return new TextRenderable(needRenderer('text'), { content: value == null ? '' : String(value) })
+}
+
+// The tags whose end starts a new line in `innerText`, and the ones whose
+// contents it never reads: a script, a stylesheet, and an inline icon, which
+// a browser draws rather than writes.
+const BLOCK_END = /<\/(?:p|div|li|dt|dd|h[1-6]|tr|pre|blockquote|section|article|header|footer|ul|ol|dl|table)\s*>/gi
+const UNREAD = /<(script|style|svg)\b[\s\S]*?<\/\1\s*>/gi
+
+/**
+ * `{@html}` markup as the text a browser's `innerText` reads from it: tags
+ * gone, a `<br>` or the end of a block a line break, references decoded.
+ * Outside a `<pre>` a run of whitespace is one space and a line holds no
+ * edge spaces, as the page lays it out; inside one, the whitespace stays.
+ */
+export function markupText(html, pre) {
+  if (html == null) return ''
+  let s = String(html).replace(/<!--[\s\S]*?-->/g, '').replace(UNREAD, '')
+  if (!pre) s = s.replace(/\s+/g, ' ')
+  s = htmlEntitiesToText(s.replace(/<br\s*\/?>/gi, '\n').replace(BLOCK_END, '\n').replace(/<[^>]*>/g, ''))
+  if (pre) return s
+  return s.split('\n').map((l) => l.trim()).filter(Boolean).join('\n')
 }
 
 export function set_text(node, value) {
@@ -603,15 +630,21 @@ function dispatch(target, type, extra = {}) {
 // to. Every focusable node is a source whether or not a listener is on it,
 // because the listener may be on an ancestor.
 
-/** Focus and blur, from a node that can hold focus; its keys arrive
- *  through `keys`. */
+/** Focus and blur, each followed by its bubbling twin, from a node that can
+ *  hold focus; its keys arrive through `keys`. The engine blurs the node
+ *  losing focus before it marks the next one focused, so the four arrive in
+ *  a browser's order: `blur`, `focusout`, `focus`, `focusin`. */
 function focusSource(node) {
   if (node.__focusSource) return
   node.__focusSource = true
-  node.on('focused', () => dispatch(node, 'focus'))
+  node.on('focused', () => { dispatch(node, 'focus'); dispatch(node, 'focusin') })
   // `destroy` blurs a node it has already marked destroyed; a browser fires
   // nothing at an element removed while focused.
-  node.on('blurred', () => { if (!node.isDestroyed) dispatch(node, 'blur') })
+  node.on('blurred', () => {
+    if (node.isDestroyed) return
+    dispatch(node, 'blur')
+    dispatch(node, 'focusout')
+  })
 }
 
 /**

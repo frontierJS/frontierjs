@@ -107,6 +107,64 @@ class FromPath {
 /** Upload a file from the server's disk into a File column. Code only — a request body cannot spell it. */
 export function fromPath(path) { return new FromPath(path) }
 
+// ─── A file over JSON ─────────────────────────────────────────────────────────
+
+// JSON has no bytes, so a caller over a JSON body or /mcp sends them inline: a
+// data URL, or `{ name, type, data }` with base64 `data` (FJS-D666). A stored
+// ref is never taken from a caller. The server is its only author, and a ref
+// naming another row's key would have that file deleted when this row's old
+// refs are cleaned up. The bound is the request body's (`http.maxBodySize`).
+const DATA_URL = /^data:([^,]*),/
+const BASE64   = /^[A-Za-z0-9+/]*={0,2}$/
+
+function isInlineFile(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false
+  const proto = Object.getPrototypeOf(v)
+  if (proto !== Object.prototype && proto !== null) return false
+  if (typeof v.data !== 'string') return false
+  return Object.keys(v).every(k => k === 'name' || k === 'type' || k === 'data')
+}
+
+function refuse(model, field, message) {
+  const err = new Error(`${model}.${field}: ${message}`)
+  err.name  = 'ValidationError'
+  err.field = field
+  err.model = model
+  return err
+}
+
+// Buffer.from(s, 'base64') skips what it cannot read, so a value that is not
+// base64 would be stored as whatever bytes survived. It is checked first.
+function decodeBase64(data, model, field) {
+  const clean = data.replace(/\s+/g, '')
+  if (!BASE64.test(clean) || clean.length % 4 === 1)
+    throw refuse(model, field, 'the file\'s data is not base64')
+  return Buffer.from(clean, 'base64')
+}
+
+function readInline(value, fieldName, model) {
+  let claimed, name, data
+  if (typeof value === 'string') {
+    const meta = DATA_URL.exec(value)[1].split(';')
+    if (meta.at(-1) !== 'base64')
+      throw refuse(model, fieldName, 'a data URL\'s bytes are read as base64 only: data:<type>;base64,<data>')
+    claimed = meta[0] || undefined
+    data    = value.slice(value.indexOf(',') + 1)
+  } else {
+    claimed = typeof value.type === 'string' ? value.type : undefined
+    name    = value.name
+    data    = value.data
+  }
+  const bytes = decodeBase64(data, model, fieldName)
+  return {
+    bytes,
+    mime:     claimed || 'application/octet-stream',
+    filename: displayName(name) ?? fieldName,
+    name:     displayName(name),
+    size:     bytes.length,
+  }
+}
+
 // ─── Detect a file value (vs. an already-stored JSON ref or null) ─────────────
 
 // A string that is not a stored ref answers true so that serialize() refuses
@@ -119,6 +177,7 @@ function isFileValue(v) {
   if (v instanceof Uint8Array)  return true
   if (v instanceof ArrayBuffer) return true
   if (v instanceof FromPath)    return true
+  if (isInlineFile(v))          return true
   if (typeof v === 'string' && !v.trimStart().startsWith('{')) return true
   return false
 }
@@ -157,15 +216,12 @@ async function readValue(value, fieldName, model) {
     const bytes = readFileSync(path)
     return { bytes, mime: guessMime(path), filename: basename(path), name: displayName(basename(path)), size: bytes.length }
   }
+  if (isInlineFile(value) || (typeof value === 'string' && DATA_URL.test(value))) return readInline(value, fieldName, model)
   if (typeof value === 'string') {
-    const err = new Error(
-      `${model}.${fieldName}: a File column takes bytes (a File, Blob or Buffer) or a stored ref, and a string is neither. ` +
-      'A string is never read as a path; code uploading from the server\'s disk passes fromPath(path)'
-    )
-    err.name  = 'ValidationError'
-    err.field = fieldName
-    err.model = model
-    throw err
+    throw refuse(model, fieldName,
+      'a File column takes bytes (a File, Blob or Buffer), a data URL (data:<type>;base64,<data>) or { name, type, data } ' +
+      'with base64 data, and this string is none of them. A string is never read as a path; code uploading from the ' +
+      'server\'s disk passes fromPath(path)')
   }
   throw new Error(`@file: unsupported value type for field "${fieldName}"`)
 }
@@ -305,10 +361,55 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // cacheKey: null — URLs are deterministic, no cache needed
   cacheKey(ref) { return null }
 
-  // ── Override onBeforeCreate to handle File[] arrays ───────────────────────
-  // The base class handles arrays generically, but File[] needs the accept check
-  // which is embedded in serialize() above — so the base class handles it correctly.
-  // No override needed.
+  // ── A File[] item that is not a file ──────────────────────────────────────
+
+  // A File[] item that is not a file names a stored key, and a key this row
+  // does not hold is another row's: replacing or deleting this row would have
+  // the provider delete that row's file (FJS-2308). A ref is the server's to
+  // write (FJS-D666), so a create takes none, and an update keeps one only when
+  // every row it matches already holds that key, as the stored ref rather than
+  // the caller's copy of it.
+  _refuseRef(model, field, i) {
+    return refuse(model, field,
+      `item ${i} is not a file. A stored reference is written by the server, never sent, and an update keeps ` +
+      `one only when the row already holds it. Send the bytes: a data URL (data:<type>;base64,<data>) or ` +
+      `{ name, type, data } with base64 data`)
+  }
+
+  // The refs every row `where` matches holds under `field`, by key; null when
+  // they cannot be read, so a ref is refused rather than kept on a guess.
+  _heldRefs(model, field, where, ctx) {
+    if (!ctx.readDb || !where) return null
+    try {
+      const params   = []
+      const whereSql = buildWhere(where, params)
+      if (!whereSql) return null
+      const rows = ctx.readDb.query(`SELECT "${field}" FROM "${model}" WHERE ${whereSql}`).all(...params)
+      const held = rows.map(row => new Map(this._parseRefArray(row[field]).filter(ref => ref?.key).map(ref => [ref.key, ref])))
+      const [first = new Map(), ...rest] = held
+      return new Map([...first].filter(([key]) => rest.every(m => m.has(key))))
+    } catch { return null }
+  }
+
+  async onBeforeCreate(model, args, ctx) {
+    const fields = this._fieldMap[model]
+    if (fields && args.data) {
+      const many = Array.isArray(args.data)
+      for (const row of [].concat(args.data)) {
+        for (const [field, opts] of Object.entries(fields)) {
+          if (!opts.isArray || row?.[field] == null) continue
+          ;[].concat(row[field]).forEach((item, i) => {
+            if (!isFileValue(item)) throw this._refuseRef(model, field, i)
+            if (many) throw new Error(
+              `${this.constructor.name}: createMany does not support raw values on field "${field}". ` +
+              `Use create() individually.`
+            )
+          })
+        }
+      }
+    }
+    return super.onBeforeCreate(model, args, ctx)
+  }
 
   // ── Override onBeforeUpdate to handle keepVersions ────────────────────────
   // keepVersions: skip stashing old ref (so cleanup won't run in onAfterWrite)
@@ -316,6 +417,20 @@ class FileStoragePlugin extends ExternalRefPlugin {
   async onBeforeUpdate(model, args, ctx) {
     const fields = this._fieldMap[model]
     if (!fields || !args.data) return
+
+    for (const [field, opts] of Object.entries(fields)) {
+      if (!opts.isArray || args.data[field] == null) continue
+      const items = [].concat(args.data[field])
+      if (items.every(isFileValue)) continue
+      const held = this._heldRefs(model, field, args.where, ctx)
+      args.data[field] = items.map((item, i) => {
+        if (isFileValue(item)) return item
+        const key = (typeof item === 'string' ? this._parseRef(item) : item)?.key
+        const ref = typeof key === 'string' ? held?.get(key) : undefined
+        if (!ref) throw this._refuseRef(model, field, i)
+        return ref
+      })
+    }
 
     // Which fields carry incoming file values? An array is never a file value
     // itself, so a File[] field is picked by its items (FJS-2095).

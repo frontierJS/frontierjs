@@ -26,6 +26,8 @@
  *     must not give
  */
 
+import { tokenize } from '../../src/predicate/tokenize.js'
+import { parseFlowExpression } from '../../src/predicate/parse.js'
 import { evaluate, shiftInstant, compare, truth, and3, or3, not3, parseText, assertValues, evaluateValues, ParseError } from '../../src/predicate/predicate.js'
 
 // The AST shapes here are hand-written, because toolbelt depends on nothing and
@@ -103,6 +105,9 @@ test('predicate: `== null` is IS NULL and answers a BOOLEAN', function () {
 test('predicate: the 3VL helpers, directly', function () {
   assert.equal(truth(null), null)
   assert.equal(truth(0), false)
+  // TEXT is its numeric prefix, as SQLite reads it as a condition (FJS-2197)
+  for (const s of ['0', '', '0.0', 'abc', 'false', '0x10', '-0']) assert.equal(truth(s), false, JSON.stringify(s))
+  for (const s of ['1', ' 2', '1abc', '.5', '-1', '1e3']) assert.equal(truth(s), true, JSON.stringify(s))
   assert.equal(and3(false, null), false)
   assert.equal(and3(true, null), null)
   assert.equal(or3(true, null), true)
@@ -296,6 +301,37 @@ test('values: text with a token left over is refused, not run as its first half'
   refuses(() => parseText("contact.name 'x'"), /after the expression/)
 })
 
+test('values: nesting past the bound is a ParseError, not a stack overflow', function () {
+  // `!` x 50k and `(` x 20k blew the stack with a RangeError nobody catches as a parse failure.
+  refuses(() => parseText('!'.repeat(50000) + 'contact.name'), /nested more than 100 deep/)
+  refuses(() => parseText('('.repeat(20000) + 'contact.name' + ')'.repeat(20000)), /nested more than 100 deep/)
+  assert.equal(valueOf('('.repeat(50) + 'contact.name' + ')'.repeat(50)), 'Ada')
+  assert.equal(valueOf('!'.repeat(50) + 'contact.name') , false)
+  // The counter is released on a throw, so one refusal does not poison the next parse.
+  assert.equal(valueOf('contact.name'), 'Ada')
+})
+
+test('flow: an object literal with many keys is checked in linear time, and a repeat is refused', function () {
+  const flow = (src) => {
+    const tokens = tokenize(src)
+    let pos = 0
+    const p = {
+      peek: (n = 0) => tokens[pos + n], advance: () => tokens[pos++],
+      check: (type) => tokens[pos]?.type === type,
+      maybeEat: (type) => (tokens[pos]?.type === type ? tokens[pos++] : undefined),
+      eat: (type) => { if (tokens[pos]?.type !== type) throw p.fail(`Expected ${type}`, tokens[pos]); return tokens[pos++] },
+      fail: (msg, at) => new ParseError(msg, at),
+    }
+    return parseFlowExpression(p)
+  }
+  const keys = Array.from({ length: 20000 }, (_, i) => `k${i}: ${i}`)
+  const started = Date.now()
+  flow('{ ' + keys.join(', ') + ' }')
+  assert.ok(Date.now() - started < 1000, 'duplicate-key check must not be quadratic')
+  refuses(() => flow('{ a: 1, b: 2, a: 3 }'), /written twice/)
+  refuses(() => flow('{ a: '.repeat(20000)), /nested more than 100 deep/)
+})
+
 test('values: auth(), now(), check(), .some() and a bare name are refused by name', function () {
   const cases = [['auth().id', /auth\(\)/], ['now()', /now\(\)/], ['now() + 2d', /now\(\)/], ['check(contact)', /check\(\)/], ['contact.some(name == 1)', /some/], ['name', /bare name/]]
   for (const [src, said] of cases) refuses(() => assertValues(parseText(src), NAMES), said)
@@ -310,4 +346,13 @@ test('values: a name outside the closed list is refused, own keys only', functio
 test('values: evaluateValues re-refuses what assertValues would, so a skipped save check cannot render it', function () {
   refuses(() => evaluateValues(parseText('auth().id'), DATA), /auth\(\)/)
   refuses(() => evaluateValues(parseText('constructor.name'), DATA), /not a name/)
+})
+
+// FJS-2192: a field or a claim is an OWN member; Object.prototype's names are on every record.
+test('predicate: a name inherited from Object is not a field or a claim', function () {
+  assert.equal(evaluate({ type: 'field', name: 'toString' }, { record: {} }), null)
+  assert.equal(evaluate({ type: 'field', name: 'constructor' }, { record: { id: 1 } }), null)
+  assert.equal(evaluate({ type: 'auth', field: 'valueOf' }, { auth: { id: 1 } }), null)
+  assert.equal(evaluate({ type: 'field', name: 'ownerId' }, { record: Object.create({ ownerId: 5 }) }), null)
+  assert.equal(evaluate({ type: 'field', name: 'ownerId' }, { record: { ownerId: 5 } }), 5)
 })

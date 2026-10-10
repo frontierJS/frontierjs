@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { renderComponent } from '../src/render-component.js'
-import { htmlEntitiesToText } from '../src/compiler.js'
+import { htmlEntitiesToText } from '../src/entities.js'
 
 const render = async (body, script = 'const year = 2026\n  const n = 3') => {
   const { html } = await renderComponent(

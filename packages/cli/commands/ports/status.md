@@ -91,7 +91,7 @@ echo(`  dev slots — ${alive.length} running  ·  ${idle.length} idle\n`)
 for (const s of sessions) {
   const status  = s.alive ? '↑' : '·'
   const state   = s.alive ? `pid ${s.pid}` : 'idle'
-  echo(`  ${status}  ${s.name}  ·  ${state}  ·  ${s.env}  ·  project ${s.projectId} slot ${s.slot ?? 0}`)
+  echo(`  ${status}  ${s.name}  ·  ${state}  ·  ${s.env}  ·  project ${s.projectId} slot ${s.slot ?? 0}${s.branch ? ` branch ${s.branch}` : ''}`)
   echo(`       ${s.root}`)
 
   for (const [cat, ps] of Object.entries(s.ports || {})) {

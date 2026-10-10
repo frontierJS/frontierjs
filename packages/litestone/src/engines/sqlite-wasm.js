@@ -91,6 +91,14 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
     // under a foreign key, and the server enforced them (`FJS-D485`).
     foreignKeys: false,
 
+    // The pool has no xShmMap, so WAL is refused in silence and the default
+    // rollback journal cost 12 ms per autocommit write in Chrome. PERSIST with
+    // synchronous OFF is 0.11 ms: the journal still rolls back a tab killed
+    // mid-write, and only a power loss mid-commit can cost the file — which
+    // holds rows the server has, with unsent writes kept apart in IndexedDB.
+    // MEMORY measured 0.06 ms and loses the file to a killed tab.
+    journal: { mode: 'PERSIST', synchronous: 'OFF' },
+
     // ─── no vector capability, and it is not a gap ────────────────────────
     //
     // This build's own compile-option list carries `SQLITE_OMIT_LOAD_EXTENSION`

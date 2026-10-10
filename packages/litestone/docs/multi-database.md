@@ -55,7 +55,7 @@ const db = await createClient({ path: './schema.lite' })
 await db.user.findMany()                  // → main.db
 await db.pageView.create({ data: {...} }) // → analytics.db
 await db.apiRequest.create({ data: {...} }) // → logs/
-await db.auditLog.findMany()              // → audit/ (auto-generated model)
+await db.auditTrail.findMany()            // → audit/ (auto-generated model)
 ```
 
 ## Drivers
@@ -70,7 +70,7 @@ Append-only log files, one `.jsonl` file per model under the specified directory
 
 Supports: `create`, `createMany`, `findMany`, `findFirst`, `count`. Retention pruning on startup.
 
-### logger
+### trail
 
 Auto-managed audit log that receives `@trail` and `@@trail` write entries. Auto-creates `<dbName>Trail` model with a structured log entry schema. Queryable through the standard ORM API.
 

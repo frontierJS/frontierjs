@@ -87,6 +87,7 @@ describe('the body size bound', () => {
       // stopped one chunk past the bound.
       expect(e.size).toBeLessThanOrEqual(e.limit + CHUNK)
       expect(e.message).toContain('262144')
+      expect(e.message).toContain('http.maxBodySize')
     }
   })
 

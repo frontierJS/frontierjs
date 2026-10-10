@@ -214,6 +214,21 @@ describe('the walk itself', () => {
     expect(report.skipped).toEqual([{ model: 'Hit', reason: 'jsonl driver — no migrations and no schema to hold a row to' }])
     expect(report.checked.map((r: any) => r.model)).toEqual(['User'])
   })
+
+  it('the trail driver is skipped by name — its rows are the audit trail\'s, not a caller\'s', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lite-validate-trail-'))
+    dirs.push(dir)
+    const c = await createClient({
+      schema: `database main  { path "${join(dir, 'm.db')}" }
+               database audit { path "${join(dir, 'audit')}"  driver trail }
+               model User { id Int @id  email String @email  @@trail(audit) }`,
+    })
+    const report = await validateRows(c)
+    await c.$close()
+
+    expect(report.skipped).toEqual([{ model: 'auditTrail', reason: 'trail driver — its rows are written by the audit trail, not by a caller' }])
+    expect(report.checked.map((r: any) => r.model)).toEqual(['User'])
+  })
 })
 
 // A restored copy is graded by this walk (`restore --verify`), and the question

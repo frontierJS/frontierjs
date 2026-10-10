@@ -55,6 +55,14 @@ test('cells: a date and time is ISO 8601 with a zone, on the calendar', function
   assert.equal(reason(parseCell('2026-01-01', 'datetime')), 'a date with no time or zone, so not one instant')
 })
 
+test('cells: a year below 100 is that year, not 19xx', function () {
+  assert.equal(value(parseCell('0001-01-01T00:00:00Z', 'datetime')), '0001-01-01T00:00:00.000Z')
+  assert.equal(value(parseCell('0004-02-29T00:00:00Z', 'datetime')), '0004-02-29T00:00:00.000Z')
+  assert.equal(reason(parseCell('0003-02-29T00:00:00Z', 'datetime')), 'not a date on the calendar')
+  assert.equal(reason(parseCell('1900-02-29T00:00:00Z', 'datetime')), 'not a date on the calendar')
+  assert.equal(value(parseCell('0099-12-31T23:00:00-01:00', 'datetime')), '0100-01-01T00:00:00.000Z')
+})
+
 test('cells: an enum member is exact, case included', function () {
   const values = ['paid', 'pending', 'refunded', 'cancelled']
   assert.equal(value(parseCell('paid', 'enum', { values })), 'paid')

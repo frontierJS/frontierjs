@@ -417,14 +417,18 @@ function openSqliteConnections(absPath, busyTimeout) {
   // and with the timeout applied after it the loser had nothing to wait on and
   // threw `SQLITE_BUSY_RECOVERY` out of `createClient`, before a line of the
   // app had run. Measured at 1 in 10 simultaneous boots (`FJS-655`).
-  applyWal(rawWriteDb, busyTimeout)
+  const journal = currentEngine()?.journal
+  if (journal) {
+    applyBusyTimeout(rawWriteDb, busyTimeout)
+    rawWriteDb.run(`PRAGMA journal_mode = ${journal.mode}`)
+  } else applyWal(rawWriteDb, busyTimeout)
   // An engine that holds a window of the server's rows says so (`FJS-D485`): a
   // child naming a parent outside the window is its ordinary state, and an
   // enforced key refuses the whole batch holding it.
   const foreignKeys = currentEngine()?.foreignKeys === false ? 'OFF' : 'ON'
   rawWriteDb.run(`PRAGMA foreign_keys = ${foreignKeys}`)
   rawWriteDb.run('PRAGMA page_size = 8192')
-  rawWriteDb.run('PRAGMA synchronous = NORMAL')
+  rawWriteDb.run(`PRAGMA synchronous = ${journal?.synchronous ?? 'NORMAL'}`)
   rawWriteDb.run('PRAGMA cache_size = -32768')
   rawWriteDb.run('PRAGMA temp_store = MEMORY')
   rawWriteDb.run('PRAGMA mmap_size = 268435456')
@@ -500,7 +504,7 @@ export function resolveAccessConfig(accessConfig, readOnly, schema) {
 //   - 'main' must be declared in schema OR dbPath option provided; when both,
 //     dbPath arrives as dbOverrides.main and overrides the declaration
 //   - access: 'readwrite' (default) | 'readonly' | false (no connection)
-//   - jsonl/logger driver: no SQLite connections — path stored only
+//   - jsonl/trail driver: no SQLite connections — path stored only
 //
 // Two declarations can name one file. Under `strategy database` every sqlite
 // database is redirected to the tenant's own file, and a literal path can also

@@ -342,3 +342,12 @@ test('match: near composes with the filters beside it', function () {
   assert.equal(matchesQuery(fields, row('closed', { lat: 51.4995, lng: -0.1248 }), q), false)
   assert.equal(matchesQuery(fields, row('open',   { lat: 55.9533, lng: -3.1883 }), q), false)
 })
+
+
+// SQLite LIKE folds ASCII only, so the server finds no é in CAFÉ.
+test('match: operators — case folding is ASCII only, as SQLite LIKE is', function () {
+  assert.equal(match(row({ name: 'CAFÉ' }), { name: { $like: 'é' } }), false)
+  assert.equal(match(row({ name: 'CAFÉ' }), { name: { $like: 'É' } }), true)
+  assert.equal(match(row({ name: 'CAFÉ' }), { name: { $like: 'caf' } }), true)
+  assert.equal(match(row({ name: 'café' }), { name: { $start: 'CAF' } }), true)
+})

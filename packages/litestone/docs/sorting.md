@@ -18,10 +18,8 @@ db.client.findMany({ orderBy: { chattiness: 'asc' } })
 // @generated, or store it. Sortable: createdAt, id, name, noteCount
 ```
 
-An unknown key throws too, with a typo suggestion. This is stricter than the
-where-key check, which only warns on a read, and deliberately: a bad filter key
-returns fewer rows, which the caller can see, while a bad sort key returns the
-right rows in the wrong order, which nothing can see.
+An unknown key throws too, with a typo suggestion — as an unknown `where` key
+does.
 
 To sort by a derived value, move the derivation into SQL — `@from` for anything
 that counts or sums a relation, `@generated` for an expression over the row's own
@@ -115,16 +113,16 @@ Sort by COUNT/SUM/AVG/MIN/MAX of a related collection. Uses a correlated subquer
 
 ```js
 // Sort authors by number of books (hasMany)
-db.authors.findMany({ orderBy: { books: { _count: 'desc' } } })
+db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
 
 // Sort authors by total revenue (hasMany _sum)
-db.authors.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
+db.author.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
 
 // Sort authors by highest-rated book (hasMany _max)
-db.authors.findMany({ orderBy: { books: { _max: { rating: 'asc' } } } })
+db.author.findMany({ orderBy: { books: { _max: { rating: 'asc' } } } })
 
 // Sort authors by number of tags (manyToMany — _count only)
-db.authors.findMany({ orderBy: { tags: { _count: 'asc' } } })
+db.author.findMany({ orderBy: { tags: { _count: 'asc' } } })
 ```
 
 **Available:** `_count` on `hasMany` and `manyToMany`. `_sum`, `_avg`, `_min`, `_max` on `hasMany` only (aggregating a scalar through a join table requires specifying which field, which manyToMany doesn't have).

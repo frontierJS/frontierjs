@@ -266,11 +266,11 @@ Everything above is loud. These are not.
   SQLite. The way out is `restore()`, or `update({ …, withDeleted: true })` to
   move the value aside. A fixed fixture key therefore makes a test single-use.
 
-- **A `where` typo below the API boundary warns to stderr and returns no rows.**
-  Over HTTP it is a 400 naming the key; a service building its own filter gets
-  silence.
+- **A `where` typo throws `ValidationError`**, naming the key with a *Did you
+  mean* — an unknown field, an unknown operator, an `in` given a string, and a
+  real key SQLite cannot filter (`@computed`, `@encrypted`). Over HTTP it is a 400.
 
-- **The audit logger defers one event-loop tick.** A read in the same tick sees
+- **The audit trail defers one event-loop tick.** A read in the same tick sees
   0 rows. Yield once; do not wait.
 
 ---

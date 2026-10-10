@@ -298,7 +298,7 @@ class TenantRegistry {
 
     // `databases: ':memory:'` is the single-client shorthand for *move them
     // all*, and a registry decides where a tenant's sqlite files go — so here
-    // it can only mean the shared jsonl/logger ones, which is not what it says.
+    // it can only mean the shared jsonl/trail ones, which is not what it says.
     // Refused by name: spreading a string yields one key per character, and the
     // per-tenant merge below would have taken it silently.
     if (typeof this.#clientOptions.databases === 'string')
@@ -406,7 +406,7 @@ class TenantRegistry {
     }
 
     // A caller's own `databases` still applies, and it reaches exactly the ones
-    // this registry does not decide: the shared jsonl/logger files. Merging
+    // this registry does not decide: the shared jsonl/trail files. Merging
     // rather than replacing, because a declared `path` on one of those is
     // relative to the process CWD and an app that assembles its schema in
     // memory has no other way to pin it. The tenant file wins for every sqlite
@@ -502,18 +502,27 @@ class TenantRegistry {
     } else {
       // Fall back to fresh DDL from schema. A tenant's single file holds ALL
       // of the schema's sqlite databases (main + analytics + …), so generate
-      // DDL for every sqlite database — jsonl/logger stay schema-global.
+      // DDL for every sqlite database — jsonl/trail stay schema-global.
       const sqliteDbs = (this.#parseResult.schema.databases ?? []).filter(
         d => !d.driver || d.driver === 'sqlite'
       )
-      if (sqliteDbs.length) {
-        for (const d of sqliteDbs) {
-          for (const s of splitStatements(generateDDLForDatabase(this.#parseResult.schema, d.name)))
-            if (s.trim()) raw.run(s)
-        }
-      } else {
-        for (const s of splitStatements(generateDDL(this.#parseResult.schema)))
-          if (s.trim()) raw.run(s)
+      const ddl = sqliteDbs.length
+        ? sqliteDbs.map(d => generateDDLForDatabase(this.#parseResult.schema, d.name)).join('\n')
+        : generateDDL(this.#parseResult.schema)
+      // One transaction: autocommit made each statement its own sync, 3.6 s
+      // for a 188-model schema against ~80 ms, and a statement that threw left
+      // the tables before it in a file nothing had registered. The PRAGMAs are
+      // already applied above, and journal_mode cannot change inside one.
+      try {
+        raw.run('BEGIN IMMEDIATE')
+        for (const s of splitStatements(ddl))
+          if (s.trim() && !s.startsWith('PRAGMA')) raw.run(s)
+        raw.run('COMMIT')
+      } catch (err) {
+        try { raw.run('ROLLBACK') } catch {}
+        raw.close()
+        for (const f of [path, `${path}-wal`, `${path}-shm`]) if (existsSync(f)) unlinkSync(f)
+        throw new Error(`Tenant "${id}" was not created — ${err.message}`, { cause: err })
       }
     }
     raw.close()

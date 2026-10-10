@@ -53,6 +53,13 @@ export function quickScore(
 	let iterations = 0;
 
 	if (query) {
+			// a match is the query's characters in order, so a query that is not
+			// a subsequence of the range cannot score; the recursion below would
+			// still spend its whole iteration cap discovering that
+		if (!isSubsequence(transformedString, transformedQuery, stringRange)) {
+			return 0;
+		}
+
 		return calcScore(stringRange, new Range(0, query.length), new Range());
 	} else {
 		return config.emptyQueryScore;
@@ -178,6 +185,28 @@ export function quickScore(
 	// make createConfig() available on quickScore so that the QuickScore
 	// constructor has access to it
 quickScore.createConfig = createConfig;
+
+
+function isSubsequence(
+	string,
+	query,
+	range)
+{
+	const end = range.max();
+	let index = range.location;
+
+	for (let i = 0; i < query.length; i++) {
+		index = string.indexOf(query[i], index);
+
+		if (index < 0 || index >= end) {
+			return false;
+		}
+
+		index++;
+	}
+
+	return true;
+}
 
 
 function getRangeOfSubstring(

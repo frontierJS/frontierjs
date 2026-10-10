@@ -10,13 +10,18 @@
 // does not apply is refused naming its files, never written as conflict
 // markers into a tree someone else is in.
 //
+// A worktree holds what git tracks and nothing it ignores, so a branch cut from
+// a running app has no `.env` and no dev database. `copyIgnored` carries the
+// ignored paths the pin's copy list names across from the parent.
+//
 // Git is called as `core/workbench-diff.ts` calls it, every path one argv
 // element, never a shell string.
 
 import { execFileSync }                       from 'node:child_process'
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { cp, mkdir }                          from 'node:fs/promises'
 import { tmpdir }                             from 'node:os'
-import { join }                               from 'node:path'
+import { dirname, join }                      from 'node:path'
 
 /** A snapshot names at most this many of the files it carried beyond HEAD. */
 export const MAX_CARRIED = 50
@@ -148,4 +153,28 @@ export function land(parent: string, path: string, base: string):
   }
   git(parent, ['apply', '--binary', '-'], { input: patch })
   return { landed: files, base: snap }
+}
+
+// ─── the copy list ────────────────────────────────────────────────────────
+
+/**
+ * The paths under `root` git ignores that one of `patterns` names. A directory
+ * ignored whole is one entry, so a `node_modules` is listed and never walked.
+ */
+export function ignoredMatching(root: string, patterns: string[]): string[] {
+  const globs = patterns.map(p => new Bun.Glob(p))
+  return git(root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])
+    .split('\0').filter(Boolean)
+    .map(p => p.replace(/\/$/, ''))
+    .filter(p => globs.some(g => g.match(p)))
+}
+
+/** Those paths copied from `parent` into the branch at `path`. */
+export async function copyIgnored(parent: string, path: string, patterns: string[]): Promise<string[]> {
+  const found = ignoredMatching(parent, patterns)
+  for (const rel of found) {
+    await mkdir(dirname(join(path, rel)), { recursive: true })
+    await cp(join(parent, rel), join(path, rel), { recursive: true, force: false })
+  }
+  return found
 }

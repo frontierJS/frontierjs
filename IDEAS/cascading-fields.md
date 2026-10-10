@@ -249,7 +249,7 @@ useful.
   - **B** — both directions in `@@cascade`.
   - **Recommend A** — the upward case is already derivable on read, so a stored copy
     would restate it and could drift from it.
-- **Does `always` fight `@@transitions`?** An `always` cascade of an enum writes a child's status
+- ~~**Does `always` fight `@@transitions`?**~~ **Answered 2026-10-10 (`FJS-D850`): C — a schema error: `always` into a field the child's `@@transitions` governs does not parse.** An `always` cascade of an enum writes a child's status
   without going through its transition table. Either the cascade respects transitions
   on the child (and can therefore fail mid-write) or it is a declared bypass. The
   second is simpler and has to be written down.
@@ -261,7 +261,7 @@ useful.
   - **Recommend C** — B is the integrity bypass `FJS-D502` refused to give even
     `asSystem()`, and A fails at runtime on data the schema could have refused at
     parse. C stays until a product needs a cascaded status, and A is the answer then.
-- **Does this open the door to triggers generally?** It should not, and the boundary
+- ~~**Does this open the door to triggers generally?**~~ **Answered 2026-10-10 (`FJS-D852`): A — the grammar is the boundary: `@@cascade` takes a source field, a relation field path and a mode, so a computed value, a condition or a side effect has no spelling.** It should not, and the boundary
   is type rule 2 plus: no computed values, no conditions beyond the mode guard, no
   side effects. A cascade that can send email is a framework inside the framework —
   the same line `state-machines.md` draws for transitions.

@@ -3428,7 +3428,7 @@ function _touch(schema, modelName, row) {
 }
 
 // Can a constraint on this model be exercised by a real write at all?
-// `@@external` emits no DDL, and the jsonl/logger drivers run no validation —
+// `@@external` emits no DDL, and the jsonl/trail drivers run no validation —
 // their "failures" would be *no such table*, which says nothing about a rule.
 function _isValidatable(model, schema) {
   if (model.attributes?.some(a => a.kind === 'external')) return false

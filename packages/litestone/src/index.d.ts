@@ -381,7 +381,7 @@ export interface CreateClientOptions {
    * one through `db.$logContext(fn)`; an app without it may pass its own.
    */
   logContext?: () => LogRequestContext | null | undefined
-  /** ':memory:' forces all SQLite databases to in-memory, jsonl/logger to tmpdir */
+  /** ':memory:' forces all SQLite databases to in-memory, jsonl/trail to tmpdir */
   databases?:  ':memory:' | Record<string, { path?: string }>
   /** Per-database access control */
   access?:     Record<string, 'readwrite' | 'readonly' | false>
@@ -539,9 +539,11 @@ export interface TableClient<
    * the caller's gate and policies apply. A day-kind anchor reads `by` in
    * `timeZone`, UTC unless stated. Makes no transition. `target` is the row
    * the move is made on — this one, or the one a to-one relation reaches.
+   * `tenant` is the row's tenancy column, present under `strategy row` on a
+   * model that carries one.
    */
   due(args?: { by?: Date | string; timeZone?: string; transition?: string; where?: TWhere }): Promise<Array<{
-    transition: string; id: number | string; dueAt: string
+    transition: string; id: number | string; dueAt: string; tenant?: string | null
     target: { model: string; accessor: string; transition: string; id: number | string }
   }>>
   optimizeFts(): void
@@ -992,6 +994,10 @@ export declare class Plugin {
 export declare class PluginRunner {
   constructor(plugins: Plugin[])
   hasPlugins: boolean
+  /** Whether an installed plugin answers onAfterDelete — the inherited empty one does not count. */
+  hearsDeletes: boolean
+  /** Whether an installed plugin answers onAfterWrite — the inherited empty one does not count. */
+  hearsWrites: boolean
   init(schema: LitestoneSchema, ctx: LitestoneCtx): void
 }
 
@@ -1564,10 +1570,20 @@ export interface RetainResult extends RetentionResult {
 // `now` is the same option `createClient` takes and defaults to the wall clock;
 // the client threads its own through, so a sweep measures from the clock a test
 // froze rather than from today (`FJS-531`).
+// A sweep is batches that yield to the event loop between them, so it resolves
+// rather than returns; `batches` caps how many each table takes.
 export declare function runSqliteRetention(
-  db: unknown, models: unknown[], retention: string, pluralize?: boolean,
-  now?: (() => Date | string | number) | Date | string | number,
-): RetentionResult[]
+  db: unknown, models: unknown[], retention: string,
+  opts?: {
+    pluralize?:   boolean
+    now?:         (() => Date | string | number) | Date | string | number
+    hears?:       (model: string) => boolean
+    onRemoved?:   (model: string, rows: Record<string, unknown>[], doomed: unknown) => Promise<void> | void
+    doomedUnder?: (model: string, rows: Record<string, unknown>[]) => unknown
+    batches?:     number
+    stopped?:     () => boolean
+  },
+): Promise<RetentionResult[]>
 export declare function compactJsonl(
   path: string, model: unknown, retention?: string | null, maxSize?: string | null,
   now?: (() => Date | string | number) | Date | string | number,

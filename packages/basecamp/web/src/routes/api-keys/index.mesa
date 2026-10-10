@@ -18,7 +18,6 @@ title: API keys
   // scope the guard does not recognize.
   import { session } from '../../session.js'
   import { apiKeys } from '../../resources/ApiKey.mesa'
-  import { workspaces } from '../../resources/Workspace.mesa'
   import { day } from '../../datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -76,13 +75,12 @@ title: API keys
     }
   }
 
-  // The service allows a key to go to a BOT member of this workspace whose
-  // role is not above the caller's (`assertBotOwner`); the list is every bot
-  // member, and a refusal for a senior one comes back in the service's words.
+  // Collection-level, like `scopes`: the service answers which bots this
+  // caller may issue a key to, by the rule create enforces.
   async function loadBots() {
     try {
-      const answer = await workspaces.service.invoke('members', session.workspaceId)
-      bots = (answer?.data ?? []).filter(m => m.user?.kind === 'bot')
+      const answer = await apiKeys.service.invoke('owners', null, {}, {})
+      bots = answer?.data ?? []
     } catch { bots = [] }
   }
 
@@ -249,7 +247,7 @@ title: API keys
       {#if bots.length}
         <label class="field-label" for="key-owner">Belongs to</label>
         <Select id="key-owner" value={draft.userId ?? ''} placeholder="You"
-                options={bots.map(b => ({ value: b.userId, label: `${b.user.displayName ?? b.user.name ?? b.user.email} (bot, ${b.role})` }))}
+                options={bots.map(b => ({ value: b.userId, label: `${b.name} (bot, ${b.role})` }))}
                 onchange={(e) => write('userId', e.target.value || null)} />
         <p class="field-hint">A key can do no more than its owner. A bot's key outlives you.</p>
       {/if}

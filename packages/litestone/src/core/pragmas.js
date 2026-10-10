@@ -10,7 +10,7 @@
 // with one connection holding the write lock: with the timeout the second waits
 // 5007ms, without it the second fails in **1ms**. The gap was not theoretical —
 // a second API process beside a running one died on its first audit write,
-// because the `logger` index is the one database with no wait at all AND the one
+// because the `trail` index is the one database with no wait at all AND the one
 // every tenant and every process shares.
 //
 // So the floor is one number in one place, applied by every site that opens a
@@ -101,7 +101,7 @@ export function resolveBusyTimeout(stated) {
  *
  * Accepts a number (every connection) or an object keyed by database name with
  * an optional `default`. The object form exists for the database this issue was
- * filed about: an audit `logger` index is written fire-and-forget and its
+ * filed about: an audit `trail` index is written fire-and-forget and its
  * failure is swallowed, so blocking the event loop for seconds to place a row
  * nobody is waiting for is the wrong trade — `{ default: 5000, audit: 250 }`
  * says so.

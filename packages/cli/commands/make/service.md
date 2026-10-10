@@ -11,6 +11,7 @@ examples:
 args:
   -
     name: model
+    kind: model
     description: Model name (PascalCase). Omit when using --auto.
     required: false
 flags:

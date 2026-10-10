@@ -439,6 +439,7 @@ function lowerNode(ctx, n) {
       const tag = n.value.match(/^@([\w-]*)/)?.[1]
       if (tag === 'render') return lowerRender(ctx, n)
       if (tag === 'const') return lowerConst(ctx, n)
+      if (tag === 'html') return { kind: 'html', loc: ctx.posOf(n.start), value: read(ctx, n.value.slice('@html'.length).trim()) }
       return unlowered(ctx, SYSTAGS[tag] ?? 'systag', n)
     }
     case 'snippet':

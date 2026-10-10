@@ -3671,6 +3671,24 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d666"></a>2026-10-10 · `FJS-D666` — How does a JSON or /mcp caller supply a File column — An inline value: a data URL (RFC 2397, `data:<mime>;base64,…`) or `{ name, type, data }` with base64 `data`, which `readValue` decodes into bytes like a Buffer, `@accept` sniffing the bytes and not trusting the claimed type. The input schema for a File column is derived to describe that value rather than `FileRef`. The bound is junction's `http.maxBodySize`, the one a browser's multipart upload already meets, so it is not a new option. Its default is 256KB and base64 adds a third, so about 190KB of file gets through untouched: a phone photo (2–5MB) is refused until the app raises that setting, which is the same raise a form upload of that photo already needs. Today the 413 reads *Request body exceeds 262144 bytes* and names nothing to raise, so it names `http.maxBodySize`. One call, and the server stays the only author of a ref.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (an upload route that takes the bytes and hands back a ref the create then accepts as an object. That needs the ref signed or checked against what the route issued: a ref the caller made up and naming another row's key would have that file deleted when this row's old refs are cleaned up. It is two steps per transport, and it is the PUT presign FJS-D260 already says comes later for direct-to-bucket upload), **C** (both, A now and B when direct-to-bucket lands).
+
+The paper's recommendation, taken as written: it is the problem's own complexity (JSON has no multipart), it uses an existing name, its owner is the `readValue` already there, and B's forged-ref failure is destructive and silent unless it brings a signing scheme that is out of scale for this row. When B arrives, it arrives as FJS-D260's presign and does not depend on this.
+
+### <a id="fjs-d852"></a>2026-10-10 · `FJS-D852` — Does this open the door to triggers generally — The grammar is the boundary: `@@cascade` takes a source field, a relation field path and a mode, so a computed value, a condition or a side effect has no spelling.
+
+Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **A** was picked over **B** (admit a `where:` on the child, the one extension a real case asks for (*only open messages*), still with no computed values and no side effects).
+
+The paper's recommendation, taken as written: `once`'s guard already covers *only open* for the motivating case, and a predicate turns a cascade into a conditional trigger. General triggers already have an owner, Orion's flows (`FJS-D269`).
+
+### <a id="fjs-d850"></a>2026-10-10 · `FJS-D850` — Does `always` fight `@@transitions` — A schema error: `always` into a field the child's `@@transitions` governs does not parse.
+
+Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **C** was picked over **A** (the cascade respects the child's transitions, and the whole write rolls back when any child cannot move), **B** (a declared bypass: `always` writes the child's status off its machine).
+
+The paper's recommendation, taken as written: B is the integrity bypass `FJS-D502` refused to give even `asSystem()`, and A fails at runtime on data the schema could have refused at parse. C stays until a product needs a cascaded status, and A is the answer then.
+
 ### <a id="fjs-d846"></a>2026-10-09 · `FJS-D846` — How many hops — One hop per declaration, chained: a child that declares its own `@@cascade` on the received field carries it a hop further, with a cycle guard.
 
 Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **C** was picked over **A** (one hop: the declaring model's direct children), **B** (the breadth-first walk with a cycle guard, as `@@softDelete(cascade)` does).
@@ -7060,6 +7078,18 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d854"></a>2026-10-10 · `FJS-D854` — Does a frame go through the after-hook chain, or only through `protect()` — `protect()` per frame, the after chain once on the final record.
+
+Asked in [`IDEAS/chat-surface.md`](IDEAS/chat-surface.md) § Open questions. **B** was picked over **A** (the full after chain per frame, consistent with `announce()`).
+
+The paper's recommendation, taken as written: an after-hook that announces, enqueues or invalidates would fire once per token under A, and a hook author cannot be expected to know which of their hooks is on a streamed method.
+
+### <a id="fjs-d853"></a>2026-10-10 · `FJS-D853` — **How does a streaming method DECLARE itself, and what does a transport that — An option on the method definition, and a non-streaming transport buffers the frames and answers one ordinary envelope.
+
+Asked in [`IDEAS/chat-surface.md`](IDEAS/chat-surface.md) § Open questions. **A** was picked over **B** (an option on the method definition, and a non-streaming transport refuses the call by name).
+
+buffering keeps transport parity meaningful (the same call down both transports still compares), and a refusal moves a transport limitation into every caller; under a non-streaming transport the tokens arrive together. Amends FJS-D13: a method that DECLARES itself streaming is the one exception to refuseStream, because the declaration is what lets the envelope know; an undeclared stream is still refused by name.
 
 ### <a id="fjs-d820"></a>2026-10-09 · `FJS-D820` — Is a miss logged — Yes, as a log line through `$.log`.
 

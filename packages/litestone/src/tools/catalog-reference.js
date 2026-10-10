@@ -60,7 +60,7 @@ function mdText(text) {
     .join('')
 }
 
-/** `driver` — `sqlite` · `jsonl` · `logger` */
+/** `driver` — `sqlite` · `jsonl` · `trail` */
 function acceptsLines(row) {
   if (!row.values) return []
   return row.values.map(v =>

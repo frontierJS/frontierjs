@@ -119,9 +119,12 @@ function _inList(rule, actual, list) {
 }
 
 // LIKE is case-insensitive for ASCII in SQLite, which is what makes `$like` and
-// `$ilike` compile to the same `contains` on the server.
+// `$ilike` compile to the same `contains` on the server. ONLY for ASCII: a
+// Unicode fold keeps `CAFÉ` in a live list for `contains: 'é'` that the server
+// returns nothing for.
+const _ascii = s => String(s).replace(/[A-Z]+/g, m => m.toLowerCase())
 const _like = (actual, operand, test) =>
-  actual == null ? false : test(String(actual).toLowerCase(), String(operand).toLowerCase())
+  actual == null ? false : test(_ascii(actual), _ascii(operand))
 
 function _matchOp(rule, actual, op, operand) {
   switch (op) {

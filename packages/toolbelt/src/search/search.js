@@ -142,9 +142,9 @@ function rankWords(items, q, { keys, minimumScore, words, weights }) {
       : (shared ?? Object.keys(item ?? {}).map(keyOf)).map((k) => ({ name: k.name, text: valueAt(item, k.path) }))
 
     const best   = parts.map(() => ({ score: 0, name: null }))
-    const byWord = {}
+    const byWord = Object.create(null)
     let whole    = { score: 0, name: null }
-    const byWhole = {}
+    const byWhole = Object.create(null)
 
     for (const { name, text } of fields) {
       if (!text || typeof text !== 'string') continue
@@ -182,7 +182,7 @@ function rankWords(items, q, { keys, minimumScore, words, weights }) {
       score = mean
       // The field that carried the most of the score, which is the one a
       // caller marking a single label wants.
-      const carried = {}
+      const carried = Object.create(null)
       for (const b of best) carried[b.name] = (carried[b.name] ?? 0) + b.score
       key = Object.keys(carried).reduce((a, b) => (carried[b] > carried[a] ? b : a))
       if (key === 'null') key = null

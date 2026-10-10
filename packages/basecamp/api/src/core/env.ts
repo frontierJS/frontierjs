@@ -14,7 +14,9 @@ export const DEV_ENCRYPTION_KEY = '0'.repeat(64)
 export const env = defineEnv({
   // ── Core ──────────────────────────────────────────────────
   NODE_ENV:     { default: 'development' },
-  PORT:         { type: 'port',   default: 8120 },
+  // `fli dev` hands a second checkout of this app its port as FLI_PORT_BE
+  // (18120 in branch 1, packages/cli/core/ports.js § Branches).
+  PORT:         { type: 'port',   default: Number(process.env.FLI_PORT_BE) || 8120 },
   HOST:         { default: '0.0.0.0' },
 
   // ── CORS ──────────────────────────────────────────────────

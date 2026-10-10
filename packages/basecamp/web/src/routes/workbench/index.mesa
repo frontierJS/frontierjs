@@ -33,6 +33,7 @@ title: Workbench
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
 
   const POLL_MS   = 2000
   const SHOW_TOOLS = 4
@@ -232,7 +233,8 @@ title: Workbench
     if (slug === null) return
     const out = await act('fork', p, { slug: slug.trim() || undefined })
     if (!out) return
-    notice = `${out.name} is ${out.branch}${out.carried?.total ? `, carrying ${plural(out.carried.total, 'uncommitted file')}` : ''}.`
+    const set = out.setup?.install === 'failed' ? ' Its install failed — the chat says why.' : ''
+    notice = `${out.name} is ${out.branch}${out.carried?.total ? `, carrying ${plural(out.carried.total, 'uncommitted file')}` : ''}.${set}`
     await loadPins()
   }
 
@@ -273,6 +275,7 @@ title: Workbench
       budget: Number(form.budget.value),
       hooks:  form.hooks.checked,
       review: form.review.checked,
+      ...(form.copy ? { copy: form.copy.value } : {}),
     })
     if (out) await loadPins()
   }
@@ -538,6 +541,13 @@ title: Workbench
                     {#if p.carried.total > p.carried.files.length}<div>… {p.carried.total - p.carried.files.length} more</div>{/if}
                   </details>
                 {/if}
+                {#if p.setup}
+                  <details class="workbench-carried">
+                    <summary>copied {plural(p.setup.copied.length, 'ignored path')} · {p.setup.install === 'ran' ? 'installed' : p.setup.install === 'failed' ? 'install failed' : 'no install'}</summary>
+                    <p>What the parent's copy list named, which git does not carry into a worktree.</p>
+                    {#each p.setup.copied as f}<div><code>{f}</code></div>{/each}
+                  </details>
+                {/if}
               </div>
             {/if}
 
@@ -781,6 +791,10 @@ title: Workbench
                           description="Off by default: a Stop hook that blocks spends the run's turns on itself." />
                 <Checkbox label="Review each finished run" name="review" checked={p.review}
                           description="A fresh read-only Claude Code session reads the change, up to $2 a review." />
+                {#if !p.from}
+                  <Textarea label="Copied into a new branch" name="copy" rows={2} value={(p.copy ?? []).join('\n')}
+                            hint="One glob per line, over the files git ignores here — a worktree has none of them. A dev database is yours to add or to seed." />
+                {/if}
                 <div class="cluster">
                   <Button type="submit" variant="outlined">Save</Button>
                   {#if !p.from}<Button variant="ghost" tone="danger" onclick={() => unpin(p)}

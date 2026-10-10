@@ -60,6 +60,17 @@ test('hooks: with no around hooks the operation still runs', async function () {
   assert.equal(await runAroundHooks(undefined, {}, async () => 'ran'), 'ran')
 })
 
+test('hooks: an outer around hook that retries re-enters every inner around hook', async function () {
+  const log = []
+  let n = 0
+  await runAroundHooks([
+    async (ctx, next) => { log.push('retry'); try { return await next() } catch { return next() } },
+    async (ctx, next) => { log.push('guard'); return next() },
+  ], {}, async () => { log.push('inner#' + (++n)); if (n === 1) throw new Error('first') ; return 'ok' })
+
+  assert.deepEqual(log, ['retry', 'guard', 'inner#1', 'guard', 'inner#2'])
+})
+
 /* ── runPhase ──────────────────────────────────────────────────────── */
 
 test('hooks: runPhase runs .all before the method\'s own', async function () {

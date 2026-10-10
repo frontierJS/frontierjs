@@ -136,6 +136,49 @@ describe('the boundary', () => {
   })
 })
 
+// FJS-2171: $49, €45 and ¥7,000 summed to one bare 16,400.
+describe('a per-row currency is aggregated one currency at a time', () => {
+  const SCHEMA = `model Invoice {
+    id       Int    @id @default(autoincrement())
+    amount   Int    @money(field: currency)
+    currency String
+    status   String @default("paid")
+  }`
+  const open = async () => {
+    const db = await createClient({ schema: SCHEMA, db: ':memory:' })
+    for (const [amount, currency] of [[4900, 'USD'], [4500, 'EUR'], [7000, 'JPY']] as const)
+      await db.invoice.create({ data: { amount, currency } })
+    return db
+  }
+
+  test('across currencies, every value-reading aggregate is refused naming the currency column', async () => {
+    const db = await open()
+    for (const agg of ['_sum', '_avg', '_min', '_max'])
+      await expect(db.invoice.aggregate({ [agg]: { amount: true } }))
+        .rejects.toThrow(/'amount'.*currency/)
+    await expect(db.invoice.aggregate({ _revenue: { sum: 'amount' } })).rejects.toThrow(/currency/)
+    await expect(db.invoice.groupBy({ by: ['status'], _sum: { amount: true } })).rejects.toThrow(/currency/)
+    // Neither selects the sum, and each still compares one across currencies.
+    await expect(db.invoice.groupBy({ by: ['status'], _count: true, having: { _sum: { amount: { gt: 0 } } } })).rejects.toThrow(/currency/)
+    await expect(db.invoice.groupBy({ by: ['status'], _count: true, orderBy: { _max: { amount: 'desc' } } })).rejects.toThrow(/currency/)
+  })
+
+  test('a where that pins the currency, or a by that names it, is one currency', async () => {
+    const db = await open()
+    expect((await db.invoice.aggregate({ where: { currency: 'USD' }, _sum: { amount: true } }))._sum.amount).toBe(4900)
+    expect((await db.invoice.aggregate({ where: { currency: { equals: 'EUR' } }, _avg: { amount: true } }))._avg.amount).toBe(4500)
+    expect((await db.invoice.aggregate({ where: { AND: [{ status: 'paid' }, { currency: { in: ['JPY'] } }] }, _max: { amount: true } }))._max.amount).toBe(7000)
+    expect((await db.invoice.aggregate({ where: { currency: 'USD' }, _usd: { sum: 'amount' } }))._usd).toBe(4900)
+    const grouped = await db.invoice.groupBy({ by: ['currency'], _sum: { amount: true }, orderBy: { currency: 'asc' } })
+    expect(grouped.map((g: any) => [g.currency, g._sum.amount])).toEqual([['EUR', 4500], ['JPY', 7000], ['USD', 4900]])
+  })
+
+  test('counting rows reads no amount, so it is not refused', async () => {
+    const db = await open()
+    expect((await db.invoice.aggregate({ _count: true }))._count).toBe(3)
+  })
+})
+
 describe('the range — the ceiling is 2^53, not int64 (`FJS-583`)', () => {
   // SQLite's INTEGER is 64-bit, but the value arrives and leaves as a JS number
   // and `bun:sqlite` returns one on every path. Past 2^53 the rounded double is

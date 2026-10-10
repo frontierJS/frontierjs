@@ -101,6 +101,17 @@ describe('what an engine must declare', () => {
     } finally { put() }
   })
 
+  // The journal is spliced into a PRAGMA, so only SQLite's own words pass.
+  it('refuses a journal outside SQLite’s words', () => {
+    const put = restore()
+    try {
+      expect(() => setEngine({ name: 'x', sync: true, open: () => ({}), journal: { mode: 'WAL; DROP TABLE t', synchronous: 'OFF' } } as any))
+        .toThrow(/declares journal/)
+      expect(() => setEngine({ name: 'x', sync: true, open: () => ({}), journal: { mode: 'PERSIST', synchronous: 'off' } } as any))
+        .not.toThrow()
+    } finally { put() }
+  })
+
   it('says what to do when nothing is registered', () => {
     const put = restore()
     clearEngine()

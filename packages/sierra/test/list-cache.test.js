@@ -34,6 +34,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     on: () => () => {},
+    callHeaders: () => ({}),
     resource: () => ({
       service: _proxy,
       store: {
@@ -188,5 +189,29 @@ describe('a composed list', () => {
     for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0))
     expect(list.error?.code).toBe(403)
     expect(list.rows).toEqual([])
+  })
+})
+
+describe('a row the device answered', () => {
+  // `Sheet`'s key is `@id @default(uuid())`, which counts as caller-supplied,
+  // so `save()` patches only an id this resource has seen. A row the device
+  // answered was the server's once; counting only the server's answers queued
+  // a post opened offline as a create, refused at replay by a service with no
+  // `create` and a duplicate on one that has it (FJS-2254).
+  test('saves as a patch, not a create', async () => {
+    await createResource('sheets', { model: 'Sheet' }).load({}, null)
+
+    // A reload, offline: a new resource whose only sight of the row is the
+    // device's copy.
+    const sheets = createResource('sheets', { model: 'Sheet' })
+    finding = offline
+    const [row] = await sheets.load({}, null)
+    expect(typeof sheets.cachedAt()).toBe('number')
+
+    const sent = []
+    _proxy.create = (d) => { sent.push('create'); return Promise.resolve(d) }
+    _proxy.patch  = (id, d) => { sent.push('patch'); return Promise.resolve(d) }
+    await sheets.save({ ...row, name: 'read' })
+    expect(sent).toEqual(['patch'])
   })
 })

@@ -62,7 +62,7 @@ import "./auth.lite" into auth
 
 ### `database` `<name> { path · driver · replication · retention · maxSize · model }` <a id="database-declaration"></a>
 
-A named database. `driver` is sqlite (default), jsonl or logger; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.
+A named database. `driver` is sqlite (default), jsonl or trail; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.
 
 ```lite
 database logs {
@@ -2008,6 +2008,10 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `index-another-index-already-covers` — an index a longer one already answers
 
 *info*. SQLite uses an index for any PREFIX of its columns, so @@index([a]) beside @@index([a, b]) is never chosen and @@index([email]) on a column that is already @unique duplicates the index the constraint built. Each one is a second B-tree written on every insert and update for no read it can serve. A @@softDelete model is exempt and that is not a hedge: there ddl.js emits every @@index WHERE deletedAt IS NULL and every UNIQUE in full, so the short one is a different, smaller index rather than a duplicate.
+
+### `retention-without-an-index` — a retention window over a model no index orders by createdAt
+
+*warn*. A database block's retention sweeps every model in it with a createdAt column, by createdAt < cutoff, at startup and on every $retain(). With no index leading with createdAt each sweep scans the whole table, whether or not anything is due — measured at 22.8 s a pass over 34M rows, against 0.6 ms with the index. A @@index on a @@softDelete model, or one with a where, is partial, and the sweep reads soft-deleted rows too.
 
 ### `declared-and-unreferenced` — a declaration nothing references
 

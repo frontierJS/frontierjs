@@ -246,6 +246,18 @@ test('signature: the clock and the nonce are the caller\'s, and it is refused wi
     /now is required/)
 })
 
+test('signature: a tolerance that is not a finite number is refused rather than read as no window (FJS-2188)', async function () {
+  // `skew > NaN` is false, so `Number(process.env.UNSET)` as the tolerance
+  // verified a request signed ten years ago.
+  const old = NOW - 10 * 365 * 86400
+  const headers = await signRequest({ secret: SECRET, method: 'POST', path: '/x', body: '', timestamp: old, nonce: 'n' })
+  for (const toleranceSeconds of [NaN, Infinity, -1, '300', null]) {
+    await assertRejects(
+      () => verifyRequest({ secret: SECRET, method: 'POST', path: '/x', body: '', headers, now: NOW, toleranceSeconds }),
+      /toleranceSeconds/)
+  }
+})
+
 /** The harness's `throws` is synchronous; a rejected promise needs its own. */
 /* ── The unit ──────────────────────────────────────────────────────── */
 

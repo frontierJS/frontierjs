@@ -33,6 +33,9 @@
   // read back after every operation — every write in the kit answers a copy, so
   // an operation that mutated this would be the one bug the whole design is
   // built to prevent, and nothing on screen would show it.
+  let abyss = {}
+  for (let i = 0; i < 100000; i++) abyss = { a: abyss }
+
   const pristine = { name: 'Ada', count: 3, live: true, missing: null, tags: ['x', 'y'], nested: { deep: 1 } }
   let edited = undefined
   let edits  = 0
@@ -85,6 +88,9 @@
 
 <h2>viewer — the default depth</h2>
 <Json id="deep" value={doc} />
+
+<h2>viewer — a document nested far past the bound</h2>
+<Json id="abyss" value={abyss} search />
 
 <h2>editable</h2>
 <Json id="editor-tree" value={pristine} expand={2} editable

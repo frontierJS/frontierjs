@@ -528,6 +528,11 @@ export interface RequestMeta {
    * It is a pointer to a set of rows and never an authority. Whoever the work
    * runs as is still re-resolved and still graded; naming a tenant decides
    * which rows are in scope and nothing about who may touch them.
+   *
+   * ABSENT on a person's HTTP request: under `strategy row` that tenant is a
+   * claim resolved per call, so it is on `ctx.locals.tenantId` and never here,
+   * and a reader of this field fails closed in a request while working in a
+   * job. Code that holds no `ctx` reads `app.tenant()`, which answers both.
    */
   tenant?:         string | null
 

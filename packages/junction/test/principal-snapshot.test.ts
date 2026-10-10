@@ -15,7 +15,7 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { membershipClaim, describePrincipalRealm, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from '../src/core/litestone.ts'
+import { membershipClaim, header, declaredCallHeaders, describePrincipalRealm, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from '../src/core/litestone.ts'
 import { renderPrincipalSnapshot } from '../tools/principal-snapshot.ts'
 
 const claim = membershipClaim({
@@ -86,6 +86,23 @@ describe('membershipClaim().describe()', () => {
   test('emits NO values — a claim name is the app, a claim value is a caller', () => {
     const d = JSON.stringify(claim.describe())
     expect(d).not.toContain('ws-1')          // what tenantFrom would answer
+  })
+})
+
+describe('membershipClaim() header', () => {
+  // FJS-2235: a tenant read off a header() that the resolver did not describe was
+  // dropped from the socket frame allow-list, so every WebSocket call arrived
+  // without its tenant.
+  test('the header tenantFrom reads reaches the call-header allow-lists', () => {
+    const named = membershipClaim({
+      tenantFrom: header('X-Agency-Id'), model: 'agencyMember', subject: 'userId', tenant: 'agencyId',
+    })
+    expect(named.describe().headers).toEqual(['X-Agency-Id'])
+    expect(declaredCallHeaders(appWith(named))).toEqual(['X-Agency-Id'])
+  })
+
+  test('a tenantFrom that is a plain function names no header', () => {
+    expect(declaredCallHeaders(appWith(claim))).toEqual([])
   })
 })
 

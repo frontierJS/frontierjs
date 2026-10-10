@@ -67,6 +67,11 @@ than started.
 | 24 | **ELA** — a live legacy-FJS lawn-care operations app, maid.tech's sibling, being ported | a system of record the app does not own, mirrored and polled; money mirrored rather than originated; a wall-clock day as a key, in a composite foreign key | `conversion-ela.md` · `conversion-maid-tech.md` · #2 · #7 · #21 · #23 |
 | 25 | **SSTime** — a live Laravel + Ember time clock, ELA's, being ported | a punch accepted and classified by device and position rather than refused; a PIN on a wall kiosk as the attestation; the employee held by two apps kept in step | `conversion-sstime.md` · #2 · #13 · #23 · #24 |
 | 26 | **serpgrid** — local SEO for agencies: a rank grid scanned on a schedule, beside the client's CRM and Google profile | an outbound call that costs money; one agency's Google grant spent by many client tenants; one scan fanned into N vendor tasks that finish out of order; a webhook signed by a JWT checked against published keys | `third-party-credentials.md` · `conduit-batteries.md` · `geo.md` · `bearer-access.md` · #21 · #23 · #24 |
+| 27 | **maid.tech** — the live legacy-FJS cleaning-business CRM the trunk came from, 148 accounts, being ported | a role a tenant wrote, read by the gate; a report that is a stored query, stored SQL and stored code on one row; a client who signs in but is not a user; a page a tenant authored, served on a domain the app does not own | `conversion-maid-tech.md` · `tenant-authored-queries.md` · `tenant-declared-fields.md` · `tables-from-the-seed.md` · #14 · #24 |
+| 28 | **Darkroom** — a browser photo editor: adjustments, curves, selective color, layers, crop, draw, export, batch, a social-card composer, ported from a React mockup | a bitmap as the record, with undo as thirty PNG snapshots of every layer; a slider at drag rate driving full-resolution pixel work on the main thread; a pointer drag owned twenty-eight times and never on touch; a color that IS the data under Invariant 13; one outbound call from an app with no `api/` | `@frontierjs/ui` `Slider.mesa` · `FileUpload.mesa` · `CommandPalette.mesa` · `static-safety.md` · `third-party-credentials.md` · #20 · #16 |
+
+**#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
+entries.
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -1008,6 +1013,288 @@ callback or poll, with progress shown live on a map.
 
 Built under the rule #21 set: its fixes land in FJS and its code never does.
 
+### 27. maid.tech — the trunk itself, asked of 148 tenants
+
+*Added 2026-10-09. A live port, in `fjs-prototypes/maidtech`; Phase 0 done
+(scaffold, import, the questions ranked), nothing ported. The reading is
+`conversion-maid-tech.md`; the plan is that folder's `PLAN.md`.*
+
+**Why it is a stressor and not only a conversion.** #14, #24 and #25 are all
+forks or siblings of this app, and each ported the half maid.tech does not
+have. What is left is the trunk: the CRM, the kanban, the forms, the sites
+CMS, the stored reports and the client portal, on the only reference with a
+REAL tenant count. ELA is four accounts with one live; this is 148, with
+production data, so every multi-tenant claim in the tree is graded on rows
+for the first time.
+
+**What it breaks first is the tenant as an author.** One account wrote a
+role as a route-glob matrix; 92 wrote their own dropdown lists; 3 declared
+columns; 22 stored a query, 13 stored JavaScript, 100 stored a website. Each
+has an owner in the tree except the stored code, and `tenant-authored-queries.md`
+argues the right owner is a refusal. The port's hardest question is whether
+the refusal can be built without losing the report. Second is **a stranger
+with a standing**: a client who signs into a portal and is a `Contact`, not a
+`User` — `overview.md` 4.35, which no run has built.
+
+Built under the rule #21 set, and the answers #14 and #24 already paid for
+(the `$:` shapes, the `$include` refusal, the data move, the widgets) are
+reused by citation rather than re-derived.
+
+### 28. Darkroom — the UI realm again, with a canvas in the middle
+
+*Added 2026-10-09, from a read of `fjs-prototypes/darkroom/mockup/darkroom
+(1).jsx`: a browser photo editor as one React component, 5,761 lines, about 190
+pieces of state and 59 refs, with no shell of its own. Phase 0's scaffold is done
+in `fjs-prototypes/darkroom`; `PLAN.md` there carries the run. The rank only
+reflects when it was appended.*
+
+**What it is.** A photo is dropped in and never leaves the tab. Around it:
+ten adjustment sliders, curves and levels with a drag editor, per-hue
+selective color, presets, a histogram, show-original and a split overlay;
+layers with blend modes; crop with handles and straighten, rotate, flip,
+resize; a pen and shapes tool, a border, a magic-wand background remover;
+export with a size scan, a smart compressor and a PNG quantizer; a batch
+queue with a rename pattern; palette extraction; a social-card composer and a
+before/after composer; a website capture through a third party; five themes;
+a command palette and keyboard shortcuts; a share link that carries the
+picture in the URL.
+
+**Why it is on the list when Figma is not.** *Not on this list* rules out
+canvas rendering, and that holds: the pixel pipeline here is about 300 lines
+of loops that port as plain functions and are not graded. The other 5,400
+lines are DOM, controls, files, keys, drags and history, which is the runtime
+this framework claims, and the canvas is what makes them hard — it is an
+imperative sink a declarative runtime has to drive, and the thing undo has to
+put back is a bitmap. #20 asked Mesa to re-derive a grid from a text; this
+asks it to decide when 24 million pixels get recomputed, on which thread, and
+what one ⌘Z costs.
+
+- **The record is the pixel buffer, and undo copies it.** Adjustments are
+  non-destructive and applied at composite; crop, resize, draw and the wand
+  write into the layer canvas. Undo bridges the two by serializing every layer
+  to a PNG data URL 600 ms after any change, thirty deep. Lightroom's answer
+  is an original that is never written and a develop history where crop is a
+  parameter. #20's Q1 with a bitmap in place of the text; nothing in the kit
+  owns an undo stack.
+- **A slider tick re-renders everything and recomputes everything.** One
+  component, so any state change re-renders all of it; the pixel work is
+  behind one effect whose dependencies include the active tab, so changing
+  tabs re-composites a 24 MP image to show the same pixels. Three
+  `getImageData` passes at full resolution on the main thread per tick. The
+  port's answer is a worker and a preview-size proxy, and `FJS-2251` is what
+  the dev server did to the last worker.
+- **Twenty-eight drag state machines, none on touch.** Crop and resize
+  handles, pan, pen, split divider, three curve editors, the card and both
+  before/after images, each its own `mousedown`/`move`/`up`, most blind to a
+  release off the window. `ui/dnd.js` is list reorder. Is a drag a thing with
+  one owner?
+- **Color three ways.** Five hex theme palettes beside Sierra's switch
+  (`FJS-D453`, `FJS-308`); thirteen color pickers whose value is the picture;
+  seven hue swatches that are hues. The clearest case yet that Invariant 13
+  has one place where the color is the data, and it has to say where that
+  place ends.
+- **A URL that carries a picture, and a page that reads it on open.** A WebP
+  data URI in `#img=`, and any `http(s)` image fetched into a canvas that
+  CORS will then taint. `static-safety.md` again, with a blob instead of
+  code.
+- **Bytes that never go to a server.** `FJS-D387` made bytes a task answered
+  by `FileField` and `FileUpload`, both shaped around an upload. Here a drop,
+  a paste, a picker and a batch of twelve all stay in the tab, and go out
+  through `<a download>` and `ClipboardItem`.
+- **One outbound call from an app with no `api/`.** The capture tab calls a
+  screenshot provider from the browser, with a custom endpoint template kept
+  in `localStorage`. Either the key lives in a static page's storage, or the
+  app grows a one-route `api/` and `FJS-1618`'s premise moves. Probably a
+  ruling.
+
+**Leave out** the pixel math as a source of findings; the two composers as
+questions, since they are the stage's shape again; and a deploy.
+
+**Gradable** in a browser, against a 1200 × 800 fixture, a 24 MP one and one
+with an alpha hole, each generated:
+
+- A two-second slider drag on 24 MP stays at frame rate, and the pixel work
+  runs at most once per presented frame.
+- Ten slider settles and a crop on 24 MP hold history the size of the edits,
+  not of the image.
+- Typing `40` into a number field is one undo step.
+- A keystroke in the export filename recomputes no pixels.
+- A drag released off the window ends, and the same drag works from a touch.
+- A `.mesa` file outside the engine and the color pickers holds no color
+  literal.
+- The share link for the small fixture opens, and the 24 MP one is refused
+  with a reason rather than silently producing nothing.
+
+Port in `fjs-prototypes/darkroom`, with questions in its `PLAN.md`, as below.
+
+## Phase 2 — the gap scan
+
+*Added 2026-10-09. Twelve products whose first break has no mention in Phase 1,
+found by checking each candidate's sharpest seam against this file, the rest of
+`IDEAS/` and `DECISIONS.md`. That was a read, not a run, so every "nothing on
+record" holds only as far as `rg` reaches. None is started. Ranked by what each
+breaks, as above; the numbering continues so `#N` stays unique.*
+
+| # | Product shape | What it breaks first | Existing record |
+| --- | --- | --- | --- |
+| 29 | **A developer API** — Stripe's shape, Svix or Resend as the open references: the product is an HTTP API other people's code calls | an API that must not move when the schema does, pinned per customer by date over a surface derived from the seed; signed, retried webhooks to an endpoint a tenant typed | `release-transitions.md` · `conduit-connectors.md` · `claimIdempotency` · #19 |
+| 30 | **Pretix** — ticket on-sale | a hold the clock releases; five thousand buyers for five hundred seats against one writer; a waiting room nobody owns | `bearer-access.md` · `offline-first-and-release.md` · #1 |
+| 31 | **Medplum / OpenEMR** — clinical record | a READ as the audited event; break-the-glass, a gate with an override path; corrections only as addenda; a tenant whose rows must stay in one jurisdiction | `logbook.md` · `effective-time.md` · `compliance-from-the-seed.md` · Invariant 6 · Invariant 7 |
+| 32 | **Ramp / Expensify** — expense approvals | four-eyes: the approver may not be the submitter; a card charge born before its receipt; a stranger's image read by OCR | `state-machines.md` · `untrusted-bytes.md` · `payroll.md` · #7 |
+| 33 | **Culture Amp** — anonymous pulse survey | a gate on a COUNT, not a row: no result for a group under five, and no differencing two filters to reach one answer; one response per person that cannot be joined back | `field-workforce.md` ([`FJS-D349`](../DECISIONS.md#fjs-d349)) · `analytics-and-warehouse.md` · #13 |
+| 34 | **Square / Odoo POS** — offline till | `stock >= 0` broken by construction when two offline tills sell the last unit, and the sale still accepted; a scanner, a receipt printer, a cash drawer | `conflict-as-data.md` · `homestead.md` · `print-kit` |
+| 35 | **Documenso / DocuSeal** — e-signature | a trail that proves it was not altered, which `logbook.md` names unbuilt; signers in order, each a stranger with a link; a completion certificate | `logbook.md` · `bearer-access.md` · `print-kit` · #13 |
+| 36 | **Toggl / Kimai** — a time tracker on web, desktop, phone and `fli` | the `desktop/`, `mobile/` and `cli/` surfaces carrying a product; one running timer per person across four devices; a reminder that has to reach a phone | [`FJS-D38`](../DECISIONS.md#fjs-d38) · `conduit-connectors.md` row 4 · #25 · #2 |
+| 37 | **Hypothesis** — web annotation | the extension surface carrying a product; an anchor on a page someone else owns, re-found after the page is edited; a gate keyed on a foreign URL | `jetty` · `permission-sets.md` · #4 |
+| 38 | **Kahoot** — live quiz | three hundred principals that live twenty minutes; one server-owned clock; a cohort broadcast driven in a two-second burst | `bridge-index` (cohort broadcast) · #12 |
+| 39 | **ThingsBoard / Home Assistant** — device telemetry | a device as a principal with a key that rotates and revokes; a command to an offline device delivered once with acknowledgement; readings thinned with age | `overview.md` · `analytics-and-warehouse.md` · #9 |
+| 40 | **Listmonk** — newsletter | a forgotten subscriber who must stay unsendable; a hundred thousand sends at a provider's rate limit; bounce and complaint webhooks | `forgetting.md` · `inbound-integrations.md` · #15 |
+
+**Folded into Phase 1 rows rather than numbered**: task dependencies that may
+never form a cycle belong with #3 — nothing in the tree mentions acyclicity —
+and data residency is inside #31.
+
+### 29. A developer API — the one that argues with the seed
+
+**Its first break is the thesis.** Everything derives from `db/schema.lite`, so
+a column rename is an API change, and a customer pinned to `2026-03-01` must keep
+the old shape while the schema moves. A per-caller version over a derived surface
+has no record anywhere; the nearest is `release-transitions.md`'s pinned
+configuration, which is a deployment generation, not a contract with one caller.
+Second, **webhooks out to customer endpoints**: signed, retried with backoff,
+replayable, disabled after a week of failures. Conduit sends to a provider the app
+chose and never to a URL a tenant typed. Third, the public idempotency key, which
+`claimIdempotency` owns and nothing outside the app has leaned on.
+
+**Gradable**: after a migration, one request at two pinned versions returns two
+shapes; a webhook to a server that answers 500 four times and then 200 arrives
+once, signed.
+
+### 30. Pretix — five thousand buyers, five hundred seats
+
+**A hold that expires** is a write whose undo is the clock: a seat in a basket is
+held ten minutes and released by nobody doing anything. Calendly asks whether two
+ranges may overlap; this asks what happens when a crowd wants the same rows at
+once against SQLite's single writer, and whether a waiting room belongs to
+Junction or to the host. A ticket's QR is checked at a door that may be offline,
+and a refund reopens inventory.
+
+**Gradable**: 5,000 concurrent checkouts sell exactly 500 seats, none twice; an
+abandoned basket's seats are buyable at minute eleven.
+
+### 31. Clinical record — the gate that says *no, unless you say why*
+
+**The audit trail records writes; here the read is the regulated event.** Who
+opened a chart is the fact a regulator asks for, and `@@log` says nothing about a
+select. **Break-the-glass**: the gate refuses, the clinician states a reason,
+access is granted and flagged for review — a gate with an override path, which
+Invariant 6 cannot spell. Corrections are addenda, never edits. A parent's proxy
+access to a child's record ends on a birthday (`effective-time.md`). And **data
+residency**: a tenant whose rows must stay in one jurisdiction, which per-tenant
+database files make a placement question rather than a query one.
+
+**Gradable**: a refused read retried with a reason succeeds and lands in a review
+queue; every chart open lands in the trail with no field value in it
+(Invariant 7).
+
+### 32. Expense approvals — an actor constrained by an earlier actor
+
+**Four-eyes**: the approver must not be the submitter, and above a threshold a
+second, different approver signs too. `@@transitions` grades who may move a row,
+never *who may not, given who moved it last*. A card charge arrives by webhook
+before its receipt exists, so the record is born half-complete; the receipt is a
+stranger's image (`untrusted-bytes.md`) read by OCR. Month-end close freezes a
+period, which `payroll.md` answers with adjustments rather than edits.
+
+**Gradable**: a submitter approving their own claim is refused at the Data
+boundary, over HTTP and over WebSocket.
+
+### 33. Anonymous pulse survey — the gate on an aggregate
+
+A manager sees the team's result only if five or more answered, and **must not
+reach one person's answer by differencing two filters** — the department, then
+the department without the new hire. Every gate here grades a row; this one grades
+a count. `FJS-D349` ruled the anonymous write; this adds eligibility beside it —
+each employee answers once, yet the answer cannot be joined back to them.
+
+**Gradable**: a filter that yields a group of four returns nothing; no row, trail
+entry or event links a response to a user.
+
+### 34. Offline till — an invariant a merge cannot keep
+
+Two tills, both offline, sell the last unit. The sale must be accepted — the
+customer is holding the bag — so `stock >= 0` breaks by construction and the clash
+is a row somebody resolves (`conflict-as-data.md`). Homestead has been tested by
+merges; this tests it by a rule. Around it, the hardware a till is: a barcode
+scanner typing as a keyboard, a receipt printer through `print-kit`, a cash
+drawer, an end-of-day count.
+
+**Gradable**: both offline sales sync, stock reads −1, and one conflict row names
+both tills.
+
+### 35. E-signature — the record that proves it was not changed
+
+`logbook.md` says it plainly: none of the audit packages makes the trail
+tamper-evident, and the hash chain that would is settled technique nobody here
+has built. A signing product is that sentence with a customer: the document hashed
+at send, signers in order, each a stranger holding only a link
+(`bearer-access.md`), and a completion certificate rendered as a PDF.
+
+**Gradable**: editing one trail row by raw SQL makes the verify step name that
+row.
+
+### 36. Time tracker — the first stressor whose first break is a surface
+
+`FJS-D38` says Mesa is every interface, and no stressor has asked `desktop/`,
+`mobile/` or `cli/` to carry a product. **One running timer per person across four
+devices** is a singleton constraint, broken when the phone starts one offline.
+Idle detection lives on the desktop; the reminder has to reach a phone, and push
+has no transport (`conduit-connectors.md` row 4). It meets #25 at the punch and
+differs from it at every surface.
+
+**Gradable**: a timer started offline on the phone and another online on the
+desktop leave one timer after sync, and the loser is a row.
+
+### 37. Web annotation — the first stressor on the extension surface
+
+Jetty is an app surface with no product on it. A note anchored to a page someone
+else owns must re-find its anchor after the page changes — a text quote plus a
+position, matched fuzzily. The note is public, group or private on any URL, so the
+gate is keyed on a string the app does not own.
+
+**Gradable**: a note survives a paragraph inserted above it; a private note never
+reaches another user's sidebar.
+
+### 38. Live quiz — three hundred strangers, one clock
+
+Players join by PIN, exist for twenty minutes, and answer within ten seconds,
+scored by latency. The server owns the clock. A broadcast is graded per recipient
+in cohorts (`bridge-index`), and nothing has driven that at three hundred sockets
+in one burst.
+
+**Gradable**: 300 headless clients answer in a two-second window and the
+leaderboard is right.
+
+### 39. Device telemetry — the machine as a principal
+
+Each device signs in as itself, with a key that rotates and revokes. A command to
+an offline device is delivered once, with acknowledgement, on reconnect. Readings
+are thinned as they age. Write rate is #9's; the device principal is not.
+
+**Gradable**: a revoked key's next reading is refused; a command queued for an
+offline device runs once.
+
+### 40. Newsletter — the suppression list that outlives the subscriber
+
+A hundred thousand sends through the outbox at the provider's rate limit, bounce
+and complaint webhooks, one-click unsubscribe (RFC 8058). **The sharp one**: a
+forgotten subscriber must stay unsendable, so `forgetting.md`'s erasure has to
+keep something — a hash of the address — and the question is whether that is a
+declaration. Sending overlaps #15.
+
+**Gradable**: forget a subscriber, re-import the list, and the address is not
+mailed.
+
 ## Not on this list, with reasons
 
 - **Figma proper.** Canvas rendering is not a question about this framework; Mesa
@@ -1020,6 +1307,11 @@ Built under the rule #21 set: its fixes land in FJS and its code never does.
   teaches nothing about the thesis.
 - **A CRM.** `IDEAS/intent-recognizer.md` and `tenant-declared-fields.md` have
   already taken the two sharp questions out of it.
+- **Airtable.** #22 and `tenant-declared-fields.md` between them already hold a
+  tenant's schema as the product.
+- **Ride-hail dispatch.** Split money is #11, a burst broadcast #38, a device
+  principal #39, and an offer that expires is #30's hold.
+- **An online store.** #11, #30 and #34 between them.
 
 ---
 

@@ -258,3 +258,23 @@ test('search: a range past the end is clamped rather than throwing', function ()
     { text: 'da', match: true  },
   ])
 })
+
+// FJS-2192: a field named `__proto__` is a key of the per-field tallies.
+test('search: words without keys ranks an item holding an own __proto__ member', function () {
+  const item = JSON.parse('{"__proto__":"abc","name":"abc"}')
+  const [hit] = rank([item], 'abc', { words: true })
+  assert.equal(hit.item, item)
+  assert.deepEqual(hit.ranges, [[0, 3]])
+})
+
+// FJS-2204: a phrase whose last character is in no item used to burn the whole
+// iteration cap per item (~4 ms), so a typo at the end froze each keystroke.
+test('search: a phrase with a trailing typo ranks 1000 items without the iteration cap', function () {
+  const items = Array.from({ length: 1000 }, (_, i) => `Customer account northern distribution center ${i}`)
+  const q = 'customer account northern distribution centerz'
+  const t0 = performance.now()
+  assert.deepEqual(rank(items, q), [])
+  assert.deepEqual(rank(items, q, { words: true }), [])
+  const ms = performance.now() - t0
+  assert.ok(ms < 400, `took ${Math.round(ms)} ms`)
+})

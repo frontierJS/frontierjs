@@ -13,6 +13,11 @@ export type Query = Record<string, unknown>
 
 export const LIMITS: Readonly<{ depth: number; keys: number; items: number }>
 
+/** Thrown, in both directions, past a limit. Carries `status` 400. */
+export class QueryLimitError extends RangeError {
+  readonly status: 400
+}
+
 /** Does this text survive `String(Number(v)) === v`? The whole number rule. */
 export function isNumericLiteral(v: unknown): boolean
 

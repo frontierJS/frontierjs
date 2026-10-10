@@ -2,7 +2,7 @@
 // API keys — how a MACHINE acting for a person proves identity to Basecamp.
 //
 // Mounted at /api-keys. Custom methods dispatch on X-Service-Method:
-//   revoke · scopes (collection-level)
+//   revoke · scopes · owners (both collection-level)
 //
 // The third direction, and the one `secrets` and auth's `Credential` do not
 // cover between them. A Credential is how a person proves identity to
@@ -22,6 +22,7 @@ import { createService, BadRequest, Forbidden, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
 import { scopeVocabulary } from './scopes.ts'
+import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { IAuth } from '@frontierjs/junction'
 
@@ -117,6 +118,10 @@ export function createApiKeysService(app: BasecampApp) {
    *   it is not above you    — an admin cannot mint a key for a bot that
    *                            outranks them and then act through it
    */
+  function outranksCaller(role: string): boolean {
+    return (WORKSPACE_ROLE_LEVEL[role] ?? 0) > (WORKSPACE_ROLE_LEVEL[roleOf($) ?? ''] ?? 0)
+  }
+
   async function assertBotOwner(userId: string): Promise<string> {
     if (userId === actor()) return userId
 
@@ -131,9 +136,7 @@ export function createApiKeysService(app: BasecampApp) {
     const botMember = await members.findFirst({ where: { workspaceId: ws(), userId } })
     if (!botMember) throw new BadRequest('That bot is not a member of this workspace')
 
-    const level = { viewer: 1, billing: 1, developer: 2, admin: 3, owner: 4 } as Record<string, number>
-    const mine  = level[roleOf($) ?? ''] ?? 0
-    if ((level[botMember.role] ?? 0) > mine)
+    if (outranksCaller(botMember.role))
       throw new Forbidden(`That bot is a ${botMember.role} — you cannot issue a key with more standing than your own`)
 
     return userId
@@ -318,6 +321,24 @@ export function createApiKeysService(app: BasecampApp) {
       return { scopes: scopeVocabulary(app), expiry: EXPIRY_PRESETS }
     },
 
+    // ── owners ────────────────────────────────────────────────────────
+    // Collection-level: the bots this caller may issue a key to, by
+    // assertBotOwner's rule. The roster carries no `kind` (`FJS-D619`), and a
+    // picker filtering every bot member offers ones senior to the caller that
+    // create refuses.
+    async owners() {
+      $.dispatch = false
+      const rows = await ($.db.asSystem() as any).workspaceMember.findMany({
+        where:   { workspaceId: ws() },
+        include: { user: { select: { kind: true, name: true, displayName: true, email: true } } },
+        orderBy: { createdAt: 'asc' },
+      })
+      const data = rows
+        .filter((m: any) => m.user?.kind === 'bot' && !outranksCaller(m.role))
+        .map((m: any) => ({ userId: m.userId, role: m.role, name: m.user.displayName ?? m.user.name ?? m.user.email }))
+      return { data }
+    },
+
     hooks: {
       before: {
         all:    [sessionScope(app), noKeyManagementByKey],
@@ -328,6 +349,7 @@ export function createApiKeysService(app: BasecampApp) {
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         revoke: [requireWorkspaceRole(app, 'admin', 'owner')],
+        owners: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

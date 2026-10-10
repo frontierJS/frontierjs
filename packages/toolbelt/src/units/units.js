@@ -86,6 +86,30 @@ export const BYTE_UNITS = Object.freeze(UNITS)
 // hand-rolled `toFixed(2)` invents two, and the two runtimes do not agree about
 // several more.
 
+// Building an Intl.NumberFormat costs ~30 µs, 55× a format call, so a money
+// cell per row of a list pays it on every render. The key is every input the
+// formatter reads. Bounded because `locale` is the caller's string, and a
+// formatter that threw is never stored.
+const MONEY_FORMATTERS = new Map()
+const MONEY_FORMATTERS_MAX = 64
+
+function moneyFormatter(locale, code, digits) {
+  const key = `${locale}|${code}|${digits}`
+  let fmt = MONEY_FORMATTERS.get(key)
+  if (fmt) return fmt
+  fmt = new Intl.NumberFormat(locale, {
+    style:           'currency',
+    currency:        code,
+    currencyDisplay: 'narrowSymbol',
+    ...(digits !== null
+      ? { minimumFractionDigits: digits, maximumFractionDigits: digits }
+      : {}),
+  })
+  if (MONEY_FORMATTERS.size >= MONEY_FORMATTERS_MAX) MONEY_FORMATTERS.clear()
+  MONEY_FORMATTERS.set(key, fmt)
+  return fmt
+}
+
 /**
  * An amount, as the string a person reads.
  *
@@ -123,14 +147,7 @@ export function formatMoney(amount, currency = 'USD', opts = {}) {
   const digits = opts.decimals !== undefined ? opts.decimals : isoDigits(code)
 
   try {
-    return new Intl.NumberFormat(opts.locale ?? 'en-US', {
-      style:           'currency',
-      currency:        code,
-      currencyDisplay: 'narrowSymbol',
-      ...(digits !== null
-        ? { minimumFractionDigits: digits, maximumFractionDigits: digits }
-        : {}),
-    }).format(n)
+    return moneyFormatter(opts.locale ?? 'en-US', code, digits).format(n)
   } catch {
     // An unknown code is a RangeError from Intl, and a thrown formatter takes
     // the screen with it. The code itself is the honest fallback — it says
@@ -560,17 +577,17 @@ export const MEASURE_UNITS = Object.freeze(Object.fromEntries(
  * can name the unit that was meant.
  */
 export function unitInfo(symbol) {
-  return MEASURES[symbol] ?? null
+  return typeof symbol === 'string' && Object.hasOwn(MEASURES, symbol) ? MEASURES[symbol] : null
 }
 
 /** Is this a unit this framework knows? */
 export function isKnownUnit(symbol) {
-  return typeof symbol === 'string' && symbol in MEASURES
+  return typeof symbol === 'string' && Object.hasOwn(MEASURES, symbol)
 }
 
 /** The base unit of a dimension — what `factor` converts to. */
 export function baseUnit(dimension) {
-  return BASE[dimension] ?? null
+  return typeof dimension === 'string' && Object.hasOwn(BASE, dimension) ? BASE[dimension] : null
 }
 
 /**

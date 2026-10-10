@@ -77,6 +77,23 @@ export const LIMITS = Object.freeze({
   items:  1000,   // elements in one array
 })
 
+/**
+ * Past a limit in EITHER direction. A filter cut short is a different filter:
+ * `notIn` minus its last id answers a row it was written to exclude, and a
+ * pair dropped off the end is a condition that never applies. So the limit
+ * refuses, and `status` is what lets a transport answer 400 without importing
+ * the framework.
+ */
+export class QueryLimitError extends RangeError {
+  constructor(message) {
+    super(message)
+    this.name   = 'QueryLimitError'
+    this.status = 400
+  }
+}
+
+const tooMany = limit => new QueryLimitError(`query exceeds the ${limit} limit of ${LIMITS[limit]}`)
+
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
 /* ── Scalars ───────────────────────────────────────────────────────────── */
@@ -175,7 +192,7 @@ function assignPath(root, path, value) {
     if (seg === '') {
       // `a[][b]=1` — an array of objects. Append a container and descend.
       if (!Array.isArray(node)) return
-      if (node.length >= LIMITS.items) return
+      if (node.length >= LIMITS.items) throw tooMany('items')
       const child = wantArray ? [] : bag()
       node.push(child)
       node = child
@@ -193,7 +210,7 @@ function assignPath(root, path, value) {
   const last = path[path.length - 1]
   if (last === '') {
     if (!Array.isArray(node)) return
-    if (node.length >= LIMITS.items) return
+    if (node.length >= LIMITS.items) throw tooMany('items')
     node.push(value)
     return
   }
@@ -203,7 +220,8 @@ function assignPath(root, path, value) {
   if (last in node) {
     const prev = node[last]
     if (Array.isArray(prev)) {
-      if (prev.length < LIMITS.items) prev.push(value)
+      if (prev.length >= LIMITS.items) throw tooMany('items')
+      prev.push(value)
     } else {
       node[last] = [prev, value]
     }
@@ -243,7 +261,7 @@ export function parseParams(params) {
 
   let seen = 0
   for (const [key, value] of entries) {
-    if (++seen > LIMITS.keys) break
+    if (++seen > LIMITS.keys) throw tooMany('keys')
     const path = keyPath(String(key))
     // A malformed or too-deep key is kept whole rather than dropped: it is a
     // filter on a column nobody declared, which the Data boundary already
@@ -320,18 +338,20 @@ export function encodePairs(query) {
   const out = []
   if (!query || typeof query !== 'object') return out
   for (const [key, value] of Object.entries(query)) walk(out, key, value, 1)
+  if (out.length > LIMITS.keys) throw tooMany('keys')
   return out
 }
 
 function walk(out, prefix, value, depth) {
   if (value === undefined) return
-  if (depth > LIMITS.depth) return
+  if (depth > LIMITS.depth) throw tooMany('depth')
 
   if (Array.isArray(value)) {
     if (!value.length) { out.push([prefix, '[]']); return }
+    if (value.length > LIMITS.items) throw tooMany('items')
     // `k[]=a&k[]=b`, which parses back as an array of one element too — where a
     // repeated bare key would read as a scalar the first time.
-    for (const item of value.slice(0, LIMITS.items)) walk(out, `${prefix}[]`, item, depth + 1)
+    for (const item of value) walk(out, `${prefix}[]`, item, depth + 1)
     return
   }
 

@@ -9,6 +9,7 @@ examples:
 args:
   -
     name: dir
+    kind: dir
     description: A directory fli db:backup (or litestone backup) wrote
     required: true
 flags:

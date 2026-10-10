@@ -13,7 +13,7 @@
  */
 
 import {
-  LIMITS, isNumericLiteral, parseValue, parseParams,
+  LIMITS, QueryLimitError, isNumericLiteral, parseValue, parseParams,
   parseQueryString, encodePairs, encodeQueryString,
 } from '../../src/query/query.js'
 
@@ -246,4 +246,45 @@ test('query: a bracket key named for an Array.prototype member does not throw', 
   assert.deepEqual(parseQueryString('?a[]=1&a[map]=x'), { a: { map: 'x' } })
   assert.deepEqual(parseQueryString('?a[]=1&a[b]=2'), { a: { b: 2 } })
   assert.deepEqual(parseQueryString('?a[length]=5&a[]=1'), { a: [1] })
+})
+
+/* ── Past a limit is refused, in both directions (FJS-2194) ────────── */
+
+const refused = fn => {
+  let err
+  try { fn() } catch (e) { err = e }
+  assert.ok(err instanceof QueryLimitError, 'throws QueryLimitError, got ' + err)
+  assert.equal(err.status, 400)
+}
+
+test('query: the encoder refuses depth past the limit rather than writing {}', function () {
+  refused(() => encodePairs({ project: { some: { owner: { is: { team: { name: 'red' } } } } } }))
+})
+
+test('query: the encoder refuses an array past the item limit', function () {
+  const ids = Array.from({ length: LIMITS.items + 1 }, (_, i) => i)
+  refused(() => encodeQueryString({ id: { notIn: ids } }))
+  assert.equal(encodePairs({ id: { notIn: ids.slice(0, LIMITS.items) } }).length, LIMITS.items)
+})
+
+test('query: the encoder refuses more pairs than the parser will read', function () {
+  const q = {}
+  for (let i = 0; i <= LIMITS.keys; i++) q['k' + i] = i
+  refused(() => encodePairs(q))
+})
+
+test('query: the parser refuses pairs past the key limit rather than dropping them', function () {
+  const pairs = []
+  for (let i = 0; i <= LIMITS.keys; i++) pairs.push(['k' + i, '1'])
+  refused(() => parseParams(pairs))
+  assert.equal(Object.keys(parseParams(pairs.slice(0, LIMITS.keys))).length, LIMITS.keys)
+})
+
+test('query: the parser refuses an array past the item limit', function () {
+  const qs = '?' + Array.from({ length: LIMITS.items + 1 }, (_, i) => 'id[notIn][]=' + i).join('&')
+  refused(() => parseQueryString(qs))
+  const rep = '?' + Array.from({ length: LIMITS.items + 1 }, (_, i) => 'id=' + i).join('&')
+  refused(() => parseQueryString(rep))
+  const objs = '?' + Array.from({ length: LIMITS.items + 1 }, (_, i) => 'a[][b]=' + i).join('&')
+  refused(() => parseQueryString(objs))
 })

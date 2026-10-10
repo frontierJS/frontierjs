@@ -79,7 +79,7 @@ kind of silence this whole area is full of.
 
 Litestone applies the same number to every connection it opens: main's write and
 read handles, the tenant registry and each tenant's file, the CLI's handles, and
-the companion index beside a `jsonl`/`logger` file.
+the companion index beside a `jsonl`/`trail` file.
 
 `@frontierjs/caravan` (`createCaravan({ busyTimeout })`) and Junction's SQLite
 cache (`createSqliteCache({ busyTimeout })`) have their own, because they own
@@ -144,7 +144,7 @@ on one client queue in the promise chain and never contend for the file lock.
   is two connections that can deadlock. `db.$setAuth(u)`, `db.asSystem()` and
   `db.$scopedBy(...)` are all views over the same handles — those are free.
 - **Under `strategy database`**, each tenant is its own file, so tenants never
-  contend with each other. The registry and any `jsonl`/`logger` database are
+  contend with each other. The registry and any `jsonl`/`trail` database are
   shared, and those are the ones to watch.
 - **Do not `await` something slow inside `$transaction`.** The lock is held for
   the whole callback, so an HTTP call or a mail send inside one stalls every

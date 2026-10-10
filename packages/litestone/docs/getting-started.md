@@ -79,10 +79,10 @@ const db = await createClient({
   },
 
   // Audit log enrichment
+  // `ctx` is the client's, so `ctx.auth` is the principal; where the request
+  // came from (ip, userAgent, correlationId) is `logContext`'s, not this
   onLog: (entry, ctx) => ({
-    actorId:   ctx.auth?.id,
-    actorType: ctx.auth?.type,
-    meta:      { requestId: ctx.requestId },
+    meta: { plan: ctx.auth?.plan },
   }),
 
   // Open all SQLite databases read-only — writes throw immediately
@@ -101,7 +101,7 @@ Four things can decide it, most specific first:
 
 | | |
 | --- | --- |
-| `databases: ':memory:'` | every SQLite database in the schema, plus a tmpdir for each jsonl/logger one |
+| `databases: ':memory:'` | every SQLite database in the schema, plus a tmpdir for each jsonl/trail one |
 | `databases: { name: { path } }` | one named database |
 | `db: './app.db'` | **main only** — a second declared database keeps its declared path |
 | `database main { path ... }` | the schema's own declaration |

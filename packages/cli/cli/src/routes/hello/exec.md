@@ -9,6 +9,7 @@ examples:
 args:
   -
     name: dir
+    kind: dir
     description: Directory to list
     defaultValue: .
 flags:

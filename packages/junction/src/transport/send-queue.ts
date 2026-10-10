@@ -21,11 +21,12 @@
 // one that pauses.
 //
 // The queue is bounded. A consumer that never drains is a memory leak with a
-// polite name, so past the cap the socket is closed with 1013 (Try Again
-// Later): the browser client rejects every in-flight call on close and
-// reconnects with backoff, and the server re-joins it to its channels on the
-// way back in. A caller then gets an error it can act on, which is the whole
-// point — the failure this module exists for is the one nobody was told about.
+// polite name, so past the cap the socket is closed. The peer sees 1006, not a
+// code of ours: the close frame cannot get past the full buffer. The browser
+// client rejects every in-flight call on close and reconnects with backoff, and
+// the server re-joins it to its channels on the way back in. A caller then gets
+// an error it can act on, which is the whole point — the failure this module
+// exists for is the one nobody was told about.
 
 export interface SendQueueSocket {
   send:               (data: string) => number
@@ -125,10 +126,11 @@ function newQueue(ws: SendQueueSocket): FrameQueue {
 function holdFrame(ws: SendQueueSocket, held: FrameQueue, payload: string): 'queued' | 'closed' {
   if (held.bytes + payload.length > maxQueuedDefault) {
     queues.delete(ws as object)
-    // 1013 Try Again Later. The client's own close handler rejects every
-    // pending call, so a caller learns the truth instead of waiting on a frame
-    // that is never coming.
-    try { ws.close(1013, 'backpressure') } catch {}
+    // No code or reason: a close frame queues behind the same full buffer, so
+    // the peer sees 1006 whatever is passed. The client's own close handler
+    // rejects every pending call, so a caller learns the truth instead of
+    // waiting on a frame that is never coming.
+    try { ws.close() } catch {}
     return 'closed'
   }
   held.frames.push(payload)

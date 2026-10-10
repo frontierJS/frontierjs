@@ -85,6 +85,14 @@
 // use, and `arm` must be idempotent because the caller holds a statement cache
 // rather than a database and cannot track which connection it is on.
 //
+//   engine.journal  →  { mode, synchronous }, or absent
+//
+// Connections open in WAL with synchronous NORMAL. A VFS with no shared memory
+// — the browser's pool — refuses WAL without an error and keeps a rollback
+// journal, so an engine that knows its VFS states the journal it should have
+// instead (`FJS-2314`). Both values are checked against SQLite's own words in
+// `setEngine`, because they are spliced into a PRAGMA.
+//
 //   engine.foreignKeys  →  false, or absent
 //
 // Connections open with foreign keys ENFORCED. An engine that holds only a
@@ -153,9 +161,19 @@ export function setEngine(engine) {
         '  An extension loads into a connection, so a similarity read arms the one it is about\n' +
         '  to use. Without it the function name is a promise no connection keeps.')
   }
+  if (engine.journal != null) {
+    const { mode, synchronous } = engine.journal
+    if (!JOURNAL_MODES.has(String(mode).toUpperCase()) || !SYNCHRONOUS.has(String(synchronous).toUpperCase()))
+      throw new Error(
+        `setEngine: engine '${engine.name}' declares journal ${JSON.stringify(engine.journal)}.\n` +
+        `  mode is one of ${[...JOURNAL_MODES].join(', ')}; synchronous one of ${[...SYNCHRONOUS].join(', ')}.`)
+  }
   current = engine
   return engine
 }
+
+const JOURNAL_MODES = new Set(['DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY', 'WAL', 'OFF'])
+const SYNCHRONOUS   = new Set(['OFF', 'NORMAL', 'FULL', 'EXTRA'])
 
 export function currentEngine() {
   return current

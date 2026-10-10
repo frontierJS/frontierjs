@@ -72,7 +72,7 @@ s3://mybucket/myapp/db-jobs        every other *.db, named db-<path under db/>
 
 `backup` copies each such file hot as `db-<path>.db` and every other file byte
 for byte under `db-files/`, keeping its path. `replicate` streams the `*.db`
-files and names the rest as not replicated, the way it names a logger. Skipped:
+files and names the rest as not replicated, the way it names a trail. Skipped:
 what a declaration or the tenancy block already covers, `-wal`/`-shm`
 companions, dot-entries, and `db/backups/`. A schema outside `db/` is a bare
 project whose directory is its source, and gets none of this.
@@ -88,7 +88,7 @@ that is not AWS — MinIO, SeaweedFS, Garage. Do not put the endpoint in the url
 each database's name is appended to it, and a query string there ends up in
 the middle of the path.
 
-**Litestream replicates SQLite.** A `jsonl` or `logger` database is a directory
+**Litestream replicates SQLite.** A `jsonl` or `trail` database is a directory
 of append-only files with no WAL, so it cannot be replicated here at all —
 `litestone replicate` names any it finds and carries on. Cover those with
 `litestone backup` on a schedule, or sync the directory to object storage.
@@ -112,7 +112,7 @@ It refuses, writing nothing:
 - **Files already at a destination**, without `--force`. With it, the old `-wal`,
   `-shm` and litestream's `.<db>-litestream` state go too — a stale WAL beside a
   restored file would be replayed onto it.
-- **A `jsonl` or `logger` database without `--from-backup <dir>`.** Litestream never
+- **A `jsonl` or `trail` database without `--from-backup <dir>`.** Litestream never
   streamed it, so its way back is the directory a `litestone backup` wrote.
   `--db <name>` restores one database and leaves the rest deliberately.
 - **Any one replica it cannot reach** — a tenant whose files are gone, a url with
@@ -146,7 +146,7 @@ With `--from-backup` and no replica word on the line — `--url`, `--at` or
 `--verify` — every database comes from the backup directory, and litestream is
 not needed. `replicate.url` in the config does not count, so a local checkpoint
 never reaches for the production replica. The directory's layout is the map:
-`<name>.db`, `<name>/` for jsonl and logger, `tenant-files/` and
+`<name>.db`, `<name>/` for jsonl and trail, `tenant-files/` and
 `tenant-registry/`, and `db-<path>.db` for a SQLite file under `db/` no schema
 names, which goes back to the live file of that name. It is all or nothing, and
 replaces files only with `--force`, the way a replica restore does, `-wal` and

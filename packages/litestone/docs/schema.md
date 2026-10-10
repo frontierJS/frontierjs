@@ -148,8 +148,8 @@ open editor correctly stale after one lands.
 @omit(all)                       excluded from all reads
 @guarded                         system-context column: stripped from every read, refused on
                                  every write, and refused in a where/orderBy/cursor
-                                 — naming it recovers it — unless asSystem()
-@guarded                    the same, and an explicit select cannot unlock the read
+                                 — naming it recovers it — unless asSystem(). An explicit
+                                 select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
                                  writable by a non-system caller
 @encrypted(deterministic: true)  IV derived from the value — equality WHERE works, and it reads back
@@ -558,7 +558,7 @@ db.blogPost.create({ data: {...} })
 | `ServiceAgreement` | `service_agreement` | `db.serviceAgreement` |
 | `BlogPost` | `blog_post` | `db.blogPost` |
 
-With `pluralize: true` in `litestone.config.js`, table names are pluralized:
+With `pluralize: true` passed to `createClient`, table names are pluralized. The CLI reads the same key from `litestone.config.js`, so a client built without it disagrees with the tables `migrate` made:
 
 | Model | Table | Accessor |
 |---|---|---|

@@ -5,9 +5,9 @@ Litestone is written in JavaScript but ships full TypeScript support via generat
 ## Generate types
 
 ```bash
-litestone types                        # outputs index.d.ts
+litestone types                        # writes <schema>.d.ts beside the schema — db/schema.d.ts
 litestone types ./db/types.d.ts        # custom output path
-litestone types --only=users,posts     # emit types for specific models only
+litestone types --only=User,Post       # just these models — the MODEL name; an unknown one is refused
 ```
 
 Or programmatically:
@@ -21,46 +21,52 @@ writeFileSync('./db/types.d.ts', dts)
 
 ## What gets generated
 
-For every model, Litestone emits:
+For every model, named for the model — `User`, never `Users`:
 
 ```ts
-// Where type — extends WhereBase (adds $raw field)
-export interface UsersWhere extends WhereBase {
-  id?:        WhereOp<number>
-  email?:     WhereOp<string>
-  role?:      WhereOp<Role>
-  deletedAt?: WhereOp<string | null>
-  AND?:       UsersWhere[]
-  OR?:        UsersWhere[]
-  NOT?:       UsersWhere
+// Full row type — the model name itself
+export interface User {
+  id:         number
+  email:      string
+  role:       Role
+  createdAt:  string
+  deletedAt?: string | null
 }
 
-// Create type — required fields only
-export interface UsersCreate {
-  id?:    number    // @id with auto-increment → optional
+// Create type — a field with an @id, a @default or a ? is optional; a
+// @default(now()) stamp like createdAt is absent
+export interface UserCreate {
+  id?:    number
   email:  string
-  role?:  Role      // has @default → optional
+  role?:  Role
 }
 
-// Update type — all fields optional
-export type UsersUpdate = Partial<UsersCreate>
-
-// OrderBy type
-export interface UsersOrderBy {
-  id?:        OrderDir | { dir: OrderDir; nulls?: 'first' | 'last' }
-  email?:     OrderDir | { dir: OrderDir; nulls?: 'first' | 'last' }
-  createdAt?: OrderDir | { dir: OrderDir; nulls?: 'first' | 'last' }
+// Update type — every writable field optional
+export interface UserUpdate {
+  id?:    number
+  email?: string
+  role?:  Role
 }
 
-// Full row type
-export interface UsersRow {
-  id:        number
-  email:     string
-  role:      Role
-  createdAt: string
-  deletedAt: string | null
+// Where type — extends WhereBase (adds $raw); a bare value is equality
+export interface UserWhere extends WhereBase {
+  id?:        number | WhereOp<number> | null
+  email?:     string | WhereOp<string> | null
+  role?:      Role   | WhereOp<Role>   | null
+  createdAt?: string | WhereOp<string> | null
+  deletedAt?: string | WhereOp<string> | null
+  AND?:       UserWhere[]
+  OR?:        UserWhere[]
+  NOT?:       UserWhere
 }
+
+// OrderBy type — one key, or a list of them
+export type UserOrderBy =
+  | { [K in keyof User]?: OrderDir }
+  | Array<{ [K in keyof User]?: OrderDir }>
 ```
+
+The accessor on the client type is camelCase: `readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>`.
 
 ## Static declarations
 
@@ -140,7 +146,7 @@ Generated:
 /**
  * User account — represents a single company or individual.
  */
-export interface AccountsRow {
+export interface Account {
   id:   number
   /** Display name shown in the UI. */
   name: string

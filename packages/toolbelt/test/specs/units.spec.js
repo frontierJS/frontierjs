@@ -469,3 +469,31 @@ test('measures: converting is within one dimension and nowhere else', function (
   assert.throws(() => convertUnit(1, 'kg', 'nope'), /unknown unit/)
   assert.throws(() => convertUnit('abc', 'kg', 'g'), /expected a number/)
 })
+
+// FJS-2192: a symbol is a map key, and `in` answers for Object.prototype's names.
+test('units: a name inherited from Object is not a unit or a dimension', function () {
+  for (const name of ['toString', 'constructor', 'valueOf', 'hasOwnProperty']) {
+    assert.equal(isKnownUnit(name), false)
+    assert.equal(unitInfo(name), null)
+    assert.equal(baseUnit(name), null)
+  }
+})
+
+// FJS-2205: a formatter costs ~30 µs to build, so a money cell per row over a
+// list pays it on every render when each call builds one.
+test('units: formatMoney reuses its formatter instead of building one per call', function () {
+  const Real = Intl.NumberFormat
+  let built = 0
+  Intl.NumberFormat = function (...a) { built++; return new Real(...a) }
+  Intl.NumberFormat.prototype = Real.prototype
+  try {
+    for (let i = 0; i < 50; i++) {
+      assert.equal(formatMoney(i, 'USD'), `$${i}.00`)
+      formatMoney(i, 'EUR', { locale: 'de-DE' })
+      formatMoney(i, 'JPY')
+    }
+    assert.ok(built <= 3, `built ${built} formatters for 150 calls`)
+  } finally {
+    Intl.NumberFormat = Real
+  }
+})

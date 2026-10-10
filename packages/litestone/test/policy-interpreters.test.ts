@@ -575,3 +575,23 @@ model Doc {
     db.$close()
   })
 })
+
+// FJS-2197: a TEXT column read as a predicate is its numeric prefix to SQLite,
+// so '0' is false there; JS truthiness called it true and create allowed a row
+// that read then hid.
+describe('a String column used as a predicate', () => {
+  const rows: Row[] = ['0', '1', '', 'abc', '0.0', ' 2', '1abc', 'false'].map((flag, i) => ({ id: `t${i}`, flag }))
+  const schema = (expr: string) => `
+model Doc {
+  id   String @id
+  flag String?
+  @@allow('read',   ${expr})
+  @@allow('create', ${expr})
+}
+`
+  for (const expr of [`flag`, `!flag`, `flag ? true : false`, `flag && true`]) {
+    it(`agrees about every row: ${expr}`, async () => {
+      expect({ expr, disagreed: await agree(schema(expr), rows, { id: 'u1' }) }).toEqual({ expr, disagreed: [] })
+    })
+  }
+})

@@ -26,7 +26,7 @@ import { modelToAccessor } from './core/ddl.js'
 // finding against one would be about the schema rather than about the data.
 const SKIP_DRIVERS = {
   jsonl:  'jsonl driver — no migrations and no schema to hold a row to',
-  logger: 'logger driver — its rows are written by the audit trail, not by a caller',
+  trail:  'trail driver — its rows are written by the audit trail, not by a caller',
 }
 
 // Every row failing is a different fact from some rows failing: a rule no row

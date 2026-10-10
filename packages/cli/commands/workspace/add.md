@@ -10,6 +10,7 @@ examples:
 args:
   -
     name: path
+    kind: dir
     description: Path to the existing package directory to add
     required: true
 flags:

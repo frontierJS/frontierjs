@@ -994,8 +994,8 @@ with the terminal backend as its second consumer, not ahead of it.
    restored from what it held at focus, and nothing asserts that (`none`).
    Layouts are still not mounted. Tier: Assessment.
    *Slice 20 2026-10-09, `<dialog>` and `<mesa:window>` (the owner asked
-   for both; the look below is this slice's proposal and has no ruling
-   yet):* role `dialog` is a bordered box laid out only while `open`.
+   for both; the look below was this slice's proposal, and the owner took
+   it as written the same day):* role `dialog` is a bordered box laid out only while `open`.
    `show()` and the `open` attribute open it where it sits; `showModal()`
    moves it under a backdrop on the screen's root, since the engine draws a
    child over its own parent's earlier siblings only, and a hidden box
@@ -1061,6 +1061,62 @@ with the terminal backend as its second consumer, not ahead of it.
    (`none`). *Familiarity vs. precision*: the platform's shape and its
    words, which fit whole; the one departure, the dim bit for the
    backdrop's tint, is Invariant 13's, not a word. Tier: Assessment.
+   *Slice 21 2026-10-09, what Json and Code stopped at (the owner said
+   "next" and left the pick to me):* `focusin` and `focusout` are the
+   bubbling twins of `focus` and `blur`, sent after each, in a browser's
+   order, since the engine blurs the old node before it marks the new one.
+   `<del>`, `<ins>` and `<dfn>` are inline boxes with their
+   default-stylesheet look as cell bits (struck through, underlined,
+   italic; `strike` joined the bits). `<pre>` is a box whose text keeps its
+   whitespace, which the compiler already preserved
+   (`PRESERVE_WHITESPACE`, now exported and read by the emitter rather
+   than restated), less the two newlines a browser drops: the one after
+   the open tag and the one ending the block. A long line wraps, where a
+   browser scrolls the block sideways, since no terminal node scrolls and
+   clipping would hide text with nothing to say so. `{@html}` lowers to an
+   IR `html` node, painted as the text `innerText` reads from the markup:
+   tags gone, a `<br>` or a block's end a new row, references decoded,
+   whitespace collapsed outside a `<pre>`, and a script, a style or an
+   inline `<svg>` never read. Decoding it at run time moved
+   `htmlEntitiesToText` out of `compiler.js` into `src/entities.js`, which
+   the compiler and the terminal runtime both import. Two kit edits came
+   with it. `Json.mesa` asks `gridEl?.querySelectorAll` before walking
+   rows, so on a terminal the arrows walk nothing and Tab reaches each
+   control in turn; Form.mesa already guards this way. `MultiSelect.mesa`'s
+   click-away moved from a `document` listener added in `onMount` to
+   `<mesa:window on:click|capture>`, which lowers since slice 20 and
+   tears itself down. For that, a terminal node answers `contains(other)`
+   through `up`, a platform method on the node the way the dialog's
+   `showModal()` is. Proved by `specs/within.spec.mjs` 8/8 and
+   `specs/pre.spec.mjs` 13/13, with 11 deliberate breaks, all red;
+   `ir.test.js` for the `html` node; the whole drive 227/227; vitest 2280;
+   corpus moves only Json and MultiSelect (and a peer's basecamp edits),
+   baseline `s21base`; ui's `multiselect-bounds` gained the browser half of
+   click-away (11/11; removing the window listener turns it red); ui suite
+   1295; `verify:tui` and `verify:site` green. `verify` stops at
+   `FJS-1642` with or without these kit edits. Report 349 → 366 of 546,
+   ui 71 → 74. Routes 20 → 22 of 34: `/invoices/` and
+   `/automations/runs/:runId/`. `/orders/:id/` now stops at DropdownMenu's
+   `<mesa:portal>`, so portal routes are six. `/invoices/` opens and is
+   barely readable: its prose is `FJS-2179`, an inline row narrower than
+   its text paints the pieces over each other. Cut on the way: keeping
+   whitespace-only text inside a `<pre>`, which no break could turn red,
+   because a column box already stacks what it would have separated.
+   *The nine for slice 21, answered before the `<pre>`/`{@html}` code
+   (the focus half and the inline tags had landed first):* (1) origin:
+   one fewer copy. Entity decoding has one home that both readers import,
+   and whitespace preservation is read from the compiler's set. (2)
+   concept: none; `<pre>`, `innerText`, `focusin` and `contains` are the
+   platform's words. (3) complexity: the problem's. (4) predictability: a
+   `{@html}` paints what a screen reader of the page would read, and
+   click-away is written once for both targets. (5) derived: the text is
+   recomputed on each write. (6) owner: `markupText` in the terminal
+   runtime, beside `set_text`. (7) boundary: markup whose meaning is
+   layout or a picture (an `<svg>` icon, a table) loses it. (8) failure:
+   that loss is silent, since an icon is decoration and its text would be
+   noise. (9) must stay true: a code block's lines appear verbatim and in
+   order, and no tag reaches the screen; `pre.spec` fails when either
+   stops. Adjudication: none in tension. Tier: Assessment.
    *The nine for slices 14 and 15, answered late, after both were green:*
    (1) origin: one fewer. `constDeclaration` is the one reading of a `{@const}`, and
    `pointer()` the one reading of a mouse event. (2) concept: none. (3)

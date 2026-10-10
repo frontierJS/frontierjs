@@ -5,7 +5,7 @@
 /** @import { LitestoneSchema, ModelDef, LogEntry, LogRequestContext } from '../index.d.ts' */
 /** @import { Ctx } from './field-policy.js' */
 
-// ─── Logger driver helpers ────────────────────────────────────────────────────
+// ─── Trail driver helpers ────────────────────────────────────────────────────
 
 // The auto-generated model AST for driver:trail databases in auto mode.
 // Shape is fixed — owned by Litestone, not the user.
@@ -149,6 +149,26 @@ function actorTypeOf(ctx) {
   return ctx.auth.id != null ? 'user' : 'bearer'
 }
 
+/**
+ * A before/after image as the line stores it. A Bytes column is a Uint8Array,
+ * which `JSON.stringify` writes as an object keyed by index — about 13
+ * characters a byte, and no longer bytes — in both images of every later update
+ * of the row (`FJS-2164`). It goes down as base64, the form the JSON Schema
+ * already names for Bytes. `btoa` and no `Buffer`: this runs in a browser
+ * (`FJS-D305`). `this[key]` because a Buffer has already been through its own
+ * `toJSON` by the time the replacer sees it.
+ * @param {unknown} image
+ */
+function imageJson(image) {
+  return JSON.stringify(image, function (key, value) {
+    const raw = this[key]
+    if (!(raw instanceof Uint8Array)) return value
+    let binary = ''
+    for (const byte of raw) binary += String.fromCharCode(byte)
+    return btoa(binary)
+  })
+}
+
 // Build the log entry object from the standard fields + onLog.
 // ctx is the request context (has ctx.auth).
 // onLog is the user-supplied function from createClient options.
@@ -180,8 +200,8 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     field:     field    ?? null,
     transition: transition ?? null,
     records:   JSON.stringify(records ?? []),
-    before:    before   != null ? JSON.stringify(before)  : null,
-    after:     after    != null ? JSON.stringify(after)   : null,
+    before:    before   != null ? imageJson(before) : null,
+    after:     after    != null ? imageJson(after)  : null,
     // An episode inverts the actor. Inside one the principal in scope IS the
     // subject — that is what makes the ceiling the subject's — so `ctx.auth.id`
     // answers who the write was made AS and nobody answers who made it. The

@@ -25,10 +25,10 @@
   //   <Json value={doc} editable onchange={(next) => doc = next} />
 
   import {
-    arrayKind, classify, coerceLike, convertTo, diffDocs, expandToDepth, format, insertIn,
+    arrayKind, classify, coerceLike, convertTo, diffDocs, exceedsDepth, expandToDepth, format, insertIn,
     isContainer, JSON_KINDS, accessorPath, jsonPointer, markRuns, pathKey,
     preview as previewOf, removeIn, renameKey, sameValue, searchDoc, setIn,
-    treeRows, tryParse,
+    treeRows, tryParse, MAX_DEPTH,
   } from '@frontierjs/toolbelt/json'
   import CopyButton, { copyText } from './CopyButton.mesa'
   import Code                     from './Code.mesa'
@@ -99,6 +99,11 @@
 
   const doc = draft === undefined ? value : draft
 
+  // The walkers refuse a document nested past MAX_DEPTH, and a Json column's
+  // author is not the person opening it, so a throw here would take the
+  // screen with it. Nothing below walks a document that is too deep.
+  const tooDeep = exceedsDepth(doc) || exceedsDepth(against)
+
   // A NEW document from above wins over the draft. Both callers are served by
   // that and they are served differently:
   //
@@ -142,31 +147,31 @@
     // in this tree's history like any other, so undo can walk back over it;
     // what it must not do is silently vanish, which is what dropping it would
     // look like from the screen.
-    if (draft !== undefined && !sameValue(value, announced)) remember(draft)
+    if (draft !== undefined && !exceedsDepth(value) && !sameValue(value, announced)) remember(draft)
     draft = undefined
   }
 
   // Read off `value`, never off the draft: a diff is a statement about two
   // documents the caller named, and editing one of them is a different feature.
-  const diff = against === undefined ? null : diffDocs(against, value)
+  const diff = against === undefined || tooDeep ? null : diffDocs(against, value)
 
   // A change three levels down is folded away behind a summary that says
   // nothing, so the routes to every difference are open from the start. Union,
   // not replacement — `expand` still says how much of the rest to show.
-  let expanded = new Set([...expandToDepth(value, expand), ...(diff ? diff.open : [])])
+  let expanded = new Set(tooDeep ? [] : [...expandToDepth(value, expand), ...(diff ? diff.open : [])])
 
   const shown = diff ? diff.merged : doc
 
   let query = ''
 
-  const found = search ? searchDoc(shown, query) : null
+  const found = search && !tooDeep ? searchDoc(shown, query) : null
 
   // A hit four levels down is not a ROW until every container above it is open
   // — `treeRows` only emits children of an open one — so a filter that does not
   // open its own ancestors finds everything and shows nothing.
   const openNow = found?.active ? new Set([...expanded, ...found.open]) : expanded
 
-  const keptRows = treeRows(shown, { expanded: openNow })
+  const keptRows = tooDeep ? [] : treeRows(shown, { expanded: openNow })
 
   // A Set, not `.includes` — the filter runs once per row, and a document big
   // enough to want a search is the one where O(n²) shows.
@@ -176,7 +181,7 @@
 
   // `format` answers '' for a value JSON cannot carry, which is also what an
   // absent document looks like — both are "nothing to show" here.
-  const text = format(shown)
+  const text = tooDeep ? '' : format(shown)
 
   const isEmpty = shown === undefined || shown === null || text === ''
 
@@ -266,7 +271,9 @@
   let cursor = { row: '', stop: 0 }
 
   const bindGrid  = (el) => { gridEl = el }
-  const rowEls    = () => (gridEl ? [...gridEl.querySelectorAll('.fjs-json-row[data-path]')] : [])
+  // A terminal node takes no selector, so there the arrows walk nothing and
+  // Tab reaches each control in turn instead of throwing at the first key.
+  const rowEls    = () => (gridEl?.querySelectorAll ? [...gridEl.querySelectorAll('.fjs-json-row[data-path]')] : [])
   const stopsIn   = (rowEl) => (rowEl ? [...rowEl.querySelectorAll('[data-stop]')] : [])
   const rowFor    = (node) => node?.closest?.('.fjs-json-row[data-path]') ?? null
 
@@ -583,7 +590,9 @@
   {/if}
 {/snippet}
 
-{#if isEmpty}
+{#if tooDeep}
+  <p class="fjs-json-empty" {class} {...$attributes}>Nested more than {MAX_DEPTH} levels deep, too deep to show</p>
+{:else if isEmpty}
   <p class="fjs-json-empty" {class} {...$attributes}>{empty}</p>
 {:else if mode === 'raw'}
   <Code {text} language="json" {copy} {class} {...$attributes} />

@@ -22,7 +22,7 @@ import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
 const esc = s => String(s).replace(/\|/g, '\\|')
 
-/** `driver: sqlite · jsonl · logger`, or blank. */
+/** `driver: sqlite · jsonl · trail`, or blank. */
 function valuesCell(row) {
   if (!row.values) return ''
   return row.values.map(v =>

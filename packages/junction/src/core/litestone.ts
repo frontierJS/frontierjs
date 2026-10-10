@@ -3488,7 +3488,12 @@ export interface MembershipClaimOptions {
    *  convention, so it is a function and never a declaration (Invariant 10).
    *  May answer a promise: a credential bound to one tenant names it only
    *  through a row the app has to read. */
-  tenantFrom: (ctx: ServiceContext) => string | null | undefined | Promise<string | null | undefined>
+  tenantFrom: ((ctx: ServiceContext) => string | null | undefined | Promise<string | null | undefined>) & {
+    /** Set by `header()`. Carried into `describe().headers`, so the CORS preflight
+     *  and the socket frame allow-list pass the header on without a restatement
+     *  in `http.callHeaders`. */
+    readonly headerName?: string
+  }
   /** The membership accessor — `workspaceMember` for `model WorkspaceMember`. */
   model:      string
   /** The column holding the caller: matched against the principal's `userId`. */
@@ -3631,7 +3636,8 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
   // called are the four that decide who a request turns out to be, and all four
   // are in this closure.
   //
-  // `tenantFrom` is deliberately absent — a function, which a diff cannot grade.
+  // `tenantFrom` is deliberately absent — a function, which a diff cannot grade;
+  // only the header name `header()` stamps on it is carried, as `headers`.
   // `namedBy` is NOT: it is a constant the app wrote, and once a resolver is
   // installed it is the only static answer to *how does a request name its
   // tenant*, which the tenancy declaration's own `resolve` stops answering.
@@ -3651,6 +3657,7 @@ export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedReso
                  ...(opts.capabilities ? ['capabilities'] : [])],
     include:    opts.include    ?? [],
     namedBy:    opts.namedBy    ?? null,
+    ...(opts.tenantFrom.headerName ? { headers: [opts.tenantFrom.headerName] } : {}),
   })
 
   return described

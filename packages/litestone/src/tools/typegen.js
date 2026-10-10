@@ -157,6 +157,14 @@ export function generateTypeScript(schema, opts = {}) {
       `  uploadedAt: string`,
       `}`,
       ``,
+      `// What a write sends a File column: bytes, never the ref. Over JSON, a base64`,
+      `// data URL or { name, type, data }; in code, a Blob, a buffer or fromPath(path).`,
+      `export type FileInput =`,
+      `  | Blob | Uint8Array | ArrayBuffer`,
+      `  | string`,
+      `  | { name?: string; type?: string; data: string }`,
+      `  | { readonly path: string }`,
+      ``,
     )
   }
 
@@ -572,7 +580,7 @@ export interface CursorResult<T> {`,
     `  parsed?:      Record<string, unknown>`,
     `  /** MAIN's path. Overrides a declared \`database main\`; a second declared database keeps its own. */`,
     `  db?:            string`,
-    `  /** ':memory:' moves every declared database, jsonl and logger included. */`,
+    `  /** ':memory:' moves every declared database, jsonl and trail included. */`,
     `  databases?:     string | Record<string, { path?: string }>`,
     `  /** 64 hex characters = 32 bytes. Required for @encrypted / @secret. */`,
     `  encryptionKey?: string`,
@@ -639,6 +647,15 @@ function fieldRowSpec(field, schema, audience, modelNames) {
   return { name, tsType, optional: type.optional, comment: commentParts.join(' ') || null }
 }
 
+// A File column is written as bytes and read as a ref (FJS-D666): typed as the
+// ref on a write, a caller's data URL failed to compile and the ref it did
+// compile is refused at runtime. A File[] update carries the refs it keeps.
+function fileInputTs(field, mode) {
+  if (field.type.name !== 'File') return null
+  if (!field.type.array) return 'FileInput'
+  return mode === 'update' ? '(FileInput | FileRef)[]' : 'FileInput[]'
+}
+
 function fieldCreateSpec(field, schema, audience, modelNames) {
   const { name, type, attributes } = field
 
@@ -667,7 +684,7 @@ function fieldCreateSpec(field, schema, audience, modelNames) {
   // same as omitting it: `null` CLEARS, absent leaves the column alone. Typing
   // it `T` only made the documented idiom an error, which an app fixes by
   // casting the client back to any.
-  const tsType = fieldToTs(field, schema, modelNames, false) + (type.optional ? ' | null' : '')
+  const tsType = (fileInputTs(field, 'create') ?? fieldToTs(field, schema, modelNames, false)) + (type.optional ? ' | null' : '')
 
   // Optional in create if: has @default, is nullable, is @id (auto-increment), or auth()-stamped
   const optional = type.optional || isId || (hasDefault && !isAuthDefault)
@@ -688,7 +705,7 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
   // Same as create, and it matters more here: clearing a nullable column is
   // only expressible as an explicit null (Invariant 9 — test key presence, not
   // `??`), so without this the one way to clear a field does not typecheck.
-  const tsType = fieldToTs(field, schema, modelNames, false) + (type.optional ? ' | null' : '')
+  const tsType = (fileInputTs(field, 'update') ?? fieldToTs(field, schema, modelNames, false)) + (type.optional ? ' | null' : '')
   return { name, tsType, optional: true, comment: null }
 }
 

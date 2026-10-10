@@ -53,7 +53,7 @@ await db.user.create({ data: { id: 1, ssn: '123-45-6789' } })
 const user = await db.user.findUnique({ where: { id: 1 } })
 user.ssn  // → null (guarded)
 
-const sysUser = await db.asSystem().users.findUnique({ where: { id: 1 } })
+const sysUser = await db.asSystem().user.findUnique({ where: { id: 1 } })
 sysUser.ssn  // → '123-45-6789'
 ```
 
@@ -72,7 +72,7 @@ model User {
 ```
 
 ```js
-await db.asSystem().users.findFirst({ where: { email: 'a@example.com' } })  // → the row
+await db.asSystem().user.findFirst({ where: { email: 'a@example.com' } })  // → the row
 user.email                                                                  // → 'a@example.com'
 ```
 
@@ -96,7 +96,7 @@ model User {
 ```
 
 ```js
-await db.asSystem().users.findFirst({ where: { loginToken: tok } })  // → the row
+await db.asSystem().user.findFirst({ where: { loginToken: tok } })  // → the row
 ```
 
 **Every read path refuses it, `asSystem()` included** — there is nothing to lift the
@@ -106,7 +106,7 @@ otherwise hand back the digest:
 
 ```js
 user.loginToken                                            // → undefined
-db.asSystem().users.findUnique({ where, select: { loginToken: true } })
+db.asSystem().user.findUnique({ where, select: { loginToken: true } })
 // ValidationError: 'loginToken' is @hashed on User — the column holds a one-way
 // digest, so there is no value to select. It can be matched in a where and never
 // read back. If this field has to be readable, it wants @encrypted(deterministic: true)
@@ -240,7 +240,7 @@ const tenants = await createTenantRegistry({
 })
 ```
 
-## @guarded and @guarded
+## @guarded
 
 Not encryption, but related. **A system-context column, in both directions**:
 stripped from every read, and refused on every write, unless the client is
@@ -249,7 +249,7 @@ stripped from every read, and refused on every write, unless the client is
 ```prisma
 model User {
   passwordHash String @guarded   // system only, and a select cannot unlock the read
-  internalNote String @guarded        // system only; the read is unlockable by nothing either
+  internalNote String @guarded
 }
 ```
 

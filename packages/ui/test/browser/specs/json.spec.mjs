@@ -43,6 +43,14 @@ export async function run(t) {
   t.is(await t.evaluate(`return ${keyText}[0];`), 'a.b',
     'and the order is the document order, not an alphabetical one')
 
+  /* ── a document nested past the bound ─────────────────────────────────── */
+
+  // A stored Json value 100000 deep is one author's write and every reader's
+  // render; the walkers refuse it, so the viewer has to say so, not die.
+  t.is(await t.evaluate(`return document.querySelector('#abyss').textContent.trim();`),
+    'Nested more than 100 levels deep, too deep to show',
+    'a document nested past the bound is named and not walked')
+
   /* ── a key that would collide with a path ─────────────────────────────── */
 
   // `['a.b']` and `['a','b']` join to one string, so a tree keyed by the join

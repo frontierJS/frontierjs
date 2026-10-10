@@ -9,6 +9,7 @@ examples:
 args:
   -
     name: target
+    kind: dir
     description: Project folder containing .caprover.yml (api or web)
     required: true
 flags:

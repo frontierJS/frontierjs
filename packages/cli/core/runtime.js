@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url'
 import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
 import { printPlanFromFile } from './prose.js'
-import { declarationProblem, valueProblem, withModuleFlags } from './flags.js'
+import { declarationProblem, valueProblem, withModuleFlags, DEFAULT_FLAGS } from './flags.js'
 import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
 import { chalk as colorChalk } from './color.js'
@@ -917,35 +917,6 @@ function assertNotRefused(config, refusedBy) {
   throw err
 }
 
-// ─── Default flags ────────────────────────────────────────────────────────────
-
-const defaultFlags = {
-  dry: {
-    type: 'boolean',
-    char: 'd',
-    description: 'Show actions that will run without executing them'
-  },
-  test: {
-    type: 'boolean',
-    char: 't',
-  },
-  step: {
-    type: 'number',
-    description: 'Re-run a single step by number (1-based) when using _steps/'
-  },
-  debug: {
-    type: 'boolean',
-    description: 'Show full stack traces on errors instead of clean messages'
-  },
-  // Asks for the paragraph behind the line — `log.detail`, and the output of a
-  // command this one composes. A command prints the same DECISIONS either way;
-  // what this adds is the reasoning and the children's chatter.
-  verbose: {
-    type: 'boolean',
-    description: 'Show the long version — explanations, and the output of composed commands'
-  }
-}
-
 // The options `execSync` understands, plus nothing. An unrecognized key used
 // to be spread through and silently ignored, and `capture: true` is what that
 // cost: four auth commands asked for the child's output, got `null` from a
@@ -979,8 +950,8 @@ export function refuseUnknownExecOptions(opts) {
 export function getConfig(metadata, rawArg, flag) {
   // Deep-clone metadata so repeated calls (registry lookups, help display)
   // don't see .value properties written by previous runs on the same cached module.
-  // Crucially, defaultFlags is also cloned per-entry — without this, setting
-  // .value on (e.g.) defaultFlags.step during one call leaks into all
+  // Crucially, DEFAULT_FLAGS is also cloned per-entry — without this, setting
+  // .value on (e.g.) DEFAULT_FLAGS.step during one call leaks into all
   // subsequent calls across the entire process. That bit us in zz-steps.test
   // where scenario 7 sets --step 99, and scenario 8 inherits the leftover
   // step:99 even though it passed flag:{}.
@@ -988,12 +959,12 @@ export function getConfig(metadata, rawArg, flag) {
   // Flag merge order: defaults first, then command-defined flags overlaid
   // PER FIELD (not per object). This means a command can re-declare `dry`
   // to add its own description without losing the inherited `char: 'd'`
-  // from defaultFlags. Without per-field merge, `flags.dry: { type: 'boolean' }`
+  // from DEFAULT_FLAGS. Without per-field merge, `flags.dry: { type: 'boolean' }`
   // in a command file would shadow the default's char and break short-flag
   // resolution.
   const cmdFlags = metadata.flags || {}
   const mergedFlags = {}
-  for (const [k, v] of Object.entries(defaultFlags)) mergedFlags[k] = { ...v }
+  for (const [k, v] of Object.entries(DEFAULT_FLAGS)) mergedFlags[k] = { ...v }
   if (metadata.confirm === 'human' && !('approved' in cmdFlags)) mergedFlags.approved = { ...APPROVED }
   for (const [k, v] of Object.entries(cmdFlags)) {
     mergedFlags[k] = { ...(mergedFlags[k] || {}), ...v }
@@ -1027,7 +998,21 @@ export function getConfig(metadata, rawArg, flag) {
 
   // A declaration is graded before any value is, so a broken one is a message
   // on every run rather than only on the run that happens to pass that flag.
-  for (const problem of [effectsProblem(metadata), ...Object.entries(cmdFlags).map(([n, d]) => declarationProblem(n, d))]) {
+  for (const problem of [
+    effectsProblem(metadata),
+    ...Object.entries(cmdFlags).map(([n, d]) => declarationProblem(n, d)),
+    ...meta.args.map((d) => declarationProblem(d.name, d)),
+  ]) {
+    if (problem) {
+      logger(problem, 'error')
+      throw new Error('Cancelling action.')
+    }
+  }
+
+  for (const def of meta.args) {
+    if (def.value === undefined) continue
+    const values = def.variadic ? rawArgArray.slice(meta.args.indexOf(def)) : [def.value]
+    const problem = values.map(v => valueProblem(def.name, def, v)).find(Boolean)
     if (problem) {
       logger(problem, 'error')
       throw new Error('Cancelling action.')

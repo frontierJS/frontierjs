@@ -11,6 +11,7 @@ examples:
 args:
   -
     name: type
+    choices: [secret, aes]
     description: "Key type: secret or aes"
     defaultValue: secret
 flags:

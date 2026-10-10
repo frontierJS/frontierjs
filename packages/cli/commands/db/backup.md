@@ -12,6 +12,7 @@ examples:
 args:
   -
     name: dest
+    kind: dir
     description: The directory to write — by default a new timestamped one under db/backups/
     required: false
 flags:

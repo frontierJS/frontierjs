@@ -407,17 +407,10 @@
 
   // ── Click outside ────────────────────────────────────────────────────────────
 
-  var _outsideHandler = null
-  $.onMount(() => {
-    _outsideHandler = (e) => {
-      if (containerEl && !containerEl.contains(e.target)) closeDropdown()
-    }
-    document.addEventListener('click', _outsideHandler, { capture: true })
-  })
-  $.onDestroy(() => {
-    document.removeEventListener('click', _outsideHandler, { capture: true })
-    clearTimeout(_debounceTimer)
-  })
+  function onClickOutside(e) {
+    if (containerEl && !containerEl.contains(e.target)) closeDropdown()
+  }
+  $.onDestroy(() => clearTimeout(_debounceTimer))
 
   // ── Dropdown animation ────────────────────────────────────────────────────────
 
@@ -432,6 +425,8 @@
     ).finished,
   })
 </script>
+
+<mesa:window on:click|capture={onClickOutside} />
 
 {#snippet control()}
   <div bind:this={containerEl} class="fjs-multiselect">

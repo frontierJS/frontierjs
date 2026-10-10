@@ -59,38 +59,40 @@ import { createClient } from '@frontierjs/litestone'
 
 export const db = await createClient({
   path:  './schema.lite',
-  onLog: (entry, ctx) => ({
-    actorId:   ctx.auth?.id     ?? null,
-    actorType: ctx.auth?.type   ?? 'system',
-    meta: {
-      requestId: ctx.requestId,
-      ip:        ctx.ip,
-      userAgent: ctx.userAgent,
-    },
-  }),
+  onLog: (entry, ctx) => ({ meta: { plan: ctx.auth?.plan } }),
 })
 ```
 
-`onLog` fires asynchronously via `setImmediate` — never blocks the write.
+`actorId` and `actorType` come from the principal without it. `onLog` runs
+synchronously inside the write; the entry is appended one tick later.
 
 ---
 
 ## Passing request context
 
-The `ctx` object in `onLog` comes from `$setAuth`. You can attach extra fields:
+`ctx` in `onLog` is the client's, so `ctx.auth` is whatever `$setAuth` was given
+and there is no `ctx.ip`. Where the write came from is `logContext`'s: a function
+the client calls per write, whose answer fills the entry's own columns.
 
 ```js
+// lib/db.js
+import { AsyncLocalStorage } from 'node:async_hooks'
+export const requestStore = new AsyncLocalStorage()
+
+export const db = await createClient({
+  path:       './schema.lite',
+  logContext: () => requestStore.getStore() ?? null,
+})
+
 // middleware/db.js
 export function dbMiddleware(req, res, next) {
-  req.db = db.$setAuth({
-    ...req.user,
-    requestId: req.id,
-    ip:        req.ip,
-    userAgent: req.headers['user-agent'],
-  })
-  next()
+  req.db = db.$setAuth(req.user)
+  const from = { correlationId: req.id, ip: req.ip, userAgent: req.headers['user-agent'] }
+  requestStore.run(from, next)
 }
 ```
+
+Junction installs a `logContext` itself, so a Junction app writes none.
 
 ---
 
@@ -102,14 +104,16 @@ Every `create`, `update`, and `delete` on `@@trail` models produces an entry:
 // After: db.user.update({ where: { id: 1 }, data: { role: 'admin' } })
 {
   operation:  'update',
-  model:      'users',
+  model:      'user',
   field:      null,           // model-level entry (not field-level)
   records:    [1],            // IDs of affected rows
   before:     { role: 'member' },
   after:      { role: 'admin' },
   actorId:    42,
   actorType:  'user',
-  meta:       { requestId: 'req_abc', ip: '1.2.3.4' },
+  correlationId: 'req_abc',
+  ip:         '1.2.3.4',
+  meta:       null,
   createdAt:  '2024-01-15T10:30:00.000Z',
 }
 ```
@@ -124,13 +128,13 @@ Every `create`, `update`, and `delete` on `@@trail` models produces an entry:
 // All writes to orders in the last 24 hours
 const recent = await db.asSystem().auditTrail.findMany({
   where: {
-    model:     'orders',
+    model:     'order',
     createdAt: { gte: new Date(Date.now() - 86400000).toISOString() },
   },
   orderBy: { createdAt: 'desc' },
   limit:   100,
 })
-// → [{ operation: 'update', model: 'orders', records: [5], ... }]
+// → [{ operation: 'update', model: 'order', records: [5], ... }]
 
 // All changes by a specific actor
 const actorHistory = await db.asSystem().auditTrail.findMany({
@@ -142,7 +146,7 @@ const actorHistory = await db.asSystem().auditTrail.findMany({
 const sql = await import('@frontierjs/litestone').then(m => m.sql)
 const recordHistory = await db.asSystem().auditTrail.findMany({
   where: {
-    model: 'orders',
+    model:     'order',
     $raw:  sql`json_extract(records, '$[0]') = ${orderId}`,
   },
   orderBy: { createdAt: 'asc' },

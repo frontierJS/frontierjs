@@ -527,9 +527,9 @@ db.user.findMany({ orderBy: { company: { country: { name: 'asc' } } } })
 Sort by relation aggregate (correlated subquery):
 
 ```js
-db.authors.findMany({ orderBy: { books: { _count: 'desc' } } })
-db.authors.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
-db.authors.findMany({ orderBy: { tags:  { _count: 'asc' } } })  // manyToMany
+db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
+db.author.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
+db.author.findMany({ orderBy: { tags:  { _count: 'asc' } } })  // manyToMany
 ```
 
 See [sorting.md](./sorting.md) for the full sorting reference.

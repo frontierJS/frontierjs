@@ -551,7 +551,7 @@ export declare function sampleWrites(
 /**
  * A fresh temp directory with the previous runs' already swept. A harness here
  * can delete its own directory at neither of the two moments it would want to
- * — an afterAll races the audit logger's flush, and `process.on('exit')` does
+ * — an afterAll races the audit trail's flush, and `process.on('exit')` does
  * not fire under `bun test` — so a run reaps on the way IN, where the owning
  * process is provably gone. `prefix` is what the sweep matches on and must
  * identify one harness.

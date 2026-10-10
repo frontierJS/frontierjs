@@ -5,7 +5,7 @@
 // print, the constraint text beside it, and the declarations it refuses.
 
 import { describe, test, expect } from 'bun:test'
-import { flagSpelling, flagConstraint, declarationProblem, valueProblem, withModuleFlags } from '../core/flags.js'
+import { flagSpelling, flagConstraint, declarationProblem, valueProblem, withModuleFlags, KINDS } from '../core/flags.js'
 
 describe('flagSpelling', () => {
   test('a boolean that defaults on is written as the switch that turns it off', () => {
@@ -48,6 +48,11 @@ describe('declarationProblem', () => {
     // `as` naming a person (db:tinker) has no choices and is not a layout.
     expect(declarationProblem('as', { type: 'string', defaultValue: '' })).toBeNull()
     expect(declarationProblem('format', { type: 'string', choices: ['json', 'csv'] })).toBeNull()
+  })
+
+  test('refuses a `kind` that is not one of KINDS, naming them', () => {
+    expect(declarationProblem('file', { kind: 'file' })).toMatch(/one of: path, dir/)
+    for (const kind of KINDS) expect(declarationProblem('x', { kind })).toBeNull()
   })
 
   test('passes a well-formed declaration', () => {

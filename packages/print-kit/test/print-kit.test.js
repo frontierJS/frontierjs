@@ -126,6 +126,33 @@ describe.skipIf(!hasChrome)('a PNG', () => {
   }, 30000)
 })
 
+// FJS-2230: a wedged browser is stopped outright, so every call to it goes
+// unanswered — the job's own and any its cleanup sends.
+describe.skipIf(!hasChrome)('a wedged browser', () => {
+  test('fails the one job, and the job behind it prints on a fresh browser', async () => {
+    const wedged = createPrinter()
+    try {
+      await wedged.pdf('<p>warm</p>')
+      const chrome = spawnSync('pgrep', ['-P', String(process.pid), 'chrome'], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean)
+      expect(chrome.length).toBeGreaterThan(0)
+      for (const pid of chrome) process.kill(Number(pid), 'SIGSTOP')
+
+      const t0 = performance.now()
+      const first = wedged.pdf('<p>first</p>').then(() => 'printed', (e) => e.message)
+      const next  = wedged.pdf('<p>next</p>').then(() => 'printed', (e) => e.message)
+      expect(await first).toMatch(/did not answer/)
+      // Resumed so the discarded browser's own close is quick, not so the next
+      // job can use it: the job is already on its way to a fresh one.
+      for (const pid of chrome) process.kill(Number(pid), 'SIGCONT')
+      // The call's own 30s and a launch — not a second and third 30s spent
+      // asking the wedged browser to close its tab.
+      expect(await next).toBe('printed')
+      expect(performance.now() - t0).toBeLessThan(40000)
+      expect(wedged.stats().launches).toBe(2)
+    } finally { await wedged.close() }
+  }, 120000)
+})
+
 describe('the plugin', () => {
   test('is claimed as app.printer, and refuses to boot with no Chrome', async () => {
     const claimed = {}

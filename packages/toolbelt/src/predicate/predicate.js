@@ -67,7 +67,20 @@ import { unitInfo } from '../units/units.js'
 // (`FALSE AND NULL` is FALSE) and wrong the other (`NULL AND FALSE` is FALSE
 // too, but only if the right side is looked at). The language has no side
 // effects, which is what makes evaluating both free.
-export const truth = (v) => (v === null || v === undefined ? null : Boolean(v))
+//
+// A string is true by its NUMERIC PREFIX, which is how SQLite reads a TEXT value
+// as a condition: '0', '', '0.0' and 'abc' are false, '1abc' and ' 2' are true.
+// `Boolean('0')` is true, so a String flag allowed a create the read then hid
+// (`FJS-2197`).
+const NUMERIC_PREFIX = /^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?/
+export const truth = (v) => {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'string') {
+    const m = NUMERIC_PREFIX.exec(v)
+    return m !== null && Number(m[0]) !== 0
+  }
+  return Boolean(v)
+}
 export const and3  = (l, r) => (l === false || r === false ? false : l === null || r === null ? null : true)
 export const or3   = (l, r) => (l === true  || r === true  ? true  : l === null || r === null ? null : false)
 export const not3  = (v)    => (v === null ? null : !v)
@@ -177,6 +190,11 @@ export function compare(L, op, R, affL = null, affR = null) {
   }
 }
 
+// A record field or a claim is an OWN member: `toString` and `valueOf` are on
+// every object, so a plain read let a name the row never stored satisfy a
+// comparison.
+const own = (o, k) => (o != null && Object.hasOwn(o, k) ? o[k] : undefined)
+
 /**
  * Evaluate a parsed policy expression against one record.
  *
@@ -221,11 +239,11 @@ export function evaluate(node, env = {}) {
     resolvePath  = () => null,
     resolveCheck = () => true,
     resolveSome  = () => null,
-    claimOf      = (field) => auth?.[field] ?? null,
+    claimOf      = (field) => own(auth, field) ?? null,
   } = env
 
   const ev = (n) => evaluate(n, env)
-  const read = (name) => record?.[columnOf(name)] ?? null
+  const read = (name) => own(record, columnOf(name)) ?? null
 
   switch (node?.type) {
     case 'or':      return or3(truth(ev(node.left)), truth(ev(node.right)))
@@ -233,7 +251,7 @@ export function evaluate(node, env = {}) {
     case 'not':     return not3(truth(ev(node.expr)))
 
     case 'literal': return node.value
-    case 'field':   return record?.[node.name] ?? null
+    case 'field':   return own(record, node.name) ?? null
     case 'path':    return resolvePath(node)
     case 'check':   return resolveCheck(node)
     case 'some':    return resolveSome(node)
@@ -246,7 +264,7 @@ export function evaluate(node, env = {}) {
     // The other half of the same sentence. `create` has no WHERE to put a CASE
     // in, so a ternary landing only in the SQL compiler would be decided one
     // way by the reader and another by the writer — `FJS-195` exactly.
-    case 'ternary': return ev(node.cond) ? ev(node.then) : ev(node.else)
+    case 'ternary': return truth(ev(node.cond)) === true ? ev(node.then) : ev(node.else)
 
     case 'compare': {
       const { left, right, op } = node

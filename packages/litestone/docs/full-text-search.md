@@ -18,7 +18,7 @@ model Message {
 ```
 
 Litestone creates:
-- An FTS5 virtual table `messages_fts` with a content table pointing to `messages`
+- An FTS5 virtual table `message_fts` with a content table pointing to `message`
 - Three sync triggers: INSERT, UPDATE, DELETE — keep the FTS index in sync automatically
 
 ## search()
@@ -106,7 +106,7 @@ await db.message.optimizeFts()
 ```
 
 ```bash
-litestone optimize messages
+litestone optimize message 
 litestone optimize               # optimize all FTS models
 ```
 

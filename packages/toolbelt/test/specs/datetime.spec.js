@@ -387,6 +387,20 @@ test('dueAt: a null anchor, a null offset column, or an unreadable instant is no
   assert.equal(dueAt({ on: 'at', kind: 'instant', offset: null }, { at: '2026-01-09 10:00:00' }), null, 'a time with no zone is not an instant')
 })
 
+test('dueAt: an offset or anchor a screen holds mid-typing answers null, never throws', function () {
+  const inst = o => ({ on: 'at', kind: 'instant', offset: o })
+  const day  = o => ({ on: 'dueOn', kind: 'day', offset: o })
+  const at   = { at: '2026-09-21T10:00:00Z' }
+  assert.equal(dueAt(inst({ sign: 1, value: 'abc', unit: 'd' }), at), null, 'a non-numeric instant offset')
+  assert.equal(dueAt(inst({ sign: 1, value: 1e9, unit: 'd' }), at), null, 'an instant offset past the Date range')
+  assert.equal(dueAt(inst({ sign: 1, field: 'n', unit: 'd' }), { ...at, n: 'abc' }), null)
+  assert.equal(dueAt(day({ sign: 1, value: 3, unit: 'd' }), { dueOn: '' }), null, 'an empty day anchor')
+  assert.equal(dueAt(day({ sign: 1, value: 3, unit: 'd' }), { dueOn: 'garbage' }), null, 'an unreadable day anchor')
+  assert.equal(dueAt(day({ sign: 1, field: 'n', unit: 'd' }), { dueOn: '2026-01-09', n: 'abc' }), null, 'a non-numeric day offset')
+  assert.equal(dueAt(day({ sign: 1, field: 'n', unit: 'd' }), { dueOn: '2026-01-09', n: 1.5 }), null, 'a non-integer day offset')
+  assert.equal(dueAt(day({ sign: 1, value: 1e12, unit: 'd' }), { dueOn: '2026-01-09' }), null, 'a day offset past the calendar')
+})
+
 test('createDatetime: today is the day the clock is on in the instance\'s zone', function () {
   const late = Date.UTC(2026, 0, 31, 1)   // 20:00 on the 30th in New York
   const dt = createDatetime({ timeZone: 'America/New_York', now: () => late })

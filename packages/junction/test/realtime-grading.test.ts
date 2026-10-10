@@ -19,7 +19,11 @@
 //            ANONYMOUS with no close, so the client's 4001 branch was dead.
 
 import { describe, test, expect, afterEach } from 'bun:test'
-import { createClient, GatePlugin } from '../../litestone/src/index.js'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
+import { createClient, GatePlugin, parse, autoMigrate } from '../../litestone/src/index.js'
 import { createApp }      from '../src/core/app.ts'
 import { createService }  from '../src/core/service.ts'
 import { channels }       from '../src/transport/channels.ts'
@@ -61,14 +65,17 @@ function sessionFor(token: string): Session | null {
   return m ? { ...base, userId: m[1] } : null
 }
 
+const LITESTONE = resolve(import.meta.dir, '../../litestone/src/index.js')
+
 const running: Array<{ stop: () => Promise<void> }> = []
 afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) })
 
-async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: string; getLevel?: (u: unknown) => number } = {}) {
+async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: string; file?: string; getLevel?: (u: unknown) => number } = {}) {
   const db: any = await createClient({
-    db: ':memory:', schema: opts.schema ?? SCHEMA,
+    ...(opts.file ? {} : { db: ':memory:' }), schema: opts.schema ?? SCHEMA,
     ...(opts.getLevel ? { plugins: [new GatePlugin({ getLevel: opts.getLevel })] } : {}),
   })
+  if (opts.file) autoMigrate(db, parse(opts.schema!))
   const app: any = createApp({
     db,
     logLevel: 'silent',
@@ -327,5 +334,67 @@ describe('an update that takes a row out of a reader\'s set (FJS-1425)', () => {
     expect(owner.events[1].data).toEqual({ id: row.id })
     expect(next.events.map(e => e.event)).toEqual(['orders updated'])
     expect(next.events[0].data.customerId).toBe(6)
+  })
+})
+
+// ─── FJS-2159 ─────────────────────────────────────────────────────────────
+
+describe('a write from a second process is graded like a local one (FJS-2159)', () => {
+
+  // The writer is a SPAWNED process: a tap on one client hears only its own
+  // writes, so an in-process `create` passes with `announce crossProcess`
+  // deleted. Asynchronous spawn, because a blocked event loop here would stop
+  // the `fs.watch` callback that delivers the event.
+  const writeFromAnotherProcess = (file: string, schema: string, customerId: string) => {
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-grade-w-'))
+    const f   = join(dir, 'w.mjs')
+    writeFileSync(f, `
+      const { createClient } = await import(${JSON.stringify(LITESTONE)})
+      const db = await createClient({ schema: ${JSON.stringify(schema)} })
+      await db.asSystem().order.create({ data: { customerId: ${JSON.stringify(customerId)} } })
+      db.$close()
+    `)
+    return new Promise<void>((res, rej) => {
+      let err = ''
+      const p = spawn('bun', [f])
+      p.stderr.on('data', d => { err += d })
+      p.on('exit', code => { rmSync(dir, { recursive: true, force: true }); code === 0 ? res() : rej(new Error(err.slice(0, 400))) })
+    })
+  }
+
+  test('the owner’s socket gets the row and a stranger’s and an anonymous one get nothing', async () => {
+    const dir    = mkdtempSync(join(tmpdir(), 'fjs-grade-'))
+    const file   = join(dir, 'app.db')
+    const schema = `
+      database main {
+        path     "${file}"
+        announce crossProcess
+      }
+      model Order {
+        id         Int    @id @default(autoincrement())
+        customerId Int?
+        status     String @default("pending")
+        @@db(main)
+        @@gate("1.4.4.5")
+        @@allow('read', customerId == auth().id || auth().isAdmin)
+      }`
+    try {
+      const { port } = await mkApp({ schema, file })
+      const anon  = open(port)
+      const other = open(port, 'u9')
+      const owner = open(port, 'u5')
+      expect(await ready(anon)).toBe(true)
+      expect(await ready(other)).toBe(true)
+      expect(await ready(owner)).toBe(true)
+
+      await writeFromAnotherProcess(file, schema, '5')
+      for (let i = 0; i < 100 && !owner.events.length; i++) await sleep(20)
+      await settle()
+
+      expect(owner.events.map(e => e.event)).toEqual(['orders created'])
+      expect(owner.events[0].data.customerId).toBe(5)
+      expect(anon.events).toEqual([])
+      expect(other.events).toEqual([])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

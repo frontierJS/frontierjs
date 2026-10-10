@@ -51,6 +51,7 @@ const ROW_FREE_EXPRS = new WeakMap()
  *   pluralize?:     boolean,
  *   now?:           any,
  *   hasPolicies?:   any,
+ *   hasPoliciedAggregates?: boolean,
  *   computedFns?:   any,
  *   enc?:           any,  scopedBy?:      any,  hookRunner?: any,  _flavor?:       any,
  *   _fieldReadHoist?: any,

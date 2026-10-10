@@ -1,4 +1,4 @@
-// ─── flags.js — what a declared flag permits, and how it is written ──────────
+// ─── flags.js — what a declared flag or argument permits, and how it is written
 //
 // A leaf with no imports: `fli list`, `--help` and completion read it on the
 // startup path, which may not import zx, and `getConfig` in `runtime.js` is the
@@ -14,11 +14,48 @@
 // `choices`, `min` and `max` are the constraints. Each is checked where the
 // declaration is read, so a range on a string or a `choices` written as one
 // string is a message at the first run rather than a check that never fires.
+// A positional argument takes `choices` too, with the same meaning.
+//
+// `kind` says what a value NAMES — one of `KINDS` — on a flag or an argument.
+// Tab completion is its only reader. Nothing derives it from the name, because
+// `make:model model` names a model that does not exist yet.
 //
 // JSON is `--json`, a boolean, on every command (`FJS-D401`). `--as` picks
 // among the layouts a PERSON reads, which may change; `--json` is what a
 // program reads, which may not. An `as` offering `json` is refused, so the
 // contract has one spelling.
+
+// ─── the flags every command has ─────────────────────────────────────────────
+
+export const DEFAULT_FLAGS = {
+  dry: {
+    type: 'boolean',
+    char: 'd',
+    description: 'Show actions that will run without executing them'
+  },
+  test: {
+    type: 'boolean',
+    char: 't',
+  },
+  step: {
+    type: 'number',
+    description: 'Re-run a single step by number (1-based) when using _steps/'
+  },
+  debug: {
+    type: 'boolean',
+    description: 'Show full stack traces on errors instead of clean messages'
+  },
+  // Asks for the paragraph behind the line — `log.detail`, and the output of a
+  // command this one composes. A command prints the same DECISIONS either way;
+  // what this adds is the reasoning and the children's chatter.
+  verbose: {
+    type: 'boolean',
+    description: 'Show the long version — explanations, and the output of composed commands'
+  }
+}
+
+/** What a value can name. `completion/_module.md` answers each one. */
+export const KINDS = ['path', 'dir', 'model', 'package', 'command']
 
 /** The spelling somebody types: `--no-push` for a boolean that defaults on. */
 export const flagSpelling = (name, def = {}) =>
@@ -48,6 +85,9 @@ export function declarationProblem(name, def = {}) {
   if ('choices' in def && !(Array.isArray(def.choices) && def.choices.length)) {
     return `\`${name}\`'s \`choices\` is ${JSON.stringify(def.choices)}. Write a list — \`[a, b]\`, or one \`- value\` per ` +
            `line under \`choices:\`.`
+  }
+  if ('kind' in def && !KINDS.includes(def.kind)) {
+    return `\`${name}\`'s \`kind\` is ${JSON.stringify(def.kind)}. It is one of: ${KINDS.join(', ')}.`
   }
   if (name === 'as' && Array.isArray(def.choices) && def.choices.includes('json')) {
     return `\`as\` offers \`json\`. JSON is \`--json\`, a boolean flag of its own; \`as\` picks among the ` +

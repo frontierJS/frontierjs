@@ -24,7 +24,8 @@
  * reached only through the `$$tui` import the compiler adds.
  */
 
-import { xNode, Q, htmlEntitiesToText } from '../compiler.js'
+import { xNode, Q, PRESERVE_WHITESPACE } from '../compiler.js'
+import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
 import { TERMINAL_TAGS, TERMINAL_EVENTS } from './tags.js'
 
@@ -139,6 +140,23 @@ const fieldText = (n) => n.children
   .filter((c) => c.kind === 'text').flatMap((c) => c.parts).map((p) => p.value).join('')
   .replace(/^\r?\n/, '')
 
+/**
+ * Where a `<pre>`'s whitespace is the content, a browser still drops two
+ * newlines: the one right after the open tag, and one ending the block,
+ * which opens no line. The engine paints both, so the text that starts the
+ * block loses its first and the text that ends it loses its last.
+ */
+const preserves = (n) => PRESERVE_WHITESPACE.has(n.tag) && !isField(n)
+function preEdges(n, starts, ends) {
+  const first = n.children[0]
+  if (first?.kind === 'text' && first.parts[0]?.kind === 'static') starts.add(first)
+  let last = n.children.at(-1)
+  while (last?.kind === 'element' && last.children.length) last = last.children.at(-1)
+  if (last?.kind === 'text' || last?.kind === 'html') ends.add(last)
+}
+const LEADING_NEWLINE = /^\r?\n/
+const TRAILING_NEWLINE = /\r?\n$/
+
 const elementOffenses = (n, add) => {
   for (const d of n.directives) add(d.name, directiveShape(d.name), d.loc)
   for (const h of n.handlers) if (!TERMINAL_EVENTS[h.event]) add(`on:${h.event}`, `on:${h.event}`, h.loc)
@@ -219,6 +237,7 @@ export function terminalOffenses(ir) {
       case 'snippet':
       case 'render':
       case 'const':
+      case 'html':
         return
       case 'unlowered':
         return add(spelling(n), n.what === 'component' ? 'component' : spelling(n), n.loc)
@@ -254,6 +273,12 @@ export function buildTerminal(ctx) {
     emitChildren(children, '$$b', ind)
     line(ind, 'return $$b;')
   }
+
+  // How many `<pre>`s the node being emitted sits in, and the texts at a
+  // `<pre>`'s two edges (`preEdges`).
+  let inPre = 0
+  const startsPre = new Set()
+  const endsPre = new Set()
 
   // A body's snippets are declared before anything in it, since a
   // `{@render}` may come first in the source.
@@ -318,7 +343,9 @@ export function buildTerminal(ctx) {
     }
     // `n.styles` and `n.classes` are CSS, and a terminal paints no CSS: they
     // are inert here as a static `style` or `class` and the scoped rules are.
+    if (preserves(n)) { preEdges(n, startsPre, endsPre); inPre++ }
     if (!field && !fallbackOnly(n)) emitChildren(n.children, el, ind)
+    if (preserves(n)) inPre--
     for (const h of n.handlers) {
       dep(h.expr)
       line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)
@@ -335,26 +362,47 @@ export function buildTerminal(ctx) {
   }
 
   const emitText = (n, parent, ind) => {
+    const parts = n.parts.map((p, i) => {
+      if (p.kind !== 'static') return p
+      let value = p.value
+      if (i === 0 && startsPre.has(n)) value = value.replace(LEADING_NEWLINE, '')
+      if (i === n.parts.length - 1 && endsPre.has(n)) value = value.replace(TRAILING_NEWLINE, '')
+      return { ...p, value }
+    })
     if (n.static) {
-      const value = n.parts.map((p) => p.value).join('')
+      const value = parts.map((p) => p.value).join('')
       if (!value.trim()) return
       line(ind, `$$tui.append(${parent}, $$tui.text(${q1(htmlEntitiesToText(value))}));`)
       return
     }
     // One template literal for the whole text, each hole guarded on its own —
     // the same shape the DOM path's render group gives a text binding (FJS-D208).
-    const tpl = '`' + n.parts.map((p) => {
+    let tpl = '`' + parts.map((p) => {
       if (p.kind === 'static') return Q(htmlEntitiesToText(p.value))
       dep(p.expr)
       return '${(' + p.expr.code + ") ?? ''}"
     }).join('') + '`'
+    if (endsPre.has(n) && parts.at(-1).kind !== 'static') tpl += `.replace(${TRAILING_NEWLINE}, '')`
+    liveText(parent, ind, tpl)
+  }
+
+  const liveText = (parent, ind, value) => {
     const t = `$$t${seq.t++}`
     line(ind, `const ${t} = $$tui.text('');`)
     line(ind, `$$tui.append(${parent}, ${t});`)
     line(ind, '$$runtime.render((__prev) => {')
-    line(ind + 1, `var __a; try { __a = ${tpl}; } catch (e) { __a = $$runtime.contain(e, __prev.a); }`)
+    line(ind + 1, `var __a; try { __a = ${value}; } catch (e) { __a = $$runtime.contain(e, __prev.a); }`)
     line(ind + 1, `if (__prev.a !== __a) $$tui.set_text(${t}, __prev.a = __a);`)
     line(ind, "}, { a: '' });")
+  }
+
+  // Markup is painted as the text a browser's `innerText` reads from it,
+  // since a terminal has text and no markup.
+  const emitHtml = (n, parent, ind) => {
+    dep(n.value)
+    let value = `$$tui.markupText((${n.value.code}), ${inPre > 0})`
+    if (endsPre.has(n)) value += `.replace(${TRAILING_NEWLINE}, '')`
+    liveText(parent, ind, value)
   }
 
   const marker = (parent, ind) => {
@@ -487,6 +535,7 @@ export function buildTerminal(ctx) {
       case 'component': return emitComponent(n, parent, ind)
       case 'slot':      return emitSlot(n, parent, ind)
       case 'render':    return emitRender(n, parent, ind)
+      case 'html':      return emitHtml(n, parent, ind)
       case 'dynamic-element': return emitDynamicElement(n, parent, ind)
       case 'const':     dep(n.value); for (const l of n.lines) line(ind, l); return
       case 'global':    return emitGlobal(n, ind)

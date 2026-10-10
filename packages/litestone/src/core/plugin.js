@@ -113,6 +113,18 @@ export class PluginRunner {
 
   get hasPlugins() { return this._plugins.length > 0 }
 
+  // Whether a plugin answers a delete. Every subclass inherits the empty
+  // onAfterDelete, so `hasPlugins` is true for a gate that has nothing to do
+  // with one, and a retention sweep read every doomed row to tell it (FJS-2288).
+  get hearsDeletes() {
+    return this._plugins.some(p => typeof p?.onAfterDelete === 'function' && p.onAfterDelete !== Plugin.prototype.onAfterDelete)
+  }
+
+  // The write half: a cascade's `onDelete: SetNull` is an update a plugin hears.
+  get hearsWrites() {
+    return this._plugins.some(p => typeof p?.onAfterWrite === 'function' && p.onAfterWrite !== Plugin.prototype.onAfterWrite)
+  }
+
   /**
    * What is installed, in run order — the answer `db.$plugins` gives.
    *

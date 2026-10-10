@@ -166,7 +166,7 @@ const HELP = `
     ${dim('  --accept-data-loss')}                  allow a change that drops a column and its values
     ${dim('  at a terminal, a drop asks y/N instead; anywhere else it refuses')}
     ${cyan('litestone types')} [out.d.ts]            generate TypeScript declarations from schema
-    ${dim('  --only=users,posts')}                  only emit types for specified models
+    ${dim('  --only=User,Post')}                    only emit types for these models
     ${dim('  --audience=client|system')}             field visibility (default: client)
     ${cyan('litestone studio')} [--no-open]        open Litestone Studio
     ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
@@ -187,11 +187,11 @@ const HELP = `
     ${cyan('litestone diagram')}                    ER diagram (opens in studio)
     ${cyan('litestone optimize')} [table]            optimize FTS5 indexes (all or one table)
     ${cyan('litestone edge eject')} <Model>.<field>  promote an @edge/@scoped field to a real model [--apply]
-    ${cyan('litestone backup')} [dest]               backup all databases (SQLite + JSONL/logger)
+    ${cyan('litestone backup')} [dest]               backup all databases (SQLite + JSONL/trail)
     ${cyan('litestone replicate')} [config.js]       stream every SQLite db's WAL to S3/R2 via litestream
     ${cyan('litestone restore')} [config.js]         bring every db back from its replica — all or nothing
     ${dim('  --at=<instant>')}                          one point in time for every file
-    ${dim('  --from-backup=<dir>')}                     every db from a litestone backup ${dim('(with --url/--at/--verify: jsonl/logger only)')}
+    ${dim('  --from-backup=<dir>')}                     every db from a litestone backup ${dim('(with --url/--at/--verify: jsonl/trail only)')}
     ${dim('  --force')}                                 replace files that exist (stop the app first)
     ${dim('  --verify=<dir>')}                          restore into <dir> instead and prove the copy is good
     ${dim('  --without-key')}                           verify with no ENCRYPTION_KEY, encrypted columns unchecked
@@ -1553,7 +1553,7 @@ async function tenantStorage(parseResult, cfg) {
 // It also needs the encryption key, which none of the three decrypts with.
 //
 //   sqlite  [{ name, path }]          streamed by litestream, copied hot
-//   other   [{ name, driver, path }]  jsonl/logger directories — copied, never streamed
+//   other   [{ name, driver, path }]  jsonl/trail directories — copied, never streamed
 //   dirs    [{ name, dir, pattern }]  tenantStorage()
 async function copyTargets(parseResult, cfg, onlyDb = null) {
   const anchor   = schemaAnchor(cfg.schema)
@@ -1745,6 +1745,12 @@ async function cmdTypes(outArg, cfg) {
     fatal(`--audience must be "client" or "system"`)
   if (augment && augment !== 'junction')
     fatal(`--augment takes only "junction"`)
+
+  // A name that matches no model emitted a file with no types and exit 0, and
+  // the plural accessor (`--only=users`) was the spelling every doc used.
+  const unknown = onlyModels ? [...onlyModels].filter(n => !parseResult.schema.models.some(m => m.name === n)) : []
+  if (unknown.length)
+    fatal(`--only names no model: ${unknown.join(', ')} — use the model name (${parseResult.schema.models.slice(0, 3).map(m => m.name).join(', ')}, …)`)
 
   // Filter schema to only requested models if --only is specified
   const schema = onlyModels
@@ -3746,7 +3752,7 @@ async function cmdOptimize(targetTable, cfg) {
 // ─── cmdBackup ────────────────────────────────────────────────────────────────
 // Full backup — backs up ALL databases in the schema to a timestamped directory:
 //   SQLite databases      → hot backup via $backup (safe during active writes)
-//   JSONL/logger dirs     → directory copy via cpSync
+//   JSONL/trail dirs     → directory copy via cpSync
 //
 //   litestone backup                   → <schema dir>/backups/2026-04-21_120000/
 //   litestone backup ./my-backup/      → explicit destination directory
@@ -3816,7 +3822,7 @@ async function cmdBackup(dest, cfg) {
 
     if (info.driver === 'sqlite') {
       // ── SQLite: hot backup ──────────────────────────────────────────────
-      // Absent is the logger arm's two cases: a parent that exists is an app
+      // Absent is the trail arm's two cases: a parent that exists is an app
       // that has not written yet — a first deploy's pre-migration backup — and
       // a missing one is a path that leads nowhere on this machine.
       if (!existsSync(info.path)) {
@@ -3848,7 +3854,7 @@ async function cmdBackup(dest, cfg) {
       }
 
     } else if (info.driver === 'jsonl' || info.driver === 'trail') {
-      // ── JSONL / logger: directory copy ──────────────────────────────────
+      // ── JSONL / trail: directory copy ──────────────────────────────────
       if (!info.path) {
         console.log(`  ${yellow('⚠')}  ${cyan(name)}: no path configured, skipping`)
         incomplete.push(`${name} (no path configured)`)
@@ -3876,7 +3882,7 @@ async function cmdBackup(dest, cfg) {
         // unreachable answer.
         if (existsSync(dirname(srcDir))) {
           console.log(`  ${dim('·')}  ${cyan(name)}: ${dim('nothing written yet')}`)
-          console.log(`     ${dim(`${srcDir} — a logger creates its directory on the first write`)}`)
+          console.log(`     ${dim(`${srcDir} — a trail creates its directory on the first write`)}`)
           continue
         }
         console.log(`  ${yellow('⚠')}  ${cyan(name)}: ${dim(srcDir)} not found, skipping`)
@@ -3907,7 +3913,7 @@ async function cmdBackup(dest, cfg) {
   }
 
   // ── Tenant files: a hot copy of each, the way `main` is copied ──────────────
-  // Absent has the two causes the logger arm separates, and the same answer:
+  // Absent has the two causes the trail arm separates, and the same answer:
   // a parent that exists is a fleet with no tenant yet, a missing one is a path
   // that leads nowhere on this machine.
   for (const t of tenantDirs) {
@@ -4022,7 +4028,7 @@ async function cmdBackup(dest, cfg) {
 // Continuous WAL replication via litestream, over the databases the SCHEMA
 // declares — the same resolution cmdBackup does, for the same reason: this used
 // to read one `db:` path out of a transform-pipeline config, so an app with a
-// `main` plus an `audit` logger replicated its rows and silently not its trail.
+// `main` plus an `audit` trail replicated its rows and silently not its trail.
 //
 //   litestone replicate                              → every declared SQLite db
 //   litestone replicate --url s3://bucket/myapp      → no config file needed
@@ -4102,7 +4108,7 @@ async function cmdReplicate(cfg) {
 //   litestone restore --url s3://bucket/myapp          → every database, latest
 //   litestone restore --at 2026-09-27T10:00:00Z        → one instant, for every file
 //   litestone restore --from-backup ./backups/<stamp>  → every database from a `backup`
-//   litestone restore --url … --from-backup <dir>      → SQLite from the replica, jsonl/logger from the backup
+//   litestone restore --url … --from-backup <dir>      → SQLite from the replica, jsonl/trail from the backup
 //                                                        (--at and --verify name the replica too)
 //   litestone restore --force                          → over files that exist
 //
@@ -4247,7 +4253,7 @@ async function cmdRestore(cfg) {
 
 // ─── restore --from-backup: a `litestone backup` directory, put back ─────────
 // The layout `backup` writes is the map: `<name>.db` for a SQLite database,
-// `<name>/` for a jsonl or logger one, `tenant-files/` and `tenant-registry/`
+// `<name>/` for a jsonl or trail one, `tenant-files/` and `tenant-registry/`
 // for the per-tenant files, `db-<path>.db` for a SQLite file under db/ that no
 // schema names. All or nothing, as a replica restore is: every copy is staged
 // beside its destination before any is moved into place.

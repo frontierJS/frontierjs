@@ -560,7 +560,7 @@ td:hover .copy-btn { opacity: 1 }
 .er-db-3      { --er-accent: #A6A0B7 }
 .er-db-4      { --er-accent: #C4B5FD }
 .er-db-jsonl  { --er-accent: #6EE7B7 }
-.er-db-logger { --er-accent: #FB923C }
+.er-db-trail { --er-accent: #FB923C }
 
 [class*="er-db-"].er-table { border-color: color-mix(in srgb, var(--er-accent) 30%, var(--rule-strong)) }
 
@@ -1755,7 +1755,7 @@ let currentCursor = null
 let prevCursors   = []
 let allRows       = []
 let filteredRows  = []
-let currentTableAppendOnly = false   // jsonl/logger drivers — no update/delete
+let currentTableAppendOnly = false   // jsonl/trail drivers — no update/delete
 let sortCol       = null
 let sortDir       = 1   // 1 = asc, -1 = desc  (server-side sort)
 let serverSearch  = ''             // server-side search text
@@ -1866,7 +1866,7 @@ function getEditableFields() {
 }
 
 function startCellEdit(e, tr, row) {
-  // Append-only drivers (jsonl/logger) don't support update — block cell edit
+  // Append-only drivers (jsonl/trail) don't support update — block cell edit
   if (currentTableAppendOnly) return
   // Don't edit special cells
   const td = e.target.closest('td')
@@ -2269,7 +2269,7 @@ function selectTable(name, { skipLoad = false } = {}) {
   if (searchInput) searchInput.value = ''
   sortCol = null; sortDir = 1
   selectedIds.clear()
-  // Show/hide edit buttons — hide for JSONL/logger tables (append-only)
+  // Show/hide edit buttons — hide for JSONL/trail tables (append-only)
   document.getElementById('btnNewRow').hidden    = !name
   // Nothing to generate into an append-only log — the server refuses it too
   document.getElementById('btnRandomRow').hidden = !(name && !isJsonl)
@@ -3071,7 +3071,7 @@ const _erDragged = new Set()
 // Map each database name to a CSS class slot
 function getDbClass(dbName, driver) {
   if (driver === 'jsonl')   return 'er-db-jsonl'
-  if (driver === 'trail')  return 'er-db-logger'
+  if (driver === 'trail')  return 'er-db-trail'
   if (!dbName || dbName === 'main') return 'er-db-main'
   // Assign stable color slot based on alphabetical order of non-main sqlite dbs
   const sqliteDbs = (schema?.databases ?? [])
@@ -3304,7 +3304,7 @@ function renderSchema() {
     const isSoft   = softDeleteMap[model.name]
     const hasFts   = model.attributes?.find(a => a.kind === 'fts')
     const isAuto   = model.attributes?.some(a => a.kind === 'auto') ||
-                     // logger auto-models: named <dbName>Trail and db is a logger driver
+                     // trail auto-models: named <dbName>Trail and db is a trail driver
                      (driver === 'trail' && model.name === dbName + 'Trail')
     // Show DB label only in multi-DB mode and only when it's not main
     const showDbLabel = multiDb && dbName !== 'main'
@@ -7479,7 +7479,7 @@ function buildErSvg() {
     return { el, x, y, w, h }
   })
   const W = maxX - minX + pad * 2, H = maxY - minY + pad * 2
-  const colors = { 'er-db-main': '#4af2a1', 'er-db-jsonl': '#39d0c4', 'er-db-logger': '#f0a35e' }
+  const colors = { 'er-db-main': '#4af2a1', 'er-db-jsonl': '#39d0c4', 'er-db-trail': '#f0a35e' }
   let out = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="ui-monospace, Menlo, monospace">`
   out += `<rect width="${W}" height="${H}" fill="#0b0d12"/>`
   // links first (shift into export coords)

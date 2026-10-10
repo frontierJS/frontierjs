@@ -623,6 +623,43 @@ export const RULES = [
   },
 
   {
+    id:       'retention-without-an-index',
+    severity: 'warn',
+    title:    'a retention window over a model no index orders by createdAt',
+    blurb:    'A database block\'s retention sweeps every model in it with a createdAt column, by ' +
+              'createdAt < cutoff, at startup and on every $retain(). With no index leading with ' +
+              'createdAt each sweep scans the whole table, whether or not anything is due — measured at ' +
+              '22.8 s a pass over 34M rows, against 0.6 ms with the index. A @@index on a @@softDelete ' +
+              'model, or one with a where, is partial, and the sweep reads soft-deleted rows too.',
+    run(schema) {
+      const out = []
+      const windowed = new Set((schema.databases ?? [])
+        .filter(d => d.retention && (d.driver ?? 'sqlite') === 'sqlite')
+        .map(d => d.name))
+      if (!windowed.size) return out
+      for (const model of schema.models ?? []) {
+        if (!windowed.has(modelAttr(model, 'db')?.name ?? 'main')) continue
+        const f = (model.fields ?? []).find(x => x.name === 'createdAt' && x.type?.name === 'DateTime')
+        if (!f || has(f, 'unique') || has(f, 'id')) continue
+        const soft = !!modelAttr(model, 'softDelete')
+        const serves = (model.attributes ?? []).some(a =>
+          (a.kind === 'uniqueIndex' || (a.kind === 'index' && !soft)) &&
+          !a.where && a.fields?.[0] === 'createdAt')
+        if (serves) continue
+        out.push({
+          model: model.name, field: 'createdAt',
+          message: `${model.name} is swept by its database's retention on createdAt, and no index ` +
+            `leads with it, so every sweep scans the table. ` +
+            (soft ? `@@softDelete makes every @@index partial and the sweep reads soft-deleted rows too, ` +
+                    `so no @@index this model can declare serves it.`
+                  : `Declare @@index([createdAt]).`),
+        })
+      }
+      return out
+    },
+  },
+
+  {
     id:       'declared-and-unreferenced',
     severity: 'info',
     title:    'a declaration nothing references',

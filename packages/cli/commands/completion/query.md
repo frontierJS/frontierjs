@@ -7,6 +7,7 @@ examples:
   - fli completion:query "fli dep"
   - fli completion:query "fli deploy:logs "
   - fli completion:query "fli deploy:logs --"
+  - fli completion:query "fli make:factory "
 args:
   -
     name: line
@@ -15,42 +16,23 @@ args:
 ---
 
 ```js
-// ─── Parse the command line ───────────────────────────────────────────────────
-// The shell passes the command line up to the cursor as a single string.
-// We split on whitespace (preserving colons — that's the whole point) to
-// determine whether we're completing a command name or flags.
-
+// The shell passes the command line up to the cursor as one string. Split on
+// whitespace only: a colon is part of a command name.
 const rawLine  = arg.line || ''
 const words    = rawLine.trim().split(/\s+/).filter(Boolean)
-const trailing = /\s$/.test(rawLine)  // true if user hit space after last word
+const trailing = /\s$/.test(rawLine)
 
-// Words that have been fully typed (not the partial being completed right now)
-// trailing space means we're starting a fresh word — all existing words are "done"
+// A trailing space means a fresh word is starting, so every word is done.
 const doneWords = trailing ? words.slice(1) : words.slice(1, -1)
+const cur       = trailing ? '' : words.at(-1) ?? ''
 
-// ─── Load completions ─────────────────────────────────────────────────────────
 const commands = await loadCompletions()
+const byName   = new Map(commands.flatMap(c => [c.name, c.alias].filter(Boolean).map(n => [n, c])))
+const at       = doneWords.findIndex(w => byName.has(w))
 
-// ─── Determine what to complete ───────────────────────────────────────────────
-// Build a lookup of all known command names + aliases
-const knownNames = new Set(
-  commands.flatMap(c => [c.name, c.alias].filter(Boolean))
-)
+const out = at === -1
+  ? commandLines(commands)
+  : await answerFor(byName.get(doneWords[at]), doneWords.slice(at + 1), cur, commands)
 
-// If any already-typed word matches a known command, complete flags for it.
-// Otherwise, complete command names.
-const typedCommand = doneWords.find(w => knownNames.has(w))
-
-if (typedCommand) {
-  const cmd = commands.find(c => c.name === typedCommand || c.alias === typedCommand)
-  const cur = trailing ? '' : words.at(-1)
-  if (cmd?.args && !cur.startsWith('-')) {
-    process.stdout.write(FILES + '\n')
-  } else if (cmd?.flags?.length) {
-    process.stdout.write(cmd.flags.join('\n') + '\n')
-  }
-} else {
-  const names = commands.flatMap(c => [c.name, c.alias].filter(Boolean))
-  process.stdout.write(names.join('\n') + '\n')
-}
+if (out.length) process.stdout.write(out.join('\n') + '\n')
 ```

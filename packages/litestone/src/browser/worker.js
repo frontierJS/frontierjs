@@ -86,13 +86,50 @@ async function open({ schema, db = '/litestone.db', wasmUrl, vfs, capacity, opti
   // stripping `FJS-D204` measured at 23 kB and hand over the row policies
   // `FJS-D303` ruled a model must OPT IN to. A projection is a filter over the
   // parsed tree, which needs no emitter and cannot accidentally carry a comment.
-  client = typeof schema === 'string'
-    ? await createClient({ ...options, schema, db })
-    : await createClient({ ...options, parsed: schema, db })
+  const parsed = typeof schema === 'string' ? (await import('../core/parser.js')).parse(schema) : schema
+  await discardIfBuiltForAnother(engine, db, parsed, options)
+  client = await createClient({ ...options, parsed, db })
 
   // Answered so the page's proxy can refuse a misspelled model by name instead
   // of posting a message that fails three layers down.
   return { engine: engine.name, models: modelsOf(client) }
+}
+
+// ─── a file built for another schema ─────────────────────────────────────
+//
+// createClient builds tables only into a file that has none, and a device
+// never runs a migration, so the deploy that added a column to a @@sync model
+// left the old table in place and every write-through naming the column failed:
+// the device held nothing and said so only offline. The device holds a window
+// of the server's rows and its unsent writes live in IndexedDB (sierra's
+// pending.js), so a file built for another schema is discarded, not migrated,
+// and the next online read refills it.
+//
+// The file is marked with the DDL its schema generates, in `user_version`,
+// because that header field is readable before a client exists and adds no
+// table for introspection to find. A file that predates the mark reads 0 and
+// is discarded once.
+async function discardIfBuiltForAnother(engine, path, parsed, options) {
+  if (path === ':memory:' || !parsed?.schema) return
+  const { generateDDL } = await import('../core/ddl.js')
+  const ddl    = generateDDL(parsed.schema, { foreignKeys: true, pluralize: !!options.pluralize })
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(ddl))
+  const mark   = new DataView(digest).getInt32(0) || 1
+
+  const raw = engine.open(path)
+  let stale
+  try {
+    const built = raw.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1`).get()
+    stale = built && raw.query('PRAGMA user_version').get()?.user_version !== mark
+    if (!built) raw.run(`PRAGMA user_version = ${mark}`)
+  } finally { raw.close() }
+  if (!stale) return
+
+  const name = path.startsWith('/') ? path : '/' + path
+  const held = new Set(engine.$pool.getFileNames())
+  for (const f of [name, `${name}-journal`, `${name}-wal`]) if (held.has(f)) engine.$pool.unlink(f)
+  const fresh = engine.open(path)
+  try { fresh.run(`PRAGMA user_version = ${mark}`) } finally { fresh.close() }
 }
 
 // A model accessor is the thing that can `findMany`. Asked that way rather than
