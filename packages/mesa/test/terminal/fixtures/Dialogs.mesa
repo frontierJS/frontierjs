@@ -35,13 +35,18 @@
   <button type="button" on:click={() => side.close()}>Hide</button>
 </dialog>
 {#if alive}
-  <dialog bind:this={doomed}>
-    <p>Doomed body</p>
-    <button type="button" on:click={() => alive = false}>Kill</button>
-  </dialog>
+  <section>
+    <dialog bind:this={doomed}>
+      <p>Doomed body</p>
+      <button type="button" on:click={() => alive = false}>Kill</button>
+    </dialog>
+  </section>
 {/if}
 <p>Behind the dialogs</p>
-<mesa:window on:keydown={(e) => keys += e.key === 'Escape' ? 'E' : e.key === 'Tab' ? '' : e.key} />
+{#each [1, 2, 3, 4, 5, 6] as n}
+  <p>{'.'.repeat(48)}</p>
+{/each}
+<mesa:window on:keydown={(e) => keys += e.key === 'Escape' ? 'E' : e.key.length === 1 ? e.key : ''} />
 {#if listening}
   <mesa:window on:keydown={() => extra++} />
 {/if}

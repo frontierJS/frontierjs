@@ -9,8 +9,10 @@
  * file; `--frame` of `/reports/` and of `/plans/7/`, a route taking a param,
  * painted; and the interactive shell under a pty: `/reports/` opened, its
  * Orders link followed into the router and refused with the reason that
- * route does not lower, a typed `/plans/7/` opened, each left with Esc, and
- * Ctrl+C, which must exit 0 with the terminal given back.
+ * route does not lower, a typed `/plans/7/` opened, each left with Esc;
+ * `/people/`'s Drawer, the kit's modal `<dialog>`, opened over the page and
+ * closed by Esc, which the dialog takes and the shell does not; and Ctrl+C,
+ * which must exit 0 with the terminal given back.
  *
  * Traps:
  * - The API is pointed at a port nothing holds, so the frame is the same with
@@ -45,7 +47,7 @@ const rows = list.stdout.split('\n')
 check(list.status === 0, '--list exits 0', list.stderr)
 check(rows.some((l) => /^✓ \/reports\/\s*$/.test(l)), '/reports/ lowers', list.stdout)
 check(rows.some((l) => /^✓ \/plans\/:id\/\s*$/.test(l)), 'a route taking a param lowers', list.stdout)
-check(rows.some((l) => /^✗ \/plans\/\s+\S.* at \S+\.mesa:\d+:\d+$/.test(l)),
+check(rows.some((l) => /^✗ \/orders\/\s+\S.* at \S+\.mesa:\d+:\d+$/.test(l)),
   'a route that does not lower names its blocker by file and line', list.stdout)
 check(/\d+ of \d+ routes lower for the terminal/.test(list.stdout), 'and a count closes it', list.stdout)
 
@@ -148,6 +150,24 @@ check(await until(() => seen('/plans/7/ · Esc goes back')), 'a typed path opens
 mark = out.length
 shell.stdin.write('\x1b')
 check(await until(() => seen('Tab moves, Enter opens')), 'and Esc comes back to the list', screen(out))
+mark = out.length
+// The route's first focus is its Pay runs link, so one Tab reaches New
+// employee. The Drawer is a modal <dialog>: drawn in a border over the page,
+// its form's first field focused, and Esc closes it without leaving the route.
+shell.stdin.write('\t'.repeat(Math.max(0, buttons.indexOf('/people/'))) + '\r')
+check(await until(() => seen('/people/ · Esc goes back') && seen('[ New employee ]')), '/people/ opens', screen(out))
+shell.stdin.write('\t')
+await new Promise((r) => setTimeout(r, 300))
+shell.stdin.write('\r')
+check(await until(() => /│ New employee +│/.test(screen(out)) && /│ \[ Save \] +│/.test(screen(out))),
+  'its Drawer opens in a border over the page', screen(out))
+mark = out.length
+shell.stdin.write('\x1b')
+check(await until(() => !/│ New employee/.test(screen(out))), 'Esc closes the Drawer', screen(out))
+check(seen('/people/ · Esc goes back') && seen('[ New employee ]'), 'and leaves the route open', screen(out))
+mark = out.length
+shell.stdin.write('\x1b')
+check(await until(() => seen('Tab moves, Enter opens')), 'a second Esc comes back to the list', screen(out))
 mark = out.length
 shell.stdin.write('\x03')
 const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('timeout'), 5000))])

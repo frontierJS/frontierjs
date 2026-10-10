@@ -153,6 +153,19 @@ describe('terminal target', () => {
         'on:dblclick at D.mesa:1:6 has no terminal lowering')
     })
 
+    // The window is the end of every event's path; nothing in the corpus
+    // listens at a document or a body, and a window property has no terminal.
+    it('<mesa:document>, <mesa:body>, and a bind: or an unknown event on <mesa:window>', async () => {
+      await refusal(`<mesa:document on:keydown={() => {}} />\n`, 'D.mesa',
+        '<mesa:document> at D.mesa:1:1 has no terminal lowering')
+      await refusal(`<mesa:body on:click={() => {}} />\n`, 'B.mesa',
+        '<mesa:body> at B.mesa:1:1 has no terminal lowering')
+      await refusal(`<script>let y = 0</script>\n<mesa:window bind:scrollY={y} />\n`, 'Y.mesa',
+        'bind:scrollY at Y.mesa:2:14 has no terminal lowering')
+      await refusal(`<mesa:window on:resize={() => {}} />\n`, 'R.mesa',
+        'on:resize at R.mesa:1:14 has no terminal lowering')
+    })
+
     // A browser moves live text into a field only until someone types.
     it('live text in a <textarea> with no value=', async () => {
       await refusal(`<script>let t = 'a'</script>\n<textarea>{t}</textarea>\n`, 'T.mesa',

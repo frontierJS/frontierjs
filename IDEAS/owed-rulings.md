@@ -294,3 +294,8 @@ Source: *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt) and
   - **C** — the move takes the hook's data: the hook answers `data` folded into the transition's own UPDATE, so the number and the refresh land in the sealing write. Needs `transition()` to accept data, which is litestone surface.
   - **D** — refuse at boot a hook keyed to a `@seals` commitment, and the app spells a never-committed `closing` state as lago does. A refusal for a shape the framework could make work.
   - **Recommend A** — one hook, one order, and a sealing move works by construction: the owed writes land while the row is still writable, and the re-read finds the draft it is about to seal.
+
+- **FJS-D847 — Does a `@@sync` model whose policy walks a model the device does not sync get that model's schema emitted, or is it refused at build?** `FJS-2248`: the device schema keeps Bookmark's policies and drops Collection, so `collection.ownerId` fails to parse on the device, the device database never opens, and every offline read falls back to the list cache — while the build, `fli check` and `advise` stay green. Measured in the portal stressor 2026-09-29.
+  - **A** — walk the policies when emitting the device schema and add each model they reach.
+  - **B** — refuse at build a `@@sync` model whose policy names a model that is not `@@sync`, naming the model to add it to.
+  - **Recommend B** — A puts a model's schema on the device without its rows, so the policy reads an empty table and answers wrong in silence; B fails loudly and is the refusal half every gap ships with.

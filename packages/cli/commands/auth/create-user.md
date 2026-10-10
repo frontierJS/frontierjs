@@ -47,6 +47,7 @@ import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 const db = await createClient({
   path:          '${schemaPath}',
+  resolveFrom:   'schema',
   encryptionKey: '${encKey}',
   plugins:       [new GatePlugin({ getLevel: () => LEVELS.SYSTEM })]
 })

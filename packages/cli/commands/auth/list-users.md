@@ -37,7 +37,7 @@ import { resolve }                    from 'path'
 const makeScript = (schemaPath, encKey, role, limit, includeSessions) => `
 import { createClient } from '@frontierjs/litestone'
 
-const db  = await createClient({ path: '${schemaPath}', encryptionKey: '${encKey}' })
+const db  = await createClient({ path: '${schemaPath}', resolveFrom: 'schema', encryptionKey: '${encKey}' })
 const sys = db.asSystem()
 
 const where = ${role ? `{ role: '${role}' }` : '{}'}

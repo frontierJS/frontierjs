@@ -993,6 +993,74 @@ with the terminal backend as its second consumer, not ahead of it.
    the real `ChainRenderer`. A link's focus cue over a `<mark>` inside it is
    restored from what it held at focus, and nothing asserts that (`none`).
    Layouts are still not mounted. Tier: Assessment.
+   *Slice 20 2026-10-09, `<dialog>` and `<mesa:window>` (the owner asked
+   for both; the look below is this slice's proposal and has no ruling
+   yet):* role `dialog` is a bordered box laid out only while `open`.
+   `show()` and the `open` attribute open it where it sits; `showModal()`
+   moves it under a backdrop on the screen's root, since the engine draws a
+   child over its own parent's earlier siblings only, and a hidden box
+   holds its place (`__home`). The backdrop sets the dim bit on every cell
+   drawn before it — the browser's `::backdrop`, without a color — and the
+   dialog blanks its own cells with `setCell`, because a box with no
+   background lets the page show through and a background is a color.
+   Focus goes to the `autofocus` control or the first, Tab stays inside, a
+   press on the dimmed page is a `click` at the dialog itself, Escape sends
+   `cancel` and closes unless prevented, `close(value)` sets `returnValue`,
+   hands focus back and sends `close` a task later. Destroying the dialog
+   or its place takes the other and the backdrop with it. Every walk up
+   the tree goes through `up`, so a lifted dialog's events still bubble
+   through the component that wrote it. `<mesa:window>` lowers to an IR
+   `global` node; the window is the last stop on every event's path and
+   where a key goes with nothing focused. `<mesa:document>`, `<mesa:body>`
+   and a window `bind:` are refused by name: no corpus file uses them.
+   Two runtime changes came with it. Keys now go through ONE engine
+   listener per renderer (`keys`) that sends `keydown`/`keypress` and runs
+   their defaults — Tab, Escape, a control's keys, activation — where each
+   focusable node had its own: the window needs the no-focus case, and the
+   shell's list and route each registered a Tab listener, so Tab moved
+   focus two places on a route screen. A dialog that takes Escape stops it
+   there, so the shell's back-on-Esc never hears it. And a press now
+   focuses before it clicks, as a browser's `mousedown` does; the engine
+   focused after the handler returned, handing focus back to the button
+   that had just opened a modal. Proved by `specs/dialog.spec.mjs` 30/30
+   over `fixtures/Dialogs.mesa` (14 breaks, all red), with a harness verb
+   `t.escape()` that waits for the key, since the parser holds a lone ESC
+   25 to 60+ ms; `terminal-emit.test.js` and `ir.test.js` for the
+   refusals and the node; the whole drive 207/207; corpus identical (1088
+   outputs, baseline `s20base`); `verify:tui` 31/31 opens `/people/`'s
+   Drawer over the page and closes it with Esc without leaving the route.
+   Report 340 → 349 of 544, ui 67 → 71. Routes 15 → 20 of 34: the five
+   Drawer routes. The five ConfirmPanel routes now stop at `<mesa:portal>`,
+   and past it ConfirmPanel's script reads `document.body`,
+   `getBoundingClientRect` and `document.addEventListener` at open, so a
+   portal lowering alone would trade a refusal for a throw. Found:
+   `FJS-2282`, an icon-only button paints `[  ]` (the Drawer's close).
+   A window listener that handles Escape without `preventDefault` (the
+   kit's Popover, ConfirmPanel) also lets the shell go back; nothing
+   lowers that reaches it yet.
+   *The nine for slice 20, answered late, after the drive was green:* (1) origin: none new; `onKey` is the one place
+   a key becomes DOM events, where it was one copy per node. (2) concept:
+   none; dialog, top layer, backdrop and window are the platform's words.
+   (3) complexity: the problem's — the engine has no top layer, so one is
+   built from a backdrop and a placeholder. (4) predictability: the kit's
+   Modal and Drawer run unchanged; `showModal`, `close`, `cancel`, `close`,
+   `returnValue` and the backdrop click mean what they mean in a browser.
+   (5) derived: the dim and the blank are drawn each frame, never stored;
+   the modal stack is the order dialogs entered. (6) owner: `keys` for a
+   key, `up` for a step toward the root, `enterTopLayer`/`leaveTopLayer`
+   for the lift. (7) boundary: a press inside a dialog that lands on no
+   control sends no `click`, where a browser sends one the kit ignores.
+   (8) failure: `showModal()` on an unattached or `show()`-opened dialog
+   throws, as the browser's `InvalidStateError`. (9) must stay true: a
+   modal dialog is the only thing reachable while it is open, and its
+   teardown leaves nothing on the screen, and a Tab moves focus once on a
+   screen two mounts share. What fails: `dialog.spec` (trap, backdrop,
+   teardown, presses beneath), and `verify:tui`, whose single Tab from
+   `/people/`'s first link must land on New employee. That a press inside
+   a dialog on no control sends no `click` is asserted by nothing
+   (`none`). *Familiarity vs. precision*: the platform's shape and its
+   words, which fit whole; the one departure, the dim bit for the
+   backdrop's tint, is Invariant 13's, not a word. Tier: Assessment.
    *The nine for slices 14 and 15, answered late, after both were green:*
    (1) origin: one fewer. `constDeclaration` is the one reading of a `{@const}`, and
    `pointer()` the one reading of a mouse event. (2) concept: none. (3)

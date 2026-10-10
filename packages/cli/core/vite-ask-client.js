@@ -57,7 +57,7 @@
 
   const css = (el, s) => { el.style.cssText = s; return el }
   const make = (tag, s, text) => { const el = css(document.createElement(tag), s || ''); if (text) el.textContent = text; return el }
-  const BTN = 'font:12px/1 ui-sans-serif,system-ui;padding:5px 9px;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer'
+  const BTN = 'font:13px/1 ui-sans-serif,system-ui;padding:6px 11px;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer'
 
   function remember(entry) {
     entries.push(entry)
@@ -109,8 +109,8 @@
     for (const f of files) {
       const box = make('div', 'margin:0 0 8px;border:1px solid #1e293b;border-radius:4px;overflow:hidden')
       box.dataset.diff = f.file
-      box.appendChild(make('div', 'padding:3px 6px;background:#1e293b;color:#e2e8f0;font:11px/1.4 ui-monospace,monospace', f.file + (f.created ? '  (new file)' : '')))
-      const pre = make('div', 'overflow-x:auto;font:11px/1.45 ui-monospace,monospace')
+      box.appendChild(make('div', 'padding:3px 6px;background:#1e293b;color:#e2e8f0;font:12px/1.4 ui-monospace,monospace', f.file + (f.created ? '  (new file)' : '')))
+      const pre = make('div', 'overflow-x:auto;font:12px/1.45 ui-monospace,monospace')
       for (const [op, text] of f.lines)
         pre.appendChild(make('div', `white-space:pre;padding:0 6px;${tones[op] || ''}`, op === '…' ? `… ${text}` : `${op} ${text}`))
       box.appendChild(pre)
@@ -126,7 +126,7 @@
   }
 
   function build() {
-    panel = make('div', 'position:fixed;right:12px;bottom:12px;z-index:2147483646;width:min(380px,calc(100vw - 24px));max-height:60vh;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:12px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)')
+    panel = make('div', 'position:fixed;right:12px;bottom:12px;z-index:2147483646;width:min(560px,calc(100vw - 24px));max-height:80vh;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)')
     const head = make('div', 'display:flex;align-items:center;gap:6px')
     title = make('strong', 'flex:1')
     head.appendChild(title)
@@ -143,10 +143,10 @@
     head.append(term, fresh, close)
 
     list = make('div', 'display:flex;flex-direction:column;gap:4px;max-height:30vh;overflow:auto')
-    hint = make('div', 'color:#64748b;font-size:11px')
+    hint = make('div', 'color:#64748b;font-size:12.5px')
     log = make('div', 'overflow:auto;flex:1;min-height:0')
 
-    input = make('textarea', 'resize:vertical;min-height:52px;padding:6px;border-radius:4px;border:1px solid #334155;background:#020617;color:#e2e8f0;font:12px/1.4 ui-sans-serif,system-ui')
+    input = make('textarea', 'resize:vertical;min-height:120px;padding:8px;border-radius:4px;border:1px solid #334155;background:#020617;color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
     input.placeholder = 'What should change? (⌘/Ctrl+Enter sends)'
     input.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask() } }
 
@@ -185,9 +185,9 @@
       const row = make('div', 'display:flex;align-items:center;gap:6px')
       row.dataset.pick = p.loc
       const what = make('div', 'flex:1;min-width:0')
-      what.appendChild(make('div', 'font:11px/1.4 ui-monospace,monospace;color:#38bdf8;word-break:break-all', p.loc))
+      what.appendChild(make('div', 'font:12.5px/1.4 ui-monospace,monospace;color:#38bdf8;word-break:break-all', p.loc))
       const text = words(p.el)
-      what.appendChild(make('div', 'color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
+      what.appendChild(make('div', 'color:#94a3b8;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
         `<${p.el.localName}>${text ? ' ' + text.slice(0, 60) : ''}`))
       row.appendChild(what)
       if (text && text.length <= MAX_TEXT) {

@@ -100,6 +100,21 @@ function makeT(rows, tmp) {
     type:  async (text) => { await need().setup.mockInput.typeText(text); await settle() },
     tab:   async (modifiers) => { need().setup.mockInput.pressTab(modifiers); await settle() },
     enter: async () => { need().setup.mockInput.pressEnter(); await settle() },
+    /** Escape alone. The parser holds a lone ESC to see whether a sequence
+     *  follows it — measured from 25 ms to past 60 — so a `press` that settles
+     *  at once reads the frame before the key has arrived. This waits for the
+     *  key, heard ahead of every other listener, since a dialog stops it. */
+    escape: async () => {
+      const keys = need().setup.renderer.keyInput
+      const arrived = new Promise((resolve) => {
+        const heard = (k) => { if (k.name === 'escape') { keys.off('keypress', heard); resolve() } }
+        keys.prependListener('keypress', heard)
+        setTimeout(() => { keys.off('keypress', heard); resolve() }, 1000)
+      })
+      need().setup.mockInput.pressEscape()
+      await arrived
+      await settle()
+    },
     /** A left press and release on the first cell of `text` in the current frame. */
     click: async (text) => {
       const { x, y } = await t.at(text)

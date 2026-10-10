@@ -22,6 +22,7 @@ import { createClient } from '@frontierjs/litestone'
 
 const db = await createClient({
   path:          '${schemaPath}',
+  resolveFrom:   'schema',
   encryptionKey: '${oldKey}'
 })
 

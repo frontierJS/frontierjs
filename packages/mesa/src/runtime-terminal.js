@@ -151,7 +151,9 @@ class ProgressBar extends BoxRenderable {
  * its `autofocus` control or its first, and keeps Tab inside it; `close()`
  * hides it, hands focus back to what held it before, and sends `close` a task
  * later, as a browser queues it. Escape sends the top modal `cancel`, and
- * closes it unless that is prevented (`keys`).
+ * closes it unless that is prevented (`keys`). A press inside it that lands
+ * on no control sends no `click`, where a browser sends one at whatever was
+ * pressed; the kit's dialogs listen only for the backdrop's.
  */
 class DialogBox extends BoxRenderable {
   returnValue = ''
@@ -778,16 +780,22 @@ function activatable(node) {
 }
 
 /** A press, from a node that fires `click` or that something listens to
- *  `mousedown` on: `mousedown` at the element under the pointer, then `click`
- *  at the nearest activatable node above it. Preventing `mousedown` keeps the
- *  engine from focusing the pressed node, its default in a browser too, and
- *  the `click` still fires. */
+ *  `mousedown` on: `mousedown` at the element under the pointer, then focus
+ *  to the nearest node above it that takes focus, then `click` at the nearest
+ *  activatable one. Preventing `mousedown` keeps focus where it is, its
+ *  default in a browser too, and the `click` still fires. The focus is moved
+ *  here rather than left to the engine, which moves it after this handler
+ *  returns: a click that opens a modal dialog focuses inside it, and the
+ *  engine would then hand focus back to the button pressed. */
 function pressSource(node) {
   if (node.__pressSource) return
   node.__pressSource = true
   node.onMouseDown = (e) => {
     const { target, fields } = pointer(node, e)
-    if (dispatch(target, 'mousedown', fields).defaultPrevented) e.preventDefault()
+    e.preventDefault()
+    if (!dispatch(target, 'mousedown', fields).defaultPrevented) {
+      for (let n = target; n; n = up(n)) if (n.focusable) { n.focus(); break }
+    }
     for (let n = target; n; n = n.parent) if (n.__activatable) { activate(n, fields); return }
   }
 }

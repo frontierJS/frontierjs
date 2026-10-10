@@ -113,6 +113,19 @@ describe('lower()', () => {
     ])
   })
 
+  it('lowers <mesa:window> to a global node carrying its handlers, modifiers applied', async () => {
+    const tree = await ir(`<script>
+  let n = 0
+</script>
+<mesa:window on:keydown|preventDefault={() => n++} />
+`, 'W.mesa')
+    const [global] = tree.children.filter((c) => c.kind !== 'text')
+    expect(global).toMatchObject({ kind: 'global', target: 'window', loc: 'W.mesa:4:1', directives: [] })
+    expect(global.handlers).toHaveLength(1)
+    expect(global.handlers[0]).toMatchObject({ event: 'keydown', modifiers: [{ name: 'preventDefault' }] })
+    expect(global.handlers[0].expr.code).toMatch(/preventDefault\(\)/)
+  })
+
   it('lowers a component call: props, binds, refusals, slots routed as the DOM path routes them', async () => {
     const tree = await ir(`<script>
   import Card from './Card.mesa'
