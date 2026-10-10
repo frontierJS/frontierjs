@@ -38,7 +38,7 @@ console.log('File exists:', existsSync(greetPath))
 
 try {
   const { Command } = await import('../core/runtime.js')
-  const cmd = await Command({ file: greetPath, arg: ['World'], flag: {} })
+  const _cmd = await Command({ file: greetPath, arg: ['World'], flag: {} })
   console.log('Command() ✓')
 } catch (err) {
   console.log('Command() FAILED:', err.message)

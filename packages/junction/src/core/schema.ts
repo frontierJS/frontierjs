@@ -186,7 +186,7 @@ function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
 
       for (const [field, def] of Object.entries(schema)) {
         const rawValue  = input[field]
-        const fieldErrs: string[] = []
+        const _fieldErrs: string[] = []
 
         let value = rawValue
 
@@ -422,7 +422,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
     }
 
     case 'number': {
-      if (typeof v !== 'number' || isNaN(v as number))
+      if (typeof v !== 'number' || Number.isNaN(v as number))
         errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a number`) })
       else {
         if (def.integer && !Number.isInteger(v))
@@ -442,7 +442,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
     }
 
     case 'instant': {
-      if (!(v instanceof Date) || isNaN((v as Date).getTime()))
+      if (!(v instanceof Date) || Number.isNaN((v as Date).getTime()))
         errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a valid date and time`) })
       break
     }
@@ -515,7 +515,7 @@ function coerce(value: unknown, type: FieldType): unknown {
     case 'number':
       if (typeof value === 'string' && value.trim() !== '') {
         const n = Number(value)
-        if (!isNaN(n)) return n
+        if (!Number.isNaN(n)) return n
       }
       return value
 
@@ -527,7 +527,7 @@ function coerce(value: unknown, type: FieldType): unknown {
     case 'instant':
       if (typeof value === 'string' || typeof value === 'number') {
         const d = new Date(value)
-        if (!isNaN(d.getTime())) return d
+        if (!Number.isNaN(d.getTime())) return d
       }
       return value
 

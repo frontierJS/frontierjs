@@ -25,6 +25,8 @@ callers that go through that hook and for nobody else: not a migration, not a
 seed, not `fli tinker`, not a job on `db.`.
 
 ```lite
+enum Status { draft  issued  voided }
+
 model Invoice {
   id        Int      @id @default(autoincrement())
   number    String   @unique @immutable
@@ -198,12 +200,33 @@ or it is refused at startup naming the set. That set is the framework's nine
 model's columns, the `tenancy` claim, and what the schema declares:
 
 ```lite
+model User { id Int @id  @@auth }
+
+model Employee {
+  id     Int  @id
+  userId Int  @unique                    // one row per caller, or the lookup is ambiguous
+  user   User @relation(fields: [userId], references: [id])
+}
+
 claim cartToken                          // resolved per request by the app
 claim employeeId from Employee(userId)   // read per request off the caller's row
+
+model Cart {
+  id         Int    @id
+  token      String
+  employeeId Int?
+
+  @@allow('read', token == auth().cartToken || employeeId == auth().employeeId)
+}
 ```
 
 A bare `claim` only NAMES it; the app's principal resolver supplies the value
-(junction's AGENTS.md, *Who the caller is*). **A claim the caller does not carry
+(junction's AGENTS.md, *Who the caller is*). A `from` claim's subject must be a
+`@unique` column that a `@relation` ties to the `@@auth` model, and its name
+may not be one of the framework's — `claim role from …` is refused because a
+row may not decide how the caller is graded; call it `membershipRole`. Litestone
+alone resolves neither kind: `$setAuth({ id, employeeId })` is what a test
+passes. **A claim the caller does not carry
 is UNKNOWN, not false** — an `@@allow` holds only on TRUE and an `@@deny` fires on
 UNKNOWN too, so a deny on a missing claim refuses. `auth().x == null` is how to
 write *carries no such claim*.
@@ -242,9 +265,10 @@ Everything above is loud. These are not.
   `$checkWhere` refuses it before the query if you ask.
 
 - **`@unique` on an optional column admits any number of NULLs.** Two NULLs
-  never compare equal. On a *composite* `@@unique` this is a parse error; on one
-  optional column it is allowed, because *unique when present* has a single
-  reading there. Say you meant it with `nullsDistinct: true`.
+  never compare equal. On a *composite* `@@unique` this is a parse error unless
+  `@@unique([a, b], nullsDistinct: true)` says it is meant; on one optional
+  column it is allowed without a word, because *unique when present* has a
+  single reading there.
 
 - **A key that is a tuple is `@@id([a, b])`, and the ORDER in it is load-bearing.**
   It desugars to `@id` on each named field, so everything downstream works
@@ -269,6 +293,8 @@ Everything above is loud. These are not.
 - **A `where` typo throws `ValidationError`**, naming the key with a *Did you
   mean* — an unknown field, an unknown operator, an `in` given a string, and a
   real key SQLite cannot filter (`@computed`, `@encrypted`). Over HTTP it is a 400.
+  A `jsonl` or `trail` model is the exception: its `where` drops an operator it
+  does not know, `$raw` included, and answers the unfiltered set (`FJS-2298`).
 
 - **The audit trail defers one event-loop tick.** A read in the same tick sees
   0 rows. Yield once; do not wait.
@@ -277,7 +303,7 @@ Everything above is loud. These are not.
 
 ## Reading and writing
 
-```js
+```js fragment
 db.user.findMany({ where, orderBy, limit, offset, include, select })
 db.user.findFirst({ where })            // → row | null
 db.user.findUnique({ where })           // → row | null
@@ -289,18 +315,19 @@ db.user.aggregate({ … })  ·  db.user.groupBy({ … })  ·  db.user.search(q)
 db.user.create({ data })       ·  db.user.createMany({ data })
 db.user.update({ where, data }) ·  db.user.updateMany({ where, data })
 db.user.upsert({ where, create, update })
-db.user.delete({ where })       ·  db.user.deleteMany({ where })
-db.user.restore({ where })      ·  db.user.transition(id, 'issue')
+db.user.delete({ where })       ·  db.user.deleteMany({ where })       // hard, @@softDelete or not
+db.user.remove({ where })       ·  db.user.restore({ where })          // the soft pair
+db.user.transition(id, 'issue')
 ```
 
 Filters:
 
-```js
+```js fragment
 { id: 1 }                                  // equality
 { deletedAt: null }                        // IS NULL
 { score: { gte: 0, lte: 100 } }            // gt gte lt lte not
 { status: { in: ['active', 'pending'] } }  // in · notIn
-{ name: { contains: 'smith' } }            // contains startsWith endsWith
+{ name: { contains: 'smith' } }            // contains startsWith endsWith — ASCII case-insensitive, nothing folds past it
 { AND: [ … ] } · { OR: [ … ] } · { NOT: { … } }
 ```
 
@@ -332,7 +359,7 @@ hatch to reach for first.
    not a hook.
 6. Every foreign key has an index (`foreign-key-without-index` warns).
 7. Every attribute used appears in `catalog.snapshot.md`.
-8. Ran `litestone advise` — the eleven shapes the parser accepts and something
+8. Ran `litestone advise` — the shapes the parser accepts and something
    later refuses, each with the word that fixes it.
 
 ---
@@ -352,7 +379,7 @@ both directions by `test/catalog.test.ts` — a word with no entry fails the sui
 and an entry with no word fails it too. So the table cannot drift from the
 language, which is the only reason this file is allowed not to repeat it.
 
-**`fli check` is the executable half of this document.** Thirteen of its rules
+**`fli check` is the executable half of this document.** Its app-scoped rules
 read an app's own source for exactly the shapes above — a discarded `$setAuth`,
 `asSystem()` off the app client, a service resolving to no model, a `@@gate`
 level nothing in the app can reach. Run it after writing, not instead.

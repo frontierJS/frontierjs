@@ -11,8 +11,9 @@ Read the section for the path you are changing before changing it.
 
 - **A read that builds its own SELECT has to compose what `buildSQL` composes.**
   Global filter, plugin read filters, soft-delete, `@@hasTemplates`, the
-  caller's where, then the policy — in that order, because positional binds make
-  the order the correctness. `findManyCursor` and `search()` applied none of the
+  effective window, the caller's where, then the policy — `READ_RULES` in
+  `client.js`, in that order, because positional binds make the order the
+  correctness. `findManyCursor` and `search()` applied none of the
   first four and neither the policy, so `findMany` answered one row where they
   answered every row in the table (`FJS-262`). And a `@@gate` lives in a
   plugin's `beforeRead`: `aggregate`, `groupBy` and `search` never called it, so
@@ -62,8 +63,8 @@ Read the section for the path you are changing before changing it.
 - **A `@derived` field is built into the SAME map as `@from`, and that is why it
   reaches every read.** Both are virtual columns carried in the SELECT,
   filterable through `_fromExprMap` and stripped from writes by `stripVirtual`,
-  so the six SELECT-building sites, the WHERE substitution and the ORDER BY all
-  work unchanged — a seventh that forgot it would be silent, the way a forgotten
+  so every SELECT-building site, the WHERE substitution and the ORDER BY all
+  work unchanged — a new one that forgot it would be silent, the way a forgotten
   `@from` is. It carries no params: compiled once at startup, `now()` emitting
   SQLite's own clock, which SQLite fixes for the duration of a statement.
   `aggregate`/`groupBy` build their own SELECTs and substitute the expression
@@ -78,13 +79,13 @@ Read the section for the path you are changing before changing it.
   what makes the narrow fetch safe, because the alternative is `undefined` and a
   plausible answer. `@from` values are resolved first, so a computed field may
   read one, and naming one in `needs` emits just that subquery.
-  **Six sites build SELECTs of their own** — the
-  query pipeline, `findManyCursor`, `search()`, `resolveIncludes` (×3 relation
-  shapes) — and each has to append the `@from` subqueries itself;
+  **Several sites build SELECTs of their own** — the
+  query pipeline, `findManyCursor`, `search()`, `resolveIncludes` (one per
+  relation shape) — and each has to append the `@from` subqueries itself;
   `fromSelectExpr()` / `deserializeFromRow()` are the shared definition.
   Forgetting one is silent, not loud: the field goes absent and `applyComputed`
   still runs, so a computed field over it answers a plausible `0`.
-- **A `@computed` field cannot be sorted, and `orderBy` now says so.** It is a JS
+- **A `@computed` field cannot be sorted, and `orderBy` says so.** It is a JS
   function over a fetched row; SQLite cannot order or paginate by one. Both that
   and an unknown key THROW, as an unknown `where` key does. `@from` sorts fine
   (it is a subquery in the SELECT). `db.$checkOrderBy(accessor, orderBy)` asks without running the query.
@@ -102,7 +103,7 @@ Read the section for the path you are changing before changing it.
   typo did the same (`FJS-202`); and nothing stripped a protected column, so
   `_max` over a `@guarded` salary answered it, `_stringAgg` over one answered
   the whole column joined with commas, and `by: ['salary']` answered every
-  distinct value with a count (`FJS-273`). **Eight arguments can carry a field
+  distinct value with a count (`FJS-273`). **The arguments that can carry a field
   name** — `_min`/`_max`/`_sum`/`_avg`, `_stringAgg`'s `field` and `orderBy`, a
   named aggregate's field, `_count: { distinct }` — plus `groupBy`'s `by` and
   `interval`. Two tiers: `by`/`distinct`/`interval` need a real column and
@@ -190,8 +191,7 @@ has no model in scope, so the default belongs at the caller that has one.
   neither: `create()` refused planting a row owned by somebody else and
   `upsertMany` planted it, `update()` refused writing to their row and
   `upsertMany` wrote it, and a `@@hasTemplates` template `updateMany` correctly
-  skipped was written too (`FJS-720`). The presence lookup a logged model
-  already pays for is now paid whenever the model has policies; the insert half
+  skipped was written too (`FJS-720`). The presence lookup a logged model already pays for is paid whenever the model has policies; the insert half
   calls `checkCreatePolicy` and refuses the batch WHOLE, like `createMany`; the
   update half rides SQLite's own `ON CONFLICT … DO UPDATE … WHERE`, where an
   unqualified column is the EXISTING row, and narrows rather than throwing —
@@ -204,8 +204,7 @@ has no model in scope, so the default belongs at the caller that has one.
   autoincrement id is assigned in insert order. What a row does NOT carry, it
   does not write — the column takes its DDL default.
 - **A key set to `undefined` is dropped from a write payload.** Only `null`
-  clears (Invariant 9). `{ views: form.views }` off a form with no views field
-  used to bind NULL and defeat the column's default.
+  clears (Invariant 9). `{ views: form.views }` off a form with no views field would otherwise bind NULL and defeat the column's default.
 - **An enum array has no CHECK behind it.** `targets ReclaimTarget[]` is a JSON
   TEXT column; SQLite cannot read a JSON array's elements without `json_each`,
   and a CHECK may not contain the subquery that would take. Membership is
@@ -227,7 +226,7 @@ has no model in scope, so the default belongs at the caller that has one.
   the deleted row; `upsertMany` is `ON CONFLICT DO UPDATE`, which SQLite
   resolves knowing nothing about soft delete, so the write landed IN the deleted
   row and reported success. A new write path that can hit the constraint routes
-  through `asSoftDeletedConflict`, which only runs on the failing path.
+  through `asUniqueConflict`, which only runs on the failing path.
 - **`@@hasTemplates` and `@@softDelete` are the same two flags on every method,
   reads and writes alike** — `withTemplates`/`onlyTemplates`,
   `withDeleted`/`onlyDeleted`. Neither is an access rule, so **`asSystem()` does
@@ -253,16 +252,15 @@ has no model in scope, so the default belongs at the caller that has one.
   offer every row to everybody and let any caller grow a shared list, and it
   would pass every test that uses one principal. **`suggested` issues no query
   at all** — enforcing nothing has to cost nothing, or nobody uses the strength
-  that keeps the list traveling. **Six write paths carry a payload and all six
-  call it**; `test/valuesets.test.ts` § every write path derives that list from
-  `client.js` itself rather than restating it, because a seventh added later
+  that keeps the list traveling. **Every write path that carries a payload
+  calls it**; `test/valuesets.test.ts` § every write path derives that list from
+  `client.js` itself rather than restating it, because one added later
   would be silent.
-- **`@updatedAt` is stamped by the CLIENT, and there is no trigger any more.** It was an AFTER UPDATE trigger, and a trigger can only ever read SQLite's own clock — so `createClient({ now })` moved a policy's `now()` and left every stamp on today, which meant the one thing a frozen clock is for (staging a row aging past a window) could not be staged (`FJS-531`). Three mechanisms became one: `@default(now())` and `@updatedAt`-on-create go through `buildGeneratedDefaultMap`, `@updatedAt`-on-update through `stampSets`, all three reading the client's clock. `isUpdatedAtField` in `ddl.js` is the one answer to *is this a stamp column* — the ATTRIBUTE, or the name `updatedAt` on a `DateTime`, because binding to the attribute alone leaves a column named for the job unstamped. **`FJS-396` is closed at the root rather than narrowed**: RETURNING is evaluated before an AFTER trigger, so a write that leaned on one handed back a value the row no longer held, and naming the column in the SET clause only fixed that while the two values DIFFERED — which they do not when the clock has not moved between two writes to one row (under an injected clock, every write after the first). With no trigger there is no window. **The floor is now asymmetric and that is the price**: the column DEFAULT stays, so a raw INSERT still stamps; a raw UPDATE does not, and a hand-written statement owns its own stamp. An existing database is migrated by `litestone migrate` — pristine stops carrying the trigger, `droppedTriggers` in `migrate.js` sees it, one `DROP TRIGGER IF EXISTS` and no table rebuild. `@@external` answers no stamp columns at all: a client stamp into a table litestone does not own is a silent write into somebody else's.
+- **`@updatedAt` is stamped by the CLIENT, and there is no trigger.** As an AFTER UPDATE trigger it could only ever read SQLite's own clock — so `createClient({ now })` moved a policy's `now()` and left every stamp on today, which meant the one thing a frozen clock is for (staging a row aging past a window) could not be staged (`FJS-531`). Three mechanisms became one: `@default(now())` and `@updatedAt`-on-create go through `buildGeneratedDefaultMap`, `@updatedAt`-on-update through `stampSets`, all three reading the client's clock. `isUpdatedAtField` in `ddl.js` is the one answer to *is this a stamp column* — the ATTRIBUTE, or the name `updatedAt` on a `DateTime`, because binding to the attribute alone leaves a column named for the job unstamped. **`FJS-396` is closed at the root rather than narrowed**: RETURNING is evaluated before an AFTER trigger, so a write that leaned on one handed back a value the row no longer held, and naming the column in the SET clause only fixed that while the two values DIFFERED — which they do not when the clock has not moved between two writes to one row (under an injected clock, every write after the first). With no trigger there is no window. **The floor is now asymmetric and that is the price**: the column DEFAULT stays, so a raw INSERT still stamps; a raw UPDATE does not, and a hand-written statement owns its own stamp. An existing database is migrated by `litestone migrate` — pristine stops carrying the trigger, `droppedTriggers` in `migrate.js` sees it, one `DROP TRIGGER IF EXISTS` and no table rebuild. `@@external` answers no stamp columns at all: a client stamp into a table litestone does not own is a silent write into somebody else's.
 - **Retention measures from the client's clock too.** `runSqliteRetention` and `compactJsonl` both took `Date.now()`, so `env.clock.advance('100d')` moved nothing either pass could see — the sweep is a crossing, and the clock could not stage the one thing it was reached for. One reading of the option (`nowMs` in `retention.js`) because both halves take it, and two interpretations is how the jsonl half ends up sweeping to a different instant than the SQLite half.
 - **`$transaction` serializes per client, and re-entrancy is decided by the async
   context rather than by the depth counter.** One connection holds one
-  transaction, so a second REQUEST arriving while the first awaits used to look
-  exactly like a genuinely nested call: it took a SAVEPOINT inside the first
+  transaction, so a second REQUEST arriving while the first awaits looks exactly like a genuinely nested call to a depth counter: it took a SAVEPOINT inside the first
   request's transaction, was told it committed, and lost its rows when that
   request rolled back (`FJS-244`). A nested call inherits an `AsyncLocalStorage`
   store and still SAVEPOINTs; anything else waits on a FIFO lock. This only
@@ -272,11 +270,11 @@ has no model in scope, so the default belongs at the caller that has one.
 - **`$close()` finalizes the statement cache, and without that it closes
   nothing.** bun's `close()` is `sqlite3_close_v2` — it defers the real
   destruction until the last prepared statement is finalized — and `wrapDb`
-  holds up to 500. Measured: a close with one live statement freed **0 file
-  descriptors**, and finalizing that statement freed 3. So for its whole life
+  holds up to 500. Measured: a close with one live statement freed **no file
+  descriptor**, and finalizing that statement did. So for its whole life
   `$close()` produced a client that answered a cached query off a closed,
   checkpointed handle and threw on a fresh one, and the tenant pool's eviction
-  paid a 7.97 ms `wal_checkpoint(TRUNCATE)` for a release that never happened
+  paid a `wal_checkpoint(TRUNCATE)` for a release that never happened
   (`FJS-640`). Every path now throws `ClientClosedError` naming the file. The
   read side needs its own call: `conn.readDb` is REPLACED by the read router,
   so anything reaching for `conn.readDb.close()` is talking to the router and
@@ -289,8 +287,8 @@ has no model in scope, so the default belongs at the caller that has one.
   RETURNING. `collection` is `count` rows matching `where`, from a statement that
   never built them. Do not read the discriminator off `result`: `result: null` is
   two different facts, and treating it as *no rows* is exactly what dropped every
-  `select: false` write a layer up (`FJS-307`). Every one of the eleven write
-  methods announces now — seven did not, `restore` and `delete` among them, both
+  `select: false` write a layer up (`FJS-307`). Every write
+  method announces — most did not, `restore` and `delete` among them, both
   of which had their rows the whole time. `test/write-events.test.ts` is the grid
   and a new write path has to appear in it. **A write matching no rows announces
   nothing**: a count of zero sending every open tab back to the server is worse
@@ -300,8 +298,8 @@ has no model in scope, so the default belongs at the caller that has one.
   (default `inProcess`) records each announced write in a table so every other
   process ON THIS MACHINE sharing the file hands it to its own `$tapEvents`
   subscribers, marked `foreign: true`, on the same seam — junction cannot tell
-  the two apart (`FJS-D173`). Declared, because it costs **+14 µs on a 25 µs
-  single-row insert** and nothing on a bulk one. The row carries the **id and
+  the two apart (`FJS-D173`). Declared, because it costs a measurable fraction of a
+  single-row insert and nothing on a bulk one. The row carries the **id and
   never the row** — writing the row would put the plaintext of every
   `@encrypted` and `@guarded` column into a table beside the ciphertext — so the
   receiver re-reads, which means **the row arrives as it is NOW** rather than as
@@ -357,7 +355,7 @@ has no model in scope, so the default belongs at the caller that has one.
   BACK, where the column is stripped by `@guarded` — refused at startup
   rather than denying every write. **`test/policy-interpreters.test.ts` is the
   oracle between them** — the same predicate over the same rows, asked of both
-  halves, 29 forms × 3 principals × 5 rows plus the clock, a `check()`
+  halves, every form over the same principals and rows plus the clock, a `check()`
   delegation and a `@@deny` beside an `@@allow`. Adding a form to the parser
   means adding a row there, or the two compilers can take it in different
   directions with nothing failing.
@@ -367,8 +365,8 @@ has no model in scope, so the default belongs at the caller that has one.
   caller whose id is the string `'5'` — which is every junction principal, a
   `SessionContext` carrying `userId` as TEXT — was TRUE through a query and
   FALSE on create and in `$readAs` (`FJS-713`). Measured across column type ×
-  operator × operand, **54 of 594 cells disagreed**, in both directions and on
-  every operator, so the filed pairing was one of a class. `compare()` in
+  operator × operand, **cells disagreed in both directions and on
+  every operator**, so the filed pairing was one of a class. `compare()` in
   `policy.js` now puts a JS value in the storage class the binder would have
   given it (a boolean is 0/1, a `Date` its ISO text), applies the column's
   affinity, and orders by class; `in` takes the same affinity per element. Two
@@ -521,9 +519,7 @@ A decrypt that fails **raises** (`FJS-716`). The one column that degrades is
   and any `into` beats a `@@db` written in the imported file. A model naming no
   database gets one. Importing one file twice under two different `into`s is an
   ERROR, not a precedence puzzle: it is merged once, so only one could hold.
-- **`parse` and `parseFile` answer the same shape.** `parseFile` used to let a
-  `ParseError` throw where `parse` returned `{valid: false, errors}`, so every
-  caller that warns and keeps going — the CLI's error box, sierra's build, which
+- **`parse` and `parseFile` answer the same shape.** Letting a `ParseError` throw from `parseFile` where `parse` returned `{valid: false, errors}` meant every caller that warns and keeps going — the CLI's error box, sierra's build, which
   is meant to leave the app running on explicitly-passed schemas — got a stack
   trace the moment a schema had a typo. An error in an imported file names that
   file, since imports chain.
@@ -601,8 +597,7 @@ A decrypt that fails **raises** (`FJS-716`). The one column that degrades is
   inside the migration it died in (`FJS-645`). The transaction had already
   rolled back either way, so what was missing was the vocabulary. `failed` is a
   third state and honestly distinct from `blocked`: one is a pre-flight refusal,
-  the other is SQLite declining what was attempted. A view the rebuild
-  invalidates is `failed` too, where it used to throw.
+  the other is SQLite declining what was attempted. A view the rebuild invalidates is `failed` too, rather than a throw.
 - **A migration only drops what litestone named.** Triggers: `*_fts_*`,
   `*_updatedAt`. Indexes: `idx_<table>_<fields>`. Anything the app created
   survives an ordinary migration — `introspect()` reads triggers into
@@ -621,7 +616,7 @@ A decrypt that fails **raises** (`FJS-716`). The one column that degrades is
 
 ## SQLite and the engine
 
-- **`busy_timeout` is 5000ms on every connection this package opens, and it is a CROSS-PROCESS device only.** `src/core/pragmas.js` is the one owner — the number was a literal in three files and absent from four others, so whether a database waited under contention was an accident of which file opened it (`FJS-569`). The one with no wait was the `trail` index, which is schema-global and therefore the single file every tenant and every process writes; a second API beside a running one died on its first audit write, in about a millisecond. **Inside one process the timeout is not a safety net, it is a stall** — `bun:sqlite` is synchronous, so a connection waiting on the lock blocks the event loop, and it can deadlock outright: the waiter blocks the loop, the holder's continuation never runs to commit, and the wait can only expire. Measured both ways — 5000ms then failure in one process for an 800ms hold, 1444ms then commit across two. What makes the in-process case fine is `$transaction`'s FIFO lock, which queues two transactions on one client in JavaScript so they never reach the SQLite lock — and what keeps THAT true is **one client per database file per process**, since `createClient` twice on one path is two connections that can deadlock where `$setAuth`/`asSystem`/`$scopedBy` are views over one handle. **The number is `createClient({ busyTimeout })`, precedence option → env (`LITESTONE_BUSY_TIMEOUT`) → 5000**, per database as `{ default, <db> }` because the audit index wants the opposite answer to main — its write is fire-and-forget and its failure swallowed, so `{ audit: 250 }` says *drop the row rather than stall the loop*. A malformed value and a key naming a database the schema does not declare are both refused by name at `createClient`, since a dropped key is a database silently keeping the default. **There is deliberately no `database { }` spelling** (`FJS-D155`): how long to wait for another process is a fact about THIS process, and the same schema is opened by an API answering a person and a queue draining a batch. `docs/concurrency.md` is the whole of it, including the worker-thread answer for a query that is genuinely long — measured, a worker holding the lock for 600ms let the main loop keep ticking and the main thread's write waited 639ms and committed, where the same shape on one thread deadlocks.
+- **`busy_timeout` is 5000ms on every connection this package opens, and it is a CROSS-PROCESS device only.** `src/core/pragmas.js` is the one owner — the number was a literal in three files and absent from four others, so whether a database waited under contention was an accident of which file opened it (`FJS-569`). The one with no wait was the `trail` index, which is schema-global and therefore the single file every tenant and every process writes; a second API beside a running one died on its first audit write, in about a millisecond. **Inside one process the timeout is not a safety net, it is a stall** — `bun:sqlite` is synchronous, so a connection waiting on the lock blocks the event loop, and it can deadlock outright: the waiter blocks the loop, the holder's continuation never runs to commit, and the wait can only expire. Measured both ways — the timeout and then failure in one process, a wait and then a commit across two. What makes the in-process case fine is `$transaction`'s FIFO lock, which queues two transactions on one client in JavaScript so they never reach the SQLite lock — and what keeps THAT true is **one client per database file per process**, since `createClient` twice on one path is two connections that can deadlock where `$setAuth`/`asSystem`/`$scopedBy` are views over one handle. **The number is `createClient({ busyTimeout })`, precedence option → env (`LITESTONE_BUSY_TIMEOUT`) → 5000**, per database as `{ default, <db> }` because the audit index wants the opposite answer to main — its write is fire-and-forget and its failure swallowed, so `{ audit: 250 }` says *drop the row rather than stall the loop*. A malformed value and a key naming a database the schema does not declare are both refused by name at `createClient`, since a dropped key is a database silently keeping the default. **There is deliberately no `database { }` spelling** (`FJS-D155`): how long to wait for another process is a fact about THIS process, and the same schema is opened by an API answering a person and a queue draining a batch. `docs/concurrency.md` is the whole of it, including the worker-thread answer for a query that is genuinely long — measured, a worker holding the lock let the main loop keep ticking and the main thread's write waited and committed, where the same shape on one thread deadlocks.
 - **`@big` has two traps in its implementation, both measured.** `safeIntegers` is per-STATEMENT and all-or-nothing, so a wide model's statements answer BigInts for `id`, a count and a Boolean's 0/1 as well — and asking at the statement while narrowing in `read`/`readAll` is an enumeration: `count()` answered `0n`, because a statement also serves counts and aggregates that reach a caller through neither. The **statement** narrows what it returns (`wideStmt`/`wideDb` in `client.js`), and `wideDb` unwraps through `$plain` before re-wrapping, because a wide model's `readDb` is handed to the include and `@from` resolvers, which read a DIFFERENT model. For a key the row read does not recognize — `_max__col`, a window's row number — the fallback is the VALUE: one that fits becomes a number, one that does not becomes digits.
 - **A plain object in `bun:sqlite`'s parameter list voids every positional binding in that statement.** It is read as a named-parameter bag, and a statement built with `?` matches none of its keys — so nothing is bound, including the WHERE, and no error is raised. `SELECT ? IS NULL` passed `{x:1}` answers 1; `UPDATE t SET a = ? WHERE id = ?` passed `({x:1}, 1)` changes no rows, because the id was voided along with the value. Every symptom of FJS-199 is this one fact wearing different clothes. Anything that reaches `run`/`query`/`prepare` with a caller-supplied value has to know the value is a bindable primitive first.
 
@@ -652,7 +647,7 @@ opt-out and existed before this, which is why the change costs no new word.
 none, and which parent to scope by is not decidable when a model has two, so
 those keep the warning. Both halves are announced, since `name String @unique`
 now builds an index over two columns and the line cannot show it;
-`db/ddl.snapshot.sql` is the artefact.
+`db/ddl.snapshot.sql` is the artifact.
 
 **A stamped column is `readOnly` in the generated JSON Schema**, with
 `x-litestone-kind: 'tenancy'` — `@system`'s treatment for `@system`'s reason:
@@ -677,7 +672,7 @@ carrying a second reading of it.
 
 What each `$`-method on a client answers, and why it exists.
 
-```js
+```js fragment
 db.$backup('./backups/prod.db')
 db.$backup('./backups/prod.db', { vacuum: true })
 db.$transaction(async (tx) => { ... })
@@ -824,26 +819,26 @@ db.sql`SELECT * FROM user WHERE id = ${1}`
   call `levelPasses()` in the gate plugin, which is the opposite of the rule
   everywhere else here. It is not an oversight: when `gateLadder` asked the
   plugin, deleting a branch from the plugin produced **zero** mismatches across
-  333 executed assertions. One exhaustive test over every (required × level) pair
+  every executed assertion. One exhaustive test over every (required × level) pair
   holds the two statements together. Describing the gate (the access snapshot)
   shares the predicate; grading it may not.
 - **A mutation score that counts its own harness failures is worthless.** Only a
   verdict disagreement kills a mutant. Counting the `error` and `skipped`
-  outcomes was worth 36 points on a 14-mutant schema: every mutant came back with
-  the same 22 error rows and the score read 93% while four mutations went
+  outcomes inflated the score by a third on a small schema: every mutant came back with
+  the same error rows and the score read as a pass while several mutations went
   completely unnoticed. Same rule as the gate matrix, one level up.
 - **The same rule one level up again: a mutant refused by the LOADER counts as a
   kill, and only while the ORIGINAL builds.** A schema the framework will not
   load cannot ship, so refusing it is a real kill — but nothing checked that the
   original loads, and on basecamp it does not: it declares `@secret`, so
   `createTestEnv` wants a key, so every mutant was refused and the run printed
-  `100% killed · 14/14` having graded nothing (`FJS-597`). `mutationScore` builds
+  `100% killed` having graded nothing (`FJS-597`). `mutationScore` builds
   the original first now and refuses with the reason attached. A thing that
   always passes and a thing that never ran are the same observation until
   something separates them.
 - **`litestone mutate` mutates the schema with its IMPORTS INLINED.** `parse`
   does not follow an import, so reading the file's own bytes made every mutant of
-  an importing schema die for a reason unrelated to the mutation — all 300 of
+  an importing schema die for a reason unrelated to the mutation — every one of
   basecamp's, and the command refused outright. `inlineImportsFromDisk` rather
   than `parseFile`, because the catalog is line-oriented and wants text; a
   fragment that cannot be read is NAMED, since its models are otherwise silently
@@ -851,13 +846,13 @@ db.sql`SELECT * FROM user WHERE id = ${1}`
   auth ships are only mutable once the fragment is in.
 - **Mutation is code-only and quote-aware.** An attribute named inside a doc
   comment is prose; editing it produces a mutant identical in behavior, which
-  survives everything. `example` reported four surviving `guarded-drop` mutants
-  on a model with no `@guarded` field before this.
+  survives everything. `example` reported surviving `guarded-drop` mutants on a
+  model with no `@guarded` field before this.
 - **A UNIQUE collision is indistinguishable from a validator working.** Both are
   a throw on a write that should have been refused, so a constraint runner that
   counts any throw as *rejected* passes against a validator that does nothing.
   `verifyConstraints` checks for `ValidationError` by name and reports anything
-  else as `error`; its first run on basecamp was 23 such rows, none about
+  else as `error`; its first run on basecamp was a page of such rows, none about
   basecamp. Three separate guards keep them out — see the comment there before
   changing how it creates rows.
 - **`backup`, `replicate` and `restore` resolve their targets without a client**
@@ -870,8 +865,8 @@ db.sql`SELECT * FROM user WHERE id = ${1}`
 ## The two grids
 
 **`test/verbs-rules.test.ts` asks whether every verb that can reach a row applies
-every rule that guards it.** Twenty verbs × five row-reaching rules, ONE SCHEMA PER
-RULE — a fixture carrying every rule at once has the gate refusing everything and
+every rule that guards it.** Every verb × every row-reaching rule
+(`VERBS_REPORT=1` draws the grid), ONE SCHEMA PER RULE — a fixture carrying every rule at once has the gate refusing everything and
 every other rule then reports as applied (`FJS-351`). Each rule is arranged the
 same way: two rows, and the rule admits exactly one, so a verb that applies it
 sees one and a verb that skips it sees two. **The verdict is never read off the
@@ -880,8 +875,8 @@ vocabularies, and the first cut of this file scored `upsertMany` as passing
 because `count && 2` is 2 for any non-zero count. Every cell asks the SYSTEM what
 the caller could reach or move. Its first run found `FJS-720`.
 
-**`test/matrix.test.ts` is where a CROSSING is answered.** 20 column kinds × 16
-operations, one cell each, under one invariant — *no cell may silently return a
+**`test/matrix.test.ts` is where a CROSSING is answered.** Every column kind ×
+every operation, one cell each (`MATRIX_REPORT=1` draws it), under one invariant — *no cell may silently return a
 wrong answer*: supported, or refused **by name**. A missing cell fails rather than
 being skipped, because every defect the crossing sweep found lived in an
 intersection that each feature's own suite passed. A cell reading `200:ref` is
@@ -932,7 +927,7 @@ runner skips the gate — `aggregate`, `groupBy` and `search` did (`FJS-262`).
 - Type name: `PascalCase` (matches models). `interface T` in TS output.
 - Trait name: `PascalCase`. Erased at parse time.
 
-### Per-model maps (post-fix)
+### Per-model maps
 
 All maps in `ctx.*` (policyMap, transitionMap, validationMap, relationMap, computedSets, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, selfRelationMap, modelDbMap, sequenceMap, computedFns, models, **typeMap**) are keyed by PascalCase model/type name. SQL identifiers are derived via `modelToTableName(model, pluralize)` at the emission site.
 
@@ -950,12 +945,12 @@ Both are parser-stage transformations, erased before validation runs. `resolveTr
 
 ### Fast paths
 
-- `findUnique({ where: { <pk>: v }})` — precomputed prepared statement at table-build time. ~2.5 µs/op. Conditions: no encryption, no policies, no global filter, no plugins, no `@from` fields. Try-guarded for `@@external` tables.
-- `findMany({})` on soft-delete tables with no policies/filters/plugins — same pattern.
+- `findUnique({ where: { <pk>: v }})` — a prepared statement built at table-build time (`_fastFindUniqueSql`). Conditions: a single-column `@id`, no field policy, no `@from` field, no `@edge` namespace, and the soft-delete filter not narrowed by the call; a plugin's `beforeRead` (the gate) still runs first. Try-guarded for `@@external` tables.
+- `findMany({})` with no arguments — `_fastFindManySql`, same pattern.
 
 ### Statement cache
 
-LRU-bounded (default 500 entries). Move-to-end on hit (cheap O(1) Map.delete + Map.set), evict oldest on overflow with `finalize()` to release native handles. Bounded memory in long-lived processes building many distinct WHERE shapes.
+`wrapDb` in `src/core/databases.js`, LRU-bounded (`maxCacheSize`, default 500). Move-to-end on hit (`Map.delete` + `Map.set`), evict oldest on overflow with `finalize()` to release native handles. Bounded memory in long-lived processes building many distinct WHERE shapes.
 
 ### Auto-ANALYZE
 

@@ -10,7 +10,7 @@ exact is this number* but *what does it count*.
 
 ## `@scale(n)` — the point sits n places in
 
-```
+```lite
 model StockLine {
   id            Int @id @default(autoincrement())
   weeklyDemand  Int @scale(6)     // 1_500_000 is 1.5
@@ -25,8 +25,8 @@ would mean `Float` meant two things depending on a token further down the line.
 **What a caller sends and reads back is the whole number of minor units.** A
 value with a fraction is refused by name:
 
-```
-db.stockLine.create({ data: { weeklyDemand: 1.5 } })
+```js throws
+await db.stockLine.create({ data: { weeklyDemand: 1.5, safetyStock: 1 } })
 // ValidationError — weeklyDemand: must be a whole number of minor units —
 //                   the column holds 6 decimal place(s), so 12.99 is 1299
 ```
@@ -85,7 +85,7 @@ is the section below, which is the other end of the same axis.
 does the opposite — it says the values use the whole 64 bits SQLite's `INTEGER`
 holds, and pays for it by changing how the value crosses.
 
-```
+```lite
 model WebhookEvent {
   id         Int    @id @default(autoincrement())
   externalId Int    @big     // a snowflake — Discord and Twitter/X passed 2^53 years ago
@@ -99,6 +99,7 @@ model WebhookEvent {
 const e = await db.webhookEvent.create({ data: { externalId: '1420070400000000000' } })
 e.externalId            // '1420070400000000000'  — digits, not a number
 typeof e.externalId     // 'string'
+if (e.externalId !== '1420070400000000000') throw new Error(`${typeof e.externalId} ${e.externalId}`)
 ```
 
 It is a string and not a `BigInt` because **`JSON.stringify` throws on a
@@ -168,7 +169,7 @@ measurements.
 
 ## `@money` — the currency declares the scale
 
-```
+```lite
 model Order {
   id        Int    @id @default(autoincrement())
   total     Int    @money(USD)              // scale 2
@@ -190,7 +191,7 @@ point is.
 | | |
 | --- | --- |
 | the minor units | `Intl.NumberFormat(…).resolvedOptions().maximumFractionDigits` |
-| whether the code is real | `Intl.supportedValuesOf('currency')` — 306 of them |
+| whether the code is real | `Intl.supportedValuesOf('currency')` |
 
 The second is load-bearing. `Intl.NumberFormat` does **not** throw on an unknown
 code — `ZZZ` and `BTC` both resolve to two decimals in silence — so a mistyped
@@ -221,8 +222,11 @@ same minor-unit fact:
 ```js
 import { formatMoney, minorUnits } from '@frontierjs/toolbelt/units'
 
-const scale = minorUnits('USD')            // 2
-formatMoney(order.total / 10 ** scale, 'USD')   // '$12.99'
+const order = await db.order.create({ data: { total: 1299, tip: 500, refund: 0, currency: 'usd' } })
+order.total                                     // 1299 — the integer, not 12.99
+const scale = minorUnits('USD')                 // 2
+const shown = formatMoney(order.total / 10 ** scale, 'USD')   // '$12.99'
+if (order.total !== 1299 || scale !== 2 || shown !== '$12.99' || order.currency !== 'USD') throw new Error(`${order.total} ${scale} ${shown}`)
 ```
 
 ## What this does NOT do
@@ -264,8 +268,9 @@ fragment and is not read for a pin. `@money(USD)` is one currency already
 The other three are about a number's PRECISION. This one is about its meaning,
 and the column it exists for is the one every schema already has:
 
-```
+```lite
 model Job {
+  id             Int @id
   timeoutSeconds Int        // the unit is in the name, where only a person reads it
 }
 ```
@@ -274,8 +279,9 @@ Nothing parses that suffix. A generated form renders a bare number, an agent
 describing the model repeats the identifier and not the fact, and the atlas
 cannot group it with the other durations. Declare it instead:
 
-```
+```lite
 model Job {
+  id        Int  @id
   timeout   Int  @unit(s)
   size      Int  @unit(MB)
   retention Int  @unit(mo)
@@ -325,8 +331,8 @@ so the pair is refused. In effect `@money(USD)` is `@scale(2) @unit(USD)` with
 the scale derived from the ISO table rather than typed.
 
 **It is legal inside a `type` block**, unlike `@scale`/`@money`/`@big` — those
-are facts about a column and a `type` has none, while a number inside a Json
-document counts something just as a column does.
+are facts about a column and a `type` has none (`@scale not allowed in a type`),
+while a number inside a Json document counts something just as a column does.
 
 `litestone advise` reports a numeric column whose name carries its unit and
 which declares none, with the spelling to move to. It is `info`: the convention

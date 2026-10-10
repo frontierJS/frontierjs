@@ -399,18 +399,22 @@ export function createAuthPlugin(
         return ctx.json({ ok: true, ended })
       })
 
-      // ── GET /auth/email/verify?token= ────────────────────────────────
+      // ── POST /auth/email/verify ──────────────────────────────────────
+      // A POST, because it spends a single-use token: the mailed link lands on
+      // a web page (`FJS-D616`) and that page posts the token. A GET that
+      // spent it would be burned by a mail scanner's prefetch before the
+      // person clicked, and answering a SessionContext to whoever fetched it.
 
-      app.get(`${prefix}/email/verify`, async (ctx: TransportContext) => {
-        const token = queryText(ctx, 'token')
+      app.post(`${prefix}/email/verify`, async (ctx: TransportContext) => {
+        const { token } = body(ctx)
         if (!token) throw new BadRequest('token is required')
 
         if (!auth.verifyEmail) {
           throw new BadRequest('Email verification not supported by this auth provider')
         }
 
-        const user = await auth.verifyEmail(token)
-        return ctx.json({ ok: true, user })
+        await auth.verifyEmail(token)
+        return ctx.json({ ok: true })
       })
 
       // ── GET /auth/oauth ──────────────────────────────────────────────
@@ -619,28 +623,6 @@ interface AuthBody {
   // rides an httpOnly cookie instead — see CHALLENGE_COOKIE.
   challenge?: string
   code?:      string
-}
-
-/**
- * One query parameter, as text or not at all.
- *
- * `ctx.query` is parsed with bracket notation, so `?token[gt]=` arrives as the
- * OBJECT `{ gt: '' }` — and a value going into a `where` is a where-OPERATOR,
- * not a token. `?token[gt]=` matched the first unexpired row and verified a
- * stranger's address (`FJS-1002`). `FJS-296` gave the BODY a reader for exactly
- * this and the query never got one; the read here was `as string`, a cast that
- * does nothing at runtime.
- *
- * Refused rather than coerced, so the caller is told which parameter was wrong.
- * The OAuth reads below coerce with `String()` instead, and that is a different
- * answer to a different question: they sit inside a redirect flow that has to
- * end on a failure PAGE, where a thrown 400 is the wrong shape.
- */
-function queryText(ctx: TransportContext, key: string): string | undefined {
-  const value = (ctx.query as Record<string, unknown> | undefined)?.[key]
-  if (value === undefined || value === null) return undefined
-  if (typeof value !== 'string') throw new BadRequest(`${key} must be a string`)
-  return value
 }
 
 function body(ctx: TransportContext): AuthBody {

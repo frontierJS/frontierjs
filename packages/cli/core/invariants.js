@@ -118,6 +118,11 @@ export const ENFORCERS = {
          covers: 'every shipped command file compiles AND the output is parsed' },
        { kind: 'test', at: 'packages/mesa/test/emission.test.js',
          covers: 'the compiler\'s own output is parsed rather than matched' }],
+
+  16: [{ kind: 'test', at: 'packages/litestone/test/doc-examples.test.ts',
+         covers: 'litestone\'s own hand-written pages — every unmarked ```lite builds and every ```js/```ts ' +
+                 'runs under the nearest schema (FJS-D860). The other packages\' pages are graded only for ' +
+                 'having such a runner, by `doc-examples-run`' }],
 }
 
 // ─── resolving one ───────────────────────────────────────────────────────────

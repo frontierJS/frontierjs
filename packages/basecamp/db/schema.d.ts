@@ -4515,6 +4515,17 @@ export interface LitestoneClient {
   $now(): Date
 }
 
+// ── Register ─────────────────────────────────────────────────────────────────
+
+// The alias is what breaks the name collision — inside the augmentation
+// `LitestoneClient` is the package's own, so this one is reached under a
+// second name.
+type GeneratedLitestoneClient = LitestoneClient
+
+declare module '@frontierjs/litestone' {
+  interface Register { client: GeneratedLitestoneClient }
+}
+
 // ── createClient ─────────────────────────────────────────────────────────────
 
 export interface CreateClientOptions {
@@ -4526,7 +4537,7 @@ export interface CreateClientOptions {
   parsed?:      Record<string, unknown>
   /** MAIN's path. Overrides a declared `database main`; a second declared database keeps its own. */
   db?:            string
-  /** ':memory:' moves every declared database, jsonl and logger included. */
+  /** ':memory:' moves every declared database, jsonl and trail included. */
   databases?:     string | Record<string, { path?: string }>
   /** 64 hex characters = 32 bytes. Required for @encrypted / @secret. */
   encryptionKey?: string

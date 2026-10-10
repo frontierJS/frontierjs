@@ -14,7 +14,7 @@ model Post {
 }
 ```
 
-`@@softDelete` requires a `deletedAt` field and is **refused at parse** without one — the attribute names that column, so a model missing it answers an empty list to every read with no error, because SQLite reads the unknown identifier in `WHERE "deletedAt" IS NULL` as a string literal rather than raising. The column must be OPTIONAL (a live row holds NULL there); its type is not checked, because `introspect` reads one out of a real database's TEXT column as `String?` and that behaves identically. All reads automatically filter `WHERE deletedAt IS NULL`. Indexes on soft-delete models are automatically partial (covering live rows only).
+`@@softDelete` requires a `deletedAt` field and is **refused at parse** without one — the attribute names that column, so a model missing it answers an empty list to every read with no error, because SQLite reads the unknown identifier in `WHERE "deletedAt" IS NULL` as a string literal rather than raising. The column must be OPTIONAL (a live row holds NULL there); its type is not checked, because `introspect` reads one out of a real database's TEXT column as `String?` and that behaves identically. All reads automatically filter `WHERE deletedAt IS NULL`. An `@@index` on a soft-delete model is partial — `WHERE "deletedAt" IS NULL`, live rows only — and a `@unique`/`@@unique` is not, which § `@unique` and a deleted row explains.
 
 ## Operations
 
@@ -36,6 +36,17 @@ await db.post.restore({ where: { id: 1 } })
 await db.post.delete({ where: { id: 1 } })
 ```
 
+## exists() and count() with soft delete
+
+Both automatically exclude soft-deleted rows. Use `withDeleted: true` to include them:
+
+```js
+await db.post.exists({ where: { id: 1 } })                      // false if soft-deleted
+await db.post.exists({ where: { id: 1 }, withDeleted: true })   // true
+await db.post.count()                                            // live rows only
+await db.post.count({ withDeleted: true })                       // all rows
+```
+
 ## Cascading soft delete
 
 Use `@@softDelete(cascade)` to propagate soft-deletes through FK children:
@@ -44,8 +55,8 @@ Use `@@softDelete(cascade)` to propagate soft-deletes through FK children:
 model Account {
   id        Int @id
   name      String
-  users     users[]
-  sessions  sessions[] @hardDelete   // hard-deleted when account is soft-deleted
+  users     User[]
+  sessions  Session[] @hardDelete   // hard-deleted when account is soft-deleted
   deletedAt DateTime?
   @@softDelete(cascade)
 }
@@ -53,23 +64,41 @@ model Account {
 model User {
   id        Int  @id
   accountId Int
-  account   accounts @relation(fields: [accountId], references: [id])
+  account   Account @relation(fields: [accountId], references: [id])
   deletedAt DateTime?
   @@softDelete
 }
 
 model Session {
   id        Int @id
-  userId    Int
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
   deletedAt DateTime?
   @@softDelete
 }
 ```
 
-When `accounts.remove()` is called:
-- `accounts.deletedAt` is stamped
-- All related `users.deletedAt` is stamped (cascade)
-- All related `sessions` rows are hard-deleted (`@hardDelete`)
+When `db.account.remove()` is called:
+- the account's `deletedAt` is stamped
+- every related `User` row's `deletedAt` is stamped (cascade)
+- every related `Session` row is hard-deleted (`@hardDelete`)
+
+```js
+await db.account.create({ data: { id: 1, name: 'acme' } })
+await db.user.create({ data: { id: 1, accountId: 1 } })
+await db.user.create({ data: { id: 2, accountId: 1 } })
+await db.session.create({ data: { id: 1, accountId: 1 } })
+
+await db.user.remove({ where: { id: 2 } })        // deleted on their own, before the account
+await db.account.remove({ where: { id: 1 } })
+
+if (await db.user.count() !== 0) throw new Error('the cascade stamps every live user')
+if (await db.session.count({ withDeleted: true }) !== 0) throw new Error('@hardDelete removes the rows')
+
+await db.account.restore({ where: { id: 1 } })
+const live = await db.user.findMany()
+if (live.length !== 1 || live[0].id !== 1) throw new Error('user 2 was deleted before the account and stays deleted')
+```
 
 `restore()` reverses the cascade — restores the account and the children that cascade stamped. The cascade stamps every child with the parent's own timestamp and leaves a child that was already deleted with its older one, so `restore()` matches the stamp: a user deleted on their own before the account stays deleted when the account comes back. Hard-deleted children cannot be restored.
 
@@ -79,10 +108,15 @@ Overrides cascade behavior for a specific child model:
 
 ```lite
 model Account {
-  users    users[]                 // soft-deleted when account is soft-deleted
-  sessions sessions[] @hardDelete  // hard-deleted (rows gone) when account is soft-deleted
+  id        Int @id
+  users     User[]                 // soft-deleted when account is soft-deleted
+  sessions  Session[] @hardDelete  // hard-deleted (rows gone) when account is soft-deleted
+  deletedAt DateTime?
   @@softDelete(cascade)
 }
+
+model User    { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  deletedAt DateTime?  @@softDelete }
+model Session { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  deletedAt DateTime?  @@softDelete }
 ```
 
 ## @keep on a relation field — the children outlive the parent
@@ -99,6 +133,9 @@ model Customer {
   deletedAt DateTime?
   @@softDelete(cascade)
 }
+
+model Order { id Int @id  customerId Int  customer Customer @relation(fields: [customerId], references: [id])  deletedAt DateTime?  @@softDelete }
+model Note  { id Int @id  customerId Int  customer Customer @relation(fields: [customerId], references: [id])  deletedAt DateTime?  @@softDelete }
 ```
 
 `@keep` covers the whole subtree beneath that child — if the order survives, its
@@ -118,23 +155,14 @@ holding financial records has.
 The parser emits a warning when a `@@softDelete` model has `hasMany` relations to other `@@softDelete` models but uses plain `@@softDelete` (not cascade):
 
 ```
-Warning: model 'accounts' has @@softDelete but its 'users' relation also has @@softDelete.
-Consider using @@softDelete(cascade) to avoid leaving orphaned deleted children.
+Model 'Account': has @@softDelete and a hasMany relation to 'User' which also uses @@softDelete.
+Soft-deleting a 'Account' row will NOT cascade to 'User' rows — they will remain live.
+Add @@softDelete(cascade) to propagate, @hardDelete on the 'users' field to hard-delete
+children, or @keep on it to say they outlive the parent on purpose.
 ```
 
 Three ways to answer it: `@@softDelete(cascade)` on the parent, `@hardDelete` on
 the field, or `@keep` on the field.
-
-## exists() and count() with soft delete
-
-Both automatically exclude soft-deleted rows. Use `withDeleted: true` to include them:
-
-```js
-await db.post.exists({ where: { id: 1 } })                      // false if soft-deleted
-await db.post.exists({ where: { id: 1 }, withDeleted: true })   // true
-await db.post.count()                                            // live rows only
-await db.post.count({ withDeleted: true })                       // all rows
-```
 
 ## Transitions and soft-delete
 
@@ -163,11 +191,23 @@ await db.order.remove({ where: { id: 1 } })                                  // 
 To require a state before deletion, express it as access rather than as a transition. A row-level policy narrows the `WHERE`, and `remove()` does honor it:
 
 ```lite
-@@deny('delete', status != 'cancelled')
+enum OrderStatus { pending  cancelled }
+
+model Order {
+  id        Int @id
+  status    OrderStatus @default(pending)
+  deletedAt DateTime?
+
+  @@softDelete
+  @@transitions(status, cancel: pending -> cancelled)
+  @@deny('delete', status != 'cancelled')
+}
 ```
 
 ```js
-await db.order.remove({ where: { id: 1 } })   // → null while pending; the row is untouched
+await db.order.create({ data: { id: 1 } })
+const gone = await db.order.remove({ where: { id: 1 } })   // → null while pending; the row is untouched
+if (gone !== null || await db.order.count() !== 1) throw new Error('a pending order is not removable')
 ```
 
 Note it returns `null` rather than throwing — a policy filters rather than refuses, so "no such deletable row" and "not allowed" are the same answer.
@@ -180,11 +220,25 @@ See [schema.md](./schema.md#state-machines) for `@@transitions` itself.
 delete is a visibility rule, not a deletion — so the slot it holds is still
 held:
 
+```lite
+model Doc {
+  id        Int    @id @default(autoincrement())
+  code      String @unique
+  deletedAt DateTime?
+  @@softDelete
+}
+```
+
 ```js
 await db.doc.create({ data: { code: 'x' } })
 await db.doc.remove({ where: { id: 1 } })
 await db.doc.count()                            // 0
-await db.doc.create({ data: { code: 'x' } })    // SoftDeletedUniqueError
+try {
+  await db.doc.create({ data: { code: 'x' } })  // SoftDeletedUniqueError
+  throw new Error('the slot is still held')
+} catch (e) {
+  if (e.name !== 'SoftDeletedUniqueError' || e.status !== 409) throw e
+}
 ```
 
 That refusal names the field, the value and the row holding it, and it is a 409
@@ -206,6 +260,9 @@ The row owns the value, so releasing it is a decision the app makes rather than
 a side effect:
 
 ```js
+await db.doc.create({ data: { code: 'x' } })
+await db.doc.remove({ where: { id: 1 } })
+
 // 1. keep the row, move the value out of the way
 await db.doc.update({ where: { id: 1 }, data: { code: 'x-archived' }, withDeleted: true })
 

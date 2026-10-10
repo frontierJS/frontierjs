@@ -23,8 +23,8 @@
 import { randomBytes } from 'node:crypto'
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
-         slugify, actor }
+import { db, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
+         slugify, }
   from '../../core/resource.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
@@ -38,7 +38,7 @@ import { parseAppSource, sourceKindOf, summarizeSource, describeSource } from '.
 import { runtimeOf } from '../../core/runtime.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
-const WITH_ENV = { environment: true }
+const _WITH_ENV = { environment: true }
 
 /** A value for a parameter that says how to mint one. The number is BYTES,
  *  read the way `openssl rand -hex 32` reads it — so `random_hex_32` is 64

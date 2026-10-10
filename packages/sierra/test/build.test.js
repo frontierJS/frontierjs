@@ -310,6 +310,7 @@ describe('_escapeFencedCodeBlocks preprocessor', () => {
 
   it('converts fenced code block to pre with @html', () => {
     // We test the logic inline since the function is module-private
+    // biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
     function escape(src) {
       return src.replace(
         /^```(\w*)\n([\s\S]*?)^```\s*$/gm,
@@ -333,6 +334,7 @@ describe('_escapeFencedCodeBlocks preprocessor', () => {
   })
 
   it('handles code fence with no language tag', () => {
+    // biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
     function escape(src) {
       return src.replace(
         /^```(\w*)\n([\s\S]*?)^```\s*$/gm,
@@ -350,6 +352,7 @@ describe('_escapeFencedCodeBlocks preprocessor', () => {
   })
 
   it('escapes backticks inside code block', () => {
+    // biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
     function escape(src) {
       return src.replace(
         /^```(\w*)\n([\s\S]*?)^```\s*$/gm,
@@ -369,6 +372,7 @@ describe('_escapeFencedCodeBlocks preprocessor', () => {
   })
 
   it('escapes template literal interpolations inside code block', () => {
+    // biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
     function escape(src) {
       return src.replace(
         /^```(\w*)\n([\s\S]*?)^```\s*$/gm,
@@ -387,6 +391,7 @@ describe('_escapeFencedCodeBlocks preprocessor', () => {
   })
 
   it('leaves non-fenced content unchanged', () => {
+    // biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
     function escape(src) {
       return src.replace(
         /^```(\w*)\n([\s\S]*?)^```\s*$/gm,

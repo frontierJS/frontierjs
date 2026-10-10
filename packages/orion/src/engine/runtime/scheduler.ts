@@ -1,6 +1,6 @@
-import type { ExecutionPlan, Edge } from "../types"
+import type { ExecutionPlan } from "../types"
 import type { ResolutionContext } from "../expression"
-import type { ExecutorOutcome, INodeRegistry, LogEntry } from "../executor"
+import type { ExecutorOutcome, INodeRegistry } from "../executor"
 import type { IExecutionCache } from "../cache"
 import { NodeExecutor } from "../executor"
 import type { ExecutionContext, ExecutionJob, NodeExecutionState } from "./context"

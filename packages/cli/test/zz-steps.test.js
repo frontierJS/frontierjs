@@ -97,8 +97,8 @@ describe('_steps/ — execution scenarios', () => {
 
   // Use the test fixture commands — the real deploy:all needs live server env vars
   const deployFile   = resolve(__dir, 'fixtures/deploy-demo/index.md')
-  const optionalFile = resolve(__dir, 'fixtures/optional-steps/index.md')
-  const requiredFile = resolve(__dir, 'fixtures/required-fails/index.md')
+  const _optionalFile = resolve(__dir, 'fixtures/optional-steps/index.md')
+  const _requiredFile = resolve(__dir, 'fixtures/required-fails/index.md')
   const dispatchFile = resolve(__dir, 'fixtures/dispatch-demo/index.md')
 
   test('all scenarios: sequence, config, skip, --step, optional, required', async () => {
@@ -162,7 +162,7 @@ describe('_steps/ — execution scenarios', () => {
 
     // 10. stepsDir dispatch — redirecting to a missing folder throws a clear error
     const badDispatchFile = resolve(__dir, 'fixtures/dispatch-demo/index.md')
-    const ev10 = await runCommand(badDispatchFile, [], {})
+    const _ev10 = await runCommand(badDispatchFile, [], {})
     // Re-run with a patched fixture isn't practical here — covered by the error path
     // in runtime.js: existsSync check throws with a descriptive message.
 

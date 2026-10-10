@@ -205,6 +205,7 @@ const PKGS = [
   rows:[
     { k:'Definition', v:'A notification is a file, and the file names it',
       why:'OrderPaid.notification.ts is OrderPaid — the same rule job files already follow, so there is no registry to keep in step with the filesystem.',
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the text is emitted into a template literal
       code:"export default defineNotification({\n  via:    (p) => p.total > 100 ? ['inApp', 'email'] : ['inApp'],\n  format: async (p) => ({ title: `Order ${p.id} paid` }),\n})",
       r:['Novu','Courier','a hand-rolled fan-out'] },
     { k:'Fan-out', v:'<code>app.notify</code> → in-app record, WebSocket event, email',

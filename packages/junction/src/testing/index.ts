@@ -26,6 +26,7 @@
 import { createApp, type App, type AppOptions } from '../core/app.ts'
 import { bridge, enterRequest, type ServiceContext }          from '../transport/bridge.ts'
 import { defaultConfig, deepMerge }               from '../config/index.ts'
+import { encodeQueryString }                     from '@frontierjs/toolbelt/query'
 import type { IAuth, SessionContext }            from '../auth/types.ts'
 import type { Service }                          from '../core/service.ts'
 import type { HookMap }                          from '../core/hooks.ts'
@@ -271,9 +272,9 @@ export function request(app: App): Pick<TestRequest, 'get' | 'post' | 'patch' | 
 
     const execute = async (): Promise<TestResponse> => {
       // Build URL with query params
-      const qs = Object.keys(_query).length
-        ? '?' + new URLSearchParams(_query).toString()
-        : ''
+      // The browser client's encoder: URLSearchParams sends '603' bare, which
+      // the wire reads as a number.
+      const qs = encodeQueryString(_query)
       const url = `http://localhost${path}${qs}`
 
       // Build the Request
@@ -353,6 +354,7 @@ export function request(app: App): Pick<TestRequest, 'get' | 'post' | 'patch' | 
       workspace(id: string) { _headers['x-workspace-id'] = id; return req },
       query(params: Record<string, string>) { _query = { ..._query, ...params }; return req },
 
+      // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
       then:  (...args) => run().then(...args),
       catch: (...args) => run().catch(...args),
     }

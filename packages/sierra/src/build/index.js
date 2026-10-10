@@ -14,9 +14,7 @@
  */
 
 import { resolve, isAbsolute, relative } from 'path'
-import { existsSync } from 'fs'
 import { readdir, rm } from 'fs/promises'
-import { pathToFileURL } from 'url'
 import { mesaPlugin, prepareForCompile, inspectOn } from './mesa-plugin.js'
 import { devtoolsPlugin } from '../devtools/plugin.js'
 import { scannerPlugin } from './scanner-plugin.js'
@@ -110,8 +108,6 @@ export function createSierraViteConfig(config = {}) {
   const {
     target = 'spa',
     routesDir = 'src/routes',
-    outDir = 'dist/client',
-    base = '/',
     vite: viteOverrides = {},
     plugins: userPlugins = [],
     mesa: mesaOptions = {},
@@ -191,7 +187,6 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
     target = 'spa',
     base = '/',
     outDir = 'dist/client',
-    routesDir = 'src/routes',
   } = config
 
   /** @type {import('vite').UserConfig} */
@@ -236,7 +231,7 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       // is nobody's answer. And `strictPort`, because vite otherwise hops to the
       // next free port in SILENCE, so the second app's drive tests the first
       // app's app. An app overrides both in its own config (`FJS-821`).
-      port: parseInt(process.env.FLI_PORT_FE ?? process.env.PORT ?? '3000'),
+      port: parseInt(process.env.FLI_PORT_FE ?? process.env.PORT ?? '3000', 10),
       strictPort: true,
       host: !!process.env.VITE_HOST_APP,
       open: false,

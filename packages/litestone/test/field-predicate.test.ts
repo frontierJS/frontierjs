@@ -251,7 +251,7 @@ describe("@allow('write', …) on a field — the predicate reads the STORED row
   })
 
   it('on CREATE the payload IS the row, so it is graded against it', async () => {
-    const { db, sys } = await docs()
+    const { db } = await docs()
     const zoe = db.$setAuth({ id: 'zoe', isAdmin: true })
     const own = await zoe.doc.create({ data: { id: 9, ownerId: 'zoe', title: 'z', notes: 'seeded' } })
     expect(own.notes).toBe('seeded')

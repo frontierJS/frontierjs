@@ -30,7 +30,7 @@ describe('an Int past 2^53 in a column that is not @big', () => {
     expect(row.n).toBe(1152921504606847000)
   })
 
-  // AUDIT-2.3-8: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2403: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // The fixed behavior is one answer on both engines: a value an Int cannot hold
   // exactly is refused on the way in, the way `@exact` already refuses it, so
   // neither engine is asked to read it.
@@ -54,7 +54,7 @@ describe('the optional serialize()', () => {
     } finally { raw.close() }
   })
 
-  // AUDIT-2.3-9: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2402: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // The export has to come from the capi the wrap was handed, not from a global
   // the module build does not set.
   test.failing('the wasm engine exports through the capi it was handed', () => {
@@ -66,7 +66,7 @@ describe('the optional serialize()', () => {
 
 describe('what a backup is made of', () => {
   // Browser half: `$backup` answered `ReferenceError: Bun is not defined`.
-  // AUDIT-2.3-10: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2401: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // The file write belongs behind #host, where the browser half refuses it by name.
   test.failing('core/backup.js reaches the filesystem through #host, never Bun', () => {
     const src = readFileSync(join(SRC, 'core/backup.js'), 'utf8')

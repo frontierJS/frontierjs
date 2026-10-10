@@ -5,7 +5,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, type Harness, signedIn } from './harness.ts'
-import { appWith, json, raw } from './audit-routes-http.ts'
+import { appWith, json } from './audit-routes-http.ts'
 
 let h: Harness
 let verifyMails = 0

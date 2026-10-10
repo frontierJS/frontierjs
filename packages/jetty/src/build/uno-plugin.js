@@ -43,7 +43,7 @@ async function locateUnoCSSFactory(extRoot, viteRoot) {
           _cachedFactory = factory
           return factory
         }
-      } catch (e) {
+      } catch (_e) {
         // Try next candidate
       }
     }

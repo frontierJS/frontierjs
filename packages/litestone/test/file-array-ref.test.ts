@@ -92,6 +92,21 @@ describe('a File[] never takes another row\'s stored ref (FJS-2308)', () => {
     db.$close()
   })
 
+  test('an update dropping a ref without adding a file deletes the dropped file (FJS-2315)', async () => {
+    const { db, deletes, stored } = await client()
+    await db.p.create({ data: { id: 1, photos: [Buffer.from('a'), Buffer.from('b')] } })
+    const [a, b] = stored(1)
+
+    await db.p.update({ where: { id: 1 }, data: { photos: [a] } })
+    expect(stored(1)).toEqual([a])
+    expect(deletes).toEqual([b.key])
+
+    await db.p.update({ where: { id: 1 }, data: { photos: [] } })
+    expect(stored(1)).toEqual([])
+    expect(deletes).toEqual([b.key, a.key])
+    db.$close()
+  })
+
   test('an update not touching the File[] column is untouched', async () => {
     const { db, stored } = await client()
     await db.p.create({ data: { id: 1, photos: [Buffer.from('a')] } })

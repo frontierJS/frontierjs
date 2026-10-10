@@ -273,7 +273,6 @@ class TenantRegistry {
   #parseResult
   #registryDb
   #pool
-  #maxOpen
   #encryptionKey
   #migrationsDir
   #clientOptions
@@ -287,7 +286,6 @@ class TenantRegistry {
     this.#dir           = dir
     this.#registryDb    = registryDb
     this.#pool          = new LRUPool(maxOpen, this.#defaultConcurrency)
-    this.#maxOpen       = maxOpen
     this.#encryptionKey = encryptionKey ?? null
     this.#migrationsDir = migrationsDir ?? null
     this.#inMemory      = inMemory ?? false

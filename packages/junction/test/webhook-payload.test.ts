@@ -330,7 +330,7 @@ describe('a custom store that does not record a subscriber', () => {
   }
 
   it('delivers ungraded rather than refusing', async () => {
-    const app0  = await createTestApp({ users: [{ id: 'alice', isAdmin: true }] as never })
+    const _app0  = await createTestApp({ users: [{ id: 'alice', isAdmin: true }] as never })
     const store = forgetfulStore(createSqliteWebhookStore(new Database(':memory:')))
     const app   = await makeApp({ db: boundary().db, store })
 

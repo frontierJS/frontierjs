@@ -1713,7 +1713,7 @@ describe('a move the engine makes, asked for by a person', () => {
 // range crossed 48 hours would show a step nobody could account for.
 describe('the metric store is readable, and picks its own resolution', () => {
   const HOUR = 3_600_000
-  let seriesId: string
+  let _seriesId: string
 
   beforeAll(async () => {
     const sys = env.system as any
@@ -1721,7 +1721,7 @@ describe('the metric store is readable, and picks its own resolution', () => {
       data: { name: 'test.gaugeReading', labelsKey: 'test.gaugeReading', type: 'gauge',
               lastSeenAt: new Date().toISOString() },
     })
-    seriesId = s.id
+    _seriesId = s.id
     // Recent minutes, inside the raw window.
     for (let i = 0; i < 5; i++)
       await sys.metricPoint.create({ data: { seriesId: s.id, at: Date.now() - i * 60_000, value: i } })

@@ -22,7 +22,7 @@
 //   - unknown → warn (catalog gap or typo)
 //   - dynamic → info (possible blind spot)
 
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import { permissionFor, isFreePermission } from './permission-catalog.js'

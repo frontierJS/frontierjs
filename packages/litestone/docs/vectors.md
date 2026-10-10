@@ -2,7 +2,7 @@
 
 An embedding is a fixed-length list of float32 that is compared by angle rather
 than by equality. SQLite has no vector type and no distance function of its own,
-so the modelling question is not *what type is a vector* but *where does the
+so the modeling question is not *what type is a vector* but *where does the
 comparison run* — and the answer is not the same on a server and in a browser.
 `@vector` declares the column; the engine decides which of the two comparisons
 computes it.
@@ -12,12 +12,15 @@ measurements are `IDEAS/shipped/embedding.md`.
 
 ## The declaration
 
-```
+The examples on this page use this schema; a real embedding is 1536 wide
+where this one is 4, so the vectors fit on a line.
+
+```lite
 model Passage {
-  id        Int     @id @default(autoincrement())
+  id         Int     @id @default(autoincrement())
   documentId Int
-  body      String
-  embedding Bytes?  @vector(1536)
+  body       String
+  embedding  Bytes?  @vector(4)
 
   @@gate("2")
 }
@@ -40,12 +43,23 @@ ran — and it is absent from a similarity list rather than failing one.
 
 ## Retrieval is an ordering, not a verb
 
+A stored vector is the float32 bytes — a `Float32Array`, or a `Uint8Array`
+over one — and the query vector is numbers:
+
 ```js
-const hits = await db.passage.findMany({
+const sys = db.asSystem()
+await sys.passage.create({ data: { documentId: 42, body: 'east',  embedding: new Float32Array([1, 0, 0, 0]) } })
+await sys.passage.create({ data: { documentId: 42, body: 'north', embedding: new Float32Array([0, 1, 0, 0]) } })
+await sys.passage.create({ data: { documentId: 42, body: 'near',  embedding: new Float32Array([0.9, 0.1, 0, 0]) } })
+
+const queryVector = [1, 0, 0, 0]
+const hits = await sys.passage.findMany({
   where:   { documentId: 42 },
   orderBy: { embedding: { near: queryVector } },
   limit:   10,
 })
+// → east, near, north — nearest first
+if (hits.map(h => h.body).join() !== 'east,near,north') throw new Error(hits.map(h => h.body).join())
 ```
 
 **`search()` earned a verb of its own because FTS5 is a different engine on a
@@ -62,7 +76,7 @@ filtered. Measured, the filter is also a **speed-up** — a quarter of the rows 
 
 `near` takes the query vector as numbers — an array or a `Float32Array`:
 
-```js
+```js fragment
 orderBy: { embedding: { near: await embed(question) } }
 ```
 
@@ -75,7 +89,13 @@ deliberately: a cosine cutoff is a number every corpus guesses differently, and
 `FJS-D329` hands the app the value instead of a knob it has to invent.
 
 ```js
-hits[0]._distance   // 0.0821…
+const sys = db.asSystem()
+await sys.passage.create({ data: { documentId: 1, body: 'a', embedding: new Float32Array([1, 0, 0, 0]) } })
+await sys.passage.create({ data: { documentId: 1, body: 'b', embedding: new Float32Array([0.9, 0.1, 0, 0]) } })
+const hits = await sys.passage.findMany({ orderBy: { embedding: { near: [1, 0, 0, 0] } } })
+hits[0]._distance   // 0
+hits[1]._distance   // 0.0061…
+if (hits[0]._distance !== 0 || !(hits[1]._distance > 0 && hits[1]._distance < 0.01)) throw new Error(JSON.stringify(hits.map(h => h._distance)))
 ```
 
 A model that declares `@vector` may not also declare a field called `_distance`;
@@ -97,11 +117,15 @@ and a distance belongs to the query vector.
 ## The column is not in the default payload
 
 ```js
-const [p] = await db.passage.findMany({ limit: 1 })
+const sys = db.asSystem()
+await sys.passage.create({ data: { documentId: 1, body: 'a', embedding: new Float32Array([1, 0, 0, 0]) } })
+
+const [p] = await sys.passage.findMany({ limit: 1 })
 p.embedding                                     // undefined
 
-await db.passage.findMany({ select: { id: true, embedding: true } })
-                                                // …and here it is
+const [q] = await sys.passage.findMany({ select: { id: true, embedding: true } })
+q.embedding                                     // …and here it is: Uint8Array(16)
+if ('embedding' in p || !(q.embedding instanceof Uint8Array) || q.embedding.length !== 16) throw new Error('payload rule changed')
 ```
 
 Four bytes a dimension is 6 kB on a 1536-dimension column, so twenty rows of an
@@ -122,8 +146,10 @@ A `BLOB` column and one `CHECK`:
 
 ```sql
 "embedding" BLOB,
-CHECK ("embedding" IS NULL OR (typeof("embedding") = 'blob' AND length("embedding") = 6144))
+CHECK ("embedding" IS NULL OR (typeof("embedding") = 'blob' AND length("embedding") = 16))
 ```
+
+— 16 bytes for the 4 dimensions above; 6144 at 1536.
 
 **No index, and that is measured rather than lazy.** At `sqlite-vec` 0.1.9 the
 `vec0` virtual table is exact brute force — it measured *slower* than a plain
@@ -152,9 +178,10 @@ valid blob and it is the *distance* that is null.
 **A `NaN` or an `Infinity`.** Every distance involving the row is then `NaN`,
 which sorts unpredictably rather than losing.
 
-```
-embedding: must be a 1536-dimension float32 vector — it is every-dimension zero,
-which is what an empty or failed embed() returns …
+```js throws
+await db.asSystem().passage.create({ data: { documentId: 1, body: 'z', embedding: new Float32Array([0, 0, 0, 0]) } })
+// ValidationError — embedding: must be a 4-dimension float32 vector — it is every-dimension zero,
+//                   which is what an empty or failed embed() returns …
 ```
 
 A wrong dimension, a wrong byte length and a non-blob are refused the same way,

@@ -3866,6 +3866,54 @@ describe('schema-in-memory', () => {
 })
 
 
+// ─── doc-examples-run ─────────────────────────────────────────────────────────
+//
+// Invariant 16's wiring half. The verdict is the package's own runner (FJS-D860);
+// this grades that one exists and that a test script reaches it.
+
+describe('doc-examples-run', () => {
+  const pkg = (label, files, scripts = { test: 'bun test test/' }) => tree('de-' + label, {
+    'packages/thing/package.json': JSON.stringify({ name: 'thing', scripts }),
+    ...Object.fromEntries(Object.entries(files).map(([f, body]) => [`packages/thing/${f}`, body])),
+  })
+  const check = (root) => runChecks({ root, scope: 'repo', only: ['doc-examples-run'] })
+  const README = '# thing\n\n```js\nimport { x } from "thing"\nx()\n```\n'
+
+  test('a runnable fence and no runner is a finding naming the count', () => {
+    const { findings } = check(pkg('none', { 'README.md': README, 'docs/guide.md': '```lite\nmodel A { id Int @id }\n```\n' }))
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/2 runnable fence\(s\) \(js, lite\)/)
+    expect(findings[0].invariant).toBe(16)
+  })
+
+  test('a runner the test script walks to is silent', () => {
+    expect(check(pkg('walked', { 'README.md': README, 'test/doc-examples.test.ts': '//\n' })).findings).toEqual([])
+  })
+
+  test('a runner named by a hand-listed script is silent', () => {
+    const root = pkg('listed', { 'README.md': README, 'test/doc-examples.test.js': '//\n' },
+      { test: 'bun test test/a.test.js test/doc-examples.test.js' })
+    expect(check(root).findings).toEqual([])
+  })
+
+  test('a runner no test script reaches is a finding', () => {
+    const root = pkg('unrun', { 'README.md': README, 'test/doc-examples.test.ts': '//\n' },
+      { test: 'bun test test/a.test.js' })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/no test script runs it/)
+  })
+
+  test('only fragments, prose fences and shell is nothing to run', () => {
+    const docs = '```js fragment\n{ a: 1 }\n```\n```sh\nbun install\n```\n```json\n{}\n```\n```\nplain\n```\n'
+    expect(check(pkg('fragments', { 'README.md': docs })).findings).toEqual([])
+  })
+
+  test('a generated snapshot page is not docs', () => {
+    expect(check(pkg('snapshot', { 'docs/surface.snapshot.md': README })).findings).toEqual([])
+  })
+})
+
 // ─── seams ────────────────────────────────────────────────────────────────────
 //
 // Both rules grade a CLAIM rather than the code: the `bridge-index` skill says
@@ -4127,7 +4175,7 @@ describe('a .mesa <style> holds no raw color, size or spacing value', () => {
 // `app-layout` — the same rule, so the allowance and the baseline are one.
 describe('app-layout grades the src/ layout (FJS-1888)', () => {
   const layout = (name, files) => only(tree(name, { ...CLEAN, ...files }), 'app-layout').findings
-  const about  = (findings, re) => findings.filter(f => re.test(f.message))
+  const _about  = (findings, re) => findings.filter(f => re.test(f.message))
 
   test('a clean tree, with the scaffold files loose in web/src, finds nothing', () => {
     expect(layout('lay-clean', {

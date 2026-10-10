@@ -12,7 +12,7 @@
 //     (Invariant 2), so every name goes through @frontierjs/toolbelt/inflect —
 //     the one owner — and the original is kept with @map.
 
-import { singularize, pascal, camel, modelName } from '@frontierjs/toolbelt/inflect'
+import { singularize, camel, modelName } from '@frontierjs/toolbelt/inflect'
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED, namesATable } from './wide-int.js'
 import { predicateToLite } from '../core/migrate.js'

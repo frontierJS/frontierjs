@@ -92,10 +92,10 @@ const RULES = {
      earlier, and renderRow drops a token that opens inside one already
      emitted. */
   json: [
-    { tag: 'b', re: /(".+"):/gi },
+    { tag: 'b', re: /(?<!\\)("(?:[^"\\]|\\.)*")(?=:)/g },
     { tag: 'strong', re: /\b(?:true|false|null)\b/g }
   ],
-  yaml: [{ tag: 'b', re: /([\w ]+):/gi }],
+  yaml: [{ tag: 'b', re: /(?<![\w ])([\w ]+):/gi }],
 
   /* A `.lite` field line is `name Type @attr(arg)`, and two of those three
      have no rule that reaches them.
@@ -149,14 +149,16 @@ const HTML_TAGS = [
   // property name
   { tag: 'b', re: /"\w+":/g },
 
-  // function name
-  { tag: 'b', re: /([\w]+)\(/gi },
+  /* function name. The two `\b` here and on the property rule below keep a
+     word run from being rescanned from every start inside it, which made one
+     long line quadratic (FJS-2201). */
+  { tag: 'b', re: /\b([\w]+)\(/gi },
 
   // numeric value
   { tag: 'em', re: /\b\d+\.?[%\w\b]*/g },
 
   // variable name
-  { tag: 'b', re: /([\w]+)\./g, lang: ['js'] }
+  { tag: 'b', re: /\b([\w]+)\./g, lang: ['js'] }
 ]
 
 /*
@@ -209,9 +211,9 @@ function encode(str) {
 
 // wrap token
 function elem(name, str) {
-  if (str == '<') str = '&lt;'
-  else if (str == '>') str = '&gt;'
-  else if (str == '&') str = '&amp;'
+  if (str === '<') str = '&lt;'
+  else if (str === '>') str = '&gt;'
+  else if (str === '&') str = '&amp;'
   return `<${name}>${str}</${name}>`
 }
 
@@ -238,13 +240,13 @@ function getMDTags(str) {
   if (['import', 'export'].includes(s.slice(0, 6))) return getTags('js')
 
   // HTML
-  if (c == '<') return getTags('html')
+  if (c === '<') return getTags('html')
 
   // heading
-  if (c == '#') return [{ tag: 'label', re: /.+/ }]
+  if (c === '#') return [{ tag: 'label', re: /.+/ }]
 
   // quote
-  if (c == '>') {
+  if (c === '>') {
     return [
       { tag: 'i', re: />/ },
       { tag: 'sup', re: / .+/ }
@@ -255,8 +257,8 @@ function getMDTags(str) {
   if (/^\w+: /.exec(s)) return getTags('yaml')
 
   // component
-  if (c == '[' && s.endsWith(']')) {
-    return s[1] == '.' ? [{ tag: 'label', re: /\w+/g }] : getTags('md')
+  if (c === '[' && s.endsWith(']')) {
+    return s[1] === '.' ? [{ tag: 'label', re: /\w+/g }] : getTags('md')
   }
 
   // lists, links, images, fenced code
@@ -292,7 +294,7 @@ export function parseRow(row, lang) {
     const { re, shift } = el
 
     row.replace(re, function (match, start, n) {
-      if (arguments.length == 4) {
+      if (arguments.length === 4) {
         const more = shift ? match.indexOf(start) : 0
         match = start
         start = n + more
@@ -318,13 +320,14 @@ export function renderRow(row, lang, mark = true) {
   const ret = []
   let index = 0
 
-  for (var i = 0, max = 0, len = els.length, el, next; (el = els[i]); i++) {
+  // biome-ignore lint/correctness/noInnerDeclarations: a function-scoped var is read after the loop
+  for (var i = 0, max = 0, _len = els.length, el, next; (el = els[i]); i++) {
     const { start, end } = el
     next = els[i + 1] || []
 
     // skip overlappings
     if (start < max) continue
-    if (start == next[0] && next[1] > end) continue
+    if (start === next[0] && next[1] > end) continue
     if (end > max) max = end
     else continue
 
@@ -397,7 +400,7 @@ function commentStep(line, open) {
   const [comm_start, comm_end] = COMMENT
   if (open) return { comment: true, open: !comm_end.test(line) }
   if (comm_start.test(line) && !isTrailingComment(line))
-    return { comment: true, open: !(comm_end.test(line) && line?.trim() != "'''") }
+    return { comment: true, open: !(comm_end.test(line) && line?.trim() !== "'''") }
   return { comment: false, open: false }
 }
 
@@ -409,7 +412,7 @@ function commentStep(line, open) {
 export function glowLanguage(source, language) {
   if (language) return language
   const first = Array.isArray(source) ? source[0] : source
-  return first?.[0] == '<' ? 'html' : language
+  return first?.[0] === '<' ? 'html' : language
 }
 
 /*
@@ -428,16 +431,16 @@ export function glowLine(line, opts = {}, open = false) {
     const prefix = opts.prefix ?? true
     const is_md = isMD(primaryLang(lang))
     const c = line[0]
-    let wrap = prefix && (is_md ? c == '|' && 'dfn' : PREFIXES[c])
-    if (wrap && is_md && line == '---') wrap = null
+    let wrap = prefix && (is_md ? c === '|' && 'dfn' : PREFIXES[c])
+    if (wrap && is_md && line === '---') wrap = null
     /* `--custom-property: …` is not a removed line. Two dashes never
        start a diff marker, so this costs nothing and stops the marker
        eating one character off every CSS variable declaration. */
-    if (wrap && c == '-' && line[1] == '-') wrap = null
-    if (wrap) line = (line[1] == ' ' ? ' ' : '') + line.slice(1)
+    if (wrap && c === '-' && line[1] === '-') wrap = null
+    if (wrap) line = (line[1] === ' ' ? ' ' : '') + line.slice(1)
 
     // escape character
-    if (prefix && c == '\\') line = line.slice(1)
+    if (prefix && c === '\\') line = line.slice(1)
 
     html = renderRow(line, lang, opts.mark ?? true)
     if (wrap) html = elem(wrap, html)
@@ -454,7 +457,7 @@ export function glow(str, opts = { prefix: true, mark: true }) {
   /* `''.split()` is `['']` — one empty line, not no lines — so without the
      second clause an empty source returns an empty <code> block while an
      empty array returns nothing. One of them has to be wrong. */
-  if (!lines || !lines.length || (lines.length == 1 && !lines[0])) return ''
+  if (!lines || !lines.length || (lines.length === 1 && !lines[0])) return ''
 
   const lang = glowLanguage(lines, opts.language)
   const line = { ...opts, language: lang }

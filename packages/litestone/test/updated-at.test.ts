@@ -128,7 +128,7 @@ describe('@updatedAt — the emitted DDL', () => {
     // `FJS-531`. A trigger can only read SQLite's clock, so a suite that froze
     // one still got today and the crossing a frozen clock exists to stage could
     // not be staged. An existing trigger is retired by `litestone migrate`.
-    expect(ddl()).not.toMatch(/CREATE TRIGGER[^]*?_updatedAt/)
+    expect(ddl()).not.toMatch(/CREATE TRIGGER[\s\S]*?_updatedAt/)
   })
 
   it('keeps the column DEFAULT, which is the floor for a write the client never sees', () => {

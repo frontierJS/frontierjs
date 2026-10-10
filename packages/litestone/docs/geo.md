@@ -1,7 +1,7 @@
 # Where a row is — `@point`
 
 A coordinate is two numbers that have to be indexed separately and read as one.
-`.lite` has no geometry type and neither does SQLite, so the modelling question
+`.lite` has no geometry type and neither does SQLite, so the modeling question
 is not *what type is a point* but *what does the database have to be able to
 prune on*. `@point` answers both from one declaration.
 
@@ -10,7 +10,9 @@ Ruled in `FJS-D316` and `FJS-D317`; the reasoning and the measurements are
 
 ## The declaration
 
-```
+The examples on this page use this schema:
+
+```lite
 model Job {
   id      Int     @id @default(autoincrement())
   address String
@@ -21,9 +23,10 @@ model Job {
 **The value is one field, written and read whole.**
 
 ```js
-await db.job.create({ data: { address: '12 Elm', site: { lat: 40.71, lng: -100.23 } } })
+const { id } = await db.job.create({ data: { address: '12 Elm', site: { lat: 40.71, lng: -100.23 } } })
 const job = await db.job.findFirst({ where: { id } })
 job.site   // { lat: 40.71, lng: -100.23 }
+if (job.site.lat !== 40.71 || job.site.lng !== -100.23) throw new Error(JSON.stringify(job.site))
 ```
 
 **The keys are named rather than assumed.** `@point(lat, lng)` and
@@ -76,6 +79,10 @@ is that a row has a usable coordinate or has none.
 | `{ lat: '40.7', lng: '-100' }` | refused — a coordinate is a number |
 | `{ lat: 91, lng: 0 }` | refused — outside ±90 |
 
+```js throws
+await db.job.create({ data: { address: 'half', site: { lat: 40.71 } } })
+```
+
 **The `coalesce()` in that CHECK is load-bearing.** A `CHECK` fails only on
 `FALSE`, so the natural spelling —
 `json_type(site, '$.lat') IN ('integer', 'real')` — evaluates to `NULL` for an
@@ -89,7 +96,7 @@ it cannot judge.
 `@point` is the whole declaration of a coordinate. `@type` grades the **rest**
 of the object, which is a question only the application can answer:
 
-```
+```lite
 type SiteLocation {
   lat        Float
   lng        Float
@@ -99,6 +106,7 @@ type SiteLocation {
 }
 
 model Visit {
+  id   Int  @id
   site Json @type(SiteLocation) @point(lat, lng)
 }
 ```
@@ -113,8 +121,8 @@ Three rules hold between them:
    matches.
 3. **The type may only narrow.** `@point`'s ±90 / ±180 is the floor; a type
    declaring `lat Float @gte(49) @lte(61)` for an application that operates in
-   one country adds a conjunct. Widening past the floor is refused — a latitude
-   of 200 is not a business rule.
+   one country adds a conjunct. A type declaring `lat Float @gte(-200)` parses
+   and changes nothing — the CHECK still holds the row to ±90.
 
 ## What cannot carry a point
 
@@ -130,11 +138,26 @@ Three rules hold between them:
 `near` is the only filter a point answers, and distance is the only ordering
 (`FJS-D318`).
 
+```lite
+model Job {
+  id      Int     @id @default(autoincrement())
+  address String
+  site    Json?   @point(lat, lng)
+}
+```
+
 ```js
-await db.job.findMany({
+await db.job.create({ data: { address: '12 Elm',   site: { lat: 40.71,  lng: -100.23 } } })
+await db.job.create({ data: { address: '14 Elm',   site: { lat: 40.715, lng: -100.235 } } })
+await db.job.create({ data: { address: 'far away', site: { lat: 51.5,   lng: -0.12 } } })
+await db.job.create({ data: { address: 'nowhere',  site: null } })
+
+const near = await db.job.findMany({
   where:   { site: { near: { lat: 40.71, lng: -100.23, within: '5mi' } } },
   orderBy: { site: { near: { lat: 40.71, lng: -100.23 } } },
 })
+// → 12 Elm, 14 Elm
+if (near.map(j => j.address).join() !== '12 Elm,14 Elm') throw new Error(near.map(j => j.address).join())
 ```
 
 **Box first, then exact.** The radius is turned into a list of bounding boxes,

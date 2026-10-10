@@ -537,7 +537,7 @@ function acquireLock(lockFile, timeoutMs = 5000) {
     } catch {
       // A holder that died mid-claim leaves the guard behind.
       try {
-        const heldBy = parseInt(readFileSync(guard, 'utf8'))
+        const heldBy = parseInt(readFileSync(guard, 'utf8'), 10)
         if (heldBy && !isProcessAlive(heldBy)) { unlinkSync(guard); continue }
       } catch {}
       if (Date.now() - start > timeoutMs) throw new Error(`Could not acquire ${guard} within ${timeoutMs}ms`)

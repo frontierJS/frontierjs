@@ -1200,7 +1200,7 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/{service}/{id}` | service |
 | PUT | `/{service}/{id}` | service |
 | OPTIONS | `/*` | raw |
-| GET | `/auth/email/verify` | raw |
+| POST | `/auth/email/verify` | raw |
 | POST | `/auth/email/verify/request` | raw |
 | POST | `/auth/login` | raw |
 | POST | `/auth/login/challenge` | raw |

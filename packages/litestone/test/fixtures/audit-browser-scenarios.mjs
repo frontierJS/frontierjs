@@ -72,8 +72,8 @@ model Project { id Int @id @default(autoincrement())  workspaceId String  name S
     // past the double range; bun:sqlite answers a rounded Number.
     ['int-past-safe', async () => {
       const db = (await open(`model Num { id Int @id @default(autoincrement())  n Int }`)).asSystem()
-      let created
-      try { created = await db.num.create({ data: { n: 2 ** 60 } }) } catch (e) { return { refused: describeErr(e) } }
+      let _created
+      try { _created = await db.num.create({ data: { n: 2 ** 60 } }) } catch (e) { return { refused: describeErr(e) } }
       const row = await db.num.findFirst()
       return { n: typeof row.n === 'bigint' ? row.n.toString() + 'n' : row.n, type: typeof row.n }
     }],

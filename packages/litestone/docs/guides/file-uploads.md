@@ -14,31 +14,6 @@ Store file metadata in SQLite and file bytes in S3-compatible object storage, wi
 
 ---
 
-## Setup
-
-```js
-// lib/db.js
-import { createClient } from '@frontierjs/litestone'
-import { FileStorage } from '@frontierjs/litestone/storage'
-
-export const db = await createClient({
-  path: './schema.lite',
-  plugins: [FileStorage({
-    provider:        'r2',
-    bucket:          process.env.R2_BUCKET,
-    endpoint:        process.env.R2_ENDPOINT,    // https://<account>.r2.cloudflarestorage.com
-    accessKeyId:     process.env.R2_ACCESS_KEY,
-    secretAccessKey: process.env.R2_SECRET_KEY,
-    keyPattern:      ':model/:field/:uuid.:ext',
-    dev:             'local',   // falls back to ./storage/ in development
-  })]
-})
-```
-
-`dev: 'local'` means no S3 config is needed during local development — files are written to `./storage/`.
-
----
-
 ## Schema
 
 ```lite
@@ -59,9 +34,46 @@ model Document {
 }
 ```
 
-`@accept` validates the MIME type of the uploaded file before storing. It throws a `ValidationError` with a descriptive message if the type doesn't match.
+`@accept` grades the uploaded bytes against the list before storing — the
+sniffed type where the format has a magic number, the claimed type otherwise —
+and refuses by name: `Document.attachments: file type "image/png" not allowed —
+accepted: application/pdf, …`.
 
-`@keepVersions` prevents the old S3 object from being deleted when the field is updated. Useful for versioned assets or files with external references.
+`@keepVersions` prevents the old object from being deleted when the field is updated. Useful for versioned assets or files with external references.
+
+---
+
+## Setup
+
+```js
+// lib/db.js
+import { createClient } from '@frontierjs/litestone'
+import { FileStorage } from '@frontierjs/litestone/storage'
+
+export const db = await createClient({
+  path: './schema.lite',
+  db:   './app.db',
+  plugins: [FileStorage({
+    provider:        process.env.R2_ENDPOINT ? 'r2' : 'local',   // ./storage/ until a bucket is configured
+    bucket:          process.env.R2_BUCKET,
+    endpoint:        process.env.R2_ENDPOINT,    // https://<account>.r2.cloudflarestorage.com
+    accessKeyId:     process.env.R2_ACCESS_KEY,
+    secretAccessKey: process.env.R2_SECRET_KEY,
+    publicBase:      process.env.ASSETS_URL ?? 'http://localhost:3001/storage',   // what a stored ref resolves to
+    keyPattern:      ':model/:field/:uuid.:ext',
+  })]
+})
+```
+
+`provider: 'local'` writes to `./storage/` and needs no credentials. With no
+`provider` and no `endpoint` at all, the plugin picks `local` when `NODE_ENV`
+is `development` or `test` and refuses to build otherwise, so a production
+process cannot fall back to a local directory by accident.
+
+A `File` column stores a reference — `{ key, name, provider, bucket, endpoint,
+publicBase, size, mime, uploadedAt }` — and a read resolves it to a URL:
+`publicBase` (or, failing that, `endpoint`) joined to the key. With neither,
+the field reads back as `null`.
 
 ---
 
@@ -70,87 +82,133 @@ model Document {
 Pass a `Blob`, `File`, `Buffer`, or `ReadableStream` as the field value:
 
 ```js
-// Route handler — multipart form upload
-app.post('/users/:id/avatar', async (req, res) => {
-  const file = req.files.avatar   // Blob or File from multipart parser
+import { FileStorage } from '@frontierjs/litestone/storage'
+const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
 
-  const user = await req.db.user.update({
-    where: { id: Number(req.params.id) },
-    data:  { avatar: file },
-  })
+const png  = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+const file = new File([png], 'me.png', { type: 'image/png' })   // what a multipart parser hands you
 
-  // user.avatar → resolved URL (autoResolve: true by default)
-  res.json({ avatarUrl: user.avatar })
+await db.user.create({ data: { id: 1, email: 'ada@example.com' } })
+await db.user.update({
+  where: { id: 1 },
+  data:  { avatar: file },
 })
-// → { avatarUrl: 'https://cdn.example.com/users/1/avatar/abc123.jpg' }
+
+const user = await db.user.findUnique({ where: { id: 1 } })
+// user.avatar → 'http://localhost:3001/storage/User/avatar/<uuid>.png'  (autoResolve: true by default)
+if (!/^http:\/\/localhost:3001\/storage\/User\/avatar\/\w+\.png$/.test(user.avatar)) throw new Error(user.avatar)
 ```
 
-Multiple files:
+The row a write hands back carries the column as the stored reference text
+rather than the resolved URL, so a handler answers the URL from a read:
 
-```js
-app.post('/documents/:id/attachments', async (req, res) => {
-  const files = req.files.attachments   // array of Blobs
+```js failing
+// FJS-2422 — the write result carries the ref as text
+import { FileStorage } from '@frontierjs/litestone/storage'
+const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
+const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'me.png', { type: 'image/png' })
+await db.user.create({ data: { id: 1, email: 'ada@example.com' } })
+const user = await db.user.update({ where: { id: 1 }, data: { avatar: file } })
+if (!user.avatar.startsWith('http://')) throw new Error(`update() returned ${user.avatar}`)
+```
 
-  const doc = await req.db.document.update({
-    where: { id: Number(req.params.id) },
-    data:  { attachments: files },
-  })
+Multiple files. A `File[]` read resolves to the list of URLs; the stored
+references are intact (`resolve: false` returns them), but the resolving read
+currently answers an empty list, which is a defect:
 
-  res.json({ attachments: doc.attachments })
-  // → { attachments: ['https://...', 'https://...'] }
+```js failing
+// FJS-2419 — a File[] reads as empty under autoResolve
+import { FileStorage } from '@frontierjs/litestone/storage'
+const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
+const pdf = new File([new TextEncoder().encode('%PDF-1.4 …')], 'spec.pdf', { type: 'application/pdf' })
+
+await db.document.create({ data: { id: 1, name: 'Spec', ownerId: 1 } })
+await db.document.update({
+  where: { id: 1 },
+  data:  { attachments: [pdf, pdf] },
 })
+
+const doc = await db.document.findUnique({ where: { id: 1 } })
+// doc.attachments → ['http://…/Document/attachments/<uuid>.pdf', 'http://…/Document/attachments/<uuid>.pdf']
+if (doc.attachments.length !== 2) throw new Error(`a File[] read answered ${JSON.stringify(doc.attachments)}`)
+```
+
+A type the field does not accept is refused before anything is stored:
+
+```js throws
+import { FileStorage } from '@frontierjs/litestone/storage'
+const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
+const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'x.png', { type: 'image/png' })
+await db.document.create({ data: { id: 1, name: 'Spec', ownerId: 1 } })
+await db.document.update({ where: { id: 1 }, data: { attachments: [png] } })
 ```
 
 ---
 
 ## Presigned download URLs
 
-For private buckets, generate time-limited presigned URLs:
+For private buckets, generate time-limited presigned URLs. `select: { field:
+{ resolve: false } }` returns the stored reference instead of the resolved
+URL — necessary for signing:
 
 ```js
-import { useStorage } from '@frontierjs/litestone/storage'
+import { FileStorage, useStorage } from '@frontierjs/litestone/storage'
+const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
 
 const storage = useStorage({
-  provider:        'r2',
+  provider:        process.env.R2_ENDPOINT ? 'r2' : 'local',
   bucket:          process.env.R2_BUCKET,
   endpoint:        process.env.R2_ENDPOINT,
   accessKeyId:     process.env.R2_ACCESS_KEY,
   secretAccessKey: process.env.R2_SECRET_KEY,
 })
 
-app.get('/documents/:id/download/:field', async (req, res) => {
-  const doc = await req.db.document.findUnique({
-    where:  { id: Number(req.params.id) },
-    select: { id: true, attachments: { resolve: false } },  // get raw refs, not URLs
-  })
+const pdf = new File([new TextEncoder().encode('%PDF-1.4 …')], 'spec.pdf', { type: 'application/pdf' })
+await db.document.create({ data: { id: 1, name: 'Spec', ownerId: 1, attachments: [pdf] } })
 
-  // Sign each ref for 1 hour
-  const signedUrls = await Promise.all(
-    doc.attachments.map(ref => storage.sign(ref, { expiresIn: 3600 }))
-  )
-
-  res.json({ urls: signedUrls })
+const doc = await db.document.findUnique({
+  where:  { id: 1 },
+  select: { id: true, attachments: { resolve: false } },  // raw refs, not URLs
 })
+
+// Sign each ref for 1 hour
+const signedUrls = await Promise.all(
+  doc.attachments.map(ref => storage.sign(ref, { expiresIn: 3600 }))
+)
+if (signedUrls.length !== 1 || !signedUrls[0].includes(doc.attachments[0].key)) throw new Error(JSON.stringify(signedUrls))
 ```
 
-`select: { field: { resolve: false } }` returns the raw reference object instead of the resolved URL — necessary for signing.
+The local provider signs nothing — `sign()` answers the public URL.
 
 ---
 
 ## Downloading to buffer
 
-```js
-app.get('/users/:id/avatar/download', async (req, res) => {
-  const user = await req.db.user.findUnique({
-    where:  { id: Number(req.params.id) },
-    select: { id: true, avatar: { resolve: false } },
-  })
+A `File?` reference asked for with `resolve: false` comes back as the stored
+JSON text rather than the object — `storage.download` and `storage.sign` read
+either, but `.mime` on it is undefined until the defect is fixed:
 
-  const buffer = await storage.download(user.avatar)
-  res.set('Content-Type', user.avatar.type)
-  res.send(buffer)
+```js failing
+// FJS-2422 — resolve: false answers the ref as text
+import { FileStorage, useStorage } from '@frontierjs/litestone/storage'
+const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
+const storage = useStorage({ provider: 'local' })
+
+const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])], 'me.png', { type: 'image/png' })
+await db.user.create({ data: { id: 1, email: 'ada@example.com', avatar: file } })
+
+const user = await db.user.findUnique({
+  where:  { id: 1 },
+  select: { id: true, avatar: { resolve: false } },
 })
+
+const buffer = await storage.download(user.avatar)
+// res.set('Content-Type', user.avatar.mime); res.send(buffer)
+if (buffer.length !== 11 || user.avatar.mime !== 'image/png') throw new Error(`${buffer.length} ${user.avatar.mime}`)
 ```
+
+The reference's type is under `mime`, and what is stored is what the bytes
+were sniffed as, never only what the client claimed.
 
 ---
 
@@ -158,26 +216,29 @@ app.get('/users/:id/avatar/download', async (req, res) => {
 
 FileStorage handles cleanup automatically:
 
-- **On update** — old S3 object is deleted when a `File?` field is replaced (unless `@keepVersions`)
-- **On row delete** — all S3 objects for the row are deleted after the SQL DELETE succeeds
+- **On update** — the old object is deleted when a `File?` field is replaced (unless `@keepVersions`)
+- **On row delete** — all objects for the row are deleted after the SQL DELETE succeeds
 - **On `File[]` update** — objects removed from the array are deleted, new objects uploaded
 
-Cleanup uses `onBeforeDelete` / `onAfterDelete` hooks. If the SQL DELETE fails, no S3 cleanup runs (no orphaned objects).
+Cleanup uses `onBeforeDelete` / `onAfterDelete` hooks. If the SQL DELETE fails, no cleanup runs (no orphaned objects).
 
 ---
 
 ## Serving from a CDN
 
-If your R2 bucket has a public domain (Cloudflare R2's `r2.dev` domain or a custom domain), files resolve directly to CDN URLs. No presigning needed for public assets:
+If your R2 bucket has a public domain (Cloudflare R2's `r2.dev` domain or a custom domain), set it as `publicBase` and files resolve directly to CDN URLs. No presigning needed for public assets:
 
-```js
+```js fragment
 FileStorage({
   provider:   'r2',
   bucket:     'my-app',
   endpoint:   process.env.R2_ENDPOINT,
-  publicUrl:  'https://assets.example.com',  // CDN domain
+  publicBase: 'https://assets.example.com',  // CDN domain
   // ...
 })
 ```
 
-`user.avatar` → `'https://assets.example.com/users/1/avatar/abc123.jpg'`
+`user.avatar` → `'https://assets.example.com/User/avatar/<uuid>.jpg'`
+
+The base is written into each stored reference at upload time, so a reference
+uploaded before the domain was configured keeps resolving against the endpoint.

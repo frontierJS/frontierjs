@@ -51,7 +51,8 @@ import { openDecisions, QUESTION_ID } from './decisions.js'
 export const WEIGHTS = Object.freeze({
   severity:  { S1: 100, S2: 60, S3: 30, S4: 10, decision: 30 },
   citedBy:   4,    // per record citing the row, up to CITED_CAP of them
-  blocks:    10,   // per open row declaring itself blocked by this one
+  blocks:    10,   // the worst open row blocked by this one, scaled by its severity against an S3
+  alsoBlocks: 3,   // each further blocked row, up to BLOCKS_CAP rows in all
   touched:   12,   // a file the row links is in the working tree or a recent commit
   reach:     1,    // per REACH_PER packages depending on the row's, up to REACH_CAP
 })
@@ -94,8 +95,11 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
   }
 
   const blockers = new Map(open.map(r => [r.id, blockedBy(r).filter(id => openId.has(id))]))
+  // What a blocker holds up: the severity of each row waiting on it, so a
+  // ruling holding an S2 is not outweighed by one holding two S3s.
+  const severityOf = new Map(open.map(r => [r.id, r.severity]))
   const blocking = new Map()
-  for (const [id, bs] of blockers) for (const b of bs) blocking.set(b, (blocking.get(b) ?? 0) + 1)
+  for (const [id, bs] of blockers) for (const b of bs) blocking.set(b, [...(blocking.get(b) ?? []), severityOf.get(id)])
 
   const scored = open.map(r => {
     const terms = []
@@ -105,8 +109,12 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
     const cited = Math.min(citers.get(r.id) ?? 0, CITED_CAP)
     if (cited) terms.push({ term: 'cited', value: cited * WEIGHTS.citedBy, note: `cited by ${citers.get(r.id)}` })
 
-    const holds = Math.min(blocking.get(r.id) ?? 0, BLOCKS_CAP)
-    if (holds) terms.push({ term: 'blocks', value: holds * WEIGHTS.blocks, note: `blocks ${blocking.get(r.id)}` })
+    const held = (blocking.get(r.id) ?? []).sort((a, b) => (WEIGHTS.severity[b] ?? 0) - (WEIGHTS.severity[a] ?? 0))
+    if (held.length) {
+      const worst = Math.round(WEIGHTS.blocks * (WEIGHTS.severity[held[0]] ?? 0) / WEIGHTS.severity.S3)
+      const value = worst + (Math.min(held.length, BLOCKS_CAP) - 1) * WEIGHTS.alsoBlocks
+      terms.push({ term: 'blocks', value, note: `blocks ${held.length}, worst ${held[0]}` })
+    }
 
     const near = r.files.filter(isCode).filter(f => recent.has(f.replace(/\/$/, '')) || [...recent].some(p => f.endsWith('/') && p.startsWith(f)))
     if (near.length) terms.push({ term: 'touched', value: WEIGHTS.touched, note: `touched recently: ${near[0]}` })
@@ -159,6 +167,12 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
 // register, so a row linking one would read as *being worked on* forever.
 function isCode(path) {
   return !/\.md$/i.test(path) && !/\.snapshot\./.test(path)
+}
+
+// A blocked row keeps the severity and score the ranking gave it: it is the
+// same ranked list, one line a row, so an S2 waiting on a ruling still reads S2.
+export function blockedLine(r) {
+  return `${r.id.padEnd(9)} ${r.severity.padEnd(8)} ${String(r.score).padStart(3)}  waits on ${r.blockedBy.join(', ')} — ${r.title.slice(0, 80)}`
 }
 
 export function byHand(record) {

@@ -51,7 +51,7 @@ async function sweep(dir) {
   try { names = await readdir(dir) } catch { return }
   await Promise.all(names.map(name => {
     const pid = Number(SIDECAR.exec(name)?.[1])
-    if (!pid || pid === process.pid || isAlive(pid)) return
+    if (!pid || pid === process.pid || isAlive(pid)) return undefined
     return rm(join(dir, name), { force: true }).catch(() => {})
   }))
 }

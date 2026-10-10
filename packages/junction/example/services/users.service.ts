@@ -4,8 +4,7 @@
 
 import { createService }        from '../../src/core/service.ts'
 import { createSchema, v }      from '../../src/core/schema.ts'
-import { NotFound, Conflict,
-         Unauthorized }         from '../../src/core/errors.ts'
+import { NotFound, Conflict}         from '../../src/core/errors.ts'
 import { protect }              from '../../src/core/hooks.ts'
 import type { App }             from '../../src/core/app.ts'
 import type { ServiceContext }  from '../../src/transport/bridge.ts'

@@ -11,7 +11,7 @@ resolve by `fli check`'s `invariant-enforcer`.
 enforced, which is the whole reason this file exists — so the gap is written down
 rather than left to be rediscovered.
 
-Covered: **18 of 19**.
+Covered: **19 of 19**.
 
 ### 1. Dependency direction
 
@@ -120,7 +120,10 @@ Covered: **18 of 19**.
 
 ### 16. Runnable examples are verified, not sketches
 
-**none** — nothing in this repo fails when it stops being true.
+| Kind | What | Covers |
+| --- | --- | --- |
+| `fli check` | `doc-examples-run` | a package whose docs fence a runnable example has a suite that runs it |
+| test | `packages/litestone/test/doc-examples.test.ts` | litestone's own hand-written pages — every unmarked ```lite builds and every ```js/```ts runs under the nearest schema (FJS-D860). The other packages' pages are graded only for having such a runner, by `doc-examples-run` |
 
 ### 17. Three markdown files at a package root is the standard
 
@@ -143,12 +146,4 @@ Covered: **18 of 19**.
 | `fli check` | `resource-file-name` | a resource file is named for its model |
 | `fli check` | `resource-one-per-file` | one Resource per file |
 | `fli check` | `widget-entry-name` | a widget is a PascalCase file, or a directory holding index.mesa |
-
-## The gap
-
-Nothing here fails when these stop being true. Each is a rule to write, or a
-statement that no mechanical check can reach it — and until one of the two is
-recorded, neither has been decided.
-
-- **16. Runnable examples are verified, not sketches**
 

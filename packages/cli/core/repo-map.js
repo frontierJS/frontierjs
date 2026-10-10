@@ -34,14 +34,14 @@
 // Zero dependencies, plain ESM, node or bun — same rule as `snapshots.js` and
 // `checks.js`, because the callers include a script that runs before install.
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync }                                       from 'node:child_process'
 import { join, relative }                                  from 'node:path'
 import { findSnapshots }        from './snapshots.js'
 // The tree readers both this and `core/runnables.js` use. One answer to *where
 // could an app be*, *what is a drive* and *what is a command*: two would drift,
 // and the one that drifted would be the one nobody reads the output of.
-import { SKIP, safeRead, isDir, readJson, appDirs, driveRows, readCommands, runnables, workspaceDeps } from './runnables.js'
+import { SKIP, safeRead, isDir, readJson, driveRows, readCommands, runnables, workspaceDeps } from './runnables.js'
 import { readProofs, resolveRun } from './proofs.js'
 // The one owner of *what does a register record look like*. This module used
 // to carry a regex per register, and a row it failed to match rendered a
@@ -1121,7 +1121,7 @@ function firstSentence(text, max) {
   return one.slice(0, one.lastIndexOf(' ', max) > 0 ? one.lastIndexOf(' ', max) : max).trim() + '…'
 }
 
-function kebab(s) { return s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() }
+function _kebab(s) { return s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() }
 
 // ─── the tree ─────────────────────────────────────────────────────────────────
 

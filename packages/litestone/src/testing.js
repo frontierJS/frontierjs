@@ -27,7 +27,7 @@ import { parseSql, evalSql }        from './check-sql.js'
 import { tempDir }                  from './tmp-dirs.js'
 import { parseDuration }            from './core/retention.js'
 import { fieldPolicyOf, isProtected } from './core/schema-maps.js'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { join }                     from 'path'
 
 // ─── makeTestClient ───────────────────────────────────────────────────────────
@@ -1985,6 +1985,11 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
   // column is null, so filling it is the one answer that is right both ways.
   const opt   = type.optional && !attrs.some(a => a.kind === 'required')
   const typeAttr = attrs.find(a => a.kind === 'type')
+  // A type's member may name another type directly — `one Leaf`, `list Leaf[]`
+  // — as well as through `Json @type(Leaf)`. Both are validated as that type,
+  // so both are generated as it; read off `@type` alone, `list Leaf[]` was a
+  // list of strings and every model holding one refused its own factory row.
+  const nested = typeAttr?.name ?? schema.types?.find(t => t.name === type.name)?.name
 
   // Array types — honor @minItems, else [] for required / null for optional
   if (type.array) {
@@ -1992,12 +1997,13 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
     if (minItems > 0) {
       const enumDef = schema.enums.find(e => e.name === type.name)
       return Array.from({ length: minItems }, (_, i) =>
-        typeAttr ? _typeValue(schema, typeAttr.name, seq + i, rng, depth + 1)
+        nested ? _typeValue(schema, nested, seq + i, rng, depth + 1)
         : enumDef ? enumDef.values[i % enumDef.values.length].name
         : _scalarSample(type.name, name, seq + i))
     }
     return opt ? null : []
   }
+  if (nested && type.name !== 'Json') return opt ? null : _typeValue(schema, nested, seq, rng, depth)
 
   // @id on String → '{modelName}-{seq}'
   const isId = attrs.some(a => a.kind === 'id')
@@ -2355,7 +2361,7 @@ export function generateValidationCases(schema, modelName) {
 
     const name  = field.name
     const isInt = field.type.name === 'Int'
-    const isOpt = field.type.optional
+    const _isOpt = field.type.optional
 
     for (const attr of field.attributes) {
       // Which attribute a case came from, recorded at the loop boundary rather

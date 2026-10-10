@@ -30,3 +30,4 @@ test/fixtures/corpus/gaps.json
 # This rule stays as a guard against dropping it back in.
 test/fixtures/corpus/maidtech.lite
 test/browser/dist/
+test/browser/dist-audit/

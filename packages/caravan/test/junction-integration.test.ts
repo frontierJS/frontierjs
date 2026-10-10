@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createTestApp, request } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
-import { createCaravan } from '../src/index.ts'
+import { createCaravan, CARAVAN_CONFIG_KEYS } from '../src/index.ts'
 import type { CaravanOptions, CaravanInstance, JobRecord } from '../src/types.ts'
 
 const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
@@ -564,5 +564,45 @@ describe('admin secret guard', () => {
 
     const res = await request(app).get('/jobs')
     expect(res.status).toBe(200)
+  })
+})
+
+// ─── the section's key list (FJS-940) ────────────────────────
+//
+// Junction refuses a key of the `caravan` section that the plugin does not
+// list, so the list has to be exactly what applyJunctionConfig reads. A key
+// read and unlisted refuses a working config; one listed and unread is the
+// inert key the check exists to catch.
+
+describe('CARAVAN_CONFIG_KEYS', () => {
+  it('is the set of keys applyJunctionConfig reads off the caravan section', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src  = readFileSync(resolve(import.meta.dir, '../src/index.ts'), 'utf8')
+    const read = new Set([...src.matchAll(/\bjunctionCaravan\.(\w+)/g)].map(m => m[1]))
+    const listed: string[] = [...CARAVAN_CONFIG_KEYS]
+    expect(listed.sort()).toEqual([...read].sort())
+  })
+
+  it('is what the plugin states to junction', () => {
+    expect(createCaravan(opts()).configKeys).toBe(CARAVAN_CONFIG_KEYS)
+  })
+
+  it('makes junction refuse a misspelled key and accept the right one', async () => {
+    const { createApp } = await import('@frontierjs/junction')
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const boot = async (section: string): Promise<string | null> => {
+      const dir = mkdtempSync(join(tmpdir(), 'caravan-cfgkeys-'))
+      writeFileSync(join(dir, 'junction.config.js'), `export default { caravan: ${section} }\n`)
+      try {
+        const app = createApp({ logLevel: 'silent', configPath: dir, config: { port: 0 } })
+        app.configure(createCaravan(opts()))
+        try { await app.start(); await app.stop(); return null }
+        catch (err) { return (err as Error).message }
+      } finally { rmSync(dir, { recursive: true, force: true }) }
+    }
+    const msg = await boot(`{ pollIntervel: 1000 }`)
+    expect(msg).toContain("'caravan' declares 'pollIntervel'")
+    expect(msg).toContain("did you mean 'pollInterval'")
+    expect(await boot(`{ pollInterval: 1000 }`)).toBeNull()
   })
 })

@@ -9,7 +9,7 @@
 
 // `modelName` is a local here, so only the two shapes are imported.
 import { pascal, camel } from '@frontierjs/toolbelt/inflect'
-import { buildEdgeMap, modelToTableName } from '../core/ddl.js'
+import { buildEdgeMap } from '../core/ddl.js'
 
 
 function renderType(t) {

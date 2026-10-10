@@ -2,7 +2,7 @@
 
 A `trait` is a reusable model fragment — a chunk of fields and model-level attributes that get spliced into a model via `@@trait(T)`. Traits are erased at parse time; nothing in the rest of the codebase needs to know they existed.
 
-```
+```lite
 trait Dates {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -29,7 +29,11 @@ The `Post` model ends up with `createdAt`, `updatedAt`, `deletedAt` fields, the 
 
 Most apps end up with the same field clusters on every model: timestamps, soft-delete, audit, tenant-scoping, ownership. Without traits, you copy-paste them. Adding a fourth field to your audit cluster means editing 30 model declarations. With traits, you change one place.
 
-```
+```lite
+database audit { path "./audit/"  driver trail }
+
+model User { id Int @id  @@auth }
+
 trait Audited {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -38,9 +42,9 @@ trait Audited {
   @@trail(audit)
 }
 
-model Order   { id Int @id; ...; @@trait(Audited) }
-model Invoice { id Int @id; ...; @@trait(Audited) }
-model Payment { id Int @id; ...; @@trait(Audited) }
+model Order   { id Int @id  total  Int     @@trait(Audited) }
+model Invoice { id Int @id  number String  @@trait(Audited) }
+model Payment { id Int @id  amount Int     @@trait(Audited) }
 ```
 
 Add a `deletedById` field to `Audited` and all three models pick it up on the next migration.
@@ -53,7 +57,7 @@ them like any other model attribute.
 
 ## Syntax
 
-```
+```lite fragment
 trait <Name> {
   <field declarations>
   <model-level attributes>
@@ -70,14 +74,25 @@ What you **can't** put in a trait:
 - `@@db(name)` — the host model owns its database routing
 - `@@fts([...])` — only one FTS index per model; the host owns it
 
-These are caught at parse time; an attempted use produces a clear error.
+These are caught at parse time; an attempted use produces a clear error —
+`Trait 'Identifiable' field 'id': @id is not allowed in a trait (the host model
+owns its primary key)`.
 
 ## Use site — `@@trait(T)`
 
 A model includes a trait by adding `@@trait(T)` to its model-level attributes. One per line, repeatable.
 
-```
+```lite
+model User { id Int @id  @@auth }
+
+trait Dates      { createdAt DateTime @default(now())  updatedAt DateTime @updatedAt }
+trait SoftDelete { deletedAt DateTime?  @@softDelete }
+trait Authored   { @@createdBy }
+
 model Post {
+  id    Int @id
+  title String
+
   @@trait(Dates)
   @@trait(SoftDelete)
   @@trait(Authored)
@@ -94,7 +109,7 @@ Three rules, in order:
 
 **1. Host wins.** If both a trait and the host model declare a field with the same name, the host's version wins and the trait's is dropped silently. Useful for tightening defaults:
 
-```
+```lite
 trait Dates {
   createdAt DateTime @default(now())
 }
@@ -106,26 +121,29 @@ model Post {
 }
 ```
 
-**2. Two traits → same field name → parse error.** No silent ordering-based winner.
+**2. Two traits → same field name → parse error.** No silent ordering-based winner, and the host declaring the field itself does not lift it — the two traits are still both providing `foo`:
 
-```
+```lite fragment
 trait X { foo String }
 trait Y { foo String }
 
-model M { id Int @id; @@trait(X); @@trait(Y) }
-//        Error: field 'foo' provided by both @@trait(X) and @@trait(Y)
+model M { id Int @id  @@trait(X)  @@trait(Y) }
+//        Error: Model 'M': field 'foo' provided by both @@trait(X) and @@trait(Y)
 ```
 
-If you really need both, override on the host:
+```lite fragment
+trait X { foo String }
+trait Y { foo String }
 
-```
 model M {
   id  Int @id
-  foo String                // host wins, both trait foos dropped
+  foo String                // still refused — rule 1 is host against ONE trait
   @@trait(X)
   @@trait(Y)
 }
 ```
+
+The way out is to move the field out of one of the traits.
 
 **3. Model-level attributes are additive.** If `Dates` adds `@@index([createdAt])` and `Audited` adds `@@trail(audit)`, the host gets both. If two traits both add `@@allow('read', X)`, the host gets both rows in its policy list — same effect as if you'd written them inline.
 
@@ -133,10 +151,10 @@ model M {
 
 A trait can itself include other traits:
 
-```
-trait Identifiable {
-  id Int @id     // ❌ Error — @id not allowed in a trait
-}
+```lite
+database audit { path "./audit/"  driver trail }
+
+model User { id Int @id  @@auth }
 
 trait Dates {
   createdAt DateTime @default(now())
@@ -158,7 +176,7 @@ model Order {
 
 Cycles are detected at parse time:
 
-```
+```lite fragment
 trait A { @@trait(B) }
 trait B { @@trait(A) }
 //        Error: Trait cycle detected: A → B → A
@@ -177,7 +195,7 @@ The `@@trait(T)` reference itself is removed from the final model — it's not e
 
 Trait-spliced fields appear directly in the model's TypeScript interface — there's no separate `Dates` interface. From a type perspective, traits are pure code reuse, not a runtime concept:
 
-```ts
+```ts fragment
 // generated types
 interface Post {
   createdAt: string
@@ -221,7 +239,7 @@ A trait is opted **into**, by the model. That requires the model's author to hav
 
 `@frontierjs/auth` ships `Credential`, `Session`, `Verification` and `OauthFlow`. It owns their columns. What it cannot know is where those rows sit in *your* schema: the relation back to your own `User`, whether you audit them, and — under row tenancy — that they span tenants rather than belonging to one. So an app imports the file and says the rest:
 
-```
+```lite fragment
 import "@frontierjs/auth/db/auth.lite"
 
 extend model Session {
@@ -242,6 +260,15 @@ An extend **adds**. Three things are refused by name rather than resolved, and e
 | an extend naming no model | a misspelling, or an import that did not resolve, does nothing at all — forever, and silently |
 | a field the model already declares | that is editing a package's column, which is the copy this feature removes |
 | a second `@@gate`, `@@db`, `@@softDelete`… | a single-valued attribute twice is two answers, not a narrowing |
+
+```lite
+model User    { id Int @id  @@auth }
+model Session { id Int @id  userId Int }
+
+extend model Session {
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+```
 
 `@@allow`, `@@deny`, `@@index`, `@@unique`, `@@check` and `@@trait` are repeatable and compose as they do anywhere else — an app adding an `@@allow` to an imported model widens it exactly as if the line had been written in the model's own body.
 

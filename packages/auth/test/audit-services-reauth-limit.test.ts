@@ -60,8 +60,7 @@ describe('the bucket', () => {
     expect((await call(u.token, 'changePassword', { currentPassword: pw, newPassword: 'pw-final' })).status).toBe(429)
   })
 
-  // FJS-1838: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('confirmTotp is behind a limit: wrong codes are not answered without bound', async () => {
+  test('confirmTotp is behind a limit: wrong codes are not answered without bound', async () => {
     const u = await person()
     expect((await call(u.token, 'setupTotp', { currentPassword: PW })).status).toBe(200)
     const seen: number[] = []
@@ -86,8 +85,7 @@ describe('the bucket', () => {
     expect(ops.some((o: string) => /reauth|password/i.test(o) && /fail|refus|wrong|invalid/i.test(o))).toBe(true)
   })
 
-  // FJS-1838: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a failed confirmTotp is in the trail', async () => {
+  test('a failed confirmTotp is in the trail', async () => {
     const u = await person()
     await call(u.token, 'setupTotp', { currentPassword: PW })
     await call(u.token, 'confirmTotp', { code: '000000' })

@@ -245,15 +245,15 @@ describe('email verification routes', () => {
     const req = await request(app).post('/auth/email/verify/request').auth((login.body as any).token)
     expect(req.status).toBe(200)
 
-    const res = await request(app).get('/auth/email/verify').query({ token: h.verifyToken() })
+    const res = await request(app).post('/auth/email/verify').send({ token: h.verifyToken() })
     expect(res.status).toBe(200)
     expect((res.body as any).ok).toBe(true)
   })
 
   test('a missing token is 400 and a bad token is 400, NOT 500', async () => {
-    expect((await request(app).get('/auth/email/verify')).status).toBe(400)
+    expect((await request(app).post('/auth/email/verify').send({})).status).toBe(400)
 
-    const bad = await request(app).get('/auth/email/verify').query({ token: 'garbage' })
+    const bad = await request(app).post('/auth/email/verify').send({ token: 'garbage' })
     expect(bad.status).toBe(400)
     expect((bad.body as any).name).toBe('BadRequest')
   })
@@ -440,16 +440,13 @@ describe('auth errors map correctly outside the auth routes', () => {
   })
 })
 
-// ─── GET /auth/email/verify — the token is a STRING ────────────────────────
+// ─── POST /auth/email/verify — the token is a STRING ───────────────────────
 //
-// `FJS-296` gave these routes a body reader because a where-operator object
-// reached the user lookup. The QUERY never got one, and this route read it with
-// `as string` — a cast that does nothing at runtime — where every OAuth sibling
-// wrote `String(...)`. `?token[gt]=` therefore arrived as `{ gt: '' }`, went
-// into `where: { value: token }`, matched the first unexpired row and verified
-// somebody else's address (`FJS-1002`).
+// A where-operator object reaching `where: { value: token }` matched the first
+// unexpired row and verified somebody else's address (`FJS-1002`). The body
+// reader refuses a non-string by naming the field (`FJS-296`).
 
-describe('GET /auth/email/verify', () => {
+describe('POST /auth/email/verify', () => {
   test('a where-operator in the query cannot verify a stranger', async () => {
     const reg = await request(app).post('/auth/register')
       .send({ email: email('ev-victim'), password: 'pw', name: 'EV' })
@@ -459,8 +456,8 @@ describe('GET /auth/email/verify', () => {
     const pendingBefore = await h.sys.verification.findMany({ where: { purpose: 'emailVerify' } })
     expect(pendingBefore.length).toBeGreaterThan(0)
 
-    for (const q of ['token[gt]=', 'token[not]=zzz', 'token[gte]=', 'token[contains]=']) {
-      const res = await request(app).get(`/auth/email/verify?${q}`)
+    for (const token of [{ gt: '' }, { not: 'zzz' }, { gte: '' }, { contains: '' }]) {
+      const res = await request(app).post('/auth/email/verify').send({ token })
       expect(res.status).toBe(400)
       expect((res.body as any).message).toMatch(/token must be a string/)
     }
@@ -481,10 +478,10 @@ describe('GET /auth/email/verify', () => {
     await (h.auth as any).requestEmailVerification((reg.body as any).user.userId)
     const token = h.verifyToken()
 
-    const res = await request(app).get(`/auth/email/verify?token=${encodeURIComponent(token)}`)
+    const res = await request(app).post('/auth/email/verify').send({ token })
     expect(res.status).toBe(200)
-    expect((res.body as any).user.email).toBe(email('ev-ok'))
+    expect((res.body as any).ok).toBe(true)
 
-    expect((await request(app).get(`/auth/email/verify?token=${encodeURIComponent(token)}`)).status).toBe(400)
+    expect((await request(app).post('/auth/email/verify').send({ token })).status).toBe(400)
   })
 })

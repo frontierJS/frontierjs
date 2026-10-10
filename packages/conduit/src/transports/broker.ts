@@ -54,6 +54,7 @@ export class BrokerTransport extends BaseTransport {
     )
   }
 
+  // biome-ignore lint/correctness/useYield: a stub that refuses before it would yield
   async *stream(_req: ConduitRequest): AsyncIterable<ConduitChunk> {
     throw new ConduitStreamError({
       kind:      'invalid_request',

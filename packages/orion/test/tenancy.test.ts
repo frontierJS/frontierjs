@@ -57,7 +57,7 @@ async function settled(db: any, runId: string, statuses = ["completed", "failed"
 // ─── strategy database ───────────────────────────────────────────────────────
 
 describe("strategy database: a tenant is a file", () => {
-  let dir: string, registry: any, app: any, runner: Runner
+  let dir: string, registry: any, app: any, _runner: Runner
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "orion-tenants-"))
@@ -72,7 +72,7 @@ describe("strategy database: a tenant is a file", () => {
     const suite = registryFor(dir)
     app.configure(orion({ plugins: [{ manifest: suite.plugins().find(p => p.manifest.id === "suite")!.manifest, implementations: [suite.get("test.count")!] }] }))
     await app._startForTest()
-    runner = app.orion
+    _runner = app.orion
   })
 
   afterAll(async () => {

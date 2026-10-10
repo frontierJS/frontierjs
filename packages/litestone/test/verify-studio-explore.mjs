@@ -25,7 +25,7 @@
 import { spawn } from 'node:child_process'
 import { openChrome } from '../../mesa/src/drive.js'
 import { join, resolve as pathResolve } from 'node:path'
-import { CATALOG, docFor, UNDOCUMENTED } from '../src/core/catalog.js'
+import { CATALOG, UNDOCUMENTED } from '../src/core/catalog.js'
 import { RULES, VISIBILITY } from '../src/core/advise.js'
 import { OPPORTUNITIES } from '../src/core/opportunities.js'
 

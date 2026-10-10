@@ -1,6 +1,6 @@
 # Multi-Database
 
-A single Litestone schema can route models to multiple SQLite databases, append-only JSONL log files, and auto-schema audit loggers. One `createClient` call handles all of them.
+A single Litestone schema can route models to multiple SQLite databases, append-only JSONL log files, and auto-schema audit trails. One `createClient` call handles all of them.
 
 ## Database blocks
 

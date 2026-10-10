@@ -47,14 +47,8 @@ import {
   onCleanup,
   onMount,
   onDestroy,
-  // Context
-  createContext,
-  provideContext,
-  useContext,
   // DOM utils
   htmlToFragment,
-  svgToFragment,
-  refer,
   createTextNode,
   insertAfter,
   removeElements,
@@ -63,7 +57,6 @@ import {
   bindText,
   bindAttribute,
   bindClass,
-  bindClassExp,
   bindStyle,
   bindInput,
   // Events
@@ -88,7 +81,6 @@ import {
   track,
   trackDerived,
   get as trackedGet,
-  $$eachBlock,
   push_component,
   pop_component,
   contextProvide,
@@ -263,7 +255,7 @@ describe('createEffect', () => {
   })
 
   it('nested effects: outer does not re-run when inner signal changes', () => {
-    const [outer, setOuter] = createSignal('o')
+    const [outer, _setOuter] = createSignal('o')
     const [inner, setInner] = createSignal('i')
     const log = []
 
@@ -1101,7 +1093,7 @@ describe('bindInput', () => {
   })
 
   it('calls setter when input event fires', () => {
-    const [, setVal] = createSignal('')
+    const [, _setVal] = createSignal('')
     const setSpy = vi.fn()
     const input = document.createElement('input')
     bindInput(input, 'value', () => '', setSpy)
@@ -3973,7 +3965,7 @@ describe('asyncDerived', () => {
 
   it('cancels in-flight request when dep changes', async () => {
     const [dep, setDep] = createSignal('TX')
-    const [val, setVal] = createSignal(null)
+    const [_val, setVal] = createSignal(null)
     const state = makeAsyncState()
     const abortLog = []
 
@@ -4381,7 +4373,7 @@ describe('onMounted', () => {
   })
 
   it('promise resolves with fn return value after mount', async () => {
-    let resolve
+    let _resolve
     const p = onMounted(async () => {
       return 'hello'
     })
@@ -4952,7 +4944,7 @@ describe('{@attach} — the element is in the document', () => {
     // element we built never reaches the node the attachment receives.
     const calls = []
     const proto = window.HTMLElement.prototype
-    const had = Object.prototype.hasOwnProperty.call(proto, 'animate')
+    const had = Object.hasOwn(proto, 'animate')
     const prev = proto.animate
     proto.animate = function (frames, opts) {
       calls.push({ connected: this.isConnected, frames, opts })

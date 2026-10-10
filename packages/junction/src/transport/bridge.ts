@@ -19,10 +19,10 @@ import {
   type ServiceMethod, type AnyMethod, type HookType,
   type CallOptions, type RequestMeta, type QueryDirectives,
 } from '../core/context.ts'
-import { isListResult, isServiceResult, unwrapResult } from '../core/envelope.ts'
+import { isServiceResult, unwrapResult } from '../core/envelope.ts'
 // `RESERVED_PARAMS` comes through `../core/context.ts` above — the same kit
 // binding, re-exported there so junction has one import point for it.
-import { splitParams, unknownDirectives } from '@frontierjs/toolbelt/directives'
+import { invalidDirectives, listedDirectives, splitParams, transportFlags, unknownDirectives } from '@frontierjs/toolbelt/directives'
 
 export {
   RESERVED_PARAMS, enterRequest, requestMeta, freezeUser,
@@ -104,7 +104,7 @@ export const bridge = {
     if (serviceMethod === 'find') {
       if (raw.route.id) {
         resolvedMethod = 'get'
-      } else if (rawQuery.$first) {
+      } else if (readTransportFlags(rawQuery).first) {
         resolvedMethod = 'get'
       }
     }
@@ -118,14 +118,14 @@ export const bridge = {
     // parseQuery downstream looked for those exact keys on ctx.query. The
     // transport deleted precisely what the query builder was written to read,
     // so $limit / $offset / $orderBy / $select were all silently inert.
-    refuseUnknownDirectives(rawQuery)
+    refuseBadDirectives(rawQuery)
 
     const { query, directives } = splitParams(rawQuery) as {
       query: Record<string, unknown>
       directives: QueryDirectives
     }
 
-    refuseNegativeWindow(directives)
+    refuseUnservableWindow(directives)
 
     // ── The write envelope — `{ data, base }` under a flag ─────────────
     // A base is a ROW, so it cannot ride a header the way an idempotency key
@@ -277,12 +277,16 @@ export const bridge = {
     // An internal caller may still hand us a `$`-spelled query (older code,
     // and tests that predate ctx.directives). Translate rather than ignore:
     // explicit opts.directives wins, `$` keys are the fallback.
-    refuseUnknownDirectives(query)
+    refuseBadDirectives(query)
 
     const { query: filters, directives: fromQuery } = splitParams(query) as {
       query: Record<string, unknown>
       directives: QueryDirectives
     }
+    // The same refusal toContext makes, so a negative count is not floored to
+    // no rows with a 200 on the in-process and socket paths.
+    const merged = { ...fromQuery, ...directives }
+    refuseUnservableWindow(merged)
     return withCallEffects({
       service,
       method,
@@ -291,7 +295,7 @@ export const bridge = {
       model:     service,
       id:        (data as Record<string, unknown>)?.id as string ?? null,
       query:      filters,
-      directives: { ...fromQuery, ...directives },
+      directives: merged,
       data,
       base,
       auth: {
@@ -403,9 +407,8 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
 // Refused by NAME here, where the `$` convention is already owned, in the same
 // shape `$checkWhere` refuses a filter key it cannot honor.
 //
-// Only a stated negative is refused. A non-numeric `$limit` keeps its existing
-// fallback to the default: text is a caller who wrote nothing usable, where a
-// negative number is a caller who wrote something and meant it.
+// Only a stated negative NUMBER is refused here; a value that is not decimal
+// digits at all never reaches this check, `invalidDirectives` refused it.
 /*
  * A `$` name the wire does not know is refused, and the refusal names it.
  *
@@ -424,7 +427,9 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
  * would go stale on the next directive added, which is the exact failure that
  * table was built to end.
  */
-export function refuseUnknownDirectives(params: unknown): void {
+export function refuseBadDirectives(params: unknown): void {
+  refuseListedDirectives(params)
+  refuseInvalidFlags(params)
   const unknown = unknownDirectives(params as Record<string, unknown>)
   if (!unknown.length) return
 
@@ -439,7 +444,51 @@ export function refuseUnknownDirectives(params: unknown): void {
   )
 }
 
-function refuseNegativeWindow(directives: QueryDirectives): void {
+/**
+ * A single-valued directive given a list. The filter half makes a repeated key a
+ * list by design; read as one value it fell to the default page with a 200.
+ */
+function refuseListedDirectives(params: unknown): void {
+  const listed = listedDirectives(params as Record<string, unknown>)
+  if (!listed.length) return
+  throw new BadRequest(
+    `${listed.join(', ')} ${listed.length > 1 ? 'take' : 'takes'} one value, and was given a list. ` +
+    `Send the key once.`,
+    { directives: listed }
+  )
+}
+
+/**
+ * A flag or a count, directive or transport, given a value its grammar does not
+ * hold. Read as false it would answer 200 without the rows `?$withDeleted=yes`
+ * asked for (`FJS-2476`); `?$limit=true` read as 1 answers a one-row page
+ * (`FJS-2459`).
+ */
+function refuseInvalidFlags(params: unknown): void {
+  const bag = params as Record<string, unknown>
+  refuseFlagValues(bag, [...invalidDirectives(bag), ...transportFlags(bag).invalid])
+}
+
+function refuseFlagValues(bag: Record<string, unknown>, invalid: string[]): void {
+  if (!invalid.length) return
+  throw new BadRequest(
+    `${invalid.map(k => `${k}=${String(bag[k])}`).join(', ')} is not a value ${invalid.length > 1 ? 'they take' : 'it takes'}. ` +
+    `A flag is true, 1, false or 0 (or written bare, which is true); a count is decimal digits.`,
+    { directives: invalid }
+  )
+}
+
+/**
+ * `$first` / `$wrap` off the raw query, refusing a value the flag grammar does
+ * not hold. The only reader of either on this side of the wire.
+ */
+export function readTransportFlags(params: unknown): { first?: boolean, wrap?: boolean } {
+  const { first, wrap, invalid } = transportFlags(params as Record<string, unknown>)
+  refuseFlagValues(params as Record<string, unknown>, invalid)
+  return { first, wrap }
+}
+
+function refuseUnservableWindow(directives: QueryDirectives): void {
   for (const name of ['limit', 'offset'] as const) {
     const value = directives[name]
     if (value === undefined || value === null) continue
@@ -447,6 +496,14 @@ function refuseNegativeWindow(directives: QueryDirectives): void {
     if (Number.isFinite(n) && n < 0) {
       throw new BadRequest(
         `$${name} must be zero or greater (got ${n}).`,
+        { directive: `$${name}`, value: n }
+      )
+    }
+    // A count is whole. SQLite refuses `LIMIT 1.5` at prepare, so a fraction
+    // otherwise surfaces as a 500 datatype mismatch.
+    if (Number.isFinite(n) && !Number.isInteger(n)) {
+      throw new BadRequest(
+        `$${name} must be a whole number (got ${n}).`,
         { directive: `$${name}`, value: n }
       )
     }

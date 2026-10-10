@@ -2,38 +2,70 @@
 
 Litestone is designed for SQLite's single-writer, multi-reader model. Most performance work is done for you, but understanding the architecture helps when tuning.
 
+The examples on this page use this schema:
+
+```lite
+database audit {
+  path   "./audit.db"
+  driver trail
+}
+
+model Account {
+  id   Int    @id
+  name String
+}
+
+model User {
+  id        Int       @id
+  email     String    @unique
+  name      String?
+  accountId Int?
+  deletedAt DateTime?
+  @@softDelete
+  @@index([accountId])
+}
+
+model Order {
+  id          Int    @id
+  accountId   Int
+  orderNumber Int
+  status      String @default("new")
+  amount      Int    @default(0)
+  @@index([accountId])
+  @@index([accountId, status])
+  @@unique([accountId, orderNumber])
+}
+```
+
 ## What to expect
 
-Numbers from a 10k-row in-memory table on a recent Macbook (Bun 1.3, single-threaded). Treat as order-of-magnitude — your numbers will vary with disk, schema complexity, and policy/plugin overhead.
+`bench/` holds the measurements — `bench/PERFORMANCE_AUDIT.md` is the write-up
+and `bench/ablation.mjs` the harness — and a number printed here would be stale
+by the next commit. The shape of the answer is stable:
 
-| Operation | Litestone | Raw `bun:sqlite` | Overhead |
-|---|---:|---:|---:|
-| `findUnique({ where: { id } })` | **2.5 µs** | 1.2 µs | ~115% |
-| `findMany({})` (10k rows) | 6.1 ms | 5.6 ms | ~10% |
-| `findMany({ where, limit: 10 })` | 23 µs | — | small |
-| `count({ where })` (no index) | 567 µs | 496 µs | ~10% (SQLite-bound) |
-| `create({ data })` | 30 µs | — | — |
-
-Two takeaways:
-
-- **Reading is essentially free.** On large result sets, Litestone is within 10% of raw SQLite — the cost is row hydration and that's irreducible.
-- **`findUnique` is the hottest per-request operation** and Litestone optimizes it heavily. The 2.5 µs cost includes async function machinery (~370 ns), soft-delete handling, plugin-check protocol, and the prepared statement call itself. About 1.4 µs of overhead beyond raw SQLite — about as low as it gets without dropping the abstraction.
+- **Reading is essentially free.** On a large result set Litestone is within a
+  small fraction of raw `bun:sqlite` — the cost is row hydration, and that is
+  irreducible.
+- **`findUnique` is the hottest per-request operation** and has its own prepared
+  statement. Its cost is the async function machinery, the soft-delete clause,
+  the plugin check and the statement call itself; the query builder is not on
+  that path. of overhead beyond raw SQLite — about as low as it gets without dropping the abstraction.
 
 ## Hot paths
 
 Litestone precomputes prepared statements at `createClient()` for two patterns that cover most reads:
 
-**`findMany({})` fast path.** A no-args `findMany` on a soft-delete table with no policies, no global filter, no plugins runs through a single precomputed statement. No buildSQL call, no select/include parsing. Adds the soft-delete `WHERE deletedAt IS NULL` automatically.
+**`findMany({})` fast path.** A no-args `findMany` on a `@@softDelete` table runs through one precomputed statement (`_fastFindManySql`), with no `buildSQL` call and no select/include parsing, when nothing narrows the read for this caller — no `@@trail`, no `@edge` namespace, and the soft-delete filter not altered by the call. A plugin's `beforeRead` (the gate) still runs first. Adds the soft-delete `WHERE deletedAt IS NULL` automatically.
 
-**`findUnique` PK fast path.** `findUnique({ where: { <pk>: value } })` — the most common per-request operation — skips the entire query builder. The statement is prepared once at table-build time and cached. Conditions: no field-level encryption, no `@@allow`/`@@deny` on this model, no global filter, no plugins, no `@from` fields.
+**`findUnique` PK fast path.** `findUnique({ where: { <pk>: value } })` — the most common per-request operation — skips the query builder. The statement is prepared once at table-build time (`_fastFindUniqueSql`). Conditions: a single-column `@id`, no field-level `@allow`, no `@from` field, no `@edge` namespace, and the soft-delete filter not altered by the call. Try-guarded for `@@external` tables, which may not exist yet.
 
-You don't need to do anything to hit these paths — they're the default when conditions match. If you opt into a feature that disables them (e.g. add `@@allow` to a model), reads continue working through the regular path; the cost goes from ~2.5 µs to ~6 µs.
+You don't need to do anything to hit these paths — they are the default when the conditions match. A feature that turns one off (a field policy, a `@from`) sends the read through the regular path, which is correct and slower.
 
 ## Statement cache
 
-Every prepared statement is cached by SQL string. Cache is per-connection, LRU-bounded (default 500 entries). On overflow, the least-recently-used statement is evicted and finalized. This matters in long-lived processes that build many distinct WHERE shapes — without the bound, the cache grows until restart.
+Every prepared statement is cached by SQL string. The cache is per connection (`wrapDb` in `src/core/databases.js`), LRU-bounded (`maxCacheSize`, default 500). On overflow the least-recently-used statement is evicted and finalized. This matters in long-lived processes that build many distinct WHERE shapes.
 
-The bound is high enough that almost no workload reaches it under normal use. If you do, raise it via `wrapDb` configuration, or restructure queries to reuse shapes (e.g. use parameterized `IN (?, ?, ?)` instead of dynamic-length lists with different sizes).
+The bound is high enough that almost no workload reaches it under normal use. If one does, restructure queries to reuse shapes — a parameterized `IN (?, ?, ?)` of a fixed width rather than a dynamic-length list, which is a new statement per length.
 
 ## ANALYZE runs automatically
 
@@ -58,20 +90,32 @@ Litestone opens two connections per database:
 This eliminates the common SQLite bottleneck where a read blocks a write or vice versa.
 
 ```js
-db.$rawDbs           // { main: Database }  — write connections
-db.$walStatus        // WAL checkpoint status
+db.$rawDbs              // { main: Database }  — the write connections
+await db.$walStatus()   // { busy, frames, checkpointed } — WAL frames since the last full checkpoint
 ```
+
 
 ## Read-only clients
 
-Open a client that can only read — any attempt to write throws immediately:
+Open a client that can only read — any attempt to write throws immediately. The
+file has to exist already, since a read-only open creates nothing:
 
 ```js
-const db = await createClient({ path: './schema.lite', db: './app.db', readOnly: true })
+const seed = await createClient({ path: './schema.lite', db: './app.db' })
+await seed.$close()
 
-await db.user.findMany()                         // ✓
-await db.user.create({ data: { email: '...' } }) // ✗ throws: database is readonly
+const db = await createClient({ path: './schema.lite', db: './app.db', readOnly: true })
+await db.user.findMany()                         // ✓ []
 ```
+
+```js throws
+const seed = await createClient({ path: './schema.lite', db: './app.db' })
+await seed.$close()
+
+const db = await createClient({ path: './schema.lite', db: './app.db', readOnly: true })
+await db.user.create({ data: { email: 'a@example.com' } })   // ✗ Database 'main' is readonly in this client
+```
+
 
 Useful for:
 - Analytics or reporting processes that should never modify app data
@@ -82,21 +126,18 @@ Multiple read-only clients pointing at the same file are fine — SQLite WAL sup
 
 ```js
 // main read-only, audit fully accessible
+const seed = await createClient({ path: './schema.lite', db: './app.db' })
+await seed.$close()
+
 const db = await createClient({
   path:   './schema.lite',
+  db:     './app.db',
   access: { main: 'readonly', audit: 'readwrite' },
 })
+console.log(db.$databases.main.access)   // 'readonly'
 ```
+ present.
 
-
-
-Litestone pre-computes common query patterns at `makeTable` time:
-
-**`_fastStmt`** — pre-prepared statement for the most common `findMany({})` call on soft-delete tables. Eliminates Map lookup overhead on every call. Bypassed automatically when `where`, `orderBy`, `limit`, `window`, `distinct`, hooks, or plugins are present.
-
-**`_baseSqlWithFrom`** — pre-built SELECT string including `@from` subqueries. Reused on every query where the base SQL doesn't change.
-
-**`_fastFindManySql`** — pre-built `SELECT * FROM "table" WHERE "deletedAt" IS NULL` for soft-delete tables without policies or filters.
 
 ## select: false
 
@@ -104,28 +145,28 @@ Skip `RETURNING *` and result parsing entirely on writes when you don't need the
 
 ```js
 // Uses writeDb.run() instead of .get() — no RETURNING clause, no row parsing
-await db.order.update({ where: { id: 1 }, data: { status: 'paid' }, select: false })   // → null
-await db.order.create({ data: { amount: 100 }, select: false })                          // → null
+await db.order.create({ data: { accountId: 1, orderNumber: 1, amount: 100 }, select: false })   // → null
+await db.order.update({ where: { id: 1 }, data: { status: 'paid' }, select: false })           // → null
 ```
 
-Most useful in hot write paths (bulk processing, event ingestion). Not available on `@@trail` models — logging requires the before/after row snapshots.
+Most useful in hot write paths (bulk processing, event ingestion). On a `@@trail` model the result is still `null` but the `RETURNING` runs anyway — the before/after images need the row ([onquery-logging.md](onquery-logging.md)).
 
 ## NULLS FIRST / LAST
 
 Avoid in-memory sorting for nullable fields by pushing NULLs to a predictable position:
 
 ```js
-orderBy: { deletedAt: { dir: 'asc', nulls: 'last' } }
+await db.user.findMany({ orderBy: { name: { dir: 'asc', nulls: 'last' } } })
 ```
 
-Without this, SQLite's NULL ordering is arbitrary depending on index direction.
+Without this, SQLite puts NULLs first in ascending order and last in descending.
 
 ## Partial indexes
 
 Litestone automatically creates partial indexes on `@@softDelete` models:
 
 ```sql
-CREATE INDEX ... ON "users" ("accountId") WHERE "deletedAt" IS NULL
+CREATE INDEX "idx_user_accountId" ON "user" ("accountId") WHERE "deletedAt" IS NULL
 ```
 
 This means indexes only cover live rows — smaller, faster, and `WHERE deletedAt IS NULL` is always index-covered.
@@ -134,6 +175,7 @@ This means indexes only cover live rows — smaller, faster, and `WHERE deletedA
 
 ```lite
 model Note {
+  id         Int       @id
   kind       String
   archivedAt DateTime?
 
@@ -168,9 +210,17 @@ What is left is what litestone writes as literal SQL on both sides of that
 comparison — the null tests and the booleans:
 
 ```lite
-@@index([kind], where: archivedAt == null)
-@@index([kind], where: live == true)
-@@index([kind], where: live == true && archivedAt == null)
+model Note {
+  id         Int       @id
+  kind       String
+  email      String
+  live       Boolean   @default(true)
+  archivedAt DateTime?
+
+  @@index([kind], where: archivedAt == null)
+  @@index([email], where: live == true)
+  @@index([kind, email], where: live == true && archivedAt == null)
+}
 ```
 
 On a `@@softDelete` model the declared predicate is **ANDed** with
@@ -184,10 +234,10 @@ predicates differ by, and the second is refused at parse.
 
 ```js
 // Full row — all columns fetched
-const users = await db.user.findMany()
+const notes = await db.note.findMany()
 
-// Partial select — only id and email fetched from SQLite
-const users = await db.user.findMany({ select: { id: true, email: true } })
+// Partial select — only id and kind fetched from SQLite
+const slim = await db.note.findMany({ select: { id: true, kind: true } })
 ```
 
 On wide tables (20+ columns), partial select can meaningfully reduce I/O.
@@ -196,6 +246,11 @@ On wide tables (20+ columns), partial select can meaningfully reduce I/O.
 
 ```lite
 model Order {
+  id          Int    @id
+  accountId   Int
+  orderNumber Int
+  status      String @default("new")
+
   @@index([accountId])               // single column
   @@index([accountId, status])       // composite
   @@unique([accountId, orderNumber]) // unique composite
@@ -212,41 +267,51 @@ Key index patterns:
 ```js
 // All writes inside a transaction share one SQLite BEGIN/COMMIT
 await db.$transaction(async tx => {
-  await tx.account.create({ data: {...} })
-  await tx.user.create({ data: {...} })
+  await tx.order.create({ data: { accountId: 1, orderNumber: 1 } })
+  await tx.order.create({ data: { accountId: 1, orderNumber: 2 } })
   // rolled back automatically on throw
 })
 ```
 
 Transactions use `BEGIN IMMEDIATE` — acquires write lock upfront, preventing mid-transaction deadlocks under concurrent load.
 
-## Window functions — inline vs subquery
+## Window functions
 
-When using `window` without `limit`/`offset`, Litestone inlines window functions directly in the SELECT clause:
+A `window` is inlined in the SELECT — one statement, no subquery — and a `limit`
+is appended to it. SQLite computes window functions over the whole filtered set
+before `LIMIT` applies, so the row numbers are right on every page:
 
-```sql
-SELECT ROW_NUMBER() OVER (...), * FROM "orders"
+```js
+await db.order.findMany({ window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } }, limit: 5 })
+// SELECT ROW_NUMBER() OVER (ORDER BY "id" ASC) AS "rn", * FROM "order" LIMIT 5
 ```
 
-With `limit`/`offset`, it wraps in a subquery to ensure LIMIT applies after window computation:
-
-```sql
-SELECT *, ROW_NUMBER() OVER (...) FROM (SELECT * FROM "orders") _w LIMIT ?
-```
-
-For large full-table window queries (no pagination), the inline path avoids one subquery materialization.
 
 ## $backup — hot backups
 
 ```js
-// Safe to run during writes — SQLite VACUUM INTO creates a consistent snapshot
-await db.$backup('./backups/prod.db')
-await db.$backup('./backups/compact.db', { vacuum: true })   // also compacts WAL
+import { mkdirSync } from 'node:fs'
+mkdirSync('./backups', { recursive: true })
+
+// Safe to run during writes — the backup API, or VACUUM INTO, takes a consistent snapshot
+await db.$backup('./backups/prod.db')                        // → { path, size, vacuumed: false }
+await db.$backup('./backups/compact.db', { vacuum: true })   // VACUUM INTO — compacted, no free pages
 ```
 
 ## Page size
 
-Litestone sets `page_size = 8192` on new databases — optimal for modern SSDs. Set once at creation; cannot be changed after.
+Litestone issues `PRAGMA page_size = 8192` when it opens a database, but it runs
+after the journal is already in WAL mode, where SQLite ignores it — so a file
+database Litestone creates has SQLite's default of 4096 (`FJS-2303`). Page size
+is fixed at creation and cannot be changed after.
+
+```js failing
+// FJS-2303
+const file = await createClient({ path: './schema.lite', db: './sized.db' })
+const { page_size } = file.$rawDbs.main.query('PRAGMA page_size').get()
+if (page_size !== 8192) throw new Error(`page_size is ${page_size}`)
+```
+
 
 ## Doctor
 
@@ -264,4 +329,4 @@ Analyzes your schema and live database for common performance issues. The PERF g
 
 **WAL pressure.** WAL file > 5000 frames means autocheckpoint is falling behind, usually because long-running readers are holding snapshots open. Surfaces a class of bugs that's hard to diagnose otherwise (queries getting slower over time as WAL bloats).
 
-Doctor also covers schema drift, migration status, encryption key configuration, stale `-wal`/`-shm` files, and Bun version. See `litestone doctor --help` for the full check list and `--ci` for machine-readable output.
+Doctor also covers schema drift, migration status, stale `-wal`/`-shm` files, and Bun version; `--ci` is the machine-readable form.

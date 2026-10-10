@@ -1,5 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "root": false,
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "formatter": { "enabled": false },
   "assist": { "enabled": false },
@@ -16,8 +17,11 @@
       "suspicious": {
         "recommended": true,
         "noExplicitAny": "off",
+        "useIterableCallbackReturn": { "level": "error", "options": { "checkForEach": false } },
         "noAssignInExpressions": "off",
-        "noConfusingVoidType": "off"
+        "noConfusingVoidType": "off",
+        "noEmptyInterface": "off",
+        "noImplicitAnyLet": "off"
       },
       "a11y": {
         "recommended": true,
@@ -32,11 +36,11 @@
   "files": {
     "includes": [
       "**",
-      "!**/node_modules/**",
-      "!**/dist/**",
-      "!**/.fli-tmp/**",
-      "!**/deploy/generated/**",
-      "!**/db/migrations/**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.fli-tmp",
+      "!**/deploy/generated",
+      "!**/db/migrations",
       "!**/*.snapshot.*"
     ]
   }

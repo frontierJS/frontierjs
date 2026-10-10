@@ -97,6 +97,7 @@ describe('a provider is what Junction calls', () => {
     // The Host is what `resolve subdomain` reads; the headers are what
     // `resolve header(...)` reads. Both, because the schema decides which.
     expect(seen?.host).toBe('acme.shop.test')
+    // biome-ignore lint/correctness/noUnsafeOptionalChaining: one of the two sides is present by construction
     expect((seen?.headers as Record<string, unknown>)['x-tenant-id']).toBe('acme')
   })
 

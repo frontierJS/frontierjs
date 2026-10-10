@@ -392,3 +392,41 @@ test('glow: a transcript may name more than one language', function () {
   assert.equal(glow(src, { language: 'js', prefix: false }),
     glow(src, { language: ['js'], prefix: false }))
 })
+
+test('glow: one long line is painted in linear time (FJS-2201)', function () {
+  /*
+   * Four rules rescanned a word run from every start inside it — `([\w]+)\(`,
+   * `([\w]+)\.`, yaml `([\w ]+):` and json `(".+"):` — so a record field
+   * holding a base64 blob froze whoever viewed it raw. 100k characters took
+   * 10–21 s; linear is a few milliseconds, so the bound is generous for a
+   * slow CI box and still two orders under the defect.
+   */
+  const run = 'aB3'.repeat(33334).slice(0, 100000)
+  const inputs = [
+    ['js', run],
+    ['ts', run],
+    ['json', run],
+    ['yaml', run],
+    ['yaml', 'ab '.repeat(33334)],
+    ['sh', run],
+    ['json', '"a" '.repeat(25000)],
+    ['json', '"' + '\\"x'.repeat(25000) + '"'],
+    ['html', run]
+  ]
+
+  inputs.forEach(function ([language, src]) {
+    const t0 = performance.now()
+    const out = glow(src, { language, prefix: false })
+    const ms = performance.now() - t0
+    assert.ok(ms < 1500, language + ' took ' + Math.round(ms) + ' ms on ' + src.length + ' characters')
+    assert.equal(textOf(out), src, language + ' changed the text it painted')
+  })
+})
+
+test('glow: a JSON key is its own token, not the span to the last colon (FJS-2201)', function () {
+  const out = glow('{"a":"x","b":1}', { language: 'json', prefix: false })
+
+  assert.ok(out.includes('<b>"a"</b>'), 'the first key is not a token')
+  assert.ok(out.includes('<b>"b"</b>'), 'the second key is not a token')
+  assert.ok(out.includes('<em>"x"</em>'), 'a value between two keys lost its string token')
+})

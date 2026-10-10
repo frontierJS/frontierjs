@@ -12,7 +12,7 @@
 //    snippet-variables and snippet-placeholders"
 // which names no snippet and no file.
 
-'use strict'
+
 
 const path = require('path')
 const fs   = require('fs')

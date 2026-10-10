@@ -7,7 +7,7 @@
 //   3. Missing required fields on create are a ValidationError, not a raw
 //      SQLite NOT NULL error.
 import { describe, it, expect, afterEach } from 'bun:test'
-import { createClient, GatePlugin, LEVELS, ValidationError, AccessDeniedError } from '../src/index.js'
+import { createClient, GatePlugin, LEVELS } from '../src/index.js'
 
 const SCHEMA = `
 enum Status { new active closed }

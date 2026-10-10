@@ -356,7 +356,7 @@ docker start  app`,
   // The health poll is the one with a second defect on top of the join, and it
   // is the only one that can be proven end to end without a docker daemon.
   test('the health poll runs on the target and reports its own failure', () => {
-    const machine = createMachine({ host: 'localhost', exec: realExec })
+    const _machine = createMachine({ host: 'localhost', exec: realExec })
     // A port nothing serves: the loop must reach `fail` and exit non-zero, which
     // is the branch that used to be reached by a syntax error instead.
     const script = `for i in $(seq 1 2); do

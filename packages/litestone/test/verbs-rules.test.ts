@@ -369,7 +369,7 @@ model Doc {
     expect(r).toEqual({ count: 1 })
   })
 
-  for (const [name, rule] of Object.entries(RULES)) {
+  for (const [name, _rule] of Object.entries(RULES)) {
     for (const v of verbs) {
       const cell = cells.get(`${name}.${v}`)!
       if (!cell || cell.code === '-') continue

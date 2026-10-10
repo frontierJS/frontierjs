@@ -23,7 +23,7 @@
 import { describe, it, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { parse } from '../src/core/parser.js'
-import { generateIndexDDL, generateDDL } from '../src/core/ddl.js'
+import { generateIndexDDL } from '../src/core/ddl.js'
 import {
   introspect, indexPredicate, diffSchemas, buildPristine,
   generateMigrationSQL, splitStatements,

@@ -61,6 +61,17 @@ declare module '@frontierjs/junction' {
 
 export const PAYLOAD_MAX_BYTES = 256 * 1024
 
+/**
+ * The keys of the `caravan` section of `junction.config.js` that
+ * `applyJunctionConfig` reads, and the list junction refuses any other key
+ * against at start() (`FJS-940`). `test/junction-integration.test.ts` holds it
+ * against the reader in both directions.
+ */
+export const CARAVAN_CONFIG_KEYS = [
+  'db', 'busyTimeout', 'synchronous', 'jobsDir', 'cleanupAfter', 'pollInterval',
+  'drainTimeout', 'admin', 'heartbeat', 'lease', 'queues',
+] as const
+
 function payloadLoss(v: unknown, path: string, seen: Set<object>): [string, string] | null {
   const kind = jsonLoss(v)
   if (kind) return [path, kind]
@@ -476,8 +487,8 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         return Response.json(redactList(caravan.list({
           queue:  q?.queue,
           status: q?.status as JobStatus | undefined,
-          limit:  q?.limit  ? parseInt(q.limit)  : 50,
-          offset: q?.offset ? parseInt(q.offset) : 0,
+          limit:  q?.limit  ? parseInt(q.limit, 10)  : 50,
+          offset: q?.offset ? parseInt(q.offset, 10) : 0,
         }), withData))
       })
 
@@ -701,6 +712,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   const caravan: CaravanInstance = {
 
     name: 'caravan',
+    configKeys: CARAVAN_CONFIG_KEYS,
 
     // ── dispatch ─────────────────────────────────────────────────────────────
 

@@ -35,21 +35,45 @@
  * key must stay absent, since a caller merging these over its own values
  * depends on the difference between "no opinion" and "the default".
  */
-const truthy = (v) => v === true || v === 'true' || v === '1'
-
-const asNumber = (v) => {
-  if (v === undefined || v === null || v === '') return undefined
-  const n = Number(v)
-  return Number.isFinite(n) ? n : undefined
+// The one flag grammar, for the directive flags and `$first`/`$wrap` alike.
+// `1` as a number is the HTTP spelling: the query parser reads `?$withDeleted=1`
+// as a number before this table sees it (FJS-D125). A bare flag is empty text and
+// is true. Anything else answers `undefined` -- not false, which would answer
+// 200 without the rows a caller who wrote `=yes` asked for.
+const flagOf = (v) => {
+  if (v === true || v === 1 || v === 'true' || v === '1' || v === '') return true
+  if (v === false || v === 0 || v === 'false' || v === '0') return false
+  return undefined
 }
+
+// A count is decimal digits. `Number()` also reads `true` as 1, `[]` as 0 and
+// `0x10` as 16, each answering 200 with a window nobody asked for. A number the
+// wire already typed passes: the query parser reads `?$limit=5` as 5 first, so
+// `0x10` and a quoted `"5"` reach here as text.
+const countOf = (v) => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined
+  if (typeof v === 'string' && /^\d+$/.test(v)) return Number(v)
+  return undefined
+}
+
+const asCount = (v) => (v === undefined || v === null || v === '' ? undefined : countOf(v))
 
 // A shape this module deliberately does not fix: `-createdAt`, `{name:'asc'}`
 // and `[{…}]` are all legal orderBys, and only the query builder can say which.
 const asIs = (v) => v
 
-const asText = (v) => (typeof v === 'string' && v !== '' ? v : undefined)
+// A text directive is text the wire may have typed: `?$search=603` and
+// `?$after=123` arrive as the number, `?$asOf=20260101` too, and `=true` as a
+// boolean. Dropping either answers the unfiltered page, 200, where `=zzz` is
+// refused. The number rule round-trips (`String(603) === '603'`), so the text
+// is the caller's own.
+const asText = (v) => {
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : undefined
+  if (typeof v === 'boolean') return String(v)
+  return typeof v === 'string' && v !== '' ? v : undefined
+}
 
-const asBool = (v) => (v === undefined ? undefined : truthy(v))
+const asBool = flagOf
 
 /*
  * The write direction, for the two rows that do not travel as themselves. A
@@ -83,11 +107,12 @@ const OPAQUE = Object.freeze({ description: 'Any shape the query builder reads; 
  * A new directive is one row, and its schema is in the row.
  */
 const DIRECTIVES = Object.freeze([
-  { param: '$limit',         name: 'limit',         read: asNumber, schema: COUNT  },
-  { param: '$offset',        name: 'offset',        read: asNumber, schema: COUNT  },
+  { param: '$limit',         name: 'limit',         read: asCount, schema: COUNT  },
+  { param: '$offset',        name: 'offset',        read: asCount, schema: COUNT  },
   // The window's far edge, opaque. A cursor is minted by the server and handed
-  // back verbatim — `asText` and never `asNumber`, because the token is base64
+  // back verbatim — `asText` and never `asCount`, because the token is base64
   // and a numeric-looking one must not be read as a number (`FJS-D145`).
+  // `asText` also takes the wire's typed spelling of it (`?$after=123`).
   { param: '$after',         name: 'after',         read: asText,  schema: TEXT   },
   { param: '$orderBy',       name: 'orderBy',       read: asIs,    schema: OPAQUE },
   { param: '$select',        name: 'select',        read: asIs,    schema: OPAQUE, write: asCsv },
@@ -125,6 +150,69 @@ export const TRANSPORT_PARAMS = Object.freeze(['$first', '$wrap'])
 
 /** Every `$` key the wire understands. Neither kind is a filter. */
 export const RESERVED_PARAMS = new Set([...DIRECTIVE_PARAMS, ...TRANSPORT_PARAMS])
+
+/**
+ * `$first` and `$wrap` → the flags they carry, read by ONE grammar.
+ *
+ * `true`/`1` are true, `false`/`0` are false, and a bare `?$first` (empty text
+ * or `true`) is true. Anything else is reported in `invalid` and left out of
+ * the answer — JS truthiness made `?$first=no` and `?$wrap=0` both TRUE, and
+ * left a bare `?$first` false. The kit reports and the boundary refuses, as
+ * `unknownDirectives` does (`FJS-D26`).
+ *
+ * @param {Record<string, unknown>} params
+ * @returns {{ first?: boolean, wrap?: boolean, invalid: string[] }}
+ */
+export function transportFlags(params) {
+  const flags = {}
+  const invalid = []
+  if (!params || typeof params !== 'object') return { invalid }
+  for (const name of ['first', 'wrap']) {
+    const v = params['$' + name]
+    if (v === undefined) continue
+    const flag = flagOf(v)
+    if (flag === undefined) invalid.push('$' + name)
+    else flags[name] = flag
+  }
+  return { ...flags, invalid }
+}
+
+/**
+ * The flag directives (`$withDeleted` and its siblings) and the counts
+ * (`$limit`, `$offset`) given a value outside their grammar, in table order.
+ * `parseDirectives` drops such a value rather than guessing false or reading
+ * `true` as 1; the boundary that refuses is the one that calls this, as it
+ * calls `unknownDirectives` (`FJS-D237`). A `null` is *not asked*, as it is to
+ * `parseDirectives`, and so is empty text for a count.
+ *
+ * @param {Record<string, unknown>} params
+ * @returns {string[]}
+ */
+export function invalidDirectives(params) {
+  if (!params || typeof params !== 'object') return []
+  return DIRECTIVES
+    .filter(({ read, param }) => (read === asBool || read === asCount)
+      && params[param] != null && params[param] !== '' && read(params[param]) === undefined)
+    .map(({ param }) => param)
+}
+
+/**
+ * The single-valued directives (count, text, flag, and `$first`/`$wrap`) given a
+ * LIST, in table order. `?$limit=5&$limit=6`, `?$limit[]=5` and a socket bag
+ * `{ $limit: [5, 6] }` all arrive as an array, which no reader here can take as
+ * one value: the filter half makes a repeated key a list by design, and a
+ * directive reading it as `Number([5, 6])` answers the default page with a 200.
+ * `$select`, `$populate` and `$orderBy` are lists by nature and are not graded.
+ * The kit reports and the boundary refuses (`FJS-D237`).
+ *
+ * @param {Record<string, unknown>} params
+ * @returns {string[]}
+ */
+export function listedDirectives(params) {
+  if (!params || typeof params !== 'object') return []
+  return [...DIRECTIVES.filter(({ read }) => read !== asIs).map(({ param }) => param), ...TRANSPORT_PARAMS]
+    .filter((param) => Array.isArray(params[param]))
+}
 
 /**
  * The `$` keys this table does not know, in the order they arrived.
@@ -236,9 +324,10 @@ const asDir = (v) => (String(v).toLowerCase() === 'desc' ? 'desc' : 'asc')
 /**
  * An `orderBy` directive → the `(key, direction)` pair a sorted header marks.
  *
- * Every legal shape, and the nesting that bracket notation produces: a value
- * that is not a direction is itself an ordering, so `$orderBy[0][name]=desc`
- * descends to `{name:'desc'}` rather than answering the index. An empty key
+ * Every legal shape: inside an ARRAY, a value that is not a direction is
+ * itself an ordering and the descent reaches the column. A plain object is
+ * read the way the boundary reads it, so `$orderBy[0][name]=desc` answers
+ * the column `0`. An empty key
  * means *nothing is sorted*, which is not the same as sorted ascending by
  * nothing — a caller marking a header tests the key.
  *
@@ -260,13 +349,20 @@ export function orderByPair(orderBy) {
 
   if (typeof orderBy !== 'object') return none
 
-  // An array is written `[{name:'desc'}, …]`; bracket notation hands the same
-  // intent back as `{'0': {…}}`, so both are reached by taking the first entry
-  // and asking what it is rather than by testing for an Array.
+  // The first entry of an array `[{name:'desc'}, …]` or of an object.
   const entries = Object.entries(orderBy)
   if (entries.length === 0) return none
 
   const [key, value] = entries[0]
+
+  // `$orderBy[0][name]=desc` parses to `{'0': {name:'desc'}}`: bracket notation
+  // names a member (`k[]` is the append), so on a non-array the index IS a
+  // column and the boundary refuses it as one. Descending would mark `name`
+  // where the server says `0`.
+  if (!Array.isArray(orderBy) && key === String(Number(key))) {
+    const structured = value !== null && typeof value === 'object'
+    return { key, dir: asDir(structured ? value.dir : value) }
+  }
 
   // A distance ordering is an ordering ARGUMENT, not another ordering: the
   // column a header marks is the point field, and descending into
@@ -280,12 +376,11 @@ export function orderByPair(orderBy) {
   // Anything else structured in the value position is one level further down.
   if (value !== null && typeof value === 'object') return orderByPair(value)
 
-  // `{'0': '-name'}` — an array of strings that lost its shape in transport.
-  // Decided on the VALUE and not on the key alone: `{'0': 'desc'}` is a
-  // direction, so the numeric key is the column there and the descent would
-  // answer `desc` as a column name. An empty direction is a missing one and
-  // falls through to `asc`, which is why this asks for a direction WORD rather
-  // than for any string.
+  // `['-name']` — an array of strings. Decided on the VALUE and not on the key
+  // alone: `['desc']` is a direction, so the numeric key is the column there
+  // and the descent would answer `desc` as a column name. An empty direction
+  // is a missing one and falls through to `asc`, which is why this asks for a
+  // direction WORD rather than for any string.
   const isDirection = value === 'asc' || value === 'desc'
   if (!isDirection && key === String(Number(key))) return orderByPair(value)
 

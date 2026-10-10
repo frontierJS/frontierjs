@@ -1109,7 +1109,7 @@ function applyPresentation(fieldSchema, field) {
 }
 
 function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audience = 'client', typeDefs = null, fileDef = 'FileRef') {
-  const { name, type, attributes } = field
+  const { type, attributes } = field
   const result = {}
 
   // Handle optional — wrap in anyOf with null, or just mark nullable

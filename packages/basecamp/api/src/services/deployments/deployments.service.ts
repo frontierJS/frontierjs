@@ -106,7 +106,7 @@ export function createDeploymentsService(app: BasecampApp) {
    *  record it renders loses every field a projection omits. */
   async function pushRow(id: string) {
     const row = await sys().deployment.findUnique({ where: { id } })
-    if (row) announce(app, ws(), 'deployments patched', row)
+    if (row) await announce(app, ws(), 'Deployment', 'deployments patched', row)
     return row
   }
 

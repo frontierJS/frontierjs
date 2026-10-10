@@ -10,7 +10,7 @@ import { join }          from 'path'
 import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
-import { rankNext, blockedBy, byHand, WEIGHTS } from '../core/next.js'
+import { rankNext, blockedBy, byHand, blockedLine, WEIGHTS } from '../core/next.js'
 
 // Every fixture declares the prefix its rows are written under.
 const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
@@ -184,5 +184,43 @@ describe('over this repo', () => {
     expect(ready.length).toBeGreaterThan(20)
     expect(ready.every(r => r.terms[0].term === 'severity')).toBe(true)
     expect(ready.every((r, i) => i === 0 || ready[i - 1].score >= r.score)).toBe(true)
+  })
+})
+
+describe('the blocked list', () => {
+  // FJS-2410: a blocked row printed id and title only, so an S2 row waiting on
+  // a ruling showed no severity and no score.
+  test('a blocked line carries the severity and score its ranking gave it', () => {
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'cli', 'Lower.', 'blocked by FJS-003'),
+      S2('FJS-002', 'cli', 'Higher.', 'blocked by FJS-003'),
+      S3('FJS-003', 'cli', 'Blocker.'),
+    ])
+    try {
+      const { blocked } = rankNext(root, { touched: new Set() })
+      const lines = blocked.map(blockedLine)
+      expect(lines[0]).toMatch(/^FJS-002\s+S2\s+\d+\s+waits on FJS-003 — Higher\.$/)
+      expect(lines[0]).toContain(` ${blocked[0].score} `)
+      expect(lines[1]).toMatch(/^FJS-001\s+S3\s+\d+\s+waits on FJS-003/)
+    } finally { cleanup() }
+  })
+})
+
+describe('what a blocker holds', () => {
+  // FJS-2409: blocks counted rows, so a ruling holding one S2 ranked below one
+  // holding two S3 picker rows.
+  test('a blocker holding one S2 outranks one holding two S3', () => {
+    const { root, cleanup } = fixture([
+      S2('FJS-001', 'cli', 'Security hole.', 'blocked by FJS-003'),
+      S3('FJS-002', 'cli', 'Picker.', 'blocked by FJS-004'),
+      S3('FJS-005', 'cli', 'Picker too.', 'blocked by FJS-004'),
+      S3('FJS-003', 'cli', 'Holds the S2.'),
+      S3('FJS-004', 'cli', 'Holds two S3.'),
+    ])
+    try {
+      const { ready } = rankNext(root, { touched: new Set() })
+      expect(ids(ready)).toEqual(['FJS-003', 'FJS-004'])
+      expect(ready[0].terms.find(t => t.term === 'blocks').note).toMatch(/S2/)
+    } finally { cleanup() }
   })
 })

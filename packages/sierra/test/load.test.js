@@ -13,7 +13,6 @@ import { renderRouteTable } from '../src/scanner/generate-route-table.js'
 import { sierraFetch, configureFetch } from '../src/fetch/index.js'
 import {
   page,
-  _resetPage,
 } from '../src/router/index.js'
 import {
   watchProxy, watchPath, createEffect, flushSync, setRenderEnvironment,

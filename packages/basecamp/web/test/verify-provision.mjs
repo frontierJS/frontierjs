@@ -1038,7 +1038,7 @@ try {
   const files = await until(`[...${card}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
     t => /claude-was-here\.txt/.test(t), 'the diff never listed the file the run wrote')
   check('the diff lists the tree\'s changes, untracked files included', /dirty\.txt/.test(files), files)
-  await evaluate(`(() => { const f = [...${card}.querySelectorAll('.workbench-file')].find(f => /dirty\.txt/.test(f.textContent)); f.open = true
+  await evaluate(`(() => { const f = [...${card}.querySelectorAll('.workbench-file')].find(f => /dirty.txt/.test(f.textContent)); f.open = true
     f.querySelector('.workbench-line').click() })()`)
   await until(`!!${card}.querySelector('.workbench-comment input')`, v => v, 'a click on a line opened no comment box')
   await evaluate(`(() => { const i = ${card}.querySelector('.workbench-comment input')

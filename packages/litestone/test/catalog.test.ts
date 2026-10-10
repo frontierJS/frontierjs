@@ -24,7 +24,6 @@
 // restatement of this file and moves the drift rather than catching it.
 
 import { describe, test, expect } from 'bun:test'
-import { readFileSync } from 'fs'
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parse } from '../src/core/parser.js'

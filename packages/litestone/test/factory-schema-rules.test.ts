@@ -130,6 +130,21 @@ describe('generateFactory reads the rules on a field', () => {
     expect(r.definition.groupBy).toBeNull()
   })
 
+  // FJS-2457: read off `@type` alone, a member naming a type directly was a
+  // string, and the client refused the row its own factory made.
+  test('a type member naming another type is that type, listed or not, and the client takes the row', async () => {
+    const src = `type Leaf { key String @regex("^[a-z]+$") }
+      type Spec { list Leaf[] @minItems(2); one Leaf; maybe Leaf? }
+      model T { id Int @id; spec Json @type(Spec) }`
+    const r = row(src)
+    expect(r.spec.list).toHaveLength(2)
+    expect(r.spec.list[0].key).toMatch(/^[a-z]+$/)
+    expect(r.spec.one.key).toMatch(/^[a-z]+$/)
+    expect(r.spec.maybe).toBeNull()
+    const { db } = await makeTestClient(src)
+    await expect(db.asSystem().t.create({ data: { ...r, id: 1 } })).resolves.toBeDefined()
+  })
+
   test('an optional @type Json stays null', () => {
     const r = row(`type Cfg { url String }  model T { id Int @id; config Json? @type(Cfg) }`)
     expect(r.config).toBeNull()

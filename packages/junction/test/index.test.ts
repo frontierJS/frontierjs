@@ -4,9 +4,6 @@
 
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { asRecord } from './helpers.ts'
-// Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
-// COPY under node_modules/.bun, so the package spec tests a stale reaper.
-import { tempDir } from '../../litestone/src/tmp-dirs.js'
 
 // ─── Router tests ─────────────────────────────────────────────────────────
 
@@ -266,7 +263,7 @@ describe('matchPathDirect', () => {
 
 // ─── Body parser tests ────────────────────────────────────────────────────
 
-import { parseBody, parseQuery, parseCookies, extractIP } from '../src/transport/body.ts'
+import { parseQuery, parseCookies, extractIP } from '../src/transport/body.ts'
 
 describe('parseQuery', () => {
 
@@ -1133,14 +1130,14 @@ import { parseQuery as parseLSQuery, parseWhere, deriveModelName } from '../src/
 describe('Litestone query translator', () => {
 
   it('parses basic query params', () => {
-    const q = parseLSQuery({ $limit: '10', $offset: '5', name: 'alice' })
+    const q = parseLSQuery({ name: 'alice' }, 20, 100, { limit: 10, offset: 5 })
     expect(q.limit).toBe(10)
     expect(q.offset).toBe(5)
     expect(q.where).toEqual({ name: 'alice' })
   })
 
   it('caps take at maxLimit', () => {
-    const q = parseLSQuery({ $limit: '9999' }, 20, 100)
+    const q = parseLSQuery({}, 20, 100, { limit: 9999 })
     expect(q.limit).toBe(100)
   })
 
@@ -1178,44 +1175,42 @@ describe('Litestone query translator', () => {
   })
 
   it('parses sort string', () => {
-    const q = parseLSQuery({ $orderBy: 'name,-created_at' })
+    const q = parseLSQuery({}, 20, 100, { orderBy: 'name,-created_at' })
     expect(q.orderBy).toEqual([{ name: 'asc' }, { created_at: 'desc' }])
   })
 
   it('parses select string', () => {
-    const q = parseLSQuery({ $select: 'id,name,email' })
+    const q = parseLSQuery({}, 20, 100, { select: 'id,name,email' })
     expect(q.select).toEqual({ id: true, name: true, email: true })
   })
 
   it('parses $populate string', () => {
-    const q = parseLSQuery({ $populate: 'author,tags' })
+    const q = parseLSQuery({}, 20, 100, { populate: 'author,tags' })
     expect(q.include).toEqual({ author: true, tags: true })
   })
 
   it('parses $populate with field selection', () => {
-    const q = parseLSQuery({ $populate: 'author:name+email' })
+    const q = parseLSQuery({}, 20, 100, { populate: 'author:name+email' })
     expect(q.include).toEqual({ author: { select: { name: true, email: true } } })
   })
 
   it('trims whitespace in $populate', () => {
-    const q = parseLSQuery({ $populate: 'author , tags' })
+    const q = parseLSQuery({}, 20, 100, { populate: 'author , tags' })
     expect(q.include).toEqual({ author: true, tags: true })
   })
 
   it('parses $search', () => {
-    const q = parseLSQuery({ $search: 'hello world' })
+    const q = parseLSQuery({}, 20, 100, { search: 'hello world' })
     expect(q.search).toBe('hello world')
   })
 
   it('parses $withDeleted', () => {
-    const q1 = parseLSQuery({ $withDeleted: true })
-    expect(q1.withDeleted).toBe(true)
-    const q2 = parseLSQuery({ $withDeleted: 'true' })
-    expect(q2.withDeleted).toBe(true)
+    const q = parseLSQuery({}, 20, 100, { withDeleted: true })
+    expect(q.withDeleted).toBe(true)
   })
 
   it('parses $onlyDeleted', () => {
-    const q = parseLSQuery({ $onlyDeleted: true })
+    const q = parseLSQuery({}, 20, 100, { onlyDeleted: true })
     expect(q.onlyDeleted).toBe(true)
   })
 
@@ -1240,7 +1235,7 @@ describe('Litestone query translator', () => {
   })
 
   it('parses sort object with MongoDB-style values', () => {
-    const q = parseLSQuery({ $orderBy: { name: 1, created_at: -1 } })
+    const q = parseLSQuery({}, 20, 100, { orderBy: { name: 1, created_at: -1 } as never })
     expect(q.orderBy).toEqual([{ name: 'asc' }, { created_at: 'desc' }])
   })
 
@@ -3570,10 +3565,9 @@ describe('paginate() hook', () => {
     expect((await pageFor('/things?$limit=9999')).locals).toEqual({ limit: 100, offset: 0 })
   })
 
-  it('falls back to the default on a non-numeric limit', async () => {
-    // parseInt('abc') is NaN and Math.min(NaN, 100) is NaN — which reaches
-    // SQLite as a bind failure rather than as "no limit".
-    expect((await pageFor('/things?$limit=abc')).locals).toEqual({ limit: 20, offset: 0 })
+  it('does not reach the hook with a non-numeric limit: the bridge refuses it', async () => {
+    // NaN out of Math.min(NaN, 100) reaches SQLite as a bind failure.
+    expect((await pageFor('/things?$limit=abc')).locals).toBeUndefined()
   })
 
   it('keeps a limit of 0, which is how a caller asks for the count alone', async () => {
@@ -3638,6 +3632,21 @@ describe('ctx.paginate()', () => {
     const body = res.body as Record<string, unknown>
     expect(body.prev).toContain('$offset=0')
     expect(body.next).toBeNull()
+  })
+
+  // FJS-2448: the next/prev URL is written by the directives kit, so a `$`
+  // directive already on the request keeps its spelling and a filter keeps its type.
+  it('carries the request\'s other directives and filters into next', async () => {
+    const app = await makeApp()
+    app.get('/paginated', (ctx) => ctx.paginate([{ id: '1' }], 10, { limit: 1, offset: 0 }))
+    const res = await request(app).get('/paginated?status=open&$orderBy=-id&$limit=9&$offset=3')
+    const next = String((res.body as Record<string, unknown>).next)
+    const params = new URL(next).searchParams
+    expect(next).not.toContain('%24')
+    expect(params.get('$orderBy')).toBe('-id')
+    expect(params.get('status')).toBe('open')
+    expect(params.getAll('$offset')).toEqual(['1'])
+    expect(params.getAll('$limit')).toEqual(['1'])
   })
 
   it('null for both next and prev on a single full page', async () => {
@@ -4100,7 +4109,7 @@ describe('healthPlugin', () => {
 
 // ─── createLogger ─────────────────────────────────────────────────────────
 
-import { createLogger, consoleWriter, noopLogger } from '../src/core/logger.ts'
+import { createLogger, noopLogger } from '../src/core/logger.ts'
 
 describe('createLogger', () => {
 

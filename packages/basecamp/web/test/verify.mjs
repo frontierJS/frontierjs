@@ -458,7 +458,7 @@ function check(name, got, want) {
 
 const path     = () => evaluate('location.pathname')
 const heading  = () => evaluate(`document.querySelector('h1')?.textContent ?? null`)
-const badges   = () => evaluate(`[...document.querySelectorAll('.badge')].map(e => e.textContent.trim()).join('|')`)
+const _badges   = () => evaluate(`[...document.querySelectorAll('.badge')].map(e => e.textContent.trim()).join('|')`)
 const hasToken = () => evaluate(`!!localStorage.getItem('basecamp_token')`)
 // Who is signed in is the Account menu's label, and the menu is `{#if open}`,
 // so the page's text carries no email until it is pressed. Pressed again to

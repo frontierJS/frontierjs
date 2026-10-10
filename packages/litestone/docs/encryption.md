@@ -24,10 +24,20 @@ matched.
 
 Pass a 64-character hex string (32 bytes) as `encryptionKey` to `createClient`:
 
+```lite
+model User {
+  id  Int     @id
+  ssn String? @encrypted
+}
+```
+
 ```js
+const ENC_KEY = process.env.ENC_KEY ?? 'a'.repeat(64)   // 64 hex chars = 32 bytes; a real one comes from the environment
+
 const db = await createClient({
-  path: './schema.lite',
-  encryptionKey: process.env.ENC_KEY,   // 64 hex chars = 32 bytes
+  path:          './schema.lite',
+  db:            ':memory:',
+  encryptionKey: ENC_KEY,
 })
 ```
 
@@ -40,8 +50,9 @@ system. For a column no caller may set either, add `@guarded`.
 
 ```lite
 model User {
-  ssn  String @encrypted
-  dob  String @encrypted
+  id   Int     @id
+  ssn  String? @encrypted
+  dob  String? @encrypted
 }
 ```
 
@@ -49,12 +60,14 @@ model User {
 // Write — value is encrypted transparently
 await db.user.create({ data: { id: 1, ssn: '123-45-6789' } })
 
-// Read — guarded: returns null unless asSystem()
+// Read — hidden: the key is absent from the row unless asSystem()
 const user = await db.user.findUnique({ where: { id: 1 } })
-user.ssn  // → null (guarded)
+user.ssn  // → undefined — stripped, not null
+if ('ssn' in user) throw new Error('a non-system read carries no @encrypted column')
 
 const sysUser = await db.asSystem().user.findUnique({ where: { id: 1 } })
 sysUser.ssn  // → '123-45-6789'
+if (sysUser.ssn !== '123-45-6789') throw new Error('the system reads the plaintext')
 ```
 
 ## @encrypted(deterministic: true)
@@ -66,14 +79,17 @@ it.
 
 ```lite
 model User {
+  id    Int    @id
   // Looked up at sign-in AND mailed to. Both, so both must work.
   email String @encrypted(deterministic: true)
 }
 ```
 
 ```js
-await db.asSystem().user.findFirst({ where: { email: 'a@example.com' } })  // → the row
-user.email                                                                  // → 'a@example.com'
+await db.user.create({ data: { id: 1, email: 'a@example.com' } })
+const user = await db.asSystem().user.findFirst({ where: { email: 'a@example.com' } })  // → the row
+user.email                                                                               // → 'a@example.com'
+if (user?.email !== 'a@example.com') throw new Error('expected the row back by its value')
 ```
 
 **What it trades.** Equal values are visibly equal in the column to anyone holding the
@@ -90,13 +106,17 @@ HMAC-SHA256. **One-way**: there is no ciphertext, no key that recovers it, and
 
 ```lite
 model User {
+  id         Int    @id
   // Matched at sign-in, never shown to anyone, including an admin.
   loginToken String @hashed
 }
 ```
 
 ```js
-await db.asSystem().user.findFirst({ where: { loginToken: tok } })  // → the row
+const tok = 'the-token-the-client-presented'
+await db.user.create({ data: { id: 1, loginToken: tok } })
+const user = await db.asSystem().user.findFirst({ where: { loginToken: tok } })  // → the row
+if (user?.id !== 1) throw new Error('expected the row matched by digest')
 ```
 
 **Every read path refuses it, `asSystem()` included** — there is nothing to lift the
@@ -105,8 +125,17 @@ aggregate throws, because those project the column straight out of SQLite and wo
 otherwise hand back the digest:
 
 ```js
+await db.user.create({ data: { id: 1, loginToken: 'tok' } })
+const user = await db.asSystem().user.findUnique({ where: { id: 1 } })
 user.loginToken                                            // → undefined
-db.asSystem().user.findUnique({ where, select: { loginToken: true } })
+if ('loginToken' in user) throw new Error('a digest is never handed back')
+
+try {
+  await db.asSystem().user.findUnique({ where: { id: 1 }, select: { loginToken: true } })
+  throw new Error('expected the select to be refused')
+} catch (e) {
+  if (e.name !== 'ValidationError') throw e
+}
 // ValidationError: 'loginToken' is @hashed on User — the column holds a one-way
 // digest, so there is no value to select. It can be matched in a where and never
 // read back. If this field has to be readable, it wants @encrypted(deterministic: true)
@@ -120,7 +149,12 @@ it requires a `String` column, since a digest is text.
 **`@secret @hashed` is the credential a server verifies**, a device token for one:
 
 ```lite
-token String @secret @hashed
+database audit { path "./audit/"  driver trail }
+
+model Device {
+  id    Int    @id
+  token String @secret @hashed
+}
 ```
 
 The digest replaces the `@encrypted` half, so the column is matchable in a `where`
@@ -135,14 +169,33 @@ to derive an IV for.
 Both matchable modes answer the same set, and refuse the rest **by name** rather than
 comparing plaintext against stored bytes and returning something plausible:
 
+```lite
+model User {
+  id         Int     @id
+  email      String? @encrypted(deterministic: true)
+  loginToken String? @hashed
+}
+```
+
 ```js
+const sys = db.asSystem()
+await sys.user.create({ data: { id: 1, email: 'a@example.com', loginToken: 'tok' } })
+
 // Works on @encrypted(deterministic: true) and @hashed alike
-where: { f: v }               where: { f: { equals: v } }
-where: { f: { in: [a, b] } }  where: { f: [a, b] }
-where: { f: { not: v } }      where: { f: { notIn: [a] } }
+await sys.user.findMany({ where: { email: 'a@example.com' } })
+await sys.user.findMany({ where: { email: { equals: 'a@example.com' } } })
+await sys.user.findMany({ where: { email: { in: ['a@example.com', 'b@example.com'] } } })
+await sys.user.findMany({ where: { email: ['a@example.com', 'b@example.com'] } })
+await sys.user.findMany({ where: { loginToken: { not: 'x' } } })
+await sys.user.findMany({ where: { loginToken: { notIn: ['x'] } } })
 
 // Refused, naming the field and the reason
-where: { f: { contains: 'x' } }
+try {
+  await sys.user.findMany({ where: { email: { contains: 'a' } } })
+  throw new Error('expected a refusal')
+} catch (e) {
+  if (e.name !== 'ValidationError') throw e
+}
 // ValidationError: … it can answer equality (equals, not, in, notIn) and cannot
 // answer 'contains', because neither preserves ordering or substrings
 ```
@@ -176,7 +229,7 @@ migrating means re-collecting the values from wherever they still exist. See
 
 ## @secret
 
-Composite attribute — expands at parse time to `@encrypted + @guarded + @trail(audit)`. Every read and write is logged to the audit trail database.
+Composite attribute — expands at parse time to `@encrypted + @guarded + @trail(audit, reads: false)`, `audit` being the first `driver trail` database the schema declares. Every write is logged to it; a read is not, because reads are high-volume — declare `@trail(audit, reads: true)` on the field beside `@secret` to log those too. With no trail database declared the audit half is dropped with a parse warning.
 
 ```lite
 database audit {
@@ -200,24 +253,55 @@ every equality filter over it answering nothing.
 
 ## Key rotation
 
-Re-encrypts every key-reversible column — `@encrypted` in both modes, and `@secret` — with the new key, then swaps the client's key:
+Re-encrypts every key-reversible column — `@encrypted` in both modes, and `@secret` — with the new key, then swaps the client's key. The stats are keyed by model name:
 
-```js
-const stats = await db.$rotateKey(newKey)
-// → { users: { rows: 42, fields: 1 }, orders: { rows: 18, fields: 2 } }
+```lite
+model User {
+  id  Int     @id
+  ssn String? @encrypted
+}
+
+model Order {
+  id   Int     @id
+  card String? @encrypted
+  iban String? @encrypted(deterministic: true)
+}
 ```
 
-**The key swap is global, so a column rotation cannot rewrite is not left on the old key — it is unreadable.** One client holds one key. Two kinds cannot be carried, and `$rotateKey` refuses while either is present rather than destroying it:
+```js
+const newKey = 'b'.repeat(64)
+await db.user.create({ data: { id: 1, ssn: '123-45-6789' } })
+
+const stats = await db.$rotateKey(newKey)
+// → { User: { rows: 1, fields: 1 }, Order: { rows: 0, fields: 2 } }
+if (stats.User.rows !== 1 || stats.User.fields !== 1) throw new Error(`unexpected stats ${JSON.stringify(stats)}`)
+```
+
+**The key swap is global, so a column rotation cannot rewrite is left behind on the old key.** One client holds one key for writing. Two kinds cannot be carried, and `$rotateKey` refuses while either is present rather than orphaning it in silence:
 
 | Declaration | Why it cannot be carried |
 | --- | --- |
 | `@hashed` | One-way. There is no plaintext anywhere to re-key, so every match becomes 0 permanently and no later fix can undo it. |
-| `@secret(rotate: false)` | Declared excluded from re-encryption. It does **not** stay bound to the original key — nothing retains that key. |
+| `@secret(rotate: false)` | Declared excluded from re-encryption. The client that rotated keeps the old key on its ring and goes on reading it; the next process to start reads the column as empty unless it is given `previousEncryptionKeys: ['<the old key>']`. |
+
+```lite
+model User {
+  id     Int     @id
+  pw     String? @hashed
+  legacy String? @secret(rotate: false)
+}
+```
 
 ```js
-await db.$rotateKey(newKey)
+const newKey = 'b'.repeat(64)
+try {
+  await db.$rotateKey(newKey)
+  throw new Error('expected the refusal')
+} catch (e) {
+  if (!/orphan/.test(e.message)) throw e
+}
 // Error: $rotateKey would leave 2 column(s) unreadable and has rotated nothing:
-//   User.pw    — @hashed — one-way, there is no plaintext to re-key …
+//   User.pw     — @hashed — one-way, there is no plaintext to re-key …
 //   User.legacy — @secret(rotate: false) — declared excluded from re-encryption
 // Pass { orphan: ['User.pw', 'User.legacy'] } to accept that deliberately.
 
@@ -233,9 +317,11 @@ The client that rotated keeps working — the key lives in one cell every derive
 The tenant registry accepts a function for per-tenant keys:
 
 ```js
+const getKeyForTenant = async (tenantId) => 'a'.repeat(64)   // a KMS or a vault in a real app
+
 const tenants = await createTenantRegistry({
   dir:           './tenants/',
-  schema:        './schema.lite',
+  path:          './schema.lite',
   encryptionKey: async (tenantId) => getKeyForTenant(tenantId),
 })
 ```
@@ -248,14 +334,16 @@ stripped from every read, and refused on every write, unless the client is
 
 ```lite
 model User {
-  passwordHash String @guarded   // system only, and a select cannot unlock the read
-  internalNote String @guarded
+  id           Int     @id
+  passwordHash String? @guarded   // system only, and a select cannot unlock the read
+  internalNote String? @guarded
 }
 ```
 
-```js
-const userDb = db.$setAuth(user)
-await userDb.user.update({ where: { id }, data: { passwordHash: 'x' } })
+```js throws
+await db.asSystem().user.create({ data: { id: 1, passwordHash: 'h' } })
+const userDb = db.$setAuth({ id: 1 })
+await userDb.user.update({ where: { id: 1 }, data: { passwordHash: 'x' } })
 // AccessDeniedError: User: "passwordHash" is @guarded — a system-context column
 // on write as well as read.
 ```

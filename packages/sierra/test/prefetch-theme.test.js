@@ -5,13 +5,12 @@
 import {
   flushSync, watchPath, createEffect, setRenderEnvironment,
 } from '@frontierjs/mesa/runtime.js'
-import { describe, test, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest'
 import { mkdir, writeFile, rm, readFile } from 'fs/promises'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 
-import { injectAutoImports } from '../src/build/auto-import-plugin.js'
 import { buildThemeScript, initTheme, setTheme, toggleTheme, themes, theme } from '../src/theme/index.js'
 import { injectThemeScript } from '../src/postbuild/inject-theme.js'
 import { prefetchHref } from '../src/router/prefetch.js'

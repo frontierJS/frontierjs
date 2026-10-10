@@ -63,8 +63,14 @@ are off. With the formatter refused, a linter that argues about style is a
 formatter that cannot fix anything.
 
 `noExplicitAny` is off because a framework boundary types values it did not
-create; `noUnusedVariables` is a warning rather than an error because a
-destructure that drops a key is a legitimate shape.
+create; `noEmptyInterface` is off because an empty exported interface is the
+slot an app augments by declaration merging, and its autofix (a type alias)
+closes the slot; `noImplicitAnyLet` is off because TypeScript types a bare `let`
+by control flow and `tsc` already grades the result; `noUnusedVariables` is a warning rather than an error because a
+destructure that drops a key is a legitimate shape. `useIterableCallbackReturn`
+skips `forEach`: its return value is discarded by the language, so
+`items.forEach(i => seen.add(i))` is not a bug, while a `map` or `filter`
+callback that forgets to return is.
 
 ## What it cannot see
 

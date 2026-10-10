@@ -324,15 +324,16 @@ export interface JunctionServicesConfig {
 
 export interface JunctionCaravanConfig {
   db?:           string
+  busyTimeout?:  number
+  synchronous?:  'NORMAL' | 'FULL'
   jobsDir?:      string
   pollInterval?: number
   cleanupAfter?: number
+  drainTimeout?: number
+  heartbeat?:    number
+  lease?:        number
   queues?:       Record<string, { concurrency?: number }>
   admin?:        boolean | { path?: string; secret?: string }
-}
-
-export interface JunctionConduitConfig {
-  dir?: string   // path to conduit/ dir for auto-discovery
 }
 
 export interface JunctionConfig {
@@ -340,7 +341,6 @@ export interface JunctionConfig {
   middleware?: JunctionMiddlewareConfig
   plugins?:    JunctionPluginsConfig
   services?:   JunctionServicesConfig
-  conduit?:    JunctionConduitConfig
   caravan?:    JunctionCaravanConfig
 
   /**
@@ -362,40 +362,96 @@ export interface JunctionConfig {
  * both merge with no error and no warning — the app boots on defaults looking
  * like it loaded something (`FJS-431`'s shape, ruled `FJS-D199`).
  *
- * TOP-LEVEL ONLY, deliberately, and the reason is measured rather than a
- * preference: the interfaces above are not the runtime's key list. `basecamp`
- * declares `middleware.cors.credentials`, which `JunctionMiddlewareConfig.cors`
- * does not name and `core/app.ts` reads and honours. Refusing nested keys means
- * hand-keeping a list per section beside an interface that has already drifted
- * from what reads it — the second origin the ruling exists to remove. The
- * nested half is its own row.
+ * The keys INSIDE a section are not read off the interfaces above, which are
+ * erased at runtime and drift from what reads them (`middleware.cors.credentials`
+ * was read and undeclared). Each is a list its reader exports and `unknownKeys`
+ * checks (`FJS-940`, `FJS-D483`).
  */
 export const JUNCTION_SECTIONS = [
-  'app', 'middleware', 'plugins', 'services', 'conduit', 'caravan', 'attachments',
+  'app', 'middleware', 'plugins', 'services', 'caravan', 'attachments',
 ] as const
 
 /**
+ * The keys of the sections junction itself reads, and the only list of each
+ * (`FJS-D483`): the reader owns what it reads. A section owned by a plugin
+ * states its own through `Plugin.configKeys`.
+ *
+ * `rateLimit` is the MIDDLEWARE and not the transport's `ddos` guard. Two
+ * different layers on purpose — `ddos` is per-IP ahead of the router, this is
+ * per-route behind it — and the transport is constructed before `load-config`
+ * runs, so a value routed there from this file arrives after the only reader
+ * has taken its copy (`FJS-1066`).
+ */
+export const MIDDLEWARE_CONFIG_KEYS = [
+  'cors', 'rateLimit', 'callHeaders', 'helmet', 'requestLogger', 'correlationId', 'csrf', 'bodyLimit',
+] as const satisfies ReadonlyArray<keyof JunctionMiddlewareConfig>
+
+export const PLUGINS_CONFIG_KEYS = [
+  'health', 'manifest', 'openapi', 'devtools',
+] as const satisfies ReadonlyArray<keyof JunctionPluginsConfig>
+
+export const SERVICES_CONFIG_KEYS = [
+  'dir',
+] as const satisfies ReadonlyArray<keyof JunctionServicesConfig>
+
+/** Section → the keys junction reads in it. `app` and `attachments` are open shapes and have no entry. */
+const OWN_SECTION_KEYS: Record<string, readonly string[]> = {
+  middleware: MIDDLEWARE_CONFIG_KEYS,
+  plugins:    PLUGINS_CONFIG_KEYS,
+  services:   SERVICES_CONFIG_KEYS,
+}
+
+/** The candidate nearest to `key` by edit distance, or null when none is close. */
+function nearestOf(key: string, known: readonly string[]): string | null {
+  let nearest: string | null = null
+  let best = Math.floor(key.length / 2) + 1
+  for (const candidate of known) {
+    const d = editDistance(key, candidate)
+    if (d < best) { best = d; nearest = candidate }
+  }
+  return nearest
+}
+
+/**
  * Sections of a `junction.config.js` nothing will read, each with the nearest
- * name that would have been read.
+ * name that would have been read. `owned` names the sections plugins configured
+ * on this app read, which are sections too.
  *
  * Nearest by edit distance rather than by a table of known typos: a table can
  * only ever name the mistakes somebody already made. A suggestion is offered
  * only when it is closer than half the word, so an unrelated key is reported
  * as unknown rather than corrected towards something the author never meant.
  */
-export function unknownSections(cfg: unknown): Array<{ key: string; nearest: string | null }> {
+export function unknownSections(cfg: unknown, owned: readonly string[] = []): Array<{ key: string; nearest: string | null }> {
   if (!isPlainObject(cfg)) return []
-  const known = JUNCTION_SECTIONS as readonly string[]
+  const known = [...JUNCTION_SECTIONS, ...owned] as readonly string[]
   const out: Array<{ key: string; nearest: string | null }> = []
   for (const key of Object.keys(cfg)) {
     if (known.includes(key)) continue
-    let nearest: string | null = null
-    let best = Math.floor(key.length / 2) + 1
-    for (const candidate of known) {
-      const d = editDistance(key, candidate)
-      if (d < best) { best = d; nearest = candidate }
+    out.push({ key, nearest: nearestOf(key, known) })
+  }
+  return out
+}
+
+/**
+ * Keys inside a section that nothing reads. `owners` is what plugins state
+ * through `configKeys`, by section name; junction's own sections are added
+ * here. A section with no list is not checked, since a check without an owner
+ * is a second origin (`FJS-D483`).
+ */
+export function unknownKeys(
+  cfg: unknown,
+  owners: Record<string, readonly string[]> = {},
+): Array<{ section: string; key: string; nearest: string | null }> {
+  if (!isPlainObject(cfg)) return []
+  const lists = { ...owners, ...OWN_SECTION_KEYS }
+  const out: Array<{ section: string; key: string; nearest: string | null }> = []
+  for (const [section, known] of Object.entries(lists)) {
+    const body = (cfg as Record<string, unknown>)[section]
+    if (!isPlainObject(body)) continue
+    for (const key of Object.keys(body)) {
+      if (!known.includes(key)) out.push({ section, key, nearest: nearestOf(key, known) })
     }
-    out.push({ key, nearest })
   }
   return out
 }
@@ -455,29 +511,18 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
   if (junctionCfg) {
     if (junctionCfg.app)        config = deepMerge(config, junctionCfg.app) as typeof config
     // Every `middleware:` key normalizes onto `config.http`, which is the one
-    // shape the start phases read. A key missing from this list is declarable
-    // and inert — `helmet` sits one letter from the `http.helmet` that is read,
-    // so the miss looks like a working opt-out (`FJS-D256`).
+    // shape the start phases read. A key missing from MIDDLEWARE_CONFIG_KEYS is
+    // declarable and inert — `helmet` sits one letter from the `http.helmet`
+    // that is read, so the miss looks like a working opt-out (`FJS-D256`).
     //
-    // Mapped one at a time rather than spread wholesale: `rateLimit` lands
-    // under a different name, and a section that merged itself in would carry
-    // a typo through as an extension key.
+    // Mapped one listed key at a time rather than spread wholesale: a section
+    // that merged itself in would carry a typo through as an extension key.
     const mw = junctionCfg.middleware
     if (mw) {
       const http: Record<string, unknown> = {}
-      if (mw.cors          !== undefined) http.cors          = mw.cors
-      // `rateLimit` is the MIDDLEWARE and not the transport's `ddos` guard.
-      // Two different layers on purpose — `ddos` is per-IP ahead of the router,
-      // this is per-route behind it — and the transport is constructed before
-      // `load-config` runs, so a value routed there from this file arrives
-      // after the only reader has taken its copy (`FJS-1066`).
-      if (mw.rateLimit     !== undefined) http.rateLimit     = mw.rateLimit
-      if (mw.callHeaders   !== undefined) http.callHeaders   = mw.callHeaders
-      if (mw.helmet        !== undefined) http.helmet        = mw.helmet
-      if (mw.requestLogger !== undefined) http.requestLogger = mw.requestLogger
-      if (mw.correlationId !== undefined) http.correlationId = mw.correlationId
-      if (mw.csrf          !== undefined) http.csrf          = mw.csrf
-      if (mw.bodyLimit     !== undefined) http.bodyLimit     = mw.bodyLimit
+      for (const key of MIDDLEWARE_CONFIG_KEYS) {
+        if (mw[key] !== undefined) http[key] = mw[key]
+      }
       config.http = deepMerge(config.http ?? {}, http as Partial<typeof config.http>) as typeof config.http
     }
     if (junctionCfg.plugins) config.plugins = deepMerge(config.plugins ?? {}, junctionCfg.plugins) as JunctionPluginsConfig
@@ -536,7 +581,7 @@ export function deepMerge<T extends object>(base: T, override: DeepPartial<T>): 
   const result = deepClone(base)
 
   for (const key in override) {
-    if (!Object.prototype.hasOwnProperty.call(override, key)) continue
+    if (!Object.hasOwn(override, key)) continue
 
     const bVal = (result as Record<string, unknown>)[key]
     const oVal = (override as Record<string, unknown>)[key]
@@ -628,7 +673,7 @@ function parseTtlImpl(ttl: string): number | null {
   // '30s' → 30000
   // raw ms number string → ms
   const n = parseInt(ttl, 10)
-  if (isNaN(n)) return null
+  if (Number.isNaN(n)) return null
 
   // Short suffixes: 300ms, 300s, 5m, 2h, 7d
   const short = ttl.replace(String(n), '').trim().toLowerCase()

@@ -96,8 +96,8 @@ const [alice] = await Promise.all([
 console.log(`✓  acme user: ${alice.displayName} (${alice.email})`)
 
 // Auth-scoped client — gate levels + policies apply
-const userDb  = acme.$setAuth(alice)
-const sysDb   = acme.asSystem()
+const _userDb  = acme.$setAuth(alice)
+const _sysDb   = acme.asSystem()
 
 console.log(`   $config.schemaPath:    ${acme.$config.schemaPath}`)
 console.log(`   $config.migrationsDir: ${acme.$config.migrationsDir}`)

@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { writeFileSync, rmSync, mkdirSync, existsSync } from 'fs'
+import { writeFileSync, rmSync, mkdirSync } from 'fs'
 
 const __dir = dirname(fileURLToPath(import.meta.url))
 const ROOT  = resolve(__dir, '..')

@@ -658,7 +658,7 @@ try {
     await waitFor(() => document.querySelectorAll('.product-row td').length);
     const cell = [...document.querySelectorAll('.product-row td')]
       .map(td => td.textContent.trim()).find(t => /[£$€]/.test(t));
-    return { symbol: (cell.match(/[£$€]/) ?? [])[0], converted: !/28\.00/.test(cell) };
+    return { symbol: (cell.match(/[£$€]/) ?? [])[0], converted: !/28.00/.test(cell) };
   `))
 
   // Back to the shop's own currency, so every screen after this is asserted in

@@ -185,7 +185,7 @@ export async function completeIfDone(client: Client, runId: number): Promise<boo
  * identical documents.
  */
 export async function calculatePayRun(client: Client, runId: number): Promise<{ payslips: number, gross: number, net: number }> {
-  const { run, employeeIds } = await planPayRun(client, runId)
+  const { employeeIds } = await planPayRun(client, runId)
 
   let made = 0, net = 0
   for (const employeeId of employeeIds) {

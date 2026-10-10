@@ -100,7 +100,7 @@ export async function safeFetchSchema(adapter) {
 export async function safeGetServerSchemaVersion(adapter) {
   if (typeof adapter?.getServerSchemaVersion !== 'function') return null
   try { return await adapter.getServerSchemaVersion() }
-  catch (e) { return null }
+  catch (_e) { return null }
 }
 
 export async function safeSubscribe(adapter, channel, handler) {

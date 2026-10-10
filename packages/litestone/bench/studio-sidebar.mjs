@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../mesa/src/drive.js'
 const R = join(dirname(fileURLToPath(import.meta.url)), '../../..')
-const SCHEMA = process.argv[2] ?? `${R}/packages/basecamp/db/schema.lite`
+const _SCHEMA = process.argv[2] ?? `${R}/packages/basecamp/db/schema.lite`
 const CWD    = process.argv[3] ?? `${R}/packages/basecamp/db`
 const PORT = 7503
 let fails = 0

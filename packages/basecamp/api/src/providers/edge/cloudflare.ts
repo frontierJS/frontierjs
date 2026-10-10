@@ -27,7 +27,7 @@ import { env }                    from '../../core/env.ts'
 import { targetFor, FLEET }       from '../compute/index.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import type { AccountSend }       from '../compute/index.ts'
-import type { EdgeConnector, EdgeZone, EdgeRecord, EdgeRecordInput, EdgeRecordRef, RecordMark } from './index.ts'
+import type { EdgeConnector, EdgeZone, EdgeRecord, EdgeRecordInput, RecordMark } from './index.ts'
 
 /** Where Cloudflare is. Overridden by `CLOUDFLARE_URL` for the dev sink, which
  *  serves the same `/client/v4` prefix so the paths below are the real ones. */

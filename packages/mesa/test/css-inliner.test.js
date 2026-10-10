@@ -10,7 +10,7 @@ import { inlineCSS, extractStyles, resolveCSSVars } from '../src/css-inliner.js'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Extract the value of a style property from an inline style string
-function styleVal(html, selector, prop) {
+function _styleVal(html, selector, prop) {
   // Very simple extraction — find style="" on element matching the selector pattern
   // Pull style attr from the first element that has data-test matching selector
   const match = html.match(new RegExp(`data-t="${selector}"[^>]*style="([^"]*)"`, 'i'))
@@ -21,7 +21,7 @@ function styleVal(html, selector, prop) {
   return propMatch ? propMatch[1].trim() : null
 }
 
-function hasStyle(html, prop, value) {
+function _hasStyle(html, prop, value) {
   return html.includes(`${prop}:${value}`) || html.includes(`${prop}: ${value}`)
 }
 

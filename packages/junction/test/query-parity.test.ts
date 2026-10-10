@@ -34,7 +34,7 @@ beforeAll(async () => {
   app.configure(channels() as never)
   app.services.register(createService({
     name:    'probe',
-    find:    async (ctx: any) => [{ transport: ctx.transport, q: shape(ctx.query), d: ctx.directives }],
+    find:    async (ctx: any) => [{ transport: ctx.transport, q: shape(ctx.query), d: { ...ctx.directives } }],
     methods: ['find'],
   } as never))
   await app.start()

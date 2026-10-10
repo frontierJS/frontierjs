@@ -158,13 +158,12 @@ describe('the server answers a window', () => {
 
   test('the directive is parsed, and an empty one is not a cursor', () => {
     expect(parseQuery({}, 20, 100, { after: 'abc' }).after).toBe('abc')
-    expect(parseQuery({ $after: 'xyz' }, 20, 100).after).toBe('xyz')
     expect(parseQuery({}, 20, 100, { after: '' }).after).toBeUndefined()
     expect(parseQuery({}, 20, 100).after).toBeUndefined()
   })
 
-  test('$after is not a filter — it never reaches the where', () => {
-    expect(parseQuery({ $after: 'abc', name: 'x' }, 20, 100).where).toEqual({ name: 'x' })
+  test('$after is not a filter — on the query past the bridge it is refused by name', () => {
+    expect(() => parseQuery({ $after: 'abc', name: 'x' }, 20, 100)).toThrow(/\$after/)
   })
 })
 
@@ -381,7 +380,8 @@ describe('an unrecognized $ directive', () => {
   const app = () => createTestApp({
     services: [() => createService({
       name: 'things',
-      find: async () => ({ data: [], total: 0 }),
+      // Enumerates the directives so the ones it was sent count as applied.
+      find: async (ctx) => { void Object.keys(ctx.directives ?? {}); return { data: [], total: 0 } },
     })],
   })
 

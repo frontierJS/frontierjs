@@ -26,7 +26,7 @@ const SCALAR_TYPES = new Set([
   'String', 'Int', 'Float', 'Bytes', 'Boolean', 'DateTime', 'Json', 'File'
 ])
 
-const KEYWORDS = new Set([
+const _KEYWORDS = new Set([
   'model', 'enum', 'function', 'import', 'database', 'view', 'trait', 'type', 'true', 'false'
 ])
 
@@ -2166,15 +2166,23 @@ class Parser {
         const column = this.eat(TK.IDENT).value
         let declaredBy = null
         let max        = null
+        let scope      = null
 
         while (this.maybeEat(TK.COMMA)) {
           const argName = this.eat(TK.IDENT).value
-          if (argName !== 'declaredBy' && argName !== 'max')
+          if (argName !== 'declaredBy' && argName !== 'max' && argName !== 'scope')
             throw new ParseError(
-              `@@extensible: unknown argument '${argName}' — expected 'declaredBy' or 'max'`, this.peek())
+              `@@extensible: unknown argument '${argName}' — expected 'declaredBy', 'max' or 'scope'`, this.peek())
           this.eat(TK.COLON)
           if (argName === 'declaredBy') {
             declaredBy = this.eat(TK.IDENT).value
+            continue
+          }
+          // `scope: databaseId` — a foreign key on THIS model whose twin is on
+          // the declaring model, so a declaration belongs to a parent row and
+          // not to the whole tenant.
+          if (argName === 'scope') {
+            scope = this.eat(TK.IDENT).value
             continue
           }
           // `max: { text: 8, number: 4 }` — one entry per member of the
@@ -2206,7 +2214,7 @@ class Parser {
             `@@extensible(${column}, …) needs declaredBy: — a blob with nobody declaring its keys is an ordinary Json column`,
             this.peek())
 
-        return { kind: 'extensible', column, declaredBy, max }
+        return { kind: 'extensible', column, declaredBy, max, scope }
       }
       case 'softDelete': {
         // @@softDelete          — soft delete, no cascade
@@ -5309,7 +5317,7 @@ function validate(schema) {
     for (const field of model.fields) {
       const gen = field.attributes.find(a => a.kind === 'generated')
       if (!gen) continue
-      const refs = refsInExpr(gen.expr)  // expr already has {x} → "x" substituted in parseGenerated
+      const _refs = refsInExpr(gen.expr)  // expr already has {x} → "x" substituted in parseGenerated
       // Note: parseGenerated already expanded {x} → "x" — we need to re-extract from raw
       // Actually gen.expr has quotes already, extract names from quoted: "fieldName"
       const quotedRefs = []
@@ -6342,13 +6350,23 @@ function validate(schema) {
           && decl.attributes.some(a => a.kind === 'deny' && a.generated === 'tenancy' && a.expr?.type === 'not'))
         errors.push(`${where} — '${ext.declaredBy}' is scoped through a parent and carries no '${tenantCol}' column, so every tenant would read one set of declarations and share one slot pool. Give it its own '${tenantCol}' column, or mark it @@tenant(none) for one set of declarations for the whole installation`)
 
+      // A scope is the parent row a declaration belongs to. The extended model
+      // holds the foreign key and the declarer holds its twin, and the key is
+      // unique within that parent rather than within the model.
+      if (ext.scope) {
+        if (!model.fields.some(f => f.name === ext.scope))
+          errors.push(`${where} — scope: names '${ext.scope}' and this model has no field '${ext.scope}'`)
+        if (!decl.fields.some(f => f.name === ext.scope))
+          errors.push(`${where} — scope: names '${ext.scope}' and '${ext.declaredBy}' has no '${ext.scope}' column. A declaration is found by the parent row it belongs to, so the declaring model needs the foreign key's twin`)
+      }
+      const unit = ext.scope ?? 'model'
       const hasKeyUnique = decl.attributes.some(a => {
         if ((a.kind !== 'uniqueIndex' && a.kind !== 'partialUnique') || !Array.isArray(a.fields)) return false
         const key = a.fields[0] === tenantCol ? a.fields.slice(1) : a.fields
-        return key.length === 2 && key.includes('model') && key.includes('key')
+        return key.length === 2 && key.includes(unit) && key.includes('key')
       })
       if (!hasKeyUnique)
-        errors.push(`${where} — '${ext.declaredBy}' does not declare @@unique([model, key]). Without it one model can declare a key twice, and the second declaration is a field whose value nothing can find`)
+        errors.push(`${where} — '${ext.declaredBy}' does not declare @@unique([${unit}, key]). Without it one ${ext.scope ? 'parent row' : 'model'} can declare a key twice, and the second declaration is a field whose value nothing can find`)
     }
   }
 
@@ -7559,7 +7577,7 @@ function validate(schema) {
     }
   }
 
-  const viewNames = new Set(schema.views.map(v => v.name))
+  const _viewNames = new Set(schema.views.map(v => v.name))
 
   // ── @@export ───────────────────────────────────────────────────────────────
   //
@@ -8448,7 +8466,7 @@ export function parseFile(filePath) {
 
     let src
     try { src = readFileSync(currentPath, 'utf8') }
-    catch (e) { allErrors.push(`Cannot read file: ${currentPath}`); return null }
+    catch (_e) { allErrors.push(`Cannot read file: ${currentPath}`); return null }
 
     // Sniff for binary content. Schemas are UTF-8 text; if we got a SQLite db
     // file, an image, or any binary blob, the tokenizer will explode at some
@@ -8651,7 +8669,7 @@ export function parseFile(filePath) {
   allWarnings.push(...tenancy.warnings)
   resolveTransitions(schema)
   allErrors.push(...expandCapabilityType(schema))
-  const { valid, errors, warnings } = validate(schema)
+  const { errors, warnings } = validate(schema)
   allErrors.push(...errors)
   allWarnings.push(...warnings)
 
@@ -8699,7 +8717,7 @@ export function parse(src) {
   const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
   const capabilityErrors = expandCapabilityType(schema)
-  const { valid, errors, warnings } = validate(schema)
+  const { errors, warnings } = validate(schema)
   const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...relatorErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

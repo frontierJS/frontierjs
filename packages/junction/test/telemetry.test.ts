@@ -10,7 +10,7 @@
 //   8. Dev-mode anonymous hook warning
 
 import { DERIVED_HOOKS } from '../src/core/service.ts'
-import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
+import { describe, it, expect, spyOn } from 'bun:test'
 import { createService, callService }               from '../src/core/service.ts'
 import { bridge }                                   from '../src/transport/bridge.ts'
 import type { CallStartEvent, TelemetryEvent, HookTelemetryEvent } from '../src/core/service.ts'

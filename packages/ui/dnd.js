@@ -629,7 +629,7 @@ export function dndzone(getOptions) {
     const touchDelayMs = () => {
       const d = config.delayTouchStart
       if (d === true) return DEFAULT_TOUCH_DELAY_MS
-      if (typeof d === 'number' && isFinite(d) && d >= 0) return d
+      if (typeof d === 'number' && Number.isFinite(d) && d >= 0) return d
       return 0
     }
 

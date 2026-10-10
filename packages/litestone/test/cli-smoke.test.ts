@@ -10,7 +10,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, readFileSync } from 'fs'
-import { join, resolve, dirname } from 'path'
+import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 import { execFileSync } from 'child_process'
 import { Database } from 'bun:sqlite'
@@ -1395,6 +1395,33 @@ describe('migrate dev — a file that deletes values is created and not applied'
     const file = join(dir, 'migrations', readdirSync(join(dir, 'migrations')).filter(f => f.endsWith('_rename.sql'))[0])
     writeFileSync(file, readFileSync(file, 'utf8').replace('Accept data loss: no', 'Accept data loss: yes'))
     expect((await runCli(dir, ['migrate', 'apply'])).exit).toBe(0)
+  })
+})
+
+describe('migrate dev — a pending file marked BLOCKED is held, not duplicated', () => {
+  // A re-run diffed the schema against the live database again and wrote a second
+  // file for the same change, so apply named both (FJS-2481).
+  const V1 = `model Offer {\n  id    Int    @id\n  title String\n}\n`
+  const V2 = `model Offer {\n  id    Int    @id\n  title String\n  jobId Int\n}\n`
+
+  test('the second run refuses, names the held file, and writes nothing', async () => {
+    const dir = makeFixtureDir('dev-blocked', { schema: V1 })
+    expect((await runCli(dir, ['migrate', 'dev', 'initial'])).exit).toBe(0)
+    const db = new Database(join(dir, 'test.db'))
+    db.run(`INSERT INTO offer VALUES (1, 'Hello')`)
+    db.close()
+
+    writeFileSync(join(dir, 'schema.lite'), V2, 'utf8')
+    const first = await runCli(dir, ['migrate', 'dev', 'jobid'])
+    expect(first.exit).toBe(1)
+    const files = () => readdirSync(join(dir, 'migrations')).filter(f => f.endsWith('.sql'))
+    const held  = files().filter(f => f.endsWith('_jobid.sql'))
+    expect(held.length).toBe(1)
+
+    const again = await runCli(dir, ['migrate', 'dev', 'jobid2'])
+    expect(again.exit).toBe(1)
+    expect(again.stdout + again.stderr).toContain(held[0])
+    expect(files().length).toBe(2)
   })
 })
 

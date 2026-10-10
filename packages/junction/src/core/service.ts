@@ -549,6 +549,56 @@ export async function callService(
     enterCall(ctx, () => _callService(service, ctx, appHooks, events, telemetry)))
 }
 
+// ─── Unread directives ─────────────────────────────────────────────────────
+//
+// The twin of watchFilterReads. A hand-written find that never read
+// `$.directives.orderBy` answered `?$orderBy=name` in its own order with a 200,
+// so a sorted column header did nothing and said nothing (`FJS-2345`).
+//
+// Only the directives the CALLER sent are watched, taken before the pipeline
+// runs: the paginate hook writes limit and offset onto every find, and a find
+// that does not page was not asked to. As with filters, a hook's reads do not
+// count, and a directive a hook removed before the body ran was that hook's.
+
+function sentDirectives(ctx: ServiceContext): string[] {
+  const d = ctx.directives as Record<string, unknown> | undefined
+  if (!d || typeof d !== 'object') return []
+  return Object.keys(d).filter(k => d[k] !== undefined)
+}
+
+function watchDirectiveReads(ctx: ServiceContext, sent: string[]): (() => void) | undefined {
+  const target = ctx.directives as Record<string, unknown> | undefined
+  if (!sent.length || !target || typeof target !== 'object') return undefined
+
+  const pending = new Set(sent.filter(k => target[k] !== undefined))
+  if (!pending.size) return undefined
+
+  const read = (k: string | symbol) => { if (typeof k === 'string') pending.delete(k) }
+  // Enumeration reads every key — parseQuery and a spread into findMany both
+  // apply all of it.
+  ctx.directives = new Proxy(target, {
+    get(t, k, r)                   { read(k); return Reflect.get(t, k, r) },
+    has(t, k)                      { read(k); return Reflect.has(t, k) },
+    getOwnPropertyDescriptor(t, k) { read(k); return Reflect.getOwnPropertyDescriptor(t, k) },
+    deleteProperty(t, k)           { read(k); return Reflect.deleteProperty(t, k) },
+    ownKeys(t)                     { pending.clear(); return Reflect.ownKeys(t) },
+  }) as ServiceContext['directives']
+
+  return () => {
+    ctx.directives = target as ServiceContext['directives']
+    if (!pending.size) return
+    const keys  = [...pending].map(k => `$${k}`)
+    const named = keys.map(k => `'${k}'`).join(', ')
+    const verb  = `${ctx.service}.${ctx.method}`
+    throw new BadRequest(
+      `${verb} does not apply ${named} — the caller sent ${keys.length > 1 ? 'them' : 'it'}, ` +
+      `but the method never read ${keys.length > 1 ? 'them' : 'it'} off $.directives, so the answer ` +
+      `would ignore ${keys.length > 1 ? 'them' : 'it'}. A hand-written ${ctx.method} reads each directive it honors.`,
+      keys.map(k => ({ field: k, message: `${verb} does not apply '${k}'` })),
+    )
+  }
+}
+
 async function _callService(
   service:    Service,
   ctx:        ServiceContext,
@@ -662,6 +712,8 @@ async function _callService(
   let methodSucceeded         = false
   let openScope: CommitScope | undefined = undefined
   const coverage: CallCoverage = { name: service.name, ids: null, deferred: [] }
+  // Before the pipeline, so a directive a hook writes is not the caller's.
+  const sent = isCustom ? [] : sentDirectives(ctx)
 
   try {
     // Marked for the whole pipeline, hooks included: a write from an `after`
@@ -671,9 +723,11 @@ async function _callService(
     await runInServiceCall(coverage, () => runPipeline(ctx, resolvedPipeline, async () => {
       // The body must read every filter autoFilter admitted — see
       // watchFilterReads. Around the method alone, so a hook's reads do not count.
-      const settleFilterReads = isCustom ? undefined : watchFilterReads(ctx)
+      const settleFilterReads    = isCustom ? undefined : watchFilterReads(ctx)
+      const settleDirectiveReads = isCustom ? undefined : watchDirectiveReads(ctx, sent)
       const raw = await methodFn(ctx)
       settleFilterReads?.()
+      settleDirectiveReads?.()
       // The method returned, so any write it made is real. Recorded here rather
       // than inferred from `pipelineError` below, because with no transaction
       // open a LATER hook throwing does not undo it (`FJS-688`).

@@ -373,6 +373,22 @@ answered by anything currently in the tree.
 
 ---
 
+## Workarounds the ports can now drop (Fable audit run 5.1, 2026-10-10)
+
+Each is dead weight: its row is closed and the fix was found in the code on this date, unless marked *row only*. The list covers every port read, not maid.tech alone, because the maid.tech ledger copies remnant's.
+
+- **maidtech** `db/schema.lite:134` — `roleId @allow('write', auth().isOwner)` goes back to the reference's `auth().isAdmin`, bounded by what the admin holds: `FJS-2324` is closed and `requireParentGrants` is committed (`f1251e7e`). `roles.test.ts`'s pin passes either way. The `role` column's `isOwner` at `:109` is the standing column and stays.
+- **maidtech** Q7 — registration need not be a root `asSystem()` write of the first row: `onRegistered({ user, db })` (`FJS-1458`) runs inside the register transaction and may write the tenant.
+- **transit** `web/src/resources/Subscription.mesa:78-81` — the make()-minus-`ownerId` seed; `FJS-1669`'s own row says the workaround can go, and `FJS-1229`'s `x-determined` covers the `except` entry. `channel` and `target` stay.
+- **transit** — the four template edits for `FJS-1675`/`1676`/`1677`/`1679` are optional; both spellings compile.
+- **ela** `web/src/components/tasks/severity.js` — the "until FJS-2005 lands" block: `now() ± 2d` is a schema spelling now, so urgency and snoozed can be `@derived`/`@@commitment` and the server filters and sorts them.
+- **ela** — the `<Modal>` standing in for `data-confirm` inside a Drawer or Modal (`FJS-1983`); keep only the DropdownItem one (`FJS-1982` open).
+- **portal** `web/src/routes/index.mesa`, `read/post/[id].mesa` — `service.patch(id, { readAt })` becomes `posts.save(...)`; `FJS-2254` closed 2026-10-10, *row only*, re-drive offline before dropping.
+- **dragonfly** `web/src/patch.js` and its test — `import { patchText } from '@frontierjs/toolbelt/json'`; `keepUnchanged` (`FJS-1619`) is toolbelt's too. The select-all button and column pick move back into Table's `header(col)` snippet (`FJS-1625`); the open tree surviving a delete at row 0 wants `rowKey` (`FJS-1622`) instead of the page's own keying.
+- **remnant** `web/src/routes/bible/References.mesa` — `$: verse, fn` can be the natural `$: verse.verseId, fn` (`FJS-1469`).
+- **remnant** — nothing to drop for `FJS-1463`/`1464`/`1465`/`1456`/`1457`/`1472`/`1474`: the hand-written FTS migration is applied history, the backup move and the pins are now tests of fixes, and the change-list-by-`db:migrate` shape is `FJS-D518` itself. The ledger rows should say so, so maid.tech does not copy the hand SQL.
+- **ksite** — nothing to drop; `FJS-1502` (the plugin gets the path) unblocks the `enhanceBlock` row marked "not yet".
+
 ## See also
 
 - `tenant-authored-queries.md` — the one unowned problem, with the sandbox probe

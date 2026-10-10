@@ -22,7 +22,7 @@
     "LICENSE"
   ],
   "peerDependencies": {
-    "@biomejs/biome": ">=2.0.0",
+    "@biomejs/biome": ">=2.2.0",
     "typescript": ">=5.0.0"
   },
   "peerDependenciesMeta": {

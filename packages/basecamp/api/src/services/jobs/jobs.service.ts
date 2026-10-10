@@ -57,7 +57,7 @@ export function createJobsService(app: BasecampApp) {
    *  request's workspace and a cron fire has no request. */
   async function pushJob(jobId: string, workspaceId: string) {
     const row = await sys().job.findUnique({ where: { id: jobId } })
-    if (row) announce(app, workspaceId, 'jobs patched', row)
+    if (row) await announce(app, workspaceId, 'Job', 'jobs patched', row)
     return row
   }
 

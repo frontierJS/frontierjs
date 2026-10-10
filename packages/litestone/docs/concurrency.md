@@ -11,7 +11,20 @@ leaks and *too many clients already* does not exist. The trade is that a call
 which takes a long time takes it out of everything else in the process.
 
 This page is the practical half: which calls can be long, what to do about each,
-and where the knob is.
+and where the knob is. The examples use this schema:
+
+```lite
+database audit {
+  path   "./audit.db"
+  driver trail
+}
+
+model User {
+  id    Int    @id
+  email String @unique
+}
+```
+
 
 ---
 
@@ -43,9 +56,9 @@ Measured, one connection holding the write lock and a second trying to write:
 
 | | |
 | --- | --- |
-| No timeout | fails in **1ms** |
-| Timeout, holder never releases | waits **5007ms**, then fails |
-| Timeout, holder commits after 1.5s | waits **1444ms**, then commits |
+| No timeout | fails at once |
+| Timeout, holder never releases | waits the whole timeout, then fails |
+| Timeout, holder commits partway through | waits until the commit, then commits |
 
 The last row is the point. This is a **cross-process device**: the holder is
 making progress on its own, so there is something to wait for.
@@ -54,7 +67,8 @@ making progress on its own, so there is something to wait for.
 
 ```js
 const db = await createClient({
-  path: './db/schema.lite',
+  path: './schema.lite',
+  databases: ':memory:',
   busyTimeout: 15_000,          // ms; 0 means fail immediately
 })
 ```
@@ -62,8 +76,13 @@ const db = await createClient({
 Per database, when one of them wants a different answer:
 
 ```js
-busyTimeout: { default: 5_000, audit: 250 }
+const db = await createClient({
+  path: './schema.lite',
+  databases: ':memory:',
+  busyTimeout: { default: 5_000, audit: 250 },
+})
 ```
+
 
 For a process that constructs no client — the CLI, a migration, a worker started
 by a supervisor:
@@ -114,22 +133,28 @@ It is a bound on how long **one call can block this process**. So:
 ## Waiting for yourself deadlocks
 
 Two connections to one file **in one process** cannot wait for each other.
-Twelve lines, measured:
+A dozen lines, measured:
 
 ```js
-const a = new Database(path); a.run('PRAGMA journal_mode = WAL')
-const b = new Database(path); b.run('PRAGMA busy_timeout = 2000')
+import { Database } from 'bun:sqlite'
+
+const path = './deadlock.db'
+const a = new Database(path); a.run('PRAGMA journal_mode = WAL'); a.run('CREATE TABLE t (v TEXT)')
+const b = new Database(path); b.run('PRAGMA busy_timeout = 300')
 
 a.run('BEGIN IMMEDIATE')
-setTimeout(() => a.run('COMMIT'), 200)   // will not get a turn
+setTimeout(() => { a.run('COMMIT'); console.log('holder committed') }, 50)   // will not get a turn
 
-b.run("INSERT INTO t VALUES ('b')")      // blocks the loop for the full 2000ms
+const t0 = performance.now()
+try { b.run("INSERT INTO t VALUES ('b')") }          // blocks the loop for the whole busy_timeout
+catch (e) { console.log(`b threw ${e.code} after ${Math.round(performance.now() - t0)} ms`) }
 ```
 
 ```
-b threw SQLITE_BUSY after 2004 ms — the holder's 200ms timer never got a turn
+b threw SQLITE_BUSY after 300 ms — the holder's 50 ms timer never got a turn
 holder committed
 ```
+
 
 `b` blocks the thread, so the timer that would release `a` cannot run, so the
 wait can only ever expire. A larger timeout makes it strictly worse.
@@ -190,8 +215,8 @@ database main {
 Each announced write then records a row in the database, and every other process
 on this machine reads it and hands it to its own `$tapEvents` subscribers — the
 same seam, so nothing above Litestone can tell a foreign event from a local one.
-It costs about **+14 µs on a single-row write** and nothing on a bulk one, which
-is why it is declared rather than default.
+It costs a measurable fraction of a single-row write and nothing on a bulk one,
+which is why it is declared rather than default.
 
 Three things it does not promise, all stated rather than approximated:
 
@@ -210,15 +235,32 @@ Three things it does not promise, all stated rather than approximated:
 
 `node:worker_threads` works with `bun:sqlite`, and a worker is a second thread of
 execution, so it has the property that matters: it makes progress while the main
-thread is blocked, and vice versa. Measured — the main loop kept ticking (56
-ticks over 10ms intervals) through a 600ms hold taken inside a worker, and a main
-thread waiting on a lock a *worker* held waited 639ms and committed, where the
-same shape on one thread deadlocks:
+thread is blocked, and vice versa. Measured — the main loop kept ticking
+through a hold taken inside a worker, and a main thread waiting on a lock a
+*worker* held waited and then committed, where the same shape on one thread
+deadlocks:
 
 ```js
 import { Worker } from 'node:worker_threads'
+import { Database } from 'bun:sqlite'
+import { writeFileSync } from 'node:fs'
+
+const path = './report.db'
+new Database(path).close()   // the file exists
+
+
+writeFileSync('./report-worker.js', `
+  import { Database } from 'bun:sqlite'
+  import { parentPort, workerData } from 'node:worker_threads'
+  const conn = new Database(workerData.path)
+  conn.run('PRAGMA busy_timeout = 5000')
+  parentPort.postMessage(conn.query('SELECT count(*) AS n FROM sqlite_master').get())
+`)
 const w = new Worker('./report-worker.js', { workerData: { path } })
+const report = await new Promise((res, rej) => { w.on('message', res); w.on('error', rej) })
+console.log(report)   // { n: 0 } — counted on a second thread, the main loop free meanwhile
 ```
+
 
 Open a connection inside the worker (a `Database` handle cannot be transferred),
 give it the same `busy_timeout`, and treat it as a separate process in every
@@ -320,7 +362,7 @@ transaction is in the WAL, and the next open replays it. **A power loss or
 kernel panic can lose the last transactions committed before it**, and they are
 lost whole, never half-written. The file is never corrupted by this. That is the
 trade every SQLite-in-production setup makes, and it is fixed here rather than
-per database: caravan measured `FULL` at 43× slower for the same inserts
+per database: caravan measured `FULL` at many times slower for the same inserts
 (`FJS-695`). A deployment that cannot lose an acknowledged write to a power cut
 wants replication (`replication.md`), which bounds the loss by time rather than
 by fsync.

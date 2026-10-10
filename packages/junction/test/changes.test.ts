@@ -6,7 +6,7 @@
 //   4. ctx.app.service() for internal calls from hooks
 //   5. Client: find() returns T[], get(query) routing, restore()
 
-import { describe, it, expect, beforeEach, afterAll } from 'bun:test'
+import { describe, it, expect, afterAll } from 'bun:test'
 import { createService, callService }        from '../src/core/service.ts'
 import { createTestApp, request }            from '../src/testing/index.ts'
 import { bridge }                            from '../src/transport/bridge.ts'

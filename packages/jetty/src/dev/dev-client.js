@@ -115,7 +115,7 @@ export function startDevClient({ port, clientType, onEvent } = {}) {
   function connect() {
     try {
       ws = new WebSocket(`ws://127.0.0.1:${port}`)
-    } catch (e) {
+    } catch (_e) {
       scheduleReconnect()
       return
     }

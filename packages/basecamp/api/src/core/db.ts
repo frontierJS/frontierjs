@@ -61,10 +61,8 @@ import { basecampGateLevel }       from './gate.ts'
 // would type a real read as an error.
 import type { LitestoneClient } from '../../../db/schema.d.ts'
 
-// `createClient`'s own return type is the untyped client: every accessor is a
-// Proxy no static type describes, so every row read out of one was `unknown`
-// and had to be cast at the call site. The generated interface is the same
-// client with the schema's own shapes on it.
+// The generated file registers this interface as what `createClient()` answers,
+// so no call site here or downstream casts.
 export type BasecampDb = LitestoneClient
 
 /** Where Caravan's queue lives: beside the main database, named for it. The
@@ -86,9 +84,6 @@ export async function createBasecampDb(): Promise<BasecampDb> {
       'encrypted with a publicly-known key. Set it: openssl rand -hex 32'
     )
 
-  // The cast is the seam, and it is one line in one file: createClient answers
-  // litestone's own untyped LitestoneClient, and the generated interface is
-  // that same client with THIS schema's shapes on it. Nothing downstream casts.
   return createClient({
     path:          SCHEMA_PATH,
     // A relative declared path is anchored to the schema rather than to
@@ -101,5 +96,5 @@ export async function createBasecampDb(): Promise<BasecampDb> {
     // user, which cannot express *admin of THIS workspace*. Every caller here
     // would grade USER(4) in every workspace, including ones they are not in.
     plugins: [new GatePlugin({ getLevel: basecampGateLevel })],
-  }) as unknown as BasecampDb
+  })
 }

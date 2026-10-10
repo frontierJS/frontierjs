@@ -2606,7 +2606,7 @@ describe('end-to-end — {#key}', () => {
   })
 
   it('does not recreate when key value is unchanged', async () => {
-    let mountCount = 0
+    let _mountCount = 0
     const fn = await compileAndExec(`
 <script>
   let id = 1
@@ -2825,8 +2825,8 @@ const data = await fetchData()
   })
 
   it('shows pending while loading, content after resolve', async () => {
-    let resolveData
-    const dataPromise = new Promise(r => { resolveData = r })
+    let _resolveData
+    const dataPromise = new Promise(r => { _resolveData = r })
     const fn = await compileAndExec(`
 <script>
 const data = await fetchIt()
@@ -4617,7 +4617,7 @@ describe('dev instrumentation — compiler output', () => {
 
 describe('dev instrumentation — runtime', () => {
   it('__dev.r() registers signal and associates with current component', async () => {
-    const { __dev, track, set, push_component, pop_component } = await import('../src/runtime.js')
+    const { __dev, track, push_component, pop_component } = await import('../src/runtime.js')
     // Clear between tests
     __dev._signals.clear(); __dev._components.clear(); __dev._log = []
 
@@ -4655,7 +4655,7 @@ describe('dev instrumentation — runtime', () => {
     expect(__dev._log[0].value).toBe(99)
     expect(events.some(e => e.type === 'update' && e.data.name === 'score')).toBe(true)
 
-    __dev.unsubscribe(events => {}) // cleanup — ignore; unsubscribing a different ref is a no-op
+    __dev.unsubscribe(_events => {}) // cleanup — ignore; unsubscribing a different ref is a no-op
   })
 
   it('snapshot() returns current state', async () => {

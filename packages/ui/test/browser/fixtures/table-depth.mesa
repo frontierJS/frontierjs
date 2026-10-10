@@ -152,10 +152,11 @@
   The shapes a URL can genuinely carry. `$orderBy` admits a string, an object
   and an array, and a page that assumed the string THREW on the object form
   while two others answered a column named `0` on the bracket-indexed one
-  (FJS-1077). Pushed through the prop, because that is the path a restored URL
+  (FJS-1077); that one is a column named `0` to the boundary (FJS-2465). Pushed through the prop, because that is the path a restored URL
   takes.
 -->
 <button type="button" id="push-object" on:click={() => { pushedOrder = { amount: 'desc' } }}>push object</button>
+<button type="button" id="push-array" on:click={() => { pushedOrder = [{ ref: 'asc' }] }}>push array</button>
 <button type="button" id="push-indexed" on:click={() => { pushedOrder = { 0: { ref: 'asc' } } }}>push indexed</button>
 
 <output id="sort">{orderBy}</output>

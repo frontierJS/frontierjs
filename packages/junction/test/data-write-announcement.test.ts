@@ -508,7 +508,7 @@ describe('two services over one model (FJS-765)', () => {
   })
 
   test('a write through NO service reaches both', async () => {
-    const { db, app, seen } = await twoServices()
+    const { db, seen } = await twoServices()
     await (db as never as { asSystem: () => { order: { create: (a: unknown) => Promise<unknown> } } })
       .asSystem().order.create({ data: { id: 3, status: 'draft' } })
     await tick()
@@ -616,7 +616,7 @@ describe('a transition inside another service call announces (FJS-567)', () => {
   })
 
   test('the same move inside the OWNING service call announces once', async () => {
-    const { db, app, frames, move } = await mk()
+    const { db, app, frames } = await mk()
     await (db as never as Record<string, { create(a: unknown): Promise<{ id: number }> }>)
       .order.create({ data: {} })
     await tick()

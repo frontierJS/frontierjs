@@ -18,7 +18,7 @@ import { scan } from '../scanner/index.js'
 // `:param` is noise, and they cannot be declared, so they cannot drift.
 const DERIVED = new Set(['dynamic', 'spread', 'isIndex'])
 
-const WIDTH = 76
+const _WIDTH = 76
 
 // ─── flatten ──────────────────────────────────────────────────────────────────
 //

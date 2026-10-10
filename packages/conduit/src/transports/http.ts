@@ -257,6 +257,7 @@ export class HttpTransport extends BaseTransport {
   // HTTP streaming (SSE) is not implemented in V1. Throws rather than
   // yielding an empty iterator: "this protocol cannot stream" must be
   // distinguishable from "the stream produced nothing".
+  // biome-ignore lint/correctness/useYield: a stub that refuses before it would yield
   async *stream(_req: ConduitRequest): AsyncIterable<ConduitChunk> {
     throw new ConduitStreamError({
       kind:      'not_implemented',
@@ -646,6 +647,7 @@ export class HttpTransport extends BaseTransport {
 
   /** Last chance to adjust fetch options before the request goes out. */
   protected fetchInit(init: RequestInit): RequestInit {
+    // biome-ignore lint/suspicious/noTsIgnore: the option is Bun-only and absent from the DOM fetch types
     // @ts-ignore — Bun-specific TLS option
     return this.pin ? { ...init, tls: this.pin } : init
   }

@@ -240,7 +240,7 @@ try {
             enabled: !!b && !b.disabled,
             denied:  !!document.querySelector('#inventory-denied'),
             badge:   document.querySelector('header .badge')?.textContent?.trim() ?? null,
-            head:    document.body.innerText.slice(0, 140).replace(/\s+/g, ' '),
+            head:    document.body.innerText.slice(0, 140).replace(/s+/g, ' '),
           }
         })()
       `)
@@ -317,7 +317,7 @@ try {
         form:   !!document.querySelector('#adjust-form #aj-submit'),
         denied: !!document.querySelector('#inventory-denied'),
         badge:  document.querySelector('header .badge')?.textContent?.trim() ?? null,
-        head:   document.body.innerText.slice(0, 160).replace(/\s+/g, ' '),
+        head:   document.body.innerText.slice(0, 160).replace(/s+/g, ' '),
       })
     `)
     if (!screen.form) return { screen, toastsNow: toastsBefore }

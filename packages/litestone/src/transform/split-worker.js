@@ -4,7 +4,7 @@
 
 import { openDatabase } from '../core/engine.js'
 import { copyFileSync, statSync } from 'fs'
-import { introspectSQL, plan, parseLimit } from './framework.js'
+import { introspectSQL, plan } from './framework.js'
 import { run } from './runner.js'
 
 function applyPragmas(db) {

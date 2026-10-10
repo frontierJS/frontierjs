@@ -139,7 +139,7 @@ describe('OPTIONS', () => {
   })
 
   it('does not displace a registered OPTIONS — which is what cors mounts', async () => {
-    const { t, probe } = await serve((r) => {
+    const { t } = await serve((r) => {
       r.get('/things', (ctx) => ctx.json({}))
       r.options('/*',  () => new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*' } }))
     })

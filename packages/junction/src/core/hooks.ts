@@ -8,7 +8,7 @@
 // Error hooks:   run when any stage throws. around exit still runs.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { toFrameworkError, Unauthorized, Forbidden } from './errors.ts'
+import { toFrameworkError } from './errors.ts'
 
 // ─── Hook definitions ─────────────────────────────────────────────────────
 

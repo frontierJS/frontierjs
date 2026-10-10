@@ -10,7 +10,7 @@
 
 import {
   DIRECTIVE_PARAMS, DIRECTIVE_SCHEMAS, TRANSPORT_PARAMS, RESERVED_PARAMS,
-  parseDirectives, directiveParams, splitParams, unknownDirectives,
+  parseDirectives, directiveParams, splitParams, unknownDirectives, invalidDirectives, listedDirectives, transportFlags,
   orderByPair, orderByValue,
 } from '../../src/directives/directives.js'
 import { parseQueryString } from '../../src/query/query.js'
@@ -64,8 +64,13 @@ test('directives: a limit of 0 survives — it is count-only, not missing', func
   assert.deepEqual(parseDirectives({ $limit: '0' }), { limit: 0 })
 })
 
-test('directives: a non-numeric limit is dropped, not passed on as NaN', function () {
+test('directives: a count is decimal digits; anything else is dropped and reported, not read as a number', function () {
   assert.deepEqual(parseDirectives({ $limit: 'lots' }), {})
+  for (const v of [true, [], '0x10', '1e2', '-5', ' 5', 'lots', Infinity]) {
+    assert.deepEqual(parseDirectives({ $limit: v, $offset: v }), {}, String(v))
+    assert.deepEqual(invalidDirectives({ $limit: v }), ['$limit'], String(v))
+  }
+  assert.deepEqual(invalidDirectives({ $limit: '', $offset: null }), [], 'empty and null are not asked')
 })
 
 test('directives: the truthy spellings a URL can carry', function () {
@@ -75,9 +80,30 @@ test('directives: the truthy spellings a URL can carry', function () {
   assert.equal(parseDirectives({ $onlyDeleted: '0' }).onlyDeleted, false)
 })
 
+test('directives: a flag reads the typed value parseQueryString hands it', function () {
+  const { $withDeleted, $onlyDeleted } = parseQueryString('$withDeleted=1&$onlyDeleted=0')
+  assert.equal(parseDirectives({ $withDeleted }).withDeleted, true)
+  assert.equal(parseDirectives({ $onlyDeleted }).onlyDeleted, false)
+})
+
 test('directives: an empty $search is not a search', function () {
   assert.deepEqual(parseDirectives({ $search: '' }), {})
   assert.deepEqual(parseDirectives({ $search: 'acme' }), { search: 'acme' })
+})
+
+// FJS-2333: the wire reads a bare `?$search=603` as the number 603.
+test('directives: a $search the wire typed as a number or flag is searched as its text', function () {
+  assert.deepEqual(parseDirectives(parseQueryString('$search=603')), { search: '603' })
+  assert.deepEqual(parseDirectives(parseQueryString('$search=true')), { search: 'true' })
+  assert.deepEqual(parseDirectives(parseQueryString('$search=0603')), { search: '0603' })
+  assert.deepEqual(parseDirectives({ $search: null }), {})
+})
+
+// FJS-2461: every text directive reads the raw text, not the wire's typed value.
+test('directives: $after and $asOf the wire typed as a number are read as their text', function () {
+  assert.deepEqual(parseDirectives(parseQueryString('$after=123')), { after: '123' })
+  assert.deepEqual(parseDirectives(parseQueryString('$asOf=20260101')), { asOf: '20260101' })
+  assert.deepEqual(parseDirectives({ $after: null, $asOf: Infinity }), {})
 })
 
 /* ── Splitting ─────────────────────────────────────────────────────── */
@@ -312,10 +338,13 @@ test('directives: the pair is read off a REAL url, which is where it broke', fun
   assert.deepEqual(pairFor('$orderBy=-name'),          { key: 'name', dir: 'desc' })
   assert.deepEqual(pairFor('$orderBy[name]=desc'),     { key: 'name', dir: 'desc' },
     'the shape that THREW: three pages assumed a string and called .replace on it')
-  assert.deepEqual(pairFor('$orderBy[0][name]=desc'),  { key: 'name', dir: 'desc' },
-    'the shape that answered key "0" and a direction that was itself an object')
-  assert.deepEqual(pairFor('$orderBy[0]=-name'),       { key: 'name', dir: 'desc' },
-    'bracket indices come back as an object, so Array.isArray is false for a caller who wrote one')
+  assert.deepEqual(pairFor('$orderBy[]=-name'),        { key: 'name', dir: 'desc' },
+    'the append spelling is the array, and it descends to the column')
+  // `k[0]` names a member, so these are a column called 0 — what the Data
+  // boundary refuses, and the header must not say `name` where it says `0`
+  // (FJS-2465).
+  assert.deepEqual(pairFor('$orderBy[0][name]=desc'),  { key: '0', dir: 'asc' })
+  assert.deepEqual(pairFor('$orderBy[0]=desc'),        { key: '0', dir: 'desc' })
 })
 
 test('directives: a distance ordering marks the point column, not a coordinate', function () {
@@ -339,7 +368,8 @@ test('directives: a numeric key is only residue when the value is not a directio
   // column named 0 sorted descending — absurd, and still better than descending
   // INTO 'desc' and reporting a column by that name.
   assert.deepEqual(orderByPair({ 0: 'desc' }),   { key: '0', dir: 'desc' })
-  assert.deepEqual(orderByPair({ 0: '-name' }),  { key: 'name', dir: 'desc' })
+  assert.deepEqual(orderByPair(['desc']),        { key: '0', dir: 'desc' })
+  assert.deepEqual(orderByPair(['-name']),       { key: 'name', dir: 'desc' })
 })
 
 test('directives: a missing direction is ascending, not unsorted', function () {
@@ -361,4 +391,34 @@ test('directives: the pair round-trips through the value a page writes back', fu
     'an empty key removes the directive rather than ordering by nothing')
   assert.deepEqual(directiveParams({ orderBy: orderByValue('total', 'desc') }), { $orderBy: '-total' },
     'and what it writes is what the table carries')
+})
+
+test('directives: $first and $wrap are flags with one grammar, and a value outside it is reported', function () {
+  // JS truthiness made 'no' and 0 true and a bare flag false (`FJS-2467`).
+  assert.deepEqual(transportFlags({ $first: 1, $wrap: 'false' }), { first: true, wrap: false, invalid: [] })
+  assert.deepEqual(transportFlags({ $first: '', $wrap: 0 }), { first: true, wrap: false, invalid: [] },
+    'a bare flag is true and the number 0 is false')
+  assert.deepEqual(transportFlags({ $first: 'no', $wrap: 'yes' }), { invalid: ['$first', '$wrap'] },
+    'neither is guessed at: both are named')
+  assert.deepEqual(transportFlags({ status: 'x' }), { invalid: [] })
+  assert.deepEqual(transportFlags(null), { invalid: [] })
+})
+
+test('directives: a single-valued directive given a list is reported; a list-valued one is not', function () {
+  assert.deepEqual(listedDirectives({ $limit: [5, 6], $withDeleted: [1], $first: [true], $search: ['a'], status: ['x', 'y'] }),
+    ['$limit', '$search', '$withDeleted', '$first'], 'table order, then the transport flags; a filter list is not a directive')
+  assert.deepEqual(listedDirectives({ $select: ['a', 'b'], $populate: ['c'], $orderBy: [{ name: 'asc' }], $limit: 5 }), [],
+    'select, populate and orderBy are lists by nature')
+  assert.deepEqual(listedDirectives(null), [])
+})
+
+test('directives: a flag directive outside the flag grammar is reported, not read as false', function () {
+  assert.deepEqual(invalidDirectives({ $withDeleted: 'yes', $onlyDeleted: 'on', $withExpired: 2 }),
+    ['$withDeleted', '$onlyDeleted', '$withExpired'])
+  assert.deepEqual(invalidDirectives({ $withDeleted: '1', $onlyDeleted: 0, $withTemplates: 'false', $onlyTemplates: true, $withExpired: '' }), [],
+    'every spelling transportFlags admits is admitted here')
+  assert.deepEqual(invalidDirectives({ $limit: 5, $offset: '0', status: 'yes' }), [], 'a filter is not graded, and a count is')
+  assert.deepEqual(invalidDirectives(null), [])
+  assert.deepEqual(parseDirectives({ $withDeleted: 'yes' }), {}, 'a reader without a boundary drops it rather than guessing false')
+  assert.equal(parseDirectives({ $withDeleted: '' }).withDeleted, true, 'a bare flag is true, as for $first')
 })

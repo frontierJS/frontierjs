@@ -136,20 +136,20 @@ if (import.meta.env.DEV && import.meta.hot) {
           ">Full reload</button>
           <button onclick="
             const text = [
-              \'[Sierra] \' + (this.dataset.type || \'error\'),
-              this.dataset.file ? \'File: \' + this.dataset.file : \'\',
+              '[Sierra] ' + (this.dataset.type || 'error'),
+              this.dataset.file ? 'File: ' + this.dataset.file : '',
               this.dataset.msg,
-              this.dataset.stack || \'\'
-            ].filter(Boolean).join(\'\\n\');
+              this.dataset.stack || ''
+            ].filter(Boolean).join('\\n');
             navigator.clipboard.writeText(text).then(() => {
               const btn = this;
-              btn.textContent = \'Copied!\';
-              btn.style.borderColor = \'#34d399\';
-              btn.style.color = \'#34d399\';
+              btn.textContent = 'Copied!';
+              btn.style.borderColor = '#34d399';
+              btn.style.color = '#34d399';
               setTimeout(() => {
-                btn.textContent = \'Copy\';
-                btn.style.borderColor = \'#2a2a3a\';
-                btn.style.color = \'#9999bb\';
+                btn.textContent = 'Copy';
+                btn.style.borderColor = '#2a2a3a';
+                btn.style.color = '#9999bb';
               }, 1500);
             });
           "

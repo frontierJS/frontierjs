@@ -6,7 +6,6 @@
 import { test, expect, beforeAll, afterAll } from 'bun:test'
 import { build, http, type Fixture } from './audit-parity-harness.ts'
 import { Driver } from './audit-parity-paths.ts'
-import { toDataPrincipal } from '@frontierjs/junction'
 let fx: Fixture, d: Driver
 const uniq = () => Math.random().toString(36).slice(2, 8)
 beforeAll(async () => { fx = await build(); d = new Driver(fx) }, 180_000)

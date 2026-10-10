@@ -398,10 +398,12 @@ export function mailerPlugin(mailer: IMail): import('../core/app.ts').Plugin {
       // Wrapped rather than read by each adapter: the warning is about where the
       // send runs, which no adapter knows.
       // Object.create keeps a class-instance mailer's own methods reachable.
-      app.mail = Object.assign(Object.create(mailer), {
+      const wrapped = Object.assign(Object.create(mailer), {
         send:  (m: MailMessage)   => { warnEffectInDrain('app.mail.send()');  return mailer.send(m) },
         batch: (ms: MailMessage[]) => { warnEffectInDrain('app.mail.batch()'); return mailer.batch(ms) },
       })
+      if (typeof app.claim === 'function') app.claim('mail', wrapped)
+      else app.mail = wrapped
     }
   }
 }

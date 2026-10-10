@@ -2,6 +2,16 @@
 
 Litestone uses two migration modes: `autoMigrate` for development (like `prisma db push`) and file-based migrations for production (like `prisma migrate deploy`). **Only the files reach a deploy** — see *The three schemas* below before mixing them.
 
+The examples on this page use this schema:
+
+```lite
+model Post {
+  id    Int     @id
+  title String
+  slug  String?
+}
+```
+
 ## autoMigrate — development
 
 Introspects the live database, diffs against a pristine rebuild of your schema, and applies changes directly:
@@ -9,22 +19,28 @@ Introspects the live database, diffs against a pristine rebuild of your schema, 
 ```js
 import { autoMigrate } from '@frontierjs/litestone'
 
-autoMigrate(db)   // safe to call on every app start in dev
+autoMigrate(db)   // safe to call on every app start in dev — { main: { state: 'in-sync', applied: 0 } }
 ```
-
 ### It refuses a change that would destroy data
 
 A column that leaves the schema takes its values with it, and `diffColumns` has
 no rename detection — so `body` → `content` is a drop plus an add, the rebuild
-copies only what the two tables share, and the values are gone. It used to
-answer `state: 'migrated'` and say nothing; the row-count guard passed, because
-it counts rows and not values (`FJS-641`).
+copies only what the two tables share, and the values are gone. A row-count
+guard cannot see it, because it counts rows and not values (`FJS-641`). So a
+database written by a schema with one more column is refused:
 
 ```js
-autoMigrate(db)                                   // → { main: { state: 'blocked', reason, dataLoss } }
-autoMigrate(db, parsed, { acceptDataLoss: true }) // → { main: { state: 'migrated', ... } }
+import { autoMigrate } from '@frontierjs/litestone'
+
+const earlier = await createClient({ schema: 'model Post {\n  id Int @id\n  title String\n  slug String?\n  body String\n}', db: './app.db' })
+await earlier.$close()
+
+const db = await createClient({ path: './schema.lite', db: './app.db' })   // Post has no body now
+autoMigrate(db)                                   // → { main: { state: 'blocked', reason, dataLoss: [{ table: 'post', columns: ['body'], renameTo: null }] } }
+autoMigrate(db, null, { acceptDataLoss: true })   // → { main: { state: 'migrated', applied: 7, sql } }
 ```
 
+The second argument is a parse result; `null` reads `db.$schema`.
 Any column drop blocks, not just the rename-shaped case: a plain drop was
 exactly as silent, and a rename IS a drop. The hash is withheld, as it is for
 the other blocked rules, so a schema left this way re-announces on every boot
@@ -70,10 +86,10 @@ about each probable rename instead (`[y/N]`, default no).
 
 A rebuild copies surviving values through `INSERT … SELECT`, and a STRICT table
 takes no TEXT into an INTEGER column — so a `String` → `Int` over a populated
-table used to throw `cannot store TEXT value in INTEGER column post__new.body`
-out of the migrator, at boot, naming a table that exists only inside the
-migration it died in (`FJS-645`). It answers `state: 'failed'` now, with
-SQLite's own sentence as the reason. The transaction had already rolled back
+table is refused by SQLite with `cannot store TEXT value in INTEGER column
+post__new.body` — a sentence naming a table that exists only inside the
+migration (`FJS-645`). It answers `state: 'failed'`, with SQLite's own sentence
+as the reason. The transaction had already rolled back
 either way, so the database is untouched.
 
 `failed` is a third state and is honestly distinct from `blocked`: one is a
@@ -125,10 +141,10 @@ the wrong two.
 migration is missing.* `migrate dev` and `migrate baseline` also compare
 **shadow ↔ live**: *has somebody changed this database without writing a file.*
 
-It used to be one comparison, declared ↔ live, doing both jobs. That is why a
-database developed with `db push` — which matches the declaration by
-construction — made `migrate create` answer *already in sync* at the exact
-moment a migration was needed, while the deploy refused for want of one
+One comparison, declared ↔ live, cannot do both jobs: a database developed
+with `db push` matches the declaration by construction, so it would make
+`migrate create` answer *already in sync* at the exact moment a migration was
+needed, while the deploy refused for want of one
 ([`FJS-D123`](../../../DECISIONS.md#fjs-d123)).
 
 ## `db push` is prototyping only
@@ -151,15 +167,18 @@ and let `migrate dev` build it, which is what Prisma does; a development
 database is disposable, and this is the option that keeps the data.
 
 ```js
-import { create, apply, status, verify } from '@frontierjs/litestone'
+import { create, apply, status, verify, parseFile } from '@frontierjs/litestone'
 
-create(db, parseResult, 'add-users', './migrations')
-apply(db, './migrations')
-status(db, './migrations')
-verify(db, parseResult, './migrations')
+const parseResult = parseFile('./schema.lite')
+const raw         = db.$rawDbs.main          // apply, status and verify take the SQLite handle
+
+create(parseResult && db, parseResult, 'add-posts', './migrations')   // → { created, name, filePath, summary, sql }
+await apply(raw, './migrations')                                       // → { applied: [{ file, ok, elapsed }], pending, skipped }
+status(raw, './migrations')                                            // → [{ file, state, applied_at, tampered, sql }]
+verify(raw, parseResult, './migrations')                               // → { state: 'in-sync', message }
 ```
 
-Migration files are plain SQL — review and edit before applying. Applied migrations are recorded in `_litestone_migrations`. Modified applied migrations show as `modified` in status and block `apply`.
+`create` diffs the declared schema against the history and never opens the database, which is why its first argument is unused beyond the call shape. Migration files are plain SQL — review and edit before applying. Applied migrations are recorded in `_litestone_migrations`. Modified applied migrations show as `modified` in status and block `apply`.
 
 ### Filenames are the run order
 
@@ -235,7 +254,7 @@ A backfill, transformation or corpus correction is an app script chained after
 ```js
 // db/backfill-slugs.js — touches only the rows that still need it, so a rerun is a no-op
 import { createClient } from '@frontierjs/litestone'
-const db  = await createClient({ schema: './db/schema.lite' })
+const db  = await createClient({ path: './schema.lite', db: ':memory:' })
 const sys = db.asSystem()
 for (const post of await sys.post.findMany({ where: { slug: null } }))
   await sys.post.update({ where: { id: post.id }, data: { slug: post.title.toLowerCase().replace(/\s+/g, '-') } })
@@ -326,8 +345,16 @@ predicate there only widens the index — the same rows are answered by a larger
 structure:
 
 ```lite
-@@index([kind], where: archivedAt == null)
-@@index([kind, email], where: live == true)
+model Lead {
+  id         Int       @id
+  kind       String
+  email      String
+  live       Boolean   @default(true)
+  archivedAt DateTime?
+
+  @@index([kind], where: archivedAt == null)
+  @@index([kind, email], where: live == true)
+}
 ```
 
 Where the predicate is not one `@@index(where:)` accepts, the plain index is
@@ -416,9 +443,9 @@ same change as a **contract** and hands back the plan — expand, backfill,
 contract — for the same reason.
 
 **It is announced as well as returned.** `autoMigrate` answers
-`{ state: 'blocked', reason }` and prints it. It used to answer
-`{ state: 'migrated', applied: 0 }` on the ALTER path, with the reason visible
-only inside a SQL string the caller usually discards: the application then ran
+`{ state: 'blocked', reason }` and prints it. An answer of
+`{ state: 'migrated', applied: 0 }` with the reason visible only inside a SQL
+string the caller discards is the failure behind that: the application then ran
 against a table missing a column its own schema declares, every write of that
 column was stripped by mass-assignment protection, and a required field read
 back `undefined` with nothing anywhere saying why
@@ -496,8 +523,8 @@ and `@@softDelete`. They are diffed like anything else: one whose body no longer
 matches the schema is dropped and recreated, and one the schema no longer
 declares is dropped.
 
-`<table>_updatedAt` is in that second class as of `FJS-531` — the client stamps
-the column itself now, so an existing database is migrated by one
+`<table>_updatedAt` is in that second class (`FJS-531`) — the client stamps the
+column itself, so a database still carrying the trigger is migrated by one
 `DROP TRIGGER IF EXISTS` with no table rebuild. The name stays on the owned list
 below, because it is what lets the migration take it away.
 

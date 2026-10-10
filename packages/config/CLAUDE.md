@@ -37,10 +37,14 @@ test/            the claims above, asserted
   root config and refuses to run** — including this one, sitting in the app's
   own `node_modules`. `files.includes` excludes `node_modules` for that reason
   and not only for speed. A directory an app has not gitignored (a per-run bun
-  cache, say) will reproduce it.
+  cache, say) will reproduce it. This file says `"root": false` for the same
+  reason: the repo's own `biome.json` extends it, and a second root under the
+  scan is the refusal above. The folder patterns omit the trailing `/**`, which
+  Biome reads as a bug from 2.2 on, so the peer range starts there.
 - **The rule set is curated, and the objective is not coverage.** Measured
-  against this repo, Biome's `recommended` gives 7,249 findings; correctness +
-  security + suspicious minus the taste rules gives ~600. `style`, `complexity`
+  against this repo, Biome's `recommended` gave 7,249 findings; correctness +
+  security + suspicious minus the taste rules gave ~4,200, ~1,400 once vendored
+  bundles were excluded, and the CI `lint` phase holds it at none. `style`, `complexity`
   and `performance` are off because with the formatter refused, a linter that
   argues about style is a formatter that cannot fix anything.
 - **`.editorconfig` is a hand copy** — EditorConfig has no extends mechanism, so
@@ -48,6 +52,12 @@ test/            the claims above, asserted
   `packages/cli/core/app-config.js` holds the copy; `test/config.test.js`
   asserts byte equality from this side and `packages/cli/test/app-config.test.js`
   from the other. Change one, change both.
+- **`biome lint --write --unsafe` is wrong for a file that is not a module.**
+  It renames an "unused" top-level binding to `_name` and drops a "redundant"
+  `'use strict'`, and `packages/css`'s guide, vocabulary and test harness are
+  concatenated into a page where those names ARE used. The repo's root
+  `biome.json` turns those rules off for them. Run the package's suite after any
+  autofix, and review `Object.hasOwn(x, k)` on an `unknown` `x`.
 - **Adding a rule is a minor, not a patch.** It can fail an app's CI on code that
   has not changed. That is the price of the config being a dependency, and the
   reason it is worth paying only for rules that catch bugs.

@@ -11,7 +11,7 @@
 //   source: 'core' | 'project'
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'fs'
+import { readFileSync, statSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'

@@ -335,12 +335,16 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors, mode 
     return
   }
 
-  // Strict mode: reject unknown keys.
+  // Strict mode: reject unknown keys, naming the ones the type takes. The
+  // message reaches the CALLER whose write was refused, and a closed type is
+  // often a vocabulary on purpose (a report's derived column takes `ratio`, and
+  // `transformer` is what it refuses), so what may be said goes beside it.
+  // `strict: false` is the schema author's word, and the author is not here.
   if (strict) {
     const declaredKeys = new Set(type.fields.map(f => f.name))
     for (const key of Object.keys(value)) {
       if (!declaredKeys.has(key)) {
-        errors.push({ path: [...path, key], message: `unknown field — type ${typeName} has no '${key}' (set strict: false to allow)` })
+        errors.push({ path: [...path, key], message: `unknown field — type ${typeName} has no '${key}'; it takes ${[...declaredKeys].join(', ')}` })
       }
     }
   }

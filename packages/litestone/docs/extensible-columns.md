@@ -153,6 +153,18 @@ An `update` never re-allocates. Re-pointing a live field would leave every exist
 
 Every tenant shares the declaring table, so the declaring model carries the tenant column and its key becomes per tenant: `[model, key]` is scoped to `[workspaceId, model, key]` the way the tenancy block scopes every unique, and either spelling is accepted. **The pool is per tenant.** The slot columns are the table's, and each tenant maps its own keys onto all of them, the way `strategy database` gives every tenant's file its own full pool. The allocation, the mirror and a filter by key each read only the writing or reading tenant's declarations, and the slot index leads with the tenant column. A system call that states no tenant is refused rather than read across all of them. A declaring model *without* the tenant column is one set of declarations for the whole installation, on purpose — and only when nothing scopes it: one scoped through a parent (`@@tenant(via: …)`, or found by its foreign key) has no column to narrow a read by, so the pairing is refused at parse, naming the column to give it or `@@tenant(none)` to make the installation-wide reading explicit.
 
+### Per parent row — `scope:`
+
+A Notion database, an Airtable table or a form's questions each own their columns, so a key namespace per tenant refuses most of them: two databases both want `status`, in different kinds. `scope: databaseId` keys a declaration per PARENT ROW.
+
+```
+@@extensible(props, declaredBy: Property, scope: databaseId, max: { text: 8, number: 4 })
+```
+
+`databaseId` is a field of the extended model and the declaring model carries its twin; the declarer's key is `@@unique([databaseId, key])` (`model` is still a column, and still names which extended model a declaration is for). The pool is then per scope row, the way it is per tenant: the allocation, the mirror, a filter by key and `$declaredFields({ where: { databaseId } })` each read one parent's declarations.
+
+The scope is read off the payload, else the where, else the one row an update reaches by id. A filter on a declared key whose where pins no scope is refused, and so is a bulk write reaching rows of more than one scope, since one SET carries one mirror. A write that changes the scope column must send the blob in the same write, so the row is re-projected against the new parent's declarations; one that does not is refused.
+
 ## What it must not become
 
 **Not a per-tenant schema.** The moment a tenant can declare a *model*, a relation or a `@@gate`, there are two schema languages and one of them is a database table. The extension point is one column shape on one model.

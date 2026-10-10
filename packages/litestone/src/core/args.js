@@ -866,7 +866,7 @@ const ARG_NAMES = {
   exists:            new Set(['where', ...VIEW_FLAGS]),
   findManyAndCount:  new Set([...PAGE_ARGS, 'window']),
   aggregate:         new Set(AGG_ARGS),
-  groupBy:           new Set([...AGG_ARGS, 'by', 'having', 'orderBy', 'limit', 'offset', 'fillGaps', 'interval', 'timeZone']),
+  groupBy:           new Set([...AGG_ARGS, 'by', 'having', 'orderBy', 'limit', 'offset', 'fillGaps', 'interval', 'timeZone', 'weekStart']),
   findManyCursor:    new Set(['cursor', 'limit', 'where', 'select', 'include', 'orderBy', 'withDeleted', 'onlyDeleted']),
   search:            new Set(['limit', 'offset', 'where', 'orderBy', 'select', 'include', 'highlight', 'snippet', 'withRank', ...VIEW_FLAGS]),
   create:            new Set(['data', 'include', 'select', 'scopedBy', 'system']),
@@ -1032,7 +1032,7 @@ export function withArgValidation(table, model, ctx) {
 
   const _pointFields = pointFieldsOf(model)
 
-  const isNearOrder = (/** @type {string} */ key, /** @type {unknown} */ val) => isNearOrderFor(_pointFields, key, val)
+  const _isNearOrder = (/** @type {string} */ key, /** @type {unknown} */ val) => isNearOrderFor(_pointFields, key, val)
 
   const checkOrderBy = (/** @type {any} */ args, /** @type {string} */ method) => {
     // Every call passes through here, and one naming no order has nothing to grade.

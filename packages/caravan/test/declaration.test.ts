@@ -18,7 +18,7 @@ import { resolve } from 'node:path'
 import { createCaravan, defineJob } from '../src/index.ts'
 import { autoloadJobs } from '../src/autoload.ts'
 import type {
-  CaravanInstance, HandlerOptions, JobContext, JobHandler, JobRegistrar,
+  CaravanInstance, HandlerOptions, JobContext, JobRegistrar,
 } from '../src/types.ts'
 
 const CRON_FIXTURES = resolve(import.meta.dir, 'fixtures/cron-jobs')

@@ -18,7 +18,7 @@ import { resolve, join } from 'path'
 import { slug } from '@frontierjs/toolbelt/inflect'
 import { openDatabase } from './engine.js'
 import {
-  introspect, buildPristine, buildPristineForDatabase, diffSchemas,
+  introspect, buildPristineForDatabase, diffSchemas,
   generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl,
 } from './migrate.js'
 import { resolveOperations, checkAgainstHistory, renameStatement, describeOperation, guessRenames } from './operations.js'

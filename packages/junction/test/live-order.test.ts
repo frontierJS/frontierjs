@@ -255,7 +255,7 @@ describe('a live list keeps its page', () => {
 
   it('a removal from a list that IS everything leaves no gap', async () => {
     const { restore } = mockList([{ id: 1 }, { id: 2 }], { limit: 20, offset: 0, total: 2 })
-    const { service, store, load, stale } = client().resource('items')
+    const { service, load, stale } = client().resource('items')
     await load()
     restore()
 

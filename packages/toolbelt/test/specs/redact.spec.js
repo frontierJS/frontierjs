@@ -213,6 +213,7 @@ test('redact: omitBy walks a value nested deeper than the call stack', function 
 
 test('redact: a sparse array keeps its holes and a sibling is not a cycle', function () {
   const shared = { a: 1 }
+  // biome-ignore lint/suspicious/noSparseArray: a sparse array is the input under test
   const sparse = [1, , 3]
   const out = omitBy({ sparse, x: shared, y: shared }, () => false)
   assert.equal(out.sparse.length, 3)

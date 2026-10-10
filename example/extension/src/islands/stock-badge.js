@@ -27,6 +27,8 @@ export function slugFromPath(pathname) {
 
 export default defineIsland({
   position: 'fixed-bottom-right',
+  // Open only because verify.mjs reads the badge from the page's own world; the default is closed.
+  shadowMode: 'open',
 
   app(root, props) {
     const box = document.createElement('div')

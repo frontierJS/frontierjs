@@ -25,7 +25,6 @@ import {
   existsSync, mkdirSync, appendFileSync, readFileSync,
   statSync, openSync, readSync, writeSync, fstatSync, closeSync, dirname } from '#host'
 import { noteMintedDirectory } from '../core/db-path.js'
-import { applyBusyTimeout } from '../core/pragmas.js'
 import { buildWhere } from '../core/query.js'
 import { ID_GENERATORS } from '../core/ids.js'
 import { compactJsonl } from '../core/retention.js'
@@ -195,7 +194,7 @@ function extractWhereFields(where) {
 // in another (which is what @frontierjs/auth issues) — and a STRICT INTEGER
 // column threw `cannot store TEXT value in INTEGER column` on the first write
 // with a known actor. See makeAuditModel() in core/client.js.
-const FIELD_TYPES = { Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER', DateTime: 'TEXT', String: 'TEXT', Json: 'TEXT', File: 'TEXT', Any: 'ANY' }
+const _FIELD_TYPES = { Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER', DateTime: 'TEXT', String: 'TEXT', Json: 'TEXT', File: 'TEXT', Any: 'ANY' }
 
 // ─── Default resolution ───────────────────────────────────────────────────────
 
@@ -236,7 +235,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
 
   // @id field name — optional for JSONL models (audit logs, event streams don't need one)
   const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))
-  const idName  = idField?.name ?? null   // null = no @id declared
+  const _idName  = idField?.name ?? null   // null = no @id declared
 
   // @@index attributes and the set of indexed field names.
   // When @id is present it's included so the index can do INSERT OR REPLACE (upsert by id).
@@ -245,7 +244,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
   // The index's shape is `jsonl-index.js`'s, because compaction rewrites every
   // row of it and the two may not disagree about what a row is.
   const shape = indexShapeFor(model)
-  const { indexAttrs, hasIndex, indexedFieldNames } = shape
+  const { hasIndex, indexedFieldNames } = shape
 
   // ── Companion index.db ────────────────────────────────────────────────────
 

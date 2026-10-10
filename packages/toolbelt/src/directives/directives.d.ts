@@ -43,6 +43,19 @@ export const RESERVED_PARAMS: ReadonlySet<string>
 /** The `$` keys this table does not know, in the order they arrived. */
 export function unknownDirectives(params: Record<string, unknown> | null | undefined): string[]
 
+/** The single-valued directives (and `$first`/`$wrap`) given a list: a repeated key or `[]` spelling. */
+export function listedDirectives(params: Record<string, unknown> | null | undefined): string[]
+
+/** The flag directives given a value outside `true/1/false/0/bare`, in table order. */
+export function invalidDirectives(params: Record<string, unknown> | null | undefined): string[]
+
+/** `$first` / `$wrap` → the flags they carry; a value outside `true/1/false/0/bare` is named in `invalid`. */
+export function transportFlags(params: Record<string, unknown> | null | undefined): {
+  first?: boolean
+  wrap?: boolean
+  invalid: string[]
+}
+
 /** The `$` keys of a parameter bag → the structured directives. */
 export function parseDirectives(params: Record<string, unknown> | null | undefined): Directives
 

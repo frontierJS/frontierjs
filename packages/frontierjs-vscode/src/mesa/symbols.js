@@ -32,7 +32,7 @@
  *     ↳ <MyComponent />                (Class)
  */
 
-'use strict'
+
 
 const vscode = require('vscode')
 const { DocumentSymbol, SymbolKind, Range, Position } = vscode
@@ -45,7 +45,7 @@ const { DocumentSymbol, SymbolKind, Range, Position } = vscode
  */
 function provideDocumentSymbols(document) {
   const src   = document.getText()
-  const lines = src.split('\n')
+  const _lines = src.split('\n')
 
   // Find script block boundaries
   const scriptMatch = src.match(/<script[^>]*>/)

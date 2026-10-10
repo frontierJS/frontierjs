@@ -198,7 +198,6 @@ const TONE_ALIASES = {
   error:   'danger',
   neutral: 'muted',
   gray:    'muted',
-  gray:    'muted',
   default: '',
   none:    '',
 

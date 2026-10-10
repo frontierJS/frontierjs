@@ -83,7 +83,7 @@ describe('the browser graph', () => {
     expect(graph.length).toBeGreaterThan(20)
   })
 
-  // AUDIT-2.3-7: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2404: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   test.failing('names no server global outside a typeof guard', () => {
     const uses = serverGlobalUses(graph)
     if (uses.length) console.warn(`[audit-browser-globals] ${uses.length} use(s) of a server global in the browser graph:\n  ${uses.join('\n  ')}`)

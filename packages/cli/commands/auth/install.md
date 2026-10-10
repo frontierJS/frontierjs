@@ -171,7 +171,7 @@ export const auth = createLitestoneAuth(db, {
   //   await mailer.send({
   //     to:      email,
   //     subject: 'Verify your email',
-  //     html:    \`<a href="\${env.APP_URL}/auth/email/verify?token=\${token}">Verify email</a>\`,
+  //     html:    \`<a href="\${env.WEB_URL}/verify-email/?token=\${token}">Verify email</a>\`,
   //   })
   // },
 })

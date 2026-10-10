@@ -334,6 +334,12 @@ export function createLitestoneAuth(
     return codes
   }
 
+  // Wrong codes against a pending enrollment, by credential id. In memory, unlike
+  // the login ticket's `attempts` column: the only caller is a session that
+  // already holds the account, and the service limiter in front of it is
+  // process-local too.
+  const enrollmentMisses = new Map<string, number>()
+
   const bumpAttempts = (row: any) =>
     sys.loginChallenge.update({
       where: { id: row.id },
@@ -846,6 +852,9 @@ export function createLitestoneAuth(
       // One enrollment in flight. A second `setupTotp` supersedes the first,
       // because a person who scanned the wrong QR code asks again and the
       // abandoned secret must not stay confirmable.
+      for (const stale of await sys.credential.findMany({ where: { userId, type: TOTP_PENDING } })) {
+        enrollmentMisses.delete(String(stale.id))
+      }
       await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
 
       const secret = generateTotpSecret()
@@ -861,7 +870,26 @@ export function createLitestoneAuth(
       if (!pending) throw new NotFoundError('No enrollment in progress — call setupTotp first')
 
       const step = verifyTotpCode(pending.value, code, sys.$now(), totpDrift)
-      if (step === null) throw new ReauthenticationFailedError('Invalid code')
+      if (step === null) {
+        const id     = String(pending.id)
+        const missed = (enrollmentMisses.get(id) ?? 0) + 1
+        const spent  = missed >= loginChallengeAttempts
+        await audit('totp.confirm.failed', {
+          model: 'Credential', records: [id],
+          actorId: userId, actorType: 'user',
+          meta: { attempts: missed, spent },
+        })
+        if (!spent) {
+          enrollmentMisses.set(id, missed)
+          throw new ReauthenticationFailedError('Invalid code')
+        }
+        // Spent like a login ticket: the next try is `setupTotp`, which asks for
+        // the password and mints a new secret to guess at from nothing.
+        enrollmentMisses.delete(id)
+        await sys.credential.deleteMany({ where: { id: pending.id } })
+        throw new ReauthenticationFailedError('Invalid code — too many attempts, start again with setupTotp')
+      }
+      enrollmentMisses.delete(String(pending.id))
 
       // Promoted rather than copied: the row keeps its id and the `totpPending`
       // spelling stops existing, so there is no window where both types answer

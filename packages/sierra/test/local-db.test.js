@@ -55,7 +55,7 @@ const offline = () => Promise.reject(new TypeError('Failed to fetch'))
 // the module looks a model up in rather than deriving a name, and `asSystem()`
 // is the ruling — a cache replays what the server already gave this caller and
 // does not re-decide it (`FJS-D307`).
-let device
+let _device
 /**
  * `rows` SEEDS the table rather than being the answer to every read.
  *
@@ -143,7 +143,7 @@ beforeEach(async () => {
   const g = await generateSchemas(path, () => {}, SIERRA_ROOT)
   registerSchemas(g.defs, g.models, g.updatePatch)
 
-  device = makeDevice()
+  _device = makeDevice()
 })
 
 afterEach(() => { vi.restoreAllMocks(); _resetLocalDb() })

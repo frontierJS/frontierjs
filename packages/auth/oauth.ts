@@ -286,6 +286,7 @@ export function isAllowedReturnTo(returnTo: string | null | undefined, allow: st
   // `//evil.com` — the shape the next line exists to refuse. Refused rather than
   // stripped: a path this app generated contains no control character, and
   // stripping would hand the allowlist a string the caller did not send.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
   if (/[\u0000-\u0020]/.test(returnTo)) return false
   if (!returnTo.startsWith('/')) return false
   if (returnTo.startsWith('//') || returnTo.startsWith('/\\')) return false

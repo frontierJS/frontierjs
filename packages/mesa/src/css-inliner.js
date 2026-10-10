@@ -208,7 +208,6 @@ function serializeInlineStyle(map) {
 export function inlineCSS(html, extraCSS = '', options = {}) {
   const {
     preserveMediaQueries = true,
-    removeStyleTags       = true,
     inlineStyleTags       = true,
     customProps: seedProps = {},
   } = options

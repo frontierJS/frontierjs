@@ -273,9 +273,11 @@ describe('client.auth — the routes', () => {
     expect(calls[0].url).toBe('http://x/auth/password-reset/request')
     expect(calls[0].headers.Authorization).toBeUndefined()
     expect(calls[1].url).toBe('http://x/auth/password-reset/confirm')
-    // Encoded — the token is a URL component, and a `+` in a query string is a
-    // space by the time the server reads it.
-    expect(calls[2].url).toBe('http://x/auth/email/verify?token=verify%20tok%2F%2B1')
+    // A POST body, never a URL: a GET that spends the token is burned by a mail
+    // scanner's prefetch (`FJS-1839`).
+    expect(calls[2].url).toBe('http://x/auth/email/verify')
+    expect(calls[2].method).toBe('POST')
+    expect(calls[2].body).toEqual({ token: 'verify tok/+1' })
   })
 })
 

@@ -8,10 +8,10 @@
 //   - Audit integration in build pipeline (config.permissions.audit modes)
 //   - CLI smoke (subprocess invocation of bin/info.js, bin/audit.js, bin/manifest.js)
 
-import { existsSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { execSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 
 let pass = 0
 let fail = 0

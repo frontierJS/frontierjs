@@ -16,12 +16,12 @@ import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/crede
 // --experimental-strip-types fails with "does not provide an export named
 // 'StaticOptions'". Bun transpiles fully so it never noticed.
 import type { StaticOptions }             from './static.ts'
-import { BAKED_CACHE_CONTROL, bridge, jsonResponse, errorResponse } from './bridge.ts'
-import { toFrameworkError, TooManyRequests } from '../core/errors.ts'
+import { BAKED_CACHE_CONTROL, errorResponse } from './bridge.ts'
+import { TooManyRequests } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
-import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
+import type { TransportContext, RouteHandler, MiddlewareFn,
               WsData, WsContext, WsHandlerSet,
               RouteSegment }              from './types.ts'
 import type { SessionContext, SessionVerifier } from '../auth/types.ts'
@@ -29,6 +29,8 @@ import type { TrustProxy } from './forwarded.ts'
 
 import { isCompressible } from '@frontierjs/toolbelt/mime'
 import { formatEvent } from '@frontierjs/toolbelt/sse'
+import { directiveParams } from '@frontierjs/toolbelt/directives'
+import { encodeQueryString, parseQueryString } from '@frontierjs/toolbelt/query'
 
 // ─── Module-level constants ────────────────────────────────────────────────
 
@@ -1073,16 +1075,14 @@ export class HttpTransport {
 
         const base   = `${url.protocol}//${url.host}${url.pathname}`
 
-        // Build next/prev URLs manually — URLSearchParams encodes '$' as '%24'
-        // but callers expect '$offset' and '$limit' to appear literally.
-        // We preserve any existing query params and add/replace $offset/$limit.
+        // The request's own parameters round-trip through the query kit, which
+        // keeps `$` literal and types intact; the window is the directives
+        // kit's spelling, not a second one.
         function buildUrl(newOffset: number, newLimit: number): string {
-          const existing = new URLSearchParams(url.search)
-          existing.delete('$offset')
-          existing.delete('$limit')
-          const rest = existing.toString()
-          const pagination = `$offset=${newOffset}&$limit=${newLimit}`
-          return `${base}?${rest ? rest + '&' + pagination : pagination}`
+          const params = parseQueryString(url.search)
+          delete params.$offset
+          delete params.$limit
+          return base + encodeQueryString({ ...params, ...directiveParams({ offset: newOffset, limit: newLimit }) })
         }
 
         const next = skip + limit < total ? buildUrl(skip + limit, limit)         : null

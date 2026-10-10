@@ -358,6 +358,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { code } = (ctx.data ?? {}) as Record<string, string>
       if (!code) throw new BadRequest('code is required')
 
+      reauthenticate(ctx)
       return need('confirmTotp')(user.userId, code)
     },
 

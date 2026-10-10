@@ -25,7 +25,7 @@ flags:
 ---
 
 ```js
-const { rankNext } = await import(resolve(global.fliRoot, 'core/next.js'))
+const { rankNext, blockedLine } = await import(resolve(global.fliRoot, 'core/next.js'))
 
 const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
 
@@ -71,8 +71,8 @@ if (!out.ready.length) echo(`  Nothing open${scope}.`)
 echo('')
 
 if (out.blocked.length) {
-  echo('  blocked:')
-  for (const r of out.blocked) echo(`    ${r.id}  waits on ${r.blockedBy.join(', ')} — ${r.title.slice(0, 80)}`)
+  echo('  blocked, ranked the same way:')
+  for (const r of out.blocked) echo(`    ${blockedLine(r)}`)
   echo('')
 }
 ```
@@ -92,5 +92,6 @@ so it orders rows inside a tie and never past one. The weights are one table in
 
 A row that cannot start until another closes says `blocked by FJS-###` in its
 own text; it leaves the ranking and is listed under *blocked* until the blocker
-closes. A row a headless session cannot finish says `by hand` as its own segment
+closes. The *blocked* list is the same ranking, one line a row with its severity
+and score, and `--limit` does not trim it. A row a headless session cannot finish says `by hand` as its own segment
 of the links cell; it stays ranked, marked *(by hand)*, and `fix:loop` skips it. Proposals are not ranked here — `IDEAS/overview.md` ranks those.

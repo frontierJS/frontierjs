@@ -222,9 +222,11 @@ describe('@@commitment — x-commitments', () => {
       },
     })
     const o = generateJsonSchema(parse(ORDERS).schema)
+    // biome-ignore lint/correctness/noUnsafeOptionalChaining: one of the two sides is present by construction
     expect((o.$defs?.Order ?? o.definitions?.Order)['x-commitments'])
       .toEqual({ abandon: { via: null, transition: 'abandon', target: 'Order', field: 'status', from: ['pending'], on: 'createdAt', kind: 'instant', offset: { sign: 1, value: 14, unit: 'd' }, while: null } })
     const d = generateJsonSchema(parse(DUNNING).schema)
+    // biome-ignore lint/correctness/noUnsafeOptionalChaining: one of the two sides is present by construction
     const x = (d.$defs?.Invoice ?? d.definitions?.Invoice)['x-commitments']
     expect(Object.keys(x)).toEqual(['subscription.lapse', 'subscription.cancel'])
     // The TARGET's move, so a screen holding the subscription can ask whether

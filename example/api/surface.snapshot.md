@@ -943,7 +943,7 @@ once; everything else was registered by hand or by a plugin.
 | PATCH | `/api/{service}/{id}` | service |
 | POST | `/api/{service}/{id}` | service |
 | PUT | `/api/{service}/{id}` | service |
-| GET | `/api/auth/email/verify` | raw |
+| POST | `/api/auth/email/verify` | raw |
 | POST | `/api/auth/email/verify/request` | raw |
 | POST | `/api/auth/login` | raw |
 | POST | `/api/auth/login/challenge` | raw |

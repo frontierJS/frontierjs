@@ -4,7 +4,7 @@ import { extractFrontmatter, transformMarkdown, compileCli, extractSegments,
 import { registerShim, rewriteStackString, _clearShims } from '../core/stack.js'
 import { commandFiles, parseCommands } from '../core/command-parse.js'
 import { declarationProblem } from '../core/flags.js'
-import { readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'

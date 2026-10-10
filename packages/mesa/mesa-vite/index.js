@@ -155,7 +155,7 @@ export default function mesaPlugin(options = {}) {
   const inspectKey = (typeof inspect === 'object' && inspect.key) || 'alt'
 
   /** Vite server instance (set in configureServer) */
-  let server = null
+  let _server = null
 
   /** Root directory (set in configResolved) */
   let root = process.cwd()
@@ -201,7 +201,7 @@ export default function mesaPlugin(options = {}) {
     },
 
     configureServer(s) {
-      server = s
+      _server = s
 
       // Resolve devtools.html path once — fileURLToPath handles Windows drive letters
       const devtoolsHtmlPath = fileURLToPath(new URL('./devtools.html', import.meta.url))

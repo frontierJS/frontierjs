@@ -17,7 +17,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join }   from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { createApp, createService } from '../index.ts'
+import { createApp, createService, type Plugin } from '../index.ts'
 import { JUNCTION_SECTIONS, unknownSections, loadConfig } from '../src/config/index.ts'
 
 /** A config directory holding one junction.config.js. */
@@ -84,7 +84,6 @@ describe('a section nothing reads is refused by name', () => {
       middleware: { helmet: true },
       plugins: { health: true },
       services: { dir: '/tmp/fjs-nothing-here' },
-      conduit: { dir: '/tmp/fjs-nothing-here' },
       caravan: { pollInterval: 1000 },
       attachments: {},
     }\n`
@@ -118,7 +117,7 @@ describe('the list is what loadConfig actually consumes', () => {
     // AppConfig; the rest are read off `_junction` by their owning subsystem.
     const dir = configDir(`export default {
       app: { name: 'named-by-the-file' },
-      middleware: {}, plugins: {}, services: {}, conduit: {}, caravan: {},
+      middleware: {}, plugins: {}, services: {}, caravan: {},
       attachments: { n8n: { env: { N8N_URL: { required: true } } } },
     }\n`)
     try {
@@ -560,5 +559,66 @@ describe('start() twice is refused by name', () => {
     }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
     await a.start()
     await a.stop()
+  })
+})
+
+// ─── one level down: a key inside a section (`FJS-940`, `FJS-D483`) ──────
+
+/** Like `startAgainst`, with plugins configured by hand before start(). */
+async function startWithPlugins(source: string, ...plugins: Plugin[]): Promise<string | null> {
+  const dir = configDir(source)
+  try {
+    const app = createApp({ logLevel: 'silent', configPath: dir, config: { port: 0 } })
+    for (const p of plugins) app.configure(p)
+    try {
+      await app.start()
+      await app.stop()
+      return null
+    } catch (err) {
+      return (err as Error).message
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+describe('a key inside a section nothing reads is refused by name', () => {
+  it('`csrfs` in `middleware` is refused and names `csrf`', async () => {
+    const msg = await startAgainst(`export default { middleware: { helmet: true, csrfs: true } }\n`)
+    expect(msg).toContain("'middleware' declares 'csrfs'")
+    expect(msg).toContain("did you mean 'csrf'")
+  })
+
+  it('…and `csrf`, one character away, boots', async () => {
+    expect(await startAgainst(`export default { middleware: { helmet: true, csrf: true } }\n`)).toBeNull()
+  })
+
+  it('`plugins` and `services` have the same check', async () => {
+    const msg = await startAgainst(
+      `export default { plugins: { helth: true }, services: { dirs: '/tmp/fjs-nothing-here' } }\n`)
+    expect(msg).toContain('2 authoring mistake(s)')
+    expect(msg).toContain("'plugins' declares 'helth'")
+    expect(msg).toContain("'services' declares 'dirs'")
+  })
+
+  it('a plugin that states its keys owns the section of its name', async () => {
+    const widgets: Plugin = { name: 'widgets', configKeys: ['size', 'color'] }
+    const typo = await startWithPlugins(`export default { widgets: { sise: 3 } }\n`, widgets)
+    expect(typo).toContain("'widgets' declares 'sise'")
+    expect(typo).toContain("did you mean 'size'")
+    expect(await startWithPlugins(`export default { widgets: { size: 3 } }\n`, widgets)).toBeNull()
+  })
+
+  it('`conduit` is refused: no reader declares it (FJS-2483)', async () => {
+    // The conduit plugin reads no config section, so `conduit: { dir }` used
+    // to pass the section check and do nothing.
+    const msg = await startAgainst(`export default { conduit: { dir: '/tmp/fjs-nothing-here' } }\n`)
+    expect(msg).toContain("declares 'conduit'")
+  })
+
+  it('a section nobody states keys for is not guessed at', async () => {
+    // `app` and `attachments` are open shapes, and a `caravan:` section with no
+    // caravan configured has no reader to ask.
+    expect(await startAgainst(`export default { caravan: { anything: 1 } }\n`)).toBeNull()
   })
 })

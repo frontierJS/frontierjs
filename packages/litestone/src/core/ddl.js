@@ -1185,7 +1185,7 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
     // @@external — table managed outside Litestone, skip DDL entirely
     if (model.attributes.some(a => a.kind === 'external')) continue
 
-    const tableName = modelToTableName(model, pluralize)
+    const _tableName = modelToTableName(model, pluralize)
     const parts = []
 
     // Doc comment

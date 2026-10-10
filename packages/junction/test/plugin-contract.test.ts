@@ -196,3 +196,48 @@ describe('app.claim', () => {
     expect((app as unknown as Record<string, unknown>).shared).toBe(first)
   })
 })
+
+// ─── a battery's slot is claimed, not assigned ──────────────────────────
+
+describe('battery slots go through app.claim', () => {
+  const mailer = { async send() { return { id: '1', message: 'sent' } }, async batch() { return [] } }
+
+  it('mailerPlugin refuses a prior app.mail and leaves it in place', async () => {
+    const { mailerPlugin } = await import('../src/mail/index.ts')
+    const app = await createTestApp()
+    const prior = { send: () => {} }
+    app.claim('mail', prior)
+
+    expect(() => app.configure(mailerPlugin(mailer as never))).toThrow(/'mail'.*already claimed/s)
+    expect(app.mail).toBe(prior as never)
+  })
+
+  it('channels refuses a prior app.channels and leaves it in place', async () => {
+    const { channels } = await import('../src/transport/channels.ts')
+    const app = await createTestApp()
+    const prior = { size: 0 }
+    app.claim('channels', prior)
+
+    expect(() => app.configure(channels())).toThrow(/'channels'.*already claimed/s)
+    expect(app.channels).toBe(prior as never)
+  })
+
+  it('openapi refuses a prior app.addOpenApiPaths and leaves it in place', async () => {
+    const { openapi } = await import('../src/plugins/openapi/index.ts')
+    const app = await createTestApp()
+    const prior = () => {}
+    app.claim('addOpenApiPaths', prior)
+
+    expect(() => app.configure(openapi({ title: 't', version: '1' } as never))).toThrow(/'addOpenApiPaths'.*already claimed/s)
+    expect(app.addOpenApiPaths).toBe(prior)
+  })
+
+  it('openapi still invalidates its cached spec when a plugin adds paths', async () => {
+    const { openapi } = await import('../src/plugins/openapi/index.ts')
+    const app = await createTestApp()
+    app.configure(openapi({ title: 't', version: '1' } as never))
+    app.addOpenApiPaths!({ '/x': { get: {} } })
+
+    expect(app._openapiExtraPaths).toHaveProperty('/x')
+  })
+})

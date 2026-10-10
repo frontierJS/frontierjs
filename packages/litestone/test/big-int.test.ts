@@ -264,6 +264,7 @@ describe('what the boundary refuses, and why it is a different sentence', () => 
 
   test('a number past 2^53 is refused, because it is already a guess', async () => {
     const db = await client()
+    // biome-ignore lint/correctness/noPrecisionLoss: the lost precision is the input under test
     const err: any = await db.post.create({ data: { title: 'r', snowflake: 9007199254740993 } })
       .catch(e => e)
     expect(err.constructor.name).toBe('ValidationError')

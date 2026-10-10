@@ -995,7 +995,6 @@ describe('a grid change is graded on the access axis', () => {
 
 import { generateDDL } from '../src/core/ddl.js'
 import { capabilityDrift } from '../src/release.js'
-import { capabilityNames } from '../src/core/capabilities.js'
 
 const withMoves = (moves: string, model = 'Invoice') => `
 enum St { a b c }

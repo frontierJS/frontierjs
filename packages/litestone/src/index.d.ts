@@ -549,7 +549,7 @@ export interface TableClient<
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
-  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown>; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
+  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown>; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
   query(args?: Record<string, unknown>): Promise<TRow[] | Record<string, unknown>[] | Record<string, unknown>>
 }
 
@@ -804,20 +804,37 @@ export interface LitestoneClient {
 }
 
 /**
+ * What `createClient()` answers when no type argument is given. A file made by
+ * `litestone types --audience system` augments this with its own client:
+ *
+ *   declare module '@frontierjs/litestone' {
+ *     interface Register { client: GeneratedLitestoneClient }
+ *   }
+ *
+ * and every `createClient()` in the app, `asSystem()` included, then answers it.
+ * It is the system audience that registers: the client audience strips
+ * `@guarded` and `@secret`, which the server's client reads (FJS-D495).
+ */
+export interface Register {}
+
+/** The registered client, else the hand-written one whose every table is `unknown`. */
+export type RegisteredClient = Register extends { client: infer C } ? C : LitestoneClient
+
+/**
  * The type parameter is how a schema's generated types reach the client an app
- * actually holds. `LitestoneClient` here is the hand-written shape — every table
- * is `unknown` through its index signature — while `litestone types` emits a
- * `LitestoneClient` of its own with a typed accessor per model:
+ * actually holds when nothing registers them. `LitestoneClient` here is the
+ * hand-written shape — every table is `unknown` through its index signature —
+ * while `litestone types` emits a `LitestoneClient` of its own with a typed
+ * accessor per model:
  *
  *   import type { LitestoneClient as Db } from './db/schema.js'
  *   const db = await createClient<Db>({ … })
  *
- * The alternative is an assertion at every call site, which is the hand-written
- * table shape this replaces (FJS-018). Nothing checks that the argument matches
- * the schema the client is built from — it cannot, the schema is read at runtime
- * — so the generated file and the `schema:` passed here have to name one .lite.
+ * Nothing checks that the argument matches the schema the client is built
+ * from — it cannot, the schema is read at runtime — so the generated file and
+ * the `schema:` passed here have to name one .lite (FJS-018).
  */
-export declare function createClient<TClient = LitestoneClient>(options: CreateClientOptions): Promise<TClient>
+export declare function createClient<TClient = RegisteredClient>(options: CreateClientOptions): Promise<TClient>
 
 // ─── Parse ────────────────────────────────────────────────────────────────────
 

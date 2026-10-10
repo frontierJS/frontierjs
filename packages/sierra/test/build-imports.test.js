@@ -12,7 +12,7 @@
 // that reaches a message carries the recorded cause with it.
 
 import { describe, test, expect, beforeEach } from 'vitest'
-import { mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { join }   from 'path'
 import { tmpdir } from 'os'

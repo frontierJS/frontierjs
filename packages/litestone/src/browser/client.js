@@ -33,7 +33,7 @@ const DEFAULT_DB = '/litestone.db'
 // A method name is anything; a MODEL name is checked against what the worker
 // reported, because a typo there is the failure that otherwise arrives as a
 // message rejected in another thread with no stack a reader recognizes.
-const CLIENT_KEYS = new Set(['asSystem', '$setAuth', '$scopedBy', '$close', '$models', '$engine', 'then'])
+const _CLIENT_KEYS = new Set(['asSystem', '$setAuth', '$scopedBy', '$close', '$models', '$engine', 'then'])
 
 /**
  * @param {object} opts

@@ -110,7 +110,7 @@ export interface LitestoneAuthOptions {
   //     await mailer.send({
   //       to:      email,
   //       subject: 'Verify your email',
-  //       html:    `<a href="${APP_URL}/auth/email/verify?token=${token}">Verify</a>`,
+  //       html:    `<a href="${APP_URL}/verify-email/?token=${token}">Verify</a>`,
   //     })
   //   }
   onEmailVerificationRequested?: (email: string, token: string) => Promise<void>

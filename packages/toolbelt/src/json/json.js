@@ -462,7 +462,7 @@ export function removeIn(value, path) {
   }
 
   if (parent !== null && typeof parent === 'object') {
-    if (!Object.prototype.hasOwnProperty.call(parent, last)) return value
+    if (!Object.hasOwn(parent, last)) return value
     const copy = {}
     for (const [k, v] of Object.entries(parent)) if (k !== last) put(copy, k, v)
     return parentPath.length ? setIn(value, parentPath, copy) : copy
@@ -497,9 +497,9 @@ export function renameKey(value, path, from, to) {
   if (target === null || typeof target !== 'object' || Array.isArray(target)) {
     throw new TypeError(`renameKey: ${pathKey(path)} is a ${classify(target)}, not an object`)
   }
-  if (!Object.prototype.hasOwnProperty.call(target, from)) return value
+  if (!Object.hasOwn(target, from)) return value
   if (from === to) return value
-  if (Object.prototype.hasOwnProperty.call(target, to)) {
+  if (Object.hasOwn(target, to)) {
     throw new Error(`renameKey: '${to}' already exists here — renaming onto it would discard its value`)
   }
 
@@ -665,7 +665,7 @@ function same(a, b, level) {
     const keys = Object.keys(a)
     if (keys.length !== Object.keys(b).length) return false
     return keys.every(k =>
-      Object.prototype.hasOwnProperty.call(b, k) && same(a[k], b[k], level + 1))
+      Object.hasOwn(b, k) && same(a[k], b[k], level + 1))
   }
 
   return false
@@ -1112,8 +1112,8 @@ export function diffDocs(before, after) {
       }
     } else {
       for (const key of mergeKeys([b, a])) {
-        const inB = Object.prototype.hasOwnProperty.call(b, key)
-        const inA = Object.prototype.hasOwnProperty.call(a, key)
+        const inB = Object.hasOwn(b, key)
+        const inA = Object.hasOwn(a, key)
         if (!inB)      { mark([...path, key], 'added');         put(merged, key, a[key]); touched = true }
         else if (!inA) { mark([...path, key], 'removed', b[key]); put(merged, key, b[key]); touched = true }
         else {

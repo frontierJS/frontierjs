@@ -78,6 +78,12 @@ describe('a type inside a type', () => {
     expect(await refused({ d: { inner: { list: [{ key: 'ok',  kind: 'text' }] } } })).toBeNull()
   })
 
+  test('an unknown key is refused beside the keys the type takes (FJS-2413)', async () => {
+    expect(await refused({ c: { list: [{ key: 'ok', kind: 'text', js: 'process.exit()' }] } }))
+      .toMatch(/c\.list\.0\.js: unknown field — type Leaf has no 'js'; it takes key, kind, n/)
+    expect(await refused({ c: { list: [{ key: 'ok', kind: 'text', n: 1 }] } })).toBeNull()
+  })
+
   test('an empty list is not a violation', async () => {
     expect(await refused({ c: { list: [] } })).toBeNull()
   })

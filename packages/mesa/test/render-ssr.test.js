@@ -25,7 +25,7 @@ import {
 } from '../src/render.js'
 import { renderFile } from '../src/render-component.js'
 import {
-  createSignal, createEffect, flushSync, mount, onMount, setRenderEnvironment,
+  createSignal, createEffect, flushSync, mount, setRenderEnvironment,
 } from '../src/runtime.js'
 
 let n = 0
@@ -120,7 +120,7 @@ describe('renderToHTML — the serializer escapes (FJS-500)', () => {
   export let text = ''
 </script>
 <p>{text}</p>`)
-    const html = await renderToHTML(Comp, { text: '</p><script>alert(1)<\/script>' })
+    const html = await renderToHTML(Comp, { text: '</p><script>alert(1)</script>' })
     expect(html).not.toMatch(/<script/)
     expect(html).toContain('&lt;/p&gt;')
   })
@@ -720,7 +720,7 @@ describe('islands — client:* markers in SSR output', () => {
     expect(islands[0].meta).toEqual({ component: 'Counter', directive: 'load', props: { start: 3 } })
     expect(islands[0].inner).toBe('<button>3</button>')
     // The non-island sibling is untouched — no marker, same markup.
-    expect(html).toContain('<button>9</button><\/article>')
+    expect(html).toContain('<button>9</button></article>')
   })
 
   it('carries the runtime prop values, not just the statically-analysable ones', async () => {

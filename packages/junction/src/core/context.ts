@@ -609,6 +609,15 @@ export interface RequestSource {
 export const MADE_AT_HEADER = 'x-fjs-made-at'
 export const SENT_AT_HEADER = 'x-fjs-sent-at'
 
+/** The headers the browser client sends whether or not an app declared them in
+ *  `http.callHeaders`. Two readers: the CORS preflight allows them, and the
+ *  socket merges them off a frame. A name added to one reader only is
+ *  preflight-refused cross-origin or silently dropped on the socket. */
+export const PROTOCOL_CALL_HEADERS      = ['X-Workspace-Id', 'Idempotency-Key', 'X-Fjs-Made-At', 'X-Fjs-Sent-At']
+/** HTTP-only: a frame names its method in the frame, so the socket merge must
+ *  never accept this one as a header. */
+export const PROTOCOL_HTTP_ONLY_HEADERS = ['X-Service-Method']
+
 /**
  * When a replayed write was made, on THIS server's clock (`FJS-D469`).
  *

@@ -6,7 +6,7 @@
 
 import type { ServiceContext } from './context.ts'
 import type { TransportContext } from '../transport/types.ts'
-import type { Hook, AroundHook } from './hooks.ts'
+import type { AroundHook } from './hooks.ts'
 import { Unavailable } from './errors.ts'
 import type { RateLimitHookOptions } from '../auth/types.ts'
 import { createRateLimiter, refuseLegacyRateLimitOptions, type RateLimitOptions } from './rate-limit.ts'

@@ -1,0 +1,48 @@
+{
+  "extends": ["./packages/config/biome.json"],
+  "files": {
+    "maxSize": 4194304,
+    "includes": [
+      "!**/node_modules",
+      "!packages/config/biome.json",
+      "!**/dist",
+      "!**/.fli-tmp",
+      "!**/deploy/generated",
+      "!**/db/migrations",
+      "!**/*.snapshot.*",
+      "!**/vendor",
+      "!**/mockup",
+      "!**/.jetty-cache",
+      "!**/*.html",
+      "!**/*.svelte",
+      "!brand/font"
+    ]
+  },
+  "overrides": [
+    {
+      "includes": ["**/test/**", "packages/junction/tools/**", "packages/frontierjs-vscode/src/**"],
+      "linter": { "rules": { "suspicious": { "noTemplateCurlyInString": "off" } } }
+    },
+    {
+      "includes": ["packages/email-kit/**/*.css"],
+      "linter": { "rules": { "correctness": { "noUnknownProperty": "off" } } }
+    },
+    {
+      "includes": ["packages/css/guide/**", "packages/css/test/**", "packages/css/vocabulary.js", "packages/css/probe.mjs"],
+      "linter": {
+        "rules": {
+          "correctness": { "noUnusedVariables": "off", "noUnusedImports": "off" },
+          "suspicious": { "noRedundantUseStrict": "off", "noUselessEscapeInString": "off" }
+        }
+      }
+    },
+    {
+      "includes": ["packages/css/test/**"],
+      "linter": { "rules": { "correctness": { "noInnerDeclarations": "off" } } }
+    },
+    {
+      "includes": ["**/test/**", "packages/cli/core/**", "packages/junction/src/**"],
+      "linter": { "rules": { "suspicious": { "noControlCharactersInRegex": "off" } } }
+    }
+  ]
+}

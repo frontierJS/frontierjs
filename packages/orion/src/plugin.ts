@@ -44,7 +44,7 @@ import type { PluginManifest } from "./engine/plugins"
 import { createNodeImplementations } from "./engine/nodes"
 import type { INodeImplementation } from "./engine/executor"
 import type { IAIModels, IJobDispatcher, INotifier, IServiceCaller } from "./engine/ports"
-import { createRunner, FlowNotRunnableError, FlowRateLimitedError, type OrionJobs, type Runner } from "./runner"
+import { createRunner, type OrionJobs, type Runner } from "./runner"
 import { litestoneModelActions, modelCatalog } from "./models"
 import { litestoneKeyValue } from "./kv"
 import { conduitOutbound, flowCredentialResolver } from "./outbound"
@@ -320,35 +320,27 @@ function mountRoutes(app: App, runner: Runner, prefix: string, options: OrionOpt
       path:    ctx.route.path,
     }
 
-    try {
-      if (hook.mode === "async") {
-        return ctx.json({ runId: await runner.start(hook.flowId, trigger, { tenant: hook.tenant }) }, 202)
-      }
-      const out = await runner.runInline(hook.flowId, trigger, { deadlineMs: options.deadlineMs, tenant: hook.tenant })
-      if ("response" in out) {
-        const { status, headers, body } = out.response
-        return new Response(typeof body === "string" ? body : JSON.stringify(body ?? null), {
-          status,
-          headers: { "content-type": "application/json", ...headers },
-        })
-      }
-      if ("timedOut" in out) return ctx.json({ runId: out.runId, error: "The flow did not answer in time" }, 504)
-      return ctx.json({ runId: out.runId, status: out.record.status }, out.record.status === "failed" ? 500 : 200)
-    } catch (err) {
-      return refusal(ctx, err)
+    if (hook.mode === "async") {
+      return ctx.json({ runId: await runner.start(hook.flowId, trigger, { tenant: hook.tenant }) }, 202)
     }
+    const out = await runner.runInline(hook.flowId, trigger, { deadlineMs: options.deadlineMs, tenant: hook.tenant })
+    if ("response" in out) {
+      const { status, headers, body } = out.response
+      return new Response(typeof body === "string" ? body : JSON.stringify(body ?? null), {
+        status,
+        headers: { "content-type": "application/json", ...headers },
+      })
+    }
+    if ("timedOut" in out) return ctx.json({ runId: out.runId, error: "The flow did not answer in time" }, 504)
+    return ctx.json({ runId: out.runId, status: out.record.status }, out.record.status === "failed" ? 500 : 200)
   })
 
   // The key is the credential: 32 random bytes, single use.
   app.post(`${prefix}/wait/{key}`, async (ctx: TransportContext) => {
-    try {
-      const resumed = await runner.resume(ctx.route.key ?? "", ctx.body ?? null)
-      return resumed
-        ? ctx.json({ resumed: true }, 202)
-        : ctx.json({ error: "No run is waiting on this key" }, 404)
-    } catch (err) {
-      return refusal(ctx, err)
-    }
+    const resumed = await runner.resume(ctx.route.key ?? "", ctx.body ?? null)
+    return resumed
+      ? ctx.json({ resumed: true }, 202)
+      : ctx.json({ error: "No run is waiting on this key" }, 404)
   })
 }
 
@@ -359,12 +351,6 @@ function tenantOfRequest(app: App, ctx: TransportContext): string | null | undef
   if (!registry?.tenantFor) return undefined
   const host = (ctx.headers.host ?? null) as string | null
   return registry.tenantFor({ host, headers: ctx.headers, principal: null }) ?? undefined
-}
-
-function refusal(ctx: TransportContext, err: unknown): Response {
-  if (err instanceof FlowRateLimitedError) return ctx.json({ error: err.message }, 429)
-  if (err instanceof FlowNotRunnableError) return ctx.json({ error: err.message }, 409)
-  throw err
 }
 
 // ─── services ────────────────────────────────────────────────────────────────

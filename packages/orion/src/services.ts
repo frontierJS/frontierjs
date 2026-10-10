@@ -23,12 +23,12 @@
  * because `/metrics` is junction's own route.
  */
 
-import { BadRequest, Conflict, Forbidden, NotFound, TooManyRequests, Unauthorized, callerGateLevel, createService } from "@frontierjs/junction"
+import { BadRequest, Conflict, Forbidden, NotFound, Unauthorized, callerGateLevel, createService } from "@frontierjs/junction"
 import type { Service, ServiceContext, SessionContext } from "@frontierjs/junction"
 import { LEVELS, levelName, levelPasses } from "@frontierjs/toolbelt/gate"
 
 import type { Flow } from "./engine/types"
-import { FlowNotRunnableError, FlowRateLimitedError, type Runner } from "./runner"
+import type { Runner } from "./runner"
 
 export interface OrionServiceNames {
   flows?:           string | false
@@ -125,12 +125,6 @@ export function createOrionServices(deps: {
   // floor junction applies to a method nobody graded.
   function signedIn(...methods: string[]) {
     return methods.map(method => ({ method, gate: LEVELS.USER }))
-  }
-
-  function refusal(err: unknown): never {
-    if (err instanceof FlowRateLimitedError) throw new TooManyRequests(err.message)
-    if (err instanceof FlowNotRunnableError) throw new Conflict(err.message)
-    throw err
   }
 
   // ─── flows ─────────────────────────────────────────────────────────────────
@@ -242,11 +236,7 @@ export function createOrionServices(deps: {
       const flow = await readableFlow(ctx, ctx.id)
       writerFor(ctx, flow, "run it")
       const payload = (ctx.data as { payload?: unknown } | null)?.payload ?? null
-      try {
-        return { runId: await runner.start(flow.id, { payload, by: caller(ctx).userId }, { via: "trigger.manual", ...tenantOf(ctx) }) }
-      } catch (err) {
-        refusal(err)
-      }
+      return { runId: await runner.start(flow.id, { payload, by: caller(ctx).userId }, { via: "trigger.manual", ...tenantOf(ctx) }) }
     },
 
     /** Runs a version as the owner, rolled back and with nothing sent (`FJS-D283`). */
@@ -255,12 +245,8 @@ export function createOrionServices(deps: {
       const flow = await readableFlow(ctx, ctx.id)
       writerFor(ctx, flow, "dry-run it")
       const data = (ctx.data ?? {}) as { trigger?: unknown; version?: number }
-      try {
-        const { record, notSent } = await runner.dryRun(flow.id, data.trigger ?? {}, { version: data.version, ...tenantOf(ctx) })
-        return { status: record.status, error: record.error ?? null, nodeStates: record.nodeStates, notSent }
-      } catch (err) {
-        refusal(err)
-      }
+      const { record, notSent } = await runner.dryRun(flow.id, data.trigger ?? {}, { version: data.version, ...tenantOf(ctx) })
+      return { status: record.status, error: record.error ?? null, nodeStates: record.nodeStates, notSent }
     },
 
     /** A version as a file for review (`FJS-D277`) — the current one unless `data.version` names another. */

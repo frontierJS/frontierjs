@@ -21,10 +21,25 @@ model Order {
 }
 ```
 
-```
+```bash
 litestone export Order --as alice@example.com
 fli db:export Order --as alice@example.com --gate ./api/src/core/gate.ts
 ```
+
+The whole of the command:
+
+```bash
+litestone export <dataset> --as <who> | --system
+                 [--since=<cursor>]        # resume from a manifest's cursor.after
+                 [--format=ndjson|csv]     # default: what @@export declares
+                 [--out=<dir>]             # <dataset>.<format> + <dataset>.manifest.json; default: the working directory
+                 [--stdout]                # rows to stdout, the manifest to stderr
+                 [--include-protected]     # keep @encrypted/@secret/@guarded columns
+                 [--with-deleted]          # include soft-deleted rows
+                 [--gate <path[#export]>]  # grade with the app's own getLevel
+                 [--tenant <id>]           # under tenancy { strategy database }
+```
+
 
 ## The rows that leave are the rows that account can read
 
@@ -99,9 +114,10 @@ incomplete export from a complete one a year later.
 
 ## Naming a standing
 
-`--as` takes an **account**, resolved the way `litestone repl --as` resolves one,
-and `--gate` names the app's own `getLevel` so the run grades the way the app
-does. A synthesized level is deliberately not offered: an invented principal
+`--as` takes an **account** — an email, username, name or id in the `@@auth`
+model, or `Model:who` to name another model — resolved the way `litestone repl --as`
+resolves one, and `--gate` names the app's own `getLevel` so the run grades the
+way the app does. A synthesized level is deliberately not offered: an invented principal
 evaluates every claim-based policy against nothing, and an absent claim is `NULL`
 — which the SQL half reads as *nobody* and the JS half as *everybody*.
 

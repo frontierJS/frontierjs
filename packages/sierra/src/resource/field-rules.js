@@ -15,7 +15,6 @@
  */
 
 import { resolveRef, modelNameFor } from './schema-registry.js'
-import { DIRECTIVE_PARAMS }          from '@frontierjs/toolbelt/directives'
 import { levelPasses, canAtLevel }   from '@frontierjs/toolbelt/gate'
 import { hookChainMessage }          from '@frontierjs/toolbelt/hooks'
 import { derefFieldSchema, fieldShape } from '@frontierjs/toolbelt/jsonschema'
@@ -1650,7 +1649,7 @@ export function validateAgainstFields(fields, data, mode = 'create') {
   const record  = data ?? {}
 
   for (const [name, rule] of Object.entries(fields ?? {})) {
-    const present = Object.prototype.hasOwnProperty.call(record, name)
+    const present = Object.hasOwn(record, name)
 
     if (!present) {
       if (!isPatch && rule.required) errors.push({ field: name, message: _required(name, rule) })
@@ -1901,7 +1900,7 @@ export function coerceToSchema(fields, data) {
   }
 
   for (const [name, rule] of Object.entries(fields ?? {})) {
-    if (!Object.prototype.hasOwnProperty.call(data, name)) continue
+    if (!Object.hasOwn(data, name)) continue
 
     const raw = data[name]
     if (typeof raw !== 'string' || raw === '') continue
@@ -1972,7 +1971,7 @@ export function normalizeBlanks(fields, data) {
     // nullable ⇒ not required in everything Litestone generates, but a field
     // that were both would be made invalid by this, so say it explicitly.
     if (!rule.nullable || rule.required) continue
-    if (!Object.prototype.hasOwnProperty.call(data, name)) continue
+    if (!Object.hasOwn(data, name)) continue
     if (data[name] !== '') continue
 
     if (out === null) out = { ...data }
@@ -2211,7 +2210,7 @@ export function stripReadOnly(fields, data, opts = {}) {
 
   for (const [name, rule] of Object.entries(fields ?? {})) {
     if (!rule?.readOnly || keep.has(name)) continue
-    if (!Object.prototype.hasOwnProperty.call(data, name)) continue
+    if (!Object.hasOwn(data, name)) continue
 
     if (out === null) out = { ...data }
     delete out[name]

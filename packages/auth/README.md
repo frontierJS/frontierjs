@@ -67,7 +67,7 @@ export const auth = createLitestoneAuth(db, {
     await mailer.send({
       to:      email,
       subject: 'Verify your email',
-      html:    `<a href="${env.APP_URL}/auth/email/verify?token=${token}">Verify</a>`,
+      html:    `<a href="${env.APP_URL}/verify-email/?token=${token}">Verify</a>`,
     })
   },
 })
@@ -126,7 +126,7 @@ relative to `apiPrefix` for the same reason.
 | `POST` | `/auth/password-reset/request` | Send reset email |
 | `POST` | `/auth/password-reset/confirm` | Confirm reset with token. On an account with no credential — one an operator created — this sets the first password, which is what makes an invitation a reset link. An account whose only way in is an OAuth provider is refused (409) |
 | `POST` | `/auth/email/verify/request` | Re-send verification email |
-| `GET`  | `/auth/email/verify?token=` | Verify email with token |
+| `POST` | `/auth/email/verify` | Verify email with a token. The mailed link lands on a page of the app's web surface and that page posts the token — a GET that spent it would be burned by a mail scanner's prefetch |
 | `POST` | `/auth/support/start` · `/auth/support/end` | Begin and end acting as another account — bounded by that account's standing, refused for one standing above yours, and recorded under the operator. Needs `canStartSupport` and a level resolver (`services: { standingLevel }` or `{ level }`); the account is told through `onCredentialChanged` |
 | `GET`  | `/auth/oauth` | Which OAuth providers this app offers |
 | `GET`  | `/auth/oauth/{provider}` · `/auth/oauth/{provider}/callback` | The redirect flow — browser navigations, not `fetch` calls |

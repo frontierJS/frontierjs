@@ -46,7 +46,9 @@ measured table of every declaration against every verb is
 
 - **1 · Principal.** `db.$setAuth(user)` returns a new client, and every rule below reads
    `auth()` off it. A claim is declared, never guessed (`FJS-D181`). The value can come
-   from another row: `claim role from Membership(userId).role` (`FJS-D359`). A tenant
+   from another row: `claim membershipRole from Membership(userId).role` (`FJS-D359`) —
+   under a name of the app's own, since `role` and the other standing fields are the
+   framework's and a row may not decide how the caller is graded. A tenant
    and a standing are both claims on the principal, resolved per request by one seam
    in Junction (`FJS-D113`). A principal with no `id` grades STRANGER before any
    `getLevel` runs (`FJS-D515`).

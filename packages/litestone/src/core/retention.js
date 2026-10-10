@@ -18,7 +18,7 @@
 //     maxSize   500mb     ← size-based: trim oldest lines when file exceeds limit
 //   }
 
-import { existsSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, openSync, readSync, closeSync } from '#host'
+import { existsSync, readFileSync, writeFileSync, renameSync, statSync, openSync, readSync, closeSync } from '#host'
 import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex } from '../drivers/jsonl-index.js'
 import { modelToTableName, fieldToColumnName } from './ddl.js'
 import { quoteIdent }       from './query.js'

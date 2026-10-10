@@ -101,7 +101,7 @@ export async function runIsland(islandModule, meta) {
   await documentReady()
 
   // Build the host element + shadow root for the island's UI.
-  const { host, shadow, hostInDoc } = mountIslandShell(id, cfg)
+  const { shadow, hostInDoc } = mountIslandShell(id, cfg)
 
   // Mount the Mesa app inside the shadow root.
   const mountHandle = await mount(shadow, cfg.app, { harbor, id, ...ctx })
@@ -145,7 +145,9 @@ function mountIslandShell(id, cfg) {
   // Reset most inherited styles. Components decide their own layout inside the shadow.
   host.style.cssText = baseHostStyle(cfg)
 
-  const shadowMode = cfg.shadowMode ?? 'open' // open by default — easier to debug; use 'closed' for hard isolation
+  // Closed unless the island opts in: an open root lets the matched host page read what the
+  // island renders and click its controls, which is a service:call with the user's token.
+  const shadowMode = cfg.shadowMode ?? 'closed'
   const shadow = host.attachShadow({ mode: shadowMode })
 
   // Place the host in the document.

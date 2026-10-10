@@ -37,8 +37,10 @@
 // file and hears nothing, which is stated rather than approximated.
 
 import { watch, dirname } from '#host'
+import { quoteIdent } from './query.js'
 
 export const EVENTS_TABLE = '_litestone_events'
+const EVENTS = quoteIdent(EVENTS_TABLE)
 
 // How long a recorded announcement is kept. Long enough that a subscriber
 // briefly behind catches up by reading rows; short enough that the table does
@@ -56,10 +58,10 @@ export function ensureEventsTable(db) {
   // A table from before the column was renamed has no `writer` column, so
   // every announcement would fail to record and only warn. The table is
   // litestone's own and holds minutes of history, so it is dropped (`FJS-D781`).
-  const cols = db.prepare(`PRAGMA table_info("${EVENTS_TABLE}")`).all()
-  if (cols.some(c => c.name === 'origin')) db.run(`DROP TABLE "${EVENTS_TABLE}"`)
+  const cols = db.prepare(`PRAGMA table_info(${EVENTS})`).all()
+  if (cols.some(c => c.name === 'origin')) db.run(`DROP TABLE ${EVENTS}`)
   db.run(`
-    CREATE TABLE IF NOT EXISTS "${EVENTS_TABLE}" (
+    CREATE TABLE IF NOT EXISTS ${EVENTS} (
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
       writer  TEXT    NOT NULL,
       event   TEXT    NOT NULL,
@@ -74,7 +76,7 @@ export function ensureEventsTable(db) {
   // AUTOINCREMENT so an id is never reused after a delete — the sweep removes
   // from the front, and a reused id would put a row BEHIND a cursor that has
   // already passed it, which is a subscriber silently missing a write.
-  db.run(`CREATE INDEX IF NOT EXISTS "${EVENTS_TABLE}_at" ON "${EVENTS_TABLE}" (at)`)
+  db.run(`CREATE INDEX IF NOT EXISTS ${quoteIdent(`${EVENTS_TABLE}_at`)} ON ${EVENTS} (at)`)
 }
 
 /**
@@ -83,7 +85,7 @@ export function ensureEventsTable(db) {
  */
 export function makeEventRecorder(db, writer, now) {
   const stmt = db.prepare(
-    `INSERT INTO "${EVENTS_TABLE}" (writer, event, model, scope, count, recordId, detail, at)
+    `INSERT INTO ${EVENTS} (writer, event, model, scope, count, recordId, detail, at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 
   return function record({ event, model, scope, count, recordId, detail }) {
@@ -120,7 +122,7 @@ export function createEventWatcher({
   // Start at the end: an app that has just opened has not missed anything, and
   // replaying the table's history would announce every write since the last
   // sweep to a browser that has just loaded the current rows.
-  let cursor = db.prepare(`SELECT COALESCE(MAX(id), 0) AS id FROM "${EVENTS_TABLE}"`).get().id
+  let cursor = db.prepare(`SELECT COALESCE(MAX(id), 0) AS id FROM ${EVENTS}`).get().id
   let stopped = false
   let draining = false
   let watcher = null
@@ -134,10 +136,10 @@ export function createEventWatcher({
   // this whole layer exists to remove, so the cursor only ever moves over a row
   // that was actually looked at.
   const since   = db.prepare(
-    `SELECT * FROM "${EVENTS_TABLE}" WHERE id > ? ORDER BY id ASC LIMIT 500`)
-  const lowest  = db.prepare(`SELECT COALESCE(MIN(id), 0) AS id FROM "${EVENTS_TABLE}"`)
-  const highest = db.prepare(`SELECT COALESCE(MAX(id), 0) AS id FROM "${EVENTS_TABLE}"`)
-  const sweep   = db.prepare(`DELETE FROM "${EVENTS_TABLE}" WHERE at < ?`)
+    `SELECT * FROM ${EVENTS} WHERE id > ? ORDER BY id ASC LIMIT 500`)
+  const lowest  = db.prepare(`SELECT COALESCE(MIN(id), 0) AS id FROM ${EVENTS}`)
+  const highest = db.prepare(`SELECT COALESCE(MAX(id), 0) AS id FROM ${EVENTS}`)
+  const sweep   = db.prepare(`DELETE FROM ${EVENTS} WHERE at < ?`)
 
   let lastSweep = 0
 

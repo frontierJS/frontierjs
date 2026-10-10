@@ -21,7 +21,7 @@ import { introspect }             from '../core/migrate.js'
 // One grading table for every converter in this package. A live database is a
 // source like any other and says less than the schema that built it; `import`'s
 // three tiers are what make the list of what it could not say readable.
-import { tierOf, summarize }      from '../import/tiers.js'
+import { summarize }      from '../import/tiers.js'
 // Mirrors the pluralizer ddl.js runs — the same table read the other way.
 import { singularize as toSingular } from '@frontierjs/toolbelt/inflect'
 
@@ -414,7 +414,7 @@ export function introspectToLite(db, { camelCase = true } = {}) {
     // Emit scalar columns
     for (const col of columns) {
       const fieldName   = camelCase ? toCamelCase(col.name) : col.name
-      const isFKCol     = col.name in fkByCol
+      const _isFKCol     = col.name in fkByCol
       const enumKey     = `${tableName}.${col.name}`
       const enumName    = columnEnumMap[enumKey]
       const liteType    = enumName ? enumName : sqliteTypeToLite(col.type)

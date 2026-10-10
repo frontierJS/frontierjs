@@ -51,7 +51,7 @@ export class Range {
 	max(
 		value)
 	{
-		if (typeof value == "number") {
+		if (typeof value === "number") {
 			this.length = value - this.location;
 		}
 
@@ -89,7 +89,7 @@ export class Range {
 	 */
 	toString()
 	{
-		if (this.location == -1) {
+		if (this.location === -1) {
 			return "invalid range";
 		} else {
 			return "[" + this.location + "," + this.max() + ")";

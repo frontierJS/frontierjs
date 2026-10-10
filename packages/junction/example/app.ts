@@ -81,17 +81,11 @@ import {
   createLogger,
   channels,
   healthPlugin,
-  authenticate,
-  requireRole,
-  protect,
-  timestamps,
   circuitBreaker,
   announce,
   correlationId,
   rateLimit,
   requestLogger,
-  createSchema,
-  v,
   createService,
 } from '../index.ts'
 import { openapi } from '../src/plugins/openapi/index.ts'

@@ -1,7 +1,7 @@
 /**
  * test/devtools.test.js
  */
-import { describe, test, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { createBuffer } from '../src/devtools/buffer.js'
 import { renderWaterfall } from '../src/devtools/waterfall.js'
 

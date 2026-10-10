@@ -123,13 +123,13 @@ describe('and the server answers it with real rows', () => {
     } as unknown as ServiceContext
   }
 
-  test('$populate on the query reaches the include and the relation comes back', async () => {
+  test('the populate directive reaches the include and the relation comes back', async () => {
     const db = await mkDb()
     await db.asSystem().customer!.create({ data: { id: 1, name: 'Ada' } })
     await db.asSystem().order!.create({ data: { id: 1, reference: 'ORD-1', customerId: 1 } })
 
     const svc = createService({ name: 'orders', model: 'order' })
-    const out = await svc.find(ctx(db, { query: { $populate: 'customer' } })) as {
+    const out = await svc.find(ctx(db, { directives: { populate: 'customer' } })) as {
       data: { customer?: { name: string } }[]
     }
 

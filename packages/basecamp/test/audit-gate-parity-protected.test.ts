@@ -1,7 +1,7 @@
 // Audit 2.2 -- protected fields on every wire (FJS-D473) and filter oracles.
 import { test, expect, beforeAll, afterAll } from 'bun:test'
 import { build, type Fixture } from './audit-parity-harness.ts'
-import { Driver, summarize, SENTINELS, type PathName } from './audit-parity-paths.ts'
+import { Driver, summarize, type PathName } from './audit-parity-paths.ts'
 let fx: Fixture, d: Driver
 const uniq = () => Math.random().toString(36).slice(2, 8)
 beforeAll(async () => { fx = await build(); d = new Driver(fx) }, 180_000)

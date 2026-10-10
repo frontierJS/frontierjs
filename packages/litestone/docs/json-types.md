@@ -119,10 +119,12 @@ await db.user.create({ data: {
   name: 'Bob',
   address: { street: 's', city: 'c', postalCode: 'p', country: 'US', bogus: 'x' }      // ← rejects
 }})
-// → ValidationError: address.bogus: unknown field — type Address has no 'bogus' (set strict: false to allow)
+// → ValidationError: address.bogus: unknown field — type Address has no 'bogus'; it takes street, city, state, postalCode, country
 ```
 
-This catches typos at write time and prevents schema drift inside JSON. If you need to accept evolving shapes (e.g. consuming events from an external service that may add new keys), opt out per field:
+This catches typos at write time and prevents schema drift inside JSON. The refusal names what the
+type takes, because it reaches the caller whose write was refused — who cannot loosen the type, and
+often meets a closed type that is a vocabulary on purpose. If you need to accept evolving shapes (e.g. consuming events from an external service that may add new keys), opt out per field:
 
 ```lite
 type Address {

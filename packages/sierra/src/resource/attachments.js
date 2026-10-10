@@ -41,7 +41,6 @@
  * split only happens when the send could not arrive.
  */
 
-import { getClient }  from '@frontierjs/sierra/resource'
 import { unreachable } from './pending.js'
 import { isStaleWrite } from './field-rules.js'
 

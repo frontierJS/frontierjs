@@ -14,7 +14,7 @@
 // everything would look identical from an assertion that only asks about
 // `<script module>`.
 
-'use strict'
+
 
 const path = require('path')
 const fs   = require('fs')

@@ -18,7 +18,7 @@ import type { App, Plugin } from '@frontierjs/junction'
 import { NotFound, createService, requestMeta, warnEffectInDrain } from '@frontierjs/junction'
 import { createConduit }    from './conduit.ts'
 import { createTraceContext, parseTraceparent, traceIdFrom } from './trace.ts'
-import type { ConduitOptions, IConduit, TargetDescriptor } from './types.ts'
+import type { ConduitOptions, IConduit } from './types.ts'
 
 // ─── App augmentation ────────────────────────────────────────
 // Adds app.conduit to Junction's App type across the entire project.

@@ -207,5 +207,6 @@ test('hooks: mergeHooks survives a method named after an Object member', async f
   // the prototype in silence.
   const p = mergeHooks(JSON.parse('{"before":{"__proto__":["x"]}}'), { before: { find: ['y'] } })
   assert.deepEqual(Object.keys(p.before).sort(), ['__proto__', 'find'])
+  // biome-ignore lint/suspicious/noProto: the test asserts what an own `__proto__` key does
   assert.deepEqual(p.before.__proto__, ['x'])
 })

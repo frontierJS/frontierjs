@@ -31,7 +31,7 @@ import { parseRenameFlag, readOperations, askRenames } from '../core/operations.
 import { backupSqliteTo }                              from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
-import { modelToAccessor, modelToTableName }           from '../core/ddl.js'
+import { modelToAccessor }           from '../core/ddl.js'
 import { findPrincipal }                               from './principal.js'
 import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag, getFlags,
          fatal, rel, header, loadSchema, getEncKey, resolveDbPath,
@@ -56,7 +56,7 @@ import { version as PKG_VERSION } from '../../package.json' with { type: 'json' 
 // path instead — so a path-based check silently returns false in exactly the build
 // we ship, and any import.meta.dir path resolution points at a directory that does
 // not exist on the user's machine. Verified on Bun 1.3.11.
-const IS_COMPILED = process.env.LITESTONE_COMPILED === '1'
+const _IS_COMPILED = process.env.LITESTONE_COMPILED === '1'
 
 // Seeds that ship inside the package, as name → SQL text. Embedded rather than
 // read from src/tools/seeds/ so they exist in a compiled binary too.
@@ -847,6 +847,17 @@ async function cmdDev(label, cfg) {
         console.log(`  ${dim(`${drift.pending.length} migration${drift.pending.length === 1 ? '' : 's'} pending`)}`)
       }
 
+      // A pending file is not history yet: create diffs against the live database
+      // again and would write a second file for the same change, which apply then
+      // names alongside the first (`FJS-2481`).
+      const blocked = unresolvedBlocks(migrationsDir, drift.pending)
+      if (blocked.length) {
+        console.error(`\n  ${red('✗')}  ${blocked.join(', ')} ${blocked.length > 1 ? 'hold' : 'holds'} a section marked BLOCKED, so no new migration was created.\n`)
+        console.error(`     ${dim('Write the change by hand under the BLOCKED line — a backfill, a value expression')}`)
+        console.error(`     ${dim('in the copy, a @default() — then delete the line and run this again.')}\n`)
+        process.exit(1)
+      }
+
       const operations = await operationsFor(parseResult, name, migrationsDir, cfg, given)
       const result = createAgainstHistoryCli(parseResult, name, label, migrationsDir, cfg, operations)
       if (result.blocked) { console.error(`\n  ${red('✗')}  ${result.message}\n`); process.exit(1) }
@@ -1628,7 +1639,7 @@ async function cmdTenant(subCmd, args, cfg) {
   if (!cfg.schema) fatal('No schema found. Use --schema ./db/schema.lite')
 
   const { dir, registry, migrationsDir } = await tenantOptions(cfg)
-  const concurrency   = parseInt(getFlag('concurrency') ?? '8')
+  const concurrency   = parseInt(getFlag('concurrency') ?? '8', 10)
 
   const tenants = await createTenantRegistry({
     dir,
@@ -1706,7 +1717,7 @@ async function cmdTenant(subCmd, args, cfg) {
         header(`litestone tenant info ${id}`)
         if (!tenants.exists(id)) fatal(`Tenant "${id}" not found`)
         const meta = tenants.meta.get(id)
-        const db   = await tenants.get(id)
+        const _db   = await tenants.get(id)
         console.log(`  ${dim('path:')}    ${cyan(resolve(dir, id + '.db'))}`)
         console.log(`  ${dim('meta:')}    ${JSON.stringify(meta)}`)
         console.log()
@@ -1987,7 +1998,7 @@ async function cmdAdvise(cfg) {
 
 
 async function cmdExplain(word) {
-  const { CATALOG, GROUPS, POSITIONS, POSITION_RULES, positionsOf, typed, lookup, grouped, docFor, bySynonym } =
+  const { CATALOG, POSITIONS, positionsOf, typed, lookup, grouped, docFor, bySynonym } =
     await import('../core/catalog.js')
   const { VISIBILITY, PER_CALLER } = await import('../core/advise.js')
 
@@ -3740,7 +3751,7 @@ async function cmdOptimize(targetTable, cfg) {
 
   for (const model of targets) {
     const t0 = performance.now()
-    const result = db[modelToAccessor(model.name)].optimizeFts()
+    const _result = db[modelToAccessor(model.name)].optimizeFts()
     const ms = (performance.now() - t0).toFixed(1)
     console.log(`  ${green('✓')}  ${cyan(model.name + '_fts')}  ${dim(`optimized (${ms}ms)`)}`)
   }
@@ -5104,7 +5115,7 @@ async function main() {
     const outputPath   = getFlag('out')
     const onlyArg      = getFlag('only')
     const only         = onlyArg ? onlyArg.split(',').map(v => v.trim()) : null
-    const concurrency  = parseInt(getFlag('concurrency') ?? '8')
+    const concurrency  = parseInt(getFlag('concurrency') ?? '8', 10)
     const paramsArg    = getFlag('params')
 
     if (paramsArg) {

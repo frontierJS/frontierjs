@@ -37,6 +37,7 @@ export function registerShim(shimPath, sourcePath, sourceLineOffset) {
 /** Test seam. */
 export function _clearShims() { shims.clear() }
 
+// biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**

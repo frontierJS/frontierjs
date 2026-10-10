@@ -118,9 +118,9 @@ describe('registry — dual-root source labeling', () => {
 
   test('project commands override core commands with the same title', () => {
     // Create a temp project command with same title as a core command
-    const { mkdirSync, writeFileSync, rmSync } = require('fs')
+    require('fs')
     const overrideDir  = resolve(ROOT, 'cli/src/routes/make')
-    const overrideFile = resolve(overrideDir, 'command.md')
+    const _overrideFile = resolve(overrideDir, 'command.md')
 
     // make:command already exists in core — if we add one in project routes
     // it should override. We verify by checking the project version wins.

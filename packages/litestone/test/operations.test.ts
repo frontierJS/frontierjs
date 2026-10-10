@@ -15,7 +15,7 @@ import { Database } from 'bun:sqlite'
 import { parse } from '../src/core/parser.js'
 import { create, apply, renameCandidates, listMigrationFiles, migrationStatements } from '../src/core/migrations.js'
 import {
-  parseRenameFlag, readOperations, resolveOperations, guessRenames, askRenames,
+  parseRenameFlag, readOperations, resolveOperations, askRenames,
 } from '../src/core/operations.js'
 
 const CLI = resolve(import.meta.dir, '..', 'src', 'tools', 'cli.js')

@@ -45,7 +45,7 @@
 // Zero dependencies, plain ESM, node or bun — the rule `snapshots.js`,
 // `checks.js` and `repo-map.js` follow, because a caller runs before install.
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative }                                  from 'node:path'
 
 import { stripComments }                                   from './codegraph.js'

@@ -12,7 +12,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterEach, vi } from 'vitest'
-import { resolve, dirname, join } from 'path'
+import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { mkdirSync, writeFileSync, readFileSync } from 'fs'
 

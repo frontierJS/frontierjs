@@ -922,8 +922,8 @@ export class AuthClient {
   }
 
   /** Confirm an address from the link. No session: the link is the proof. */
-  async verifyEmail(token: string): Promise<unknown> {
-    return this._c._request('GET', `${this._prefix}/email/verify?token=${encodeURIComponent(token)}`, undefined, { skipAuth: true })
+  async verifyEmail(token: string): Promise<void> {
+    await this._c._request('POST', `${this._prefix}/email/verify`, { token }, { skipAuth: true })
   }
 
   // ── The caller's own account — services ────────────────────────────
@@ -1655,7 +1655,7 @@ export class JunctionClient extends EventEmitter {
 
       // Not the first page: this row may belong before it, and putting it here
       // would push a row off the end that belongs here.
-      if (offset > 0) return stale.bump()
+      if (offset > 0) { stale.bump(); return }
 
       const cmp = orderOf()
       if (!cmp) {
@@ -1674,7 +1674,7 @@ export class JunctionClient extends EventEmitter {
         // one still applies at any page size; and a page that is not yet full
         // still appends, so the row the caller just created shows on the
         // ordinary short list.
-        if (limit !== null && store.get().length >= limit) return stale.bump()
+        if (limit !== null && store.get().length >= limit) { stale.bump(); return }
         store.upsert(record, key)
         return
       }
@@ -1719,16 +1719,19 @@ export class JunctionClient extends EventEmitter {
       if (answer === false) {
         // Out of the filter: not "do not add it" but "take it out" — a patch is
         // how a row leaves a list, and there is no removal event for that.
-        return drop(record, record?.[key])
+        drop(record, record?.[key])
+        return
       }
-      if (answer !== true) return refetch()
+      if (answer !== true) { refetch(); return }
 
       const present = store.get().some((r) => r[key] === record?.[key])
       // A row already on this page is this page's row whatever the paging says;
       // reposition it, since the patch may have moved its sort key.
       if (present) {
         const cmp = orderOf()
-        return cmp ? store.place(record, key, cmp) : store.upsert(record, key)
+        if (cmp) store.place(record, key, cmp)
+        else store.upsert(record, key)
+        return
       }
       insert(record)
     }
@@ -1836,7 +1839,8 @@ export class JunctionClient extends EventEmitter {
         // re-arms once, after.
         dropping = true
         try { for (const row of lapsed) drop(row, row[key]) } finally { dropping = false }
-        return regrade()
+        regrade()
+        return
       }
       if (soonest !== Infinity) {
         // setTimeout's ceiling is 2^31-1 ms; past it the timer fires at once.
@@ -2728,7 +2732,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
    * never passed through that check at all.
    */
   upsert(record: T, idField = 'id'): void {
-    if (!_hasId(record, idField)) return _warnNoId(idField)
+    if (!_hasId(record, idField)) { _warnNoId(idField); return }
     const rows = this.get()
     const idx  = rows.findIndex((r) => r[idField] === record[idField])
     this._replace(
@@ -2753,7 +2757,7 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
     cmp: (a: T, b: T) => number,
     max?: number
   ): void {
-    if (!_hasId(record, idField)) return _warnNoId(idField)
+    if (!_hasId(record, idField)) { _warnNoId(idField); return }
     const rest = this.get().filter((r) => r[idField] !== record[idField])
     let at = rest.findIndex((r) => cmp(record, r) < 0)
     if (at === -1) at = rest.length

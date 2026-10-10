@@ -6,9 +6,9 @@
 //   bun seed.ts --studio     (seed then open studio)
 
 import { createClient }    from '../src/index.js'
-import { parse, generateDDL, generateDDLForDatabase } from '../src/index.js'
+import { parse, generateDDLForDatabase } from '../src/index.js'
 import { splitStatements } from '../src/core/migrate.js'
-import { existsSync, unlinkSync, rmSync, mkdirSync, readFileSync } from 'fs'
+import { existsSync, unlinkSync, rmSync, readFileSync } from 'fs'
 import { Database } from 'bun:sqlite'
 
 const __dir      = import.meta.dir
@@ -217,7 +217,7 @@ console.log(`       errors (status >= 400): ${errors.length} — "${errors[0]?.e
 // createMany bypasses emitLogs, so we do a few targeted single-row ops here.
 
 // Single creates — each fires @@trail(audit) → auditTrail entry
-const auditUser1 = await sys.user.create({ data: {
+const _auditUser1 = await sys.user.create({ data: {
   id: 8, accountId: acme.id, email: 'audit1@acme.com',
   firstName: 'Audit', lastName: 'One', role: 'viewer', salary: 55000
 }})

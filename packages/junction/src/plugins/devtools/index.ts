@@ -106,7 +106,7 @@ export interface EventEntry {
 
 const DEFAULT_REDACT = ['password', 'token', 'secret', 'apikey', 'apiKey', 'authorization']
 
-function redactObj(
+function _redactObj(
   obj: Record<string, unknown> | null | undefined,
   fields: string[]
 ): Record<string, unknown> {
@@ -118,7 +118,7 @@ function redactObj(
   return out
 }
 
-function summarize(result: unknown): string {
+function _summarize(result: unknown): string {
   if (result === null || result === undefined) return 'null'
   if (typeof result !== 'object') return String(result)
   const r = result as Record<string, unknown>
@@ -191,7 +191,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
   const port       = opts.port       ?? 8503
   const hostname   = opts.hostname   ?? '127.0.0.1'
   const maxEntries = opts.maxEntries ?? 200
-  const redactKeys = [...DEFAULT_REDACT, ...(opts.redact ?? [])].map(k => k.toLowerCase())
+  const _redactKeys = [...DEFAULT_REDACT, ...(opts.redact ?? [])].map(k => k.toLowerCase())
   const isProd     = process.env.NODE_ENV === 'production'
   const isLoopback = LOOPBACK.has(hostname)
 
@@ -220,7 +220,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
   }
 
   let adminServer: ReturnType<typeof Bun.serve> | null = null
-  let appRef: import('../../core/app.ts').App | null = null
+  let _appRef: import('../../core/app.ts').App | null = null
   // Unsubscribe fns for every bus/telemetry/channel subscription made in
   // register() — drained by shutdown() so nothing outlives the plugin.
   const _unsubs: Array<() => void> = []
@@ -230,7 +230,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
     name: 'devtools',
 
     register(app: import('../../core/app.ts').App): void {
-      appRef = app
+      _appRef = app
 
       // ── Instrument all service calls via app.telemetry ──────────────
       // No longer uses an around hook — subscribes to the telemetry bus instead.
@@ -332,7 +332,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
         if (typeof u2 === 'function') _unsubs.push(u2)
       }
 
-      appRef = app
+      _appRef = app
     },
 
     // The server binds in ready(), not register(). `ready-hooks` is a
@@ -472,8 +472,8 @@ export function devtools(opts: DevtoolsOptions = {}) {
                 jobs: q.list({
                   queue:  p.get('queue')  || undefined,
                   status: p.get('status') || undefined,
-                  limit:  p.get('limit')  ? parseInt(p.get('limit')!)  : 50,
-                  offset: p.get('offset') ? parseInt(p.get('offset')!) : 0,
+                  limit:  p.get('limit')  ? parseInt(p.get('limit')!, 10)  : 50,
+                  offset: p.get('offset') ? parseInt(p.get('offset')!, 10) : 0,
                 }),
               })
             }
@@ -582,7 +582,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
 
       adminServer?.stop()
       adminServer = null
-      appRef = null
+      _appRef = null
     },
 
     writer,

@@ -673,7 +673,7 @@ function relay(run, box, e, source) {
   for (let n = at.parent; n && n !== box; n = n.parent) if (n[source]) { n[source](e); return }
 }
 
-const show = (n, on) => { if (n.visible !== on) n.visible = on }
+const _show = (n, on) => { if (n.visible !== on) n.visible = on }
 
 // ─── options ──────────────────────────────────────────────────────────
 

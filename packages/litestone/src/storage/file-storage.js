@@ -189,6 +189,7 @@ function isFileValue(v) {
 // string: a path or a control character in it would reach a download header.
 function displayName(raw) {
   if (typeof raw !== 'string') return undefined
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
   const name = raw.split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 255)
   return name || undefined
 }
@@ -432,12 +433,12 @@ class FileStoragePlugin extends ExternalRefPlugin {
       })
     }
 
-    // Which fields carry incoming file values? An array is never a file value
-    // itself, so a File[] field is picked by its items (FJS-2095).
-    const rawFields = Object.entries(fields).filter(([field, opts]) => {
-      const value = args.data[field]
-      return opts.isArray && Array.isArray(value) ? value.some(isFileValue) : isFileValue(value)
-    })
+    // Which fields does this write replace? An array is never a file value
+    // itself, so a File[] field is picked by being given at all: an update
+    // that only drops refs carries no file, and the dropped ones still need
+    // their cleanup stashed (FJS-2095, FJS-2315).
+    const rawFields = Object.entries(fields).filter(([field, opts]) =>
+      opts.isArray ? args.data[field] != null : isFileValue(args.data[field]))
     if (!rawFields.length) return
 
     // Stash old refs for cleanup after write — ONE combined SELECT for all

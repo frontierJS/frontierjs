@@ -28,7 +28,7 @@
 
 import { Script } from 'node:vm'
 import { readFileSync, existsSync, rmSync } from 'node:fs'
-import { resolve, join } from 'node:path'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 

@@ -15,14 +15,13 @@ import { generateDDL, isSoftDelete,
          isStrict }                   from '../src/core/ddl.js'
 import { splitStatements, introspect,
          buildPristine, diffSchemas,
-         generateMigrationSQL,
-         summarizeDiff }              from '../src/core/migrate.js'
+         generateMigrationSQL,}              from '../src/core/migrate.js'
 import { createClient, ValidationError } from '../src/core/client.js'
 import { AccessDeniedError }              from '../src/core/plugin.js'
 // The stored envelope is asserted by PARSING it rather than by a prefix
 // substring: the prefix moved once (`v1.` → `v2.<kid>.`, FJS-714) and every
 // one of these read as a green test against a format that no longer existed.
-import { parseEnvelope, keyId }           from '../src/core/encryption.js'
+import { parseEnvelope }           from '../src/core/encryption.js'
 import { buildWhere, buildOrderBy, sql, now, schemaRaw,
          encodeCursor, decodeCursor,
          normalizeOrderBy, buildCursorWhere,
@@ -1818,7 +1817,6 @@ describe('status() — sql field', () => {
     )
     // Create a temp migrations dir with one file
     const { join } = await import('path')
-    const { tmpdir } = await import('os')
     const { mkdirSync, writeFileSync } = await import('fs')
     const { status } = await import('../src/core/migrations.js')
 
@@ -1837,7 +1835,6 @@ describe('status() — sql field', () => {
   test('orphaned rows have sql: null', async () => {
     const { db } = await makeTestClient(`model T { id Int @id }`)
     const { join } = await import('path')
-    const { tmpdir } = await import('os')
     const { mkdirSync, writeFileSync, unlinkSync } = await import('fs')
     const { status, apply } = await import('../src/core/migrations.js')
 
@@ -6229,6 +6226,54 @@ describe('raw SQL and the access rules it cannot enforce', () => {
     open.$close()
   })
 
+  test('sql.read runs a stored statement read-only — a CTE that deletes is refused', async () => {
+    // FJS-2412: a stored report opening WITH routes to the writer by its first
+    // word, and `WITH x AS (…) DELETE` writes. `read` takes the text and params a
+    // report is stored as and refuses any statement that writes.
+    const open = await makeDb(`model Item { id Int @id  n Int }`, 'raw-sql-read')
+    const sys  = open.asSystem()
+    await sys.item.createMany({ data: [{ id: 1, n: 1 }, { id: 2, n: 5 }] })
+
+    const rows = await sys.sql.read('WITH big AS (SELECT id FROM item WHERE n > ?) SELECT id FROM big', [3])
+    expect(rows.map((r: any) => r.id)).toEqual([2])
+    expect((await sys.sql.read`SELECT id FROM item WHERE n < ${3}`).map((r: any) => r.id)).toEqual([1])
+
+    let err: any = null
+    try { await sys.sql.read('WITH big AS (SELECT id FROM item WHERE n > ?) DELETE FROM item WHERE id IN (SELECT id FROM big)', [3]) } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).toContain('sql.read')
+    expect((await sys.sql`SELECT id FROM item`).length).toBe(2)
+
+    // The refusal does not leave the writer read-only.
+    await sys.item.create({ data: { id: 3, n: 9 } })
+    expect((await sys.sql`SELECT id FROM item`).length).toBe(3)
+    open.$close()
+  })
+
+  test('sql.read inside a transaction sees its own writes and still refuses a write', async () => {
+    const open = await makeDb(`model Item { id Int @id  n Int }`, 'raw-sql-read-tx')
+    const sys  = open.asSystem()
+    await sys.$transaction(async (tx: any) => {
+      await tx.item.create({ data: { id: 1, n: 1 } })
+      expect((await tx.sql.read`SELECT id FROM item`).length).toBe(1)
+      let err: any = null
+      try { await tx.sql.read('WITH x AS (SELECT 1) DELETE FROM item') } catch (e) { err = e }
+      expect(err).not.toBeNull()
+      await tx.item.create({ data: { id: 2, n: 2 } })
+    })
+    expect((await sys.sql`SELECT id FROM item`).length).toBe(2)
+    open.$close()
+  })
+
+  test('sql.read is raw SQL, so a schema with access rules refuses it off asSystem()', async () => {
+    const g = await makeDb(`model P { id Int @id  secret String @guarded }`, 'raw-sql-read-guarded')
+    let err: any = null
+    try { await g.sql.read`SELECT secret FROM p` } catch (e) { err = e }
+    expect(err).not.toBeNull()
+    expect(String(err.message)).toContain('asSystem')
+    g.$close()
+  })
+
   test('@guarded alone is enough to trigger it', async () => {
     // Each declaration family is its own reason. A schema whose only rule is a
     // withheld column still must not hand that column over raw.
@@ -6732,7 +6777,7 @@ describe('@secret field attribute', () => {
 // ─── 19b. onLog callback ──────────────────────────────────────────────────────
 
 describe('onLog callback', () => {
-  const ENC_KEY = 'a'.repeat(64)
+  const _ENC_KEY = 'a'.repeat(64)
 
   // Schema with a trail db, a @trail field, and a @@trail model
   const LOG_SCHEMA = `
@@ -7844,7 +7889,6 @@ describe('@@allow / @@deny row-level policies', () => {
   })
 
   test('@@allow create — blocks unauthenticated', async () => {
-    const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeDb(`
       model Post {
         id    Int @id
@@ -8617,7 +8661,6 @@ describe('GatePlugin', () => {
   // ── LOCKED and SYSTEM sentinels ─────────────────────────────────────────────
 
   test('LOCKED(8) blocks even highest user level', async () => {
-    const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model AuditLog {
         id Int @id
@@ -8630,7 +8673,6 @@ describe('GatePlugin', () => {
   })
 
   test('SYSTEM(8) blocks normal users, passes asSystem()', async () => {
-    const { AccessDeniedError } = await import('../src/core/plugin.js')
     const db = await makeGateDb(`
       model AuditLog {
         id Int @id
@@ -10447,7 +10489,7 @@ describe('event listeners (on.*)', () => {
     `, 'evt-timing', {
       onEvent: { create: () => timeline.push('event') }
     })
-    const row = await db.t.create({ data: { id: 1, val: 'x' } })
+    const _row = await db.t.create({ data: { id: 1, val: 'x' } })
     timeline.push('after-await')
     await Bun.sleep(20)
     expect(timeline[0]).toBe('after-await')  // caller gets result first
@@ -11204,7 +11246,6 @@ describe('enum transitions — enforcement', () => {
       const { splitStatements } = await import('../src/core/migrate.js')
       const { Database } = await import('bun:sqlite')
       const { join } = await import('path')
-      const { tmpdir } = await import('os')
       const { mkdirSync } = await import('fs')
       const dir = tmpSub('tx-event-')
       mkdirSync(dir, { recursive: true })
@@ -11628,7 +11669,7 @@ model M {
 
 // ─── Lock primitive ───────────────────────────────────────────────────────────
 
-import { LockNotAcquiredError, LockReleasedByOtherError, LockExpiredError }
+import { LockNotAcquiredError }
   from '../src/core/client.js'
 
 const LOCK_SCHEMA = `model Thing { id Int @id; name String }`
@@ -11958,7 +11999,7 @@ describe('lock primitive — $locks.list', () => {
 describe('lock primitive — _locks table auto-created', () => {
   test('_locks table does not exist before first use', async () => {
     const { db } = await makeTestClient(LOCK_SCHEMA)
-    const tables = db.$db.prepare(
+    const _tables = db.$db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='_locks'"
     ).all()
     // Not created yet — no $lock call
@@ -12649,7 +12690,7 @@ describe('Factory — withRelation', () => {
   let db: any
   let accounts: AccountFactory
   let users: UserFactory
-  let posts: PostFactory
+  let _posts: PostFactory
 
   beforeEach(async () => {
     const result = await makeTestClient(FACTORY_SCHEMA, {
@@ -12658,13 +12699,13 @@ describe('Factory — withRelation', () => {
     db = result.db
     accounts = result.factories.account as AccountFactory
     users    = result.factories.user    as UserFactory
-    posts    = result.factories.post    as PostFactory
+    _posts    = result.factories.post    as PostFactory
   })
   afterEach(() => db.$close())
 
   test('withRelation auto-creates parent and injects FK', async () => {
     // Make account first for the user FK
-    const acct = await accounts.createOne()
+    const _acct = await accounts.createOne()
     const user = await users.withRelation('account', accounts, 'accountId').createOne()
     expect(user.accountId).toBeDefined()
     const acctExists = await db.account.findUnique({ where: { id: user.accountId } })
@@ -13357,7 +13398,7 @@ import { generateFactory, generateGateMatrix, generateValidationCases, factoryFr
          deriveAccess, renderAccessSnapshot, gateLadder, policyExprToString,
          expectedVerdict, REACHABLE_LEVELS, createTestEnv, readOnly, sampleWrites }
   from '../src/testing.js'
-import { GatePlugin, LEVELS, levelPasses } from '../src/plugins/gate.js'
+import { levelPasses } from '../src/plugins/gate.js'
 import { Plugin } from '../src/core/plugin.js'
 import { _resetTemplates }       from '../src/testdb.js'
 import { DEFAULT_MESSAGES }      from '../src/core/validate.js'
@@ -13693,7 +13734,7 @@ describe('generateFactory', () => {
   })
 
   test('@secret included (ORM encrypts on write)', () => {
-    const ENC = 'c'.repeat(64)
+    const _ENC = 'c'.repeat(64)
     const { schema: s } = parse(`model T { id Int @id; token String @secret }`)
     const row = generateFactory(s, 'T')(1, null)
     // @secret field is present — value generated like any String field
@@ -14936,8 +14977,8 @@ describe('createTestEnv', () => {
     const env = await createTestEnv({ schema: ENV_SCHEMA })
     const read = readOnly(env.db)
 
-    for (const escape of ['asSystem', 'sql', '$setAuth', '$rawDbs', '$transaction'])
-      expect(() => read[escape]).toThrow(`readOnly: ${escape} is not available`)
+    for (const name of ['asSystem', 'sql', '$setAuth', '$rawDbs', '$transaction'])
+      expect(() => read[name]).toThrow(`readOnly: ${name} is not available`)
 
     env.close()
   })
@@ -15589,7 +15630,7 @@ describe('createTestEnv', () => {
 
     // Scenario one dirties the database.
     const a = env.phases()
-    await a.act(async ({} = {}) => env.system.account.create({ data: { id: 8, name: 'junk' } }))
+    await a.act(async () => env.system.account.create({ data: { id: 8, name: 'junk' } }))
     expect(await env.system.account.count()).toBe(2)
 
     // Scenario two must not see it, and must still see the fixture — with the
@@ -16172,7 +16213,7 @@ describe('generateTypeScript', () => {
 
 // ─── Enum transitions ─────────────────────────────────────────────────────────
 
-import { TransitionViolationError, TransitionConflictError, TransitionNotFoundError }
+import { TransitionConflictError, TransitionNotFoundError }
   from '../src/core/client.js'
 
 const TRANSITION_SCHEMA = `
@@ -23244,7 +23285,7 @@ describe('co-FK propagation — nested create', () => {
   })
 
   test('nested account.create propagates tenantId from parent (1 level)', async () => {
-    const t = await db.tenant.findUnique({ where: { id: 1 } })
+    const _t = await db.tenant.findUnique({ where: { id: 1 } })
     // Create an account nested inside tenant — this is a hasMany create from
     // the tenant side. Account must inherit tenantId without us specifying it.
     await db.tenant.update({
@@ -23977,7 +24018,7 @@ model Tag    { id Int @id; label String; authors Author[] }`
     db = await createClient({ schema: SCHEMA, db: ':memory:' })
     const a1 = await db.author.create({ data: { name: 'Ann' } })
     const a2 = await db.author.create({ data: { name: 'Bo' } })
-    const a3 = await db.author.create({ data: { name: 'Cy' } })   // no posts
+    const _a3 = await db.author.create({ data: { name: 'Cy' } })   // no posts
     await db.post.createMany({ data: [
       { authorId: a1.id, title: 'p1', published: true },
       { authorId: a1.id, title: 'p2', published: false },

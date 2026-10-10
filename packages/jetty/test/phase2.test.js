@@ -65,12 +65,12 @@ function mockStorage() {
 function mockAdapter({ schemaVersion = null, schema = null, services = {}, autoConnect = true } = {}) {
   let connected = autoConnect
   let token = null
-  let url = null
+  let _url = null
   const subs   = new Map()
   const events = { connect: new Set(), disconnect: new Set(), reconnect: new Set(), error: new Set() }
   const calls  = []
   return {
-    async connect(opts = {}) { connected = true; url = opts.url; token = opts.token ?? null; for (const fn of events.connect) fn() },
+    async connect(opts = {}) { connected = true; _url = opts.url; token = opts.token ?? null; for (const fn of events.connect) fn() },
     async disconnect()       { connected = false; for (const fn of events.disconnect) fn() },
     isConnected()            { return connected },
     async setToken(t)        { token = t },
@@ -112,7 +112,7 @@ group('adapter contract')
 
   // Non-object
   try { validateAdapter(null); bad('validateAdapter accepted null') }
-  catch (e) { ok('validateAdapter rejects null') }
+  catch (_e) { ok('validateAdapter rejects null') }
 }
 
 // --- schema cache ---
@@ -221,7 +221,7 @@ group('auth flow')
       'auth.login': async () => ({ user: { id: 1 } }), // missing token
     })
     try { await auth.login({}); bad('login should throw on missing token') }
-    catch (e) { ok('login throws on missing token in response') }
+    catch (_e) { ok('login throws on missing token in response') }
   }
 
   // A login that owes a second factor. Nothing is stored, nothing is upgraded,
@@ -343,12 +343,12 @@ group('auth flow')
 
 group('message routing')
 {
-  const { defineHarbor, handleConnect } = await import('../src/define/harbor.js')
+  const { handleConnect } = await import('../src/define/harbor.js')
   const { makeHarborRegistry } = await import('../src/runtime/harbor-registry.js')
   const { PROTOCOL_VERSION } = await import('../src/runtime/protocol.js')
 
   // Simulate a connected port + a fake bootContext
-  function setup(services = {}) {
+  function _setup(services = {}) {
     const adapter = mockAdapter({ services })
     const storage = mockStorage()
     const { makePagesApi } = require0('runtime/harbor-registry.js') // helper below
@@ -531,7 +531,7 @@ group('PagePort.request')
   {
     const inert = new PagePort({ type: 'dock', id: 'dock', runtime: null })
     try { await inert.request('x'); bad('inert request should reject') }
-    catch (e) { ok('request rejects when no runtime') }
+    catch (_e) { ok('request rejects when no runtime') }
   }
 }
 

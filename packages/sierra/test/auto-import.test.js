@@ -6,7 +6,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { mkdir, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
-import { dirname, resolve } from 'path'
+import { dirname } from 'path'
 
 import { injectAutoImports, autoImportPlugin, normalizeModules } from '../src/build/auto-import-plugin.js'
 

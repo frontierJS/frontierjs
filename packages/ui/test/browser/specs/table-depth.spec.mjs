@@ -54,11 +54,17 @@ export async function run(t) {
   await t.eventually(`document.querySelectorAll('#reported thead th')[0].getAttribute('aria-sort')`, 'none',
     'and marks nothing else')
 
-  await t.clickAt('#push-indexed')
+  await t.clickAt('#push-array')
   await t.eventually(`document.querySelectorAll('#reported thead th')[0].getAttribute('aria-sort')`, 'ascending',
-    'a bracket-indexed ordering names its column rather than the index')
+    'an array ordering names its first column')
   await t.eventually(`document.querySelectorAll('#reported thead th')[2].getAttribute('aria-sort')`, 'none',
     'and the column the previous push marked is released')
+
+  // `k[0]` names a member, so the Data boundary reads this as a column called 0
+  // and refuses it; the header must not mark the column it nests (FJS-2465).
+  await t.clickAt('#push-indexed')
+  await t.eventually(`document.querySelectorAll('#reported thead th')[0].getAttribute('aria-sort')`, 'none',
+    'a bracket-indexed ordering marks no real column, as the boundary reads it')
 
   // A `hideLabel` column. An actions column with a bare <th> leaves a screen
   // reader saying nothing for a column that has a control in every row, and a

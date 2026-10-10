@@ -183,6 +183,7 @@ describe('a destination is graded before anything is sent', () => {
     const bad  = await request(app).post('/webhooks').auth(tok).send({ url: 'http://169.254.169.254/', events: ['*'] })
     const good = await request(app).post('/webhooks').auth(tok).send({ url: 'http://93.184.216.34/h', events: ['*'] })
     expect(bad.status).toBe(400)
+    expect(JSON.stringify(bad.body)).toContain('private address')
     expect(good.status).toBe(201)
   })
 

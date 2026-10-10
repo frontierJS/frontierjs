@@ -11,7 +11,7 @@
  * - Trailing slash always appended (configurable)
  */
 
-import { dirname, basename, extname, join, relative, resolve } from 'path'
+import { dirname, basename, extname, relative, resolve } from 'path'
 import { readFrontmatter } from './parse-frontmatter.js'
 import { importFresh } from './import-fresh.js'
 import {
@@ -370,7 +370,7 @@ function resolveLayout(file, routesDir, layoutMap) {
  */
 function buildTreeFromEntries(entries, routesDir, layoutMap, trailingSlash) {
   // Root node — corresponds to the routes directory itself
-  const rootLayout = layoutMap.get(routesDir) ?? null
+  const _rootLayout = layoutMap.get(routesDir) ?? null
 
   const root = {
     id: 'root',

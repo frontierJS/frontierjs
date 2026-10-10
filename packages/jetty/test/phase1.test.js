@@ -46,7 +46,7 @@ function mockPort(name) {
   return port
 }
 
-function mockRuntime() {
+function _mockRuntime() {
   const onConnectListeners = []
   return {
     id: 'mock-extension-id',
@@ -263,7 +263,7 @@ group('page-port')
     const originalLocation = globalThis.location
     globalThis.location = { reload() { reloaded++ } }
 
-    const port2 = new PagePort({ type: 'dock', id: 'dock', runtime })
+    const _port2 = new PagePort({ type: 'dock', id: 'dock', runtime })
     const port2_underlying = lastPort
     port2_underlying._emitMessage({ type: 'protocol:upgrade', payload: {} })
     if (reloaded === 1) ok('protocol:upgrade triggers location.reload')

@@ -113,6 +113,10 @@ describe('the check gate', () => {
     expect(withTests.test).toBe('bun test api/test')
     expect(withTests.check.endsWith('&& bun run test')).toBe(true)
     expect(withTests.check.indexOf('fli check')).toBe(0)
+    // The scaffolded test types its tables off the generated db/schema.d.ts
+    // (FJS-1125), so the typecheck that reads it writes it first.
+    expect(withTests.typecheck).toBe('bun run db:types && fli typecheck')
+    expect(scripts.typecheck).toBe('fli typecheck')
   })
 
   test('fli is a dependency, so the gate runs on a fresh clone', () => {

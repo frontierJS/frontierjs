@@ -16,7 +16,6 @@
 
 import { resolve, dirname, isAbsolute } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { createRequire } from 'module'
 import { gzipSync } from 'zlib'
 import { pathToFileURL } from 'url'
 import { diffSchemaModes } from '../resource/schema-registry.js'

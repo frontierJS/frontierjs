@@ -50,7 +50,7 @@ import { createService, BadRequest, Conflict, Forbidden, NotFound, $ } from '@fr
 import { LEVELS }                  from '@frontierjs/litestone'
 import { getPagination }           from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
-import { db, slugify } from '../../core/resource.ts'
+import { slugify } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 // ─── Vocabularies ─────────────────────────────────────────────────────────

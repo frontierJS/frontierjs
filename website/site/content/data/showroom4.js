@@ -141,7 +141,7 @@ export const PHASES = [
       ['m','# description: Email the weekly rollup'],
       ['m','# flags: { since: { type: string } }'],
       ['m','# ---'],
-      ['m','# <script> … <\/script>'],
+      ['m','# <script> … </script>'],
       ['m',''],
       ['c','fli reports:weekly --since 7d'],
       ['m',''],

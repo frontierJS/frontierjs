@@ -360,7 +360,7 @@ check('…offering the types the schema accepts',
 check('…and an alt-text box beside it, because the column is required',
       await evaluate(`!!document.querySelector('[data-add-photo-panel] [name="alt"]')`), true)
 
-const swatchesBefore = await evaluate(`document.querySelectorAll('.swatch').length`)
+const _swatchesBefore = await evaluate(`document.querySelectorAll('.swatch').length`)
 
 // A File cannot be put on an <input type="file"> by assignment — the list is
 // read-only except through a DataTransfer, which is also what a real drop

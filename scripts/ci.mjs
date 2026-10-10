@@ -190,7 +190,7 @@ let currentPhase = null
 // deploy through a twenty-minute run to reach a three-minute phase is how people
 // learn to stop running CI at all.
 const PHASES = {
-  hygiene, structure, registers, snapshots, access, coverage,
+  hygiene, lint, structure, registers, snapshots, access, coverage,
   registry, advisories, scaffold, typecheck, deploy, mutate, tutor, tests,
 }
 
@@ -955,6 +955,29 @@ function coverage() {
   if (clean(from)) ok(`${workspaceDirs().length} workspace member(s), ${Object.keys(exempt).length} exempt by name`)
 }
 
+// ─── phase 1b · lint ────────────────────────────────────────
+// Biome over the whole tree with the rule set apps extend (biome.json at the
+// root extends @frontierjs/config), warnings failing too: a warning this phase
+// tolerated is a count that grows until someone raises the bar.
+
+function lint() {
+  phase('lint')
+
+  const bin = join(ROOT, 'node_modules', '.bin', 'biome')
+  if (!existsSync(bin)) {
+    fail('biome is not installed — run `bun install` at the root')
+    return
+  }
+
+  const at  = Date.now()
+  const run = spawnSync(bin, ['lint', '--error-on-warnings', '--max-diagnostics=25'], { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER })
+  if (run.status !== 0) {
+    fail(`biome lint exited ${run.status}`, { stdout: run.stdout, stderr: run.stderr })
+    return
+  }
+  ok('biome lint', Date.now() - at)
+}
+
 // ─── phase 7 · typecheck ────────────────────────────────────
 // Two halves: the direction of the ratchet (a git question) and the count
 // itself (each package's own script already answers that, and exits 1 above
@@ -1156,7 +1179,7 @@ async function registry() {
     const spec = `${name}@${version}`
     if (spec in knownSchemas) excused.add(spec)
     if (faults.length && spec in knownSchemas) {
-      for (const [target, why] of faults) note(`${spec} ships ${target} and it does not parse — known: ${knownSchemas[spec]}`)
+      for (const [target, _why] of faults) note(`${spec} ships ${target} and it does not parse — known: ${knownSchemas[spec]}`)
       warn(`${spec} ships a schema that does not parse (known)`)
       continue
     }

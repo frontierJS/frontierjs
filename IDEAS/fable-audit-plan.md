@@ -1,12 +1,12 @@
 ---
 id: fable-audit-plan
-status: partial
+status: shipped
 dated: 2026-10-05
 ---
 
 # Idea — The Fable 5 audit plan: what is still unread, and how each run reports
 
-**Status: 10 of 17 runs reported** (1.1, 1.2, 1.3, 2.2, 3.1, 4.1 on 2026-10-05; 1.4, 1.5, 4.3 and 5.2 on 2026-10-10). Open: 2.1, 2.3, 2.4, 3.2, 4.2, 4.4, 5.1. Findings so far are `FJS-1816`–`1820`, `FJS-1831`–`1876`, `FJS-2334`–`2378` (less the litestone ids another session filed in between); questions `FJS-D615`–`D619`, `FJS-D861`. Which run filed a row is in the row (*Fable audit 2026-10-05, run N.N*). Dated 2026-10-05. A queue of audits to run
+**Status: all 17 runs reported** (1.1, 1.2, 1.3, 2.2, 3.1, 4.1 on 2026-10-05; the other eleven on 2026-10-10). Nothing open; a re-run is a new plan. Findings so far are `FJS-1816`–`1820`, `FJS-1831`–`1876`, `FJS-2334`–`2468` (less the ids another session filed in between); questions `FJS-D615`–`D619`, `FJS-D861`, `FJS-D863`–`D871`. Run 2.4 landed the `doc-examples-run` rule; run 4.2's draft is `IDEAS/spec-directives.md`; run 5.1's removable-workaround list is in `IDEAS/conversion-maid-tech.md`. Which run filed a row is in the row (*Fable audit 2026-10-05, run N.N*). Dated 2026-10-05. A queue of audits to run
 on Fable 5 (`claude-fable-5-1`), ordered by unaudited risk first and judgment-heavy
 work second. A finding lands in `ISSUES.md` with an id. This file stays the plan, and
 it is not a register.

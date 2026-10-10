@@ -209,6 +209,8 @@ export const RULES = [
     title: 'every seam the skill explains is named in CLAUDE.md\'s key list' },
   { id: 'threat-row',           scope: 'repo', severity: 'error', invariant: null,
     title: 'every THREATS.md row names a test that is in the tree' },
+  { id: 'doc-examples-run',     scope: 'repo', severity: 'warn',  invariant: 16,
+    title: 'a package whose docs fence a runnable example has a suite that runs it' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
@@ -1496,6 +1498,7 @@ const CHECKS = {
         else if (!consts.has(m[1]))                        consts.set(m[1], m[3])
       }
     }
+    // biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
     const valueOf = (token) => {
       const t   = token.trim()
       const lit = t.match(/^(['"`])([^'"`]*)\1$/)
@@ -1557,7 +1560,7 @@ const CHECKS = {
     const files = scripts(root, 'api').filter(p => /\.service\.[cm]?[jt]s$/.test(basename(p)))
     if (!files.length) return { skipped: 'no *.service.* under api/' }
 
-    const { resolves, modelNamed } = modelResolver(schema, root)
+    const { resolves } = modelResolver(schema, root)
 
     const findings = []
     for (const path of files) {
@@ -2713,6 +2716,57 @@ const CHECKS = {
     }
 
     if (!looked) return { skipped: 'no package hand-lists its test files' }
+    return { findings }
+  },
+
+  // Invariant 16 says a runnable example is verified, and the only grader a
+  // hand-written page had was a link check — litestone's 2026-10-09 docs audit
+  // found 17 examples that failed as written, each green for months (FJS-D860).
+  // The fence contract is package-neutral: a ```lite, ```js, ```ts or ```mesa
+  // block runs unless its info string says `fragment`. What runs it is the
+  // package's own suite, because only the package can supply the prelude a
+  // block needs — a client built from the nearest schema, a compiled
+  // component — so this grades the WIRING and never the verdict: a package
+  // fencing an unmarked runnable block has `test/doc-examples.test.*`, and a
+  // test script that reaches it (FJS-2331).
+  //
+  // `packages/cli/commands/**` is never read: a `.md` there is a command.
+  'doc-examples-run': ({ root }) => {
+    const pkgs = []
+    for (const name of safeRead(join(root, 'packages'))) {
+      const dir = join(root, 'packages', name)
+      if (existsSync(join(dir, 'package.json'))) pkgs.push(dir)
+    }
+    if (!pkgs.length) return { skipped: 'no packages/' }
+
+    const findings = []
+    for (const dir of pkgs) {
+      const blocks = runnableFences(dir)
+      if (!blocks.length) continue
+
+      const runner = ['ts', 'js', 'mjs'].map(ext => join(dir, 'test', `doc-examples.test.${ext}`)).find(existsSync)
+      let pkg = {}
+      try { pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch {}
+      const bodies = Object.entries(pkg.scripts ?? {})
+        .filter(([name]) => /^test(:|$)/.test(name) && !name.endsWith(':watch'))
+        .map(([, body]) => body)
+      const walks = bodies.some(b => /\bbun\s+test\b/.test(b) && !/[\w.-]+\.[cm]?[jt]s\b/.test(b))
+      const runs  = runner && (walks || bodies.some(b => b.includes('doc-examples.test')))
+      if (runs) continue
+
+      const langs = [...new Set(blocks.map(b => b.lang))].join(', ')
+      const files = [...new Set(blocks.map(b => b.file))]
+      findings.push({
+        file: join(dir, files.length === 1 ? files[0] : 'package.json'),
+        message: runner
+          ? `test/${basename(runner)} exists and no test script runs it — ${blocks.length} runnable fence(s) ` +
+            `(${langs}) across ${files.length} file(s) are graded by nothing.`
+          : `${blocks.length} runnable fence(s) (${langs}) across ${files.length} doc file(s) and no ` +
+            `test/doc-examples.test.* to run them. A fenced example nothing executes is a sketch wearing ` +
+            `an example's clothes; litestone's runner is the shape (FJS-D860). Mark a sliver \`fragment\` ` +
+            `on its info string, and run the rest.`,
+      })
+    }
     return { findings }
   },
 
@@ -4460,6 +4514,42 @@ function walk(dir, depth, fn) {
 
 function safeRead(dir) {
   try { return readdirSync(dir) } catch { return [] }
+}
+
+// The fence tags a doc-example runner executes (FJS-D860), by the names the
+// pages use for them; `prisma` is deliberately absent — litestone's language
+// is fenced ```lite, and a `prisma` block is an unverified one.
+const RUNNABLE_FENCE = new Set(['lite', 'js', 'javascript', 'mjs', 'ts', 'typescript', 'mesa'])
+
+/** A package's hand-written docs: the three root files plus everything under docs/. */
+function docPages(dir) {
+  const out = ['README.md', 'AGENTS.md', 'CLAUDE.md'].filter(f => existsSync(join(dir, f)))
+  walk(join(dir, 'docs'), 6, d => {
+    for (const name of safeRead(d))
+      if (name.endsWith('.md') && !name.includes('.snapshot.')) out.push(relative(dir, join(d, name)))
+  })
+  return out
+}
+
+/** Every runnable fence in a package's docs not marked `fragment`, as `{ file, line, lang }`. */
+function runnableFences(dir) {
+  const out = []
+  for (const file of docPages(dir)) {
+    let text
+    try { text = readFileSync(join(dir, file), 'utf8') } catch { continue }
+    const lines = text.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^\s*(`{3,}|~{3,})([\w+-]*)\s*(.*)$/)
+      if (!m) continue
+      const [, fence, lang, info] = m
+      let j = i + 1
+      while (j < lines.length && !lines[j].trim().startsWith(fence.slice(0, 3))) j++
+      const words = info.split(/\s+/).filter(Boolean)
+      if (RUNNABLE_FENCE.has(lang.toLowerCase()) && !words.includes('fragment')) out.push({ file, line: i + 1, lang: lang.toLowerCase() })
+      i = j
+    }
+  }
+  return out
 }
 
 function mesaUnder(dir) {

@@ -1,4 +1,4 @@
-import type { Expression, PipeStep, PredicateNode } from "../types"
+import type { Expression, PipeStep } from "../types"
 import { answerPredicate } from "./text"
 
 // ─────────────────────────────────────────────
@@ -111,7 +111,7 @@ const BUILTINS: Record<string, BuiltinFn> = {
   },
   keys:   (a) => Object.keys(a   as object),
   values: (a) => Object.values(a as object),
-  has:    (a, b) => Object.prototype.hasOwnProperty.call(a, b as string),
+  has:    (a, b) => Object.hasOwn(a as object, b as string),
 
   // Type
   isNull:   (a) => a == null,

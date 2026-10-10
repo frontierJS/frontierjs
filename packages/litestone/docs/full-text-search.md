@@ -11,7 +11,9 @@ model Message {
   title     String?
   body      String
   createdAt DateTime @default(now())
+  deletedAt DateTime?
 
+  @@softDelete
   @@fts([body, title])
   @@index([userId])
 }
@@ -24,6 +26,9 @@ Litestone creates:
 ## search()
 
 ```js
+await db.message.create({ data: { id: 1, userId: 1, title: 'important', body: 'hello world invoice' } })
+await db.message.create({ data: { id: 2, userId: 2, body: 'hello goodbye' } })
+
 // Basic full-text search
 const results = await db.message.search('hello world')
 
@@ -43,6 +48,8 @@ const highlighted = await db.message.search('hello', {
 const snippets = await db.message.search('hello', {
   snippet: { field: 'body', length: 64 }
 })
+
+if (results.length !== 1 || filtered.length !== 1 || highlighted[0]._highlight !== '<mark>hello</mark> goodbye' || !snippets[0]._snippet) throw new Error('search changed')
 ```
 
 Results are ordered by FTS5 rank (relevance) by default, and each row carries
@@ -65,9 +72,14 @@ The index mirrors the table — soft-deleted rows stay in it, and `search()` is
 what decides they are not visible:
 
 ```js
-await db.message.search('invoice')                        // live rows
-await db.message.search('invoice', { withDeleted: true })  // live + deleted
-await db.message.search('invoice', { onlyDeleted: true })  // deleted only
+await db.message.create({ data: { id: 1, userId: 1, body: 'invoice paid' } })
+await db.message.create({ data: { id: 2, userId: 1, body: 'invoice void' } })
+await db.message.remove({ where: { id: 2 } })
+
+const live    = await db.message.search('invoice')                        // live rows
+const all     = await db.message.search('invoice', { withDeleted: true })  // live + deleted
+const deleted = await db.message.search('invoice', { onlyDeleted: true })  // deleted only
+if (live.length !== 1 || all.length !== 2 || deleted.length !== 1) throw new Error(`${live.length} ${all.length} ${deleted.length}`)
 ```
 
 `where`, the soft-delete filter and `@@hasTemplates` all narrow **before** the
@@ -82,19 +94,21 @@ indexed row it corrupts without a word. One filter, in one place.
 ## FTS5 query syntax
 
 ```js
+await db.message.create({ data: { id: 1, userId: 1, title: 'important', body: 'hello world' } })
+
 // Phrase search
-db.message.search('"hello world"')
+await db.message.search('"hello world"')
 
 // Prefix search
-db.message.search('hel*')
+await db.message.search('hel*')
 
 // Boolean operators
-db.message.search('hello AND world')
-db.message.search('hello OR goodbye')
-db.message.search('hello NOT spam')
+await db.message.search('hello AND world')
+await db.message.search('hello OR goodbye')
+await db.message.search('hello NOT spam')
 
 // Column-specific search (when multiple columns in @@fts)
-db.message.search('body: hello title: important')
+await db.message.search('body: hello title: important')
 ```
 
 ## Maintaining the index
@@ -102,7 +116,7 @@ db.message.search('body: hello title: important')
 FTS5 indexes can fragment over time. Periodically merge segments for optimal performance:
 
 ```js
-await db.message.optimizeFts()
+await db.message.optimizeFts()   // → { optimized: true, table: 'message_fts' }
 ```
 
 ```bash
@@ -117,20 +131,21 @@ Best run as a scheduled job (weekly or after large bulk imports).
 Query a FTS5 virtual table you manage yourself:
 
 ```lite
-model search_index {
+model SearchIndex {
   rowid Int @id
   title String
   body  String
   @@external
+  @@map("search_index")
   @@fts([title, body])
 }
 ```
 
-Litestone will not create the virtual table or triggers — it only exposes `search()` on it.
+Litestone will not create the virtual table or triggers — it only exposes `search()` on it, as `db.searchIndex.search()`.
 
 ## Notes
 
-- FTS5 is always case-insensitive for ASCII (configurable with `tokenize` options via `@@fts`)
+- FTS5 is always case-insensitive for ASCII; `@@fts([…], tokenize: porter)` picks the tokenizer — `unicode61` (the default), `ascii`, `porter` or `trigram`. A trigram index matches nothing for a term under three characters (`FJS-2332`)
 - Soft-deleted rows are excluded from search results automatically
 - Row-level policies apply to search results — filtered in SQL, not JS
 - FTS index is updated synchronously via triggers on every write

@@ -10,7 +10,7 @@
 // the workspace source must be what these tests run against.
 
 import { singularize } from '@frontierjs/toolbelt/inflect'
-import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
+import { test, expect, describe, afterAll } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -749,7 +749,8 @@ describe('the gate ladder', () => {
         @@gate("5.5.5.5")
       }
     `
-    const db = await createClient({ schema: gatedSchema, db: ':memory:' })
+    // Not the app's schema, so not the client the generated file registers.
+    const db = await createClient<any>({ schema: gatedSchema, db: ':memory:' })
     await expect(db.$setAuth({ userId: 'u1', role: 'admin' }).thing.findMany({ limit: 1 }))
       .rejects.toThrow(/ACCESS_DENIED|requires level/)
     db.$close()

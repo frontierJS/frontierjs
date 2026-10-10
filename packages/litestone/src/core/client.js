@@ -21,7 +21,7 @@ import {
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
   aggregatableKeysFor, LIKE_SQL, likePattern, inList,
-  sqlFragment, ident, and, join as sqlJoin, pageSql,
+  sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { validate, applyTransforms, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
@@ -730,6 +730,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   function parentRows(sink, references, values) {
+    // biome-ignore lint/suspicious/noDoubleEquals: a key arrives as text or a number depending on the caller; SQLite compares them by affinity
     return sink.rowsWhere(references[0], [values[0]]).filter(r => references.every((f, j) => r[f] == values[j]))
   }
 
@@ -2640,7 +2641,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // ── $merge, ahead of everything ──────────────────────────────────────
       // It has to be read before the ALL_OPS bail (it is not in that list) and
       // before the Json skip below (which is the whole reason it exists).
-      if (Object.prototype.hasOwnProperty.call(val, MERGE_OP)) {
+      if (Object.hasOwn(val, MERGE_OP)) {
         const mf = _fieldsByName.get(key)
         if (!mf) {
           const dot  = key.indexOf('.')
@@ -2852,6 +2853,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       column:      ext.column,
       mirror:      `${ext.column}Slots`,
       declaredBy:  ext.declaredBy,
+      scope:       ext.scope ?? null,
       declTable:   decl ? modelToTableName(decl, ctx.pluralize ?? false) : null,
       kindOf:      (k) => (numeric.has(k) ? 'number' : 'text'),
     }
@@ -2894,18 +2896,24 @@ function makeTable(readDb, writeDb, shape, ctx) {
       kind:   Object.fromEntries(kinds),
       table:  modelToTableName(model, ctx.pluralize ?? false),
       mirror: `${ext.column}Slots`,
+      scope:  ext.scope ?? null,
     }
   }
 
-  function _extDeclarations(tenant) {
+  function _extDeclarations(tenant, scope) {
     if (!_extensible?.declTable) return []
     const cache = (ctx.extDecl ??= new Map())
-    const at    = _extTenantCol ? `${modelName}\0${tenant}` : modelName
+    const at    = `${modelName}\0${_extTenantCol ? tenant : ''}\0${_extensible.scope ? scope : ''}`
     const hit   = cache.get(at)
     if (hit) return hit
-    const rows = (_extTenantCol
-      ? readDb.query(`SELECT "key", "type", "slot" FROM "${_extensible.declTable}" WHERE "model" = ? AND "${_extTenantCol}" = ?`).all(modelName, tenant)
-      : readDb.query(`SELECT "key", "type", "slot" FROM "${_extensible.declTable}" WHERE "model" = ?`).all(modelName)) ?? []
+    // A scoped declaration is the parent row's, so the read is narrowed by it
+    // the way the tenant column narrows it under row tenancy.
+    const narrow = [['model', modelName]]
+    if (_extTenantCol)     narrow.push([_extTenantCol, tenant])
+    if (_extensible.scope) narrow.push([_extensible.scope, scope])
+    const rows = readDb.query(
+      `SELECT "key", "type", "slot" FROM "${_extensible.declTable}" WHERE ${narrow.map(([c]) => `${quoteIdent(c)} = ?`).join(' AND ')}`
+    ).all(...narrow.map(([, v]) => v)) ?? []
     cache.set(at, rows)
     return rows
   }
@@ -2952,6 +2960,28 @@ function makeTable(readDb, writeDb, shape, ctx) {
       `state '${col}' on it, or make it as the tenant` }])
   }
 
+  // Which parent row a pool read is for: the one the payload states, else the
+  // one a filter pins, else the one row the where reaches. Declarations are a
+  // parent row's, so a read naming none would project one scope's keys onto
+  // another's values with nothing failing. Rows spread over several parents
+  // are refused for the same reason: one SET cannot carry a mirror per row.
+  function extScope(data, where) {
+    const col = _extensible.scope
+    if (data && data[col] != null) return data[col]
+    const pinned = pinnedIn(where, col)
+    if (pinned != null) return pinned
+    if (where && data) {
+      const params = []
+      const sql = buildWhereWithEncryption(where, params)
+      const seen = readDb.query(`SELECT DISTINCT ${quoteIdent(col)} AS s FROM ${quoteIdent(tableName)}${sql ? ` WHERE ${sql}` : ''} LIMIT 2`).all(...params)
+      if (seen.length === 1) return seen[0].s
+      if (seen.length > 1) throw new ValidationError([{ path: [col], message:
+        `${modelName}: this write reaches rows of more than one '${col}', and each has its own declarations — narrow it to one '${col}'` }])
+    }
+    throw new ValidationError([{ path: [col], message:
+      `${modelName}: @@extensible(scope: ${col}) reads declarations per '${col}', and this call names none — state '${col}' on it` }])
+  }
+
   function requiredFailure(f) {
     const attrs  = f.attributes ?? []
     const custom = attrs.find(a => a.kind === 'required')?.message
@@ -2992,10 +3022,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // table's own gate in front of it. Narrowed because one declaring table
       // serves every extensible model and `t1` on a customer is not `t1` on a
       // product.
-      const taken = new Set((_extTenantCol
-        ? readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL AND "${_extTenantCol}" = ?`).all(model, extTenant(data))
-        : readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`).all(model)
-      ).map(r => r.slot))
+      // Under a scope the pool is the parent row's: database 2's first text
+      // field is `t1` whatever database 1 holds.
+      const narrow = [['model', model]]
+      if (_extTenantCol) narrow.push([_extTenantCol, extTenant(data)])
+      if (pool.scope)    narrow.push([pool.scope, data[pool.scope]])
+      const at = narrow.map(([c]) => ` AND ${quoteIdent(c)} = ?`).join('').slice(5)
+      const taken = new Set(readDb.query(`SELECT "slot" FROM "${tableName}" WHERE ${at} AND "slot" IS NOT NULL`)
+        .all(...narrow.map(([, v]) => v)).map(r => r.slot))
       // First free of the matching kind, in INDEX order — so the field a
       // tenant declares first lands leftmost, where a one-term query reaches
       // it. A full pool answers null, which is the ordinary end of a pool and
@@ -3011,8 +3045,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
         const path = `$.${slot}`
         const sql  = `UPDATE "${pool.table}" SET "${pool.mirror}" = json_remove("${pool.mirror}", ?) ` +
           `WHERE json_extract("${pool.mirror}", ?) IS NOT NULL`
-        if (_extTenantCol) writeDb.run(`${sql} AND "${_extTenantCol}" = ?`, path, path, extTenant(data))
-        else writeDb.run(sql, path, path)
+        const only = [], vals = []
+        if (_extTenantCol) { only.push(` AND ${quoteIdent(_extTenantCol)} = ?`); vals.push(extTenant(data)) }
+        if (pool.scope)    { only.push(` AND ${quoteIdent(pool.scope)} = ?`);    vals.push(data[pool.scope]) }
+        writeDb.run(sql + only.join(''), path, path, ...vals)
       }
     }
     data    = { ...data, slot }
@@ -3020,8 +3056,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return [data, stamped]
   }
 
-  function mirrorExtSlots(data, stamped) {
-    const declared = _extDeclarations(_extTenantCol ? extTenant(data) : undefined)
+  function mirrorExtSlots(data, stamped, where) {
+    const declared = _extDeclarations(_extTenantCol ? extTenant(data) : undefined,
+                                      _extensible.scope ? extScope(data, where) : undefined)
     const blob     = data[_extensible.column]
     const slots    = {}
     // An unpromoted or absent key is omitted rather than written null: a
@@ -3339,7 +3376,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
   }
 
-  function writeData(data, { requireAll = false, system = null, fieldWrite = 'js', stamped = null, creating = false } = {}) {
+  function writeData(data, { requireAll = false, system = null, fieldWrite = 'js', stamped = null, creating = false, where = null } = {}) {
     const model = shape.model
 
     // Unknown keys in the data payload are silently stripped — mass-assignment
@@ -3422,8 +3459,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // leave the mirror too, or a query goes on finding a row by a value it no
     // longer has. Absent means leave it alone — a patch naming other columns is
     // not a statement about these — and Invariant 9's explicit null clears.
-    if (_extensible && data && typeof data === 'object' && !Array.isArray(data)
-        && _extensible.column in data) [data, stamped] = mirrorExtSlots(data, stamped)
+    //
+    // Under `scope:` the mirror is built from the PARENT ROW's declarations, so
+    // a write moving a row to another parent without restating the blob would
+    // leave the old parent's slots in a mirror the new parent reads.
+    if (_extensible && data && typeof data === 'object' && !Array.isArray(data)) {
+      if (_extensible.column in data) [data, stamped] = mirrorExtSlots(data, stamped, where)
+      else if (_extensible.scope && !creating && _extensible.scope in data)
+        throw new ValidationError([{ path: [_extensible.scope], message:
+          `${modelName}: moving a row to another '${_extensible.scope}' re-projects '${_extensible.column}' against the new one's declarations, so send '${_extensible.column}' in the same write` }])
+    }
 
     // ── @guarded, the write half ──────────────────────────────────────────
     // @guarded is a system-context lock in both directions. The read strips the
@@ -3783,7 +3828,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
     if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap, _pointMap)
     where = _hasScopes ? expandScopes(where) : where
-    where = _extensible ? rewriteExtensibleWhere(where, _extTenantCol ? () => extTenant(null, where) : null) : where
+    where = _extensible ? rewriteExtensibleWhere(where, _extTenantCol ? () => extTenant(null, where) : null,
+                                                  _extensible.scope ? () => extScope(null, where) : null) : where
     where = _transformed ? rewriteTransformedWhere(where) : where
     let rewritten = where
     if (ctx.enc.key) {
@@ -3824,14 +3870,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
    * request succeeds, the count looks plausible, and the answer is about more
    * rows than were asked for.
    */
-  function rewriteExtensibleWhere(where, tenantOf) {
+  function rewriteExtensibleWhere(where, tenantOf, scopeOf) {
     if (!where || typeof where !== 'object') return where
-    if (Array.isArray(where)) return where.map(w => rewriteExtensibleWhere(w, tenantOf))
+    if (Array.isArray(where)) return where.map(w => rewriteExtensibleWhere(w, tenantOf, scopeOf))
 
     const out = {}
     for (const [key, val] of Object.entries(where)) {
       if (key === 'AND' || key === 'OR' || key === 'NOT') {
-        out[key] = rewriteExtensibleWhere(val, tenantOf)
+        out[key] = rewriteExtensibleWhere(val, tenantOf, scopeOf)
         continue
       }
       // Only the blob, and only when handed an object of keys. An operator
@@ -3843,7 +3889,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         continue
       }
 
-      const declared = _extDeclarations(tenantOf?.())
+      const declared = _extDeclarations(tenantOf?.(), scopeOf?.())
       const byKey    = new Map(declared.map(d => [d.key, d]))
       for (const [k, v] of Object.entries(val)) {
         const d = byKey.get(k)
@@ -5476,7 +5522,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const _umVersion = shape.version
     if (_umVersion && data && _umVersion in data) { data = { ...data }; delete data[_umVersion] }
     const { data: _umValues, ops: _umOps } = extractWriteOps(data)
-    const row       = writeData(_umValues, { system, fieldWrite: 'sql', stamped })
+    const row       = writeData(_umValues, { system, fieldWrite: 'sql', stamped, where })
     // The SET list is one fragment and the WHERE another; the statement is
     // their text in order and so are its binds, which is what lets the
     // empty-SET case below be handled where it belongs.
@@ -5943,7 +5989,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
 
       const { data: _upValues, ops: _upOps } = extractWriteOps(data)
-      const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped })
+      const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped, where })
       const setParams = []
       const setCols   = [
         ...Object.keys(row).map(c => setFragment(c, row[c], setParams)),
@@ -6908,8 +6954,15 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     async groupBy(args = {}) {
       refuseRecursive('groupBy', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
-      const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps, timeZone } = args
+      const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps, timeZone, weekStart = 'monday' } = args
       const interval = args.interval   // { fieldName: 'unit' }
+      // A week is named by its first day, and which day that is belongs to the
+      // business: a Sunday-start tenant read Monday-cut buckets as wrong weeks.
+      // Refused beside any other unit, where it would be quietly ignored.
+      if (!['monday', 'sunday'].includes(weekStart))
+        throw new ValidationError([{ path: ['weekStart'], message: `groupBy() weekStart '${weekStart}' is not a week start — use 'monday' or 'sunday'` }])
+      if ('weekStart' in args && Object.values(interval ?? {})[0] !== 'week')
+        throw new ValidationError([{ path: ['weekStart'], message: `groupBy() weekStart cuts a week — pass interval: { <DateTime field>: 'week' } beside it` }])
       // S3: an interval is cut on the wall clock of `timeZone` (IANA), not UTC's.
       // Refused without an interval, where it would mean nothing and quietly
       // be ignored — the shape of every silent wrong answer a report can give.
@@ -7021,6 +7074,11 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         refuseAggregateKeys('orderBy', names)
       }
 
+      // Days since the week began, from %w (Sunday is 0).
+      const weekday = expr => weekStart === 'sunday'
+        ? `CAST(STRFTIME('%w', ${expr}) AS INTEGER)`
+        : `((CAST(STRFTIME('%w', ${expr}) AS INTEGER) + 6) % 7)`
+
       // Build STRFTIME expression for a given field + unit. With a time zone the
       // instant is first moved onto that zone's wall clock (`zoneShift`).
       function strftimeExpr(field, unit) {
@@ -7031,8 +7089,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           case 'year':    return `STRFTIME('%Y', ${expr})`
           case 'quarter': return `STRFTIME('%Y', ${expr}) || '-Q' || (((CAST(STRFTIME('%m', ${expr}) AS INTEGER) - 1) / 3) + 1)`
           case 'month':   return `STRFTIME('%Y-%m', ${expr})`
-          case 'week':    return `STRFTIME('%Y-W%W', ${expr})`
-          case 'day':     return `STRFTIME('%Y-%m-%d', ${expr})`
+          // The week's first date, so a week crossing New Year is one bucket.
+          case 'week':    return `DATE(${expr}, '-' || ${weekday(expr)} || ' days')`
+          case 'day':    return `STRFTIME('%Y-%m-%d', ${expr})`
           case 'hour':    return `STRFTIME('%Y-%m-%dT%H', ${expr})`
         }
       }
@@ -7055,7 +7114,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           case 'year':    return '%Y'
           case 'quarter': return null   // special case handled below
           case 'month':   return '%Y-%m'
-          case 'week':    return '%Y-W%W'
+          case 'week':    return '%Y-%m-%d'
           case 'day':     return '%Y-%m-%d'
           case 'hour':    return '%Y-%m-%dT%H'
         }
@@ -7200,6 +7259,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           : NaN
         if (!Number.isFinite(ms))
           throw new ValidationError([{ path: ['fillGaps', which], message: `groupBy() gap fill ${which} ${JSON.stringify(v)} is not a date or an instant` }])
+        // A bound written as a date IS a calendar date, and is that date in any
+        // zone. Read as an instant it was UTC midnight, which is the evening
+        // before west of Greenwich, so `start: '2026-01-01'` in Chicago filled
+        // from December.
+        if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
+          return intervalUnit === 'hour' ? `${v} 00:00:00` : v
         // An hour bucket walks a wall clock to the hour, everything else a date.
         if (intervalUnit === 'hour') {
           if (!timeZone) return new Date(ms).toISOString().slice(0, 13).replace('T', ' ') + ':00:00'
@@ -7212,10 +7277,14 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // The CTE steps from a bucket's FIRST day. Stepped from the bound's own
       // day, '+1 month' from 31 January is 3 March and February never filled,
       // and a start later in its month than the end (the 15th, then the 10th)
-      // stopped one bucket short. A week is walked a day at a time instead,
-      // because `%W` names the days before a year's first Monday week 00, and
-      // no seven-day walk from the Monday before lands in it.
+      // stopped one bucket short. A week starts on its Monday or Sunday, which
+      // is the label the data rows carry.
       const bucketStart = (d) => {
+        if (intervalUnit === 'week') {
+          const t = new Date(`${d}T00:00:00Z`)
+          const back = (t.getUTCDay() + (weekStart === 'sunday' ? 0 : 6)) % 7
+          return new Date(t.getTime() - back * 864e5).toISOString().slice(0, 10)
+        }
         if (intervalUnit === 'month')   return `${d.slice(0, 7)}-01`
         if (intervalUnit === 'year')    return `${d.slice(0, 4)}-01-01`
         if (intervalUnit === 'quarter') return `${d.slice(0, 4)}-${String(Math.floor((Number(d.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, '0')}-01`
@@ -7238,7 +7307,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
       if (gapStart && gapEnd && intervalField) {
         // Gap-fill path: recursive CTE generates all intervals, LEFT JOIN data
-        const step   = intervalUnit === 'week' ? '+1 day' : cteStep(intervalUnit)
+        const step   = cteStep(intervalUnit)
         const fmt    = cteDateFormat(intervalUnit)
         // date() drops the time, so date(d, '+1 hour') is d again and the CTE
         // never ended: one request with interval hour and a gap fill held a
@@ -11470,16 +11539,23 @@ function makeLockPrimitive(rawWriteDb) {
   /** The one raw runner. There were three byte-identical copies of this.
    *  `runCtx` is the calling flavor's, so the event says who ran it. */
   function _runRawSql(strings, values, runCtx = ctx) {
+    const query = _templateText(strings, values)
+    // Leading comments are stripped before the test, so `-- why\nDELETE …`
+    // still routes as a write rather than as an unrecognized statement.
+    const head = query.replace(/^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)+/, '')
+    return _execRaw(query, values, runCtx, _RAW_READ.test(head) ? readDb : writeDb)
+  }
+
+  function _templateText(strings, values) {
     let query = ''
     for (let i = 0; i < strings.length; i++) {
       query += strings[i]
       if (i < values.length) query += '?'
     }
-    query = query.trim()
-    // Leading comments are stripped before the test, so `-- why\nDELETE …`
-    // still routes as a write rather than as an unrecognized statement.
-    const head = query.replace(/^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)+/, '')
-    const conn = _RAW_READ.test(head) ? readDb : writeDb
+    return query.trim()
+  }
+
+  function _execRaw(query, values, runCtx, conn) {
     if (!queryTapped(runCtx)) return conn.query(query).all(...values)
     const t0 = performance.now()
     const rows = conn.query(query).all(...values)
@@ -11487,10 +11563,43 @@ function makeLockPrimitive(rawWriteDb) {
     return rows
   }
 
+  // `sql.read`: the statement may not write, whatever its first word is. It runs
+  // on the write connection with `query_only` ON, because the read connection is
+  // the write one for `:memory:` and inside a transaction (which has to see its
+  // own uncommitted rows), so "use the reader" would refuse nothing there. The
+  // pragma is set and restored inside one synchronous call, so no other caller
+  // can run while it is on. Takes a tagged template or `(text, params[])`.
+  function _runRawRead(first, rest, runCtx) {
+    const [query, values] = typeof first === 'string'
+      ? [first.trim(), rest[0] ?? []]
+      : [_templateText(first, rest), rest]
+    writeDb.run('PRAGMA query_only = ON')
+    try {
+      return _execRaw(query, values, runCtx, writeDb)
+    } catch (err) {
+      if (/readonly/i.test(`${err?.code ?? ''} ${err?.message ?? ''}`))
+        throw new Error('sql.read: this statement writes, and sql.read refuses a write. Use sql for a statement that changes data.', { cause: err })
+      throw err
+    } finally {
+      writeDb.run('PRAGMA query_only = OFF')
+    }
+  }
+
+  // `sql.read` is refused wherever `sql` is: it is raw SQL, so it applies no
+  // access rule either. `surface` names the refusing entry point.
+  function _withRead(fn, surface, runCtx = ctx) {
+    fn.read = async (first, ...rest) => {
+      if (surface && _hasAccessRules) throw rawSqlRefusal(`${surface}.read`)
+      return _runRawRead(first, rest, runCtx)
+    }
+    return fn
+  }
+
   async function sql(strings, ...values) {
     if (_hasAccessRules) throw rawSqlRefusal('db.sql')
     return _runRawSql(strings, values)
   }
+  _withRead(sql, 'db.sql')
 
 
   // ── $rotateKey ─────────────────────────────────────────────────────────────
@@ -11821,6 +11930,7 @@ function makeLockPrimitive(rawWriteDb) {
     async function sysSql(strings, ...values) {
       return _runRawSql(strings, values, sysCtx)
     }
+    _withRead(sysSql, null, sysCtx)
 
     // System-scoped multi-model query — uses sysTables so each batched query
     // bypasses gate/policies/guarded fields, matching this proxy's contract.
@@ -11946,6 +12056,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (_hasAccessRules) throw rawSqlRefusal('db.$setAuth(user).sql')
       return _runRawSql(strings, values)
     }
+    _withRead(authSql, 'db.$setAuth(user).sql', authCtx)
 
     // This scope's own system proxy, not the root's. It keeps `user`, which is
     // what carries a tenant claim across the bypass and what an audit actor is

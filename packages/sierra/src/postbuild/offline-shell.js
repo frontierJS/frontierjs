@@ -60,7 +60,7 @@
  * deciding that for every app already shipped.
  */
 
-import { readdir, readFile, writeFile, stat } from 'fs/promises'
+import { readdir, readFile, writeFile } from 'fs/promises'
 import { join, relative, sep } from 'path'
 import { createHash } from 'node:crypto'
 import { gzipSync, brotliCompressSync, constants as zlibConstants } from 'node:zlib'

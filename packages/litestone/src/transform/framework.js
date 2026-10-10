@@ -273,7 +273,7 @@ function resolveConfig(mod) {
 export async function preview(configPath) {
   const abs    = resolve(configPath)
   const mod    = await import(`file://${abs}`)
-  const { db: dbPath, pipeline: rawPipeline, filename, redact: redactConfig } = resolveConfig(mod)
+  const { db: dbPath, pipeline: rawPipeline } = resolveConfig(mod)
   const pipeline = flattenPipeline(rawPipeline ?? [])
   const { sharedPipeline, splitBy, postSplit } = parseShard(pipeline)
 
@@ -337,13 +337,13 @@ export async function preview(configPath) {
               if (!fks.length) continue
               const fk = fks[0]
               // Use IN subquery for accurate count
-              let where
+              let _where
               if (fk.composite) {
                 const fromCols = fk.from.map(c => `"${c}"`).join(', ')
                 const toCols   = fk.to.map(c => `"${c}"`).join(', ')
-                where = `(${fromCols}) IN (SELECT ${toCols} FROM "${parent}")`
+                _where = `(${fromCols}) IN (SELECT ${toCols} FROM "${parent}")`
               } else {
-                where = `"${fk.from}" IN (SELECT "${fk.to}" FROM "${parent}")`
+                _where = `"${fk.from}" IN (SELECT "${fk.to}" FROM "${parent}")`
               }
               // For preview we query source db, which hasn't been filtered yet
               // So we compute what WOULD survive proportionally
@@ -738,7 +738,7 @@ export async function execute(configPath, { dryRun = false, verbose = true, outp
 
   // Worker pool — runs poolSize workers at a time, properly awaits all
   const queue   = [...work]
-  const running = []
+  const _running = []
 
   function startNext() {
     if (queue.length === 0) return null
@@ -833,7 +833,7 @@ export function parseLimit(n) {
   const s = n.trim().toLowerCase()
   if (s.endsWith('%')) {
     const pct = parseFloat(s)
-    if (isNaN(pct) || pct <= 0 || pct > 100) throw new Error(`Invalid percentage: "${n}"`)
+    if (Number.isNaN(pct) || pct <= 0 || pct > 100) throw new Error(`Invalid percentage: "${n}"`)
     return { type: 'percent', value: pct / 100 }
   }
   const units = { b: 1, kb: 1024, mb: 1024**2, gb: 1024**3, tb: 1024**4 }
@@ -1012,7 +1012,7 @@ const dropColumn   = (name)          => ({ _type: 'dropColumn', name })
 const renameColumn = (from, to)      => ({ _type: 'renameColumn', from, to })
 const setField     = (name, fn)      => ({ _type: 'setField', name, fn })
 const keepColumns  = (...names)      => ({ _type: 'keepColumns', names })
-const redactField  = (name)           => ({ _type: 'redactField', name })
+const _redactField  = (name)           => ({ _type: 'redactField', name })
 const maskField    = (name, strategy) => {
   if (!maskStrategies[strategy]) throw new Error(`Unknown mask strategy "${strategy}". Valid: ${Object.keys(maskStrategies).join(', ')}`)
   return { _type: 'mask', name, strategy }

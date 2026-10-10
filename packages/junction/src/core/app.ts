@@ -5,7 +5,7 @@
 
 import { HttpTransport }            from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
-import { bridge, errorResponse, refuseUnknownDirectives } from '../transport/bridge.ts'
+import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
@@ -20,14 +20,14 @@ import { resolveServicesDir, describeServicesDir, type ServicesDirResolution } f
 import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from './attachments.ts'
 import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
-import { toFrameworkError, NotFound }   from './errors.ts'
+import { NotFound, toFrameworkError } from './errors.ts'
 import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit } from '../transport/middleware.ts'
-import { defaultConfig, deepMerge, loadConfig, unknownSections } from '../config/index.ts'
+import { defaultConfig, deepMerge, loadConfig, unknownKeys, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
-import { createLogger, noopLogger }             from './logger.ts'
-import type { ILogger, LoggerOptions }          from './logger.ts'
+import { createLogger }             from './logger.ts'
+import type { ILogger }          from './logger.ts'
 import type { AppConfig }                          from '../config/index.ts'
-import type { IAuth, SessionVerifier } from '../auth/types.ts'
+import type { SessionVerifier } from '../auth/types.ts'
 import type { IEventBus }           from '../events/index.ts'
 import type { RouteHandler, MiddlewareFn, WsHandlerSet } from '../transport/types.ts'
 
@@ -112,6 +112,15 @@ export interface Plugin {
    * @example requires: ['mailer']
    */
   requires?:  string[]
+
+  /**
+   * The keys of the `junction.config.js` section named like this plugin — the
+   * only list of what it reads there. start() refuses any other key in that
+   * section by name, which is how `caravan: { pollIntervel: 1000 }` stops
+   * booting on the default (`FJS-940`, `FJS-D483`). Export the same array the
+   * reader loops over, so the check and the read cannot disagree.
+   */
+  configKeys?: readonly string[]
 }
 
 export type PluginInput = PluginFn | Plugin
@@ -1045,6 +1054,10 @@ export function createApp(opts: AppOptions = {}): App {
       : null,
     powered:     config.http.powered,
     onError:     (err) => {
+      // The transport announces every throw before errorResponse maps it, so
+      // a 404/409/429 a raw route means would log beside a real 500 with a
+      // stack. A refusal is the caller's answer; only a 5xx is the app's error.
+      if ((toFrameworkError(err).code ?? 500) < 500) return
       // Through the app's logger, not console: in production the logger is
       // JSON and this was the one thing in the stream that was not, so the
       // errors were the lines a log query could not reach.
@@ -1155,7 +1168,7 @@ export function createApp(opts: AppOptions = {}): App {
         // carrying a wire's query -- an mcp tool, or a custom method handing
         // its input to find (`FJS-D609`, Invariant 10). Here rather than in
         // makeCtx so it rejects the promise instead of throwing past a .catch().
-        refuseUnknownDirectives(ctx.query)
+        refuseBadDirectives(ctx.query)
         await callService(svc, ctx, app._appHooks, app.events, app.telemetry)
         // Same rule as the HTTP boundary: a list keeps its envelope, a single
         // unwraps to the record.
@@ -1488,9 +1501,19 @@ export function createApp(opts: AppOptions = {}): App {
 
         // A section nothing reads. Recorded rather than thrown here, so one
         // boot reports every one of them.
-        for (const miss of unknownSections(merged._junction)) {
+        // A plugin that states `configKeys` reads the section of its name.
+        const owners: Record<string, readonly string[]> = {}
+        for (const p of plugins) if (p.configKeys) owners[p.name] = p.configKeys
+
+        for (const miss of unknownSections(merged._junction, Object.keys(owners))) {
           _authoringFindings.push(
             `junction.config.js declares '${miss.key}', which nothing reads` +
+            (miss.nearest ? ` — did you mean '${miss.nearest}'?` : '.')
+          )
+        }
+        for (const miss of unknownKeys(merged._junction, owners)) {
+          _authoringFindings.push(
+            `junction.config.js's '${miss.section}' declares '${miss.key}', which nothing reads` +
             (miss.nearest ? ` — did you mean '${miss.nearest}'?` : '.')
           )
         }
@@ -2333,15 +2356,10 @@ export function registerServiceRoutes(app: App): void {
     // It used to be read as `=== 'true'`, so $wrap=false on a list was silently
     // ignored — the only way to get a bare array out of find() was not to ask.
     //
-    // Both spellings of false: the transport parses types now (`FJS-D125`) so
-    // `?$wrap=false` arrives as the boolean, and a hand-built context still
-    // passes the string. Reading only one of them is how this was broken the
-    // first time.
-    const rawWrapParam = (ctx.query as Record<string, unknown>)?.['$wrap']
-    const wrap: boolean | undefined =
-      rawWrapParam === undefined
-        ? undefined
-        : rawWrapParam !== false && rawWrapParam !== 'false'
+    // Read by the flag grammar the bridge shares with `$first`: the transport
+    // parses types (`FJS-D125`), so `?$wrap=0` is the number and `?$wrap=false`
+    // the boolean, and a hand-built context passes the string.
+    const { wrap } = readTransportFlags(ctx.query)
     const svcCtx = bridge.toContext(ctx, serviceName, model, 'http', app)
 
     // Open the request scope once, around the whole pipeline run, so

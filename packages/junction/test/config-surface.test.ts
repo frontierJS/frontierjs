@@ -27,6 +27,7 @@ import { join }   from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { createApp } from '../src/core/app.ts'
+import { MIDDLEWARE_CONFIG_KEYS, PLUGINS_CONFIG_KEYS, SERVICES_CONFIG_KEYS } from '../src/config/index.ts'
 
 // ─── The table ────────────────────────────────────────────────────────────
 // One row per declarable key, naming how this file proves it is read. A row
@@ -133,6 +134,16 @@ describe('every declarable key is graded', () => {
   test('a row here names a key that still exists', () => {
     const real = new Set([...declaredKeys('JunctionMiddlewareConfig'), ...declaredKeys('JunctionPluginsConfig')])
     expect(Object.keys(COVERED).filter(k => !real.has(k))).toEqual([])
+  })
+
+  // `loadConfig` maps exactly the exported lists and `start()` refuses any other
+  // key against them (`FJS-940`), so a list and its interface must agree: a
+  // declared key missing from the list is refused, one only in the list is typed
+  // by nothing.
+  test('each exported key list is the interface it reads for', () => {
+    expect(([...MIDDLEWARE_CONFIG_KEYS] as string[]).sort()).toEqual(declaredKeys('JunctionMiddlewareConfig').sort())
+    expect(([...PLUGINS_CONFIG_KEYS] as string[]).sort()).toEqual(declaredKeys('JunctionPluginsConfig').sort())
+    expect(([...SERVICES_CONFIG_KEYS] as string[]).sort()).toEqual(declaredKeys('JunctionServicesConfig').sort())
   })
 
   // The control. A scan that matched nothing would pass both directions above

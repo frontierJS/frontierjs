@@ -38,7 +38,7 @@ import { NOW_SQL, rawClause }  from './query.js'
 // compilation: `compileSql` below and this are still the two halves an oracle
 // holds together (`verifyRowPolicies`, `test/policy-interpreters.test.ts`), and
 // the browser runs these same bytes.
-import { evaluate as evalPredicate, compare, truth, and3, or3, not3, shiftInstant } from '@frontierjs/toolbelt/predicate'
+import { evaluate as evalPredicate, truth, shiftInstant } from '@frontierjs/toolbelt/predicate'
 
 // ─── Debug logger ─────────────────────────────────────────────────────────────
 // policyDebug: true     — logs SQL filters + denials
@@ -101,7 +101,7 @@ export function policyExprToString(node) {
 // ─── Build policy map ─────────────────────────────────────────────────────────
 // { modelName: { 'read': { allows: [expr,...], denies: [expr,...] }, ... } }
 
-const ALL_OPS = ['read', 'create', 'update', 'post-update', 'delete']
+const _ALL_OPS = ['read', 'create', 'update', 'post-update', 'delete']
 
 // ─── What a claim is, decided at startup ─────────────────────────────────────
 //

@@ -1,8 +1,10 @@
 // test/audit-routes-email-verify-get.test.ts
 //
-// Audit 2026-10-05: GET /auth/email/verify?token= mutates state and answers the
-// whole SessionContext to whoever fetched the link. A mail-link scanner fetches
-// it first; the person who clicks later gets `Invalid or expired`.
+// FJS-1839: a mail-link scanner fetches the link before the person clicks it.
+// The token is single-use, so a GET that spends it burns the link for the
+// person, and answering the SessionContext hands the account to whoever
+// fetched. The link lands on a web page and the page POSTs the token
+// (`FJS-D616`); a GET to the API route changes nothing.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, type Harness } from './harness.ts'
@@ -17,26 +19,31 @@ beforeAll(async () => {
 })
 afterAll(() => h.cleanup())
 
-describe('GET /auth/email/verify', () => {
-  // FJS-1839: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('answers no account fields to the holder of the link', async () => {
+const post = (token: string) => raw(app, 'POST', '/auth/email/verify', {
+  headers: { 'content-type': 'application/json' },
+  body:    JSON.stringify({ token }),
+})
+
+describe('/auth/email/verify', () => {
+  test('POST answers no account fields to the holder of the link', async () => {
     const u = await h.auth.createUser({ email: 'scanme@example.com', password: 's-pw-1', name: 'Scan Me' })
     await h.auth.requestEmailVerification!(u.userId)
 
-    const res = await raw(app, 'GET', `/auth/email/verify?token=${encodeURIComponent(h.verifyToken())}`)
+    const res = await post(h.verifyToken())
     expect(res.status).toBe(200)
-    // Secure: `{ ok: true }` and nothing about the account. What it answers
-    // today is in the failure message.
-    expect(res.body.user).toBeUndefined()
+    expect(res.body).toEqual({ ok: true })
   })
 
-  // FJS-1839: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a scanner\'s GET does not consume the link for the person who clicks it', async () => {
+  test('a scanner\'s GET does not consume the link for the person who clicks it', async () => {
     const u = await h.auth.createUser({ email: 'scanned@example.com', password: 's-pw-1', name: 'Scanned' })
     await h.auth.requestEmailVerification!(u.userId)
-    const link = `/auth/email/verify?token=${encodeURIComponent(h.verifyToken())}`
+    const token = h.verifyToken()
 
-    expect((await raw(app, 'GET', link)).status).toBe(200)   // the scanner
-    expect((await raw(app, 'GET', link)).status).toBe(200)   // the person
+    const scanner = await raw(app, 'GET', `/auth/email/verify?token=${encodeURIComponent(token)}`)
+    expect(scanner.status).toBe(405)
+    expect(scanner.body?.user).toBeUndefined()
+
+    expect((await post(token)).status).toBe(200)   // the person
+    expect((await post(token)).status).toBe(400)   // single-use, spent by the POST
   })
 })

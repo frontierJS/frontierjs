@@ -768,6 +768,8 @@ export interface CaravanInstance {
 
   // Junction plugin protocol
   name:      string
+  /** The `caravan` section keys of junction.config.js (`CARAVAN_CONFIG_KEYS`). */
+  configKeys: readonly string[]
   register:  (app: CaravanApp) => Promise<void> | void
   boot?:     (app: CaravanApp) => Promise<void> | void
   work?:     (app: CaravanApp) => Promise<void> | void

@@ -41,6 +41,7 @@ export class UnixTransport extends HttpTransport {
   }
 
   protected fetchInit(init: RequestInit): RequestInit {
+    // biome-ignore lint/suspicious/noTsIgnore: the option is Bun-only and absent from the DOM fetch types
     // @ts-ignore — Bun-specific unix socket option
     return { ...init, unix: this.descriptor.address }
   }

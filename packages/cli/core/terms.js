@@ -80,7 +80,7 @@ const KIND_BY_EXT = new Map([
 ])
 export const KINDS = ['markdown', 'code', 'framework', 'web']
 
-const DOC_EXT    = new Set(['.md'])
+const _DOC_EXT    = new Set(['.md'])
 const SOURCE_EXT = new Set(['.js', '.ts', '.mjs', '.mts'])
 
 // Output this workspace WROTE is not prose somebody wrote, and reading it is the
@@ -1071,7 +1071,7 @@ export function collectTerms({ root }) {
       // A plural is dropped with its singular. The fold below cannot do it:
       // it merges into a HOST row, and a dropped word leaves none, so `Views`
       // and `Requests` would survive as terms of their own.
-      const lower = term.toLowerCase()
+      const _lower = term.toLowerCase()
       if (dropped(term)) {
         droppedWords.set(term, (droppedWords.get(term) ?? 0) + 1)
         continue

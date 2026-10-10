@@ -41,7 +41,7 @@ describe('spreadAttributes — markup sinks', () => {
   it('refuses srcdoc on an iframe, by property and by attribute', () => {
     captureWarn()
     const el = document.createElement('iframe')
-    spread(el, { srcdoc: '<script>parent.__pwn=1<\/script>' })
+    spread(el, { srcdoc: '<script>parent.__pwn=1</script>' })
     expect(el.getAttribute('srcdoc')).toBeNull()
     expect(el.srcdoc == null || el.srcdoc === '').toBe(true)
     expect(warn.mock.calls.join(' ')).toContain('srcdoc')

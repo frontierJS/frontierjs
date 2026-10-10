@@ -198,12 +198,10 @@ describe('the second factor', () => {
     } finally { now = was }
   })
 
-  // EXPECTED TO FAIL: `confirmTotp` (auth.ts ~857) has no attempt ceiling and
-  // the service puts no limiter in front of it (services.ts `confirmTotp` does
-  // not call `reauthenticate`). A pending enrollment can be guessed through at
-  // 6 digits × a 3-step drift window — ~333k guesses, unbounded.
-  // FJS-1838: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('confirmTotp has a ceiling on wrong codes', async () => {
+  // A pending enrollment is a six-digit guess across a 3-step drift window, so
+  // it is spent after `loginChallengeAttempts` wrong codes and the next try is
+  // `setupTotp` (FJS-1838).
+  test('confirmTotp has a ceiling on wrong codes', async () => {
     const u = await fresh('confirm-ceiling')
     await h.auth.setupTotp!(u.userId, u.password)
     let refusedByCeiling = false

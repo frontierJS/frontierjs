@@ -6,15 +6,13 @@
 // No real network calls — _request is intercepted via fetch mock.
 // Run: bun test test/client.test.ts
 
-import { describe, it, expect, beforeEach, mock } from 'bun:test'
+import { describe, it, expect, mock } from 'bun:test'
 import {
   createJunctionClient,
-  JunctionClient,
   ResultShapeError,
   ServiceProxy,
   Store,
 } from '../src/client/index.ts'
-import type { PaginatedResult } from '../src/client/index.ts'
 import { stubbable }           from './helpers.ts'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1050,6 +1048,17 @@ describe('config.http.cors', () => {
     expect(allowed).toContain('X-Service-Method')
     expect(allowed).toContain('X-Workspace-Id')
     expect(allowed).toContain('Idempotency-Key')
+  })
+
+  it('the protocol headers are ONE declaration: the preflight allows every one the frame merge accepts, plus the HTTP-only ones', async () => {
+    const { PROTOCOL_CALL_HEADERS, PROTOCOL_HTTP_ONLY_HEADERS, MADE_AT_HEADER, SENT_AT_HEADER } = await import('../src/core/context.ts')
+    const lower = PROTOCOL_CALL_HEADERS.map(h => h.toLowerCase())
+    expect(lower).toContain(MADE_AT_HEADER)
+    expect(lower).toContain(SENT_AT_HEADER)
+    const app = await appWith({ origins: ['https://app.test'], headers: ['X-Custom'] })
+    const allowed = String((await hdr(app as never, 'options')).headers['access-control-allow-headers']).toLowerCase()
+    for (const name of [...PROTOCOL_CALL_HEADERS, ...PROTOCOL_HTTP_ONLY_HEADERS]) expect(allowed).toContain(name.toLowerCase())
+    expect(PROTOCOL_HTTP_ONLY_HEADERS).toEqual(['X-Service-Method'])
   })
 
   it('a declared call header is allowed cross-origin too', async () => {

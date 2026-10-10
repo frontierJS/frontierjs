@@ -17,6 +17,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { createService, createBaseService } from '../src/core/service.ts'
 import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks } from '../src/core/litestone.ts'
 import { toFrameworkError } from '../src/core/errors.ts'
+import { splitParams } from '@frontierjs/toolbelt/directives'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 import { createApp, createStubAuth } from '../index.ts'
 
@@ -158,10 +159,9 @@ describe('the template and soft-delete directives reach a real client', () => {
   test('the same names travel as `$` params, which is what a browser sends', async () => {
     const db = await tmplDb()
     // What the bridge produces from `?$onlyTemplates=true`: the parse is
-    // toolbelt's, and this is the fallback path parseQuery keeps for callers
-    // that predate ctx.directives.
+    // toolbelt's, and parseQuery reads only its directives half.
     const out = await quotes().find(
-      ctx(db, { service: 'quotes', query: { $onlyTemplates: 'true' } })) as { data: { id: number }[] }
+      ctx(db, { service: 'quotes', ...splitParams({ $onlyTemplates: 'true' }) })) as { data: { id: number }[] }
     expect(out.data.map(r => r.id)).toEqual([2])
   })
 

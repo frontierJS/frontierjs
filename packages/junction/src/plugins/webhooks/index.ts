@@ -34,11 +34,10 @@
 //   await app.webhooks.deliver('orders:created', { id: 'ord_1', total: 99 })
 
 import type { App, Plugin }    from '../../core/app.ts'
-import type { IEventBus }      from '../../events/index.ts'
 import type { Database } from 'bun:sqlite'
 import { signRequest }         from '@frontierjs/toolbelt/signature'
 import { sessionGateLevel }    from '../../core/litestone.ts'
-import { assertPublicUrl, PublicUrlError }   from '../../core/public-url.ts'
+import { assertPublicUrl }                   from '../../core/public-url.ts'
 import type { PublicUrlPolicy } from '../../core/public-url.ts'
 import { shapeForSubscriber, sayUnowned } from './payload.ts'
 import type { ShapeResult }    from './payload.ts'
@@ -847,12 +846,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
         // subscriber off the principal in scope. Registering through the store
         // here instead is how the route came to be the one registration path
         // with no subscriber on it.
-        let hook: WebhookRegistration
-        try { hook = await manager.register(body.url, body.events, body.secret) }
-        catch (err) {
-          if (err instanceof PublicUrlError) return ctx.json({ error: err.message }, 400)
-          throw err
-        }
+        const hook = await manager.register(body.url, body.events, body.secret)
         return ctx.json(hook, 201)   // includes secret — the one and only time
       })
 

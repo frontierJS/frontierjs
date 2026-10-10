@@ -135,8 +135,7 @@
 
 import { getClient } from '@frontierjs/sierra/resource'
 import { defaultRegistry, serviceNameFor, resolveRef } from './schema-registry.js'
-import {
-  derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
+import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, declinedFields, requiredFor, blankRefused, withheldFields,
@@ -978,7 +977,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   //
   // It is the fact `save({ mode: 'auto' })` needs and did not have — see save().
   const callerSuppliedId = !!(schema && modelDef?.properties
-    && Object.prototype.hasOwnProperty.call(modelDef.properties, idField))
+    && Object.hasOwn(modelDef.properties, idField))
 
   // The ids this resource has READ, on a model whose key the caller types.
   //

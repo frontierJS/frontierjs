@@ -8,10 +8,10 @@
  *   const tree = await scan('src/routes', { trailingSlash: 'always' })
  */
 
-import { resolve, join } from 'path'
+import { resolve } from 'path'
 import { walk } from './walk.js'
 import { buildTree } from './build-tree.js'
-import { generateRouteTable, renderRouteTable } from './generate-route-table.js'
+import { generateRouteTable } from './generate-route-table.js'
 
 /**
  * Scan a routes directory and return the route tree.

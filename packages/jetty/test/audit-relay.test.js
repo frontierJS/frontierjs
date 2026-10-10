@@ -7,15 +7,15 @@
 //      to be the dock because it says so.
 //   2. makePageBridge accepts any message whose `source` is the page's own
 //      window, which every script on the host page satisfies.
-//   3. An island's shadow root is open by default, so the host page can read
-//      what the island renders and click what it renders.
+//   3. An island's shadow root is closed by default, so the host page cannot
+//      read what the island renders or click what it renders (FJS-2335).
 //
 // Runs under plain node like the phase files. A check marked `failing(...)`
 // asserts the behavior the package should have and fails today; it counts as a
 // pass here until the fix lands, and then as a failure, which is the signal to
 // turn it into ok().
 //
-// FJS-2336, FJS-2334, FJS-2335: each failing() below asserts the fixed
+// FJS-2336, FJS-2334: each failing() below asserts the fixed
 // behavior, so it fails until the fix lands; drop the failing() wrapper then.
 
 import { JSDOM } from 'jsdom'
@@ -133,16 +133,20 @@ group('runIsland — what the host page can reach inside an island')
     },
   }, { id: 'pay', type: 'island' })
 
-  // The host page, reading and driving the island through the open root.
+  // The host page, trying to read and drive the island through its root.
   const host = document.querySelector('[data-jetty-island="pay"]')
   const root = host?.shadowRoot ?? null
-  if (root) ok('the host page can reach host.shadowRoot (open by default)')
-  if (root?.textContent.includes('bob@x.test')) ok('the host page can read what the island rendered')
   root?.querySelector('button')?.click()
-  if (clicks === 1) ok('the host page can click a control inside the island and its handler runs')
-
-  failing('an island shadow root is closed unless the island opts into open', root === null)
+  if (host && root === null) ok('an island shadow root is closed unless the island opts into open')
+  else bad('the host page can reach host.shadowRoot', 'default root is open')
+  if (clicks === 0) ok('the host page cannot click a control inside the island')
   handle.destroy()
+
+  const openHandle = await runIsland({ app: (r) => { r.textContent = 'x' }, shadowMode: 'open' }, { id: 'dbg', type: 'island' })
+  const openHost = document.querySelector('[data-jetty-island="dbg"]')
+  if (openHost?.shadowRoot) ok('shadowMode: open still opts in')
+  else bad('shadowMode: open was not honored')
+  openHandle.destroy()
 }
 
 console.log(`\n${pass} passed, ${fail} failed, ${knownFailing} failing-as-expected`)

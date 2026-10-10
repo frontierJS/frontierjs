@@ -26,9 +26,8 @@
 // Rendered by `litestone catalog --reference`, byte-compared by `--check`.
 // Never imported by production code.
 
-import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, GROUPS, POSITIONS,
-         POSITION_RULES, positionsOf, typed, grouped, probeFor, docFor,
-         UNDOCUMENTED, synonymsFor } from '../core/catalog.js'
+import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, POSITIONS,
+         POSITION_RULES, positionsOf, typed, grouped, probeFor, docFor,synonymsFor } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
 /**

@@ -3,7 +3,7 @@
 ## Getting started
 - [getting-started.md](getting-started.md) — install, quick start, createClient, first query
 - [why-litestone.md](why-litestone.md) — why SQLite, why Bun, why schema-first, when to choose something else
-- [gotchas.md](gotchas.md) — production surprises: ILIKE, json_extract types, NULL behavior, WAL contention
+- [gotchas.md](gotchas.md) — production surprises: ASCII-only LIKE, json_extract types, NULL behavior, id reuse, WAL contention
 
 ## Schema
 - [schema.md](schema.md) — .lite DSL: types, field attributes, model attributes, enums, functions
@@ -59,7 +59,6 @@
 
 ## Meta
 - [internals.md](internals.md) — **for a change to litestone itself**: the rule each path must keep, the failure that established it, and its `FJS-###`. Reads, writes, events, policies, parse, migrations, SQLite, tenancy, client utilities, tooling
-- [gotchas.md](gotchas.md) — production surprises and edge cases
 
 ## Audits
 

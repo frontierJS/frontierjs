@@ -244,6 +244,8 @@ profile.
 
 #### 14. Directives and query values
 
+*Long-form draft with 64 conformance vectors and the leak table: `IDEAS/spec-directives.md` (audit run 4.2, 2026-10-10).*
+
 **Would state:** the directive table (`$limit`, `$offset`, `$orderBy`,
 `$select`, `$after`). No prefixed key survives the boundary, and an unknown one
 is refused on a request and dropped on a URL. What a query-string value means:

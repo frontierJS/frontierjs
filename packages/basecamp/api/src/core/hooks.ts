@@ -3,8 +3,7 @@
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
 import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, $} from '@frontierjs/junction'
-import type { Hook, AroundHook, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
-import { env }                             from './env.ts'
+import type { Hook, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { channelManager, workspaceChannelName } from '../channels.ts'
 import type { BasecampApp }                from '../basecamp.types.ts'
 import { grantsFor, grantsWithin }         from './capabilities.ts'
@@ -994,8 +993,8 @@ export function getPagination(
   const offset = parseInt(String(d.offset ?? q.offset ?? 0), 10)
 
   return {
-    limit:  isNaN(limit)  ? (defaults.limit ?? 20)  : Math.max(1, limit),
-    offset: isNaN(offset) ? 0 : Math.max(0, offset),
+    limit:  Number.isNaN(limit)  ? (defaults.limit ?? 20)  : Math.max(1, limit),
+    offset: Number.isNaN(offset) ? 0 : Math.max(0, offset),
     // `$after` is the third thing a caller can ask for and it is one of these,
     // not a filter: a hand-written find that reads limit and offset and drops
     // the cursor answers page one to every press of "load more" (`FJS-D145`).

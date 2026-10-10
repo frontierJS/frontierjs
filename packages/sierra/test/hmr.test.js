@@ -1,11 +1,10 @@
 /**
  * hmr.test.js — Tests for Sierra HMR infrastructure
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { hmrInvalidate } from '../src/router/internals.js'
 import { generateOverlayScript } from '../src/build/dev-overlay.js'
 import { _generateVirtualSierra } from '../src/virtual/virtual-sierra.js'
-import { rewriteLayoutSlots } from '../src/build/slot-rewrite.js'
 
 // ── hmrInvalidate ─────────────────────────────────────────────────────────────
 

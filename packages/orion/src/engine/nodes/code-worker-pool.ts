@@ -65,7 +65,7 @@ export class CodeWorkerPool {
   private readonly pool: PoolWorker[] = []
   private          idx  = 0
 
-  constructor(private readonly size = 3) {
+  constructor(size = 3) {
     for (let i = 0; i < size; i++) {
       this.pool.push(this.spawn())
     }

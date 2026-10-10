@@ -841,6 +841,7 @@ function safeCodePoint(code) {
    * U+2028 and U+2029 are line separators — pasting them into a regex
    * literal terminates the literal and the module stops parsing.
    */
+  // biome-ignore lint/suspicious/noMisleadingCharacterClass: each code point is listed separately on purpose
   if (/[\u00ad\u034f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\ufeff]/.test(
         String.fromCodePoint(code))) return ''
 
@@ -1025,7 +1026,7 @@ export async function renderComponent(source, options = {}) {
   const rootPath = path.isAbsolute(filename)
     ? filename
     : path.join(cwd, filename)
-  const rootDir  = path.dirname(rootPath)
+  const _rootDir  = path.dirname(rootPath)
 
   // Pass source directly to compileTree — no temp .mesa file at entry point.
   // compileTree will still create temp .mjs files for compiled output,

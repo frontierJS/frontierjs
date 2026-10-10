@@ -37,17 +37,38 @@ four rows stopped satisfying it.
 ## What it costs you to not know
 
 A stored row that breaks a boundary validator still **reads back perfectly**.
-Every list renders it, every snapshot matches, every health check passes. What
-fails is its next UPDATE, and it fails naming a column the caller never sent:
+Every list renders it, every snapshot matches, every health check passes. Take
+a `Place` whose `Addr` gained a required `zip` after a row was written:
+
+```lite
+type Addr {
+  city String
+  zip  String
+}
+
+model Place {
+  id   Int  @id
+  addr Json @type(Addr)
+}
+```
 
 ```js
 // The row was written when `Addr` had only a city.
-await db.place.findUnique({ where: { id: 1 } })
+db.$rawDbs.main.run(`INSERT INTO "place" ("id", "addr") VALUES (1, '{"city":"Reno"}')`)
+
+console.log(await db.place.findUnique({ where: { id: 1 } }))
 // → { id: 1, addr: { city: 'Reno' } }        ← fine
+```
+
+What fails is its next UPDATE, and it fails naming a column the caller never sent:
+
+```js throws
+db.$rawDbs.main.run(`INSERT INTO "place" ("id", "addr") VALUES (1, '{"city":"Reno"}')`)
 
 await db.place.update({ where: { id: 1 }, data: { addr: { city: 'Sparks' } } })
 // → ValidationError — addr.zip: is required  ← the row is stuck
 ```
+
 
 So the symptom reaches you as a support ticket from whoever owned that row,
 about a field they were not editing, long after the deploy that caused it.
@@ -102,23 +123,30 @@ declared shape there to hold a row to.
 
 ## The report
 
-Not a published entry point. `src/validate-rows.js` sits beside `release.js` and
-`access.js` and is reached the way they are — through the command — because an
-ops surface with two callers is two things to keep true. `--json` is the API:
+Not a published entry point. `validateRows(db, { models, limit })` in
+`src/validate-rows.js` sits beside `release.js` and `access.js` and is reached
+the way they are — through the command — because an ops surface with two
+callers is two things to keep true. `litestone validate --only=Place --json` is
+the API:
 
-```js
-const report = await validateRows(db, { models: ['Place'] })
-// {
-//   ok: false,
-//   checked:  [{ model: 'Place', rows: 2, failing: 2 }],
-//   findings: [{ model: 'Place', id: 1, errors: [{ path: ['addr','zip'], message: 'is required' }] }],
-//   models:   [{ model: 'Place', rows: 2, failing: 2, errors: [...] }],
-//   skipped:  [],
-// }
+```json
+{
+  "ok": false,
+  "checked":    [{ "model": "Place", "rows": 2, "failing": 2 }],
+  "findings":   [{ "model": "Place", "id": 1, "errors": [{ "path": ["addr", "zip"], "message": "is required" }] }],
+  "models":     [{ "model": "Place", "rows": 2, "failing": 2, "errors": [] }],
+  "skipped":    [],
+  "unreadable": [],
+  "notChecked": []
+}
 ```
 
 `checked` carries the true counts; `findings` is capped per model by `limit`
 (default 100), so a capped report never reads as a smaller problem than it is.
+`unreadable` names a model whose rows could not be read, with the error;
+`notChecked` names the `@encrypted`/`@secret` columns read around when
+`restore --verify` runs without the key — a pass over them would be a claim
+nothing made.
 
 ## See also
 

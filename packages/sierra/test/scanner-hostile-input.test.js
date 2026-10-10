@@ -144,8 +144,9 @@ describe('a route param named __proto__', () => {
   test('is readable — it was a setter call, so the route matched and the value vanished', () => {
     const m = matchRoute('/hello/', tree, { trailingSlash: 'always' })
     expect(m).toBeTruthy()
+    // biome-ignore lint/suspicious/noProto: the test asserts what an own `__proto__` key does
     expect(m.params.__proto__).toBe('hello')
-    expect(Object.prototype.hasOwnProperty.call(m.params, '__proto__')).toBe(true)
+    expect(Object.hasOwn(m.params, '__proto__')).toBe(true)
   })
 
   test('and the params object is not corrupted by it', () => {
@@ -157,6 +158,7 @@ describe('a route param named __proto__', () => {
     // setter syntax and produces `{}` — the same trap one layer up.
     const round = JSON.parse(JSON.stringify(m.params))
     expect(Object.keys(round)).toEqual(['__proto__'])
+    // biome-ignore lint/suspicious/noProto: the test asserts what an own `__proto__` key does
     expect(round.__proto__).toBe('hello')
   })
 

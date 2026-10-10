@@ -463,9 +463,9 @@ describe('what the machine is asked to do', () => {
   test('a volume prune answers only what it actually removed', async () => {
     // Basecamp forgets exactly these rows. A volume still held by a container
     // fails here and must not appear, or a full disk becomes invisible.
-    let call = 0
+    let _call = 0
     const run = async (argv) => {
-      call++
+      _call++
       return { exitCode: argv.includes('held') ? 1 : 0, stdout: '', stderr: 'volume is in use' }
     }
     const server = createOutpostServer(CONFIG, {

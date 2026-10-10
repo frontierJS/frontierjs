@@ -65,6 +65,7 @@
 .app {
   margin:           0;
   min-block-size:   100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the first declaration is the fallback for a browser without dvh */
   min-block-size:   100dvh;
   background:       var(--app-bg, var(--surface-sunken));
   color:            var(--ink);
@@ -83,6 +84,7 @@
     "topbar  topbar"
     "sidebar screen";
   min-block-size: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the first declaration is the fallback for a browser without dvh */
   min-block-size: 100dvh;
 }
 
@@ -106,6 +108,7 @@
  */
 .shell.viewport {
   block-size:     100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the first declaration is the fallback for a browser without dvh */
   block-size:     100dvh;
   min-block-size: 0;
   overflow:       hidden;

@@ -171,7 +171,7 @@ export class QueueWorker {
       this._db.exec('BEGIN IMMEDIATE')
       job = this._stmts.claimNextNamed(this._claimNames.length).get(params)
       this._db.exec('COMMIT')
-    } catch (err) {
+    } catch (_err) {
       try { this._db.exec('ROLLBACK') } catch {}
       // Busy lock is expected under concurrency — not an error
       return null

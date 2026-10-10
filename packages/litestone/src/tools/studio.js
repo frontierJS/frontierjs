@@ -235,7 +235,7 @@ export async function cmdStudio(cfg) {
   const { createClient }  = await import('../core/client.js')
   const { status: migStatus, apply: migApply, autoMigrate: migAuto,
           create: migCreate, createForDatabase: migCreateForDb } = await import('../core/migrations.js')
-  const { diffSchemas, buildPristine, generateMigrationSQL, summarizeDiff } = await import('../core/migrate.js')
+  const { diffSchemas, generateMigrationSQL, summarizeDiff } = await import('../core/migrate.js')
   const { columnPlan }    = await import('../export.js')
 
   // 8502 is dev/tooling/project 0/service 2 in the framework's port scheme —
@@ -244,7 +244,7 @@ export async function cmdStudio(cfg) {
   // because this package sits below the CLI that owns the formula. It was 5001
   // for its whole life, which the scheme had never heard of: the reserved slot
   // answered nothing and the tool sat outside the range (`FJS-557`).
-  const port        = parseInt(getFlag('port') ?? '8502')
+  const port        = parseInt(getFlag('port') ?? '8502', 10)
 
   // ── --host without --token ────────────────────────────────────────────────
   // Refused here, before the schema is read and before a database is opened, so
@@ -783,7 +783,7 @@ export async function cmdStudio(cfg) {
           if (!model) return json({ error: `Unknown table: ${table}` }, 400)
           const accessor = modelToAccessor(model.name)
           const tableDb  = authCtx ? activeDb.$setAuth(authCtx) : activeDb.asSystem()
-          const limit    = Math.max(10, Math.min(500, parseInt(pageSize) || 50))
+          const limit    = Math.max(10, Math.min(500, parseInt(pageSize, 10) || 50))
           const where    = buildSearchWhere(model, search)
           const ob       = buildOrderBySpec(model, orderBy)
           const result   = await tableDb[accessor].findManyCursor({ cursor, limit, where, withDeleted, orderBy: ob })
@@ -941,7 +941,7 @@ export async function cmdStudio(cfg) {
             try {
               const r = await tableDb[accessor].createMany({ data: batch })
               inserted += r?.count ?? batch.length
-            } catch (e) {
+            } catch (_e) {
               // Batch failed — retry row-by-row so one bad row doesn't sink 500
               for (let j = 0; j < batch.length; j++) {
                 try { await tableDb[accessor].create({ data: batch[j] }); inserted++ }
@@ -1975,7 +1975,7 @@ export async function cmdStudio(cfg) {
                 for (const t of tgts) {
                   if (tables[t] !== undefined) {
                     const n = parseFloat(s.n)
-                    if (!isNaN(n) && n < tables[t]) tables[t] = Math.floor(n)
+                    if (!Number.isNaN(n) && n < tables[t]) tables[t] = Math.floor(n)
                   }
                 }
               }
@@ -1994,7 +1994,7 @@ export async function cmdStudio(cfg) {
 
         // POST /api/transform/run — execute a pipeline
         if (path === '/api/transform/run') {
-          const { srcDb, outPath, steps, filenameFn } = body
+          const { srcDb, outPath, steps } = body
           if (!srcDb) return json({ error: 'srcDb is required' }, 400)
           const absDb = resolve(srcDb)
           if (!existsSync(absDb)) return json({ error: `DB not found: ${absDb}` }, 404)
@@ -2015,6 +2015,7 @@ export async function cmdStudio(cfg) {
                 case 'keep':        return t.keep(...(s.cols||'').split(',').map(c => c.trim()).filter(Boolean))
                 case 'mask':        return t.mask(s.col, s.strategy)
                 case 'rename':      return t.rename(s.from, s.to)
+                // biome-ignore lint/security/noGlobalEval: Studio evaluates a transform expression the operator typed
                 case 'set':         return t.set(s.col, eval(s.expr)) // eslint-disable-line no-eval
                 case 'redact':      return t.redact(s.mode === 'both' ? undefined : s.mode)
                 case 'drop-table':  return $[s.target].drop()

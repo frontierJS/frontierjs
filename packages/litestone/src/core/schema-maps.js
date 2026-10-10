@@ -550,7 +550,7 @@ export function buildFromMap(schema, pluralize = false) {
       // no relation behind it, an ambiguous one, and a via naming nothing.
       if (!fk || fk.ambiguous || fk.unresolvedVia) continue
       const { fkCols, refCols } = fk
-      const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+      const _idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 
       // The target model's own defaults apply, the same ones a direct read or an
       // include gets. Without this a @from counted rows the app had deleted, and
@@ -1009,7 +1009,7 @@ export function getCascadeTargets(modelName, shapes, modelToTable) {
 
   while (queue.length) {
     const parent = queue.shift()
-    for (const [relName, rel] of Object.entries(shapes[parent].relations)) {
+    for (const [_relName, rel] of Object.entries(shapes[parent].relations)) {
       if (rel.kind !== 'hasMany') continue
       const child = rel.targetModel
       // @keep is the opt-out: these children stay live when the parent goes,

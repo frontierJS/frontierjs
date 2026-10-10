@@ -17,7 +17,7 @@ import { createService, createBaseService } from '../src/core/service.ts'
 import { isDerivedHook } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
-const DERIVED = ['gateAuth', 'autoValidate', 'autoFilter', 'autoSort']
+const _DERIVED = ['gateAuth', 'autoValidate', 'autoFilter', 'autoSort']
 
 function hooksOf(svc: unknown): Record<string, Function[]> {
   return ((svc as { _hookMap?: { before?: Record<string, Function[]> } })._hookMap?.before ?? {})

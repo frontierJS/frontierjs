@@ -6,14 +6,11 @@
 // Run: bun test example/test.ts
 // ─────────────────────────────────────────────────────────────────────────
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect } from 'bun:test'
 import {
   createTestApp, request, testCtx,
-  createService, createSchema, v,
-  authenticate, requireRole, circuitBreaker,
-  protect, timestamps,
-  callService,
-  NotFound, BadRequest, Forbidden, Unavailable,
+  createService, circuitBreaker,
+  callService,Unavailable,
   healthPlugin, correlationId,
   type TestApp,
 } from '../index.ts'

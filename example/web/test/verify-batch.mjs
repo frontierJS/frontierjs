@@ -197,7 +197,7 @@ t('keys.aResumeReusesTheSameKey',
 
 await sys.payRun.transition(run.id, 'approve')
 const sends = recorder()
-const paid  = await payPayRun(sys, run.id, {
+const _paid  = await payPayRun(sys, run.id, {
   dispatchSend: (payslipId, key) => sends.dispatch(sendPayslip, { payslipId }, { id: key }),
 })
 

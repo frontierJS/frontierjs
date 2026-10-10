@@ -178,7 +178,7 @@ export function checkEnvField(key: string, field: EnvFieldSpec, raw: string | un
     case 'number':
     case 'port': {
       const n = Number(strValue)
-      if (isNaN(n)) return fail(`${key}: expected a number, got "${quote(strValue)}"`)
+      if (Number.isNaN(n)) return fail(`${key}: expected a number, got "${quote(strValue)}"`)
       if (type === 'port' && (n < 1 || n > 65535))
         return fail(`${key}: port must be between 1 and 65535, got ${n}`)
       value = n

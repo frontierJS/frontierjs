@@ -5,7 +5,7 @@
  * known Mesa tokens and returns a markdown tooltip.
  */
 
-'use strict'
+
 
 const vscode = require('vscode')
 

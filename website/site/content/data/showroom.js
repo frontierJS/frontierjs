@@ -280,7 +280,7 @@ await leads.create(draft)` },
   await leads.find()
 
   leads.subscribe()   // joins the 'leads' channel
-<\/script>
+</script>
 
 <!-- no refresh logic: the list is reactive -->
 {#each leads.data as lead}

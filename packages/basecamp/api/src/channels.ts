@@ -14,7 +14,13 @@
 import type { BasecampApp } from './basecamp.types.ts'
 
 type Channel = { send?: (event: string, data: unknown) => void }
-type Manager = { channel: (name: string) => Channel | undefined }
+type Manager = {
+  channel:    (name: string) => Channel | undefined
+  sendGraded: (
+    channelId: string, event: string, payload: unknown,
+    src: { db: unknown; accessor: string; label?: string },
+  ) => Promise<void>
+}
 
 /** Every browser in one workspace listens here. */
 export const workspaceChannelName = (workspaceId: string): string => `workspace:${workspaceId}`
@@ -49,10 +55,18 @@ export function channelManager(app: BasecampApp): Manager | undefined {
   return (app as unknown as Record<string, unknown>).channels as Manager | undefined
 }
 
-/** Tell everyone watching one workspace. A no-op where no manager is configured
- *  — a job that cannot announce has still done the work. */
-export function announce(
-  app: BasecampApp, workspaceId: string, event: string, row: unknown,
-): void {
-  channelManager(app)?.channel?.(workspaceChannelName(workspaceId))?.send?.(event, row)
+/** Tell everyone watching one workspace who may read `row`, a whole row of
+ *  `model`. A no-op where no manager is configured — a job that cannot announce
+ *  has still done the work.
+ *
+ *  Graded per recipient, never `Channel.send`: the row was read through
+ *  `asSystem()`, and a socket stays in the channel after its membership is gone,
+ *  so an ungraded send hands that socket every row an engine writes (`FJS-2443`).
+ *  Never throws, for the same reason a job need not announce. */
+export async function announce(
+  app: BasecampApp, workspaceId: string, model: string, event: string, row: unknown,
+): Promise<void> {
+  await channelManager(app)?.sendGraded(workspaceChannelName(workspaceId), event, row, {
+    db: app.db, accessor: model, label: event,
+  }).catch(() => { /* a dead socket is not the job's problem */ })
 }

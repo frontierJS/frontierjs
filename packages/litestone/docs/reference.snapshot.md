@@ -1521,7 +1521,7 @@ model Example {
 - **`tokenize`** — `unicode61` · `ascii` · `porter` · `trigram`
 - **Deeper** — [full-text-search.md](full-text-search.md)
 
-#### `@@extensible` `(column, declaredBy: Model[, max: { kind: N }])` <a id="extensible-model"></a>
+#### `@@extensible` `(column, declaredBy: Model[, scope: field][, max: { kind: N }])` <a id="extensible-model"></a>
 
 A column whose KEYS a tenant declares at runtime, and the model whose rows are those declarations — a customer of your app adds a field on a Tuesday, with no deploy. The column stays an ordinary Json blob: declaring says what a form OFFERS, not what may be written. `max:` is the optional half and it is the half that costs — it generates a pool of promoted columns so a declared key can be FILTERED on, and an unused slot is a tax on every write to that table forever, paid by every tenant including the ones who declared nothing. Its keys are members of the declaring model's own type enum, and the pool is laid down in that ratio, because a composite index is read left to right and the mix an app declared is the only statement anyone has about which segments should reach it. The declaring model is found by convention — `model`, `key`, `type`, and `slot` where a pool is asked for — with a refusal naming whichever is missing.
 

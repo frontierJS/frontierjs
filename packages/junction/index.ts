@@ -16,7 +16,7 @@ export { CALL_OPTIONS_AT } from './src/core/app.ts'
 export { loadConfig, deepMerge, parseTtl, defaultConfig } from './src/config/index.ts'
 export type { AppConfig, DeepPartial, JunctionConfig, JunctionMiddlewareConfig,
               JunctionPluginsConfig, JunctionServicesConfig,
-              JunctionCaravanConfig, JunctionConduitConfig }  from './src/config/index.ts'
+              JunctionCaravanConfig }  from './src/config/index.ts'
 
 // ─── Errors ───────────────────────────────────────────────────────────────
 export {

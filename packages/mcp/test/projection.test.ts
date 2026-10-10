@@ -598,7 +598,7 @@ describe('an argument schema resolves on its own', () => {
       const defs = (schema.$defs ?? {}) as Record<string, unknown>
       const refs: string[] = []
       ;(function walk(n: unknown): void {
-        if (Array.isArray(n)) return n.forEach(walk)
+        if (Array.isArray(n)) { n.forEach(walk); return }
         if (!n || typeof n !== 'object') return
         for (const [k, v] of Object.entries(n)) {
           if (k === '$ref' && typeof v === 'string') refs.push(v)

@@ -16,7 +16,7 @@ export const covers = []
 
 const state = `document.getElementById('state').textContent`
 const log   = `document.getElementById('log').textContent`
-const reset = `document.getElementById('log').textContent`
+const _reset = `document.getElementById('log').textContent`
 
 /** A point just past the far edge of a list item, so the pointer sits below
  *  its midpoint and the insertion index is the slot AFTER it. */

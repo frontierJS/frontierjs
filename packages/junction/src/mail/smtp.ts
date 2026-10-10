@@ -213,7 +213,7 @@ function parseResponse(raw: string): { response: SmtpResponse; consumed: number 
     const separator = line[3]                  // '-' = more lines, ' ' = terminal
     const text      = line.slice(4)
 
-    if (isNaN(code)) return null
+    if (Number.isNaN(code)) return null
 
     lines.push(text)
 

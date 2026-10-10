@@ -110,7 +110,7 @@ describe('bearerClaim', () => {
 
   test('a live token scopes the caller to the subject it resolved to', async () => {
     const db = await seeded()
-    const { app, seen } = await appWith(db)
+    const { app } = await appWith(db)
 
     const rows = rowsOf(await holding('live-one', () => app.service('answers').find({})))
     expect(rows.map(r => r.answer)).toEqual(['one'])

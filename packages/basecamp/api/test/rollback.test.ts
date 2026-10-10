@@ -240,7 +240,7 @@ describe('what a rollback refuses, before it writes anything', () => {
     // `success` is the whole from-list. A failed release put nothing on the
     // machine, so there is nothing of it to undo.
     const { current, app } = await anAppWithHistory()
-    const sys = env.system as any
+    const _sys = env.system as any
     const failed = await releaseAt('failed', {
       appId: app.id, workspaceId: ws.id,
       previousDeploymentId: current.id, toImage: 'x:v3' })

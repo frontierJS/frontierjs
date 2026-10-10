@@ -184,8 +184,7 @@ Raising a `@@gate` previews as **contract** *and* **narrows**, which is the pair
 that disagrees by construction and the reason both are shown. A word that changes
 none of the derived surfaces says so rather than showing empty panes. A pane the
 server could not compute shows the reason: `parse()` is more permissive than the
-layers above it, and a gate string it accepts and `deriveAccess` refuses used to
-come back as a bare 500.
+layers above it, and a gate string it accepts and `deriveAccess` refuses would otherwise come back as a bare 500.
 
 **The UI realm is deliberately absent.** Which control a form renders is sierra's
 `field-rules.js`, and litestone may not import sierra — a table here would be a

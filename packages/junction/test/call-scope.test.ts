@@ -15,7 +15,7 @@
 // ctx.locals.db under the method mid-call.
 
 import { describe, test, expect } from 'bun:test'
-import { createApp, createService, defaultConfig }        from '../index.ts'
+import { createApp, createService }        from '../index.ts'
 import { createLogger }                                   from '../src/core/logger.ts'
 import { $, currentCall, enterCall, announcingService }   from '../src/core/context.ts'
 import { createClient }                                   from '../../litestone/src/index.js'

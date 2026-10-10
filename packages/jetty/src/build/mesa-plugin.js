@@ -48,7 +48,7 @@ export function mesaPlugin(options = {}) {
   let compiler   = null
   let isDev      = false
   let viteRoot   = process.cwd()
-  let resolvedCompilerPath = null
+  let _resolvedCompilerPath = null
   let resolvedRuntimePath  = null
   let resolvedSwapPath     = null
   let stubWarned   = false
@@ -109,7 +109,7 @@ export function mesaPlugin(options = {}) {
         if (existsSync(p)) {
           try {
             compiler = await import(pathToFileURL(p).href)
-            resolvedCompilerPath = p
+            _resolvedCompilerPath = p
             // Runtime is sibling of compiler: same dir, runtime.js
             const runtimeP = p.replace(/compiler\.js$/, 'runtime.js')
             if (existsSync(runtimeP)) resolvedRuntimePath = runtimeP
@@ -123,7 +123,7 @@ export function mesaPlugin(options = {}) {
               if (existsSync(swapP)) { resolvedSwapPath = swapP; break }
             }
             break
-          } catch (e) {
+          } catch (_e) {
             // Try next candidate
           }
         }

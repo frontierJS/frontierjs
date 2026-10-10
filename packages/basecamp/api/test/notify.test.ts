@@ -21,7 +21,7 @@
 //   transport BEFORE delivering any of them, so getting this wrong costs the
 //   person both.
 
-import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
+import { test, expect, describe, afterAll } from 'bun:test'
 import { join }             from 'node:path'
 import { readdirSync }      from 'node:fs'
 import { createTestEnv }    from '@frontierjs/litestone/testing'

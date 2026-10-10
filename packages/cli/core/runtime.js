@@ -4,7 +4,6 @@ import { compileCliWithMap, extractFrontmatter } from './compiler.js'
 import { registerShim } from './stack.js'
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, rmSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
-import { fileURLToPath } from 'url'
 import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
 import { printPlanFromFile } from './prose.js'
@@ -1200,8 +1199,8 @@ function buildGitUtils(defaultDir) {
     remote: (dir) => run('git remote get-url origin', dir),
 
     // Commits ahead/behind the upstream tracking branch
-    ahead:  (dir) => parseInt(run('git rev-list --count @{u}..HEAD', dir)) || 0,
-    behind: (dir) => parseInt(run('git rev-list --count HEAD..@{u}', dir)) || 0,
+    ahead:  (dir) => parseInt(run('git rev-list --count @{u}..HEAD', dir), 10) || 0,
+    behind: (dir) => parseInt(run('git rev-list --count HEAD..@{u}', dir), 10) || 0,
   }
 }
 

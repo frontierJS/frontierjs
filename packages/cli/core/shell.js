@@ -66,6 +66,7 @@ const DRY = {
   throws()  { return this },
   cwd()     { return this },
   env()     { return this },
+  // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
   then(ok, fail) { return Promise.resolve(EMPTY).then(ok, fail) },
 }
 
@@ -95,6 +96,7 @@ class ShellRun {
   cwd(dir)     { this.#inner.cwd(dir);   return this }
   env(vars)    { this.#inner.env(vars);  return this }
 
+  // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
   then(ok, fail) {
     return this.#inner
       .then(

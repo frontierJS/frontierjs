@@ -14,7 +14,7 @@
 // Register it before requiring anything under out/:
 //   require('./vscode-stub').install()
 
-'use strict'
+
 
 const Module = require('module')
 

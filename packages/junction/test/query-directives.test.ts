@@ -28,7 +28,7 @@ function echoService() {
     name: 'things',
     find: async (ctx) => ({
       total: 0, limit: 0, offset: 0,
-      data: [{ query: ctx.query, directives: ctx.directives }],
+      data: [{ query: ctx.query, directives: { ...ctx.directives } }],
     }),
   })
 }
@@ -72,9 +72,25 @@ describe('the bridge splits the query string in two', () => {
     expect(got.directives).toEqual({})
   })
 
-  test('a garbage $limit falls back rather than producing NaN', async () => {
-    const got = await seen('?$limit=banana') as { directives: { limit?: number } }
-    expect(got.directives.limit).toBeUndefined()
+  test('a garbage $limit is refused by name rather than producing NaN or the default', async () => {
+    const app = await createTestApp({ services: [() => echoService()] })
+    const res = await request(app).get('/things?$limit=banana')
+    expect(res.status).toBe(400)
+    expect(String((res.body as { message?: string }).message)).toContain('$limit')
+  })
+
+  // FJS-2333: the wire types a bare `603` as a number, and a search for it was
+  // dropped, so the list answered every row.
+  test('a numeric $search is searched as its text', async () => {
+    const got = await seen('?$search=603') as { directives: { search?: string } }
+    expect(got.directives.search).toBe('603')
+  })
+
+  test('request().query() sends a numeric search as the browser client does', async () => {
+    const app = await createTestApp({ services: [() => echoService()] })
+    const res = await request(app).get('/things').query({ $search: '603' })
+    const got = (res.body as { data: Array<{ directives: { search?: string } }> }).data[0]
+    expect(got.directives.search).toBe('603')
   })
 })
 
@@ -96,17 +112,9 @@ describe('parseQuery consumes directives', () => {
     expect(parseQuery({}, 20, 100, { limit: 0 }).limit).toBe(0)
   })
 
-  test('the `$`-in-query path still works for callers that predate directives', () => {
-    // Direct parseQuery() users and older internal calls.
-    const q = parseQuery({ $limit: '10', $offset: '5', name: 'alice' })
-    expect(q.limit).toBe(10)
-    expect(q.offset).toBe(5)
-    expect(q.where).toEqual({ name: 'alice' })
-  })
-
-  test('explicit directives beat a `$` key of the same name', () => {
-    const q = parseQuery({ $limit: '10' }, 20, 100, { limit: 3 })
-    expect(q.limit).toBe(3)
+  test('a `$` key in query is refused by name, even beside the directive it spells', () => {
+    expect(() => parseQuery({ $limit: '10', $offset: '5', name: 'alice' })).toThrow(/'\$limit', '\$offset'/)
+    expect(() => parseQuery({ $limit: '10' }, 20, 100, { limit: 3 })).toThrow(/\$limit/)
   })
 })
 

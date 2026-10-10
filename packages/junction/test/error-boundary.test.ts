@@ -16,8 +16,7 @@
 
 import { describe, it, expect, afterEach } from 'bun:test'
 import {
-  toFrameworkError, registerErrorMapper,
-  FrameworkError, BadRequest, Unauthorized, Forbidden, NotFound,
+  toFrameworkError, registerErrorMapper,BadRequest, Unauthorized, Forbidden, NotFound,
   Conflict, PaymentRequired, GeneralError,
 } from '../src/core/errors.ts'
 import { createTestApp, request } from '../src/testing/index.ts'

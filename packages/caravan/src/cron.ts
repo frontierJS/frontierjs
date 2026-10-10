@@ -132,7 +132,7 @@ export function parseCronExpr(
   date:    Date,
   options: ValidateOptions = {},
 ): ValidateResult {
-  if (date instanceof Date && isNaN(date.getTime())) {
+  if (date instanceof Date && Number.isNaN(date.getTime())) {
     return { isValid: false, date: undefined }
   }
   const config = parseCron(line)

@@ -1,6 +1,16 @@
 # Replication
 
-Litestone wraps Litestream for continuous WAL replication to S3-compatible storage. Zero data loss with point-in-time recovery.
+Litestone wraps Litestream for continuous WAL replication to S3-compatible storage, with point-in-time recovery inside the retention window.
+
+The examples on this page use this schema:
+
+```lite
+model User {
+  id    Int    @id
+  email String @unique
+}
+```
+
 
 ## Setup
 
@@ -224,32 +234,24 @@ binary you provide.
 
 Litestream continuously streams SQLite's WAL (Write-Ahead Log) to S3/R2/GCS/Azure. Each WAL frame is uploaded as it's checkpointed — typically within seconds.
 
-Litestone sets the required SQLite pragmas automatically:
-- `WAL` mode
-- `synchronous = NORMAL`
-- `busy_timeout = 5000`
+Litestone sets the SQLite pragmas Litestream needs on every connection it opens
+(`src/core/pragmas.js`): WAL mode, `synchronous = NORMAL`, and a `busy_timeout`
+(default 5000 ms — [concurrency.md](concurrency.md)).
 
-## Point-in-time queries
+## Point-in-time restore
 
-With `l0Retention` set, query the database at any past timestamp:
+`l0Retention` is how far back `litestone restore --at <instant>` can reach.
+Default: `24h`. Litestream also answers a past instant on a live connection
+through its own VFS; that is Litestream's feature and not a litestone command.
 
-```sql
-PRAGMA litestream_time = '2024-01-15T10:30:00Z';
-SELECT * FROM users;
-```
-
-The `l0Retention` window determines how far back you can query. Default: `24h`.
 
 ## Providers
 
-```js
-// Cloudflare R2
-url: 'r2://bucket/path'
-
+```js fragment
 // AWS S3
 url: 's3://bucket/path'
 
-// Backblaze B2, MinIO, SeaweedFS — the endpoint goes in AWS_ENDPOINT_URL_S3
+// Cloudflare R2, Backblaze B2, MinIO, SeaweedFS — the endpoint goes in AWS_ENDPOINT_URL_S3
 url: 's3://bucket/path'
 
 // Local filesystem (dev/testing)
@@ -271,14 +273,21 @@ Use both: `db.$backup()` before migrations, Litestream for continuous protection
 ## Pre-migration backup
 
 ```js
+import { mkdirSync } from 'node:fs'
+import { apply } from '@frontierjs/litestone'
+
 // Always back up before running migrations
-await db.$backup(`./backups/pre-migration-${Date.now()}.db`)
-await apply(db, './migrations')
+mkdirSync('./backups', { recursive: true })
+mkdirSync('./migrations', { recursive: true })
+await db.$backup(`./backups/pre-migration-${Date.now()}.db`)   // → { path, size, vacuumed }
+await apply(db.$rawDbs.main, './migrations')                     // takes the SQLite handle — migrations.md
 ```
+
+`litestone migrate apply --backup` is the same two steps as one command.
 
 ## WAL status
 
 ```js
-const status = await db.$walStatus
-// → { walSize: 1048576, checkpointCount: 42, ... }
+const status = await db.$walStatus()
+// → { busy: false, frames: 0, checkpointed: 0 } — WAL frames since the last full checkpoint, read without checkpointing
 ```

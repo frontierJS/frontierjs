@@ -112,7 +112,7 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
     if (component && entry.refusal) return { file: relative(root, path), error: entry.refusal }
     for (const m of entry.code.matchAll(MESA_IMPORT)) {
       let dep
-      try { dep = resolveFrom(m[2], path) } catch (e) { return { file: relative(root, path), error: `cannot resolve ${m[2]}` } }
+      try { dep = resolveFrom(m[2], path) } catch (_e) { return { file: relative(root, path), error: `cannot resolve ${m[2]}` } }
       const refused = await lowers(dep, seen, component && takesComponent(m[1]))
       if (refused) return refused
     }

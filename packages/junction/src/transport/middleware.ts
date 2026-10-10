@@ -13,7 +13,7 @@
 import type { MiddlewareFn, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
 import { Forbidden, toFrameworkError }          from '../core/errors.ts'
-import { clientIp, requestMeta, inboundCorrelationId, mintCorrelationId } from '../core/context.ts'
+import { clientIp, requestMeta, inboundCorrelationId, mintCorrelationId, PROTOCOL_CALL_HEADERS, PROTOCOL_HTTP_ONLY_HEADERS } from '../core/context.ts'
 import {
   createRateLimiter,
   refuseLegacyRateLimitOptions,
@@ -96,9 +96,6 @@ export interface CorsOptions {
   maxAge?:      number      // seconds
 }
 
-/** What the browser client sends whether or not an app asked for it. */
-const PROTOCOL_HEADERS = ['X-Service-Method', 'X-Workspace-Id', 'Idempotency-Key', 'X-Fjs-Made-At', 'X-Fjs-Sent-At']
-
 /** Case-insensitive dedupe, first spelling wins — a list is header NAMES, and
  *  `content-type` and `Content-Type` are one header announced twice. */
 function _uniqueHeaders(names: string[]): string {
@@ -152,7 +149,7 @@ export function cors(opts: CorsOptions) {
   // states a list of its own: `config.http.cors.headers` is populated in
   // defaultConfig, so every app that configured CORS through config replaced
   // the default with three names and lost all three protocol headers.
-  const headerStr  = _uniqueHeaders([...headers, ...PROTOCOL_HEADERS, ...(opts.callHeaders ?? [])])
+  const headerStr  = _uniqueHeaders([...headers, ...PROTOCOL_HTTP_ONLY_HEADERS, ...PROTOCOL_CALL_HEADERS, ...(opts.callHeaders ?? [])])
 
   function isAllowed(origin: string): boolean {
     if (origins === '*') return true

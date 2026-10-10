@@ -295,7 +295,7 @@ describe('warnDuplicateSnippets', () => {
   })
 
   test('warns when two layouts in same chain declare same prop', () => {
-    const tree = makeTree([
+    const _tree = makeTree([
       {
         id: 'leads', path: '/leads/', file: 'src/routes/leads/index.mesa',
         layout: 'src/routes/leads/_module.mesa', meta: {}, params: [], children: []
@@ -471,14 +471,14 @@ describe('rewriteMesaSlots', () => {
 
   test('no warning emitted for <mesa:slot> named snippets', () => {
     // extractProvidedSlots should recognize mesa:slot tags
-    const { warnUnexportedSnippets } = require('../src/build/warnings.js')
+    require('../src/build/warnings.js')
     // Use dynamic import for ESM
   })
 })
 
 describe('warnUnexportedSnippets — mesa:slot suppression', () => {
   const routesDir = '/project/src/routes'
-  function collectWarnings(source, id = '/project/src/routes/page.mesa') {
+  function _collectWarnings(source, id = '/project/src/routes/page.mesa') {
     const { warnUnexportedSnippets } = require('../src/build/warnings.js')
     const warnings = []
     warnUnexportedSnippets(source, id, routesDir, (msg) => warnings.push(msg))

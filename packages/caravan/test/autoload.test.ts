@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import { resolve } from 'node:path'
 import { autoloadJobs } from '../src/autoload.ts'
 import { createCaravan } from '../src/index.ts'
-import type { HandlerOptions, JobHandler, JobRegistrar } from '../src/types.ts'
+import type { HandlerOptions, JobRegistrar } from '../src/types.ts'
 
 const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
 const COLON    = resolve(import.meta.dir, 'fixtures/colon-jobs')

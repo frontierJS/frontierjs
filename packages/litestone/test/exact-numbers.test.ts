@@ -200,6 +200,7 @@ describe('the range — the ceiling is 2^53, not int64 (`FJS-583`)', () => {
 
   test('a value past the range is refused by name, and names the bound', async () => {
     const db = await open()
+    // biome-ignore lint/correctness/noPrecisionLoss: the lost precision is the input under test
     await expect(db.rate.create({ data: { price: 12345678900000001, total: 0 } }))
       .rejects.toThrow(/at most 9,007,199,254,740,991 minor units/)
   })

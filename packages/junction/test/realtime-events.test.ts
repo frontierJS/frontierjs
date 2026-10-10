@@ -18,7 +18,7 @@
 // Neither is visible from the server side, and neither breaks a request. Both
 // were found by driving the real client against a real server.
 
-import { describe, test, expect, mock } from 'bun:test'
+import { describe, test, expect } from 'bun:test'
 import { createService, callService } from '../src/core/service.ts'
 import { AUTO_EVENT_MAP }             from '../src/core/events.ts'
 import { announce } from '../src/transport/channels.ts'

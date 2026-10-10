@@ -546,7 +546,7 @@ ctx.stream(readable, type, status?)
 
 // Pagination envelope with next/prev links built from the request URL
 ctx.paginate(rows, total, { limit, skip })
-// → { data, total, limit, offset, next: '/posts?$offset=20&$limit=20', prev: null }
+// → { data, total, limit, offset, next: '/posts?$limit=20&$offset=20', prev: null }
 
 // Server-Sent Events
 const { response, send, close, onDisconnect } = ctx.sse()

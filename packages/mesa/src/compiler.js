@@ -322,6 +322,7 @@ export function applyEventModifiers(ctx, modifiers, event, handler) {
       if (g === 'stopPropagation') return '$$e.stopPropagation();'
       if (g === 'self')    return 'if ($$e.target !== $$e.currentTarget) return;'
       if (g === 'trusted') return 'if (!$$e.isTrusted) return;'
+      return ''
     }).join(' ')
     handler = `($$e) => { ${guards} (${handler})($$e); }`
   }
@@ -367,7 +368,7 @@ export function trimEmptyNodes(nodes) {
 }
 
 export const isNumber = (v) =>
-  typeof v === 'number' || (v && typeof v === 'string' && !isNaN(v))
+  typeof v === 'number' || (v && typeof v === 'string' && !Number.isNaN(Number(v)))
 export const isObject = (d) => d !== null && typeof d === 'object'
 
 /**
@@ -1802,6 +1803,7 @@ xNode.template = (data) =>
 
 class Reader {
   constructor(src) {
+    // biome-ignore lint/correctness/noConstructorReturn: the constructor deliberately answers a different object
     if (src instanceof Reader) return src
     this.index = 0
     this.source = src
@@ -2046,8 +2048,8 @@ export function parseHTML(source) {
         tag.body = []
         try {
           go(tag)
-        } catch (e) {
-          if (typeof e === 'string') e = new Error(e)
+        } catch (caught) {
+          const e = typeof caught === 'string' ? new Error(caught) : caught
           if (!e.details) e.details = tag.openTag
           throw e
         }
@@ -2180,6 +2182,7 @@ export function parseHTML(source) {
             assertAt(!parent.parts.then,
               'A second {:then} in {#await}. A block has one then branch — the earlier ' +
               'one would be silently discarded.', bindStart)
+            // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
             parent.parts.then = []
             parent.parts.thenValue = v
             return go(parent, (n) => parent.parts.then.push(n))
@@ -4671,7 +4674,7 @@ export function scopeCSS(css, cssId) {
 }
 
 export function processCSS(ctx) {
-  const { styleNodes, config } = ctx
+  const { styleNodes } = ctx
   // The id is derived from the style content, so it is the same in every
   // compilation of this component — see `cssHash`. `styleNodes` is already
   // populated here, and `process()` below joins it the same way.
@@ -5105,7 +5108,7 @@ export function buildBlock(data, option = {}) {
     if (isRoot) {
       let svg = false,
         other = false
-      body.some((node) => {
+      body.forEach((node) => {
         if (node.type !== 'node') return
         if (svgElements[node.name]) svg = true
         else other = true
@@ -8046,7 +8049,7 @@ function _isInertBlock(blockNode) {
 }
 
 export function emitScript(ctx) {
-  const { vars, watchPaths, watchHandlers, watchGroups, postCallHooks, effects, imports } = ctx.analysis
+  const { vars, watchPaths, watchHandlers, watchGroups, postCallHooks, imports } = ctx.analysis
   const { module: mod, script } = ctx
   const raw = script.source
   const ast = script.ast
@@ -9853,7 +9856,6 @@ export async function compile(source, config = {}) {
   })()
 
   const ctx = {
-    source,
     config,
     uniqIndex: 0,
     warning: config.warning,
@@ -9990,8 +9992,8 @@ export async function compile(source, config = {}) {
     // place both are in scope, so it is where an offset becomes a place.
     try {
       ctx.DOM = parseHTML(source)
-    } catch (e) {
-      if (typeof e === 'string') e = new Error(e)
+    } catch (caught) {
+      const e = typeof caught === 'string' ? new Error(caught) : caught
       const at = e.pos != null ? ctx.posOf(e.pos) : null
       if (at && !e._located) {
         e.message = `${e.message} — ${at}`

@@ -168,10 +168,16 @@ function reason(e: unknown) {
     ?? lines.find(l => !/^\d+ \||^\^|^at /.test(l)) ?? ''
 }
 
+// A `fragment` runs nothing and nothing says so, so the count may only fall:
+// a new sliver is written complete, or an old one is completed to make room.
+const FRAGMENT_CEILING = 39
+
 const all: { id: string, block: Block }[] = []
+let fragments = 0
 for (const file of corpus())
   for (const block of blocksOf(file))
-    if (RUNNABLE.has(block.lang) && !block.words.has('fragment') && (!ONLY || `${file}:${block.line}`.includes(ONLY)))
+    if (RUNNABLE.has(block.lang) && block.words.has('fragment')) fragments++
+    else if (RUNNABLE.has(block.lang) && !block.words.has('fragment') && (!ONLY || `${file}:${block.line}`.includes(ONLY)))
       all.push({ id: `${file}:${block.line}`, block })
 
 // Every block runs up front, eight wide: a process per block is the isolation,
@@ -203,6 +209,11 @@ describe('every example in the docs runs', () => {
       if (err && !REPORT) throw err
       if (err) failures.push(`${id.padEnd(44)} ${block.lang.padEnd(4)} ${reason(err)}`)
     })
+
+  test(`fragments ratchet down (${fragments} of ${FRAGMENT_CEILING})`, () => {
+    if (fragments > FRAGMENT_CEILING) throw new Error(`${fragments} fragments, ceiling ${FRAGMENT_CEILING}: complete one, or lower the ceiling only`)
+    if (fragments < FRAGMENT_CEILING) throw new Error(`${fragments} fragments: lower FRAGMENT_CEILING to ${fragments}`)
+  })
 
   if (REPORT) test('report', () => {
     console.log(`\n${failures.length} of ${all.length} examples failing\n` + failures.join('\n') + '\n')

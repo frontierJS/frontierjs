@@ -28,11 +28,7 @@ const writeConfig = (obj) => {
 // Import after globals are set so module cache is fresh each test
 const { loadFrontierConfig } = await import('../core/utils.js')
 
-// Pull the helpers out of _module.md by evaluating its script block
-// (same way the fli runtime does it — compile and exec)
-import { compileCli, extractFrontmatter } from '../core/compiler.js'
 import { readFileSync } from 'fs'
-import { pathToFileURL } from 'url'
 
 // Set global.fliRoot so the _module.md script can resolve its dynamic import
 // (it does `await import(new URL('file://' + global.fliRoot + '/core/utils.js'))`)
@@ -55,7 +51,7 @@ async function loadModuleHelpers() {
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 

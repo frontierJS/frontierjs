@@ -137,9 +137,9 @@ describe('the gap fill\'s other two edges', () => {
   })
 })
 
-// FJS-2401: the CTE stepped from the bound's own day. Found by a CRM's
+// FJS-2407: the CTE stepped from the bound's own day. Found by a CRM's
 // monthly report (maidtech Q2) whose range began on 31 December in New York.
-describe('the gap fill walks whole buckets (FJS-2401)', () => {
+describe('the gap fill walks whole buckets (FJS-2407)', () => {
   const labels = (rows: any[]) => rows.map((r: any) => r.placedAt)
   const fill = (db: any, interval: string, start: string, end: string, timeZone?: string) =>
     db.order.groupBy({ by: ['placedAt'], interval: { placedAt: interval }, _count: true, orderBy: { placedAt: 'asc' }, fillGaps: { start, end }, ...(timeZone ? { timeZone } : {}) })
@@ -163,10 +163,65 @@ describe('the gap fill walks whole buckets (FJS-2401)', () => {
       .toEqual(['2024-12', '2025-01', '2025-02', '2025-03'])
   })
 
-  it('a week fill holds the days before a year\'s first Monday, once each', async () => {
-    // Monday 29 December 2025 is 2025-W52; Thursday 1 January 2026 is 2026-W00.
+  it('a week fill across New Year names each week once, by its Monday', async () => {
     const db = await seeded([[1, '2026-01-07T12:00:00.000Z', 1]])
-    expect(labels(await fill(db, 'week', '2025-12-29', '2026-01-12'))).toEqual(['2025-W52', '2026-W00', '2026-W01', '2026-W02'])
+    expect(labels(await fill(db, 'week', '2025-12-31', '2026-01-12'))).toEqual(['2025-12-29', '2026-01-05', '2026-01-12'])
+  })
+
+  // FJS-2417: a date-only bound was read as UTC midnight, the evening before
+  // in Chicago. The instant beside it is the control: it is still moved.
+  it('a bound written as a date is that date in the zone; an instant is still moved into it', async () => {
+    const db = await seeded([[1, '2025-02-10T12:00:00.000Z', 1]])
+    expect(labels(await fill(db, 'month', '2025-01-01', '2025-03-31', 'America/Chicago'))).toEqual(['2025-01', '2025-02', '2025-03'])
+    expect(labels(await fill(db, 'month', '2025-01-01T00:00:00Z', '2025-03-31', 'America/Chicago'))).toEqual(['2024-12', '2025-01', '2025-02', '2025-03'])
+    expect(labels(await fill(db, 'day', '2025-02-09', '2025-02-11', 'America/Chicago'))).toEqual(['2025-02-09', '2025-02-10', '2025-02-11'])
+  })
+})
+
+// FJS-2470: a week was a Monday-start `%Y-W%W` bucket cut in two at every year
+// boundary, and no business whose week starts Sunday could ask for its own.
+describe('a week is one bucket labelled by its first date (FJS-2470)', () => {
+  const ROWS: [number, string, number][] = [
+    [1, '2025-12-28T10:00:00.000Z', 1],   // Sunday
+    [2, '2025-12-31T10:00:00.000Z', 2],   // Wednesday
+    [3, '2026-01-03T10:00:00.000Z', 4],   // Saturday
+    [4, '2026-01-04T10:00:00.000Z', 8],   // Sunday
+    [5, '2026-01-05T10:00:00.000Z', 16],  // Monday
+  ]
+  const run = (db: any, extra: any = {}) =>
+    db.order.groupBy({ by: ['placedAt'], interval: { placedAt: 'week' }, _count: true, _sum: { amount: true }, orderBy: { placedAt: 'asc' }, fillGaps: false, ...extra })
+  const sums = (rows: any[]) => Object.fromEntries(rows.map((r: any) => [r.placedAt, r._sum.amount]))
+
+  it('Monday weeks, the default, are named by their Monday and do not split at New Year', async () => {
+    const db = await seeded(ROWS)
+    expect(sums(await run(db))).toEqual({ '2025-12-22': 1, '2025-12-29': 14, '2026-01-05': 16 })
+  })
+
+  it('weekStart: sunday cuts Sunday weeks, named by their Sunday', async () => {
+    const db = await seeded(ROWS)
+    expect(sums(await run(db, { weekStart: 'sunday' }))).toEqual({ '2025-12-28': 7, '2026-01-04': 24 })
+  })
+
+  it('a Sunday-week fill names every week once, across the year boundary', async () => {
+    const db = await seeded(ROWS)
+    const got = await run(db, { weekStart: 'sunday', fillGaps: { start: '2025-12-14', end: '2026-01-11' } })
+    expect(got.map((r: any) => r.placedAt)).toEqual(['2025-12-14', '2025-12-21', '2025-12-28', '2026-01-04', '2026-01-11'])
+    expect(got.map((r: any) => r._count)).toEqual([0, 0, 3, 2, 0])
+  })
+
+  it('weekStart is cut on the zone\'s wall clock', async () => {
+    // 2026-01-04T20:00Z is Monday 5 January in Tokyo.
+    const db = await seeded([[1, '2026-01-04T20:00:00.000Z', 1]])
+    expect(sums(await run(db, { weekStart: 'sunday', timeZone: 'Asia/Tokyo' }))).toEqual({ '2026-01-04': 1 })
+    expect(sums(await run(db, { weekStart: 'sunday' }))).toEqual({ '2026-01-04': 1 })
+    expect(sums(await run(db, { timeZone: 'Asia/Tokyo' }))).toEqual({ '2026-01-05': 1 })
+  })
+
+  it('weekStart is refused unless the interval is a week, and by name when not a weekday', async () => {
+    const db = await seeded(ROWS)
+    await expect(run(db, { interval: { placedAt: 'month' }, weekStart: 'sunday' })).rejects.toThrow(ValidationError)
+    await expect(db.order.groupBy({ by: ['amount'], weekStart: 'sunday', _count: true })).rejects.toThrow(ValidationError)
+    await expect(run(db, { weekStart: 'friday' })).rejects.toThrow(ValidationError)
   })
 })
 

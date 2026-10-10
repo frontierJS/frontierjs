@@ -364,7 +364,7 @@ export function docCitesDead({ root }) {
   const findings = []
   for (const doc of docs) {
     const prose = maskFences(doc.text)
-    const pkg   = packageRootOf(root, doc.path)
+    const _pkg   = packageRootOf(root, doc.path)
 
     // `ISSUES.md` is two tiers in one file: the rows above § Closed are the open
     // register and the rows below it are history that has not aged out to
@@ -532,7 +532,7 @@ function countFiles(dir, ext) {
   return n
 }
 
-function countMatches(file, re) {
+function _countMatches(file, re) {
   const text = readSafe(file)
   if (text === null) return null
   return [...text.matchAll(re)].length

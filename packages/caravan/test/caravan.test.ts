@@ -624,10 +624,10 @@ describe('crash recovery', () => {
     // Simulate a previous crash by dispatching then manually setting
     // status to running — as if the process died mid-execution
     const q = makeQueue()
-    const id = await q.dispatch('stuck-job', {})
+    const _id = await q.dispatch('stuck-job', {})
 
     // Manually set to running (simulates a crash)
-    const db = (q as unknown as { _db?: import('bun:sqlite').Database })
+    const _db = (q as unknown as { _db?: import('bun:sqlite').Database })
     // Access internal db via the test — we just verify start() resets it
     // by starting fresh and confirming the job gets picked up
 

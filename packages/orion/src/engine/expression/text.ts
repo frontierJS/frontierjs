@@ -76,6 +76,7 @@ function compile(ast: Ast): Expression {
     // the members as values.
     case 'list':     return { type: 'literal', value: ast.items }
     case 'ref':      return { type: 'ref', path: ast.path }
+    // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
     case 'ternary':  return { type: 'cond', if: compile(ast.cond), then: compile(ast.then), else: compile(ast.else) }
     case 'call':     return call(ast)
     case 'template': return { type: 'template', parts: ast.parts.map(compile) }

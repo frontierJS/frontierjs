@@ -277,7 +277,7 @@ export class NodeRegistry {
 
   /** A node's last hold went away. */
   _released(node: Expirable): void {
-    if (this._ttl <= 0) return this._drop(node)
+    if (this._ttl <= 0) { this._drop(node); return }
     node._releasedAt = Date.now()
     this._startSweeping()
   }

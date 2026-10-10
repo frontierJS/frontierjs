@@ -52,7 +52,7 @@ import { extractSegments, splitFrontmatter } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
 import { ownStyleBundle, glowSource, CDN_STYLESHEET } from './assets.js'
-const PORT = parseInt(process.env.FLI_PORT) || GLOBAL.gui
+const PORT = parseInt(process.env.FLI_PORT, 10) || GLOBAL.gui
 
 // ─── Registry cache ───────────────────────────────────────────────────────────
 // buildRegistry() walks the filesystem and reads every .md file — expensive

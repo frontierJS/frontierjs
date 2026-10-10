@@ -44,7 +44,7 @@ function printSearch(q, all) {
   const dim    = (s) => chalk.dim(s)
   const green  = (s) => chalk.green(s)
   const yellow = (s) => chalk.yellow(s)
-  const cyan   = (s) => chalk.cyan(s)
+  const _cyan   = (s) => chalk.cyan(s)
 
   const scored = all.map(m => {
     const title = m.title.toLowerCase()
@@ -111,7 +111,7 @@ async function printNamespace(ns, commands, verbose = false) {
   // Show module docs if --verbose or if requires are unmet
   if (verbose && mod) {
     if (mod.meta?.requires?.length) {
-      const unmet = mod.meta.requires.filter(k => !process.env[k])
+      const _unmet = mod.meta.requires.filter(k => !process.env[k])
       process.stdout.write(`  ${dim('requires')}\n`)
       for (const k of mod.meta.requires) {
         const set = process.env[k]

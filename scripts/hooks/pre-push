@@ -6,7 +6,7 @@
 # Edit THIS file, not the copy in .git/hooks — the installer symlinks, so a
 # change here is live, and .git/hooks is not in git.
 #
-# Runs the fast tier: hygiene, structure, registers, snapshots, access,
+# Runs the fast tier: hygiene, lint, structure, registers, snapshots, access,
 # coverage, registry, advisories, scaffold and typecheck. What it does NOT run
 # is deploy, tutor and the suites — those take minutes and drive a real browser,
 # and blocking every push on them trains people to reach for --no-verify, which

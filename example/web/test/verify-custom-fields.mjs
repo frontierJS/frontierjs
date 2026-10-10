@@ -60,7 +60,6 @@
  * count is a delta rather than an absolute.
  */
 
-import { readFileSync }  from 'node:fs'
 import { spawn }         from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createClient }  from '@frontierjs/litestone'

@@ -12,7 +12,7 @@
 export const name = 'runtime'
 
 export async function run(t) {
-  const { createSignal, flushSync } = t.runtime
+  const { createSignal } = t.runtime
   const $$tui = t.tui
 
   const [count, setCount]   = createSignal(0)

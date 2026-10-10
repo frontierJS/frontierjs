@@ -216,7 +216,7 @@ describe('the index', () => {
 
 import { createClient, autoMigrate } from '../src/index.js'
 import { distance } from '@frontierjs/toolbelt/geo'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 

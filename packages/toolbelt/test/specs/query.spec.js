@@ -175,6 +175,7 @@ test('query: an empty object or array is sent, not dropped', function () {
 test('query: {} and [] are themselves, and quoted they are text', function () {
   assert.deepEqual(parseValue('{}'), {})
   assert.deepEqual(parseValue('[]'), [])
+  // biome-ignore lint/suspicious/noSelfCompare: the comparison asserts identity or stability, which is the point
   assert.ok(parseValue('{}') !== parseValue('{}'), 'each read is a fresh container')
   const pairs = Object.fromEntries(encodePairs({ a: '{}', b: '[]' }))
   assert.equal(pairs.a, '"{}"')

@@ -4,8 +4,8 @@ Reference tells you what an attribute does. This tells you which one to reach fo
 
 Each entry is a question that comes up on most models, the test that settles it,
 and what the wrong answer costs. Where the answer is decided by something in
-Litestone's own emitter or client rather than by taste, the line is cited — those
-are the ones that cannot be reasoned out from the schema language alone.
+Litestone's own emitter or client rather than by taste, the function is named —
+those are the ones that cannot be reasoned out from the schema language alone.
 
 ## Which feature makes this field?
 
@@ -101,6 +101,11 @@ it whole, which is why the shape kept appearing without a `draft` state at all.
 hasMany relation says which children it is made of:
 
 ```lite
+enum DocState { draft  issued  paid  void }
+
+model Payment     { id Int @id  invoiceId Int  invoice Invoice @relation(fields: [invoiceId], references: [id]) }
+model InvoiceLine { id Int @id  invoiceId Int  invoice Invoice @relation(fields: [invoiceId], references: [id]) }
+
 model Invoice {
   id     Int      @id
   state  DocState @default(draft)
@@ -165,29 +170,6 @@ tools rather than tastes:
   `orderBy` says so rather than answering the right rows in the wrong order
   ([sorting.md](sorting.md)). Reach for it when the derivation needs JavaScript:
   formatting, a lookup table, anything with a branch SQL would make unreadable.
-### What the parser refuses, and what `advise` merely reports
-
-Two owners, and the line between them is whether the schema can be built at all.
-
-The **parser** refuses what cannot be expressed. Three of these are derived from
-one question — *what does the column physically hold* — rather than ruled
-attribute by attribute:
-
-| written | what happens without the rule |
-| --- | --- |
-| `@unique` / `@@unique` / `@@index` over `@computed`, `@derived` or `@from` | the constraint vanishes, or `@@unique` emits `UNIQUE ("c")` over a column that is not emitted and SQLite refuses the whole table at boot |
-| `@default(12.99)` on `@scale(2)` or `@money` | the column is an INTEGER of minor units, so `DEFAULT 12.99` is written into the DDL and the first row that takes it is refused |
-| `@relation` between models in two `database` blocks | a foreign key names a table and a table lives in one file, so every create throws `no such table` |
-| `@minItems`/`@maxItems` on a to-one relation, or on an implicit many-to-many | the count is of child ROWS and is reached through the child's foreign key — one side holds a single row, the other holds no key at all |
-
-`@generated` is deliberately not in the first row: it is a real column and takes
-a constraint like any other.
-
-**`litestone advise`** is the other half — what is legal and *wrong*. Its own
-contract is that every rule in it parses, so `@@fts` over an `@encrypted` column
-(the index holds ciphertext; `search()` can never match a word) is reported
-there and not refused here.
-
 - **`@derived(expr)`** — a *predicate or a bucket*, in the `@@allow` expression
   language, emitted into the SELECT. Filterable and sortable, because it is SQL.
   The language is comparisons, `and`/`or`/`not`, a ternary, `now()` and
@@ -219,6 +201,29 @@ the language `@derived` speaks cannot express any of them — it has comparisons
 and a ternary, and no arithmetic, no concatenation and no function calls. Of
 the second group, the ones that are **joined strings** take `@generated`'s
 backtick form and the rest take its SQL one.
+
+### What the parser refuses, and what `advise` merely reports
+
+Two owners, and the line between them is whether the schema can be built at all.
+
+The **parser** refuses what cannot be expressed. Three of these are derived from
+one question — *what does the column physically hold* — rather than ruled
+attribute by attribute:
+
+| written | what happens without the rule |
+| --- | --- |
+| `@unique` / `@@unique` / `@@index` over `@computed`, `@derived` or `@from` | the constraint vanishes, or `@@unique` emits `UNIQUE ("c")` over a column that is not emitted and SQLite refuses the whole table at boot |
+| `@default(12.99)` on `@scale(2)` or `@money` | the column is an INTEGER of minor units, so `DEFAULT 12.99` is written into the DDL and the first row that takes it is refused |
+| `@relation` between models in two `database` blocks | a foreign key names a table and a table lives in one file, so every create throws `no such table` |
+| `@minItems`/`@maxItems` on a to-one relation, or on an implicit many-to-many | the count is of child ROWS and is reached through the child's foreign key — one side holds a single row, the other holds no key at all |
+
+`@generated` is deliberately not in the first row: it is a real column and takes
+a constraint like any other.
+
+**`litestone advise`** is the other half — what is legal and *wrong*. Its own
+contract is that every rule in it parses, so `@@fts` over an `@encrypted` column
+(the index holds ciphertext; `search()` can never match a word) is reported
+there and not refused here.
 
 ### Where the matrix runs out
 

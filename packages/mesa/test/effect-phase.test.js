@@ -22,7 +22,7 @@
 
 import { describe, test, expect, beforeAll } from 'vitest'
 
-let createSignal, createEffect, render, flushSync, ifBlock
+let createSignal, createEffect, render, flushSync, _ifBlock
 
 beforeAll(async () => {
   const { Window } = await import('happy-dom')
@@ -31,7 +31,7 @@ beforeAll(async () => {
     try { Object.defineProperty(globalThis, k, { value: win[k], configurable: true, writable: true }) } catch {}
   }
   globalThis.window = win
-  ;({ createSignal, createEffect, render, flushSync, ifBlock } = await import('../src/runtime.js'))
+  ;({ createSignal, createEffect, render, flushSync, _ifBlock } = await import('../src/runtime.js'))
 })
 
 describe('user effects run after the DOM updates', () => {

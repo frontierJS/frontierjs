@@ -186,6 +186,9 @@ export function appCheckScripts({ tests = false } = {}) {
     check:      'fli check && bun run lint && bun run typecheck',
   }
   if (tests) {
+    // The test file types its tables off db/schema.d.ts, which a clone does not
+    // carry until `db:types` has run.
+    scripts.typecheck = 'bun run db:types && fli typecheck'
     scripts.test   = 'bun test api/test'
     scripts.check += ' && bun run test'
   }

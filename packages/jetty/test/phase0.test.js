@@ -133,18 +133,18 @@ try {
 try {
   defineDock({})
   bad('defineDock({}) accepted — should reject (no app)')
-} catch (e) { ok('defineDock({}) rejected w/ clear error') }
+} catch (_e) { ok('defineDock({}) rejected w/ clear error') }
 
 // Island validation
 const { defineIsland } = await import('../src/index.js')
 try {
   defineIsland({})
   bad('defineIsland({}) accepted — should require app or main')
-} catch (e) { ok('defineIsland({}) rejected (need app or main)') }
+} catch (_e) { ok('defineIsland({}) rejected (need app or main)') }
 try {
   defineIsland({ app: () => {}, world: 'MAIN' })
   bad('defineIsland({app, world: MAIN}) accepted — should reject')
-} catch (e) { ok('defineIsland({app, world: MAIN}) rejected') }
+} catch (_e) { ok('defineIsland({app, world: MAIN}) rejected') }
 try {
   defineIsland({ main: async () => {}, world: 'MAIN' })
   ok('defineIsland({main, world: MAIN}) accepted')

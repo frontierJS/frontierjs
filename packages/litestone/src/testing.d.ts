@@ -3,7 +3,7 @@
 // Re-exports Factory / Seeder / runSeeder from the main package (typed in
 // index.d.ts), plus testing-only helpers that don't belong in the runtime API.
 
-import type { LitestoneClient, ParseResult, Factory, FactoryRng, FactoryRow } from './index.js'
+import type { LitestoneClient, RegisteredClient, ParseResult, Factory, FactoryRng, FactoryRow } from './index.js'
 
 export { Factory, defineFactory, Seeder, runSeeder, loadFixture, parseCsv } from './index.js'
 export type { FactoryRng, FactoryRow, FactoryOverrides, FactorySpec, LoadFixtureOptions } from './index.js'
@@ -305,11 +305,11 @@ export interface PolicyMismatch {
   message: string
 }
 
-export interface TestEnv {
+export interface TestEnv<TClient = RegisteredClient> {
   /** The unscoped client. */
-  db:        LitestoneClient
+  db:        TClient
   /** `db.asSystem()` — for arranging fixtures below the boundary. */
-  system:    LitestoneClient
+  system:    TClient
   factories: Record<string, Factory>
   schema:    ParseResult['schema']
   /** The throwaway directory holding this env's databases. */
@@ -321,7 +321,7 @@ export interface TestEnv {
   clock:     TestClock
 
   /** A scoped client for a principal, graded by the app's own `getLevel`. */
-  actingAs(user: unknown): LitestoneClient
+  actingAs(user: unknown): TClient
 
   /**
    * A client graded at `n` by a synthetic resolver, for walking the gate grid.
@@ -329,7 +329,7 @@ export interface TestEnv {
    * a grid driven through it says nothing about the app's own derivation.
    * `atLevel(8)` is `asSystem()`, since `getLevel` is clamped to 0–7.
    */
-  atLevel(n: number): Promise<LitestoneClient>
+  atLevel(n: number): Promise<TClient>
 
   /** Every gated model's ladder, model name attached. The axis, not the run. */
   gateMatrix(modelName?: string): Array<GateCase & { model: string }>
@@ -393,14 +393,14 @@ export interface TestEnv {
    * later `phases()` call, with their ids, so the value it returns stays valid.
    * Refused twice, and refused after the first scenario has run.
    */
-  setup<T>(fn: (tools: ArrangeTools) => T | Promise<T>): Promise<T>
+  setup<T>(fn: (tools: ArrangeTools<TClient>) => T | Promise<T>): Promise<T>
 
   /**
    * Arrange / Act / Assert, scoped by what each phase can reach. Call inside
    * whatever `test()` the package uses — this is not tied to a runner.
    * Begins a scenario: restores `setup()`'s rows when a setup was declared.
    */
-  phases(opts?: { as?: unknown }): TestPhases
+  phases(opts?: { as?: unknown }): TestPhases<TClient>
 
   /** Snapshot the current rows. */
   seal(): void
@@ -410,20 +410,20 @@ export interface TestEnv {
   close(): void
 }
 
-export interface ArrangeTools {
+export interface ArrangeTools<TClient = RegisteredClient> {
   /** `asSystem()` — writes below the boundary, announcing nothing. */
-  system:    LitestoneClient
+  system:    TClient
   factories: Record<string, Factory>
-  db:        LitestoneClient
+  db:        TClient
 }
 
-export interface TestPhases {
+export interface TestPhases<TClient = RegisteredClient> {
   /** Setup, through the system client. Refused once `act` has run. */
-  arrange<T>(fn: (tools: ArrangeTools) => T | Promise<T>): Promise<T>
+  arrange<T>(fn: (tools: ArrangeTools<TClient>) => T | Promise<T>): Promise<T>
   /** The one mutation, through the principal's graded client. Once per scenario. */
-  act<T>(fn: (as: LitestoneClient) => T | Promise<T>): Promise<T>
+  act<T>(fn: (as: TClient) => T | Promise<T>): Promise<T>
   /** Assertions, through the principal's graded READ-ONLY client. */
-  assert<T>(fn: (read: LitestoneClient) => T | Promise<T>): Promise<T>
+  assert<T>(fn: (read: TClient) => T | Promise<T>): Promise<T>
 }
 
 /**
@@ -479,8 +479,12 @@ export interface TestClock {
  * A migrated database, a client, factories and a principal, in one call. The
  * tables arrive as a file copy from a template migrated once per schema per
  * process, so the per-test cost is a copy rather than a DDL run.
+ *
+ * The type argument names the app's generated client, as `createClient`'s does;
+ * unnamed, it is the one `db/schema.d.ts` registered, else the hand-written one
+ * whose every table is `unknown`.
  */
-export declare function createTestEnv(opts: TestEnvOptions): Promise<TestEnv>
+export declare function createTestEnv<TClient = RegisteredClient>(opts: TestEnvOptions): Promise<TestEnv<TClient>>
 
 export interface ValidationCase {
   field:   string

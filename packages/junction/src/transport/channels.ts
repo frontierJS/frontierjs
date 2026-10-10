@@ -36,12 +36,11 @@ import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
-import { MADE_AT_HEADER, SENT_AT_HEADER, acceptedRequestId } from '../core/context.ts'
+import { PROTOCOL_CALL_HEADERS, acceptedRequestId } from '../core/context.ts'
 import { serviceAccessor }      from '../core/service.ts'
 import { wsSend }               from './send-queue.ts'
 import { logSocketCall }        from './middleware.ts'
 import type { ServiceContext } from './bridge.ts'
-import type { IAuth }          from '../auth/types.ts'
 import type { App, Plugin }    from '../core/app.ts'
 import { SESSION_SOCKET }       from './types.ts'
 import type { WsContext }      from './types.ts'
@@ -702,7 +701,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
     sendToConn,
     flushMs:    _presencePolicy.flushMs,
   })
-  const presenceFor     = _presence.presenceFor
+  const _presenceFor     = _presence.presenceFor
   const presenceMembers = _presence.members
   const presenceGet     = _presence.get
   const presenceByUser  = _presence.byUser
@@ -1208,15 +1207,16 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
           })()
 
       const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 }, opts.claims)
+      if (typeof app.claim === 'function') app.claim('channels', manager)
+      else (app as unknown as Record<string, unknown>).channels = manager
       _manager = manager
-      ;(app as unknown as Record<string, unknown>).channels = manager
 
       // Convenience shortcuts
       ;(app as unknown as Record<string, unknown>).channel     = (name: string) => manager.channel(name)
       ;(app as unknown as Record<string, unknown>).localPresence   = (channelId: string) => manager.localPresence(channelId)
       ;(app as unknown as Record<string, unknown>).localPresenceOf = (userId: string | number) => manager.localPresenceOf(userId)
 
-      const auth = app.auth
+      const _auth = app.auth
 
       // Pre-import service dispatch dependencies — resolved once at register,
       // not on every incoming WebSocket message.
@@ -1727,9 +1727,9 @@ function reportAnnounceReach(app: App): void {
 
 // ─── Per-call headers ─────────────────────────────────────────────────────
 
-/** Junction's own protocol headers — the browser client sends these whether or
- *  not an app asked for them, so they are always mergeable. */
-const PROTOCOL_CALL_HEADERS = ['x-workspace-id', 'idempotency-key', MADE_AT_HEADER, SENT_AT_HEADER]
+/** Junction's own protocol headers, lower-cased — always mergeable off a frame.
+ *  The declaration is `PROTOCOL_CALL_HEADERS` in core/context.ts, shared with CORS. */
+const PROTOCOL_CALL_LOWER = PROTOCOL_CALL_HEADERS.map(h => h.toLowerCase())
 
 /**
  * The upgrade request's headers, plus the ones this frame is allowed to state.
@@ -1749,7 +1749,7 @@ function _mergeCallHeaders(
   app:         App,
 ): Record<string, string> {
   const declared = declaredCallHeaders(app)
-  const allowed  = new Set([...PROTOCOL_CALL_HEADERS, ...declared.map(h => h.toLowerCase())])
+  const allowed  = new Set([...PROTOCOL_CALL_LOWER, ...declared.map(h => h.toLowerCase())])
 
   let merged: Record<string, string> | null = null
   const put = (name: string, value: unknown) => {
@@ -1774,7 +1774,7 @@ function _frameProtocolHeaders(frame: unknown): Record<string, string> | undefin
   let out: Record<string, string> | undefined
   for (const [name, value] of Object.entries(frame)) {
     const lower = name.toLowerCase()
-    if (value == null || !PROTOCOL_CALL_HEADERS.includes(lower)) continue
+    if (value == null || !PROTOCOL_CALL_LOWER.includes(lower)) continue
     ;(out ??= {})[lower] = String(value)
   }
   return out

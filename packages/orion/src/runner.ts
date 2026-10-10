@@ -88,6 +88,7 @@ const insideRun = new AsyncLocalStorage<string>()
 // ─── errors ──────────────────────────────────────────────────────────────────
 
 export class FlowRateLimitedError extends Error {
+  readonly status = 429
   constructor(readonly flowId: string, readonly limit: number) {
     super(`Flow "${flowId}" has started ${limit} runs in the last minute, its limit`)
     this.name = "FlowRateLimitedError"
@@ -95,6 +96,7 @@ export class FlowRateLimitedError extends Error {
 }
 
 export class FlowNotRunnableError extends Error {
+  readonly status = 409
   constructor(readonly flowId: string, reason: string) {
     super(`Flow "${flowId}" cannot run: ${reason}`)
     this.name = "FlowNotRunnableError"

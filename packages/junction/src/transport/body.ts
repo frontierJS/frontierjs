@@ -22,7 +22,7 @@ const CT_URLENCODED  = 'application/x-www-form-urlencoded'
 const CT_MULTIPART   = 'multipart/form-data'
 /** The part the junction client puts a write's non-string values in. */
 export const MULTIPART_JSON = '$json'
-const CT_TEXT        = 'text/plain'
+const _CT_TEXT        = 'text/plain'
 const CT_XML_APP     = 'application/xml'
 const CT_XML_TEXT    = 'text/xml'
 
@@ -400,7 +400,7 @@ function parseMultipart(
 
   // Build boundary markers as Uint8Array for scanning
   const boundaryBytes  = ENCODER.encode('--' + boundary)
-  const finalBytes     = ENCODER.encode('--' + boundary + '--')
+  const _finalBytes     = ENCODER.encode('--' + boundary + '--')
   const CRLF_CRLF_BYTES = ENCODER.encode(CRLF_CRLF)
 
   let pos = 0

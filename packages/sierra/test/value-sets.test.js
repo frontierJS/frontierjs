@@ -308,7 +308,7 @@ describe('resource.aggregate — the verb, from the client', () => {
     res.service.invoke = svc.invoke
 
     const a = await res.aggregate({ by: ['status'], _count: true })
-    const b = await res.aggregate({ by: ['status'], _count: true })
+    const _b = await res.aggregate({ by: ['status'], _count: true })
 
     expect(a).toEqual({ _count: 3 })
     expect(seen.length).toBe(2)                       // asked twice — a total is not cacheable

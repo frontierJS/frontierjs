@@ -22,12 +22,13 @@ function tree(files) {
   return root
 }
 
-// FJS-2368: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-test.failing('a proof row naming a directory with a trailing slash matches a file under it', () => {
+test('a proof row naming a directory with a trailing slash matches a file under it', () => {
   const m = matchChanged('the deploy pipeline — `_steps-docker/`, `core/machine.js`', {
     files: ['packages/cli/commands/deploy/_steps-docker/01-preflight.md'], packages: [],
   })
   expect(m?.tier).toBe('path')
+  // A directory token is a whole segment: `_steps-docker/` is not under `my_steps-docker/`.
+  expect(matchChanged('`_steps-docker/`', { files: ['x/my_steps-docker/a.md'], packages: [] })).toBeNull()
 })
 
 // FJS-2378: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
@@ -73,8 +74,7 @@ test.failing('proof-target reports a Run cell that resolves to no target at all'
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-// FJS-2366: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-test.failing('command-resolves finds a typescript hoisted to a parent node_modules', () => {
+test('command-resolves finds a typescript hoisted to a parent node_modules', () => {
   const real = join(import.meta.dir, '..', '..', '..', 'node_modules', 'typescript')
   if (!existsSync(real)) return
   const ws = tree({

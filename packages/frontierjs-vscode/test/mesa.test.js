@@ -13,7 +13,7 @@
 // the three providers were plain JS that tsc never emitted, so activation threw
 // on its first require — which is why `startMesaClient` was commented out.
 
-'use strict'
+
 
 const path = require('path')
 const fs   = require('fs')

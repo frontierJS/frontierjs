@@ -96,6 +96,7 @@ export function targetExpression(command) {
   const value = command.trim()
   const rest  = value === 'fli' ? '' : value.startsWith('fli ') ? value.slice(4) : null
   if (rest === null) return escapeTemplate(value)
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the text is emitted into a template literal
   return '${$.fli}' + (rest ? ' ' + escapeTemplate(rest) : '')
 }
 
@@ -134,6 +135,7 @@ export function renderShortcut({ name, command, description = '' }) {
     'const extra = process.argv.slice(3).map(q).join(\' \')',
     '',
     '$.exec({',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the text is emitted into a template literal
     '  command: `' + target + '${extra ? \' \' + extra : \'\'}`,',
     '  cwd:     $.paths.root,',
     '  dry:     flag.dry,',

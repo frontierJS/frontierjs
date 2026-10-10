@@ -53,7 +53,7 @@ d('the fixture is a browser-shaped host', () => {
 })
 
 d('a server global named outside #host', () => {
-  // AUDIT-2.3-1: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2399: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // core/databases.js resolveDbPath reads process.env for `path env(...)`.
   test.failing('a `database { path env(...) }` resolves its default, or is refused by name', () => {
     const v = answers['env-path']
@@ -61,7 +61,7 @@ d('a server global named outside #host', () => {
     expect(v.opened === true || /not set|HOST_UNAVAILABLE/.test(`${v.message}${v.code}`)).toBe(true)
   })
 
-  // AUDIT-2.3-2: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2398: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // core/encryption.js normalizeKey is Buffer.from, reached at createClient
   // before #host's createCipheriv refusal can say what is wrong.
   test.failing('an @encrypted write on a device is refused by #host, naming the attribute', () => {
@@ -70,7 +70,7 @@ d('a server global named outside #host', () => {
     expect(v.code).toBe('HOST_UNAVAILABLE')
   })
 
-  // AUDIT-2.3-3: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2396: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // core/audit-log.js armExitFlush: `typeof process?.on` evaluates `process`
   // before `typeof` can protect it, inside the create() that fired the log.
   test.failing('a @@trail write lands and the write resolves; the trail failure is a warning', () => {
@@ -79,7 +79,7 @@ d('a server global named outside #host', () => {
     expect(v.threw).toBeNull()
   })
 
-  // AUDIT-2.3-4: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2400: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // core/client.js mints the cross-process writer id from process.pid.
   test.failing('`announce crossProcess` opens, or is refused by name', () => {
     const v = answers['cross-process']
@@ -87,7 +87,7 @@ d('a server global named outside #host', () => {
     expect(v.opened === true || v.code === 'HOST_UNAVAILABLE').toBe(true)
   })
 
-  // AUDIT-2.3-5: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2397: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // core/hooks.js emit() and core/client.js dispatchEvent() defer with a bare
   // setImmediate; audit-log.js already falls back to setTimeout for the same call.
   test.failing('an onEvent listener fires after the write, and the write resolves', () => {
@@ -97,7 +97,7 @@ d('a server global named outside #host', () => {
     expect(v.landed).toBe(1)
   })
 
-  // AUDIT-2.3-6: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // FJS-2401: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // core/backup.js is Bun.write and Bun.file behind no seam.
   test.failing('$backup on a device is refused by name', () => {
     const v = answers['backup']

@@ -153,6 +153,7 @@ export class Factory {
     // Return a Proxy so that trait methods (defined via class instance fields
     // which run AFTER super() returns) are available immediately on the instance.
     // The Proxy intercepts unknown property lookups and calls _ensureTraits() first.
+    // biome-ignore lint/correctness/noConstructorReturn: the constructor deliberately answers a different object
     return new Proxy(this, {
       get(target, prop, receiver) {
         // For known internal props, return directly
@@ -637,6 +638,7 @@ export function defineFactory(spec = {}) {
       if (afterCreate) this.afterCreate = afterCreate
       Object.assign(this, rest)
       this._ensureTraits()
+      // biome-ignore lint/correctness/noConstructorReturn: the constructor deliberately answers a different object
       return this
     }
   }

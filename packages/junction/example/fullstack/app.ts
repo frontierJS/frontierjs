@@ -165,7 +165,7 @@ if (!bundle.success) {
 
 const clientJs = await bundle.outputs[0]!.text()
 
-app.http.router.get('/client.js', async ctx =>
+app.http.router.get('/client.js', async _ctx =>
   new Response(clientJs, { headers: { 'content-type': 'text/javascript' } }))
 
 // ctx.file() for a single file. (serveStatic() is the directory-tree version

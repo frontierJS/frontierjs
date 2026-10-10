@@ -28,7 +28,7 @@
 // separate from ours. Our classifier only fires when a change can't be
 // hot-replaced by Vite alone.
 
-import { posix, sep } from 'node:path'
+import { sep } from 'node:path'
 
 export function classifyChange({ relPath, found }) {
   // Normalize separators — Windows paths arrive with backslashes.

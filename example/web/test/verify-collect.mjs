@@ -60,7 +60,7 @@ const HOOK_SECRET = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-secr
 // process: the outbound call needs the booted conduit, and the inbound webhook
 // needs the route bound on 8110. A spawned server gives the second and not the
 // first.
-const stopAll = () => {}
+const _stopAll = () => {}
 
 for (const [port, what] of [[8110, 'the API']]) {
   let busy = false
@@ -109,7 +109,7 @@ const { chargeInvoice, issueInvoice, periodLines, startSubscription } = await im
 const sys = db.asSystem()
 
 const RUN = String(Date.now()).slice(-6)
-const DAY = 24 * 60 * 60 * 1000
+const _DAY = 24 * 60 * 60 * 1000
 // A billing period is DAYS in the shop's calendar (`FJS-D143`), so the fixtures
 // below are plain dates; this drive bills in UTC and says so on every call.
 const TODAY = plainDateIn(Date.now(), 'UTC')

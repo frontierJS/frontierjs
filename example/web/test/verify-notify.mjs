@@ -117,7 +117,7 @@ try {
   const paid = await fetch(`${API}/api/orders/${orderId}`, {
     method: 'POST', headers: { ...admin, 'x-service-method': 'pay' }, body: '{}',
   })
-  const payMs = Date.now() - before
+  const _payMs = Date.now() - before
   const outboxAtOnce = await (await fetch(`${SINK}/outbox`)).json()
 
   // The response must not have waited on the provider. Asserted as "the outbox

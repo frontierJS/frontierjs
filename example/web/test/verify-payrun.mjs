@@ -34,7 +34,6 @@ import { db }                              from '../../api/src/core/db.ts'
 import { postJournal, saleJournal }        from '../../api/src/domain/ledger.ts'
 import { calculatePayRun, payPayRun, revertPayRun } from '../../api/src/domain/payroll'
 import { periodShare }                 from '../../api/src/domain/payroll'
-import { allRatesAsAt }                    from '../../api/src/domain/payroll'
 import { plainDateIn, addToDate }          from '@frontierjs/toolbelt/datetime'
 
 import { sweepPayroll }                from './payroll-sweep.mjs'
@@ -222,7 +221,7 @@ t('ladder.anAdministratorMay',
 const runB = await newRun('B')
 t('pay.anUnapprovedRunIsRefused', await refused(() => payPayRun(sys, runB.id)))
 
-const paid = await payPayRun(sys, runA.id)
+const _paid = await payPayRun(sys, runA.id)
 const rowP = await sys.payRun.findFirst({ where: { id: runA.id } })
 t('pay.itMovesToPaid',   rowP.status === 'paid')
 t('pay.itStampsPaidAt',  rowP.paidAt != null)

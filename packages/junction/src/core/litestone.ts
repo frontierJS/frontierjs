@@ -27,8 +27,7 @@
 
 import { createSchema } from './schema.ts'
 import type { Schema, FieldDef } from './schema.ts'
-import { createService, createBaseService, serviceAccessor } from './service.ts'
-import type { CacheDeclaration } from './service.ts'
+import { serviceAccessor } from './service.ts'
 import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
 import { fieldError } from './field-errors.ts'
@@ -40,7 +39,7 @@ import type { TransportContext } from '../transport/types.ts'
 import { generateCuid } from '@frontierjs/toolbelt/ids'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { gradeStanding, levelPasses, LEVELS } from '@frontierjs/toolbelt/gate'
+import { gradeStanding, levelPasses } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from './query-values.ts'
 
@@ -198,6 +197,8 @@ export interface ParsedQuery {
   onlyExpired?:    boolean   // $onlyExpired — only the rows NOT in force
 }
 
+const WHERE_COMBINATORS = new Set(['$or', '$and', '$not'])
+
 /**
  * Filters + directives → a Litestone query.
  *
@@ -206,9 +207,12 @@ export interface ParsedQuery {
  * bridge stripped exactly the four keys this function destructured — so
  * pagination, ordering and field selection were all inert over HTTP.
  *
- * The `$`-in-query path is kept as a fallback for callers that predate
- * ctx.directives (direct parseQuery() users, older internal calls). Explicit
- * directives always win.
+ * Shape is read from `directives` alone. A `$` key still in `query` was put
+ * there past the bridge, by a hook or an in-process caller; honoring it would
+ * be a second `$` parser that answers differently from the bridge's table, and
+ * keeping it would be a WHERE on a column nobody declared. It is refused by
+ * name as the bridge refuses it (`FJS-D237`, `FJS-2442`). `$or`/`$and`/`$not`
+ * are parseWhere's grammar, not directives.
  */
 export function parseQuery(
   query: Record<string, unknown>,
@@ -216,25 +220,30 @@ export function parseQuery(
   maxLimit = 100,
   directives: QueryDirectives = {}
 ): ParsedQuery {
-  const { $limit, $offset, $after, $orderBy, $select, $populate,
-          $search, $withDeleted, $onlyDeleted,
-          $withTemplates, $onlyTemplates,
-          $asOf, $withExpired, $onlyExpired, ...where } = query
+  const stray = Object.keys(query).filter(k => k.startsWith('$') && !WHERE_COMBINATORS.has(k))
+  if (stray.length) {
+    const named = stray.map(k => `'${k}'`).join(', ')
+    throw new BadRequest(
+      `${named} reached the query builder as a filter. A $ key is transport syntax the bridge ` +
+      `parses into ctx.directives (Invariant 10) — a hook or in-process caller sets ctx.directives, never a $ key on ctx.query.`,
+      stray.map(k => ({ field: k, message: `'${k}' is not a filter` })),
+    )
+  }
 
-  const limitRaw   = directives.limit       ?? $limit
-  const offsetRaw  = directives.offset      ?? $offset
-  const afterRaw   = directives.after       ?? $after
-  const orderByRaw = directives.orderBy     ?? $orderBy
-  const selectRaw  = directives.select      ?? $select
-  const popRaw     = directives.populate    ?? $populate
-  const searchRaw  = directives.search      ?? $search
-  const withDel    = directives.withDeleted ?? $withDeleted
-  const onlyDel    = directives.onlyDeleted ?? $onlyDeleted
-  const withTmpl   = directives.withTemplates ?? $withTemplates
-  const onlyTmpl   = directives.onlyTemplates ?? $onlyTemplates
-  const asOfRaw    = directives.asOf          ?? $asOf
-  const withExp    = directives.withExpired   ?? $withExpired
-  const onlyExp    = directives.onlyExpired   ?? $onlyExpired
+  const limitRaw   = directives.limit
+  const offsetRaw  = directives.offset
+  const afterRaw   = directives.after
+  const orderByRaw = directives.orderBy
+  const selectRaw  = directives.select
+  const popRaw     = directives.populate
+  const searchRaw  = directives.search
+  const withDel    = directives.withDeleted
+  const onlyDel    = directives.onlyDeleted
+  const withTmpl   = directives.withTemplates
+  const onlyTmpl   = directives.onlyTemplates
+  const asOfRaw    = directives.asOf
+  const withExp    = directives.withExpired
+  const onlyExp    = directives.onlyExpired
 
   // What a limit and an offset mean is `clampPage`'s answer, not this
   // function's — the `paginate()` hook needs the same one and had its own.
@@ -243,25 +252,29 @@ export function parseQuery(
     defaultLimit, maxLimit,
   )
 
+  // `?$select=` names no column, and Litestone reads `{}` as "select nothing":
+  // a 200 of rows with no fields. An empty value is absent, as `$search=` is.
+  const select = selectRaw != null ? parseSelect(selectRaw as SelectParam) : undefined
+
   return {
-    where:        parseWhere(where),
+    where:        parseWhere(query),
     orderBy:      orderByRaw != null ? parseSort(orderByRaw as SortParam) : undefined,
     offset,
     limit,
     after:        typeof afterRaw === 'string' && afterRaw !== '' ? afterRaw : undefined,
-    select:       selectRaw  != null ? parseSelect(selectRaw as SelectParam) : undefined,
+    select:       select && Object.keys(select).length ? select : undefined,
     include:      popRaw     != null ? parsePopulate(popRaw as PopulateParam) : undefined,
     search:       typeof searchRaw === 'string' ? searchRaw : undefined,
-    withDeleted:   withDel  === true || withDel  === 'true' || undefined,
-    onlyDeleted:   onlyDel  === true || onlyDel  === 'true' || undefined,
-    withTemplates: withTmpl === true || withTmpl === 'true' || undefined,
-    onlyTemplates: onlyTmpl === true || onlyTmpl === 'true' || undefined,
+    withDeleted:   withDel  === true || undefined,
+    onlyDeleted:   onlyDel  === true || undefined,
+    withTemplates: withTmpl === true || undefined,
+    onlyTemplates: onlyTmpl === true || undefined,
     // Passed through as it arrived. Grading it here would be a second answer
     // to a question only the schema can settle — a window is over instants or
     // over days per model — and this side has no schema.
     asOf:          typeof asOfRaw === 'string' && asOfRaw !== '' ? asOfRaw : undefined,
-    withExpired:   withExp  === true || withExp  === 'true' || undefined,
-    onlyExpired:   onlyExp  === true || onlyExp  === 'true' || undefined,
+    withExpired:   withExp  === true || undefined,
+    onlyExpired:   onlyExp  === true || undefined,
   }
 }
 
@@ -1239,9 +1252,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         return record
       }
 
-      const { $limit, $offset, ...where } = ctx.query as Record<string, unknown>
       const args: Record<string, unknown> = {
-        where: { ...parseWhere(where), ...softDeleteFilter() },
+        where: { ...q.where, ...softDeleteFilter() },
       }
       if (q.select)      args.select       = q.select
       if (q.include)     args.include      = q.include
@@ -1690,6 +1702,7 @@ export function checkUnknownKeys(
   row:    unknown,
   fields: Set<string>,
   what:   string,
+  // biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
   escape: string,
   guarded: Set<string> = new Set(),
 ): void {
@@ -2518,7 +2531,7 @@ export function watchFilterReads(ctx: ServiceContext): (() => void) | undefined 
   const target   = ctx.query as Record<string, unknown> | undefined
   if (!admitted || !target || typeof target !== 'object') return undefined
 
-  const pending = new Set(admitted.keys.filter(k => Object.prototype.hasOwnProperty.call(target, k)))
+  const pending = new Set(admitted.keys.filter(k => Object.hasOwn(target, k)))
   if (!pending.size) return undefined
 
   const read = (k: string | symbol) => { if (typeof k === 'string') pending.delete(k) }

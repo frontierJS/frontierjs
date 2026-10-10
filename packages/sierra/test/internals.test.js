@@ -17,7 +17,6 @@ import {
 import {
   provideSlot,
   page,
-  _resetPage,
 } from '../src/router/index.js'
 import {
   watchProxy, watchPath, createEffect, flushSync, setRenderEnvironment,

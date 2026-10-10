@@ -417,7 +417,7 @@ function attachRefs(schema: unknown, all: Record<string, JsonSchemaObject>): Jso
   const seen   = new Set<string>()
 
   const visit = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(visit)
+    if (Array.isArray(node)) { node.forEach(visit); return }
     if (!node || typeof node !== 'object') return
     for (const [key, value] of Object.entries(node as JsonSchemaObject)) {
       if (key === '$ref' && typeof value === 'string') {

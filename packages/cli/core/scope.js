@@ -22,7 +22,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire }            from 'node:module'
-import { join }                     from 'node:path'
+import { dirname, join, resolve }   from 'node:path'
 
 // The host runtime's globals plus what a module may name without declaring.
 // `Bun` is listed by hand: a check run under node grades a command bun runs.
@@ -31,10 +31,19 @@ const HOST = new Set([
   'Bun', 'arguments', 'require', 'undefined', 'NaN', 'Infinity',
 ])
 
-/** TypeScript installed in `root`, synchronously, or null. Never this package's own. */
+/**
+ * The TypeScript `root` resolves, synchronously, or null — the nearest
+ * `node_modules/typescript` at or above it, because a workspace hoists it to
+ * the root and an app's own `node_modules` then has none (`FJS-2366`). Never
+ * this package's own.
+ */
 export function typeScriptIn(root) {
-  const dir = join(root, 'node_modules', 'typescript')
-  if (!existsSync(dir)) return null
+  let dir = resolve(root)
+  while (!existsSync(join(dir, 'node_modules', 'typescript'))) {
+    if (dirname(dir) === dir) return null
+    dir = dirname(dir)
+  }
+  dir = join(dir, 'node_modules', 'typescript')
   try {
     const main = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).main
     const file = join(dir, main)

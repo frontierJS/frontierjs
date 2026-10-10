@@ -32,7 +32,6 @@
 
 import path               from 'path'
 import { fileURLToPath }  from 'url'
-import { readFile }       from 'fs/promises'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const COMPONENTS_DIR = path.join(__dirname, 'components')

@@ -57,6 +57,7 @@ describe('one object, one proxy — imported state', () => {
 
   test('the same object read twice at one path is one proxy', () => {
     const p = watchProxy({ a: { b: 1 } })
+    // biome-ignore lint/suspicious/noSelfCompare: the comparison asserts identity or stability, which is the point
     expect(p.a === p.a).toBe(true)
   })
 
@@ -85,6 +86,7 @@ describe('one object, one proxy — a local let', () => {
 
   test('a nested object is equal to itself across two reads', () => {
     const [p] = localProxy({ child: { n: 1 } })
+    // biome-ignore lint/suspicious/noSelfCompare: the comparison asserts identity or stability, which is the point
     expect(p.child === p.child).toBe(true)
   })
 

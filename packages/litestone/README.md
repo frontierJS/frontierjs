@@ -699,6 +699,15 @@ db.asSystem().sql`SELECT …`                    // the deliberate bypass — an
 db.post.findMany({ where: { $raw: sql`…` } })  // keeps every policy — reach for this
 ```
 
+Stored, operator-authored text is the case `sql` routes wrongly: it picks the
+connection by the statement's first word, so a report opening `WITH` runs on the
+writer and `WITH x AS (…) DELETE …` writes. `sql.read` refuses any write whatever
+the first word is, and takes a tag or `(text, params[])` —
+``await db.asSystem().sql.read(report.sql, [clientId])``, where a write throws an
+error naming `sql.read`. It is raw SQL like `sql`, so it applies no access rule and is refused off
+`asSystem()` under the same schemas. It limits what the statement may do, not
+who may run it.
+
 Raw statements enforce no gate, no row policy, no field guard and no soft-delete
 filter, because all of those live above SQLite. It is coarse per schema on
 purpose: deciding per statement means parsing it, and a wrong validator grants a

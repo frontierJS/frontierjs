@@ -9,7 +9,7 @@
  * signal commits, and hook execution are fully testable in Node.
  */
 
-import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach } from 'vitest'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 
@@ -25,8 +25,6 @@ import {
   isActive,
   page,
   provideSlot,
-  nodes,
-  _resetPage,
 } from '../src/router/index.js'
 import { watchProxy } from '@frontierjs/mesa/runtime'
 
@@ -38,7 +36,7 @@ const _p = watchProxy(page)
 // ─── Fixture tree ─────────────────────────────────────────────────────────────
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const FIXTURE = resolve(__dirname, 'fixtures/basic-spa')
+const _FIXTURE = resolve(__dirname, 'fixtures/basic-spa')
 
 // Build a minimal hand-crafted tree mirroring the fixture structure
 // (avoids async scan in beforeEach which would slow tests down)
@@ -891,7 +889,7 @@ describe('layouts eager loading', () => {
     // Wait for all layout promises to resolve
     await new Promise(r => setTimeout(r, 20))
 
-    const { resolveChain, getComponents } = await import('../src/router/internals.js')
+    const { resolveChain } = await import('../src/router/internals.js')
     // Navigate to a route that uses the root layout
     await goto('/blog/')
     const chain = resolveChain(page.route)

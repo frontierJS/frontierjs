@@ -2,7 +2,7 @@
  * test/postbuild.test.js — post-build pipeline tests
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'vitest'
+import { describe, test, expect, afterAll } from 'vitest'
 import { mkdir, writeFile, rm, readFile, access } from 'fs/promises'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
@@ -40,7 +40,7 @@ async function setup(subdir, files = {}) {
   return dir
 }
 
-function dirname2(p) {
+function _dirname2(p) {
   return join(p, '..')
 }
 

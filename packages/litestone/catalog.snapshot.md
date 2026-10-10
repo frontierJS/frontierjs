@@ -120,7 +120,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
 | `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse · field · read |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
-| `@@extensible` | Shape the table | (column, declaredBy: Model[, max: { kind: N }]) |  |  |  |
+| `@@extensible` | Shape the table | (column, declaredBy: Model[, scope: field][, max: { kind: N }]) |  |  |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
 | `@@expires` | Shape the table | (<field>) |  |  |  |

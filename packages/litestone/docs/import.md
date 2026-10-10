@@ -23,7 +23,7 @@ one records every construct it could not express — with the model, the field,
 what the source said and what was emitted instead — and that list is the half
 worth reading.
 
-Seven real applications produced 2,178 such records. Undifferentiated that is
+A real application produces hundreds of such records. Undifferentiated that is
 noise, so each one is graded:
 
 | | |
@@ -33,14 +33,14 @@ noise, so each one is graded:
 | **noted** | nothing lost and nothing changed: a decision only you can make, or a translation that is exact |
 
 `--strict` fails on **changed** alone. A gate that also failed on `lost` would
-fail on every real import — one of the seven carries 251 partial indexes — and a
-check that always fires is one nobody reads.
+fail on every real import — a Rails schema carries a partial index per
+soft-deleted table — and a check that always fires is one nobody reads.
 
 An unknown kind grades `changed`, which is fail-closed on purpose: a reader that
 learns a new refusal must not have it filed under *ignore me*.
-`test/import.test.ts` reads every `gap('…')` literal out of the four readers and
-fails on one the table does not name, so that default is a backstop rather than
-the mechanism.
+`test/import.test.ts` reads every `gap('…')` literal out of the readers in
+`src/import/` and fails on one `tiers.js` does not name, so that default is a
+backstop rather than the mechanism.
 
 ## Where the warning lives
 

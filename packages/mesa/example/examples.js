@@ -1686,7 +1686,7 @@ export const EXAMPLES = {
 {#each Object.keys(toppingPrice) as t (t)}
   <label style="margin-right:12px">
     <input type="checkbox" bind:group={toppings} value={t} />
-    {t} {toppingPrice[t] > 0 ? '(+\$' + toppingPrice[t].toFixed(2) + ')' : '(free)'}
+    {t} {toppingPrice[t] > 0 ? '(+$' + toppingPrice[t].toFixed(2) + ')' : '(free)'}
   </label>
 {/each}
 

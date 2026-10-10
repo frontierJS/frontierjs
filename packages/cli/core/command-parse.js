@@ -156,6 +156,7 @@ function parseOne({ file, template, module, refused }, shim, node) {
   return { ...where, message: error + shared }
 }
 
+// biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 // ─── resolving ────────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 // Uses bun:sqlite directly — zero external dependencies.
 
 import { Database } from 'bun:sqlite'
-import type { JobRecord, JobStatus, CaravanStats, QueueStats } from './types.ts'
+import type { JobRecord, CaravanStats, QueueStats } from './types.ts'
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS jobs (
@@ -212,7 +212,7 @@ export function isUniqueKeyCollision(err: unknown): boolean {
 function withOpenRetry(label: string, fn: () => void): void {
   const deadline = Date.now() + 2_000
   for (;;) {
-    try { return fn() } catch (err) {
+    try { fn(); return } catch (err) {
       const message = (err as { message?: string } | null)?.message ?? ''
       if (!/locked|busy/i.test(message) || Date.now() >= deadline)
         throw new Error(`[Caravan] ${label}: ${message}`, { cause: err })

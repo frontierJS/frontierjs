@@ -57,27 +57,27 @@
   $: contentPreview = glow(value, { language, mark, numbered })
 
   // Sync scroll positions
-  function syncScroll() {
+  function _syncScroll() {
     if (previewEl) {
       previewEl.scrollTop = contentEl.scrollTop
       previewEl.scrollLeft = contentEl.scrollLeft
     }
   }
 
-  function handleInput(event) {
+  function _handleInput(event) {
     value = event.target.value
     dispatch('input', { value })
   }
 
-  function handleChange(event) {
+  function _handleChange(event) {
     dispatch('change', { value: event.target.value })
   }
 
-  function handleFocus(event) {
+  function _handleFocus(event) {
     dispatch('focus', event)
   }
 
-  function handleBlur(event) {
+  function _handleBlur(event) {
     dispatch('blur', event)
   }
 

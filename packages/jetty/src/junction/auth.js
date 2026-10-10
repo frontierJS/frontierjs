@@ -89,7 +89,7 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
           // Make sure the live junction connection knows about the token.
           await safeSetToken(adapter, token)
         }
-      } catch (e) {
+      } catch (_e) {
         // Stale or invalid token. Clear it.
         await persistToken(null)
         session = { user: null, authenticated: false, expiresAt: null }

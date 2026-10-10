@@ -22,7 +22,7 @@
  * These tests pin the properties that make that true, rather than the timings.
  */
 
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach } from 'vitest'
 import { createBuffer } from '../src/devtools/buffer.js'
 
 describe('ring buffer', () => {

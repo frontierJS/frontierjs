@@ -664,6 +664,7 @@ describe("cond", () => {
     expect(r.resolve({
       type: "cond",
       if:   { type: "ref",     path: "$.scoreLead.qualified" },
+      // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
       then: { type: "literal", value: "qualified" },
       else: { type: "literal", value: "rejected" },
     }, ctx)).toBe("qualified")
@@ -677,6 +678,7 @@ describe("cond", () => {
         { type: "literal", value: 0.3 },
         { type: "literal", value: 0.7 },
       ]},
+      // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
       then: { type: "literal", value: "high" },
       else: { type: "literal", value: "low" },
     }, ctx)).toBe("low")
@@ -691,6 +693,7 @@ describe("cond", () => {
         { type: "ref",     path: "$.scoreLead.score" },
         { type: "literal", value: 0.9 },
       ]},
+      // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
       then: { type: "literal", value: "excellent" },
       else: {
         type: "cond",
@@ -698,6 +701,7 @@ describe("cond", () => {
           { type: "ref",     path: "$.scoreLead.score" },
           { type: "literal", value: 0.7 },
         ]},
+        // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
         then: { type: "literal", value: "good" },
         else: { type: "literal", value: "poor" },
       },

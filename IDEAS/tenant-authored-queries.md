@@ -187,6 +187,34 @@ wrong, for this product, is *never stored*.
 
 ---
 
+## Measured — the application itself, ported (maidtech Q2, 2026-10-10)
+
+The audited application's own rows, graded and one of them ported
+(`fjs-prototypes/maidtech`, PLAN § Q2; `api/test/reports.test.ts`). Live rows
+only: 62 of the 72 above.
+
+| Measured | Result |
+| --- | --- |
+| Who reads the 53 SQL rows | 23 are a tenant reading its own (an account id typed into the SQL as a literal; one binds the session's account), 2 an agency reading its franchises, 28 the operator. *All cross-account administrative reads* (above) was the view namespace, `@system/`, read as a scope |
+| Who reads the 9 Prisma-only rows | the operator, across accounts, every one. The query-object axis has **no tenant row** to compile to a `where` |
+| Who could write a row | anyone signed in, in any account: the tenant service had no hooks. The transformer on the Prisma path ran in `Function(...)`, not even `node:vm` |
+| A tenant report as DATA | `spec Json @type(ReportSpec)`: named counts, each a `where` in the list's grammar, over one served model's `aggregate`, bucketed on the account's IANA zone; `ratios` (`of`/`per`) and `total` for what the transformer computed. Run with no `auth`, so as the reader (D369's recipe, from a list filter to an aggregate). Equal to the reference's own SQL on two accounts, 39 months; a reader whose Role cannot read the source is a 403 naming the capability |
+| How much of the tenant half that says | **1 of 23 today**, 3 more once their model is ported. The rest need what SQL does and a series cannot: strings (10), row lists (8), JSON reshape (8), latest-per-group (6), Sunday weeks (4, `FJS-2470`) |
+| The transformer's 35 jobs (11 rows) | 16 are a ratio or a totals row — the two words. **29 of 35 could have been the report's own SQL.** The 6 that could not merge a webhook's answer or draw SVG: an action and a component, never a row |
+| Running the operator's SQL from a row, read-only | not possible: raw `sql` routes on the first word and 12 of 53 open with `WITH`, which goes to the write connection (`FJS-2412`) |
+
+**So, for question 2 above:** the transform compiles to terms the aggregate
+already has for the jobs that ARE expressions over one row or over sums
+(16 of 35), and needs no third compiler for them — `ratio` and `total` are two
+named operations, not a language. Question 3's refusal is the type itself: a
+strict `@type` refuses `transformer`, `sql`, `prisma` and a ratio's `js` and
+names what it takes (`FJS-2413`). **What the operator does instead** for the
+other jobs, proposed and not yet ruled in that app: a litestone `view` — SQL a
+person on staff writes, declared with `@@tenant` and `@@gate`, diffed by
+`fli check`, read through the reader's accessor — which answers question 1 for
+anything a series cannot say. A spec naming a view as its source would compose
+the two. Unprobed: whether junction serves a view's `aggregate`.
+
 ## Open questions
 
 - ~~**Q1 — does `FJS-D71` hold for a product whose views ARE stored filters? (`FJS-D369`)**~~ **Answered 2026-09-28 (`FJS-D369`): B — Amend D71 to its reason: a view MAY store a filter, in the list's own query-string grammar, and it is only ever executed as the person it is for (the reader's own read, or each subscriber through `app.runAs` and a service read), never as its author and never as the system. The framework ships the ruling and the recipe, nothing new.**

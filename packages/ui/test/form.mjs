@@ -23,7 +23,7 @@ import { renderComponent } from '../../mesa/src/render-component.js'
 // would pass while the two disagreed, which is the whole failure this table
 // exists to prevent. field-rules.js is a leaf and imports nothing.
 import {
-  formFieldList, registerControl, unregisterControl, registeredControls,
+  formFieldList, unregisterControl, registeredControls,
 } from '../../sierra/src/resource/field-rules.js'
 // The kit's half of a contributed control. Same module instance the fixtures
 // below import through '../../controls.js' — both resolve to this file.

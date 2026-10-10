@@ -211,7 +211,7 @@ export function createCleanupService(app: BasecampApp) {
         where: { id: run.id },
         data:  { status: 'running', startedAt },
       })
-      announce(app, ws(), 'cleanup patched', updated)
+      await announce(app, ws(), 'CleanupRun', 'cleanup patched', updated)
 
       return {
         runId:       run.id,
@@ -259,7 +259,7 @@ export function createCleanupService(app: BasecampApp) {
           durationMs: finishedAt - startedMs,
         },
       })
-      announce(app, ws(), 'cleanup patched', updated)
+      await announce(app, ws(), 'CleanupRun', 'cleanup patched', updated)
 
       return updated
     },

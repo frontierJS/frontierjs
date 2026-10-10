@@ -93,7 +93,7 @@ describe('biome', () => {
     // Biome treats any biome.json it finds while scanning as a competing root
     // config and refuses to run. This package ships one, so an app that scanned
     // its own node_modules would fail on its own dependency.
-    expect(biome.files.includes).toContain('!**/node_modules/**')
+    expect(biome.files.includes).toContain('!**/node_modules')
   })
 
   test('it is plain JSON — biome.json is not jsonc', () => {

@@ -131,6 +131,7 @@ export function createPagesService(app: BasecampApp) {
       const { f, row: r } = await row()
       // `children.js` runs with FORCE_COLOR for `fli gui`, which renders it;
       // this screen prints text, where an escape is a box and `[33m`.
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
       return { id: r.id, lines: f.outputOf(r.id).map(l => l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')) }
     },
 

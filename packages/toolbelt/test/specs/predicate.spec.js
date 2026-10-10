@@ -65,6 +65,7 @@ test('predicate: and / or / not', function () {
 
 test('predicate: a ternary chooses a value', function () {
   const node = { type: 'ternary', cond: cmp(fld('status'), '==', lit('shipped')),
+                 // biome-ignore lint/suspicious/noThenProperty: a `then` here is a field of the data, not a thenable
                  then: lit(true), else: lit(false) }
   assert.equal(on(node), true)
 })
@@ -289,6 +290,7 @@ test('predicate: now() + a duration moves the instant, and a month overflows as 
 const NAMES = { contact: ['name', 'email'], agent: ['name'] }
 const DATA  = { contact: { name: 'Ada', email: null }, agent: { name: 'Sam' } }
 const refuses = (fn, said) => assert.throws(() => { try { fn() } catch (e) { assert.equal(e instanceof ParseError, true); throw e } }, said)
+// biome-ignore lint/suspicious/noShadowRestrictedNames: a local helper; the global of this name is not used here
 const valueOf = (src) => { const ast = parseText(src); assertValues(ast, NAMES); return evaluateValues(ast, DATA) }
 
 test('values: text parses without a caller-written cursor, and a ternary over names answers', function () {

@@ -89,7 +89,7 @@ await db.user.delete({ where: { id: 1 } })
 **A `File[]` is not cleaned up with its row yet.** The row delete removes a single `File?` object; the objects a `File[]` names stay in storage:
 
 ```js failing
-// a File[] is not cleaned up with its row yet
+// FJS-2419 — a File[] column reads as empty and its objects outlive the row
 import { FileStorage } from '@frontierjs/litestone/storage'
 import { readdirSync } from 'node:fs'
 

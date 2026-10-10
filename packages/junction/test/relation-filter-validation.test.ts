@@ -26,7 +26,7 @@
 // a check that refused every relation filter would satisfy a test that only
 // asked about the broken one (`FJS-351`).
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
+import { describe, test, expect, beforeAll } from 'bun:test'
 import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
 import { createClient }  from '../../litestone/src/index.js'

@@ -270,7 +270,9 @@ export function createRecipesService(app: BasecampApp) {
         where: { id: run.id },
         data:  { status: 'running', startedAt },
       })
-      announce(app, ws(), 'recipes patched', { id: run.recipeId })
+      // The whole row, because a graded push is read by the row's own rule and
+      // a bare id carries no tenant to grade.
+      if (recipe) await announce(app, ws(), 'Recipe', 'recipes patched', recipe)
 
       // Everything the handler needs, in the call it already had to make: the
       // script AS QUEUED (the recipe is editable and a fleet run in flight must
@@ -307,14 +309,14 @@ export function createRecipesService(app: BasecampApp) {
       // five machines ran five times. `Recipe` is update-at-ADMINISTRATOR and a
       // developer may run one, so this is system too, and confined by the same
       // read.
-      await sys().recipe.update({
+      const counted = await sys().recipe.update({
         where: { id: run.recipeId },
         data:  {
           lastRunAt: new Date(finishedAt).toISOString(),
           runCount:  ((recipe?.runCount as number) ?? 0) + 1,
         },
       })
-      announce(app, ws(), 'recipes patched', { id: run.recipeId })
+      await announce(app, ws(), 'Recipe', 'recipes patched', counted)
 
       return { runId: run.id, status: patch.status ?? null }
     },

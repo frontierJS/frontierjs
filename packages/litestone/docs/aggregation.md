@@ -189,8 +189,26 @@ SQLite has no zone database, so the zone reaches it as the fixed offsets it keep
 rows the call reads — toolbelt's `offsetSpans`, one `CASE` arm per summer-time change, over
 only the UTC years that hold rows, named by one extra `DISTINCT` read over the same `where`. A
 `9999-12-31` "never" date costs its own year, not the eight thousand between. A gap fill's bounds become that zone's calendar
-dates. An `hour` bucket on the night the clock goes back holds both 01:00 hours. `timeZone`
+dates — an instant's date there, and a bound written as a date (`'2026-01-01'`) that date, never
+UTC midnight moved west into December. An `hour` bucket on the night the clock goes back holds both 01:00 hours. `timeZone`
 without `interval` is refused.
+
+### Weeks
+
+A `week` bucket is labelled by its first date, so a week across New Year is one bucket, not two.
+It starts on Monday; `weekStart: 'sunday'` is for a business whose week does. `weekStart` beside
+any other unit is refused.
+
+```js
+await db.order.groupBy({
+  by:        ['placedAt'],
+  interval:  { placedAt: 'week' },
+  weekStart: 'sunday',
+  fillGaps:  false,
+  _count:    true,
+})
+// → [{ placedAt: '2025-12-28', _count: 7 }, { placedAt: '2026-01-04', _count: 3 }]
+```
 
 ## HAVING
 

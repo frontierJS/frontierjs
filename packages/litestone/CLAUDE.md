@@ -108,7 +108,9 @@ Then, because every other package sits on this one: `example` and `basecamp`
   `ctx.isSystem` (`FJS-D575`).
 - **Raw SQL keeps the policies only inside a where** —
   ``where: { $raw: sql`price > ${min}` }``. `db.sql` throws once a schema declares
-  access rules; `db.asSystem().sql` is the deliberate bypass.
+  access rules; `db.asSystem().sql` is the deliberate bypass. `sql` routes on the
+  statement's first word, so stored text that may not write goes through
+  `sql.read(text, params)` (`FJS-2412`).
 - **The clock is `now()`.** A `DateTime` is ISO-8601 TEXT, so `datetime('now')`
   compares wrong for today and is refused by name (`FJS-226`).
 - **A bare array in a `where` is membership**; `{ equals: [...] }` is equality.
@@ -124,7 +126,8 @@ Then, because every other package sits on this one: `example` and `basecamp`
   is refused without `acceptDataLoss`, because a rename is a drop plus an add
   unless `migrate create` was told it was one (`--rename`, `--operations`;
   `src/core/operations.js`, `FJS-D603`).
-- **A `jsonl` model has no update, delete, migration, FTS or cursor.**
+- **A `jsonl` model has no update, delete, migration or FTS** — append-only, and
+  `findManyCursor` pages it.
 
 ### Computed fields
 

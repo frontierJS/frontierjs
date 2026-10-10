@@ -13,7 +13,7 @@
  */
 
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, rm, mkdir, writeFile, readFile, readlink, stat, symlink } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, readFile, readlink, stat, symlink } from 'node:fs/promises'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
 import { createStatic, digestOfFiles, validRelativePath, LIMITS } from '../src/static.js'

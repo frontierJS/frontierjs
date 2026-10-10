@@ -24,7 +24,7 @@ Bun has a native SQLite driver built in — `bun:sqlite`. It's significantly fas
 
 Litestone uses Bun's native SQLite directly. This is why it has no third-party npm dependencies — its one dependency is `@frontierjs/toolbelt`, pure functions from the same repo with none of their own (`FJS-D26`). A Litestone project installs in under a second.
 
-Bun also has fast test runner, native TypeScript, native `.env`, and a built-in bundler. The whole toolchain is faster.
+Bun also has a fast test runner, native TypeScript, native `.env`, and a built-in bundler. The whole toolchain is faster.
 
 If you're on Node, use Prisma or Drizzle. They're great. Litestone is specifically built for Bun.
 
@@ -44,7 +44,7 @@ Schema-first is better when:
 
 Every npm dependency is a supply-chain risk, a breakage surface, and a source of version conflicts. Litestone and the first-party `@frontierjs/toolbelt` beneath it do everything: schema parsing, migrations, queries, encryption, file storage, FTS, access control.
 
-There's no Rust binary to compile on your CI machine. On a server there is no WASM bundle adding 500kb to your lambda — SQLite's wasm build is only what the browser client runs over. No `node_modules/prisma/query-engine-darwin-arm64` file that doesn't exist on Linux.
+There's no Rust binary to compile on your CI machine. On a server there is no WASM bundle in your lambda — SQLite's wasm build is only what the browser client runs over, and it is a development dependency of this package, not a runtime one. No `node_modules/prisma/query-engine-darwin-arm64` file that doesn't exist on Linux.
 
 `bun add @frontierjs/litestone` — runs immediately.
 
@@ -52,7 +52,7 @@ There's no Rust binary to compile on your CI machine. On a server there is no WA
 
 Most ORMs that have access control implement it in JavaScript: fetch the rows, filter them in the app layer. This has a serious failure mode — if you forget to apply the filter, you expose data. The filter is opt-in, not structural.
 
-Litestone's `@@allow` and `@@deny` compile to SQL `WHERE` clauses at query time. The filter is injected into the SQL before it hits SQLite. If you're using a scoped client (`db.$setAuth(user)`), there is no path to unfilterd data except `asSystem()`, which is explicit. Forgetting to filter is not possible.
+Litestone's `@@allow` and `@@deny` compile to SQL `WHERE` clauses at query time. The filter is injected into the SQL before it hits SQLite. If you're using a scoped client (`db.$setAuth(user)`), there is no path to unfiltered data except `asSystem()`, which is explicit. Forgetting to filter is not possible.
 
 This is the same design as ZenStack (which is built on top of Prisma) — but it's built into Litestone natively, with no separate layer.
 

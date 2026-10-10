@@ -67,7 +67,7 @@ group('defineIsland validation')
     if (/matches/.test(e.message)) ok('empty matches array rejected')
   }
   try { defineIsland({ app: () => {}, matches: 'not-an-array' }); bad('string matches accepted') }
-  catch (e) { ok('string matches rejected') }
+  catch (_e) { ok('string matches rejected') }
 
   // Reject: injectPageScript with MAIN world
   try {
@@ -89,7 +89,7 @@ group('defineIsland validation')
   try {
     defineIsland({ app: () => {}, shadowMode: 'translucent' })
     bad('bad shadowMode accepted')
-  } catch (e) { ok('bad shadowMode rejected') }
+  } catch (_e) { ok('bad shadowMode rejected') }
 
   // Reject: mount integrated/iframe in v1
   try {
@@ -103,7 +103,7 @@ group('defineIsland validation')
   try {
     defineIsland({ app: () => {}, runAt: 'document_lazy' })
     bad('bad runAt accepted')
-  } catch (e) { ok('bad runAt rejected') }
+  } catch (_e) { ok('bad runAt rejected') }
 }
 
 // --- registration: buildRegistration ---
@@ -255,6 +255,7 @@ group('island runtime — shadow DOM mount')
     let appCalled = false
     const handle = await runIsland({
       app: (root) => { appCalled = true; root.innerHTML = '<p>hi</p>' },
+      shadowMode: 'open',
     }, { id: 'test-app', type: 'island' })
 
     if (appCalled) ok('app function invoked during mount')

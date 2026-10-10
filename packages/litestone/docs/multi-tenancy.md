@@ -20,27 +20,32 @@ Two strategies, and the choice is about isolation, not about size:
 
 ## `strategy database` — a file per tenant
 
-```
+```lite
 tenancy {
   strategy database
   dir      "./tenants"                  // where the files live
   registry "./tenants-registry.db"      // the index of who exists
   maxOpen  100                          // LRU connection pool
-  key      env("TENANT_KEY")            // optional, one key for every tenant
   resolve  subdomain                    // how a REQUEST names its tenant
 }
+
+model Order { id Int @id  total Float }
 ```
 
 Relative paths resolve against the schema file's own directory, the same rule
-`migrations` follows. `dir` and `registry` may be `env("VAR", "./default")`.
+`migrations` follows. `dir` and `registry` may be `env("VAR", "./default")`. An
+optional `key env("TENANT_KEY")` is one encryption key for every tenant; an `env`
+with no default refuses the registry by name while the variable is unset, so a
+schema that declares one does not open at all without it.
 
 ```js
 import { createTenantRegistry } from '@frontierjs/litestone'
 
-const tenants = await createTenantRegistry({ path: './db/schema.lite' })
+const tenants = await createTenantRegistry({ path: './schema.lite' })
+await tenants.create('acme')
 
 const db = await tenants.get('acme')
-await db.$setAuth(user).order.findMany()
+await db.$setAuth({ id: 1 }).order.findMany()
 ```
 
 That is the whole call. Every option is still accepted and **beats the
@@ -52,8 +57,10 @@ temporary directory.
 and a schema is a file in git:
 
 ```js
+const kms = { getTenantKey: async (tenantId) => 'a'.repeat(64) }   // the vault in a real app
+
 const tenants = await createTenantRegistry({
-  path:          './db/schema.lite',
+  path:          './schema.lite',
   encryptionKey: async (tenantId) => kms.getTenantKey(tenantId),
 })
 ```
@@ -64,19 +71,24 @@ as a path.
 ### The fleet
 
 ```js
-await tenants.create('acme', { plan: 'pro' })   // DDL or migrations, then registered
-await tenants.getOrCreate('acme')
-tenants.list()                                  // ['acme', 'globex']
-await tenants.delete('acme')                    // closes, unlinks, deregisters
+const tenants = await createTenantRegistry({ path: './schema.lite', migrationsDir: './migrations' })
 
-await tenants.query(db => db.user.count())      // → [{ tenantId, result }]
-await tenants.query(fn, { where: { plan: 'pro' }, concurrency: 16, flatten: true })
-await tenants.aggregate(db => db.user.count())  // → { total, byTenant }
-await tenants.migrate()                         // every tenant, in parallel
+await tenants.create('acme', { plan: 'pro' })   // DDL or migrations, then registered
+await tenants.getOrCreate('globex')
+tenants.list()                                  // ['acme', 'globex']
+
+await tenants.query(db => db.order.count())     // → [{ tenantId, result }]
+await tenants.query(db => db.order.findMany(), { where: { plan: 'pro' }, concurrency: 16, flatten: true })
+// `where` filters on the tenants' meta; `flatten` concatenates row arrays, stamping each row's tenantId
+const totals = await tenants.aggregate(db => db.order.count())  // → { total, byTenant }
+await tenants.migrate()                         // every tenant, in parallel — needs migrationsDir
 await tenants.migrate({ only: ['acme'] })
 
 tenants.meta.get('acme')                        // { plan: 'pro' }
 tenants.meta.set('acme', { plan: 'enterprise' })
+
+await tenants.delete('globex')                  // closes, unlinks, deregisters
+if (tenants.list().join() !== 'acme' || totals.total !== 0) throw new Error('expected one tenant left and no orders')
 ```
 
 ### The connection pool
@@ -93,7 +105,10 @@ leaked K-1 sets of handles.
 **A lease is what lets an eviction close anything.**
 
 ```js
-const release = tenants.retain(id)
+const tenants = await createTenantRegistry({ path: './schema.lite' })
+await tenants.create('acme')
+
+const release = tenants.retain('acme')
 try   { /* the unit of work */ }
 finally { release() }
 ```
@@ -128,7 +143,7 @@ default.
 
 ## `strategy row` — a tenant column
 
-```
+```lite
 tenancy {
   strategy row
   column   workspaceId     // the column that holds the tenant
@@ -146,11 +161,14 @@ Nothing is passed to `createClient` and no registry exists. Every model that
 **declares the column** is scoped, and a caller-scoped client is the whole API:
 
 ```js
-const db   = await createClient({ path: './db/schema.lite', db: './app.db' })
-const mine = db.$setAuth(user)          // user.workspaceId decides what exists
+const db   = await createClient({ path: './schema.lite', db: ':memory:' })
+const mine = db.$setAuth({ id: 1, workspaceId: 10 })   // user.workspaceId decides what exists
 
-await mine.project.findMany()           // only this workspace's rows
-await mine.project.create({ data: { name: 'New' } })   // workspaceId stamped
+const made = await mine.project.create({ data: { id: 1, name: 'New' } })   // workspaceId stamped
+await db.$setAuth({ id: 2, workspaceId: 20 }).project.create({ data: { id: 2, name: 'Theirs' } })
+
+const rows = await mine.project.findMany()              // only this workspace's rows
+if (made.workspaceId !== 10 || rows.length !== 1) throw new Error('expected the stamp and the scope')
 ```
 
 ### What it desugars into, and why
@@ -304,8 +322,24 @@ The rewrite is **skipped where it is already right**, and the test is
 **or** a key reaching a model that is itself scoped. Both of these are untouched —
 
 ```lite
-@@unique([workspaceId, slug])     // names the column
-@@unique([serverId, name])        // a Server is scoped, so a Volume is
+tenancy { strategy row  column workspaceId }
+
+model Post {
+  id          Int    @id
+  workspaceId Int
+  slug        String
+  @@unique([workspaceId, slug])     // names the column
+}
+
+model Server { id Int @id  workspaceId Int  volumes Volume[] }
+
+model Volume {
+  id       Int    @id
+  serverId Int
+  server   Server @relation(fields: [serverId], references: [id])
+  name     String
+  @@unique([serverId, name])        // a Server is scoped, so a Volume is
+}
 ```
 
 — and so is a grandchild, because the check reads the same scoping fixpoint the
@@ -315,8 +349,20 @@ Where the global reading is the one you meant — a credential looked up **by** 
 value, before anybody knows whose it is; a public subdomain — say so:
 
 ```lite
-token String @unique(global)
-@@unique([hostname], global: true)
+tenancy { strategy row  column workspaceId }
+
+model Credential {
+  id          Int    @id
+  workspaceId Int
+  token       String @unique(global)
+}
+
+model Site {
+  id          Int    @id
+  workspaceId Int
+  hostname    String
+  @@unique([hostname], global: true)
+}
 ```
 
 That is the opt-out, and it is the only thing that keeps a constraint
@@ -356,7 +402,7 @@ route every request at one tenant in silence.
 Applied in one place — `registry.tenantFor({ host, headers, principal })` — so
 the API realm asks rather than re-reading the declaration:
 
-```js
+```js fragment
 import { createApp } from '@frontierjs/junction'
 
 const app = createApp({ tenants })     // instead of createApp({ db })
@@ -366,7 +412,7 @@ Junction then resolves a tenant per call and puts that tenant's caller-scoped
 client on `ctx.locals.db`. Work with no request behind it (a job, a scheduled
 sweep) names its tenant explicitly:
 
-```js
+```js fragment
 await app.service('orders').find({}, { locals: { tenantId: 'acme' } })
 ```
 
@@ -383,12 +429,14 @@ claim instead of an empty list with a 200. Anonymous is left to the gate.
 ## Reading the declaration yourself
 
 ```js
-db.$tenancy          // on every flavor of client — root, $setAuth, asSystem, $scopedBy
-tenants.tenancy      // the same, off a registry
-tenants.tenantFor({ host, headers, principal })
+import { resolveTenancy, parseFile } from '@frontierjs/litestone'
 
-import { resolveTenancy, tenantFrom } from '@frontierjs/litestone'
-resolveTenancy(parseResult.schema, { schemaPath })
+db.$tenancy          // on every flavor of client — root, $setAuth, asSystem, $scopedBy
+// tenants.tenancy   — the same, off a registry (strategy database)
+// tenants.tenantFor({ host, headers, principal })
+
+const declared = resolveTenancy(parseFile('./schema.lite').schema, { schemaPath: './schema.lite' })
+if (declared.strategy !== 'row' || db.$tenancy.column !== 'workspaceId') throw new Error('one declaration, read two ways')
 ```
 
 `null` when the schema declares no tenancy.

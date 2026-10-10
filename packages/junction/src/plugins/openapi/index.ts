@@ -29,7 +29,7 @@
 
 import type { App, Plugin }      from '../../core/app.ts'
 import type { CompiledSchema, Schema, FieldDef } from '../../core/schema.ts'
-import { customMethodNames, isMethodAllowed } from '../../core/service.ts'
+import { isMethodAllowed } from '../../core/service.ts'
 import { appJsonSchema }                  from '../../core/litestone.ts'
 
 // ─── Options ──────────────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ const METHOD_SUMMARIES: Record<string, string> = {
   remove: 'Delete',
 }
 
-const METHOD_HTTP: Record<string, string> = {
+const _METHOD_HTTP: Record<string, string> = {
   find:   'get',
   get:    'get',
   create: 'post',
@@ -662,10 +662,16 @@ export function openapi(opts: OpenAPIOptions): Plugin {
     register(app: App): void {
       // Expose a helper so other plugins can inject paths before spec generation
       // Usage in a plugin's register(): app.addOpenApiPaths({ '/auth/login': { post: {...} } })
-      app.addOpenApiPaths = (paths: Record<string, unknown>) => {
+      // The spec is generated once and cached; adding paths busts it.
+      let specCache: string | null = null
+      let specSvcCount = -1
+      const addPaths = (paths: Record<string, unknown>) => {
         const existing = app._openapiExtraPaths ?? {}
         ;app._openapiExtraPaths = { ...existing, ...paths }
+        specCache = null
       }
+      if (typeof app.claim === 'function') app.claim('addOpenApiPaths', addPaths)
+      else app.addOpenApiPaths = addPaths
       // app.get applies apiPrefix — see the route shortcuts in core/app.ts.
       // The spec's own `paths` still carry the prefix, because they describe
       // URLs a client will call rather than routes this app registers.
@@ -675,14 +681,6 @@ export function openapi(opts: OpenAPIOptions): Plugin {
       // ONCE on first request instead of rebuilding the whole document
       // (service reflection included) per hit. addOpenApiPaths() and any
       // late service registration invalidate the cache.
-      let specCache: string | null = null
-      let specSvcCount = -1
-      const prevAdd = app.addOpenApiPaths!
-      app.addOpenApiPaths = (paths: Record<string, unknown>) => {
-        prevAdd(paths)
-        specCache = null
-      }
-
       app.get(endpoint, async () => {
         // Cheap invalidation probe: late-registered services change the
         // service count, which busts the cache.

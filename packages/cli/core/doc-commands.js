@@ -36,7 +36,7 @@
 // an AGENTS.md, and a command file naming a sibling.
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
-import { join, relative, basename }                        from 'path'
+import { join, relative }                        from 'path'
 
 /**
  * `fli <token>` in backticks, one per match.

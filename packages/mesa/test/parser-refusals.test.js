@@ -149,27 +149,27 @@ describe('a component tag name keeps all of itself (FJS-841)', () => {
 
 describe('a nested <script> is reported (FJS-842)', () => {
   it('names one inside an element', async () => {
-    const w = await warningsOf('<div><script>let q = 5<\/script>{q}</div>')
+    const w = await warningsOf('<div><script>let q = 5</script>{q}</div>')
     expect(w.join('\n')).toMatch(/<script> must be at the top level/)
   })
 
   it('names one inside a block', async () => {
-    const w = await warningsOf('{#if a}<script>let z = 1<\/script>{/if}')
+    const w = await warningsOf('{#if a}<script>let z = 1</script>{/if}')
     expect(w.join('\n')).toMatch(/<script> must be at the top level/)
   })
 
   it('names one inside {#each}', async () => {
-    const w = await warningsOf('{#each xs as x}<script>let z = 1<\/script>{/each}')
+    const w = await warningsOf('{#each xs as x}<script>let z = 1</script>{/each}')
     expect(w.join('\n')).toMatch(/<script> must be at the top level/)
   })
 
   it('names a non-JS block, which is the shape an author means to ship', async () => {
-    const w = await warningsOf('<div><script type="application/ld+json">{"a":1}<\/script></div>')
+    const w = await warningsOf('<div><script type="application/ld+json">{"a":1}</script></div>')
     expect(w.join('\n')).toMatch(/<script> must be at the top level/)
   })
 
   it('says nothing about a top-level script', async () => {
-    const w = await warningsOf('<script>let q = 5<\/script><div>{q}</div>')
+    const w = await warningsOf('<script>let q = 5</script><div>{q}</div>')
     expect(w.join('\n')).not.toMatch(/<script> must be at the top level/)
   })
 })

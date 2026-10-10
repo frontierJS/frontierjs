@@ -74,7 +74,7 @@ function serve() {
 //
 // `true` when the browser's answer is the one `#host` promises: a value, or a
 // refusal that names what was reached for. A ReferenceError is never that.
-const notReference = (v) => !(v?.error && v.name === 'ReferenceError')
+const _notReference = (v) => !(v?.error && v.name === 'ReferenceError')
 const EXPECT = {
   'engine-facts':       v => v.engine?.startsWith('sqlite-wasm') && v.journal === 'persist' && v.foreignKeys === 0 && v.fts5 && v.math && v.json,
   'host-globals':       v => v.setImmediate === 'undefined' && v.process === 'undefined' && v.Buffer === 'undefined',

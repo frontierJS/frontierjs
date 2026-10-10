@@ -147,14 +147,14 @@ async function handleRequest(req) {
     // request if the user's level is below the model's read requirement.
 
     if (req.method === 'GET' && !id) {
-      const limit = parseInt(url.searchParams.get('limit') ?? '50')
+      const limit = parseInt(url.searchParams.get('limit') ?? '50', 10)
       return json(await table.findMany({ limit }))
     }
 
     // ── GET /accounts/1 ───────────────────────────────────────────────────────
 
     if (req.method === 'GET' && id) {
-      return json(await table.findUniqueOrThrow({ where: { id: parseInt(id) } }))
+      return json(await table.findUniqueOrThrow({ where: { id: parseInt(id, 10) } }))
     }
 
     // ── POST /accounts ────────────────────────────────────────────────────────
@@ -171,7 +171,7 @@ async function handleRequest(req) {
 
     if (req.method === 'PATCH' && id) {
       return json(await table.update({
-        where: { id: parseInt(id) },
+        where: { id: parseInt(id, 10) },
         data:  await req.json(),
       }))
     }
@@ -180,7 +180,7 @@ async function handleRequest(req) {
     // Hard delete (or soft delete if the model has deletedAt).
 
     if (req.method === 'DELETE' && id) {
-      await table.delete({ where: { id: parseInt(id) } })
+      await table.delete({ where: { id: parseInt(id, 10) } })
       return json({ deleted: true })
     }
 

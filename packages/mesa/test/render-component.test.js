@@ -9,7 +9,6 @@ import { writeFile, unlink, mkdir, readdir, utimes } from 'fs/promises'
 import { existsSync, rmSync } from 'fs'
 import path from 'path'
 import { renderComponent, renderFile } from '../src/render-component.js'
-import { initRenderer } from '../src/render.js'
 
 // ── Test fixtures directory ───────────────────────────────────────────────────
 // Every `cwd:` below is this directory and fixture() writes into it, so it has to

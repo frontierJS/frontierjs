@@ -172,9 +172,9 @@ export function generateTypeScript(schema, opts = {}) {
   lines.push(`// ── Models ───────────────────────────────────────────────────────────────────`, ``)
 
   for (const model of schema.models) {
-    const isSoftDelete = model.attributes.some(a => a.kind === 'softDelete')
+    const _isSoftDelete = model.attributes.some(a => a.kind === 'softDelete')
     const dbAttr       = model.attributes.find(a => a.kind === 'db')
-    const dbName       = dbAttr?.name ?? 'main'
+    const _dbName       = dbAttr?.name ?? 'main'
 
     lines.push(`// ─── ${pascal(model.name)} ${'─'.repeat(Math.max(0, 60 - model.name.length))}`)
     lines.push(``)
@@ -567,6 +567,25 @@ export interface CursorResult<T> {`,
     ``,
   )
 
+  // The server's client is the system audience's: the client audience strips
+  // what `createClient()` reads, so registering it would type `db` as a client
+  // that lacks the columns it returns.
+  if (audience === 'system') {
+    lines.push(
+      `// ── Register ─────────────────────────────────────────────────────────────────`,
+      ``,
+      `// The alias is what breaks the name collision — inside the augmentation`,
+      `// \`LitestoneClient\` is the package's own, so this one is reached under a`,
+      `// second name.`,
+      `type GeneratedLitestoneClient = LitestoneClient`,
+      ``,
+      `declare module '@frontierjs/litestone' {`,
+      `  interface Register { client: GeneratedLitestoneClient }`,
+      `}`,
+      ``,
+    )
+  }
+
   // ── createClient ─────────────────────────────────────────────────────────────
   lines.push(
     `// ── createClient ─────────────────────────────────────────────────────────────`,
@@ -631,7 +650,7 @@ function fieldRowSpec(field, schema, audience, modelNames) {
   if (attributes.some(a => a.kind === 'transient')) return null
 
   const tsType  = fieldToTs(field, schema, modelNames)
-  const optional = type.optional || isGuarded  // guarded fields may be absent even in system reads
+  const _optional = type.optional || isGuarded  // guarded fields may be absent even in system reads
 
   const commentParts = []
   if (attributes.some(a => a.kind === 'guarded'))  commentParts.push('@guarded')

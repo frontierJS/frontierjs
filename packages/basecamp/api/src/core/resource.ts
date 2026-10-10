@@ -10,8 +10,8 @@
 // so the ones with real behavior (servers' drain/heartbeat, deployments'
 // job handoff) read as themselves rather than as config for a base class.
 
-import { NotFound, Conflict, $ } from '@frontierjs/junction'
-import type { ServiceContext } from '@frontierjs/junction'
+import { NotFound, Conflict, normalizeOrderBy, normalizeSelect, $ } from '@frontierjs/junction'
+import type { ServiceContext, SortParam, SelectParam } from '@frontierjs/junction'
 
 // ─── Reading the call ────────────────────────────────────────────────────
 // `$` is the service call in progress — read-only, fresh per call, and it
@@ -60,16 +60,22 @@ export function slugify(s: string): string {
  * and `workspaceId` is the tenancy declaration's — both compile into the WHERE
  * for every read, and a restated clause is the one that disagrees when the
  * declaration moves.
+ *
+ * `opts.orderBy` is the service's default, and the caller's `$orderBy` and
+ * `$select` win over it: junction refuses a directive the method never read,
+ * and this is where every list here reads them.
  */
 export async function findScoped(
   accessor: string,
   opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, unknown> | Record<string, unknown>[] },
 ) {
+  const { orderBy: sort, select } = ($.directives ?? {}) as { orderBy?: SortParam; select?: SelectParam }
   const { rows, total } = await db()[accessor].findManyAndCount({
     where:   opts.where ?? {},
     limit:   opts.limit,
     offset:  opts.offset,
-    orderBy: opts.orderBy ?? { createdAt: 'desc' },
+    orderBy: sort != null ? normalizeOrderBy(sort) : opts.orderBy ?? { createdAt: 'desc' },
+    ...(select != null ? { select: normalizeSelect(select) } : {}),
   })
   return { total, limit: opts.limit, offset: opts.offset, data: rows }
 }

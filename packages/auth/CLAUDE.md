@@ -218,7 +218,7 @@ index.ts     public API
   the class of defect `FJS-277` was.
 - **Auth records events through `db.$audit`, beside the `@@trail(audit)` rows
   rather than instead of them.** `login.succeeded`, `login.failed`,
-  `login.challenged`, `logout`, `session.revoked`, `password.reset.refused`,
+  `login.challenged`, `totp.confirm.failed`, `logout`, `session.revoked`, `password.reset.refused`,
   the `oauth.*` events (`oauth.signin`, `oauth.registered`, `oauth.refused`,
   `oauth.link.refused`) and the `support.*` pair (`support.started`,
   `support.ended`) — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
@@ -255,16 +255,14 @@ index.ts     public API
   `findFirst({ where: { email } })` as a where-operator and the address was a
   FILTER (`FJS-296`). **A new route reads its body through that reader**; a new
   field is a line in `BODY_FIELDS`.
-- **The BODY has a reader and so does the QUERY, and the query one was missing
-  for a year.** `FJS-296` gave `plugin.ts` a body reader because a where-operator
-  object reached the user lookup; nothing gave `ctx.query` the same rule, and
-  `GET /auth/email/verify` read it with `as string` — a cast that does nothing at
-  runtime — where every OAuth sibling wrote `String(...)`. `?token[gt]=` arrived
-  as `{gt: ''}`, went into `where: { value: token }` and **verified a stranger's
-  address** (`FJS-1002`). `queryText()` refuses a non-string by naming the
-  parameter. The OAuth reads keep `String()` on purpose: they are inside a
-  redirect flow that has to end on a failure PAGE, so a thrown 400 is the wrong
-  shape there — a real difference, not a second spelling.
+- **A route that spends a single-use token is a POST, and the mailed link lands
+  on a web page that posts it** (`FJS-1839`, `FJS-D616`). `POST /auth/email/verify`
+  takes the token in the body and answers `{ ok: true }`; a GET there is a 405.
+  A mail scanner's prefetch burned the link before the person clicked it, and the
+  old answer was the whole SessionContext. The body reader refuses a non-string
+  token, which is what closed `?token[gt]=` verifying a stranger (`FJS-1002`). The
+  OAuth query reads keep `String()` on purpose: they are inside a redirect flow
+  that has to end on a failure PAGE, so a thrown 400 is the wrong shape there.
 - **A session is graded, not trusted.** `sessionGateLevel()` (in Junction) turns
   a `SessionContext` into Litestone's 0–7 scale, and `toDataPrincipal()` turns it
   into the principal `auth()` reads. Absent ≠ null: an app with no verification

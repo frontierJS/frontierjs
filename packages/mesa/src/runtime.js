@@ -1341,6 +1341,7 @@ const _URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'formAction']
 // for the TEST only — nothing rewrites the value that gets written.
 const refusedURL = (name, value) =>
   _URL_ATTRS.has(name) && value != null &&
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
   /^(?:javascript:|data:text\/html)/.test(('' + value).replace(/[\u0000-\u0020]/g, '').toLowerCase())
 
 // Named rather than dropped, for the reason a refused spread key is named: an
@@ -3242,7 +3243,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     const sources = new Int32Array(midLen)
     let moved   = false
     let pos     = 0
-    let patched = 0
+    let _patched = 0
 
     for (let i = 0; i < midLen; i++) {
       const key     = newKeys[j + i]
@@ -3254,7 +3255,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
         sources[i] = oldIdx + 1       // 1-based
         if (pos > oldIdx) moved = true
         else pos = oldIdx
-        patched++
+        _patched++
       }
       // sources[i] stays 0 for new blocks
     }
@@ -4679,7 +4680,7 @@ function _buildProxy(obj, byTarget, entry, pathPrefix) {
     // nothing, so a whole-object watch — which is supposed to catch any change —
     // kept rendering the deleted value.
     deleteProperty(target, key) {
-      const had = Object.prototype.hasOwnProperty.call(target, key)
+      const had = Object.hasOwn(target, key)
       delete target[key]
       if (had) {
         for (const n of entry.nodes) {

@@ -200,7 +200,11 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
   for (const t of ticks) {
     if (!/[/.]/.test(t) || /\s/.test(t)) continue
     const token = t.replace(/^\.\//, '')
-    for (const f of files) if (f === token || f.endsWith(`/${token}`)) hits.push({ tier: 'path', file: f, on: t })
+    // A directory token ends in / and a changed path never does.
+    const under = token.endsWith('/')
+      ? f => f.startsWith(token) || f.includes(`/${token}`)
+      : f => f === token || f.endsWith(`/${token}`)
+    for (const f of files) if (under(f)) hits.push({ tier: 'path', file: f, on: t })
   }
   if (hits.length) return best(hits)
 

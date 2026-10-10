@@ -89,7 +89,7 @@ export function parseGateString(str) {
 
   const parts = raw.map(Number)
 
-  if (parts.some(isNaN))
+  if (parts.some(Number.isNaN))
     throw new Error(`@@gate: invalid value "${str}" — expected numbers separated by dots`)
 
   if (parts.some(n => n < 0 || n > 9 || !Number.isInteger(n)))

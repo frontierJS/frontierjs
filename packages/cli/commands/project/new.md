@@ -794,6 +794,7 @@ function makeApiAccessTest() {
 // Each refusal sits beside a caller who IS allowed the same thing. A schema that
 // refused everybody would pass every refusal on its own.
 
+/// <reference path="../../db/schema.d.ts" />
 import { afterAll, describe, expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -818,9 +819,11 @@ afterAll(() => env.close())
 // copy, and each fresh copy restarts the sequence that keeps emails unique.
 const users = env.factories.user.asSystem()
 
-// TestEnv is not generic over the schema, so its tables are typed unknown.
-const system   = env.system as any
-const actingAs = (principal: unknown) => env.actingAs(principal) as any
+// The reference at the top is what types these: db/schema.d.ts registers the
+// schema's client, and createTestEnv answers it. \`bun run typecheck\` writes
+// the file first, so a fresh clone has it.
+const system   = env.system
+const actingAs = (principal: unknown) => env.actingAs(principal)
 
 // A principal is the SESSION the API builds, not a row: auth's sessionFields
 // turns role "admin" into isAdmin at sign-in, and gate.ts reads isAdmin.
@@ -1090,7 +1093,7 @@ export const auth = createLitestoneAuth(db, {
     console.log(\`[auth] password reset for \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
   onEmailVerificationRequested: async (email, token) => {
-    const link = \`\${env.APP_URL}/api/auth/email/verify?token=\${encodeURIComponent(token)}\`
+    const link = \`\${env.WEB_URL}/verify-email/?token=\${encodeURIComponent(token)}\`
     console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
 })

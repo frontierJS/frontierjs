@@ -11,7 +11,7 @@
  * regex scan of the document's <script> block.
  */
 
-'use strict'
+
 
 const vscode = require('vscode')
 const { CompletionItem, CompletionItemKind, SnippetString, MarkdownString } = vscode

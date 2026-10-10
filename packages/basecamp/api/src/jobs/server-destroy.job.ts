@@ -1,4 +1,4 @@
-import { $ } from '@frontierjs/junction'
+
 // src/jobs/server-destroy.job.ts
 // Unmakes one machine at a cloud. Dispatched as `server:destroy`.
 //
@@ -13,7 +13,6 @@ import { $ } from '@frontierjs/junction'
 
 import { defineJob }    from '@frontierjs/caravan'
 import { runsAsCaller } from './context.ts'
-import type { BasecampApp } from '../basecamp.types.ts'
 
 export default defineJob<{ serverId: string; workspaceId: string }>(
   'server:destroy',

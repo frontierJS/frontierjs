@@ -21,6 +21,8 @@ WHERE "accountId" = ? -- bound to ctx.auth.accountId
 That clause is part of every `SELECT`, `UPDATE`, and `DELETE` that touches this model from a scoped client. It cannot be forgotten.
 
 ```lite
+model User { id Int @id  accountId Int  @@auth }   // the claims a policy may read come from here
+
 model Post {
   id        Int  @id
   accountId Int
@@ -67,9 +69,10 @@ is safe in a column, a log line and an error.
 
 ```js
 const db = await createClient({
-  path:                   './db/schema.lite',
-  encryptionKey:           process.env.ENCRYPTION_KEY,
-  previousEncryptionKeys: [process.env.ENCRYPTION_KEY_OLD],  // read-only
+  path:                   './schema.lite',
+  db:                     ':memory:',
+  encryptionKey:           process.env.ENCRYPTION_KEY     ?? 'b'.repeat(64),    // 64 hex chars
+  previousEncryptionKeys: [process.env.ENCRYPTION_KEY_OLD ?? 'a'.repeat(64)],   // read-only
 })
 ```
 
@@ -316,15 +319,14 @@ than for an access check.
 The clock is injectable:
 
 ```js
-const db = await createClient({ path: './schema.lite', now: () => new Date('2026-01-01T00:00:00Z') })
+const db = await createClient({ path: './schema.lite', db: ':memory:', now: () => new Date('2026-01-01T00:00:00Z') })
 ```
 
 `now` takes a function returning a `Date` or an ISO string; absent, it is the
 wall clock. It reaches both halves of the policy compiler — the WHERE and the
 JS evaluator a `create` policy uses — and `@@softDelete`'s stamp.
 
-**It does not reach every timestamp litestone writes**, which this section used
-to claim. `@default(now())` is a column DEFAULT and `@updatedAt` is an AFTER
+**It does not reach every timestamp litestone writes.** `@default(now())` is a column DEFAULT and `@updatedAt` is an AFTER
 UPDATE trigger, and both are `strftime('%Y-%m-%dT%H:%M:%fZ','now')` — SQLite's
 own clock, which no JS injection can move (`FJS-531`). A test that needs a row
 to be old states its timestamp on the write; a column default only applies to a
@@ -380,16 +382,15 @@ on the call, so a create policy naming one is answerable.
 
 ```js
 // Scope client to a user — policies apply to all queries
-const userDb = db.$setAuth(req.user)
+const userDb = db.$setAuth({ id: 1, accountId: 1 })
 
+await userDb.post.create({ data: { id: 1, accountId: 1, title: 'Mine' } })   // checked against @@allow('create', ...)
+await db.asSystem().post.create({ data: { id: 2, accountId: 2, ownerId: 9, title: 'Theirs' } })
 const posts = await userDb.post.findMany()   // only returns allowed posts
-await userDb.post.create({ data: {...} })    // checked against @@allow('create', ...)
 
 // Bypass all policies
 const all = await db.asSystem().post.findMany()
-
-// Debug which policy blocked a query
-const result = await userDb.post.findMany({ policyDebug: true })
+if (posts.length !== 1 || all.length !== 2) throw new Error('expected one post scoped, two as the system')
 ```
 
 ### Reaching a model through `include`
@@ -401,14 +402,42 @@ columns, and a `@@gate` the caller does not clear **refuses the query** rather
 than answering an empty list (a gate is per model: *no rows* and *not for you*
 are different answers).
 
+```lite
+model User    { id Int @id  accountId Int  role String?  @@auth }
+model Team    { id Int @id  secrets Vault[] }
+model Vault   { id Int @id  teamId Int  team Team @relation(fields: [teamId], references: [id])  @@gate("7") }
+model Account { id Int @id  posts Post[] }
+model Post {
+  id        Int     @id
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
+  title     String
+  @@allow('read', accountId == auth().accountId)
+}
+```
+
 ```js
+const sys    = db.asSystem()
+const userDb = db.$setAuth({ id: 1, accountId: 1, role: 'user' })   // level 4
+await sys.team.create({ data: { id: 1 } })
+for (const accountId of [1, 2]) {
+  await sys.account.create({ data: { id: accountId } })
+  await sys.post.create({ data: { id: accountId, accountId, title: `post ${accountId}` } })
+}
+
 // Vault is @@gate("7"); the caller is level 4
-await userDb.team.findMany({ include: { secrets: true } })
+try {
+  await userDb.team.findMany({ include: { secrets: true } })
+  throw new Error('expected the gate to refuse the query')
+} catch (e) {
+  if (e.name !== 'AccessDeniedError') throw e
+}
 // AccessDeniedError: "Vault.read" requires level 7, user has level 4
 
 // Post is @@allow('read', accountId == auth().accountId)
-await userDb.account.findMany({ include: { posts: true } })
+const accounts = await userDb.account.findMany({ include: { posts: true } })
 // each account carries only the posts this caller may read
+if (accounts[0].posts.length !== 1 || accounts[1].posts.length !== 0) throw new Error('the include is filtered by the child policy')
 ```
 
 The gate is checked before the query runs, so it names the model it refused.
@@ -421,7 +450,11 @@ It compiles to a correlated `EXISTS` over the parent's table, so it is exact and
 it costs one subquery; an **absent** foreign key allows, in SQL and in JS alike.
 
 ```lite
+model User { id Int @id  @@auth }
+model App  { id Int @id  ownerId Int  deploys Deploy[]  @@allow('read', ownerId == auth().id) }
+
 model Deploy {
+  id    Int @id
   app   App @relation(fields: [appId], references: [id])
   appId Int
   @@allow('read', check(app))            // readable if the app is
@@ -447,10 +480,10 @@ restriction at all* — `createClient` warns, naming the model, the operation an
 what the parent is actually protected by.
 
 ```lite
-model Vault { id Int @id  @@gate("7") }        // ← no row policy
-model Doc   { vault Vault @relation(…)  @@allow('read', check(vault)) }
-// [litestone] Doc: … delegates to Vault, whose protection for 'read' is a @@gate
-// and no row policy … places no restriction at all on Doc
+model Vault { id Int @id  docs Doc[]  @@gate("7") }        // ← no row policy
+model Doc   { id Int @id  vaultId Int  vault Vault @relation(fields: [vaultId], references: [id])  @@allow('read', check(vault)) }
+// [litestone] Doc: @@allow/@@deny('read', check(vault)) delegates to Vault, whose protection
+// for 'read' is a @@gate and no row policy ... places no restriction at all on Doc
 ```
 
 Give the parent an `@@allow` for that operation, or say what the child requires
@@ -473,7 +506,11 @@ carries, compared directly.
 A policy may name a column on the model this one belongs to, written as a path.
 
 ```lite
+model User  { id Int @id  @@auth }
+model Order { id String @id  userId Int  lines OrderLine[] }
+
 model OrderLine {
+  id      Int    @id
   order   Order  @relation(fields: [orderId], references: [id])
   orderId String
   @@allow('read', order.userId == auth().id)   // the lines of my own orders
@@ -528,16 +565,23 @@ identically from the summary while only one of them is a broken policy.
 does any of them match.
 
 ```lite
+model User { id Int @id  @@auth }
+
 model Team {
+  id      Int          @id
   private Boolean      @default(false)
   members TeamMember[]
   @@allow('read', private == false || members.some(userId == auth().id))
 }
+model TeamMember { id Int @id  teamId Int  team Team @relation(fields: [teamId], references: [id])  userId Int  @@index([teamId]) }
 
 model Lens {
-  grants Grant[]
+  id      Int     @id
+  ownerId Int
+  grants  Grant[]
   @@allow('read', ownerId == auth().id || grants.some(granteeId == auth().id && status == 'active'))
 }
+model Grant { id Int @id  lensId Int  lens Lens @relation(fields: [lensId], references: [id])  granteeId Int  status String  @@index([lensId]) }
 ```
 
 Without it the rule had two homes, and both are copies. A principal resolver
@@ -703,7 +747,7 @@ const gate = new GatePlugin({
   }
 })
 
-const db = await createClient({ plugins: [gate], ... })
+const db = await createClient({ path: './schema.lite', db: ':memory:', plugins: [gate] })
 ```
 
 `getLevel` answers **synchronously**, and a Promise is refused by name at the
@@ -762,12 +806,6 @@ Explicit standing outranks the lifecycle: `isSystemAdmin` / `isOwner` /
 `isAdmin` are checked first, so an owner who never completed activation is still
 the owner.
 
-> **Fixed 2026-08-04.** This used to test `!user.verifiedAt`, which collapses
-> absent into null — so every session from an app without a verification flow
-> graded `VISITOR(1)`, below the `USER(4)` an ordinary model needs to read, and
-> gates 403'd the whole API. The `role` check also ran ahead of the standing
-> checks, so a system admin with no role string graded `CREATOR(3)`.
-
 Junction's `sessionGateLevel()` is the same BINDING, not a copy of it: both are
 `gradeStanding` from `@frontierjs/toolbelt/gate`, which is substrate below the
 dependency graph and so importable from either side (`FJS-D197`). They were a
@@ -781,7 +819,7 @@ the app had installed.
 A gate is a digit string: four positions, `Read.Create.Update.Delete`, each one
 the level that operation requires.
 
-```lite
+```lite fragment
 @@gate("R.C.U.D")      // four positions — required level for each op
 @@gate("4")            // one position: every op requires USER (level 4+)
 @@gate("2.4.4.6")      // READER to read, USER to write, OWNER to delete
@@ -809,16 +847,18 @@ distinction:
 
 ```lite
 model User {
+  id             Int      @id
   emailVerified  Boolean  @default(false) @allow('write', auth().isAdmin)
   role           String   @default("user") @allow('write', auth().isAdmin)
 
   @@gate("4.4.4.5")
   @@allow('update', id == auth().id || auth().isAdmin)
+  @@auth
 }
 
-model Credential { …  @@gate("8") }   // the password hash, the API key HMAC
-model Session    { …  @@gate("8") }   // the bearer token
-model Verification { … @@gate("8") }  // the reset token
+model Credential   { id Int @id  userId Int  hash  String @hashed  @@gate("8") }   // the password hash, the API key HMAC
+model Session      { id Int @id  userId Int  token String @hashed  @@gate("8") }   // the bearer token
+model Verification { id Int @id  userId Int  token String @hashed  @@gate("8") }   // the reset token
 ```
 
 Three declarations answering three different questions, and **you need all
@@ -859,6 +899,8 @@ application mostly asks a grid — *which nouns, and which verbs on them* — an
 billing clerk and a production planner are both level 4 with neither above the other.
 
 ```lite
+enum InvoiceStatus { draft  issued  voided }
+
 model Invoice {
   id     Int           @id
   number String
@@ -915,6 +957,8 @@ and `.note`.
 **Who holds one is data; that the column holds capabilities is schema.**
 
 ```lite
+model Invoice { id Int @id  note String @capability  @@gate("2")  @@capabilities(all) }
+
 model Role {
   id           String       @id @default(cuid())
   workspaceId  String
@@ -954,10 +998,16 @@ its own — a column read must strip rather than refuse — so it is spelled as 
 predicate, and the literal in it is resolved against the same derived set:
 
 ```lite
-salary Float @allow('read', 'Employee.salary' in auth().capabilities)
+model Employee {
+  id     Int   @id
+  salary Float @capability @allow('read', 'Employee.salary' in auth().capabilities)
+  @@gate("2")
+  @@capabilities(all)
+}
 ```
 
-A misspelling there makes the predicate permanently false, so the column disappears for
+The literal has to name a capability the schema declares — here the `@capability` on
+the same column. A misspelling there makes the predicate permanently false, so the column disappears for
 everybody including the holders, with nothing anywhere saying why. It is a parse error
 naming the nearest legal capability.
 

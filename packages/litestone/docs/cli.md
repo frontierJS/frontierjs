@@ -59,7 +59,7 @@ litestone tenant list|create|info|delete|migrate
 ```bash
 litestone migrate create [label]
 ```
-Generate a new SQL migration file from the diff between your schema and the live database. Creates `migrations/<timestamp>_<label>.sql`.
+Generate a new SQL migration file from the diff between your schema and the migration history replayed into a shadow database — the live database is not consulted. Creates `migrations/<timestamp>_<label>.sql`.
 
 A renamed column is a drop plus an add to a diff, so say it was a rename and its values stay (`ALTER TABLE … RENAME COLUMN`, written into the file and named in its header):
 
@@ -132,7 +132,7 @@ Check setup and database health: Bun version, config, schema validity, database 
 ```bash
 litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction] [--stdout]
 ```
-Generate TypeScript declarations from your schema, to `<schema>.d.ts` beside it by default. Outputs `<Model>` (the row), `<Model>Create`, `<Model>Update`, `<Model>Where` and `<Model>OrderBy` for every model — `User`, `UserCreate`, … `--only` takes model names and refuses one that names no model. `--audience=system` includes the fields a client never sees; `--augment=junction` adds the module augmentation Junction's `ServiceTypes` reads. [typescript.md](typescript.md) shows what is generated.
+Generate TypeScript declarations from your schema, to `<schema>.d.ts` beside it by default. Outputs `<Model>` (the row), `<Model>Create`, `<Model>Update`, `<Model>Where` and `<Model>OrderBy` for every model — `User`, `UserCreate`, … `--only` takes model names and refuses one that names no model. `--audience=system` includes the fields a client never sees and registers the generated client as what `createClient()` answers; `--augment=junction` adds the module augmentation Junction's `ServiceTypes` reads. [typescript.md](typescript.md) shows what is generated.
 
 ## Schema tools
 
@@ -152,7 +152,7 @@ answers. An unknown word suggests the near ones and exits 1.
 ```bash
 litestone advise [--json] [--strict]
 ```
-The one command that reads YOUR schema and says something no generated artefact
+The one command that reads YOUR schema and says something no generated artifact
 can. Two lists, and they are two questions.
 
 **Legal and worth a look** — the schema says something and a layer above the
@@ -165,7 +165,7 @@ it, so these stay green through every migration and every test.
 would have said it better: a `deletedAt` with no `@@softDelete` behind it, a
 token column stored as text, an enum lifecycle any write may set to any value,
 the same columns written out in five models. Nothing else can produce this list,
-because every other artefact is derived from the schema and a word absent from the
+because every other artifact is derived from the schema and a word absent from the
 seed is absent from all of them.
 
 **Three of them are about a decision that cannot be taken back**, which is why
