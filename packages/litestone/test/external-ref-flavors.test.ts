@@ -88,7 +88,7 @@ describe('two principals updating at once keep their own stash', () => {
     ])
 
     const rows = await sys.doc.findMany({ orderBy: { id: 'asc' } })
-    expect(rows.map((r: any) => JSON.parse(r.resume).key)).toEqual(['alice-new', 'bob-new'])
+    expect(rows.map((r: any) => r.resume.key)).toEqual(['alice-new', 'bob-new'])
     db.$close()
   })
 

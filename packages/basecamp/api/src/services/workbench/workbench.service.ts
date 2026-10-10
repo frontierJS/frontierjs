@@ -17,8 +17,11 @@
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
 //   POST /workbench/:id           fork        { slug?, preview? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run;
 //                                             with preview, Open: a preview Environment and its rows (`core/preview.ts`), routed to the branch's web port
+//   POST /workbench/:id           freeze      a preview's web/ built and released by digest; the hostname serves the build
+//   POST /workbench/:id           thaw        a preview's hostname routed back to the branch's dev server
 //   POST /workbench/:id           land        a branch's work into its parent's tree, uncommitted
-//   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept
+//   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept;
+//                                             a preview is RETIRED first — off the machine, its Environment removed
 //   POST /workbench/:id           stop · fresh · seen · unpin
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
 //
@@ -34,12 +37,12 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
 import { describeRepo }            from '../../core/local-git.ts'
 import { doneScript }              from '../../core/workbench.ts'
-import { openPreview, type PreviewSettings } from '../../core/preview.ts'
+import { openPreview, freezePreview, thawPreview, retirePreview, type Opened, type PreviewSettings } from '../../core/preview.ts'
 import { db, ws }                  from '../../core/resource.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen', 'check', 'review', 'fork', 'land', 'archive']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen', 'check', 'review', 'fork', 'freeze', 'thaw', 'land', 'archive']
 
 export function createWorkbenchService(app: BasecampApp) {
   // Read per call: services are built inside createApp, before app.ts claims it.
@@ -58,6 +61,15 @@ export function createWorkbenchService(app: BasecampApp) {
   }
 
   const body = () => ($.data ?? {}) as Record<string, unknown>
+
+  /** A preview branch: what Open made, and the settings of the checkout it
+   *  was forked from. */
+  function previewOf(p: ReturnType<typeof pinned>): { opened: Opened, settings: PreviewSettings } {
+    const parent = p.from ? wb().getPin(p.from) : null
+    if (!p.opened?.appId || !p.opened.environmentId) throw new Conflict(`${p.name} is not a preview — fork one with { preview: true }`)
+    if (!parent?.preview) throw new Conflict(`${p.name}'s checkout no longer carries preview settings`)
+    return { opened: p.opened as Opened, settings: parent.preview }
+  }
 
   async function previewTargetsHere(s: Pick<PreviewSettings, 'projectId' | 'serverId'>) {
     if (!await db().project.findFirst({ where: { id: s.projectId, workspaceId: ws() } }))
@@ -135,6 +147,24 @@ export function createWorkbenchService(app: BasecampApp) {
       }
     },
 
+    async freeze() {
+      const p = pinned()
+      const { opened, settings } = previewOf(p)
+      try { return await freezePreview(app, settings, { path: p.path, branch: p.branch!, appId: opened.appId }) }
+      catch (e) {
+        if ((e as { code?: number }).code) throw e
+        throw new Conflict(`Freeze failed, and the hostname still serves what it did: ${(e as Error).message}`)
+      }
+    },
+
+    async thaw() {
+      const p = pinned()
+      const { opened, settings } = previewOf(p)
+      const { port, hosts, ...route } = await thawPreview(app, settings, opened)
+      if (!route.ok) throw new Conflict(`The hostnames were not routed back: ${route.why}`)
+      return { hosts, port, route }
+    },
+
     async land() {
       const p = pinned()
       const r = wb().land(p.id)
@@ -144,9 +174,14 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async archive() {
       const p = pinned()
+      const refused = wb().archiveRefusal(p.id, { discard: body().discard })
+      if (refused) throw new Conflict(refused.refused, { pending: refused.pending ?? 0 })
+      // Before the worktree goes and its port with it: a route left dialing a
+      // released port serves whichever branch claims that port next.
+      const retired = p.opened?.environmentId ? await retirePreview(app, p.opened as Opened) : null
       const r = await wb().archive(p.id, { discard: body().discard })
       if ('refused' in r) throw new Conflict(r.refused, { pending: r.pending ?? 0 })
-      return r
+      return retired ? { ...r, retired } : r
     },
 
     async configure() {

@@ -4,6 +4,7 @@
 // Plugin system: Option C hybrid — simple fn or full lifecycle object.
 
 import { HttpTransport }            from '../transport/http.ts'
+import type { WsRouteOptions }       from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
@@ -577,7 +578,12 @@ export interface App {
   //     message(ctx, msg)   { ... },
   //     close(ctx, code)    { ... },
   //   })
-  ws: (path: string, handlers: WsHandlerSet) => App
+  //
+  // The route is the raw door: junction sends it no `connected` frame and no
+  // `{type:'error'}`. `limits` overrides config.http.ws for this route (a
+  // refused frame closes 1008 with the code as reason); `upgrade(req)` returns
+  // a Response to refuse the upgrade. Per-socket state is `ctx.locals`.
+  ws: (path: string, handlers: WsHandlerSet, opts?: WsRouteOptions) => App
 
   // Lifecycle
   start:    () => Promise<void>
@@ -1628,7 +1634,7 @@ export function createApp(opts: AppOptions = {}): App {
     delete(path, handler, mw) { http.router.delete(prefixPath(path), scoped(handler), mw); return app },
 
     // ── WebSocket shortcut ────────────────────────────────────────
-    ws(path, handlers)        { http.ws(path, handlers);               return app },
+    ws(path, handlers, opts)  { http.ws(prefixPath(path), handlers, opts); return app },
 
     // ── Startup ──────────────────────────────────────────────────
     // Both entry points run ONE ordered, named phase list (see startPhases

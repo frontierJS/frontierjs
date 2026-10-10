@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS "outbox_message" (
   "job" TEXT NOT NULL,
   "payload" TEXT NOT NULL,
   "actorId" TEXT,
+  "tenantId" TEXT,
   "claimedAt" TEXT,
   "deliveredAt" TEXT,
   "attempts" INTEGER NOT NULL DEFAULT 0,

@@ -192,6 +192,14 @@
   hyphens:       auto;
 }
 
+/* A clickable step's label is a .btn, and the chip lineage keeps a button
+   on one line — so two long labels side by side overprinted where the plain
+   ones beside them wrapped. It wraps like the label it stands in for. */
+.step-label .btn {
+  white-space:   normal;
+  overflow-wrap: anywhere;
+}
+
 .step-label {
   font-size:   var(--text-md);
   font-weight: 500;

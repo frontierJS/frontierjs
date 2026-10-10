@@ -99,25 +99,23 @@ const user = await db.user.findUnique({ where: { id: 1 } })
 if (!/^http:\/\/localhost:3001\/storage\/User\/avatar\/\w+\.png$/.test(user.avatar)) throw new Error(user.avatar)
 ```
 
-The row a write hands back carries the column as the stored reference text
-rather than the resolved URL, so a handler answers the URL from a read:
+The row a write hands back carries the column as the stored reference, the
+parsed object a `File[]` item is, rather than the resolved URL, so a handler
+answers the URL from a read:
 
-```js failing
-// FJS-2422 — the write result carries the ref as text
+```js
 import { FileStorage } from '@frontierjs/litestone/storage'
 const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
 const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'me.png', { type: 'image/png' })
 await db.user.create({ data: { id: 1, email: 'ada@example.com' } })
 const user = await db.user.update({ where: { id: 1 }, data: { avatar: file } })
-if (!user.avatar.startsWith('http://')) throw new Error(`update() returned ${user.avatar}`)
+if (user.avatar.mime !== 'image/png') throw new Error(`update() returned ${JSON.stringify(user.avatar)}`)
 ```
 
-Multiple files. A `File[]` read resolves to the list of URLs; the stored
-references are intact (`resolve: false` returns them), but the resolving read
-currently answers an empty list, which is a defect:
+Multiple files. A `File[]` read resolves to the list of URLs; `resolve: false`
+returns the stored references:
 
-```js failing
-// FJS-2419 — a File[] reads as empty under autoResolve
+```js
 import { FileStorage } from '@frontierjs/litestone/storage'
 const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
 const pdf = new File([new TextEncoder().encode('%PDF-1.4 …')], 'spec.pdf', { type: 'application/pdf' })
@@ -185,11 +183,10 @@ The local provider signs nothing — `sign()` answers the public URL.
 ## Downloading to buffer
 
 A `File?` reference asked for with `resolve: false` comes back as the stored
-JSON text rather than the object — `storage.download` and `storage.sign` read
-either, but `.mime` on it is undefined until the defect is fixed:
+object, the same shape a `File[]` item has; `storage.download` and
+`storage.sign` read it:
 
-```js failing
-// FJS-2422 — resolve: false answers the ref as text
+```js
 import { FileStorage, useStorage } from '@frontierjs/litestone/storage'
 const db = await createClient({ path: './schema.lite', db: './app.db', plugins: [FileStorage({ provider: 'local', publicBase: 'http://localhost:3001/storage' })] })
 const storage = useStorage({ provider: 'local' })

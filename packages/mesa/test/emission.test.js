@@ -1538,3 +1538,37 @@ describe('{@const} with a destructuring pattern', () => {
     c.remove()
   })
 })
+
+describe('{@const} bound to an object literal', () => {
+  // The memo was written as an arrow with the value as its body, so a value
+  // opening with a brace read as a block: inside {#each} a module that did not
+  // parse, inside {#if} a body of labels answering undefined (FJS-2489).
+  it('binds the object inside {#each}', async () => {
+    const C = await build(
+      `<script>let k = 2</script>
+{#each [1, 3] as x}
+  {@const t = { w: x, h: x * k }}
+  <p>{t.w}x{t.h}</p>
+{/each}
+<button on:click={() => k = 3}>go</button>`, 'EachObjConst.mesa')
+    const c = mount(C)
+    const text = () => [...c.querySelectorAll('p')].map(p => p.textContent)
+    expect(text()).toEqual(['1x2', '3x6'])
+    c.querySelector('button').click()
+    $rt.flushSync()
+    expect(text()).toEqual(['1x3', '3x9'])
+    c.remove()
+  })
+
+  it('binds the object inside {#if}', async () => {
+    const C = await build(
+      `<script>let n = 4</script>
+{#if n}
+  {@const t = { w: n }}
+  <p>{t.w}</p>
+{/if}`, 'IfObjConst.mesa')
+    const c = mount(C)
+    expect(c.querySelector('p').textContent).toBe('4')
+    c.remove()
+  })
+})

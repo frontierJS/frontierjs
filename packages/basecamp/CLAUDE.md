@@ -149,7 +149,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           (tier preview, slug wb-<slug>), a static inline App on that port, its
           VITE_API_URL, the Domain <slug>.<domain>, the placement, and `/route`
           with the port — written through each row's own service as the
-          caller; a failed Open removes the rows and archives the branch. verify:provision
+          caller; a failed Open removes the rows and archives the branch.
+          `freeze` builds web/ with the App's VITE_ variables, publishes the
+          build to the machine ITSELF and releases that digest (the files never
+          enter a row — a built SPA is up to 180 files and every row is
+          trailed); `thaw` routes back to the port; `archive` on a preview
+          RETIRES it first, before the port it routed to is released. verify:provision
           drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
           or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
           services/api-keys/scopes.ts, proved by verify:mcp
@@ -500,6 +505,12 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   between the two. Never add a fourth branch that returns early and lets the
   caller mark the step `success`: that was the whole of `FJS-257`, a release
   finishing green in 23ms having issued no command.
+- **An inline release that names a digest uploads nothing.** `deployments.create`
+  with `builtImage` on an inline App snapshots `{ kind: 'inline', files: [] }`
+  and runs Validate, Activate, Health check — the machine already holds the
+  bytes (a preview's Freeze). Every inline Activate sends the App's live Domain
+  rows as `hosts`, as `/deploy` does, so a machine with no Caddy fails the
+  release of an inline app that has a Domain rather than leaving it unrouted.
 - **An App's source is a KIND, and `inline` means the files ARE the release**
   (`FJS-D345`). `git`, `image`, `inline`, read in one place —
   `api/src/core/app-source.ts` — and a source naming no kind is REFUSED rather
@@ -525,8 +536,9 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   Outpost's words. A `Domain` changed between releases reaches the machine
   through `domain:dns`, which sends `/route` to every running placement on an
   online server — and a machine it cannot reach fails the job so it retries.
-  The container's BIND does not move until the next release (`FJS-1616`), and
-  a redirect or an inline app is routed nowhere (`FJS-1615`).
+  The container's BIND does not move until the next release (`FJS-1616`). A
+  redirect is routed nowhere, and an inline app only by its release's Activate
+  — `domain:dns` skips it between releases (`FJS-1615`).
 - **A status column with a machine behind it is declared, and the level for a
   move goes on the move.** `Server`, `Deployment` and `Job` carry
   `@@transitions(status, …)`, so a move is `db.<model>.transition(id, name)` and

@@ -684,6 +684,14 @@ export interface LitestoneClient {
    */
   $readGrading(accessor: string): 'open' | 'graded'
   /**
+   * The model names whose writes can change who may read a row of this model —
+   * the model itself, every model a policy path or `.some()` crosses into, and
+   * every model a `check()` delegates to, with its own reach. Where a reader
+   * must be asked again although their row never changed: a revoked share
+   * writes no page. Read off the schema; an unknown accessor answers `[]`.
+   */
+  $readReach(accessor: string): string[]
+  /**
    * What level the app grades a caller at for one model — `getLevel(auth, model)`,
    * asked rather than re-derived.
    *
@@ -1288,7 +1296,12 @@ export interface FactoryRng {
 export type FactoryRow       = Record<string, unknown>
 export type FactoryOverrides = FactoryRow | ((seq: number, rng: FactoryRng | null) => FactoryRow)
 
-export declare class Factory {
+/**
+ * `TRow` is what `createOne` answers. `env.factories.user` carries the registered
+ * client's `User`, so `me.id` is a string; a hand-built Factory answers a
+ * FactoryRow.
+ */
+export declare class Factory<TRow = FactoryRow> {
   constructor(db: AnyLitestoneClient)
 
   /** Subclass fields. */
@@ -1312,7 +1325,7 @@ export declare class Factory {
    * Auto-create a parent row and inject its PK as `fk` (default `<name>Id`).
    * One parent is shared across a `createMany` unless `{ fresh: true }`.
    */
-  withRelation(name: string, factory: Factory, fk?: string | string[], pk?: string | string[], opts?: { fresh?: boolean }): this
+  withRelation(name: string, factory: Factory<any>, fk?: string | string[], pk?: string | string[], opts?: { fresh?: boolean }): this
   /** Use an existing parent row — no auto-create. */
   for(name: string, row: FactoryRow, fk?: string | string[], pk?: string | string[]): this
 
@@ -1325,7 +1338,7 @@ export declare class Factory {
 
   /** Create hasMany children after the row, FK pointed back at it. */
   has(name: string, count?: number, opts?: {
-    factory?:   Factory
+    factory?:   Factory<any>
     overrides?: FactoryOverrides
     /** Name the FK when the child declares more than one relation to this model. */
     fk?:        string
@@ -1334,20 +1347,20 @@ export declare class Factory {
 
   /** Connect implicit many-to-many rows after the row is created. */
   attach(name: string, countOrRows?: number | FactoryRow[], opts?: {
-    factory?:   Factory
+    factory?:   Factory<any>
     overrides?: FactoryOverrides
   }): this
 
   buildOne(overrides?: FactoryOverrides): FactoryRow
   buildMany(count: number, overrides?: FactoryOverrides): FactoryRow[]
-  createOne(overrides?: FactoryOverrides): Promise<FactoryRow>
-  createMany(count: number, overrides?: FactoryOverrides): Promise<FactoryRow[]>
+  createOne(overrides?: FactoryOverrides): Promise<TRow>
+  createMany(count: number, overrides?: FactoryOverrides): Promise<TRow[]>
 
   /** Overloaded on the first argument: a number is a count, anything else is overrides. */
   build(overrides?: FactoryOverrides): FactoryRow
   build(count: number, overrides?: FactoryOverrides): FactoryRow[]
-  create(overrides?: FactoryOverrides): Promise<FactoryRow>
-  create(count: number, overrides?: FactoryOverrides): Promise<FactoryRow[]>
+  create(overrides?: FactoryOverrides): Promise<TRow>
+  create(count: number, overrides?: FactoryOverrides): Promise<TRow[]>
 
   truncate(): Promise<void>
 }

@@ -142,6 +142,22 @@ try {
       .some(el => el.textContent.includes('level')));
     return true;
   `)
+  // Asked for BY NAME, on a visit of its own. The orders page is newest-first
+  // and 20 rows deep, so on a database every checkout drive has added to, the
+  // seeded orders are on page 140 and the default window holds none of them
+  // (`FJS-1371`). The watcher's tab below keeps the default window, because
+  // that is the list a created order lands on the top of.
+  const SEEDED = ['ORD-1001', 'ORD-1002', 'ORD-1003']
+  await goto('/orders/?' + SEEDED.map(r => `reference[in][]=${r}`).join('&'))
+  // Sorted, and narrowed to the SEEDED references. `verify:jobs` re-creates a
+  // seeded order it cancels, which changes that row's id and therefore where it
+  // sorts. What is being asserted is that the rows the seed made are readable
+  // by this session — not that this database has only ever been read by this
+  // drive.
+  t('watcher.rowsBefore', await evaluate(`
+    await waitFor(() => refs().some(r => /^ORD-100\\d$/.test(r)));
+    return { refs: refs().filter(r => /^ORD-100\\d$/.test(r)).sort() }`))
+
   await goto('/orders/')
 
   t('watcher.live', await evaluate(`
@@ -149,14 +165,6 @@ try {
       .some(el => el.textContent.trim() === 'live'));
     return { socket: live };
   `))
-  // Sorted, and narrowed to the SEEDED references. Two things move this list
-  // otherwise: `verify:jobs` re-creates a seeded order it cancels, which changes
-  // that row's id and therefore where it sorts, and every drive that checks a
-  // basket out places a real order. What is being asserted is that the watcher
-  // started with the rows it should have — not that this database has only ever
-  // been read by this drive.
-  t('watcher.rowsBefore', await evaluate(
-    `return { refs: refs().filter(r => /^ORD-100\\d$/.test(r)).sort() }`))
 
   const framesBefore = inbound.length
 

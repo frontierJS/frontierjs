@@ -248,20 +248,24 @@ export function createAppsService(app: BasecampApp) {
       // cannot be reached does not block the delete: the row is the operator's
       // decision and the retire is best effort, said in the log rather than
       // swallowed.
+      // `machine` says which, for a caller that has to act on it.
       const executor = await resolveExecutor(app, target.id)
+      let machine: { ok: true } | { ok: false, why: string }
       if (isExecutor(executor)) {
         const reply = sourceKindOf(target.source) === 'inline'
           ? await executor.call('/static/retire', { app_id: target.id, slug: target.slug })
           : await executor.call('/stop', { app_id: target.id })
+        machine = reply.error ? { ok: false, why: reply.error.message } : { ok: true }
         if (reply.error)
           app.logger.warn(`app ${target.id} deleted, but the machine still serves it: ${reply.error.message}`)
       } else {
+        machine = { ok: false, why: executor.reason }
         app.logger.warn(`app ${target.id} deleted with no machine to retire it from: ${executor.reason}`)
       }
 
       const removed = await removeScoped('app', 'App')
       app.events.emit('app:deleted', { id: $.id, workspace_id: ws() })
-      return removed
+      return { ...removed, machine }
     },
 
 

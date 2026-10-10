@@ -501,8 +501,8 @@ const FIELD = [
     'immutable',
     'field',
     'protect',
-    '',
-    "Written once, at create, and never again by anybody — an update payload naming the column is refused by NAME, whether or not the value differs. What a document is: an invoice's number, the instant it was issued and the total it was issued for. It is the constraint tier, so asSystem() does not drop it, where the gate, the row policies and @guarded all fall away there; a raw UPDATE still bypasses it, as it does a @check. Reaches the client as readOnly in the UPDATE schema alone, so a generated create form still offers the box.",
+    '[(after: <move>)]',
+    "Written once, at create, and never again by anybody — an update payload naming the column is refused by NAME, whether or not the value differs. What a document is: an invoice's number, the instant it was issued and the total it was issued for. It is the constraint tier, so asSystem() does not drop it, where the gate, the row policies and @guarded all fall away there; a raw UPDATE still bypasses it, as it does a @check. Reaches the client as readOnly in the UPDATE schema alone, so a generated create form still offers the box. On a model with a @seals move the bare word freezes at the seal instead. (after: <move>) names a later instant: writable until that move's target, refused from there and from every state reachable from it — a signature written by the accept, after the terms sealed at approve.",
     'issuedAt DateTime @immutable',
     { seeAlso: ['system', 'guarded', 'version'] }
   ),

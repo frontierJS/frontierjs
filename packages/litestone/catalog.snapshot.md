@@ -52,7 +52,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@omit` | Hide or lock a value | [(all)] |  | level: all |  |
 | `@guarded` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@system` | Hide or lock a value |  |  |  |  |
-| `@immutable` | Hide or lock a value |  |  |  |  |
+| `@immutable` | Hide or lock a value | [(after: <move>)] |  |  |  |
 | `@sealed` | Hide or lock a value |  |  |  |  |
 | `@capability` | Hide or lock a value |  |  |  |  |
 | `@encrypted` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |

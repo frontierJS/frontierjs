@@ -17,7 +17,8 @@ import { pathToFileURL } from 'url'
 import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
-         readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces } from '../core/ports.js'
+         readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
+         portStatus } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -338,6 +339,36 @@ describe('claimSession — each app its own dev slot', () => {
     releaseSession('/x/one/app', { lockFile })
     expect(Object.keys(readLock(lockFile))).toEqual(['/x/two/app'])
   })
+})
+
+describe('portStatus — `fli ps <port>`', () => {
+  const PROBE = 15_000                // one lsof per port, about a second each
+  let dir, lockFile
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'fli-ports-')); lockFile = join(dir, 'sessions.lock') })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('a handed-out slot is named by the app that holds it, not the table', async () => {
+    // 8008 is past service slot 0, so busyKnownPorts would never see it.
+    writeFileSync(lockFile, JSON.stringify({ '/x/eight': { name: 'eight', ports: { fe: 8008, be: [8108] } } }))
+    const fe = await portStatus(8008, { lockFile })
+    expect([fe.env, fe.category, fe.projectId, fe.serviceId, fe.project]).toEqual(['dev', 'fe', 0, 8, 'eight'])
+    expect((await portStatus(8108, { lockFile })).project).toBe('eight')
+  }, PROBE)
+
+  test('the reserved block and the table name what the lock file does not', async () => {
+    expect((await portStatus(GLOBAL.studio, { lockFile })).project).toBe('fli studio')
+    expect((await portStatus(8010, { lockFile })).project).toBe('example')
+    expect((await portStatus(8013, { lockFile })).project).toBeNull()
+  }, PROBE)
+
+  test('a listening port reads busy with its pid', async () => {
+    const server = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+    try {
+      const s = await portStatus(server.port, { lockFile })
+      expect(s.busy).toBe(true)
+      if (s.pids.length) expect(s.pids).toContain(String(process.pid))
+    } finally { server.stop(true) }
+  }, PROBE)
 })
 
 describe('claimSession — a linked worktree takes a branch block', () => {

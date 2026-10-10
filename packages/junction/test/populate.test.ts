@@ -148,3 +148,73 @@ describe('and the server answers it with real rows', () => {
     expect(out.data[0]!.customer).toBeUndefined()
   })
 })
+
+describe('a nested relation has a spelling (FJS-2429)', () => {
+
+  async function mkDb() {
+    return await createClient({
+      db: ':memory:',
+      schema: `
+        model Lemma {
+          id    Int    @id
+          root  String
+          words Word[]
+        }
+        model Word {
+          id      Int    @id
+          text    String
+          verseId Int
+          lemmaId Int
+          lemma   Lemma  @relation(fields: [lemmaId], references: [id])
+          verse   Verse  @relation(fields: [verseId], references: [id])
+        }
+        model Verse {
+          id    Int    @id
+          words Word[]
+        }
+      `,
+    }) as unknown as {
+      asSystem(): Record<string, { create(a: unknown): Promise<unknown> }>
+    }
+  }
+
+  async function seeded() {
+    const db = await mkDb()
+    await db.asSystem().lemma!.create({ data: { id: 1, root: 'amo' } })
+    await db.asSystem().verse!.create({ data: { id: 1 } })
+    await db.asSystem().word!.create({ data: { id: 1, text: 'amat', verseId: 1, lemmaId: 1 } })
+    return db
+  }
+
+  function ctx(db: unknown, populate: string): ServiceContext {
+    return {
+      service: 'verses', method: 'find', id: undefined, data: null,
+      params: {}, query: {}, auth: {}, caller: {},
+      locals: { db }, app: {}, directives: { populate },
+    } as unknown as ServiceContext
+  }
+
+  type Out = { data: { words?: { text: string; lemma?: { root: string } }[] }[] }
+
+  test('words.lemma reaches the second level', async () => {
+    const db = await seeded()
+    const svc = createService({ name: 'verses', model: 'verse' })
+    const out = await svc.find(ctx(db, 'words.lemma')) as Out
+    expect(out.data[0]!.words?.[0]?.text).toBe('amat')
+    expect(out.data[0]!.words?.[0]?.lemma?.root).toBe('amo')
+  })
+
+  test('a dotted path and its own parent in one list merge', async () => {
+    const db = await seeded()
+    const svc = createService({ name: 'verses', model: 'verse' })
+    const out = await svc.find(ctx(db, 'words:text,words.lemma:root')) as Out
+    expect(out.data[0]!.words?.[0]?.text).toBe('amat')
+    expect(out.data[0]!.words?.[0]?.lemma?.root).toBe('amo')
+  })
+
+  test('an unknown nested relation is still refused by name', async () => {
+    const db = await seeded()
+    const svc = createService({ name: 'verses', model: 'verse' })
+    await expect(svc.find(ctx(db, 'words.nope'))).rejects.toThrow(/nope/)
+  })
+})

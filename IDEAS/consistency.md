@@ -48,6 +48,28 @@ per row, announced after commit, effects at-most-once unless they go through the
 outbox, and a gap on the wire answered by a reload.** That is a coherent model.
 Nobody has written it down as one.
 
+### What would make *How known* standing
+
+Each *ran* row above is one throwaway run on one date. The cross-process rows were read
+from source and never run. `litestone/test/jsonl-multiprocess.test.ts` already proves
+its own lock the standing way, with eight processes and a writer SIGKILLed while it
+holds the lock. Nothing tests the table's guarantees at the client that way.
+
+The shape that would is the one sqlite-multiwriter's suite uses (`test/mw_serial.c`,
+`test/mw_multiproc_crash.c`):
+
+- N processes run random `$transaction`s against a small model, and some are
+  SIGKILLed mid-callback.
+- A checker then asserts what any serial order must give: no lost update, no UNIQUE
+  value held twice, and a conserved sum equal to the committed transactions' deltas.
+- The checker must catch a deliberately weakened build, such as one with the
+  `@version` check off. That is the negative control, and it is how that suite was
+  mutation-tested.
+
+The outbox row's half (every `ctx.enqueue` of a committed call delivered at least once,
+none of a rolled-back one) needs Junction, so it belongs in `@frontierjs/testing`, not
+litestone.
+
 ## The gap, as a failure an app hits
 
 Three, in order of how often they will happen.

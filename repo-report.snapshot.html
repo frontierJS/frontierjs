@@ -2414,7 +2414,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">145 rows · 244 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">146 rows · 247 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>a migration, db/migrations/, or a column whose KIND of time changed</td>
       <td>example: verify:migrate — the only thing that reads the committed files, since autoMigrate means nothing else ever does</td>
@@ -2756,6 +2756,10 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>packages/basecamp: bun run test (api/test/registers.test.ts, the prompt per intent) + packages/basecamp: verify:registers — the only place a register record reaches a screen, is ruled on there, and is handed to a workbench run</td>
       <td><span class="tally"><b>packages/basecamp</b>bun run test</span><span class="tally"><b>packages/basecamp</b>verify:registers</span></td>
     </tr><tr data-row>
+      <td>a preview's Open — basecamp's api/src/core/preview.ts, the workbench's fork with preview, outpost's /route with a port</td>
+      <td>packages/basecamp: api/test/workbench.test.ts + verify:provision — the unit file holds the settings, the marker and the port claimed at the cut; the drive is the only place the four rows are written by the real services and the route is read off a machine's TLS port rather than off Open's own answer. packages/outpost: bun run test for the port half of /route</td>
+      <td><span class="tally"><b>packages/basecamp</b>api/test/workbench.test.ts</span><span class="tally"><b>packages/basecamp</b>verify:provision</span><span class="tally"><b>packages/outpost</b>bun run test</span></td>
+    </tr><tr data-row>
       <td>a cloud account, a provisioned machine, the spend guard, cloud-init or the enrollment route — api/src/providers/compute/, Secret.providerKind, Server's three enrollment columns</td>
       <td>packages/basecamp: bun run test + verify:provision — the suite for the dialect and the pure halves, and the drive is the only place a machine is BOUGHT, and the only one that puts a real request at the enrollment route. The unit file is the other half and its sharpest row is the grant tripwire: provision and destroy landed gated and refused every caller including an owner, because core/capabilities.ts is hand-kept and the schema had grown two moves it had never heard of</td>
       <td><span class="tally"><b>packages/basecamp</b>bun run test</span><span class="tally"><b>packages/basecamp</b>verify:provision</span></td>
@@ -2992,7 +2996,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>website: verify</td>
       <td><span class="tally"><b>website</b>verify</span></td>
     </tr><tr data-row>
-      <td>the ask panel — core/vite-ask.js, core/vite-ask-client.js, ask-claude.js's edit mode, mesa-vite/inspect-client.js's onPick</td>
+      <td>the ask panel — core/vite-ask.js (its admission and Submit included), core/vite-ask-client.js, ask-claude.js's edit mode, mesa-vite/inspect-client.js's onPick</td>
       <td>website: verify:ask — and verify:ask --real once when the argv or the prompt moves, because the fake makes the edit itself and so agrees with any argv</td>
       <td><span class="tally"><b>website</b>verify:ask</span></td>
     </tr></tbody></table></div>

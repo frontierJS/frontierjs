@@ -252,6 +252,11 @@ export interface WsData {
   search?:  string
   headers:  Record<string, string>
   ip:       string
+  /** Per-socket scratch for the route's own handlers — `ctx.locals`. */
+  locals:   Record<string, unknown>
+  // The frame bounds this route enforces: `config.http.ws` with the route's
+  // own `limits` laid over it.
+  bounds:   { maxFrameBytes: number; maxFramesPerSecond: number; maxInFlight: number }
   // Resolved during _wsOpen after async auth — null until then.
   // Always set before any user-facing handler is called.
   user:     SessionContext | null
@@ -292,6 +297,8 @@ export interface WsContext {
   headers:  Record<string, string>
   ip:       string
   user:     SessionContext | null
+  /** Scratch that lives as long as the socket — the name service contexts use. */
+  locals:   Record<string, unknown>
 
   // Send helpers
   send:  (data: string | object) => void
@@ -310,7 +317,9 @@ export interface WsContext {
  */
 export const SESSION_SOCKET: unique symbol = Symbol.for('junction.ws.sessionSocket') as never
 
-// Handler set registered via app.ws() / http.ws()
+// Handler set registered via app.ws() / http.ws(). A route speaks no protocol
+// of junction's: `connected` and the `{type:'error'}` frames belong to the
+// handler set carrying SESSION_SOCKET (`FJS-D688`).
 export interface WsHandlerSet {
   open?:    (ctx: WsContext) => void | Promise<void>
   message?: (ctx: WsContext, msg: string | Buffer) => void | Promise<void>

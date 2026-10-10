@@ -786,7 +786,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
 
     expect(row).toBeDefined()
     expect(row.actorId).toBe(u.userId)
-    expect(JSON.parse(row.meta).reason).toBe('bad-password')
+    expect(row.meta.reason).toBe('bad-password')
     h.cleanup()
   })
 
@@ -800,7 +800,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
 
     expect(row).toBeDefined()
     expect(row.actorId).toBe(null)
-    expect(JSON.parse(row.meta)).toEqual({ reason: 'no-such-user', email: 'ghost@b.co' })
+    expect(row.meta).toEqual({ reason: 'no-such-user', email: 'ghost@b.co' })
     h.cleanup()
   })
 
@@ -823,7 +823,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
 
     expect(row).toBeDefined()
     expect(row.actorId).toBe(u.userId)
-    expect(JSON.parse(row.records)).toHaveLength(1)
+    expect(row.records).toHaveLength(1)
     h.cleanup()
   })
 
@@ -835,7 +835,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
     const row  = rows.find((r: any) => r.operation === 'logout')
 
     expect(row).toBeDefined()
-    expect(JSON.parse(row.meta).reason).toBe('unknown-session')
+    expect(row.meta.reason).toBe('unknown-session')
     h.cleanup()
   })
 })
@@ -981,7 +981,7 @@ describe('the auth hooks', () => {
 
     const row = (await h.sys.auditTrail.findMany({})).slice(before)
       .find((r: any) => r.operation === 'login.failed')
-    expect(JSON.parse(row.meta)).toMatchObject({ reason: 'refused-by-app', message: 'locked out' })
+    expect(row.meta).toMatchObject({ reason: 'refused-by-app', message: 'locked out' })
     h.cleanup()
   })
 

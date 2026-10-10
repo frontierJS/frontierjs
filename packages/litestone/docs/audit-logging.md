@@ -73,7 +73,7 @@ const [entry] = await sys.auditTrail.findMany({ where: { operation: 'update', fi
 if (entry?.model !== 'user' || !/\b1\b/.test(JSON.stringify(entry.records))) throw new Error(`unexpected entry ${JSON.stringify(entry)}`)
 ```
 
-The entry's `records`, `before`, `after` and `meta` are declared `Json`, and a trail read through the jsonl reader hands them back as JSON STRINGS (`"[1]"`, `"{\"salary\":50000}"`) rather than decoding them; a model declared in a jsonl database decodes its own `Json` columns, so this is the trail reader's and not the format's.
+The entry's `records`, `before`, `after` and `meta` are `Json` columns and read back decoded on a jsonl trail and a SQL trail alike. `onLog` is handed the entry before that, with the four as JSON text.
 
 `before`/`after` images are only included for single-row writes — `update()`, `delete()` and `remove()`. A bulk write records **which** rows it touched and **what** it did to them, never their contents:
 

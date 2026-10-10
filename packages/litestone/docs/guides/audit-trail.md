@@ -142,13 +142,10 @@ A protected field never reaches an image as its value: `@encrypted`,
 `@guarded`, `@secret` and `@hashed` log as `'[redacted]'` and `@personal` as
 `'[personal]'`.
 
-The entry is written with `records`, `before`, `after` and `meta` already
-serialized, so the trail's own `Json` columns hand them back as JSON text
-rather than as the values above — a read `JSON.parse`s them until the defect
-is fixed:
+The trail's `records`, `before`, `after` and `meta` read back as the values
+above, not as JSON text:
 
-```js failing
-// FJS-2421 — the trail hands its Json columns back as text
+```js
 const db = await createClient({ path: './schema.lite', db: './app.db' })
 await db.asSystem().user.create({ data: { id: 1, email: 'ada@example.com' } })
 await new Promise(r => setImmediate(r))

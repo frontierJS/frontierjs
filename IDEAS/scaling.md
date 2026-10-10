@@ -89,6 +89,45 @@ worker threads with a connection each, or an async driver. Neither is proposed h
 `bun:sqlite` handles are not transferable across threads, and the shape that gets the
 parallelism cheaply is (a) or (b), which need no framework change at all.
 
+**One outside engine would change the lock side, and it is a watch item, not a
+proposal.** [`sqlite-multiwriter`](https://github.com/sqliteai/sqlite-multiwriter)
+(sqliteai, Apache-2.0) is a C VFS loaded as an extension that gives each writer a
+private WAL and commits optimistically. When two commits touched the same page, the
+first wins and the second gets `SQLITE_BUSY_SNAPSHOT` at once, rather than waiting out
+`busy_timeout` on the event loop. Probed 2026-10-10 at 0.6.2 under Bun 1.4.2, with 8
+Bun processes on one file. The machine was loaded and each shape ran once, so read
+these numbers for direction only:
+
+- The slowest commit fell from 2–6 s to under 1 s.
+- Throughput was equal or worse in every shape, and far worse on litestone's own write
+  shape: with a uuid key, 481 against 2,249 tx/s at 620 retries per 100 transactions;
+  read-then-write, 259 against 10,193.
+
+The rebase it offers never applies to a transaction that reads. Any trigger or virtual
+table in the file switches it off for the whole database, and FTS is both. Adopting the
+engine would also cost what exists today:
+
+- `PRAGMA data_version`, which `litestone/src/core/cross-process.js` polls to hear
+  another process, changes on every transaction under it.
+- Litestream ships WAL bytes, and the engine keeps its commits in its own `-mw` log.
+- While the engine has the file open, any connection outside the VFS (Studio, the
+  `sqlite3` shell, a backup) reads it stale.
+- Isolation drops from serializable to snapshot isolation plus validation of the pages
+  read. An invariant a transaction only reads then needs a guard row both sides write
+  (`UPDATE guard SET n = n + 1`), and `$transaction` would have to re-run its callback,
+  hooks and all, on a refusal.
+- `bun:sqlite` opens a `file:` URI only when it is given numeric flags that include
+  `SQLITE_OPEN_URI`. Without them the URI becomes a literal filename.
+
+Revisit when both of these hold:
+
+- Shape (a) runs against one file, and a measured event-loop stall traces to a
+  cross-process busy wait.
+- The engine has months of soak past the 0.6 line. It was two days old when probed.
+
+Until then, shape (b) is the answer: it removes the cross-process writer for the price
+of a routing rule.
+
 ---
 
 ## 3. What the tree already does and does not support

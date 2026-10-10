@@ -500,7 +500,10 @@ The page's origin is right while Vite in dev, or nginx in `fli deploy`, proxies 
 `tauri://localhost`, have no proxy, so every call would go to a host with no API on it:
 `VITE_API_URL=https://api.example.com bun run build`. Vite inlines the value; both guards
 are there because Vite also loads this file in Node, which has neither `import.meta.env` nor
-`location`. The API must then allow that page's origin in its CORS configuration.
+`location`. The API must then allow that page's origin in its CORS configuration. A family
+of origins is a predicate rather than a list — `middleware: { cors: { origins: o =>
+o.endsWith('.preview.example.com') } }` in `junction.config.js` admits every frozen Basecamp
+preview of the app, with nothing to add or remove as previews come and go.
 
 ### Connection state
 

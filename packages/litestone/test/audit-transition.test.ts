@@ -44,7 +44,7 @@ async function withDb(fn: (db: any) => Promise<void>) {
 async function updatesFor(db: any, id: number) {
   await tick()
   const rows = await db.asSystem().auditTrail.findMany({})
-  return rows.filter((r: any) => r.operation === 'update' && JSON.parse(r.records).includes(id))
+  return rows.filter((r: any) => r.operation === 'update' && r.records.includes(id))
 }
 
 describe('an audited update names the move it made', () => {
@@ -63,7 +63,7 @@ describe('an audited update names the move it made', () => {
       expect(cancelled.map((r: any) => r.transition)).toEqual(['cancel', 'cancel'])
       expect(abandoned.map((r: any) => r.transition)).toEqual(['abandon', 'abandon'])
       // The snapshots alone are the same, which is what the column is for.
-      const snap = (r: any) => JSON.parse(r.after).status
+      const snap = (r: any) => r.after.status
       expect(snap(cancelled.find((r: any) => r.field === null))).toBe('cancelled')
       expect(snap(abandoned.find((r: any) => r.field === null))).toBe('cancelled')
     })

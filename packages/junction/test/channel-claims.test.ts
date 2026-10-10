@@ -211,6 +211,43 @@ describe('cohorts', () => {
     expect(asked).toHaveLength(2)
   })
 
+  test('two strangers holding different links are two verdicts, each by its own claim (FJS-2528)', async () => {
+    // What a stranger holds is on the CONNECTION — a cookie or a token on the
+    // upgrade — so the resolver reads the connection, and grouping every
+    // session-less socket under one key asked it of the first and handed that
+    // answer to the rest: one portal contact received another's message.
+    const byLink = (_name: string, conn: { data: { link?: string } }) =>
+      conn.data.link ? { workspaceId: conn.data.link } : null
+    const manager = createChannelManager(undefined, byLink as never)
+    const holderA = subscriber(manager, ['servers'], null)
+    const holderB = subscriber(manager, ['servers'], null)
+    holderA.conn.data = { link: WS_A }
+    holderB.conn.data = { link: WS_B }
+    const { db, asked } = tenantBoundary()
+
+    await announce(manager, db, ROW_A, ['servers'])
+
+    expect(asked).toHaveLength(2)
+    expect(holderA.rows()).toEqual([ROW_A])
+    expect(holderB.rows()).toEqual([])
+  })
+
+  test('and the control — the other link\'s holder gets its own row', async () => {
+    const byLink = (_name: string, conn: { data: { link?: string } }) =>
+      conn.data.link ? { workspaceId: conn.data.link } : null
+    const manager = createChannelManager(undefined, byLink as never)
+    const holderA = subscriber(manager, ['servers'], null)
+    const holderB = subscriber(manager, ['servers'], null)
+    holderA.conn.data = { link: WS_A }
+    holderB.conn.data = { link: WS_B }
+    const { db } = tenantBoundary()
+
+    await announce(manager, db, ROW_B, ['servers'])
+
+    expect(holderA.rows()).toEqual([])
+    expect(holderB.rows()).toEqual([ROW_B])
+  })
+
   test('with no resolver installed the grading is exactly what it was', async () => {
     // The whole feature is opt-in: an app that declares no claims must reach
     // `$readAs` with the untouched principal, once per principal.

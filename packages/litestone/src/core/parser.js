@@ -15,7 +15,7 @@ import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { pointColumnNames } from './ddl.js'
 import { inferFromFk } from './schema-maps.js'
-import { sealedStates, sealFaults } from './seal.js'
+import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
 
 // What a `@values` binding may say about a value the set does not contain.
@@ -1067,13 +1067,25 @@ class Parser {
       // the row policies and @guarded all fall away there. A renewal job and a
       // payment settler both run as system, so a rule they may drop is a rule
       // absent from every caller that actually writes an invoice.
+      //
+      // `@immutable(after: <move>)` is the same freeze with a later instant
+      // (`FJS-D568`): writable until the named move's target, frozen from there
+      // and from every state reachable from it. A signature is written by the
+      // accept, after the terms were sealed at approve. The move is checked
+      // against the model's @@transitions once the whole model is parsed.
       case 'immutable': {
-        if (this.check(TK.LPAREN))
+        if (!this.check(TK.LPAREN)) return { kind: 'immutable' }
+        this.eat(TK.LPAREN)
+        const key = this.eat(TK.IDENT)
+        if (key.value !== 'after')
           throw new ParseError(
-            '@immutable takes no arguments — a column is written once or it is not. ' +
-            'For a row that freezes when it reaches a state, freeze the columns and let ' +
-            '@@transitions own the state column.', this.peek())
-        return { kind: 'immutable' }
+            `@immutable(${key.value}: …) is not an argument. The one it takes is after: <move> — ` +
+            'frozen from that move of @@transitions on. Bare @immutable is frozen at create, ' +
+            'or at the seal on a model that seals.', key)
+        this.eat(TK.COLON)
+        const after = this.eat(TK.IDENT).value
+        this.eat(TK.RPAREN)
+        return { kind: 'immutable', after }
       }
       case 'capability': {
         // @capability — writing THIS column is its own capability.
@@ -6004,7 +6016,22 @@ function validate(schema) {
   // declares two rules for one column is wrong before any row exists.
   for (const model of schema.models) {
     for (const field of model.fields) {
-      if (!field.attributes.some(a => a.kind === 'immutable')) continue
+      const immutable = field.attributes.find(a => a.kind === 'immutable')
+      if (!immutable) continue
+
+      // `after:` names a move of this model's own machine, checked the way
+      // `@seals` is: a move that does not exist freezes the column at no state,
+      // which reads as a freeze and refuses nothing.
+      if (immutable.after) {
+        const machine = machineWithMove(model, immutable.after)
+        if (!machine) {
+          const moves = model.attributes.filter(a => a.kind === 'transitions').flatMap(a => Object.keys(a.transitions))
+          errors.push(`Model '${model.name}', field '${field.name}': @immutable(after: ${immutable.after}) — '${model.name}' has no move '${immutable.after}'. ` +
+            (moves.length ? `Its moves are ${moves.join(', ')}.` : `It declares no @@transitions.`))
+        } else if (machine.field === field.name) {
+          errors.push(`Model '${model.name}', field '${field.name}': @immutable(after: ${immutable.after}) on the state column itself — the machine writes it on every move, and the freeze would stop the machine`)
+        }
+      }
 
       for (const kind of ['updatedAt', 'version'])
         if (field.attributes.some(a => a.kind === kind))
@@ -7403,7 +7430,7 @@ function validate(schema) {
 
     // A seal that freezes nothing is a typo, not a no-op: the move parses, the
     // artefacts render it, and no write is ever refused.
-    const hasImmutable = model.fields.some(f => f.attributes.some(a => a.kind === 'immutable'))
+    const hasImmutable = model.fields.some(f => f.attributes.some(a => a.kind === 'immutable' && !a.after))
     if (!sealedFields.length && !hasImmutable)
       errors.push(
         `Model '${model.name}': @@transitions(${seals.field}) '${seals.moves[0]}' declares @seals and there is ` +

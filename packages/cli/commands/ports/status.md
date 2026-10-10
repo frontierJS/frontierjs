@@ -5,9 +5,14 @@ alias: ps
 examples:
   - fli ps
   - fli ports:status
+  - fli ps 8008
   - fli ports:status --clean
   - fli ports:status --sessions
   - fli ps --include-idle
+args:
+  -
+    name: port
+    description: one port — what holds it and which dev slot it belongs to
 flags:
   include-idle:
     type: boolean
@@ -49,18 +54,33 @@ counted but not listed — a dozen of them buried the running one — so
 `--include-idle` lists them, `--clean` forgets them, and `--sessions` shows only
 this half.
 
+**One port.** `fli ps 8008` asks about that number alone. It is probed
+directly rather than looked up among the schema's ports, because the schema's
+walk stops at service slot 0 and the port somebody types is often a slot
+`fli dev` handed out. The dev slots are cut to the one holding the port, idle
+or running, since the app that owns a free port is usually the question.
+
 `fli kill <port>` is what to do about a port you want back; it names the process
 before it signals it, and reads the same `pidsOnPort` this does.
 
 ```js
-const { getSessionStatus, releaseSession, busyKnownPorts } = await import(resolve(global.fliRoot, 'core/ports.js'))
+const { getSessionStatus, releaseSession, busyKnownPorts, portStatus } = await import(resolve(global.fliRoot, 'core/ports.js'))
 const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 
-const sessions = getSessionStatus()
-const busy     = flag.sessions ? [] : await busyKnownPorts()
+const target = String(arg.port ?? '').trim()
+const only   = target ? Number(target) : null
+if (target && !(/^\d+$/.test(target) && only >= 1 && only <= 65535)) {
+  log.error(`${target} is not a port`)
+  return
+}
+
+const holds    = s => Object.values(s.ports || {}).flat().map(Number).includes(only)
+const sessions = getSessionStatus().filter(s => only == null || holds(s))
+const one      = only != null && !flag.sessions ? await portStatus(only) : null
+const busy     = flag.sessions ? [] : one ? (one.busy ? [one] : []) : await busyKnownPorts()
 
 if (flag.json) {
-  echo(JSON.stringify({ busy, sessions }, null, 2))
+  echo(JSON.stringify(one ? { port: one, sessions } : { busy, sessions }, null, 2))
   return
 }
 
@@ -70,14 +90,16 @@ const envTag   = env => (ENV_TONE[env] ?? chalk.white)(env)
 
 if (!flag.sessions) {
   echo('')
-  if (!busy.length) {
+  if (one && !one.busy) {
+    echo(chalk`  {bold.cyan ${only}} {dim is free —} ${one.env} {dim ·} ${one.category} {dim ·} {dim project ${one.projectId} slot ${one.serviceId}}\n`)
+  } else if (!busy.length) {
     echo(chalk.dim('  No port this workspace can name is in use.\n'))
   } else {
     echo(chalk`  {bold ${plural(busy.length, 'port')} in use}\n`)
     for (const b of busy) {
       const what = b.reserved
         ? chalk`{magenta ${b.project ?? 'reserved tooling slot'}}`
-        : chalk`{bold ${b.project}} {dim ·} {cyan ${b.category}} {dim ·} ${envTag(b.env)}`
+        : chalk`{bold ${b.project ?? `project ${b.projectId} slot ${b.serviceId}`}} {dim ·} {cyan ${b.category}} {dim ·} ${envTag(b.env)}`
       echo(chalk`  {green ●}  {bold.cyan ${String(b.port).padEnd(6)}} ${what}`)
       // The pid is what makes the line actionable — without it the answer is
       // "something has it", which is what the caller already knew.
@@ -90,13 +112,15 @@ if (!flag.sessions) {
 }
 
 if (!sessions.length) {
-  log.info('No app has a slot in ~/.fli/sessions.lock — `fli dev` gives one')
+  log.info(only != null
+    ? `No dev slot in ~/.fli/sessions.lock holds ${only}`
+    : 'No app has a slot in ~/.fli/sessions.lock — `fli dev` gives one')
   return
 }
 
 const alive  = sessions.filter(s => s.alive)
 const idle   = sessions.filter(s => !s.alive)
-const shown  = flag['include-idle'] ? sessions : alive
+const shown  = flag['include-idle'] || only != null ? sessions : alive
 
 echo('')
 echo(chalk`  {bold dev slots} {dim —} {green ${alive.length} running}  {dim ·  ${idle.length} idle}\n`)
@@ -125,7 +149,7 @@ for (const s of shown) {
   echo('')
 }
 
-if (!flag['include-idle'] && idle.length && !flag.clean) {
+if (!flag['include-idle'] && only == null && idle.length && !flag.clean) {
   echo(chalk`  {dim ${plural(idle.length, 'idle slot')} not listed —} --include-idle {dim to show,} --clean {dim to forget}\n`)
 }
 

@@ -68,7 +68,7 @@ describe('a File column with a plugin that stores File', () => {
   test('the upload reaches the plugin and the column keeps its reference', async () => {
     const sys = await client([new RecordingStore()])
     const row = await sys.doc.create({ data: { name: 'e', resume: upload(), photos: [upload()] } })
-    expect(JSON.parse(row.resume)).toEqual({ key: 'k/cv.pdf' })
+    expect(row.resume).toEqual({ key: 'k/cv.pdf' })
     expect(row.photos).toEqual([{ key: 'k/cv.pdf' }])
   })
 

@@ -202,6 +202,23 @@ describe('the release pipeline an inline app runs', () => {
     expect(await stepNames(release.id)).toEqual(['Validate', 'Upload files', 'Activate', 'Health check'])
   })
 
+  // A preview's Freeze publishes its own build and releases it by digest: the
+  // files never enter a row, and the app's placeholder is never uploaded over them.
+  test('a release that names a digest is of bytes the machine holds: no upload, and a snapshot with no files', async () => {
+    const target = await anInlineApp()
+    const digest = 'sha256:' + 'c'.repeat(64)
+    const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id, builtImage: digest, trigger: 'freeze' })
+
+    expect(await stepNames(release.id)).toEqual(['Validate', 'Activate', 'Health check'])
+    const stored = await (env.system as any).deployment.findUnique({ where: { id: release.id } })
+    expect(stored.configSnapshot.source).toEqual({ kind: 'inline', files: [] })
+    expect(stored.builtImage).toBe(digest)
+    expect(stored.trigger).toBe('freeze')
+
+    await expect(deployments().create({ appId: target.id, workspaceId: ws.id, builtImage: 'latest' }))
+      .rejects.toThrow(/not a digest/)
+  })
+
   const aContainerApp = async (source: unknown, type = 'container') => {
     const slug = `c-${uniq()}`
     const target: any = await apps().create({

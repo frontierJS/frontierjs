@@ -6,7 +6,7 @@
 
 import { Router }                         from './router.ts'
 import { BUILD_HEADER } from '../core/build-id.ts'
-import { WS_PROTOCOL, bearerFromProtocols, withoutBearer } from '../core/ws-auth.ts'
+import { WS_PROTOCOL, bearerFromProtocols, withoutBearer, CREDENTIAL_HEADER, CREDENTIAL_CHANGED } from '../core/ws-auth.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
 import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError } from './body.ts'
 import { serveStatic }                    from './static.ts'
@@ -223,6 +223,17 @@ export interface WsLimits {
   maxConnections?:      number
 }
 
+/**
+ * The third argument of `app.ws` (`FJS-D688`). `limits` overrides
+ * `config.http.ws` field by field for this route; `maxPayloadLength` is Bun's
+ * and one for the whole server, so it is not here. `upgrade` runs before the
+ * socket is accepted: a `Response` refuses it, anything else proceeds.
+ */
+export interface WsRouteOptions {
+  limits?:  Omit<WsLimits, 'maxPayloadLength'>
+  upgrade?: (req: Request) => Response | void
+}
+
 const WS_DEFAULTS = {
   maxPayloadLength:    1024 * 1024,
   maxFramesPerSecond:  100,
@@ -247,7 +258,12 @@ export class HttpTransport {
   private _wsPerIp:     Map<string, number> = new Map()
   private _wsLimits:    Required<WsLimits>
   private _ddosGc:      ReturnType<typeof setInterval> | null = null
-  private _wsRoutes: Array<{ segments: RouteSegment[]; handlers: WsHandlerSet }> = []
+  private _wsRoutes: Array<{
+    segments: RouteSegment[]
+    handlers: WsHandlerSet
+    limits:   Required<Omit<WsLimits, 'maxPayloadLength'>>
+    upgrade?: WsRouteOptions['upgrade']
+  }> = []
 
   /**
    * Every socket this server currently holds open.
@@ -550,12 +566,16 @@ export class HttpTransport {
   // Called before start() — registers a route that accepts WS upgrades.
   // Same {param} segment syntax as HTTP routes.
 
-  ws(path: string, handlers: WsHandlerSet): void {
+  ws(path: string, handlers: WsHandlerSet, opts: WsRouteOptions = {}): void {
     if (this.router.isBuilt) {
       throw new Error(`Cannot register WS route ${path} after router is built`)
     }
     const segments = parsePathSegments(path)
-    this._wsRoutes.push({ segments, handlers })
+    const limits   = {
+      ...this._wsLimits,
+      ...Object.fromEntries(Object.entries(opts.limits ?? {}).filter(([, v]) => v !== undefined)),
+    }
+    this._wsRoutes.push({ segments, handlers, limits, upgrade: opts.upgrade })
   }
 
   // ─── fetch() — public request handler for testing ─────────────────
@@ -922,6 +942,7 @@ export class HttpTransport {
       for (const [name, value, opts] of cookieHeaders) {
         headers.append('set-cookie', serializeSetCookie(name, value, opts as Parameters<typeof serializeSetCookie>[2]))
       }
+      if (this._cookiesChanged(ctx, cookieHeaders)) headers.set(CREDENTIAL_HEADER, CREDENTIAL_CHANGED)
     }
 
     if (cors)        for (const [k, v] of Object.entries(cors))        headers.set(k, v)
@@ -1193,19 +1214,21 @@ export class HttpTransport {
   ): Response | null {
 
     // Route the upgrade through the same zero-allocation matcher as HTTP requests.
-    let matchedHandlers: WsHandlerSet | null = null
-    let matchedParams:   Record<string, string> = {}
+    let matched: (typeof this._wsRoutes)[number] | null = null
+    let matchedParams: Record<string, string> = {}
 
     for (const route of this._wsRoutes) {
       const params = matchPathDirect(route.segments, path)
       if (params !== null) {
-        matchedHandlers = route.handlers
-        matchedParams   = params
+        matched       = route
+        matchedParams = params
         break
       }
     }
 
-    if (!matchedHandlers) return null
+    if (!matched) return null
+    const matchedHandlers = matched.handlers
+    const routeLimits     = matched.limits
 
     this.stats.request.websocket++
 
@@ -1240,17 +1263,32 @@ export class HttpTransport {
       user:     null,
       credential,
       handlers: matchedHandlers,
+      locals:   {},
+      bounds:   {
+        maxFrameBytes:      routeLimits.maxFrameBytes,
+        maxFramesPerSecond: routeLimits.maxFramesPerSecond,
+        maxInFlight:        routeLimits.maxInFlight,
+      },
     }
 
     // Refused HERE rather than closed after `open`, because an upgrade that
     // does not happen is an HTTP response the caller can read, where a close
     // code arrives on a socket the client believes it established.
-    const perIp = this._wsLimits.maxConnectionsPerIp
-    const total = this._wsLimits.maxConnections
+    const perIp = routeLimits.maxConnectionsPerIp
+    const total = routeLimits.maxConnections
     if (total > 0 && this.stats.performance.online >= total)
       return new Response('Too many connections', { status: 503 })
     if (perIp > 0 && (this._wsPerIp.get(ip) ?? 0) >= perIp)
       return new Response('Too many connections from this address', { status: 503 })
+
+    // The route's own refusal: a path ticket that names nothing is turned away
+    // as an HTTP response rather than upgraded and closed after.
+    if (matched.upgrade) {
+      try {
+        const refused = matched.upgrade(req)
+        if (refused instanceof Response) return refused
+      } catch (err) { return errorResponse(err) }
+    }
 
     // Selected by name: Bun would otherwise echo the FIRST offer, and an app's
     // own client may offer its protocols in any order.
@@ -1276,6 +1314,7 @@ export class HttpTransport {
       headers: ws.data.headers,
       ip:      ws.data.ip,
       user:    ws.data.user,
+      locals:  ws.data.locals,
       send(data: string | object): void {
         // Never ws.send() directly. A dropped frame is silent — send-queue.ts is
         // the one place that knows what Bun's return value means.
@@ -1345,7 +1384,7 @@ export class HttpTransport {
     }
 
     const ctx = this._buildWsContext(ws)
-    try { await ws.data.handlers.open?.(ctx) } catch {}
+    try { await ws.data.handlers.open?.(ctx) } catch (err) { this._wsFailed(err) }
 
     // Signal the client that auth is resolved and the connection is registered.
     // The client defers _wsReady until it receives this — prevents service calls
@@ -1355,8 +1394,14 @@ export class HttpTransport {
     // the cadence this needs — a deploy restarts the container, so every socket
     // drops and the reconnect is when a stale client finds out. A client that
     // predates the field ignores it.
-    wsSend(ws, JSON.stringify(
-      this._buildId ? { type: 'connected', build: this._buildId } : { type: 'connected' }))
+    //
+    // Only the app's own socket sends it: a route's peer speaks its own
+    // protocol, and a frame it did not define is one it answers as malformed
+    // (`FJS-D688`).
+    if (ws.data.handlers[SESSION_SOCKET]) {
+      wsSend(ws, JSON.stringify(
+        this._buildId ? { type: 'connected', build: this._buildId } : { type: 'connected' }))
+    }
     return true
   }
 
@@ -1372,6 +1417,13 @@ export class HttpTransport {
    * an unattributable error per dropped frame is egress with no reader.
    */
   private _wsRefuse(ws: Bun.ServerWebSocket<WsData>, code: string, message: string, frame?: string | Buffer): void {
+    // A raw route's peer cannot read junction's error frame, and dropping the
+    // frame silently would leave a gap in its stream: the close says which
+    // bound was crossed, with the code as the reason.
+    if (!ws.data.handlers[SESSION_SOCKET]) {
+      ws.close(1008, code)
+      return
+    }
     const callId = typeof frame === 'string' ? this._wsCallId(frame) : undefined
     if (callId !== undefined) {
       const error = new TooManyRequests(message, { code }).toJSON()
@@ -1396,7 +1448,7 @@ export class HttpTransport {
   }
 
   private async _wsMessage(ws: Bun.ServerWebSocket<WsData>, message: string | Buffer): Promise<void> {
-    const lim = this._wsLimits
+    const lim = ws.data.bounds
     const l   = ws.data.limits ??= { tokens: lim.maxFramesPerSecond, refilled: Date.now(), inFlight: 0, told: 0 }
 
     // ── The app's own size limit ──────────────────────────────────────
@@ -1405,10 +1457,12 @@ export class HttpTransport {
     // reads as the network having dropped.
     const size = typeof message === 'string' ? Buffer.byteLength(message) : message.length
     if (size > lim.maxFrameBytes) {
-      wsSend(ws, JSON.stringify({ type: 'error', error: {
-        code: 'frame_too_large',
-        message: `Frame is ${size} bytes; this app accepts ${lim.maxFrameBytes}`,
-      } }))
+      if (ws.data.handlers[SESSION_SOCKET]) {
+        wsSend(ws, JSON.stringify({ type: 'error', error: {
+          code: 'frame_too_large',
+          message: `Frame is ${size} bytes; this app accepts ${lim.maxFrameBytes}`,
+        } }))
+      }
       ws.close(1009, 'frame_too_large')
       return
     }
@@ -1447,8 +1501,39 @@ export class HttpTransport {
       if (!await ws.data.opened) return
       const ctx = this._buildWsContext(ws)
       await ws.data.handlers.message?.(ctx, message)
-    } catch {}
+    } catch (err) { this._wsFailed(err) }
     finally { l.inFlight-- }
+  }
+
+  // ── A cookie that changed after a socket's upgrade ────────────────
+  //
+  // A frame's headers are the upgrade's, so a cookie this response sets or
+  // clears never reaches an open socket: a cleared link cookie kept reading
+  // over it until the tab reloaded (`FJS-1503`). Every socket upgraded with
+  // the old value is closed, and its reconnect carries whatever the browser
+  // now holds. Only a request holding the old value can name it, so this
+  // closes no stranger's socket (`FJS-D548`). Answers whether any cookie
+  // changed, for the header that tells the caller's own client to cycle — a
+  // cookie the request did not carry is one no socket can be matched on.
+  private _cookiesChanged(ctx: TransportContext, set: Array<[string, string, Record<string, unknown>]>): boolean {
+    let changed = false
+    const stale: Array<[string, string]> = []
+    for (const [name, value, opts] of set) {
+      const cleared = value === '' || (typeof opts.maxAge === 'number' && opts.maxAge <= 0)
+      const was     = ctx.cookies[name]
+      if (!cleared && was === value) continue
+      if (cleared && was === undefined) continue
+      changed = true
+      if (was !== undefined) stale.push([name, was])
+    }
+    if (!stale.length) return changed
+    for (const ws of this._sockets) {
+      const jar = parseCookies(ws.data.headers?.cookie ?? '')
+      if (!stale.some(([name, was]) => jar[name] === was)) continue
+      // A socket already closing throws on a second close.
+      try { ws.close(1001, 'credential changed') } catch {}
+    }
+    return changed
   }
 
   private _releaseIp(ip: string): void {
@@ -1468,7 +1553,12 @@ export class HttpTransport {
       await ws.data.opened
       const ctx = this._buildWsContext(ws)
       await ws.data.handlers.close?.(ctx, code, reason)
-    } catch {}
+    } catch (err) { this._wsFailed(err) }
+  }
+
+  /** A handler's throw has no response to become, so it is announced the way a stray route error is. */
+  private _wsFailed(err: unknown): void {
+    try { this._opts.onError?.(err) } catch {}
   }
 
   private async _wsDrain(ws: Bun.ServerWebSocket<WsData>): Promise<void> {
@@ -1476,7 +1566,7 @@ export class HttpTransport {
     // before any handler gets a chance to write more.
     flushSendQueue(ws)
     const ctx = this._buildWsContext(ws)
-    try { await ws.data.handlers.drain?.(ctx) } catch {}
+    try { await ws.data.handlers.drain?.(ctx) } catch (err) { this._wsFailed(err) }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────

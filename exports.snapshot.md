@@ -388,6 +388,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
 | exports | `./json` | `src/json/json.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
+| exports | `./markdown` | `src/markdown/markdown.js` | yes |
 | exports | `./match` | `src/match/match.js` | yes |
 | exports | `./mime (types)` | `src/mime/mime.d.ts` | yes |
 | exports | `./mime (default)` | `src/mime/mime.js` | yes |
@@ -419,8 +420,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 78 files |
-| exports | `./components/*` | `components/*.mesa` | 78 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 79 files |
+| exports | `./components/*` | `components/*.mesa` | 79 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

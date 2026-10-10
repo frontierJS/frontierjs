@@ -86,6 +86,8 @@ export const RULES = [
     title: 'every vite config sets strictPort' },
   { id: 'drive-opens-chrome',   scope: 'both', severity: 'error', invariant: null,
     title: 'a drive opens Chrome through @frontierjs/mesa/drive' },
+  { id: 'test-port-literal',   scope: 'app',  severity: 'error', invariant: null,
+    title: 'a test asks for its port with portFor(), never a literal' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     title: 'the body tag is never written inside a comment' },
   { id: 'untrusted-upload-root', scope: 'app', severity: 'warn', invariant: null,
@@ -794,21 +796,7 @@ const CHECKS = {
   // a page that computes its own answer and is read back from the dump has no
   // port to pin, and css's harness is that shape on purpose.
   'drive-opens-chrome': ({ root }) => {
-    const apps  = new Set(findApps(root).filter(a => a !== root))
-    const files = []
-    const visit = (dir, depth, inTests) => {
-      if (depth < 0) return
-      for (const name of safeRead(dir)) {
-        if (SKIP.has(name) || name.startsWith('.')) continue
-        const child = join(dir, name)
-        let st
-        try { st = statSync(child) } catch { continue }
-        if (st.isDirectory()) {
-          if (!apps.has(child)) visit(child, depth - 1, inTests || /^(tests?|bench)$/.test(name))
-        } else if (inTests && /\.(mjs|js|ts)$/.test(name)) files.push(child)
-      }
-    }
-    visit(root, 8, false)
+    const files = driveFiles(root, /^(tests?|bench)$/)
     if (!files.length) return { skipped: 'no test directory' }
     const findings = []
     for (const path of files) {
@@ -823,6 +811,41 @@ const CHECKS = {
                  'lets Chrome pick the port, gives the run a profile of its own, and kills the browser ' +
                  'on a throw or a signal — a launcher written here has to relearn each of those, and a ' +
                  'fixed port attaches to whichever browser bound it first.',
+      })
+    }
+    return { findings }
+  },
+
+  // `FJS-D841`'s branch offset moves a port read from `FLI_PORT_*` or an env
+  // var and nothing else. A test that names 8110 reaches the PARENT checkout's
+  // server from a branch, or fails to bind the port the parent's run holds —
+  // and the first of those passes against the wrong app, so nothing goes red
+  // (`FJS-2277`). `portFor()` in `@frontierjs/cli/core/ports.js` is the way to
+  // ask (`FJS-D857`).
+  //
+  // The pattern is text: a number in 7000–8999 (8500–8509 is fli tooling's)
+  // on a line that says `localhost`, `listen` or `port`. A fixture such as
+  // `memory: 8192` says none of those, which the rule's own test holds.
+  'test-port-literal': ({ root }) => {
+    const files = driveFiles(root, /^tests?$/)
+    if (!files.length) return { skipped: 'no test directory' }
+    const findings = []
+    for (const path of files) {
+      readCode(path).split('\n').forEach((line, i) => {
+        if (!/localhost|127\.0\.0\.1|listen|port/i.test(line)) return
+        for (const m of line.matchAll(/\b[78]\d{3}\b/g)) {
+          const n = Number(m[0])
+          if (n < 7000 || (n >= 8500 && n <= 8509)) continue
+          findings.push({
+            file: path,
+            line: i + 1,
+            message: `this test names port ${n} as a literal. A second checkout of the app (a Workbench ` +
+                     'branch) takes an offset on every port, and a literal ignores it: the test reaches ' +
+                     "the parent's server or fails to bind the parent's port. Ask for it with `portFor()` " +
+                     'from @frontierjs/cli/core/ports.js.',
+          })
+          break
+        }
       })
     }
     return { findings }
@@ -4593,6 +4616,27 @@ console.log(JSON.stringify({ failed: await checkMesaFiles(files, { root: process
 `
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length
+
+// Every script under a directory whose name `dirs` matches, a nested app left
+// to that app's own run.
+function driveFiles(root, dirs) {
+  const apps  = new Set(findApps(root).filter(a => a !== root))
+  const files = []
+  const visit = (dir, depth, inTests) => {
+    if (depth < 0) return
+    for (const name of safeRead(dir)) {
+      if (SKIP.has(name) || name.startsWith('.')) continue
+      const child = join(dir, name)
+      let st
+      try { st = statSync(child) } catch { continue }
+      if (st.isDirectory()) {
+        if (!apps.has(child)) visit(child, depth - 1, inTests || dirs.test(name))
+      } else if (inTests && /\.(mjs|js|ts)$/.test(name)) files.push(child)
+    }
+  }
+  visit(root, 8, false)
+  return files
+}
 
 // ─── reporting ────────────────────────────────────────────────────────────────
 

@@ -43,7 +43,7 @@
 //   until each answers, asserts, and kills.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, appendFileSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -117,8 +117,11 @@ writeFileSync(join(ALPHA, 'README'), 'x')
 writeFileSync(join(ALPHA, 'frontier.config.js'), 'export default {}')
 // …with the two halves a preview needs: a web/ to edit, and the schema that
 // makes it an app root (`findProjectRoot`), so its branch claims a port block.
-mkdirSync(join(ALPHA, 'web'), { recursive: true })
-writeFileSync(join(ALPHA, 'web', 'index.html'), '<h1>alpha</h1>\n')
+mkdirSync(join(ALPHA, 'web', 'config'), { recursive: true })
+writeFileSync(join(ALPHA, 'web', 'index.html'), '<h1>alpha</h1>\n<script type="module" src="./main.js"></script>\n')
+// …which Freeze builds with Vite, and whose bundle must carry VITE_API_URL.
+writeFileSync(join(ALPHA, 'web', 'main.js'), 'document.body.dataset.api = import.meta.env.VITE_API_URL\n')
+writeFileSync(join(ALPHA, 'web', 'config', 'vite.config.js'), 'export default {}\n')
 mkdirSync(join(ALPHA, 'db'), { recursive: true })
 writeFileSync(join(ALPHA, 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
 // A stand-in for the checkout's own `fli done`, which the workbench runs after
@@ -130,7 +133,10 @@ writeFileSync(join(ALPHA, 'packages', 'cli', 'core', 'done.js'), `export functio
     drives: [{ changed: 'a screen', tier: 'path', on: [], run: ['cd web && bun run verify'] }] }
 }
 `)
-writeFileSync(join(ALPHA, '.gitignore'), '.env\n')
+writeFileSync(join(ALPHA, '.gitignore'), '.env\nnode_modules\n')
+// This package's Vite, reached the way a branch's own install would leave it;
+// the preview's copy list carries the link into the worktree.
+symlinkSync(join(HERE, '..', '..', 'node_modules'), join(ALPHA, 'node_modules'))
 gitIn(ALPHA, 'add', '.'); gitIn(ALPHA, 'commit', '-q', '-m', 'first commit')
 // Ignored, so only the copy list carries it into a branch.
 writeFileSync(join(ALPHA, '.env'), 'SECRET=alpha\n')
@@ -1156,14 +1162,41 @@ try {
   // enrollment pinned, so the route is read off the wire rather than off
   // Open's own answer.
   console.log('\n  a preview — the Workbench branch a client edits')
+  //
+  // The machine is outpost's own server and static store, so Freeze's bytes
+  // are written, activated and SERVED by the code a fleet machine runs. Only
+  // docker (there is none) and Caddy (`routes` holds what it would) stand in.
   const tls = (await import('@frontierjs/outpost/cert')).ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`))
+  const { createOutpostServer } = await import('@frontierjs/outpost/server')
+  const { createStatic }        = await import('@frontierjs/outpost/static')
+  const { createStaticServer }  = await import('@frontierjs/outpost/serve')
+  const { createDocker }        = await import('@frontierjs/outpost/docker')
+  const STATIC_DIR = join(SCRATCH, 'outpost-static'), STATIC_PORT = 7181
+  const routes = new Map()
+  const outpost = createOutpostServer({ serverId, secret: credential, version: '0.1.0', staticPort: STATIC_PORT }, {
+    statics: createStatic({ staticDir: STATIC_DIR }),
+    docker:  createDocker({ run: async () => ({ exitCode: 1, stdout: '', stderr: 'Error: No such object' }) }),
+    ingress: {
+      route:   async ({ appId, hosts, port, host = null }) => { routes.set(appId, { hosts, port, host }); return { hosts } },
+      unroute: async ({ appId }) => ({ removed: routes.delete(appId) }),
+    },
+    log: { warn() {}, error() {} },
+  })
+  const origin = createStaticServer({ staticDir: STATIC_DIR }, { log: { warn() {}, error() {} } })
+  // What the hostname answers: Caddy's route for it, dialed with the Host it sets.
+  const getHostname = async (hostname) => {
+    const r = [...routes.values()].find(r => r.hosts.includes(hostname))
+    if (!r) return { status: 'unrouted' }
+    if (r.port !== STATIC_PORT) return { status: 'dev-server', port: r.port }
+    const res = await origin.handle(new Request(`http://127.0.0.1:${STATIC_PORT}/`, { headers: { host: r.host } }))
+    return { status: res.status, text: await res.text() }
+  }
   const machineSaw = []
   const machine = Bun.serve({
     port: MACHINE_PORT, tls: { cert: Bun.file(tls.certPath), key: Bun.file(tls.keyPath) },
     async fetch(req) {
-      const url = new URL(req.url), sent = await req.json().catch(() => ({}))
-      machineSaw.push({ path: url.pathname, body: sent })
-      return Response.json(url.pathname === '/route' ? { hosts: sent.hosts, port: sent.port, rebind: null } : {})
+      machineSaw.push({ path: new URL(req.url).pathname, body: await req.clone().json().catch(() => ({})) })
+      return outpost.handle(req)
     },
   })
   const registered = await heartbeat(credential, { outpost_url: `https://localhost:${MACHINE_PORT}` })
@@ -1188,7 +1221,7 @@ try {
   check('…and a preview fork before any settings is refused, with no branch cut',
     noSettings.status === 409 && /no preview settings/.test(noSettings.body?.message ?? '')
       && !/wb\/client/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout), JSON.stringify(noSettings))
-  const set = await call('POST', `/workbench/${alphaPin?.id}`, 'configure', { preview: settings })
+  const set = await call('POST', `/workbench/${alphaPin?.id}`, 'configure', { preview: settings, copy: ['**/.env', 'node_modules'] })
   check('the checkout takes preview settings', set.status === 200 && set.body?.preview?.domain === 'preview.example.test', JSON.stringify(set))
 
   const opened = await call('POST', `/workbench/${alphaPin?.id}`, 'fork', { slug: 'client', preview: true })
@@ -1214,6 +1247,53 @@ try {
   const markerAt = spawnSync('git', ['-C', clientTree, 'rev-parse', '--path-format=absolute', '--git-path', 'fjs-preview'], { encoding: 'utf8' }).stdout.trim()
   check('the branch\'s worktree is marked a preview, outside its tree',
     spawnSync('test', ['-f', markerAt]).status === 0 && !markerAt.startsWith(clientTree + '/'), markerAt)
+  check('…and its hostname dials the branch\'s dev server', (await getHostname(o.hostname)).port === o.port)
+
+  // ─── …Freeze, Thaw, and Retire ─────────────────────────────────────────
+  // The § Silence artefact: the hostname serves the built UI once frozen, and
+  // answers nothing once retired.
+  const frozen = await call('POST', `/workbench/${opened.body?.id}`, 'freeze')
+  const head = spawnSync('git', ['-C', clientTree, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
+  check('Freeze builds web/, publishes it and queues a release of that digest',
+    frozen.status === 200 && /^sha256:[0-9a-f]{64}$/.test(frozen.body?.digest ?? '') && frozen.body?.files >= 2
+      && frozen.body?.commitSha === head, JSON.stringify(frozen).slice(0, 600))
+  let release
+  for (let i = 0; i < 60 && !['success', 'failed'].includes(release?.status); i++) {
+    await new Promise(r => setTimeout(r, 250))
+    release = (await call('GET', `/deployments/${frozen.body?.deploymentId}`)).body
+  }
+  check('…which runs without an upload, as a freeze, at the branch\'s head',
+    release?.status === 'success' && release?.trigger === 'freeze' && release?.builtImage === frozen.body?.digest
+      && release?.commitSha === head && release?.branch === 'wb/client'
+      && JSON.stringify(release?.steps?.map(s => s.name)) === '["Validate","Activate","Health check"]',
+    JSON.stringify(release).slice(0, 600))
+  const servedFrozen = await getHostname(o.hostname)
+  check('the hostname serves the built UI, carrying production\'s API origin',
+    servedFrozen.status === 200 && /<h1>alpha<\/h1>/.test(servedFrozen.text ?? '') && /\/assets\/[^"]+\.js/.test(servedFrozen.text ?? ''),
+    JSON.stringify(servedFrozen).slice(0, 300))
+  const bundle = (servedFrozen.text ?? '').match(/\/assets\/[^"]+\.js/)?.[0]
+  const js = bundle ? await origin.handle(new Request(`http://127.0.0.1:${STATIC_PORT}${bundle}`, { headers: { host: routes.get(o.appId)?.host } })).then(r => r.text()) : ''
+  check('…whose bundle has VITE_API_URL inlined', js.includes('https://api.example.test'), bundle ?? 'no bundle')
+
+  // The App row is where the dev server's port lives, not Open's record of
+  // it: an edit to the row is what Thaw must send.
+  const moved = await call('PATCH', `/apps/${o.appId}`, null, { port: o.port + 1 })
+  const thawed = await call('POST', `/workbench/${opened.body?.id}`, 'thaw')
+  check('Thaw routes the hostname back to the dev server, on the port the App row names',
+    moved.status === 200 && thawed.status === 200 && (await getHostname(o.hostname)).port === o.port + 1, JSON.stringify(thawed))
+
+  const notPreview = await call('POST', `/workbench/${alphaPin?.id}`, 'freeze')
+  check('…and Freeze on a checkout that is not a preview is refused', notPreview.status === 409 && /not a preview/.test(notPreview.body?.message ?? ''), JSON.stringify(notPreview))
+
+  const retired = await call('POST', `/workbench/${opened.body?.id}`, 'archive', { discard: true })
+  check('Archive retires the preview first, and the machine took it',
+    retired.status === 200 && retired.body?.retired?.machine?.ok === true, JSON.stringify(retired))
+  check('…so the hostname answers nothing', (await getHostname(o.hostname)).status === 'unrouted', JSON.stringify([...routes]))
+  check('…its files are off the static origin too',
+    (await origin.handle(new Request(`http://127.0.0.1:${STATIC_PORT}/`, { headers: { host: `${o.appId}.localhost` } }))).status === 404)
+  check('…the Environment is removed', (await call('GET', `/environments/${o.environmentId}`)).status === 404)
+  check('…and the git branch is kept',
+    /wb\/client/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout))
   machine.stop(true)
 
   // Focus mode, on the screen it was asked for. A sidebar left in the DOM

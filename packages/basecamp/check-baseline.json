@@ -11,5 +11,14 @@
   "//capability-ladder": "All three are the exemption FJS-D146 names when it mandates this very check: a deliberately high floor under a grid. Server and Environment carry @@capabilities and @@gate(\"2.4.4.5\"), Variable @@gate(\"2.4.4.4\"), and the failure the rule warns about needs a role that HOLDS a grant and sits BELOW the write level. Basecamp has none, and it is measured rather than argued: api/src/core/gate.ts maps viewer and billing to 2 and developer to 4, and api/src/core/capabilities.ts grants viewer [] and billing [] on all three models - every grant is held at 4 or above, which is where the gate writes. So no grant is unreachable; the grid narrows WITHIN developers and admins, which is what the ladder cannot say. Flattening to @@gate(\"2\") would make the hand-stamped grant table the only thing between a viewer and Server.delete, and seven writers stamp it. This is undecidable for fli check rather than merely unstated: the two maps are app source with no declared shape, so a rule reading them would be guessing at two module layouts. The number is 3, so a FOURTH @@capabilities model fails - and the two role sets are named here so a role gaining a grant below level 4 makes this entry visibly false in the diff.",
   "capability-ladder": 3,
   "//app-layout": "FJS-D625's src/ layout, graded for the first time (FJS-1888): five modules and RelationCell.mesa loose in web/src, four helpers in services/ that app.ts, a job or core/ import, and core/mailer.ts exporting a plugin. Each is a move, not a defence — FJS-1889 onward moves them — so this is a ceiling that falls as they do.",
-  "app-layout": 11
+  "app-layout": 11,
+  "allow": {
+    "test-port-literal:web/test/verify-screens.mjs": "8443 and 8080 are the `port` column of a Domain and an App the drive types into a form -- data a container publishes, never a port the drive binds or reaches.",
+    "test-port-literal:api/test/compute.test.ts": "outpostPort 8180 and the basecampUrl 'http://localhost:8120' are inputs to the pure cloudInit and installCommand; nothing connects to either.",
+    "test-port-literal:api/test/workbench.test.ts": "PORT: 8120 is the value the test hands a run and then asserts never reaches the child (call.port is null).",
+    "test-port-literal:api/test/verify-dns.mjs": "7129 is the App.port of an nginx container the drive records and never starts.",
+    "test-port-literal:api/test/reachability.test.ts": "baseUrl on a HubConfig row; the sweep under test reads heartbeats and never connects to it.",
+    "test-port-literal:api/test/edge.test.ts": "8443 is a Domain.port patched on a row; nothing binds it.",
+    "test-port-literal:api/test/rollback.test.ts": "8080 is the App.port snapshotted into a Release and compared back; nothing binds it."
+  }
 }

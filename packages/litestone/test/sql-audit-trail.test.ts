@@ -129,8 +129,7 @@ describe('a trail in SQLite', () => {
     await tick()
     const rows = await db.asSystem().auditTrail.findMany({})
     expect(rows).toHaveLength(1)
-    // Still the jsonl shape: strings, because there is no column type under it.
-    expect(typeof rows[0].records).toBe('string')
+    expect(rows[0].records).toEqual([1])
     db.$close()
   })
 })

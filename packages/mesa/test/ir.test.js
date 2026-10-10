@@ -300,7 +300,7 @@ describe('lower()', () => {
       loc: '<mesa>:6:8',
       names: ['x'],
       value: { raw: 'n * 2', code: '$$runtime.get($$sig_n) * 2', reads: ['n'] },
-      lines: ['const $$_const_x = $$runtime.createMemo(() => $$runtime.get($$sig_n) * 2);', 'const x = $$_const_x();'],
+      lines: ['const $$_const_x = $$runtime.createMemo(() => ($$runtime.get($$sig_n) * 2));', 'const x = $$_const_x();'],
     })
     expect(branch[1].children[0].parts[0].expr.code).toBe('$$_const_x()')
     // The <p> before the block is built after lower() ran over the whole tree.

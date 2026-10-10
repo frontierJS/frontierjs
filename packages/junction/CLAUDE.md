@@ -15,6 +15,9 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   background tap alike, with the DECLARED `model:` as the accessor (`FJS-D175`,
   `FJS-672`, `FJS-700`) — `test/realtime-grading.test.ts`. A connection's claims
   are the app's to state, per channel (`FJS-749`, `test/channel-claims.test.ts`).
+- **A room bound by `channels({ rooms })` is graded at the join and again after
+  every committed write its row's read policy reaches**, since presence and a
+  raw `send` are not graded per frame (`FJS-D596`, `test/channel-rooms.test.ts`).
 - **A service broadcasts through `channel:` or the `announce()` hook, never
   both**, matched on the hook's mark rather than its name (`FJS-045`,
   `test/double-broadcast.test.ts`).

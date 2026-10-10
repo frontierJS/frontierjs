@@ -443,7 +443,105 @@ The plan as written:
 - *Proof:* `basecamp` `verify:provision` — Open against the stand-in machine
   writes the four rows and the route call carries the pin's port.
 
-### Slice 4 — Freeze, Thaw, Retire (basecamp)
+### Slice 4 — Freeze, Thaw, Retire (basecamp) — built 2026-10-10, PR-close poll not built
+
+**As built, where it departs from the bullets below:**
+
+- **The build never enters a row.** *Hand `dist/` to `inlineFilesFor`* was
+  measured before it was built and does not fit: the Sierra builds in this
+  workspace run 25–180 files and 0.5–3.8 MB, against an inline source's 20
+  files and outpost's 50. Raising both still stores megabytes in `App.source`
+  and again in `Deployment.configSnapshot` on every Freeze, both trailed, and a
+  Deployment is pushed whole to every browser in the workspace on each step.
+  So Freeze publishes the build to the machine ITSELF (`/static/publish`,
+  through `resolveExecutor`, the machine the job will pick) and releases the
+  digest: `deployments.create { builtImage, trigger: 'freeze', commitSha,
+  branch }`. A release of an inline App that names a digest snapshots
+  `{ kind: 'inline', files: [] }` and runs Validate, Activate, Health check —
+  no upload, so the App's placeholder is never sent over the build, and a
+  rollback to it re-activates the digest. The commit names the bytes; a
+  rollback past outpost's keep window says the machine no longer holds them.
+- **The build** mirrors fli's desktop surface: `bun --bun vite build -c
+  <web>/config/vite.config.js --outDir <tmp> --emptyOutDir` from `web/`
+  (a plain `web/vite.config.*` is probed after Sierra's), with the App's
+  plain `VITE_` variables, and the same refusal when no file carries
+  `VITE_API_URL`. Text goes as `content`, anything else as `content_base64`,
+  which outpost already read.
+- **`commitSha` is HEAD only when the worktree is clean**, else null: the
+  build is of the tree, and the deploy job's rule is that a release which
+  cannot say which bytes ran says null rather than a plausible sha.
+- **Activate routes the hostnames — for every inline app, not only a
+  preview.** `/static/activate { hosts }` is `/deploy`'s shape: the route
+  moves to the static origin first, then the symlink swaps. The job sends the
+  live Domain rows. Caddy dials the origin with the Host set to
+  `<app_id>.localhost`, and `activate` links the ID as a host label beside
+  the slug — routed by SLUG, the second preview activated on a machine (every
+  preview App is slugged `web`) would take over the first one's hostname.
+  This closes the release-time half of `FJS-1615`'s inline case;
+  `routeDomainApp` still skips an inline App between releases.
+- **Outpost's limits are sized for a built SPA**: 500 files, 4 MB a file,
+  24 MB a release.
+- **Thaw is `/route { port }` again**, the push Open made — with the port read
+  off the App row and the hostnames off its Domain rows, never off `opened`,
+  which records what Open made. The static release stays on the machine;
+  which of the two serves is what the route dials.
+- **Retire is what Archive does to a preview, first.** `apps.remove` — the
+  owner of *deleting an app retires it from the machine*, which now answers
+  what the machine said — sends `/static/retire`, which takes the files AND
+  the route off (whichever port it dialed); then the Environment is removed
+  and its Variables and Domain cascade. Not the Environment alone: a cascade
+  retires nothing on a machine (`FJS-2536`). It runs
+  BEFORE the worktree goes, because Archive releases the port: a route left
+  dialing a released port serves whichever branch claims it next. Archive's
+  refusal (work not landed) is asked before anything is retired. A machine
+  that cannot be reached does not keep the rows; it is reported in
+  `retired.machine`, in its words.
+- **Not built: Retire on PR close.** The poll is a cron with no caller, and
+  every write here goes through a service as the caller, in their workspace.
+  It needs the opener recorded at Open and a way to replay a call as them in
+  that workspace — which is the question to settle before it is a job, not a
+  detail of one. Owed with it: `apps.service` refusing a non-static App under
+  a preview Environment, and the *Fork for a client* control.
+- *Proved:* `verify:provision` 13 checks beyond slice 3's, against outpost's
+  own server and static store on the command port's TLS (docker and Caddy
+  stand in): the hostname dials the dev server after Open; Freeze answers the
+  digest, file count and HEAD; the release runs as `freeze` with three steps;
+  the static origin, asked with the Host the route sets, serves the built page
+  and its bundle carries `https://api.example.test`; Thaw dials back; Freeze
+  on a plain checkout is refused; Thaw follows an edited App port; Archive retires with the machine's
+  agreement, the hostname is unrouted, the files 404 by ID, the Environment
+  404s and `wb/client` stays. Dropping `hosts` from the job's Activate turned
+  exactly the two serving checks red. `inline-app.test.ts` one test (three
+  steps, empty snapshot, a non-digest refused); outpost three (the route and
+  the origin answering it, a second app taking the slug and not the
+  hostname, refused with no static origin, retire unrouting a dev-server
+  route).
+- **The nine, answered late** (after the code was green — a check, not the
+  decision; the owner question moved Retire's machine call into
+  `apps.remove`): origin — the bytes are the commit's and the machine's, never
+  a row's; the state is still the route and the release. Concept — none; a
+  digest release is a Deployment, Retire is Archive's first step. Complexity —
+  one build, one publish, one ordinary release. Predictability — Activate takes
+  `hosts` as `/deploy` does. Derived — `VITE_` variables from the App's rows,
+  the hostname set from Domain rows. Owner — the release is the deploy job's,
+  the machine retire `apps.remove`'s, the build `core/preview.ts`'s, the route
+  outpost's. Boundary — every read and write as the caller. Failure — the
+  build and the bundle check refuse before the machine is touched; a machine
+  refusing the publish refuses Freeze; an unreachable machine at Retire is
+  REPORTED rather than refused, since the stale route needs a later fork to
+  claim that exact port on that machine to serve anything, and refusing would
+  strand rows nobody can retire once the machine is gone. Silence — *stays
+  true:* a preview's hostname reaches only its own App's files or its own
+  branch's port, and a retired one answers nothing; *what fails:* the serving
+  and unrouted checks in `verify:provision`, and outpost's
+  second-app-same-slug test. Adjudications: *preservation vs. evolution*
+  (`/static/activate`'s body grew `hosts` and every inline release sends it,
+  no old shape kept); *batteries vs. smallness* (the preview stays in
+  `core/preview.ts` and the workbench; what reached the release path is
+  `FJS-1615`'s fix, which every inline app needed); *ergonomics vs.
+  strictness* (Retire's unreachable machine, above). Tier: Assessment.
+
+The plan as written:
 
 - **Freeze**: build `web/` in the worktree with the App's Variables, hand the
   `dist/` files to `inlineFilesFor` and dispatch an ordinary `Deployment`

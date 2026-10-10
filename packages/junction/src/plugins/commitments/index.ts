@@ -10,6 +10,10 @@
 //     once across replicas (`FJS-D36`). It asks `due()` of every declaring model
 //     for rows due within the lookahead and dispatches a fire per row, with a
 //     delay to its time, so the cadence is not the precision
+//   • the kick — a committed write to a declaring model asks `due()` of that
+//     row and dispatches its fire at once, so a row due at its own write waits
+//     for no tick. The sweep is the backstop for a write this process never
+//     saw, and a sweep after a kick may find the row already moved
 //   • the fire — re-asks `due()` of that one row, then makes the transition as
 //     system on the row `due()` names as its TARGET — the declaring row, or the
 //     one a to-one relation reaches (`subscription.lapse` on an invoice,
@@ -47,6 +51,7 @@
 
 import type { App, Plugin } from '../../core/app.ts'
 import type { ServiceContext } from '../../core/context.ts'
+import type { LitestoneWriteEvent } from '../../core/litestone.ts'
 import { forEachAppDatabase, enqueueOutbox } from '../outbox/engine.ts'
 import type { EnqueueRef, EnqueueOptions, OutboxApi } from '../outbox/engine.ts'
 import { startOfDay }         from '@frontierjs/toolbelt/datetime'
@@ -56,8 +61,8 @@ export interface CommitmentsPluginOptions {
    * When the sweep runs, as a five-field cron. Default every minute.
    *
    * Not the precision: a row due inside the lookahead is dispatched with a
-   * delay to its own time, so a coarser sweep costs lateness only for a row
-   * whose due time falls between a write and the next tick.
+   * delay to its own time, and a write that makes a row due kicks its fire at
+   * once. A coarser sweep costs lateness only for a write another process made.
    */
   cron?:        string
   /**
@@ -208,6 +213,7 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
   let lastSweepAt: string | null = null
 
   let api: CommitmentsApi | null = null
+  const untap: Array<() => void> = []
 
   return {
     name:     'commitments',
@@ -245,6 +251,15 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
       // belongs in jobs.snapshot.md, and schedule() is the door a ROW binds a
       // clock through, which registrations() leaves out.
       jobs.handle(COMMITMENT_SWEEP_JOB, async () => { await sweep(app) }, { queue, cron })
+
+      // Under `tenants` there is no one client to tap: each is tapped as it opens.
+      kickOnWrites(app, app.db, null)
+      if (typeof app.onTenantClient === 'function')
+        untap.push(app.onTenantClient((client, id) => kickOnWrites(app, client, id)))
+    },
+
+    async shutdown(): Promise<void> {
+      for (const off of untap.splice(0)) off()
     },
   }
 
@@ -255,40 +270,78 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
    * measured on the same clock.
    */
   async function sweep(app: App): Promise<CommitmentSweepResult> {
-    const jobs = app.jobs as unknown as Jobs
     let count = 0
 
     await forEachAppDatabase(app, declares, async (raw, tenant) => {
-      const db  = raw as CommitmentClient
-      const sys = db.asSystem()
-      const now = (db.$now?.() ?? new Date()).getTime()
-      const by  = new Date(now + lookaheadMs)
-      const timeZone = await zoneFor(tenant ?? null)
-
-      for (const accessor of new Set(db.$commitments.map(d => d.accessor))) {
-        for (const row of await sys[accessor].due({ by, timeZone })) {
-          count++
-          // Under row tenancy the database is every tenant's and names none;
-          // the row's own tenant is what the fire's principal holds as its claim.
-          const rowTenant = row.tenant !== undefined ? row.tenant : tenant
-          // A day kind answers `YYYY-MM-DD`, which Date.parse reads as UTC
-          // midnight — the fire would run hours early or late anywhere else.
-          const at = row.dueAt.length === 10 ? startOfDay(row.dueAt, timeZone) : Date.parse(row.dueAt)
-          await jobs.dispatch(COMMITMENT_FIRE_JOB,
-            { accessor, transition: row.transition, id: row.id, dueAt: row.dueAt, timeZone } satisfies FirePayload, {
-              queue,
-              delay:  Math.max(0, at - now),
-              unique: `commitment:${rowTenant ?? ''}:${accessor}:${row.transition}:${String(row.id)}:${row.dueAt}`,
-              actor:  null,
-              tenant: rowTenant,
-            })
-        }
-      }
+      const db = raw as CommitmentClient
+      for (const accessor of new Set(db.$commitments.map(d => d.accessor)))
+        count += await dispatchDue(app, db, tenant, accessor)
     })
 
     due         = count
     lastSweepAt = new Date().toISOString()
     return { due: count }
+  }
+
+  /**
+   * Dispatch a fire for each row of one accessor due within the lookahead —
+   * all of them, or the one `where` names. The sweep walks every accessor; a
+   * write that may have made a row due asks for that row alone.
+   */
+  async function dispatchDue(
+    app: App, db: CommitmentClient, tenant: string | null, accessor: string, where?: Record<string, unknown>,
+  ): Promise<number> {
+    const jobs = app.jobs as unknown as Jobs
+    const now  = (db.$now?.() ?? new Date()).getTime()
+    const by   = new Date(now + lookaheadMs)
+    const timeZone = await zoneFor(tenant ?? null)
+    let count = 0
+
+    for (const row of await db.asSystem()[accessor].due({ by, timeZone, where })) {
+      count++
+      // Under row tenancy the database is every tenant's and names none;
+      // the row's own tenant is what the fire's principal holds as its claim.
+      const rowTenant = row.tenant !== undefined ? row.tenant : tenant
+      // A day kind answers `YYYY-MM-DD`, which Date.parse reads as UTC
+      // midnight — the fire would run hours early or late anywhere else.
+      const at = row.dueAt.length === 10 ? startOfDay(row.dueAt, timeZone) : Date.parse(row.dueAt)
+      await jobs.dispatch(COMMITMENT_FIRE_JOB,
+        { accessor, transition: row.transition, id: row.id, dueAt: row.dueAt, timeZone } satisfies FirePayload, {
+          queue,
+          delay:  Math.max(0, at - now),
+          unique: `commitment:${rowTenant ?? ''}:${accessor}:${row.transition}:${String(row.id)}:${row.dueAt}`,
+          actor:  null,
+          tenant: rowTenant,
+        })
+    }
+    return count
+  }
+
+  /**
+   * Kick a fire for a row the moment a committed write may have made it due,
+   * where the sweep alone would leave it to the next tick — the outbox's
+   * post-commit kick, for the commonest commitment: one due at its own write.
+   * A tap's callback runs after the commit, so the row it reads is there. The
+   * sweep stays the backstop for a write this process did not see.
+   */
+  function kickOnWrites(app: App, raw: unknown, tenant: string | null): void {
+    if (!declares(raw)) return
+    const db = raw as CommitmentClient
+    const tap = (db as { $tapEvents?: (fn: (e: LitestoneWriteEvent) => void) => () => void }).$tapEvents
+    if (typeof tap !== 'function') return
+    const accessors = new Map(db.$commitments.map(d => [d.model, d.accessor]))
+    untap.push(tap.call(db, (e) => {
+      const accessor = accessors.get(e.model)
+      if (!accessor || e.event === 'remove') return
+      const row = (e.event === 'transition' ? e.record : e.result) as Record<string, unknown> | null | undefined
+      const keys = db.asSystem().$primaryKey(accessor)
+      const where = e.scope !== 'collection' && row && keys.every(k => k in row)
+        ? Object.fromEntries(keys.map(k => [k, row[k]]))
+        : undefined
+      void dispatchDue(app, db, tenant, accessor, where).catch((err: unknown) =>
+        (err as { name?: string })?.name === 'ClientClosedError' ||
+        console.warn(`[Junction] commitments(): the kick after a ${e.model} write failed:`, err))
+    }))
   }
 
   /**

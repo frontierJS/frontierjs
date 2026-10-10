@@ -517,6 +517,34 @@ export async function busyKnownPorts() {
     .sort((a, b) => a.port - b.port)
 }
 
+/**
+ * One port, asked about directly — `fli ps 8008`.
+ *
+ * Not a filter over `busyKnownPorts()`: that walk stops at service slot 0, and
+ * a port somebody types is as often a slot `fli dev` handed out (8008 is
+ * project 0's ninth app) or a number outside the schema altogether. So this
+ * probes the one port, decodes it, and names it from the most specific source
+ * that knows it — the reserved block, then the lock file's slot, then the
+ * project table. `project` is null where none of them does.
+ */
+export async function portStatus(p, { lockFile = LOCK_FILE } = {}) {
+  const pids = pidsOnPort(p)
+  const busy = pids.length > 0 || await isPortInUse(p, '127.0.0.1')
+  const { env, category, projectId, serviceId, branch } = decode(p)
+  const reserved = isReservedToolingPort(p)
+
+  const owner = Object.values(readLock(lockFile)).find(s =>
+    Object.values(s.ports || {}).flat().map(Number).includes(p))
+  const tool  = Object.keys(GLOBAL).find(k => GLOBAL[k] === p)
+  const table = !serviceId && !branch ? Object.keys(PROJECTS).find(k => PROJECTS[k] === projectId) : null
+  const project = reserved ? (tool ? `fli ${tool}` : null) : (owner?.name ?? table ?? null)
+
+  return {
+    port: p, env, category, projectId, serviceId, branch, project, reserved, busy,
+    pids, command: pids.length ? describeProcess(pids[0]) : '',
+  }
+}
+
 // ─── Dev slots ────────────────────────────────────────────────────────────────
 //
 // Project 0 is every app `PROJECTS` does not name, so two of them derive one

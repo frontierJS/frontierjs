@@ -115,6 +115,15 @@ describe('terminal target', () => {
       await expect(terminal(source, 'A.mesa')).rejects.toThrow(shape)
     })
 
+    // A caller that stripped a frontmatter block hands over `locLines`, and a
+    // refusal names the FILE's line, as `data-fjs-loc` does (FJS-2519).
+    it('the file\'s line when the caller rewrote the source', async () => {
+      const prepared = `<div>\n<iframe></iframe>\n</div>\n`
+      const locLines = [4, 5, 6, 7]
+      await expect(compile(prepared, { target: 'terminal', filename: 'A.mesa', dev: false, locLines, warning: () => {} }))
+        .rejects.toThrow('<iframe> at A.mesa:5:1 has no terminal lowering')
+    })
+
     // Columns are equal shares of a row, so a spanning cell would put the
     // row's later values under the wrong header.
     it('colspan and rowspan on a cell, static or live', async () => {
@@ -166,8 +175,10 @@ describe('terminal target', () => {
       await refusal(`<input type="file" class="field" />\n`, 'F.mesa', 'type="file" on <input> at F.mesa:1:1 has no terminal lowering')
       await refusal(`<script>let h = true</script>\n<input type="file" hidden={h} />\n`, 'H.mesa',
         'type="file" on <input> at H.mesa:2:1 has no terminal lowering')
+      await refusal(`<script>let v = ''</script>\n<input type="file" hidden bind:value={v} />\n`, 'V.mesa',
+        'bind:value on <input type="file"> at V.mesa:2:27 has no terminal lowering')
       await refusal(`<script>let f</script>\n<input type="file" hidden bind:files={f} />\n`, 'B.mesa',
-        'bind:files on <input type="file"> at B.mesa:2:26 has no terminal lowering')
+        'bind:files at B.mesa:2:27 has no terminal lowering')
       for (const ok of [
         `<input type="file" hidden />\n`,
         `<script>let a = '*/*'</script>\n<input type="file" accept={a} class="x visually-hidden" />\n`,

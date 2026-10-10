@@ -443,20 +443,28 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
    * is refused by count unless `discard` says to lose it.
    */
   async function archive(id: string, { discard = false }: { discard?: unknown } = {}): Promise<{ archived: string } | { refused: string, pending?: number }> {
-    const p = getPin(id)
-    if (!p) return { refused: `no pinned checkout '${id}'` }
-    const parent = p.from ? getPin(p.from) : null
-    if (!p.from || !p.base || !p.branch) return { refused: `${p.name} is not a branch — unpin it instead` }
-    let pending = 0
-    try { pending = existsSync(p.path) ? pendingFiles(p.path, p.base).length : 0 } catch {}
-    if (pending && discard !== true)
-      return { refused: `${p.name} holds ${pending} file${pending === 1 ? '' : 's'} not landed`, pending }
+    const refused = archiveRefusal(id, { discard })
+    if (refused) return refused
+    const p = getPin(id)!
+    const parent = getPin(p.from!)
     stop(id)
     try { removeWorktree(parent?.path ?? p.path, p.path) }
     catch (e) { return { refused: `git refused to remove the worktree: ${(e as Error).message}` } }
     forget(id)
     try { (await loadPorts()).releaseSession(p.path, { lockFile: portsLock }) } catch {}
-    return { archived: p.branch }
+    return { archived: p.branch! }
+  }
+
+  /** Why Archive would refuse, asked before a preview is retired for it. */
+  function archiveRefusal(id: string, { discard = false }: { discard?: unknown } = {}): { refused: string, pending?: number } | null {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    if (!p.from || !p.base || !p.branch) return { refused: `${p.name} is not a branch — unpin it instead` }
+    let pending = 0
+    try { pending = existsSync(p.path) ? pendingFiles(p.path, p.base).length : 0 } catch {}
+    if (pending && discard !== true)
+      return { refused: `${p.name} holds ${pending} file${pending === 1 ? '' : 's'} not landed`, pending }
+    return null
   }
 
   function configure(id: string, patch: { name?: unknown, budget?: unknown, hooks?: unknown, review?: unknown, copy?: unknown, preview?: unknown }): Pin | { refused: string } {
@@ -823,6 +831,6 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
-    send, stop, fresh, seen, check, review, fork, land, archive, recordOpened,
+    send, stop, fresh, seen, check, review, fork, land, archive, archiveRefusal, recordOpened,
   }
 }

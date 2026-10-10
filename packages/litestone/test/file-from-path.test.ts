@@ -77,7 +77,7 @@ describe('a string in a File column is never a path (FJS-2061)', () => {
     const row = await db.asSystem().photo.create({ data: { id: 1, name: 'x', original: fromPath(secret) } })
     expect(puts.map(p => p.bytes)).toEqual(['server-only bytes'])
     expect(puts[0].key.endsWith('.txt')).toBe(true)
-    expect(JSON.parse(row.original).key).toBe(puts[0].key)
+    expect(row.original.key).toBe(puts[0].key)
     db.$close()
   })
 

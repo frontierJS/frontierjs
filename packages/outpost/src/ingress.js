@@ -88,8 +88,11 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      * Caddy answers the first match, so a second app claiming a live hostname
      * would either take it over or silently never be reached, depending on the
      * order the routes happen to be in.
+     *
+     * `host` replaces the Host header upstream. The static origin picks an app
+     * by its Host label, and a public hostname's first label is not the app's.
      */
-    route({ appId, hosts, port }) {
+    route({ appId, hosts, port, host = null }) {
       return serially(async () => {
         if (!hosts?.length) throw new Error('a route needs at least one hostname')
         if (!(Number.isInteger(Number(port)) && Number(port) > 0))
@@ -113,7 +116,10 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
         const route = {
           '@id':    id,
           match:    [{ host: hosts }],
-          handle:   [{ handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${port}` }] }],
+          handle:   [{
+            handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${port}` }],
+            ...(host ? { headers: { request: { set: { Host: [host] } } } } : {}),
+          }],
           terminal: true,
         }
         // PATCH by id replaces in place; Caddy answers 404 for an id it has not

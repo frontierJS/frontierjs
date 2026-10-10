@@ -9,9 +9,10 @@
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { portFor } from '@frontierjs/cli/core/ports.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const PORT = process.env.PREVIEW_PORT ?? '8011'
+const PORT = process.env.PREVIEW_PORT ?? String(await portFor(import.meta.url, 'fe', { env: 'dev', service: 1 }))
 const UI   = `http://localhost:${PORT}`
 
 const preview = spawn(process.execPath, [join(HERE, 'preview.mjs')], {

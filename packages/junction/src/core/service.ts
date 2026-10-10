@@ -5,7 +5,7 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect } from './context.ts'
+import { CRUD_METHODS, requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect } from './context.ts'
 import type { CommitScope, CallCoverage, OutboxRelay } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
@@ -484,7 +484,7 @@ export interface HookTelemetryEvent {
   error?:       { name: string; message: string }
 }
 
-const CRUD_METHODS = new Set(['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'])
+const CRUD_METHOD_SET = new Set<string>(CRUD_METHODS)
 // The one method the framework answers beside CRUD (`FJS-D487`): the custom
 // fields a workspace declared on an @@extensible model. It is not in the
 // custom table, which is what `describe()`, the manifest and OpenAPI list, so a
@@ -609,8 +609,9 @@ async function _callService(
 
   const start  = Date.now()
   const method = ctx.method
-  const isCustom = !CRUD_METHODS.has(method as string)
+  const isCustom = !CRUD_METHOD_SET.has(method as string)
   const isRead   = isReadMethod(service, method as string)
+  if (isCustom && isRead && ctx.locals) ctx.locals.readCall = true
 
   // ── The method policy ────────────────────────────────────────────────
   // Enforced HERE because callService is the one path every caller takes —
@@ -1299,7 +1300,7 @@ export function collectCustomMethods(
   if (Array.isArray(declared)) {
     for (const entry of declared) {
       const name = methodEntryName(entry, serviceName)
-      if (CRUD_METHODS.has(name)) continue
+      if (CRUD_METHOD_SET.has(name)) continue
       // Own keys. `src['toString']` answers an inherited function, so six names
       // — toString, valueOf, constructor, hasOwnProperty, isPrototypeOf,
       // propertyIsEnumerable — passed the `typeof fn !== 'function'` check below
@@ -1729,7 +1730,7 @@ export function collectReadMethods(
         `which is not true or false.`)
     // A CRUD verb is a read or a write by its name, and a declaration that
     // could disagree with the name is one nothing would honor.
-    if (CRUD_METHODS.has(name))
+    if (CRUD_METHOD_SET.has(name))
       throw new TypeError(
         `[Junction] service '${serviceName}': ${name} declares read, but ${name} is a CRUD verb, ` +
         `whose name already says whether it reads. read: is for a custom method.`)
@@ -2008,7 +2009,6 @@ export function createBaseService(
   // untouched: `gateAuth` wraps every method and `autoFilter` is attached by
   // METHOD NAME, so an override keeps the model's `@@gate` and the filter check
   // it would have had.
-  const CRUD_METHODS = ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'] as const
   const overrides: Record<string, Method> = {}
   for (const verb of CRUD_METHODS) {
     const fn = (opts as unknown as Record<string, unknown>)[verb]

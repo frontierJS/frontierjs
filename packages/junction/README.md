@@ -507,6 +507,17 @@ app.ws('/chat/{roomId}', {
 })
 ```
 
+`app.ws` is the raw door (`FJS-D688`): the path takes `apiPrefix` as `app.post` does, and junction sends the peer no `connected` and no `{type:'error'}` frame, since a vendor's socket speaks its own protocol. Per-socket state is `ctx.locals`, and a handler's throw goes to `onError`. A third argument sets the route's own bounds:
+
+```typescript
+app.ws('/media/{ticket}', handlers, {
+  limits:  { maxFramesPerSecond: 0, maxInFlight: 0, maxConnectionsPerIp: 0 },   // over config.http.ws, field by field
+  upgrade: req => { if (!known(req)) return new Response('no such ticket', { status: 404 }) },
+})
+```
+
+A frame past a route's bound closes the socket `1008` with the code (`rate_limited`, `too_many_in_flight`) as the reason. `maxPayloadLength` is Bun's, one for the whole server, so it is not a route option.
+
 A frame sent the instant the socket opens waits until `open()` has settled, an async one included, and so does `close()`. Frames are not ordered among themselves: each `message()` starts when its frame arrives, so a handler that awaits I/O can see the next frame before the current one has finished.
 
 ### 5. Channels — real-time without polling
@@ -526,6 +537,27 @@ after: {
 ```
 
 Client: `{ type: 'event', event: 'deployments created', data: { ... } }`
+
+**A room is a channel bound to one row** (`FJS-D596`). Presence and
+`channel(name).send` are not graded per recipient, so the room's membership is
+kept true instead:
+
+```typescript
+app.configure(channels(setup, { rooms: { 'page:{id}': 'Page' }, presence: ['page:*'] }))
+
+// in a service method: graded at the Data boundary, answers whether it admitted
+const admitted = await app.channel(`page:${id}`).join(conn)
+```
+
+The join reads the row as the system and asks the joiner's read verdict on it.
+After every committed write to a model the row's read policy reaches
+(`db.$readReach`), each member is asked again; one who lost the row leaves the
+room and is sent `presence:sync` with no members. With a `claims` resolver
+installed the policy's reach cannot be read, so every committed write asks again.
+Needs `createApp({ db })`, or
+`createApp({ tenants })` with the tenant in the pattern
+(`'{tenant}:page:{id}': 'Page'`): the room reads its row through that tenant's
+client, and a write in one tenant asks no room of another.
 
 ### 6. Compiled hook pipelines
 
@@ -928,8 +960,10 @@ looks exactly like an app with no services.
 The boot banner carries the answer either way:
 
 ```
-🚀 shop v1.0.0 … services=20 autoload=api/src/services …
-🚀 shop v1.0.0 … services=3  autoload="none — probed api/services, api/src/services" …
+🚀 shop v1.0.0                                🚀 shop v1.0.0
+    …                                             …
+    services  20                                  services  3
+    autoload  api/src/services                    autoload  none — probed api/services, api/src/services
 ```
 
 The second line is an app that loaded nothing and will 404 every route those

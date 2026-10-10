@@ -305,6 +305,21 @@ export interface PolicyMismatch {
   message: string
 }
 
+/**
+ * `env.factories`, each answering its model's row: keyed by the client's own
+ * table accessors, so `factories.user.createOne()` is a `User` and an accessor
+ * the schema lacks is a type error. A client with no named accessors (the
+ * unregistered default) falls back to any name and a FactoryRow.
+ */
+export type FactoriesOf<TClient> = string extends keyof TClient
+  ? Record<string, Factory>
+  : { [K in keyof TClient as TClient[K] extends TableLike ? K : never]:
+      TClient[K] extends { findFirst(...args: any[]): Promise<infer TRow> } ? Factory<NonNullable<TRow>> : never }
+
+// Structural: a generated schema.d.ts declares its own TableClient, so the
+// package's interface does not match it.
+type TableLike = { findFirst(...args: any[]): Promise<any> }
+
 export interface TestEnv<TClient = RegisteredClient> {
   /** The unscoped client. */
   db:        TClient
@@ -315,7 +330,7 @@ export interface TestEnv<TClient = RegisteredClient> {
    * `.asSystem()` on one, or `setup`/`arrange`, whose factories are system-bound.
    * Empty unless `autoFactories: true` or `factories` was passed.
    */
-  factories: Record<string, Factory>
+  factories: FactoriesOf<TClient>
   schema:    ParseResult['schema']
   /** The throwaway directory holding this env's databases. */
   dir:       string
@@ -419,7 +434,7 @@ export interface ArrangeTools<TClient = RegisteredClient> {
   /** `asSystem()` — writes below the boundary, announcing nothing. */
   system:    TClient
   /** `env.factories`, each bound to `system` — a gate is not asked of a fixture. */
-  factories: Record<string, Factory>
+  factories: FactoriesOf<TClient>
   db:        TClient
 }
 

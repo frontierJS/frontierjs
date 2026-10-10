@@ -449,7 +449,10 @@ export function buildFieldPolicyMap(schema) {
         // @immutable — written once, at create. Unlike every other entry here
         // it is not about WHO is asking, which is why the write path tests it
         // outside the `!ctx.isSystem` guard the others share.
-        immutable: !!immutableAttr,
+        immutable: !!immutableAttr && !immutableAttr.after,
+        // `@immutable(after: <move>)` — frozen by the machine's state rather
+        // than by create or the seal, so the write path guards it in the WHERE.
+        immutableAfter: immutableAttr?.after ?? null,
         allow,    // null if no @allow on this field
         // Whether the DECLARED type is Json. Captured here, beside the other
         // per-field facts, because the encrypt/decrypt steps both need it and
@@ -519,9 +522,11 @@ export function buildSecretMap(schema) {
 export function buildJsonMap(schema) {  const map = {}
   for (const model of schema.models) {
     map[model.name] = new Set(
-      // Include Json fields AND array fields — both stored as JSON text.
+      // Include Json fields, array fields and a single File — all stored as JSON
+      // text. A File left out came back as that text from every read that does not
+      // resolve it, where a File[] item beside it was an object (FJS-2422).
       // Exclude @edge fields — they live on a join/side table, not the host row.
-      model.fields.filter(f => (f.type.name === 'Json' || f.type.array) && !f.attributes.find(a => a.kind === 'edge')).map(f => f.name)
+      model.fields.filter(f => (f.type.name === 'Json' || f.type.name === 'File' || f.type.array) && !f.attributes.find(a => a.kind === 'edge')).map(f => f.name)
     )
   }
   return map

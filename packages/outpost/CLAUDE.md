@@ -11,11 +11,11 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/config.js` | every environment variable, and the three that have no safe default |
 | `src/docker.js` | **the one place a command runs on the machine** — `createDocker` for containers, `createInspector` for volumes and disk |
 | `src/server.js` | the inbound half: the route table, and the signature every route but `/health` requires |
-| `src/static.js` | **the other kind of release** — an app whose source is the FILES. Writes them under their own digest, swaps one symlink, and computes the digest itself |
+| `src/static.js` | **the other kind of release** — an app whose source is the FILES. Writes them under their own digest, swaps one symlink, and computes the digest itself. `activate` links the app's ID as a host label as well as its slug: a routed hostname reaches the ID, because a slug is a label any app on the machine may take over |
 | `src/serve.js` | the origin those files answer on. A SECOND listener, its own port, nothing signed — see below |
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers |
-| `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy and on `/route`, DELETEd on stop, the ingress server made on the first one |
+| `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, on `/route` and on `/static/activate` (to the static origin, Host set to `<app_id>.localhost`), DELETEd on stop and `/static/retire`, the ingress server made on the first one |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 

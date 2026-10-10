@@ -14,7 +14,7 @@ import { omitBy } from '@frontierjs/toolbelt/redact'
 // re-exports it so existing `from '.../transport/bridge.ts'` imports keep
 // working unchanged.
 import {
-  RESERVED_PARAMS, enterRequest, requestMeta, freezeUser, withCallEffects,
+  CRUD_METHODS, RESERVED_PARAMS, enterRequest, requestMeta, freezeUser, withCallEffects,
   type ServiceContext, type ServiceContextLocals, type ServiceResult,
   type ServiceMethod, type AnyMethod, type HookType,
   type CallOptions, type RequestMeta, type QueryDirectives,
@@ -47,9 +47,14 @@ const METHOD_MAP: Record<string, ServiceMethod> = {
   'DELETE': 'remove',
 }
 
-// CRUD methods that cannot be overridden via X-Service-Method header.
-// Custom method names pass through — callService validates existence.
-const CRUD_METHOD_BLOCK = new Set(['find', 'get', 'create', 'update', 'patch', 'remove'])
+// Built-ins no HTTP verb names, so the header is their only address. `upsert`
+// is not a CRUD method; it is resolved against the body in toContext.
+const HEADER_BUILTINS = new Set<string>(['aggregate', 'restore', 'upsert'])
+
+// CRUD methods that cannot be overridden via X-Service-Method header: the ones
+// an HTTP verb already names. Custom method names pass through — callService
+// validates existence.
+const CRUD_METHOD_BLOCK = new Set<string>(CRUD_METHODS.filter(m => !HEADER_BUILTINS.has(m)))
 
 // ─── Wire `$directive` → structured QueryDirectives ──────────────────────
 // This is where the API realm applies the `$` convention, and everything past
@@ -94,9 +99,7 @@ export const bridge = {
     let serviceMethod: AnyMethod = METHOD_MAP[httpMethod] ?? 'find'
 
     if (rawHeaderMethod && !CRUD_METHOD_BLOCK.has(headerLower)) {
-      serviceMethod = (headerLower === 'upsert' || headerLower === 'restore')
-        ? headerLower
-        : rawHeaderMethod
+      serviceMethod = HEADER_BUILTINS.has(headerLower) ? headerLower : rawHeaderMethod
     }
 
     // ── Routing ────────────────────────────────────────────────────────

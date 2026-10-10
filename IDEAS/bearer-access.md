@@ -27,7 +27,7 @@ in Chrome and Firefox. It needed no framework change and met one seam:
 `cookie()` is read off the WebSocket's upgrade, so the cookie a redeem sets
 after load is invisible to the socket and a cleared one keeps working
 ([`FJS-1503`](../ISSUES.md#fjs-1503)). What *ships* is cited to the file that ships it;
-every number was read off a database or a probe named beside it. Do not cite
+every number was read off a database or a probe named beside it. **maid.tech's portal was built 2026-10-10** (`fjs-prototypes/maidtech`, stressor #27 Phase 5) on the shipped half: `PortalLink` = the Grant trait + `Capability[]` (the paper's two strengths as the grid, no scope enum), `.mint()`/`.redeem()` unchanged, `Message` at gate 0 under `@@capabilities(all)`. Its socket half is `channels({ claims })` running the app's principal per frame, which surfaced [FJS-2527](../ISSUES.md#fjs-2527) and [FJS-2528](../ISSUES.md#fjs-2528) (both S2, fixed). Do not cite
 this file as behavior — see `VERIFYING.md`.
 
 ---

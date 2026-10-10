@@ -8,6 +8,7 @@
 // Error hooks:   run when any stage throws. around exit still runs.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
+import { CRUD_METHODS } from './context.ts'
 import { toFrameworkError } from './errors.ts'
 
 // ─── Hook definitions ─────────────────────────────────────────────────────
@@ -89,11 +90,11 @@ export interface ResolvedPipeline {
 export const HOOK_STAGES = ['around', 'before', 'validated', 'after', 'error'] as const
 
 // ─── Merge hook map into resolved pipelines per method ──────────────────
-// Processes all five CRUD methods plus any extra method names found in the map.
+// Processes every CRUD method plus any extra method names found in the map.
 
 export function resolvePipelines(hooks: HookMap): Record<string, ResolvedPipeline> {
 
-  const crudMethods: ServiceMethod[] = ['find', 'get', 'create', 'patch', 'remove', 'restore']
+  const crudMethods: readonly ServiceMethod[] = CRUD_METHODS
 
   // Collect any custom method names from the hook map
   const customNames = new Set<string>()

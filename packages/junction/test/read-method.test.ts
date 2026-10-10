@@ -11,6 +11,8 @@ import { createTestApp } from '../src/testing/index.ts'
 import { createService, callService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
+import { withLitestoneDb } from '../src/core/litestone.ts'
+import { createClient } from '../../litestone/src/index.js'
 
 function searchService() {
   const calls = { search: 0, reboot: 0, aggregate: 0 }
@@ -108,5 +110,61 @@ describe('the declaration', () => {
       name: 'usages',
       methods: [{ method: 'create', read: true }],
     })).toThrow(/create is a CRUD verb/)
+  })
+})
+
+// ─── a declared read that writes (FJS-1477, FJS-D581) ─────────────────────────
+//
+// `read: true` switches off the idempotency cache and the announcement, so a
+// method that spends a row under it would double-spend on a signed-in retry and
+// tell nobody. The client it is handed refuses the write by name instead.
+
+describe('a declared read is handed a client that refuses writes', () => {
+
+  const SCHEMA = `model Pass { id Int @id @default(autoincrement())  label String }`
+
+  async function run(methods: unknown[], body: (db: any) => Promise<unknown>, method = 'search') {
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA }) as any
+    const svc = createService({
+      name: 'passes',
+      methods,
+      search: async (ctx: any) => body(ctx.locals.db),
+      reboot: async (ctx: any) => body(ctx.locals.db),
+    } as never)
+    const app = await createTestApp()
+    const ctx = bridge.internal('passes', method as 'create', {}, {
+      auth: { user: { userId: 'u1' } as never },
+    }, app)
+    ctx.method = method
+    const hooks = { around: { all: [withLitestoneDb(db)] } }
+    const out = await enterRequest(
+      { correlationId: 'c1', origin: 'internal' },
+      () => callService(svc, ctx, hooks as never, app.events, app.telemetry).then(() => null, (e: Error) => e),
+    )
+    return { db, out }
+  }
+
+  test('create inside a read throws a 500 naming the method and the model', async () => {
+    const { db, out } = await run([{ method: 'search', read: true }], d => d.pass.create({ data: { label: 'x' } }))
+    expect(out).toBeInstanceOf(Error)
+    expect((out as Error).message).toMatch(/passes\.search.*read: true.*pass\.create/s)
+    expect((out as { code?: number }).code).toBe(500)
+    expect(await db.asSystem().pass.count()).toBe(0)
+  })
+
+  test('every write verb is refused, and a read through the same client is not', async () => {
+    const verbs = ['createMany', 'update', 'updateMany', 'upsert', 'remove', 'removeMany', 'delete', 'deleteMany']
+    for (const verb of verbs) {
+      const { out } = await run([{ method: 'search', read: true }], d => d.pass[verb]({ data: {}, where: { id: 1 } }))
+      expect(String((out as Error)?.message), verb).toMatch(/read/)
+    }
+    const { out } = await run([{ method: 'search', read: true }], d => d.pass.findMany({}))
+    expect(out).toBeNull()
+  })
+
+  test('an undeclared custom method still writes', async () => {
+    const { db, out } = await run(['reboot'], d => d.pass.create({ data: { label: 'x' } }), 'reboot')
+    expect(out).toBeNull()
+    expect(await db.asSystem().pass.count()).toBe(1)
   })
 })

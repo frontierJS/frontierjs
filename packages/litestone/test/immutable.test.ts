@@ -30,9 +30,9 @@ const client = () => createClient({ schema: DOC, resolveFrom: import.meta.dir })
 const errsOf = (src: string) => parse(src).errors.join(' · ')
 
 describe('what parses', () => {
-  test('it takes no arguments, and the refusal points at the row-level shape', () => {
+  test('its one argument is after: <move>, and any other is refused naming it', () => {
     expect(parse(`model D { id Int @id  n String @immutable }`).valid).toBe(true)
-    expect(errsOf(`model D { id Int @id  n String @immutable(all) }`)).toMatch(/takes no arguments/)
+    expect(errsOf(`model D { id Int @id  n String @immutable(all) }`)).toMatch(/after: <move>/)
   })
 
   test('it is refused on the columns the ENGINE writes on every update', () => {

@@ -18,6 +18,8 @@ import { createDocker, createInspector, isDigest } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
 import { createIngress }          from '../src/ingress.js'
 import { createVitals }           from '../src/vitals.js'
+import { createStatic }           from '../src/static.js'
+import { createStaticServer }     from '../src/serve.js'
 import { readConfig }             from '../src/config.js'
 import { ensureCert }             from '../src/cert.js'
 import { mkdtempSync, statSync }  from 'node:fs'
@@ -771,6 +773,63 @@ describe('the ingress — Caddy, through its admin API', () => {
       await deploy(serverWith(caddy, bound('127.0.0.1')).server, { hosts: ['shop.example.com'] })
       const res = await route(serverWith(caddy, bound('127.0.0.1', '7301')).server, ['shop.example.com'], 'app-2')
       expect((await res.json()).error).toContain('already routed to fjs-app-1')
+    })
+  })
+
+  describe('/static/activate and /static/retire — an inline app\'s hostnames', () => {
+    const page = (text) => [{ path: 'index.html', content: `<h1>${text}</h1>` }]
+    const withStatic = (caddy, staticPort = 7181) => {
+      const dir = mkdtempSync(join(tmpdir(), 'outpost-static-route-'))
+      const statics = createStatic({ staticDir: dir })
+      return {
+        origin: createStaticServer({ staticDir: dir }, { log: { warn() {}, error() {} } }),
+        server: createOutpostServer({ ...CONFIG, staticPort }, {
+          statics, ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
+          docker: createDocker({ run: fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } }).run }),
+        }),
+      }
+    }
+
+    test('activate routes the hostnames to the static origin, and the origin answers them with the release', async () => {
+      const caddy = fakeCaddy()
+      const { server, origin } = withStatic(caddy)
+      const { digest } = await (await send(server, 'POST', '/static/publish', { app_id: 'app-1', files: page('frozen') })).json()
+      const res = await send(server, 'POST', '/static/activate', { app_id: 'app-1', slug: 'wb-client', digest, hosts: ['client.preview.example.com'] })
+      expect((await res.json()).hosts).toEqual(['client.preview.example.com'])
+
+      const proxy = caddy.config.apps.http.servers.ingress.routes[0].handle[0]
+      expect(proxy.upstreams[0].dial).toBe('127.0.0.1:7181')
+      // What Caddy sends upstream, asked of the origin itself: the public
+      // hostname's own first label is 'client', which names no app here.
+      const host = proxy.headers.request.set.Host[0]
+      const got  = await origin.handle(new Request('http://127.0.0.1:7181/', { headers: { host } }))
+      expect(await got.text()).toContain('frozen')
+
+      // A second app taking the same slug moves the slug, not the hostname.
+      const other = await (await send(server, 'POST', '/static/publish', { app_id: 'app-2', files: page('someone else') })).json()
+      await send(server, 'POST', '/static/activate', { app_id: 'app-2', slug: 'wb-client', digest: other.digest })
+      expect(await (await origin.handle(new Request('http://127.0.0.1:7181/', { headers: { host } }))).text()).toContain('frozen')
+
+      await send(server, 'POST', '/static/retire', { app_id: 'app-1', slug: 'wb-client' })
+      expect((await origin.handle(new Request('http://127.0.0.1:7181/', { headers: { host } }))).status).toBe(404)
+    })
+
+    test('a hostname is refused where the machine serves no static origin, and nothing is routed', async () => {
+      const caddy = fakeCaddy()
+      const { server } = withStatic(caddy, 0)
+      const { digest } = await (await send(server, 'POST', '/static/publish', { app_id: 'app-1', files: page('x') })).json()
+      const res = await send(server, 'POST', '/static/activate', { app_id: 'app-1', slug: 'shop', digest, hosts: ['shop.example.com'] })
+      expect((await res.json()).error).toContain('serves no static origin')
+      expect(caddy.asked).toEqual([])
+    })
+
+    test('retire takes the route out with the files, whichever port it dialed', async () => {
+      const caddy = fakeCaddy()
+      const { server } = withStatic(caddy)
+      await send(server, 'POST', '/route', { app_id: 'app-1', hosts: ['client.preview.example.com'], port: 18020 })
+      const body = await (await send(server, 'POST', '/static/retire', { app_id: 'app-1', slug: 'wb-client' })).json()
+      expect(body).toEqual({ retired: true, unrouted: true })
+      expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
     })
   })
 

@@ -4,7 +4,7 @@
 //
 // Works in the browser with no bundler — import as ESM or compile to a
 import { BUILD_HEADER, BUILD_FIELD } from '../core/build-id.ts'
-import { WS_PROTOCOL, WS_BEARER, WS_TOKEN_SAFE } from '../core/ws-auth.ts'
+import { WS_PROTOCOL, WS_BEARER, WS_TOKEN_SAFE, CREDENTIAL_HEADER, CREDENTIAL_CHANGED } from '../core/ws-auth.ts'
 // single file with `bun build framework/client/index.ts --outfile hub/ui/public/junction-client.js`
 //
 // Usage:
@@ -30,7 +30,7 @@ import { WS_PROTOCOL, WS_BEARER, WS_TOKEN_SAFE } from '../core/ws-auth.ts'
 import { NodeRegistry, nodeKey, type NodeView } from './nodes.ts'
 import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { directiveParams as toDirectiveParams } from '@frontierjs/toolbelt/directives'
-import { isListResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
+import { isListResult, isServiceResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
 import type { QueryDirectives } from '../core/directives.ts'
 import { comparatorFor } from '../core/query-values.ts'
 
@@ -1247,6 +1247,21 @@ export class JunctionClient extends EventEmitter {
    * stale, and a server with none has not been deployed by anything that stamps
    * one. Emits `stale` at most once, with both ids, so a screen can say which.
    */
+  /**
+   * A response changed a cookie, which the open socket's upgrade did not carry:
+   * a link redeemed for a cookie read nothing over it until the tab reloaded
+   * (`FJS-1503`). Cycled the way `setToken` cycles it, so the reconnect's
+   * upgrade carries what the browser now holds (`FJS-D548`). A client with no
+   * socket and none pending has nothing stale to cycle, and one the app
+   * disconnected stays disconnected.
+   */
+  private _noteCredential(value: string | null): void {
+    if (value !== CREDENTIAL_CHANGED) return
+    if (this._intentionalClose || (!this._ws && !this._reconnectTimer)) return
+    this._disconnect()
+    this._openWs()
+  }
+
   private _noteServerBuild(id: unknown): void {
     if (typeof id !== 'string' || !id) return
     this._serverBuild = id
@@ -1543,8 +1558,8 @@ export class JunctionClient extends EventEmitter {
     // took `.data` off ANY object that had it — including a record with a
     // column named `data`, which it would silently replace with that column.
     const unwrap = (raw: unknown): T =>
-      (isListResult(raw) || (raw as ServiceResult)?.kind === 'single')
-        ? (raw as ServiceResult<T>).data
+      isServiceResult<T>(raw)
+        ? raw.data as T
         : raw as T
 
     // ── The query the store means ──────────────────────────────────────────
@@ -2122,6 +2137,7 @@ export class JunctionClient extends EventEmitter {
       clearTimeout(timer)
 
       this._noteServerBuild(res.headers.get(BUILD_HEADER))
+      this._noteCredential(res.headers.get(CREDENTIAL_HEADER))
 
       const text = await res.text()
       let data: unknown
@@ -2189,6 +2205,7 @@ export class JunctionClient extends EventEmitter {
 
     const res = await fetch(this._url + this._apiPrefix + path, { ...init, headers })
     this._noteServerBuild(res.headers.get(BUILD_HEADER))
+    this._noteCredential(res.headers.get(CREDENTIAL_HEADER))
     if (res.ok) return res
 
     const text = await res.text()

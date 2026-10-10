@@ -348,6 +348,65 @@ hatch to reach for first.
 
 ---
 
+## Testing — `@frontierjs/litestone/testing`
+
+Full surface: `docs/testing.md`. An app with a Junction API imports the same
+names from `@frontierjs/testing` (its `AGENTS.md`), which adds the API half.
+
+```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+
+const getLevel = (user) => user?.level ?? 0       // the app's own resolver
+const env = await createTestEnv({
+  schema: `model Lead {
+    id   Int    @id @default(autoincrement())
+    name String
+    @@gate("1.3.3.5")
+  }`,                                              // text or a path; a throwaway tmpdir, never the app's file
+  // migrations: 'db/migrations',                  // replay committed SQL instead of generating DDL
+  autoFactories: true,                             // env.factories.<accessor>; empty without it
+  plugins:       [new GatePlugin({ getLevel })],
+})
+const mismatches = await env.verifyGateLadder()    // every gated model × level × op
+if (mismatches.length) throw new Error(JSON.stringify(mismatches))   // [] is a pass
+await env.factories.lead.asSystem().createOne()
+env.close()
+```
+
+- **Seeding past a gate is a system concern.** An unauthenticated factory grades
+  `STRANGER` and throws `AccessDeniedError`. Seed with `env.factories.lead.asSystem()
+  .withParents().createOne()`, or in `env.setup(({ factories }) => …)` /
+  `env.phases().arrange(…)`, whose factories are system-bound. A `@guarded` column
+  cannot be seeded as a non-system principal (`FJS-2367`).
+- **`env.actingAs(user)` is the app's `getLevel`; `env.atLevel(n)` is a synthetic
+  one.** Use `actingAs` for any claim about behavior and `atLevel` only to walk the grid.
+- **The verifiers answer a list of mismatches; `[]` passes.** `verifyGateLadder`,
+  `verifyReadLadder`, `verifyFieldProtection`, `verifyRowPolicies`,
+  `verifyConstraints`, `verifyTenantIsolation`. A `got: 'error'` or `'skipped'` is
+  not a verdict — read it.
+- **Arrange / Act / Assert is three clients:** `env.phases({ as: user })` →
+  `arrange` (system), `act` (the principal, once), `assert` (the principal, read-only).
+- **`env.clock` moves `now()`**, in a row policy and `@@softDelete`'s stamp. It does
+  not move `@default(now())` or `@updatedAt`; state those on the write.
+- **The audit trail is a model in the env.** `await env.system.auditTrail.findMany({
+  where: { model: 'lead' } })` after one tick (`await new Promise(r => setTimeout(r, 0))`).
+  Its `model` is the accessor spelling, and `records`/`before`/`after` come back as JSON
+  strings. `db.$audit({ operation, model, records })` writes an entry by hand (`meta`
+  is never redacted). **Declare `database main { … }` beside a `trail` database**, or
+  `createTestEnv` throws a bare `TypeError` (`FJS-2532`).
+- **Local file storage is the double.** `plugins: [FileStorage({ provider: 'local',
+  localPath: tempDir('myapp-') })]` from `@frontierjs/litestone/storage`; a `File`
+  column takes `new File([bytes], 'x.png', { type })` or `fromPath(p)`, never a
+  hand-built `{ key, name }` ref (`ValidationError`), and the bytes land at
+  `<localPath>/<Model>/<field>/<uuid>.<ext>` for the test to read.
+- **Hand-written factories** are `defineFactory({ model: 'User', definition: seq => ({…}) })`
+  passed as `factories: { user: … }`; `seed:` makes the RNG deterministic.
+- **Nothing here mocks a module.** Pass a real client,
+  a real plugin, a real double.
+
+---
+
 ## Checklist before emitting a schema
 
 1. Every model name is **PascalCase singular**.

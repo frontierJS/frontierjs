@@ -55,6 +55,21 @@ model Draft {
   hidden Boolean @default(false)
   @@deny('read', hidden == true)
 }
+
+// Read is on the grid and on nothing else: no gate, no policy. Each verb is a
+// capability the caller's role holds (FJS-2527).
+model Lead {
+  id   Int    @id @default(autoincrement())
+  name String
+  @@capabilities(all)
+}
+
+// The grid without \`(all)\`: writes and moves only, so read stays open.
+model Memo {
+  id   Int    @id @default(autoincrement())
+  body String
+  @@capabilities
+}
 `
 
 const client = () => createClient({ schema: SCHEMA, resolveFrom: import.meta.dir })
@@ -87,6 +102,33 @@ describe('who may see the row at all', () => {
     const db = await client()
     expect(await db.$readAs('ledger', { id: 1, memo: 'x' }, owner)).toBeNull()
     expect((await db.$readAs('ledger', { id: 1, memo: 'x' }, { id: 'a', isAdmin: true }))?.memo).toBe('x')
+  })
+})
+
+describe('the capability grid, where (all) puts read on it — FJS-2527', () => {
+  test('a reader whose grant lacks Model.read is refused the row a query would not have answered', async () => {
+    const db = await client()
+    const row = { id: 1, name: 'Casey' }
+    expect(await db.$readAs('lead', row, { id: 'site', capabilities: ['Lead.create'] })).toBeNull()
+    expect(await db.$readAs('lead', row, { id: 'guest' })).toBeNull()
+    expect(await db.$readAs('lead', row, null)).toBeNull()
+  })
+
+  test('and the control — a reader holding Lead.read gets the row', async () => {
+    const db = await client()
+    const row = { id: 1, name: 'Casey' }
+    expect(await db.$readAs('lead', row, { id: 'closer', capabilities: ['Lead.read'] })).toEqual(row)
+  })
+
+  test('a grid that leaves read off grades nothing on read', async () => {
+    const db = await client()
+    expect(await db.$readAs('memo', { id: 1, body: 'x' }, { id: 'anyone' })).toEqual({ id: 1, body: 'x' })
+    expect(db.$readGrading('memo')).toBe('open')
+  })
+
+  test('a model whose only read rule is its grid is graded, not open', async () => {
+    const db = await client()
+    expect(db.$readGrading('lead')).toBe('graded')
   })
 })
 
@@ -177,5 +219,67 @@ describe('the sibling contract', () => {
   test('a null row is null, never an empty object', async () => {
     const db = await client()
     expect(await db.$readAs('order', null, staff)).toBeNull()
+  })
+})
+
+describe('$readReach — which writes can take a row from its reader', () => {
+  // A revoked share writes a Share, never the Page, so a reader holding the
+  // page is asked again only if the Share is known to decide it (`FJS-1743`).
+  const REACH = `
+database main { path ":memory:" }
+
+model Workspace {
+  id      Int    @id @default(autoincrement())
+  ownerId String
+  pages   Page[]
+  @@allow('read', ownerId == auth().id)
+}
+
+model Page {
+  id          Int       @id @default(autoincrement())
+  workspaceId Int
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  ownerId     String
+  shares      Share[]
+  blocks      Block[]
+  @@allow('read', ownerId == auth().id || shares.some(userId == auth().id) || workspace.ownerId == auth().id)
+}
+
+model Share {
+  id     Int    @id @default(autoincrement())
+  pageId Int
+  page   Page   @relation(fields: [pageId], references: [id])
+  userId String
+}
+
+model Block {
+  id     Int  @id @default(autoincrement())
+  pageId Int
+  page   Page @relation(fields: [pageId], references: [id])
+  @@allow('read', check(page))
+}
+
+model Tag {
+  id   Int    @id @default(autoincrement())
+  name String
+}
+`
+  const reachClient = () => createClient({ schema: REACH, resolveFrom: import.meta.dir })
+
+  test('a path and a .some() reach the models they cross into', async () => {
+    const db = await reachClient()
+    expect(db.$readReach('page')).toEqual(['Page', 'Share', 'Workspace'])
+  })
+
+  test('a check() reaches the delegated model and everything IT reaches', async () => {
+    const db = await reachClient()
+    expect(db.$readReach('block')).toEqual(['Block', 'Page', 'Share', 'Workspace'])
+  })
+
+  test('a model with no policy reaches itself, and an unknown accessor nothing', async () => {
+    const db = await reachClient()
+    expect(db.$readReach('tag')).toEqual(['Tag'])
+    expect(db.$readReach('nope')).toEqual([])
+    expect(db.asSystem().$readReach('block')).toEqual(db.$readReach('block'))
   })
 })

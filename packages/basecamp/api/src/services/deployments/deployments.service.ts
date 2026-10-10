@@ -18,7 +18,7 @@ import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { announce } from '../../channels.ts'
-import { isInline, isGit, imageOf } from '../../core/app-source.ts'
+import { isInline, isGit, imageOf, inlineFilesFor } from '../../core/app-source.ts'
 import { snapshotVariables } from '../../core/variables.ts'
 import { runtimeOf } from '../../core/runtime.ts'
 
@@ -51,10 +51,15 @@ const WITH_APP = { app: { include: { environment: true } }, environment: true }
  * push: there is no registry between the two. `built` is a release putting back
  * bytes an earlier one already built (a rollback) — building again would ship
  * the branch as it is now, which is neither release.
+ *
+ * An inline source holding no files is a release of bytes the machine already
+ * holds, named by digest — a preview's Freeze publishes its build itself.
  */
 function buildInitialSteps(target: { type: string; source?: unknown }, built = false): string[] {
   if (isInline(target.source))
-    return ['Validate', 'Upload files', 'Activate', 'Health check']
+    return inlineFilesFor(target.source).length
+      ? ['Validate', 'Upload files', 'Activate', 'Health check']
+      : ['Validate', 'Activate', 'Health check']
   if ((target.type === 'container' || target.type === 'function') && isGit(target.source))
     return built
       ? ['Validate', 'Start container', 'Health check']
@@ -173,8 +178,16 @@ export function createDeploymentsService(app: BasecampApp) {
       // What the app looked like at release time: how its container starts
       // (`core/runtime.ts`) and its variables — plain values copied, secrets by
       // id (`core/variables.ts`).
+      //
+      // An inline app's release that states a digest is of bytes already on
+      // the machine (a preview's Freeze), so its snapshot holds no files: the
+      // app's own would be uploaded over the digest, and a rollback to it
+      // would put back the app's files rather than the bytes that served.
+      const held = isInline(target.source) && data.builtImage != null
+      if (held && !/^sha256:[0-9a-f]{64}$/.test(String(data.builtImage)))
+        throw new BadRequest(`'${data.builtImage}' is not a digest — a release of bytes the machine holds names them as sha256:<64 hex>`)
       data.configSnapshot = {
-        source: target.source ?? {}, runtime: runtimeOf(target),
+        source: held ? { kind: 'inline', files: [] } : target.source ?? {}, runtime: runtimeOf(target),
         ...await snapshotVariables(db(), target),
       }
       data.toImage      ??= imageOf(target.source)
@@ -191,7 +204,7 @@ export function createDeploymentsService(app: BasecampApp) {
       const deployment = await db().deployment.create({ data })
 
       await db().deploymentStep.createMany({
-        data: buildInitialSteps(target).map((name, position) => ({
+        data: buildInitialSteps({ type: target.type, source: (data.configSnapshot as any).source }).map((name, position) => ({
           deploymentId: deployment.id, position, name, status: 'pending',
         })),
       })

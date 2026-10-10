@@ -81,6 +81,7 @@ export type { CallContext } from './src/core/context.ts'
 
 // ─── Transport ────────────────────────────────────────────────────────────
 export { HttpTransport }                                          from './src/transport/http.ts'
+export type { WsRouteOptions }                                    from './src/transport/http.ts'
 export { Router }                                                 from './src/transport/router.ts'
 export { parseBody, parseQuery, parseCookies, extractIP }         from './src/transport/body.ts'
 export { serveStatic }                                            from './src/transport/static.ts'

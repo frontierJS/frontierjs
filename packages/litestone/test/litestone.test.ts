@@ -5479,6 +5479,26 @@ describe("databases: ':memory:'", () => {
     db.$close()
   })
 
+  // FJS-2418: one handle serves reads and writes, so ATTACH runs once
+  test('$attach and $detach work on an in-memory client', async () => {
+    const archivePath = tmpDb('attach-mem-archive')
+    const archive = new Database(archivePath)
+    archive.run('CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT)')
+    archive.run("INSERT INTO accounts VALUES (100, 'Archive Corp')")
+    archive.close()
+
+    const db = await makeDb(`
+      model User { id Int @id; name String }
+    `, 'inmem-attach', { databases: ':memory:' })
+    db.$attach(archivePath, 'archive')
+    expect(db.$attached).toContain('archive')
+    const rows = await db.sql`SELECT name FROM archive.accounts`
+    expect(rows).toHaveLength(1)
+    db.$detach('archive')
+    expect(db.$attached).not.toContain('archive')
+    db.$close()
+  })
+
 })
 
 // ─── $walStatus() ────────────────────────────────────────────────────────────
@@ -9745,7 +9765,7 @@ describe('FileStorage plugin', () => {
     class SpyPlugin extends (await import('../src/core/plugin.js')).Plugin {
       async onAfterDelete(_model: string, rows: any[]) {
         for (const row of rows) {
-          if (row.avatar) deleted.push(JSON.parse(row.avatar).key)
+          if (row.avatar) deleted.push(row.avatar.key)
         }
       }
     }

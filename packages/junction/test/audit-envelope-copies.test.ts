@@ -60,8 +60,7 @@ describe('the browser client asks the owner when a push arrives', () => {
     expect(store.get().find((r: any) => r.id === 2)).toEqual(pushed)
   })
 
-  // FJS-2441: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a pushed row whose kind column reads "single" lands in the store as itself', async () => {
+  test('a pushed row whose kind column reads "single" lands in the store as itself', async () => {
     const page = pageClient([{ id: 1, kind: 'note', data: 'hello', status: 'paid' }])
     const { store, load } = page.resource('messages')
     await load()

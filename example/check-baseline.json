@@ -1,0 +1,9 @@
+{
+  "allow": {
+    "test-port-literal:web/test/verify-replicate.mjs": "8333 is the port INSIDE the SeaweedFS container, mapped from the drive's own S3_PORT; nothing on the host binds it.",
+    "test-port-literal:web/test/verify-tui.mjs": "7999 is a port nothing holds, on purpose: the drive proves the frame renders with the API unreachable.",
+    "test-port-literal:web/test/verify-widget.mjs": "The buy-button HTML names the dev origins, and this drive rewrites each to the port it started (replaceAll on the three strings).",
+    "test-port-literal:extension/test/verify.mjs": "7710 is in the extension manifest's host permissions, a file the build emits, so the drive cannot pick its port at run time.",
+    "test-port-literal:site/test/verify-account.mjs": "8112 is the example API's own provider sink, bound from a literal there (FJS-2496); the drive follows it until that moves."
+  }
+}

@@ -264,6 +264,20 @@ export function buildLogEntry({ operation, model, field, transition, records, be
   return entry
 }
 
+/**
+ * The entry for a jsonl trail: its Json columns as values. A SQL trail is handed
+ * the text, because its table stores a string as given and decodes it on read; a
+ * jsonl line stores whatever it is handed, so text there reads back as a quoted
+ * string where a user model's Json column answers the object.
+ * @param {Record<string, any>} entry
+ */
+export function jsonlTrailEntry(entry) {
+  const out = { ...entry }
+  for (const column of ['records', 'before', 'after', 'meta'])
+    if (typeof out[column] === 'string') out[column] = JSON.parse(out[column])
+  return out
+}
+
 // Fire-and-forget write to a log table.
 // Never blocks, never throws to caller.
 // Uses setImmediate (or setTimeout fallback) to push the I/O outside the current

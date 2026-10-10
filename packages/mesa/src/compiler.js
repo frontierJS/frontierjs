@@ -2547,11 +2547,30 @@ export const parseAttributes = (source, option = {}) => {
 
 // ─── 4. ANALYZER ──────────────────────────────────────────────────────────────
 
+// The names a function's parameter list binds. They are not reads of anything
+// outside it: `(bar, e) => bar + e` beside a top-level `const bar` depends on
+// nothing, and counting `bar` made the pair a circular dependency.
+function paramBindings(fn, into) {
+  const bind = (p) => {
+    if (!p) return
+    if (p.type === 'Identifier') into.add(p.name)
+    else if (p.type === 'ObjectPattern') p.properties.forEach((pr) => bind(pr.value ?? pr.argument))
+    else if (p.type === 'ArrayPattern') p.elements.forEach(bind)
+    else if (p.type === 'AssignmentPattern') bind(p.left)
+    else if (p.type === 'RestElement') bind(p.argument)
+  }
+  fn.params.forEach(bind)
+  return into
+}
+
 function collectRefs(node) {
   const refs = new Set()
-  const walk = (n, parentKey, parent) => {
+  const walk = (n, parentKey, parent, shadowed) => {
     if (!n || typeof n !== 'object') return
-    if (n.type === 'Identifier') {
+    if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/.test(n.type) && n.params.length) {
+      shadowed = paramBindings(n, new Set(shadowed))
+    }
+    if (n.type === 'Identifier' && !shadowed?.has(n.name)) {
       // Skip identifiers that are non-computed property keys — they're names,
       // not references to variables. Covers:
       //   { name: 'Alice' }       → 'name' is a Property key, not a ref
@@ -2565,8 +2584,8 @@ function collectRefs(node) {
     for (const k of Object.keys(n)) {
       if (k === 'start' || k === 'end' || k === 'type') continue
       const c = n[k]
-      if (Array.isArray(c)) c.forEach((i) => { if (i?.type) walk(i, k, n) })
-      else if (c?.type) walk(c, k, n)
+      if (Array.isArray(c)) c.forEach((i) => { if (i?.type) walk(i, k, n, shadowed) })
+      else if (c?.type) walk(c, k, n, shadowed)
     }
   }
   walk(node, null, null)
@@ -6181,7 +6200,7 @@ export function constDeclaration(ctx, tagValue) {
     ]
   } else if (memo) {
     register(names[0], `${memo}()`)
-    lines = [`const ${memo} = $$runtime.createMemo(() => ${code});`, `const ${names[0]} = ${memo}();`]
+    lines = [`const ${memo} = $$runtime.createMemo(() => (${code}));`, `const ${names[0]} = ${memo}();`]
   } else {
     for (const nm of names) if (ctx.accessors?.[nm] !== undefined) register(nm, nm)
     lines = [`const ${pattern ? pattern.source : names[0]} = ${code};`]
@@ -9881,7 +9900,7 @@ export async function compile(source, config = {}) {
       if (index == null) return null
       _diagLocate ??= makeLocator(source)
       const { line, column } = _diagLocate(index)
-      return `${_locFile || '<mesa>'}:${line}:${column}`
+      return `${_locFile || '<mesa>'}:${config.locLines?.[line - 1] ?? line}:${column}`
     },
     // Present only when the file carried a `---` block. A caller that keeps its
     // own frontmatter parser (Sierra's scanner does) is unaffected; a caller

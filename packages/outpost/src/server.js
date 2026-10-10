@@ -208,9 +208,26 @@ export function createOutpostServer(config, {
     'POST /static/publish':  (body) => statics.publish({
       appId: body.app_id, slug: body.slug, files: body.files, keep: body.keep,
     }),
-    'POST /static/activate': (body) => statics.activate({ appId: body.app_id, slug: body.slug, digest: body.digest }),
+    //
+    // `/static/activate` names the app's hostnames the way `/deploy` does, and
+    // Caddy routes them to the static origin under the app's ID — never its
+    // slug, which another app on this machine may hold. The route moves first:
+    // a swap that fails leaves the hostnames on the release already live. A
+    // list that dropped its last hostname drops the route.
+    'POST /static/activate': async (body) => {
+      const hosts = hostsOf(body.hosts)
+      if (hosts.length) {
+        if (!config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
+        await ingress.route({ appId: body.app_id, hosts, port: config.staticPort, host: `${body.app_id}.localhost` })
+      } else if (body.hosts) await ingress.unroute({ appId: body.app_id })
+      return { ...await statics.activate({ appId: body.app_id, slug: body.slug, digest: body.digest }), hosts }
+    },
     'POST /static/health':   (body) => statics.healthCheck({ appId: body.app_id, digest: body.digest }),
-    'POST /static/retire':   (body) => statics.retire({ appId: body.app_id, slug: body.slug }),
+    // Off the air means off every hostname too, whichever port the route dialed.
+    'POST /static/retire':   async (body) => ({
+      ...await statics.retire({ appId: body.app_id, slug: body.slug }),
+      ...await ingress.unroute({ appId: body.app_id }).then(r => ({ unrouted: r.removed })),
+    }),
     'POST /static/releases': (body) => statics.releases({ appId: body.app_id }),
 
     'POST /system/prune':  (body) => inspector.prune({ targets: body.targets, keepImages: body.keep_images })

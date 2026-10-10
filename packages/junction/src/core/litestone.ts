@@ -29,7 +29,7 @@ import { createSchema } from './schema.ts'
 import type { Schema, FieldDef } from './schema.ts'
 import { serviceAccessor } from './service.ts'
 import type { HookMap } from './hooks.ts'
-import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
+import { NotFound, BadRequest, Unauthorized, Forbidden, FrameworkError } from './errors.ts'
 import { fieldError } from './field-errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
@@ -186,7 +186,7 @@ export interface ParsedQuery {
   limit:  number
   after?: string    // $after — the window's far edge, opaque (`FJS-D145`)
   select?: Record<string, boolean>
-  include?: Record<string, boolean | { select: Record<string, boolean> }>
+  include?: IncludeTree
   search?:         string    // $search — FTS5 via table.search()
   withDeleted?:    boolean   // $withDeleted — include soft-deleted rows
   onlyDeleted?:    boolean   // $onlyDeleted — show only soft-deleted rows
@@ -419,21 +419,32 @@ const parseSelect = normalizeSelect
 
 type PopulateParam = string | string[]
 
-function parsePopulate(
-  populate: PopulateParam
-): Record<string, boolean | { select: Record<string, boolean> }> {
+type IncludeTree = { [relation: string]: boolean | IncludeNode }
+type IncludeNode = { select?: Record<string, boolean>; include?: IncludeTree }
+
+// `words.lemma:root` is the second level: the dots before the colon are the
+// path, so `words:text,words.lemma` lands on one `words` node. Litestone's
+// `include` is already a tree — this only spells it.
+function parsePopulate(populate: PopulateParam): IncludeTree {
   const relations = Array.isArray(populate) ? populate : populate.split(',')
-  const result: Record<string, boolean | { select: Record<string, boolean> }> = {}
+  const result: IncludeTree = {}
 
   for (const rel of relations.map(r => r.trim())) {
     const colonIdx = rel.indexOf(':')
-    if (colonIdx === -1) {
-      result[rel] = true   // already trimmed above
-    } else {
-      const name = rel.slice(0, colonIdx).trim()
-      const fields = rel.slice(colonIdx + 1).split('+').map((f) => f.trim())
-      result[name] = { select: parseSelect(fields) }
-    }
+    const path = (colonIdx === -1 ? rel : rel.slice(0, colonIdx)).split('.').map(s => s.trim())
+    let level = result
+    path.forEach((name, i) => {
+      if (i === path.length - 1) {
+        if (colonIdx === -1) { level[name] ??= true; return }
+        const fields = rel.slice(colonIdx + 1).split('+').map((f) => f.trim())
+        const node = level[name]
+        level[name] = { ...(typeof node === 'object' ? node : {}), select: parseSelect(fields) }
+        return
+      }
+      let node = level[name]
+      if (typeof node !== 'object') node = level[name] = {}
+      level = node.include ??= {}
+    })
   }
 
   return result
@@ -3419,6 +3430,46 @@ async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: Pri
   return claims
 }
 
+const WRITE_VERBS = new Set([
+  'create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany',
+  'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'transition',
+])
+
+/**
+ * The client a custom method declared `read: true` is handed (`FJS-D581`).
+ * `read` turns off the idempotency cache and the announcement, so a write made
+ * under it would spend twice on a signed-in retry and tell nobody; this throws
+ * at the first one, before the statement, and the call's transaction rolls
+ * back. Covers the handed-over client only: `asSystem()`, an imported root
+ * client and a raw statement walk past it.
+ */
+function refuseWrites(client: unknown, service: string, method: string): unknown {
+  if (!client || typeof client !== 'object') return client
+  const guard = (model: string, accessor: object) => new Proxy(accessor, {
+    get(target, verb) {
+      const v = Reflect.get(target, verb, target)
+      if (typeof verb !== 'string' || typeof v !== 'function') return v
+      if (!WRITE_VERBS.has(verb)) return v.bind(target)
+      return () => {
+        throw new FrameworkError(
+          `${service}.${method} is declared read: true and called ${model}.${verb}. ` +
+          `A read keeps no idempotent answer and announces nothing, so a write under it would ` +
+          `repeat on a retry and tell no one. Drop read: true from the method.`,
+          { service, method, model, verb })
+      }
+    },
+  })
+  return new Proxy(client, {
+    get(target, prop) {
+      const v = Reflect.get(target, prop, target)
+      if (typeof prop !== 'string') return v
+      if (typeof v === 'function') return v.bind(target)
+      if (v && typeof v === 'object' && !prop.startsWith('$')) return guard(prop, v)
+      return v
+    },
+  })
+}
+
 export function withLitestoneDb(
   db:         unknown,
   principal?: PrincipalSetting,
@@ -3443,6 +3494,8 @@ export function withLitestoneDb(
       ctx.auth?.user && typeof client?.$setAuth === 'function'
         ? client.$setAuth(toDataPrincipal(ctx.auth.user))
         : client
+
+    if (ctx.locals.readCall) ctx.locals.db = refuseWrites(ctx.locals.db, ctx.service, ctx.method) as LitestoneClient
 
     // Before the resolver, because most apps have no resolver: the claim came
     // from `sessionFields` at sign-in and is already on the principal.
@@ -4711,8 +4764,74 @@ export function announceDataWrites(
     return coveredWrite(name, id, announce)
   }
 
+  // ── A write that changes who may read ANOTHER model's rows ──────────────
+  //
+  // A frame is graded against the row that was written, so a revoked Share
+  // reached no page store: the page row never changed, the reader kept it on
+  // screen, and a grantee was never shown it (`FJS-1738`). Litestone answers
+  // which models a read policy reaches (`$readReach`), and every service over a
+  // model whose read reaches the written one is told `changed`, count-only and
+  // graded by the gate as a bulk write is, so its stores re-read (`FJS-D597`).
+  // A covering service call does not cover these: it announces its own row.
+  //
+  // Coalesced per tick and per service, because a grant copied down a tree
+  // writes one row per page and one re-read answers all of them.
+  let dependents: Map<string, Set<string>> | null = null
+  let dependentsAt: number | undefined
+  const modelOf = new Map<string, string>()
+
+  const dependentsOf = (model: string): string[] => {
+    if (!dependents || dependentsAt !== app.services.version) {
+      dependents   = new Map()
+      dependentsAt = app.services.version
+      modelOf.clear()
+      for (const name of app.services.list()) {
+        const svc      = app.services.get(name) as { model?: string | null } | undefined
+        const accessor = serviceAccessor({ name, model: svc?.model })
+        if (!accessor) continue
+        let reach: string[] = []
+        try {
+          const fn = (db as { $readReach?: (a: string) => string[] }).$readReach
+          if (typeof fn === 'function') reach = fn(accessor)
+        } catch { /* a client predating $readReach, or a name it does not know */ }
+        const spellings = new Set(accessorCandidates(accessor).map(c => c.toLowerCase()))
+        for (const reached of reach) {
+          const key = reached.toLowerCase()
+          if (spellings.has(key)) { modelOf.set(name, reached); continue }
+          let set = dependents.get(key)
+          if (!set) dependents.set(key, set = new Set())
+          set.add(name)
+        }
+      }
+    }
+    const hit = dependents.get(model.toLowerCase())
+    if (!hit) return []
+    const own = new Set(servicesFor(model))
+    return [...hit].filter(name => !own.has(name))
+  }
+
+  let pending: Set<string> | null = null
+  const regrade = (model: string): void => {
+    const names = dependentsOf(model)
+    if (!names.length) return
+    if (!pending) {
+      pending = new Set()
+      setImmediate(() => {
+        const due = pending!
+        pending = null
+        for (const name of due) {
+          const detail = { model: modelOf.get(name) ?? name, operation: 'regrade', count: null }
+          app.events?.emit(`${name}:changed`, detail)
+          sendToChannel(name, 'changed', detail, 'gate')
+        }
+      })
+    }
+    for (const name of names) pending.add(name)
+  }
+
   return tap((e) => {
     if (!e.model) return
+    if (e.event === 'transition' || PAST[e.event as string]) regrade(e.model)
 
     // ── A state move ──────────────────────────────────────────────────────
     // A transition is a row change and announces like one. It arrives under

@@ -39,10 +39,12 @@ import { dirname, join, resolve, sep } from 'node:path'
 // Outpost is not talked into filling its disk by a control plane that has been
 // taken, and so the failure is a named 500 rather than ENOSPC halfway through.
 
+// Sized for a built single-page app as well as a paste: the route-split
+// builds in this workspace run 25 to 180 files and up to 4 MB.
 export const LIMITS = {
-  files:      50,
-  fileBytes:  2 * 1024 * 1024,
-  totalBytes: 8 * 1024 * 1024,
+  files:      500,
+  fileBytes:  4 * 1024 * 1024,
+  totalBytes: 24 * 1024 * 1024,
   pathLength: 400,
 }
 
@@ -275,6 +277,10 @@ export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl 
       if (!stat?.isDirectory()) fail(`this machine does not hold release ${digest} of this app`)
 
       await swap(dir, digest)
+      // The id's own link is what a routed hostname reaches (`server.js`): a
+      // slug is a label any app on this machine may hold, so a hostname
+      // routed by slug serves whichever app activated it last.
+      await linkHost(appId, appId)
       const host = await linkHost(slug, appId)
       // Where it can be reached, said by the machine serving it. A console
       // assembling this from a port and a slug is a console guessing, and the
@@ -306,6 +312,7 @@ export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl 
     async retire({ appId, slug }) {
       const dir = appDir(appId)
       await fsp.rm(join(dir, 'current'), { force: true })
+      await fsp.rm(join(hostsDir, appId), { force: true })
       if (slug) {
         const bad = validName(slug, 'slug')
         if (bad) fail(bad)

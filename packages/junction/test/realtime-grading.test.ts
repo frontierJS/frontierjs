@@ -398,3 +398,141 @@ describe('a write from a second process is graded like a local one (FJS-2159)', 
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
+
+// ─── FJS-1738 ─────────────────────────────────────────────────────────────
+
+// A read policy that crosses a relation makes a Page's readers depend on rows
+// of Share, and a Block's on its Page through check(): a revoked share writes
+// no page, so a frame graded against the written row reaches no page store.
+const REACH_SCHEMA = `
+  model Page {
+    id     Int     @id @default(autoincrement())
+    title  String
+    shares Share[]
+    blocks Block[]
+    @@gate("1.4.4.5")
+    @@allow('read', shares.some(userId == auth().id))
+  }
+  model Share {
+    id     Int  @id @default(autoincrement())
+    pageId Int
+    page   Page @relation(fields: [pageId], references: [id])
+    userId Int
+    @@gate("1.4.4.5")
+    @@allow('read', userId == auth().id)
+  }
+  model Block {
+    id     Int    @id @default(autoincrement())
+    pageId Int
+    page   Page   @relation(fields: [pageId], references: [id])
+    body   String
+    @@gate("1.4.4.5")
+    @@allow('read', check(page))
+  }
+  model Tag {
+    id   Int    @id @default(autoincrement())
+    name String
+    @@gate("1.4.4.5")
+  }
+`
+
+async function mkReachApp() {
+  const db: any = await createClient({ db: ':memory:', schema: REACH_SCHEMA })
+  const app: any = createApp({
+    db,
+    logLevel: 'silent',
+    config: { port: 0, services: { dir: '/nonexistent' } },
+    auth: {
+      verifySession: async (token: string) => {
+        const u = sessionFor(token)
+        if (!u) throw new Error('bad token')
+        return u
+      },
+    },
+  })
+  for (const [name, model] of [['pages', 'Page'], ['shares', 'Share'], ['blocks', 'Block'], ['tags', 'Tag']])
+    app.services.register(createService({ name, model, channel: name }))
+  app.configure(channels((a: any) => {
+    a.channels.on('connection', (_s: unknown, conn: unknown) => {
+      for (const name of ['pages', 'shares', 'blocks', 'tags']) a.channel(name).join(conn)
+    })
+  }))
+  await app.start()
+  running.push(app)
+  const sys = db.asSystem()
+  const page = await sys.page.create({ data: { title: 'D' } })
+  await sys.block.create({ data: { pageId: page.id, body: 'one' } })
+  return { app, db, sys, page, port: app.http.port as number }
+}
+
+describe('a write that changes who may read OTHER rows (FJS-1738)', () => {
+
+  test('a revoked share tells every model whose read reaches Share to re-read', async () => {
+    const { sys, page, port } = await mkReachApp()
+    const share = await sys.share.create({ data: { pageId: page.id, userId: 5 } })
+    const gus = open(port, 'u5')
+    const anon = open(port)
+    expect(await ready(gus)).toBe(true)
+    expect(await ready(anon)).toBe(true)
+
+    await sys.share.delete({ where: { id: share.id } })
+    await settle()
+
+    // The Share row is gus's own, so it arrives graded; what it decided — the
+    // page and, through check(page), its blocks — arrives as a count-only
+    // changed, which is what a live store re-reads on. Tag's read reaches no
+    // Share and hears nothing.
+    expect(gus.events.map(e => e.event).sort()).toEqual(['blocks changed', 'pages changed', 'shares removed'])
+    const changed = gus.events.find(e => e.event === 'pages changed')
+    expect(changed.data).toEqual({ model: 'Page', operation: 'regrade', count: null })
+    // Gate mode: below the read gate nothing is said, not even that something changed.
+    expect(anon.events).toEqual([])
+  })
+
+  test('a grant through the SERVICE still reaches the dependent models', async () => {
+    const { sys, page, port } = await mkReachApp()
+    // The owner's own share, so the page the grant names is one they can read.
+    await sys.share.create({ data: { pageId: page.id, userId: 1 } })
+    const gus = open(port, 'u5')
+    expect(await ready(gus)).toBe(true)
+    await settle()
+    gus.events.length = 0
+
+    // The service call announces its own row and nothing else, so the
+    // dependents are not covered by it.
+    const res = await fetch(`http://localhost:${port}/shares`, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer admin' },
+      body:    JSON.stringify({ pageId: page.id, userId: 5 }),
+    })
+    expect(res.status).toBe(201)
+    await settle()
+
+    expect(gus.events.map(e => e.event).sort()).toEqual(['blocks changed', 'pages changed', 'shares created'])
+  })
+
+  test('a burst of writes is one changed per dependent model', async () => {
+    const { sys, page, port } = await mkReachApp()
+    const gus = open(port, 'u5')
+    expect(await ready(gus)).toBe(true)
+
+    await sys.$transaction(async (tx: any) => {
+      for (let i = 0; i < 20; i++) await tx.share.create({ data: { pageId: page.id, userId: 100 + i } })
+    })
+    await settle()
+
+    expect(gus.events.filter(e => e.event === 'pages changed')).toHaveLength(1)
+    expect(gus.events.filter(e => e.event === 'blocks changed')).toHaveLength(1)
+  })
+
+  test('a write to a model no read policy reaches announces only itself', async () => {
+    const { sys, port } = await mkReachApp()
+    const gus = open(port, 'u5')
+    expect(await ready(gus)).toBe(true)
+
+    await sys.tag.create({ data: { name: 'x' } })
+    await settle()
+
+    expect(gus.events.map(e => e.event)).toEqual(['tags created'])
+  })
+})

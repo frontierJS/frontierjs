@@ -86,10 +86,9 @@ await db.user.delete({ where: { id: 1 } })
 
 `@accept` grades the BYTES, not the name: the type is sniffed from the content where the format has a signature, and the claim (`File.type`, the extension) stands only where nothing identifies the bytes. A refused upload is a `ValidationError` naming the model, the field, the type found and the list accepted.
 
-**A `File[]` is not cleaned up with its row yet.** The row delete removes a single `File?` object; the objects a `File[]` names stay in storage:
+A row delete removes the objects a `File?` or a `File[]` names:
 
-```js failing
-// FJS-2419 — a File[] column reads as empty and its objects outlive the row
+```js
 import { FileStorage } from '@frontierjs/litestone/storage'
 import { readdirSync } from 'node:fs'
 
@@ -105,7 +104,7 @@ if (readdirSync('./storage/User/photos').length !== 0) throw new Error('the phot
 
 ## Resolving URLs
 
-With `autoResolve: true` (the default), a single `File?` field reads as a URL — `publicBase` (or, failing that, `endpoint`) joined to the stored key. A local store declaring neither reads as `null` (`FJS-1504`), and a `File[]` reads as `[]` whatever the store, because the array arrives at the resolver already parsed and is taken for empty — the same fault that leaves its objects behind on delete:
+With `autoResolve: true` (the default), a single `File?` field reads as a URL — `publicBase` (or, failing that, `endpoint`) joined to the stored key. A local store declaring neither reads as `null` (`FJS-1504`), and a `File[]` reads as the list of those URLs:
 
 ```js
 import { FileStorage } from '@frontierjs/litestone/storage'
@@ -122,7 +121,7 @@ user.avatar   // → 'https://cdn.example.com/User/avatar/<uuid>.png'
 if (!String(user.avatar).startsWith('https://cdn.example.com/User/avatar/')) throw new Error(`expected a URL, got ${user.avatar}`)
 ```
 
-The row a `create` or `update` answers is not resolved: it carries the stored ref as written, a JSON string. To get the raw reference on a read (for custom signing, etc.):
+The row a `create` or `update` answers is not resolved: it carries the stored ref as written, the parsed object. To get the raw reference on a read (for custom signing, etc.):
 
 ```js
 import { FileStorage, parseRef } from '@frontierjs/litestone/storage'
@@ -143,7 +142,7 @@ const ref = parseRef(user.avatar)
 if (ref.mime !== 'image/png' || ref.size !== 70) throw new Error('expected the stored ref')
 ```
 
-The ref is stored as a JSON string; `parseRef` turns one into the object.
+The ref is stored as JSON text and read back as the object; `parseRef` also turns the text into the object, for a ref held outside a row.
 
 ## Utilities
 

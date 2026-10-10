@@ -478,9 +478,9 @@ const CALL_OPERATION = 'mcp.call'
 type Outcome = 'done' | 'refused' | 'rejected' | 'failed'
 
 interface TrailRow {
-  records?:   string | null
+  records?:   string[] | null
   actorId?:   string | null
-  meta?:      string | null
+  meta?:      Record<string, unknown> | null
   createdAt?: string
 }
 
@@ -556,12 +556,11 @@ async function recordCall(
 
 /** One trail row as `/calls` answers it. */
 function callOf(r: TrailRow) {
-  const meta = JSON.parse(r.meta ?? '{}') as Record<string, unknown>
   return {
     at:      r.createdAt ?? null,
     actorId: r.actorId ?? null,
-    records: JSON.parse(r.records ?? '[]') as string[],
-    ...meta,
+    records: r.records ?? [],
+    ...r.meta,
   }
 }
 

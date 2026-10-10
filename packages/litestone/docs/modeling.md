@@ -149,6 +149,33 @@ Four things follow, and each of them is the reason it is spelled this way:
   existence is the gate's — `@@gate("1.8.8.8")` on the model is what says *and
   nobody deletes one*.
 
+A column that is written AT a later move and frozen from then — a signature,
+written by the accept after the terms were sealed at approve — takes
+`@immutable(after: <move>)`:
+
+```lite
+enum OfferState { draft  approved  sent  accepted  declined }
+
+model Offer {
+  id         Int        @id
+  status     OfferState @default(draft)
+  terms      String     @immutable                 // ← frozen at the seal
+  signedName String?    @immutable(after: accept)  // ← writable until accepted
+  @@transitions(status,
+    approve: draft    -> approved @seals,
+    send:    approved -> sent,
+    accept:  sent     -> accepted,
+    decline: sent     -> declined)
+}
+```
+
+It is writable until the named move's target and refused from there and from
+every state reachable from it, by the same closure the seal uses. The accept may
+carry the column in the same write. A model with no `@seals` move may use it
+too. Bare `@immutable` keeps its two meanings. It reaches the client as
+`x-litestone-kind: 'immutable-after'` with the state column, the frozen set and
+the move in `x-litestone-frozen`.
+
 A refused write raises `SealedDocumentError` — a 409, `retryable: false` — which
 names the document, the state it was found at and the relation or the columns.
 The guard rides the WHERE like the transition compare-and-swap and the `@version`

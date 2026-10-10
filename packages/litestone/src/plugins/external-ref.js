@@ -138,13 +138,19 @@ export class ExternalRefPlugin extends Plugin {
 
   // ── Ref helpers ───────────────────────────────────────────────────────────
 
+  // A column the client JSON-parses arrives as the ref itself; one it did not
+  // arrives as text. Both are the same stored value.
   _parseRef(value) {
-    if (!value || typeof value !== 'string') return null
+    if (!value) return null
+    if (typeof value === 'object') return value
+    if (typeof value !== 'string') return null
     try { return JSON.parse(value) } catch { return null }
   }
 
   _parseRefArray(value) {
-    if (!value || typeof value !== 'string') return []
+    if (!value) return []
+    if (typeof value === 'object') return Array.isArray(value) ? value : [value]
+    if (typeof value !== 'string') return []
     try {
       const parsed = JSON.parse(value)
       return Array.isArray(parsed) ? parsed : [parsed]

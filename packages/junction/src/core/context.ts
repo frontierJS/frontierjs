@@ -355,6 +355,9 @@ export interface ServiceContextLocals {
    *  answer the same shape through `clampPage`, and a third spelling here is
    *  how the hook and the query builder came to disagree in the first place. */
   paginate?: Page
+  /** Set by `callService` on a custom method declared `read: true`, so
+   *  `withLitestoneDb` hands that call a client that refuses writes (`FJS-D581`). */
+  readCall?: boolean
   [key: string]: unknown
 }
 
@@ -385,7 +388,10 @@ export type HookType = 'before' | 'validated' | 'method' | 'after' | 'around' | 
 // `from '.../transport/bridge.ts'` imports keep working.
 export type { ServiceResult, ResultKind, ListResult, SingleResult } from './envelope.ts'
 
-export type ServiceMethod = 'find' | 'get' | 'aggregate' | 'create' | 'update' | 'patch' | 'remove' | 'restore'
+// The framework's own method names. Every table that asks "is this a custom
+// method" reads this one; a name missing from a copy is served as custom there.
+export const CRUD_METHODS = ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'] as const
+export type ServiceMethod = typeof CRUD_METHODS[number]
 export type AnyMethod     = ServiceMethod | string
 
 // ─── Call options (internal service-to-service calls) ─────────────────────

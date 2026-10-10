@@ -35,3 +35,16 @@ export function withoutBearer(header: string | undefined): string | undefined {
   const rest = header.split(',').map(p => p.trim()).filter(p => p && !p.startsWith(WS_BEARER))
   return rest.length ? rest.join(', ') : undefined
 }
+
+// ─── a cookie that changed after the upgrade ─────────────────────────────────
+//
+// A socket's headers are the upgrade's for its whole life, so a cookie a route
+// sets or clears afterwards never reaches a frame: a redeemed link read nothing
+// over the open socket, and a cleared one kept reading (`FJS-1503`). A response
+// that changes a cookie the request carried closes the sockets upgraded with
+// the old value; one that sets a cookie the socket never saw can only say so,
+// and the client cycles its socket on this header (`FJS-D548`).
+
+/** The response header that says a cookie changed, and its one value. */
+export const CREDENTIAL_HEADER  = 'x-fjs-credential'
+export const CREDENTIAL_CHANGED = 'changed'

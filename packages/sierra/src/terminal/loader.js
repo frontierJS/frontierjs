@@ -31,7 +31,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, resolve, relative } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
-import { findMesaFile, prepareForCompile } from '../build/mesa-plugin.js'
+import { findMesaFile, locLines, prepareForCompile } from '../build/mesa-plugin.js'
 import { appSrcDir } from '../build/app-alias-plugin.js'
 
 let installed = null
@@ -83,11 +83,13 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
     if (cache.has(path)) return cache.get(path)
     let entry
     try {
-      const content = prepareForCompile(readFileSync(path, 'utf8'), path, autoImportMap)
+      const source = readFileSync(path, 'utf8')
+      const content = prepareForCompile(source, path, autoImportMap)
       const ctx = await compile(content ?? '', {
-        target:   'terminal',
-        filename: relative(root, path),
-        warning:  () => {},
+        target:    'terminal',
+        filename:  relative(root, path),
+        locLines:  content == null ? null : locLines(source, content),
+        warning:   () => {},
       })
       entry = { code: ctx.result.replace(ROUTER_IMPORT, `$1${ROUTER}$2`), refusal: ctx.terminalRefusal ?? null }
     } catch (e) {

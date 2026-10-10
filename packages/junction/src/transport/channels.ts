@@ -132,12 +132,21 @@ export class Channel {
   // guard the wrappers stack and one join counts N times.
   __presenceWrapped?: boolean
 
+  // Set by the manager on a channel `channels({ rooms })` binds to a row: the
+  // join that skips the grading, for the manager to call once it has graded.
+  __admit?: (connection: Connection, opts?: { meta?: Record<string, unknown> }) => unknown
+
   constructor(name: string) {
     this.name        = name
     this.connections = new Set()
   }
 
-  join(connection: Connection, opts?: { meta?: Record<string, unknown> }): this {
+  /**
+   * On a channel bound to a row (`channels({ rooms })`) the join is graded at
+   * the Data boundary first and answers a Promise of whether it was admitted;
+   * every other channel joins at once and answers itself.
+   */
+  join(connection: Connection, opts?: { meta?: Record<string, unknown> }): this | Promise<boolean> {
     this.connections.add(connection)
     // Store join opts on connection for presence manager to read
     if (opts?.meta) connection.__joinMeta = opts.meta
@@ -519,7 +528,13 @@ export async function gradeRecipients(
       if (conn.socket.readyState !== 1 || seen.has(conn)) continue
       seen.add(conn)
       live++
-      const key = principalKey(conn.user)
+      // Two strangers are not one principal. A connection with no session is
+      // its own cohort wherever a resolver answers claims, because what it
+      // holds is on IT — a link's cookie, a widget's token on the upgrade —
+      // and the claims asked of the first stranger were handed to every other:
+      // one portal contact's message reached another contact's socket
+      // (`FJS-2528`). Without a resolver every stranger grades identically.
+      const key = conn.user == null && claimsFor ? conn : principalKey(conn.user)
       if (!byPrincipal.has(key)) byPrincipal.set(key, { user: conn.user ?? null, byClaims: new Map() })
       let chans = byChannel.get(key)
       if (!chans) byChannel.set(key, chans = new Map())
@@ -630,6 +645,62 @@ export async function gradeRecipients(
 
 // ─── Channel manager ──────────────────────────────────────────────────────
 
+// ─── Rooms: a channel bound to a row ──────────────────────────────────────
+//
+// `FJS-1743`, ruled by `FJS-D596`. Admission was the app's call, asked once at
+// the join, and a reader whose grant was revoked stayed in the room: presence
+// and `channel.send` are not graded per recipient, so both reached them in
+// both directions until they closed the tab. Grading every presence frame
+// would put the busiest frame an app sends through the Data boundary, so the
+// membership is kept true instead — graded at the join, and asked again after
+// every committed write to a model the row's read policy reaches.
+
+/** The row a channel name stands for. */
+interface RoomRow { model: string; id: string; tenant?: string }
+
+/** What the manager needs to bind a room. Resolved by `channels()`. */
+export interface RoomPolicy {
+  match: (channelName: string) => RoomRow | null
+  /**
+   * The client the room's row is read through and graded on, and the lease on
+   * it. A tenanted app has one client per tenant, so the room's tenant picks
+   * it; `null` says no client can be had, which admits nobody.
+   */
+  open:  (tenant: string | undefined) => Promise<{ db: unknown; release: () => void } | null>
+}
+
+/**
+ * `{ 'page:{id}': 'Page' }` → the matcher. `{id}` is one segment with no `:`,
+ * so `page:{id}` never claims `page:1:comments`. Under `createApp({ tenants })`
+ * a pattern also names the tenant, `{ '{tenant}:page:{id}': 'Page' }`, since a
+ * channel name is the only thing a room has to find its tenant's client by.
+ */
+export function roomMatcher(rooms: Record<string, string>, tenanted = false): (name: string) => RoomRow | null {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const compiled = Object.entries(rooms).map(([pattern, model]) => {
+    const parts = pattern.split(/(\{id\}|\{tenant\})/)
+    const slots = parts.filter(p => p === '{id}' || p === '{tenant}')
+    if (slots.filter(s => s === '{id}').length !== 1)
+      throw new Error(`[Junction] channels({ rooms }): '${pattern}' must name the row's id exactly once, as {id}`)
+    const tenants = slots.length - 1
+    if (tenanted && tenants !== 1)
+      throw new Error(`[Junction] channels({ rooms }): '${pattern}' must name the tenant exactly once, as {tenant} — ` +
+        `this app is createApp({ tenants }) and a room's row lives in its tenant's client`)
+    if (!tenanted && tenants !== 0)
+      throw new Error(`[Junction] channels({ rooms }): '${pattern}' names {tenant} and this app has no createApp({ tenants })`)
+    const re = new RegExp('^' + parts.map(p => p === '{id}' || p === '{tenant}' ? '([^:]+)' : esc(p)).join('') + '$')
+    return { re, model, slots }
+  })
+  return (name) => {
+    for (const { re, model, slots } of compiled) {
+      const m = re.exec(name)
+      if (!m) continue
+      return { model, id: m[1 + slots.indexOf('{id}')], ...(tenanted ? { tenant: m[1 + slots.indexOf('{tenant}')] } : {}) }
+    }
+    return null
+  }
+}
+
 /** What the manager needs to know about presence. Resolved by `channels()`. */
 export interface PresencePolicy {
   /** Is presence tracked for this channel at all? */
@@ -638,7 +709,7 @@ export interface PresencePolicy {
   flushMs: number
 }
 
-export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?: ChannelClaimsFn) {
+export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?: ChannelClaimsFn, rooms?: RoomPolicy) {
 
   const _presencePolicy: PresencePolicy = presencePolicy ?? { enabled: () => false, flushMs: 50 }
 
@@ -738,6 +809,139 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
     return ch
   }
 
+  // ── Rooms ───────────────────────────────────────────────────────────
+  // The row is read as the system and graded per cohort by the same
+  // `gradeRecipients` a broadcast takes, so a join and a broadcast cannot
+  // disagree about who may read it. A row that is gone, or a client that
+  // cannot be asked, admits nobody.
+  async function roomAdmits(room: RoomRow, name: string, conns: Connection[]): Promise<Set<Connection>> {
+    let lease: { db: unknown; release: () => void } | null = null
+    try {
+      lease = await rooms?.open(room.tenant) ?? null
+      const db = lease?.db as Record<string, any> | undefined
+      if (!db || typeof db !== 'object' || !('$readAs' in db) || !('$primaryKey' in db)) return new Set()
+      tapRoomClient(db, room.tenant)
+      primeReach(room.model, db)
+      const accessor = resolveAccessor(db, room.model)
+      const pk = db.$primaryKey(accessor) as string[]
+      if (pk.length !== 1) return new Set()
+      const row = await db.asSystem()[accessor].findFirst({ where: { [pk[0]]: room.id } })
+      if (!row) return new Set()
+      const probe = new Channel(name)
+      for (const conn of conns) probe.connections.add(conn)
+      const graded = await gradeRecipients([probe], 'room', row, { db, accessor: room.model }, 'row', claimsFor, channelsOf)
+      // Null once the row was read means the model can only ever say yes.
+      if (graded === null) return new Set(conns.filter(c => c.socket.readyState === 1))
+      return new Set(graded.flatMap(c => c.conns))
+    } catch { return new Set() }
+    finally { lease?.release() }
+  }
+
+  // Under `createApp({ tenants })` there is no one client to tap at boot: a
+  // tenant's client is tapped the first time a room reads through it, and a
+  // client evicted from the pool and reopened is a new object, tapped again.
+  const tappedRoomClients = new WeakSet<object>()
+  const untapRoomClients  = new Set<() => void>()
+  function tapRoomClient(db: Record<string, any>, tenant: string | undefined): void {
+    if (tenant === undefined || tappedRoomClients.has(db)) return
+    tappedRoomClients.add(db)
+    if (typeof db.$tapEvents !== 'function') return
+    untapRoomClients.add(db.$tapEvents((e: { model?: string }) => { if (e?.model) noteWrite(e.model, tenant) }))
+  }
+
+  // The models whose writes can take a room's row from a reader. Null where
+  // the client cannot say, and then every write asks again. The policy is the
+  // schema's, so one tenant's client answers for all of them. A claims resolver
+  // is app code whose reads are not on the policy AST (a Member row behind
+  // auth().memberRole), so with one installed the reach is unknowable and every
+  // write asks again (`FJS-2521`).
+  const reachCache = new Map<string, Set<string> | null>()
+  function primeReach(model: string, db: Record<string, any>): void {
+    if (reachCache.has(model)) return
+    let reach: Set<string> | null = null
+    try {
+      if (!claimsFor && '$readReach' in db) reach = new Set(db.$readReach(resolveAccessor(db, model)) as string[])
+    } catch { reach = null }
+    reachCache.set(model, reach)
+  }
+  const reachOf = (model: string): Set<string> | null => reachCache.get(model) ?? null
+
+  // Writes are counted per tenant: a write in one shop asks nobody in another.
+  const writeCount = new Map<string, Map<string, number>>()
+  const written    = new Map<string, Set<string>>()
+  let roomTimer: ReturnType<typeof setTimeout> | null = null
+
+  const snapshotWrites = (room: RoomRow) => new Map(writeCount.get(room.tenant ?? '') ?? [])
+
+  function writesSince(room: RoomRow, before: Map<string, number>): boolean {
+    const now   = writeCount.get(room.tenant ?? '')
+    const reach = reachOf(room.model)
+    for (const [m, n] of now ?? []) {
+      if (reach && !reach.has(m)) continue
+      if (n !== (before.get(m) ?? 0)) return true
+    }
+    return false
+  }
+
+  // A join graded while a write it depends on landed is graded again: the pass
+  // that followed the write ran before this member was in the room to ask.
+  async function admitToRoom(
+    ch: Channel, room: RoomRow, conn: Connection, opts?: { meta?: Record<string, unknown> },
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = snapshotWrites(room)
+      const ok = (await roomAdmits(room, ch.name, [conn])).has(conn)
+      if (!ok || !connections.has(conn.id)) return false
+      if (writesSince(room, before)) continue
+      // The gc prunes an empty channel, and this one was empty while it graded.
+      let live = channels.get(ch.name)
+      if (!live) { channels.set(ch.name, ch); live = ch }
+      live.__admit!(conn, opts)
+      return true
+    }
+    return false
+  }
+
+  // Out of the room, and told: a leave sends the leaver nothing, so without the
+  // empty sync their own screen keeps the roster of a room they are no longer in
+  // and their own presence updates are dropped in silence.
+  function evict(ch: Channel, conn: Connection): void {
+    ch.leave(conn)
+    sendToConn(conn, 'presence:sync', { channelId: ch.name, you: conn.id, members: [] })
+  }
+
+  async function reaskRooms(): Promise<void> {
+    roomTimer = null
+    const pending = new Map(written)
+    written.clear()
+    for (const ch of [...channels.values()]) {
+      const room = rooms?.match(ch.name)
+      if (!room || ch.length === 0) continue
+      const models = pending.get(room.tenant ?? '')
+      if (!models) continue
+      const reach = reachOf(room.model)
+      if (reach && ![...models].some(m => reach.has(m))) continue
+      const members = [...ch.connections]
+      const keep = await roomAdmits(room, ch.name, members)
+      for (const conn of members) if (!keep.has(conn) && ch.connections.has(conn)) evict(ch, conn)
+    }
+  }
+
+  // Called with the model of every committed write, and the tenant whose
+  // client made it where the app has tenants. Coalesced to one pass, which
+  // asks each bound room the write reaches once per cohort.
+  function noteWrite(model: string, tenant?: string): void {
+    if (!rooms) return
+    const key = tenant ?? ''
+    let counts = writeCount.get(key)
+    if (!counts) writeCount.set(key, counts = new Map())
+    counts.set(model, (counts.get(model) ?? 0) + 1)
+    let models = written.get(key)
+    if (!models) written.set(key, models = new Set())
+    models.add(model)
+    if (!roomTimer) roomTimer = setTimeout(() => { reaskRooms().catch(() => {}) }, 0)
+  }
+
   return {
 
     // Graded send for a write that went through NO service call — the
@@ -794,8 +998,19 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
         }
       }
 
+      // After the presence wrap, so an admitted join is a presence join.
+      const room = rooms?.match(name)
+      if (room && !ch.__admit) {
+        ch.__admit = ch.join.bind(ch)
+        ch.join = (conn: Connection, opts?: { meta?: Record<string, unknown> }) => admitToRoom(ch, room, conn, opts)
+      }
+
       return ch
     },
+
+    // Called by `channels({ rooms })` with the model of every committed write
+    // on the app's one client; a tenant's client is tapped by the manager.
+    roomWritten(model: string): void { noteWrite(model) },
 
     // Exposed for the WS service dispatcher — read-only access to live connections
     get connections(): ReadonlyMap<string, Connection> {
@@ -1077,6 +1292,9 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
 
     destroy(): void {
       clearInterval(gcTimer)
+      if (roomTimer) clearTimeout(roomTimer)
+      for (const untap of untapRoomClients) untap()
+      untapRoomClients.clear()
       channels.clear()
       connections.clear()
     }
@@ -1183,11 +1401,43 @@ export interface ChannelsOptions {
    * window instead.
    */
   presenceFlushMs?: number
+
+  /**
+   * Channels that stand for one row: `{ 'page:{id}': 'Page' }`, the pattern
+   * naming the row's id once as `{id}` (one segment, no `:`) and the value its
+   * model (`FJS-D596`).
+   *
+   * A join on a bound name is graded at the Data boundary — the row read as
+   * the system, then the joiner's read verdict on it — and answers a Promise
+   * of whether it was admitted. After every committed write to a model the
+   * row's read policy reaches, each member is asked again and one who lost
+   * the row is taken out and sent an empty `presence:sync`. So presence and
+   * `channel(name).send` need no grading of their own: everyone in the room
+   * may read its row. Needs `createApp({ db })`, or `createApp({ tenants })`
+   * with the tenant named in the pattern, `{ '{tenant}:page:{id}': 'Page' }`.
+   */
+  rooms?: Record<string, string>
+}
+
+// The client a room's row is read through: the app's one, or the tenant's the
+// room name encodes. `registry.get` refuses a tenant that does not exist, and a
+// room of a tenant nobody has admits nobody.
+function openRoomClient(app: App): RoomPolicy['open'] {
+  return async (tenant) => {
+    const registry = app.tenants
+    if (!registry) return { db: (app as { db?: unknown }).db, release: () => {} }
+    if (tenant === undefined) return null
+    try {
+      const db = await registry.get(tenant)
+      return { db, release: registry.retain?.(tenant) ?? (() => {}) }
+    } catch { return null }
+  }
 }
 
 export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Plugin {
   let _manager:        ReturnType<typeof createChannelManager> | null = null
   let _heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  let _untapRooms:     (() => void) | null = null
 
   return {
     name: 'channels',
@@ -1206,7 +1456,10 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             return (name: string) => exact.has(name) || prefixes.some(p => name.startsWith(p))
           })()
 
-      const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 }, opts.claims)
+      const rooms: RoomPolicy | undefined = opts.rooms
+        ? { match: roomMatcher(opts.rooms, !!app.tenants), open: openRoomClient(app) }
+        : undefined
+      const manager = createChannelManager({ enabled, flushMs: opts.presenceFlushMs ?? 50 }, opts.claims, rooms)
       if (typeof app.claim === 'function') app.claim('channels', manager)
       else (app as unknown as Record<string, unknown>).channels = manager
       _manager = manager
@@ -1674,6 +1927,18 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
     boot(app: App): void {
       reportAnnounceReach(app)
 
+      // The root client's tap hears every write once its transaction commits,
+      // whichever flavor made it.
+      if (opts.rooms && !app.tenants) {
+        let tap: unknown
+        try { tap = ((app as { db?: unknown }).db as { $tapEvents?: unknown } | undefined)?.$tapEvents } catch {}
+        if (typeof tap !== 'function') throw new Error(
+          `[Junction] channels({ rooms }) binds a channel to a row, which needs the app's Litestone client ` +
+          `— createApp({ db }) or createApp({ tenants }). This app has neither, so no join could be graded.`)
+        _untapRooms = (tap as (fn: (e: { model?: string }) => void) => () => void)
+          .call((app as { db?: unknown }).db, (e) => { if (e?.model) _manager?.roomWritten(e.model) })
+      }
+
       if (!_manager?.defaultAnnouncer) return
 
       const undeclared = app.services.values()
@@ -1690,6 +1955,8 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
     },
 
     shutdown(): void {
+      _untapRooms?.()
+      _untapRooms = null
       _manager?.destroy()
       _manager = null
       if (_heartbeatTimer) {

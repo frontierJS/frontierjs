@@ -5039,7 +5039,7 @@ told something.
 the only `@@arc` in either app and the only place a provider's answer drives a
 state machine.
 
-### <a id="fjs-d175"></a>2026-09-02 · `FJS-D175` — a broadcast is graded PER RECIPIENT at publish, by the Data boundary, in cohorts; joining a channel is a subscription and never a permission.
+### <a id="fjs-d175"></a>2026-09-02 · `FJS-D175` — a broadcast is graded PER RECIPIENT at publish, by the Data boundary, in cohorts; joining a channel is a subscription and never a permission — except a channel bound to a row by `channels({ rooms })`, whose join is graded (`FJS-D596`).
 
 `FJS-631`. A channel is a named set of connections and joining one was an
 ungraded **grant**: every row published there reached every member, whatever the

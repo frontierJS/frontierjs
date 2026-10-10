@@ -53,7 +53,7 @@ import { tmpdir }                          from 'node:os'
 // path rather than reimplemented, because a framework that breaks its own stated
 // rules is worse than one that never stated them — and the way that happens is
 // two copies where only one of them is ever re-derived.
-import { runChecks, findApps, formatFindings } from '../packages/cli/core/checks.js'
+import { runChecks, findApps, formatFindings, readBaseline } from '../packages/cli/core/checks.js'
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
@@ -660,7 +660,10 @@ function structure() {
 
   for (const app of apps) {
     const label = relative(ROOT, app) || '.'
-    report(label, runChecks({ root: app, allow: allow[label] ?? {} }), app)
+    // The app's own `check-baseline.json` allowances (`FJS-D508`) count here as
+    // they do under `fli check`; a CI run that read only this file's would fail
+    // an app on what the app already answered.
+    report(label, runChecks({ root: app, allow: { ...readBaseline(app).allow, ...allow[label] } }), app)
   }
 
   report('packages', runChecks({ root: ROOT, scope: 'repo', allow: allow['.'] ?? {} }), ROOT)

@@ -172,7 +172,7 @@ function mintableId(model) {
   return { field: ids[0].name, kind: gen.fn }
 }
 import { filterableKeysFor, sortableKeysFor, aggregatableKeysFor, identifyingKeysFor } from './core/query.js'
-import { sealedStates } from './core/seal.js'
+import { sealedStates, frozenAfterMove, machineWithMove } from './core/seal.js'
 import { buildCommitmentMap } from './core/commitment.js'
 import { buildEffectiveMap } from './core/schema-maps.js'
 
@@ -703,7 +703,16 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // form must still offer the box: this is the only column kind here whose
     // answer differs by mode, and emitting it readOnly in create would make the
     // model uncreatable through a generated form.
-    if (mode === 'update' && field.attributes.some(a => a.kind === 'immutable')) {
+    const immutable = field.attributes.find(a => a.kind === 'immutable')
+    if (mode === 'update' && immutable?.after) {
+      // Frozen from a named move rather than create or the seal; the row's
+      // state is the only thing that says which, so `readOnly` is withheld.
+      const frozen = frozenAfterMove(machineWithMove(model, immutable.after), immutable.after)
+      if (frozen) {
+        fieldSchema['x-litestone-kind']   = 'immutable-after'
+        fieldSchema['x-litestone-frozen'] = { field: frozen.field, states: [...frozen.states], after: immutable.after }
+      }
+    } else if (mode === 'update' && immutable) {
       // On a SEALING model the freeze has a moment, so `readOnly` is the wrong
       // answer for a row that is still a draft — and no schema can tell the two
       // apart, because the difference is in the ROW. The keyword is withheld and

@@ -56,6 +56,26 @@ const EXPLICIT = `
   }
 `
 
+// FJS-2531 -- a fixture row is the model's row, so its id goes into a where.
+const FACTORIES = `
+  import { createTestEnv } from '@frontierjs/litestone/testing'
+
+  export async function run() {
+    const env = await createTestEnv({
+      schema:        'model Employee { id Int @id\\n name String }',
+      autoFactories: true,
+    })
+    const users = env.factories.employee.asSystem()
+    const me    = await users.createOne()
+    const id: number = me.id
+    const [a]   = await users.createMany(2)
+    const same  = await env.system.employee.findFirst({ where: { id: me.id, name: a.name } })
+    // @ts-expect-error -- an accessor the schema lacks
+    env.factories.nobody
+    return { id, same }
+  }
+`
+
 function compile(usage: string, files: Record<string, string>): { ok: boolean; out: string } {
   const dir = mkdtempSync(join(tmpdir(), 'litestone-test-env-'))
   try {
@@ -93,6 +113,12 @@ const generated = generateTypeScript(parse(SCHEMA).schema, { audience: 'system' 
 describe('createTestEnv answers the app\'s client', () => {
   test('a registered client types env.system, actingAs() and atLevel() with no call-site change', () => {
     const { ok, out } = compile(REGISTERED, { 'db.d.ts': generated })
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+
+  test('env.factories answers each model\'s row, so createOne().id goes straight into a where', () => {
+    const { ok, out } = compile(FACTORIES, { 'db.d.ts': generated })
     expect(out).toBe('')
     expect(ok).toBe(true)
   })

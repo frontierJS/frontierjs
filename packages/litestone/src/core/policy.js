@@ -982,6 +982,44 @@ function rulesFor(modelName, op, ctx, tenancyOnly = false) {
   return denies.length ? { allows: [], denies } : null
 }
 
+// ─── What a verdict reads ────────────────────────────────────────────────────
+//
+// The models whose rows an `op` verdict on `modelName` reads: the model itself,
+// every model a `path` or a `.some()` crosses into, and every model a `check()`
+// delegates to, with that model's own reach. A write to any other model cannot
+// change who may read a row of this one; a write to one of these can, though
+// the row itself never changed — a revoked share leaves the page row as it was
+// (`FJS-1738`, `FJS-1743`). Read off the schema alone, so a policy that gains a
+// hop widens the set with nothing to remember. The gate is not here: a level
+// is the app's synchronous mapping of the principal and reads no row.
+export function readReach(modelName, ctx, op = 'read') {
+  const reach  = new Set([modelName])
+  const walked = new Set()
+  const delegate = (model, operation) => {
+    reach.add(model)
+    if (walked.has(`${model} ${operation}`)) return
+    walked.add(`${model} ${operation}`)
+    const rules = shapeOf(ctx, model).policy[operation]
+    if (rules) for (const { expr } of [...rules.allows, ...rules.denies]) walk(expr, model, operation)
+  }
+  const walk = (node, model, operation) => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { for (const n of node) walk(n, model, operation); return }
+    const rels = relationsOf(ctx, model)
+    if (node.type === 'path' && rels[node.rel]) reach.add(rels[node.rel].targetModel)
+    if (node.type === 'some' && rels[node.rel]) {
+      reach.add(rels[node.rel].targetModel)
+      walk(node.where, rels[node.rel].targetModel, operation)
+      return
+    }
+    if (node.type === 'check' && rels[node.field])
+      delegate(rels[node.field].targetModel, node.operation ?? operation)
+    for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v, model, operation)
+  }
+  delegate(modelName, op)
+  return [...reach].sort()
+}
+
 // Returns { sql, params } to AND-merge into a query WHERE, or null (no filter).
 // Pass op = 'read' | 'update' | 'delete' for SQL-based enforcement.
 // ─── One clock per evaluation ────────────────────────────────────────────────

@@ -1523,6 +1523,7 @@ with the terminal backend as its second consumer, not ahead of it.
    because store review, eviction and background execution make offline-first a
    prerequisite. The IR does not change that argument. *Narrowed 2026-10-09 by
    [`FJS-D689`](../DECISIONS.md#fjs-d689): offline-first gates store release only.*
+   *The Lynx spike (`FJS-D690`) ran 2026-10-10 on Lynx for Web: § 9.*
 
 ---
 
@@ -1594,6 +1595,83 @@ Mesa reaches a terminal without a second component model.
 
 ---
 
+## 9. The Lynx spike, measured 2026-10-10
+
+This is `FJS-D690`'s spike. It ran on Lynx for Web (`@lynx-js/web-core` 0.26.3)
+in headless Chrome. The owner chose web only, so nothing ran on a device. The
+code is in `fjs-prototypes/lynx-spike/`, which is outside this repo and not
+under version control. Mesa itself was not edited.
+
+**The terminal emitter's output is already the host-neutral emitter.**
+`runtime-lynx.js` (457 lines) implements the 17 `$$tui` calls over the Element
+PAPI. `prep.mjs` points the compiled `$$tui` import at that file, and nothing
+else changes. The "one emitter" `FJS-D690` asks for therefore already exists:
+it is `terminal/emit.js`. The terminal-specific parts are `tags.js` and the
+runtime.
+
+- **30 of 43 fixtures mount**: the 42 terminal fixtures plus one probe. The
+  Counter, Bound and Probe specs pass with real clicks. Between them they
+  cover taps, `{#if}`, keyed `{#each}`, child components, `bind:value` in both
+  directions, and `bind:this` calling an exported function.
+- **The 13 that do not mount each refuse by name.** They fall into four kinds:
+  - No Lynx element exists (6): `<select>`, `<datalist>`, `<progress>`, and
+    the checkbox, date and file inputs.
+  - Lynx has the element but the spike did not wire it (1): `<svg>`, which is
+    `x-svg`.
+  - DOM behavior the runtime has to build, as the terminal runtime did (4):
+    `close` on `<dialog>`, `toggle` on `<details>`, `focusin`, and a direct
+    `touchstart`.
+  - Key events, which a phone does not send (2): `keydown`.
+
+**Threads: Mesa runs entirely on Lynx's main thread.** Its script, signal graph,
+flush and handlers all run there, and the background thread is turned off
+(`background: false`). Two timing facts matter:
+
+- An `__AddEventListener` closure runs one microtask after the tap. Mesa's
+  microtask flush absorbs that delay.
+- A PAPI write made synchronously inside a worklet throws in Rust, and the
+  dispatcher swallows the error. The runtime therefore uses closures, not
+  worklets.
+
+Every write schedules one `__FlushElementTree` per microtask. Native Lynx needs
+that call to show a change; web ignores it.
+
+**The synchronous DOM habits do not survive.** On native, `boundingClientRect`
+and `focus` are `__InvokeUIMethod` callbacks. Web answers them synchronously, so
+the runtime deliberately delays the answer, to make the web run fail where a
+phone would.
+
+- The probe's `el.getBoundingClientRect()` on a `bind:this` node finds nothing.
+- The async `measure()` and `focus()` both work.
+- **65 of 565 `.mesa` files reach for the DOM directly** (`document.`,
+  `querySelector`, `.focus()`, or a measurement). 41 of the 65 are in
+  `@frontierjs/ui`, which is 41 of its 137 files.
+
+**`@frontierjs/css` reaches a phone as nothing.** Every rule sits inside an
+`@layer`, and both encoders drop a layer block whole without a warning. 110 kB
+of CSS encodes to a 1.3 kB native template.
+
+With the layers unwrapped first (`unlayer.mjs`), the native encoder (TASM) keeps
+most of the stylesheet and names what it drops:
+
+- **113 of 569 rules lose a selector.** The dropped kinds:
+  - `:where`, `:is`, `:not` and `:has`. `:where` has zero specificity, so
+    rewriting it changes the cascade.
+  - The `:lang(...)` RTL fallbacks the build generates (42 selectors).
+  - `[popover]`, `::backdrop` and `:focus-visible`.
+- **205 of 1,966 declarations are refused**, across 60 properties. 112 of the
+  205 are logical properties such as `inline-size` and `margin-block`, which can
+  be lowered mechanically to physical properties once the text direction is
+  known.
+- **Dropped at-rules:** `@media` (8), `@supports` (1) and `@container` (2).
+- **The web encoder has two more bugs:** it mis-encodes attribute selectors and
+  `::before`.
+
+**What a web run cannot answer:** native layout, how gestures feel, and whether
+`elementRefptr` on a native event names the element the way it does on web.
+
+---
+
 ## Open questions
 
 - ~~**Which engine does the terminal runtime drive?**~~ **Answered 2026-10-09 (`FJS-D698`): A — OpenTUI's core alone, pinned to an exact version while it is 0.x, and never its React or Solid binding.**
@@ -1656,6 +1734,37 @@ Mesa reaches a terminal without a second component model.
     backend, so the closed set should be read off its table rather than guessed
     before it, and A matches the tag answer. C rewrites 216 handlers to
     anticipate a set nobody has measured.
+- **Does FJS own Swift and Kotlin hosts (`FJS-D689` step 5)?** `FJS-D690` said
+  this would be decided from the spike's numbers, and § 9 has them.
+  - **A** — no, keep borrowing Lynx. The next step is a real Lynx backend:
+    - a tag table, and the runtime moved into mesa behind an optional peer, as
+      OpenTUI is;
+    - a CSS lowering pass owned by the backend: unwrap the layers, convert
+      logical properties to physical, and unwrap `:where`;
+    - an async measure and focus member on `$`, for the 41 kit files.
+  - **B** — yes, build FJS hosts in Swift and Kotlin. They would reuse the
+    emitter whole.
+  - **C** — not yet. First run the same bundles on a device, using an Android
+    emulator and the Lynx Explorer APK (4.0.3 ships one), then rule.
+  - **Recommend C, then A.** The seam held: the emitter was unchanged and the
+    runtime is 457 lines. Every gap § 9 found belongs to FJS whichever host
+    runs: the CSS layers, the six missing controls, and the async measure. So
+    B buys nothing that was measured. What web cannot answer is layout and
+    gesture feel, and one emulator install answers both.
+    - *Batteries vs. smallness:* Lynx is severable behind one runtime file.
+    - *The nine:*
+      - (1) origin: one emitter, so no second one.
+      - (2) concept: no new noun.
+      - (3) complexity: the problem's own.
+      - (4) predictability: a native backend behaves like the terminal one.
+      - (5) derived: yes, from the IR.
+      - (6) owner: mesa, beside `runtime-terminal.js`.
+      - (7) boundary: the IR and emitter never name Lynx.
+      - (8) failure: a tag or event with no lowering is refused by name.
+      - (9) must stay true: a fixture mounts and its spec passes on the
+        host. What fails when it stops: `drive-fixtures.mjs`. That drive
+        lives outside the repo, so the answer today is `none`.
+    - Tier: Assessment.
 
 ---
 

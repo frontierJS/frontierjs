@@ -1161,6 +1161,39 @@ describe('the silent config hazards', () => {
     expect(only(join(root, 'packages/fleet'), 'drive-opens-chrome').findings).toHaveLength(1)
   })
 
+  // `FJS-2277`: a literal ignores the branch offset, so the drive passes against
+  // the parent's server. The negatives are what the text pattern must not trip on.
+  test('a port literal in a test dir is an error, at the line, and the fixtures beside it are not', () => {
+    const root = tree('port-literal', {
+      ...CLEAN,
+      'api/test/serve.test.ts':
+        "const memory = 8192\n" +
+        "const sink = Bun.serve({ port: 7123, fetch })\n" +
+        "const BASE = process.env.API_URL ?? 'http://localhost:8110'\n" +
+        "// listen on 8110 -- a comment is prose\n" +
+        "const API = `http://localhost:${await portFor(import.meta.url, 'be')}`\n" +
+        "const tooling = 'http://localhost:8503'\n" +
+        "const moved = 'http://localhost:18110'\n",
+      'web/src/dev.js': "const PORT = 8110\n",
+    })
+    const { findings } = only(root, 'test-port-literal')
+    expect(findings.map(f => f.line)).toEqual([2, 3])
+    expect(findings[0].message).toMatch(/portFor\(\)/)
+    expect(findings.every(f => f.file.endsWith('serve.test.ts'))).toBe(true)
+  })
+
+  test('a port literal is excused by an allowance keyed to the file, with its reason', () => {
+    const root = tree('port-literal-allow', {
+      ...CLEAN,
+      'api/test/data.test.ts': "await app.create({ port: 8443 })\n",
+    })
+    const { findings } = only(root, 'test-port-literal')
+    expect(findings).toHaveLength(1)
+    const run = runChecks({ root, only: ['test-port-literal'], allow: { 'test-port-literal:api/test/data.test.ts': 'a column value' } })
+    expect(run.findings).toHaveLength(0)
+    expect(run.allowed).toHaveLength(1)
+  })
+
   test('a commented body tag ABOVE the real one is an error, at the mention', () => {
     const root = tree('b-comment', {
       ...CLEAN,

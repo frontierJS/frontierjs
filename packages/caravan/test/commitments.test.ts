@@ -171,7 +171,42 @@ describe('a due row is transitioned', () => {
     const rows = await db.asSystem().auditTrail.findMany({})
     const move = rows.find((r: any) => r.operation === 'update')
     expect(move.transition).toBe('abandon')
-    expect(JSON.parse(move.after).status).toBe('cancelled')
+    expect(move.after.status).toBe('cancelled')
+  })
+})
+
+describe('a write that makes a row due kicks its fire (FJS-2516)', () => {
+
+  // No sweep is called anywhere in this block, and the cron never fires: the
+  // only thing that can dispatch is the kick after the write.
+  it('a row created already due is moved without waiting for a sweep', async () => {
+    const { db, status } = await started()
+    const order = await db.order.create({ data: { createdAt: new Date(T0 - 14 * DAY) } })
+    await until('the order to be abandoned', async () => (await status(order.id)) === 'cancelled')
+  })
+
+  it('an edit that brings an anchor due kicks it, and one that leaves it ahead does not', async () => {
+    const { db, queue, status } = await started()
+    const order = await db.order.create({ data: {} })
+    expect(fires(queue)).toHaveLength(0)
+
+    await db.order.update({ where: { id: order.id }, data: { createdAt: new Date(T0 - 14 * DAY) } })
+    await until('the order to be abandoned', async () => (await status(order.id)) === 'cancelled')
+  })
+
+  it('a row due inside the lookahead is kicked with a delay to its time', async () => {
+    const { db, queue, status } = await started()
+    const order = await db.order.create({ data: { createdAt: new Date(T0 - 14 * DAY + 4 * 60_000) } })
+    await until('the fire to be queued', () => fires(queue).length === 1)
+    expect(fires(queue)[0]!.run_at - fires(queue)[0]!.created_at).toBeGreaterThan(3 * 60_000)
+    expect(await status(order.id)).toBe('pending')
+  })
+
+  it('a row held by while: is not kicked', async () => {
+    const { db, queue } = await started()
+    await db.order.create({ data: { held: true, createdAt: new Date(T0 - 14 * DAY) } })
+    await Bun.sleep(100)
+    expect(fires(queue)).toHaveLength(0)
   })
 })
 
@@ -549,7 +584,9 @@ describe('under tenancy { strategy database }', () => {
     for (const t of ['acme', 'globex'])
       ids[t] = (await (await registry.get(t)).order.create({ data: {} })).id
 
-    expect(await app.commitments.sweep()).toEqual({ due: 2 })
+    // A row created already due is kicked by its own write (FJS-2516), so the
+    // sweep may find it moved; the fires it leaves are what carry the tenant.
+    await app.commitments.sweep()
     expect(fires(queue).map(j => j.tenant_id).sort()).toEqual(['acme', 'globex'])
 
     for (const t of ['acme', 'globex'])
@@ -583,7 +620,9 @@ ${SCHEMA.replace('database main { path "./app.db" }', '').replace('  @@db(main)\
     for (const t of ['acme', 'globex'])
       ids[t] = (await db.asSystem().order.create({ data: { workspaceId: t } })).id
 
-    expect(await app.commitments.sweep()).toEqual({ due: 2 })
+    // A row created already due is kicked by its own write (FJS-2516), so the
+    // sweep may find it moved; the fires it leaves are what carry the tenant.
+    await app.commitments.sweep()
     expect(fires(queue).map(j => j.tenant_id).sort()).toEqual(['acme', 'globex'])
 
     const status = async (id: number) => (await db.asSystem().order.findUnique({ where: { id } })).status

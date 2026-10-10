@@ -10,10 +10,16 @@
  * applied: Mesa compiles an undefined name without complaint, so they change
  * no verdict here.
  *
+ * A compile with no errors is not a module that loads (Invariant 15), so the
+ * output is parsed too — with the acorn the resolved compiler depends on.
+ * `{@const t = { w, h }}` compiled clean to a memo `vite build` stopped on,
+ * and this gate passed it (`FJS-2489`).
+ *
  * @module sierra/check
  */
 
 import { readFileSync } from 'fs'
+import { createRequire } from 'module'
 import { pathToFileURL } from 'url'
 import { findMesaFile, prepareForCompile } from './mesa-plugin.js'
 
@@ -27,6 +33,7 @@ export async function checkMesaFiles(files, { root = process.cwd() } = {}) {
   const path = findMesaFile('compiler.js', root)
   if (!path) throw new Error(`[Sierra] Could not find the @frontierjs/mesa compiler from ${root}`)
   const compiler = await import(pathToFileURL(path).href)
+  const acorn = createRequire(path)('acorn')
 
   const failed = []
   for (const file of files) {
@@ -35,7 +42,12 @@ export async function checkMesaFiles(files, { root = process.cwd() } = {}) {
     try {
       const ctx = await compiler.compileSource(content, { filename: file })
       const errors = ctx.analysis?.errors ?? []
-      if (errors.length) failed.push({ file, errors: errors.map(String) })
+      if (errors.length) { failed.push({ file, errors: errors.map(String) }); continue }
+      try {
+        acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })
+      } catch (err) {
+        failed.push({ file, errors: [`compiled clean but the emitted JavaScript does not parse: ${err.message}`] })
+      }
     } catch (err) {
       failed.push({ file, errors: [err.message] })
     }

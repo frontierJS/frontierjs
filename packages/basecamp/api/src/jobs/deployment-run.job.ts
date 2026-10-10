@@ -23,7 +23,10 @@
 // An app whose source is `inline` speaks a second, shorter protocol. It has no
 // image, so none of the routes above apply to it:
 //   POST /static/publish  { app_id, files }          → { digest }
-//   POST /static/activate { app_id, slug, digest }   → { digest }
+//   POST /static/activate { app_id, slug, digest, hosts } → { digest }; the hostnames
+//                                                     routed to the static origin
+//   POST /static/retire   { app_id, slug }           → off the air and off every hostname
+//                                                     (sent by apps.remove and a preview's Retire)
 //   POST /static/health   { app_id, digest }         → { healthy }
 //
 // WHO speaks it is `providers/executor.ts` — a registered outpost, or the named
@@ -377,7 +380,9 @@ function runner(app: BasecampApp) {
 
     if (name.includes('validate')) {
       // The snapshot, not the app. A release queued against an empty source is
-      // a release with nothing to send, and it says so before anything leaves.
+      // a release with nothing to send, and it says so before anything leaves —
+      // unless it names a digest, which is bytes the machine already holds.
+      if (!files.length && digest) return { output: `the machine holds ${digest} already — nothing to upload`, digest }
       if (!files.length) throw new Error('This release has no files — the source was empty when it was queued')
       const bytes = files.reduce((n: number, f: { content?: string }) => n + (f.content?.length ?? 0), 0)
       return { output: `${files.length} file(s), ${bytes} characters`, digest }
@@ -411,6 +416,9 @@ function runner(app: BasecampApp) {
         // pointed at it yet, which is every app on the day it is pasted in.
         slug:   service.slug,
         digest,
+        // The live Domain rows, as `/deploy` sends them: a hostname deleted
+        // since the last release drops out here.
+        hosts:  await routedHosts(app.db, deploy.appId),
       })
       if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)
 

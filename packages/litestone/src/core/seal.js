@@ -149,3 +149,32 @@ export function buildSealMap(schema, relationMap, tableFor) {
   }
   return map
 }
+
+// ─── freezeAfter ──────────────────────────────────────────────────────────────
+//
+// `@immutable(after: <move>)` (FJS-D568) is the seal's own closure started from
+// ANY move rather than from the `@seals` ones: the states from which the column
+// is frozen are the named move's target and everything reachable from it. A
+// second walk would let the seal and the later freeze disagree about `void`, so
+// it is the same `reachable`.
+
+/**
+ * @param {object} attr  a `@@transitions` attribute
+ * @param {string} move  the move the column freezes after
+ * @returns {{ field: string, states: Set<any> }|null}  null when the machine has no such move
+ */
+export function frozenAfterMove(attr, move) {
+  if (!attr || attr.kind !== 'transitions') return null
+  const t = Object.hasOwn(attr.transitions, move) ? attr.transitions[move] : null
+  if (!t) return null
+  return { field: attr.field, states: reachable(attr.transitions, [t.to]) }
+}
+
+/**
+ * The machine of `model` that declares `move`, or null.
+ *
+ * @param {{ attributes: object[] }} model
+ */
+export function machineWithMove(model, move) {
+  return model.attributes.find(a => a.kind === 'transitions' && Object.hasOwn(a.transitions, move)) ?? null
+}

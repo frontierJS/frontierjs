@@ -39,12 +39,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
 import { collectRegisterAtlas } from '../../../cli/core/register-atlas.js'
+import { portFor }              from '@frontierjs/cli/core/ports.js'
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
 const PKG      = join(HERE, '..', '..')
 const ROOT     = join(PKG, '..', '..')
-const API_PORT = Number(process.env.API_PORT ?? 8120)
-const WEB_PORT = Number(process.env.UI_PORT ?? 8020)
+const API_PORT = Number(process.env.API_PORT ?? await portFor(import.meta.url, 'be', { env: 'dev' }))
+const WEB_PORT = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev' }))
 const BASE     = `http://localhost:${WEB_PORT}`
 const API      = `http://localhost:${API_PORT}`
 const EMAIL    = 'sam@example.com'

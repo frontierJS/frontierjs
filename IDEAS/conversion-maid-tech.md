@@ -247,6 +247,15 @@ become its kinds rather than three nouns.
 4. **`Action` as a domain model** with `@@transitions`, caravan as the executor.
    Decide where staged dependencies and `pausedAt` live — they belong on the row,
    not in the queue.
+   *Measured 2026-10-10 (maidtech Phase 4):* staged dependencies do not exist
+   (no column, no code — `new:staged` is a comment in queue.js) and `pausedAt`
+   equals `createdAt` on 29,046 of 29,053 rows, a freeze on the copy; 1 real
+   pause. 92% of actions are one kind, a lead pushed to the account's CRM. Built
+   as `@@transitions` + `@@commitment(start, on: executeAt)`, the sweep's move
+   writing the run to the outbox, a Caravan job ending the row; the pause is a
+   state the sweep cannot start. And the "63 MaidCentral credentials" are
+   addresses — an unauthenticated quoting endpoint per account; the tenant-held
+   credential is Jobber's 8 rotating OAuth logins (Q11, `FJS-D848`).
 5. **Split the settings blob four ways** — valueset, tenant-declared fields,
    tenant meta, ordinary models — and decide whether the one tenant's raw-CSS
    `theme` survives at all.

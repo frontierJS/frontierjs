@@ -4,8 +4,16 @@
 // A preview is an Environment whose Release is the branch's `web/`. While
 // someone edits, the bytes are the worktree's Vite dev server, which proxies
 // production's API by path; the hostname reaches it through a `/route` to the
-// dev server's port on the machine holding the worktree. Freeze (slice 4)
-// replaces that with a static release of the same App.
+// dev server's port on the machine holding the worktree.
+//
+// Freeze builds `web/` with the App's VITE_ variables and publishes the build
+// to the machine itself, then releases that digest as an ordinary Deployment:
+// the files never enter a row, because a built SPA runs to 180 files and
+// several megabytes, every row here is in the audit trail, and a Deployment is
+// pushed whole to every browser in the workspace. The commit names the bytes.
+// Activating routes the hostname to the static origin. Thaw routes it back to
+// the dev server's port. Retire takes it off the machine and removes the
+// Environment, whose App, Variables and Domain go with it.
 //
 // The rows are written through each row's own service, as the caller, so
 // every check a person's create meets is met here too. Nothing here stores
@@ -16,9 +24,14 @@
 // project the previews belong to, which app in the checkout, which machine
 // holds the worktrees, the wildcard domain, and production's API origin.
 
-import { existsSync }               from 'node:fs'
-import { isAbsolute, join, normalize } from 'node:path'
-import { executorOn, isExecutor }   from '../providers/executor.ts'
+import { execFileSync, spawn }     from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir }                   from 'node:os'
+import { isAbsolute, join, normalize, relative } from 'node:path'
+import { executorOn, isExecutor, resolveExecutor } from '../providers/executor.ts'
+import { snapshotVariables }        from './variables.ts'
+import { db }                       from './resource.ts'
+import { routedHosts }              from './runtime.ts'
 import type { BasecampApp }         from '../basecamp.types.ts'
 
 export type PreviewSettings = {
@@ -112,15 +125,149 @@ export async function openPreview(app: BasecampApp, settings: PreviewSettings,
     throw e
   }
 
-  return { port: branch.port, environmentId: env.id, appId, hostname, route: await routeTo(app, settings.serverId, appId, hostname, branch.port) }
+  return { port: branch.port, environmentId: env.id, appId, hostname, route: await routeTo(app, settings.serverId, appId, [hostname], branch.port) }
 }
 
-async function routeTo(app: BasecampApp, serverId: string | null, appId: string, hostname: string, port: number): Promise<Opened['route']> {
+async function routeTo(app: BasecampApp, serverId: string | null, appId: string, hosts: string[], port: number): Promise<Opened['route']> {
   if (!serverId) return { ok: false, why: 'no machine is named in the checkout\'s preview settings, so nothing routes the hostname' }
   const executor = await executorOn(app, serverId)
   if (!isExecutor(executor)) return { ok: false, why: executor.reason }
-  const reply = await executor.call('/route', { app_id: appId, hosts: [hostname], port })
+  const reply = await executor.call('/route', { app_id: appId, hosts, port })
   if (reply.error) return { ok: false, why: reply.error.message }
   const note = (reply.data as { note?: unknown } | undefined)?.note
   return { ok: true, note: typeof note === 'string' ? note : null }
+}
+
+// ─── Freeze ──────────────────────────────────────────────────────────────
+
+const BUILD_MS = 5 * 60_000
+
+/** What Freeze sent and the release it queued. */
+export type Frozen = {
+  deploymentId: string
+  digest:       string
+  files:        number
+  bytes:        number
+  /** HEAD of the branch, or null when the tree holds work HEAD does not —
+   *  the build is of the tree, and a sha that names other bytes is worse
+   *  than none. */
+  commitSha:    string | null
+}
+
+type Wire = { path: string, content: string } | { path: string, content_base64: string }
+
+/**
+ * The branch's `web/` built, published to the machine holding its App, and
+ * released by digest. Refused before anything reaches the machine when the
+ * build fails or its bundle does not carry `VITE_API_URL`.
+ */
+export async function freezePreview(app: BasecampApp, settings: PreviewSettings,
+  branch: { path: string, branch: string, appId: string }): Promise<Frozen> {
+  const svc   = (name: string) => app.service(name) as any
+  const row   = await svc('apps').get(branch.appId) as { id: string, environmentId: string }
+  const vars  = (await snapshotVariables(db(), row)).env
+  const env   = Object.fromEntries(Object.entries(vars).filter(([k]) => k.startsWith('VITE_')))
+
+  const out = mkdtempSync(join(tmpdir(), 'preview-freeze-'))
+  try {
+    await build(join(branch.path, settings.app, 'web'), out, env)
+    const files = filesUnder(out)
+    if (env.VITE_API_URL && !files.some(f => 'content' in f && f.content.includes(env.VITE_API_URL)))
+      throw new Error(`the build finished and no file carries VITE_API_URL (${env.VITE_API_URL}) — web/'s sierra.config.js has to read it for junction.url, or the frozen page calls its own origin`)
+
+    const executor = await resolveExecutor(app, branch.appId)
+    if (!isExecutor(executor)) throw new Error(executor.reason)
+    const reply = await executor.call('/static/publish', { app_id: branch.appId, files }, { timeoutMs: 120_000 })
+    if (reply.error) throw new Error(`the machine refused the build: ${reply.error.message}`)
+    const digest = String((reply.data as { digest?: unknown })?.digest ?? '')
+    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error('the machine wrote the build and reported no digest')
+
+    const commitSha = cleanHead(branch.path)
+    const deployment = await svc('deployments').create({
+      appId: branch.appId, trigger: 'freeze', builtImage: digest, commitSha, branch: branch.branch,
+    }) as { id: string }
+    const bytes = files.reduce((n, f) => n + ('content' in f ? Buffer.byteLength(f.content) : Buffer.from(f.content_base64, 'base64').length), 0)
+    return { deploymentId: deployment.id, digest, files: files.length, bytes, commitSha }
+  } finally {
+    rmSync(out, { recursive: true, force: true })
+  }
+}
+
+// Sierra's layout first; a plain Vite app keeps its config beside index.html.
+const VITE_CONFIGS = ['config/vite.config.js', 'config/vite.config.ts', 'vite.config.js', 'vite.config.ts', 'vite.config.mjs']
+
+/** `vite build` from web/ into `out`, never into web/dist — `vite build`
+ *  empties its outDir, and the worktree's own is the dev server's to keep. */
+function build(web: string, out: string, env: Record<string, string>): Promise<void> {
+  const config = VITE_CONFIGS.map(c => join(web, c)).find(existsSync)
+  if (!config) return Promise.reject(new Error(`${web} has no vite config (looked for ${VITE_CONFIGS.join(', ')})`))
+  return new Promise((done, fail) => {
+    let tail = ''
+    const child = spawn(process.execPath, ['--bun', 'vite', 'build', '-c', config, '--outDir', out, '--emptyOutDir'], {
+      cwd: web, env: { ...process.env, ...env, NODE_ENV: 'production' }, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const keep  = (b: Buffer) => { tail = (tail + b.toString('utf8')).slice(-4000) }
+    child.stdout.on('data', keep)
+    child.stderr.on('data', keep)
+    const timer = setTimeout(() => child.kill('SIGTERM'), BUILD_MS)
+    child.on('error', e => { clearTimeout(timer); fail(e) })
+    child.on('close', (code, signal) => {
+      clearTimeout(timer)
+      if (code === 0) return done()
+      fail(new Error(`vite build ${signal ? `stopped after ${BUILD_MS / 60_000} minutes` : `exited ${code}`}:\n${tail.trim().split('\n').slice(-15).join('\n')}`))
+    })
+  })
+}
+
+const UTF8 = new TextDecoder('utf-8', { fatal: true })
+
+/** Every file under the build, text as text and the rest as base64. Sierra
+ *  writes the page under `client/` when a server half is built beside it. */
+function filesUnder(out: string): Wire[] {
+  const root = existsSync(join(out, 'index.html')) ? out : join(out, 'client')
+  if (!existsSync(join(root, 'index.html'))) throw new Error('the build wrote no index.html, so its address would serve nothing')
+  return (readdirSync(root, { recursive: true, withFileTypes: true }) as import('node:fs').Dirent[])
+    .filter(e => e.isFile())
+    .map(e => {
+      const abs   = join(e.parentPath, e.name)
+      const path  = relative(root, abs)
+      const bytes = readFileSync(abs)
+      try { return { path, content: UTF8.decode(bytes) } }
+      catch { return { path, content_base64: bytes.toString('base64') } }
+    })
+    .sort((a, b) => a.path.localeCompare(b.path))
+}
+
+function cleanHead(path: string): string | null {
+  const git = (...argv: string[]) => execFileSync('git', ['-c', 'core.fsmonitor=false', '-C', path, ...argv], { encoding: 'utf8' }).trim()
+  try { return git('status', '--porcelain') ? null : git('rev-parse', 'HEAD') }
+  catch { return null }
+}
+
+// ─── Thaw and Retire ─────────────────────────────────────────────────────
+
+/** The hostnames back on the branch's dev server. A static release stays on
+ *  the machine; the route is what says which one serves. The port and the
+ *  hostnames are the App's and its Domains' — `opened` is what Open made,
+ *  and a row edited since is what the machine must be told. */
+export async function thawPreview(app: BasecampApp, settings: PreviewSettings, opened: Opened): Promise<Opened['route'] & { port: number | null, hosts: string[] }> {
+  const row   = await (app.service('apps') as any).get(opened.appId) as { id: string, port: number | null }
+  const hosts = await routedHosts(app.db, row.id)
+  if (!row.port) return { ok: false, why: 'the App names no port for its dev server', port: null, hosts }
+  return { ...await routeTo(app, settings.serverId, row.id, hosts, row.port), port: row.port, hosts }
+}
+
+/**
+ * The preview off the machine — `apps.remove` retires its files and its
+ * hostname's route, whichever port that dialed — then the Environment
+ * removed, its Variables and Domain with it. A machine that cannot be reached
+ * does not keep the rows and is reported: its route still dials the branch's
+ * port, which Archive then gives back for another branch to claim.
+ */
+export async function retirePreview(app: BasecampApp, opened: Opened): Promise<{ machine: { ok: true } | { ok: false, why: string } }> {
+  const svc = (name: string) => app.service(name) as any
+  const gone = (e: { code?: number }) => { if (e?.code !== 404) throw e; return null }
+  const removed = await svc('apps').remove(opened.appId).catch(gone) as { machine: { ok: true } | { ok: false, why: string } } | null
+  await svc('environments').remove(opened.environmentId).catch(gone)
+  return { machine: removed?.machine ?? { ok: true } }
 }

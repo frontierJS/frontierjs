@@ -1141,8 +1141,8 @@ name when it declares none.
 
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`, `fork`, `land`, `archive`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`, `fork`, `land`, `archive`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`, `fork`, `freeze`, `thaw`, `land`, `archive`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`, `fork`, `freeze`, `thaw`, `land`, `archive`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
@@ -1158,6 +1158,8 @@ name when it declares none.
   - `check` — standing 5 or above — declared `gate: 5`
   - `review` — standing 5 or above — declared `gate: 5`
   - `fork` — standing 5 or above — declared `gate: 5`
+  - `freeze` — standing 5 or above — declared `gate: 5`
+  - `thaw` — standing 5 or above — declared `gate: 5`
   - `land` — standing 5 or above — declared `gate: 5`
   - `archive` — standing 5 or above — declared `gate: 5`
 

@@ -110,27 +110,42 @@ const secretReplacer = (key: string, value: unknown) =>
 // a boot line carrying five keys was a wall of braces and quotes nobody reads.
 // Dim key, bright value: the value is the information.
 
-function formatValue(v: unknown): string {
+// A string is quoted where it would otherwise run into what follows it: the
+// next pair on a line, or the next row in a block.
+function formatValue(v: unknown, inline = true): string {
   if (v === null || v === undefined)                     return String(v)
   if (typeof v === 'number' || typeof v === 'boolean')   return String(v)
-  if (typeof v === 'string')                             return /[\s"=]/.test(v) ? JSON.stringify(v) : v
+  if (typeof v === 'string')                             return (inline ? /[\s"=]/ : /[\r\n]/).test(v) ? JSON.stringify(v) : v
   // The replacer, because a nested `{ headers: { authorization } }` reaches the
   // line through here and the top-level key check above cannot see it.
   return JSON.stringify(v, secretReplacer)
 }
 
+// A line carrying this many fields or more prints them one per row under the
+// message. The boot banner's eight `key=value` pairs on one line wrap back to
+// column 0 mid-pair and `services=` cannot be found in them; a request line's
+// two or three fields stay on the line they describe.
+const BLOCK_AT = 4
+
 function formatData(data: Record<string, unknown>): string {
-  return Object.entries(data)
+  const fields = Object.entries(data)
     // `undefined` is dropped, because JSON.stringify dropped it and the app
     // banner passes two — rendering them turns a silent omission into noise
     // on every boot line. `null` is kept: stringify kept it, and a stated
     // null is an answer where an absent key is not.
     .filter(([, v]) => v !== undefined)
-    // The pretty path redacts as well as the JSON one. A developer's terminal is
-    // where a token is most likely to be shoulder-surfed or pasted into an
-    // issue, and a redaction that only holds in production is one nobody trusts.
-    .map(([k, v]) => `${DIM}${k}=${RESET}${isSecretKey(k) ? REDACTED : formatValue(v)}`)
-    .join(' ')
+
+  // The pretty path redacts as well as the JSON one. A developer's terminal is
+  // where a token is most likely to be shoulder-surfed or pasted into an
+  // issue, and a redaction that only holds in production is one nobody trusts.
+  const inline = fields.length < BLOCK_AT
+  const shown = fields.map(([k, v]) => [k, isSecretKey(k) ? REDACTED : formatValue(v, inline)] as const)
+
+  if (inline)
+    return shown.map(([k, v]) => ` ${DIM}${k}=${RESET}${v}`).join('')
+
+  const width = Math.max(...shown.map(([k]) => k.length))
+  return shown.map(([k, v]) => `\n    ${DIM}${k.padEnd(width)}${RESET}  ${v}`).join('')
 }
 
 // ─── createLogger ─────────────────────────────────────────────────────────
@@ -249,7 +264,7 @@ export function consoleWriter(format: 'pretty' | 'json' = 'pretty'): LogWriter {
     let line = `${time} ${level}${ns} ${msg}`
 
     if (entry.data && Object.keys(entry.data).length) {
-      line += ' ' + formatData(entry.data)
+      line += formatData(entry.data)
     }
 
     if (entry.error) {

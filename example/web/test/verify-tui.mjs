@@ -139,8 +139,9 @@ check(await until(() => seen('/orders/ · Esc goes back') && seen('Last 7 days')
   'a link is followed into the router and the route it names opens', screen(out))
 // /orders/ is taller than the screen: its lines keep a row each rather than
 // being pressed into 30 and painted over one another (FJS-2487), and Tab past
-// the bottom edge scrolls the control it reaches into view.
-check(seen('Unable to connect.') && seen('Placed between'), 'a route taller than the screen paints each line whole', screen(out))
+// the bottom edge scrolls the control it reaches into view. The error line
+// waits on the refused fetch, which lands after the route has painted.
+check(await until(() => seen('Unable to connect.') && seen('Placed between')), 'a route taller than the screen paints each line whole', screen(out))
 for (let i = 0; i < 60 && !seen('[ 28 ]'); i++) {
   shell.stdin.write('\t')
   await new Promise((r) => setTimeout(r, 60))

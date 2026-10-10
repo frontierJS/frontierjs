@@ -10,7 +10,7 @@ import { validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, mkdirSync, AsyncLocalStorage } from '#host'
 import { resolveAnchor } from './db-path.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns } from './ddl.js'
-import { buildSealMap } from './seal.js'
+import { buildSealMap, frozenAfterMove, machineWithMove } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
 import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols } from './ddl.js'
 import {
@@ -34,7 +34,7 @@ import {
   buildPolicyMap, buildScopeMap, compileScope, compileStatic, policyExprToString,
   buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs,
   compileFieldPredicate, delegationProblems, buildClaimSet, checkFieldPolicies,
-  authClaimsUsed,
+  authClaimsUsed, readReach,
 } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField, normalizeKey,
@@ -89,7 +89,7 @@ import { refuseUntrustedSchema } from './untrusted.js'
 import {
   checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter,
 } from './hooks.js'
-import { makeLoggerAutoModel, buildLogMap, buildLogEntry, fireLog, flushPendingLogs } from './audit-log.js'
+import { makeLoggerAutoModel, buildLogMap, buildLogEntry, jsonlTrailEntry, fireLog, flushPendingLogs } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
 // tools import it from here.
 export { buildRelationMap } from './schema-maps.js'
@@ -1768,35 +1768,54 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return null
   }
 
-  // The sealing model's OWN columns. `@immutable` on a model that declares a
-  // `@seals` move means *frozen at the seal* rather than *frozen at create*, so
-  // it stops being answerable from the payload and becomes a state guard like
-  // the rest of them.
-  //
+  // The model's OWN frozen columns, each frozen from a state rather than from
+  // create. `@immutable` on a model that declares a `@seals` move means *frozen
+  // at the seal*, and `@immutable(after: <move>)` means *frozen from that move's
+  // target* (`FJS-D568`). Either way it stops being answerable from the payload
+  // and becomes a state guard like the rest of them: one group per freeze instant.
+  const _selfFreezes = []
+  if (_sealSelf && _immutableWriteKeys.size)
+    _selfFreezes.push({ keys: _immutableWriteKeys, column: _sealSelf.column, states: _sealSelf.states })
+  {
+    const byMove = new Map()
+    for (const [name, p] of Object.entries(fieldPolicy))
+      if (p.immutableAfter) byMove.set(p.immutableAfter, [...(byMove.get(p.immutableAfter) ?? []), name])
+    for (const [move, names] of byMove) {
+      const frozen = frozenAfterMove(machineWithMove(_modelForKeys, move), move)
+      if (frozen) _selfFreezes.push({ keys: new Set(names), column: frozen.field, states: [...frozen.states] })
+    }
+  }
+
   // It applies ONLY where the payload names a frozen column. Narrowing every
   // update on the model would refuse `settle: issued -> paid`, which is a move
   // the machine declares out of a state the seal put the row in.
   function sealSelfClause(data, whereSql, whereParams) {
-    if (!_sealSelf || !_immutableWriteKeys.size || !data || typeof data !== 'object' || Array.isArray(data))
+    if (!_selfFreezes.length || !data || typeof data !== 'object' || Array.isArray(data))
       return { ...sqlFragment(whereSql, whereParams), frozen: [] }
-    const frozen = Object.keys(data).filter(k => _immutableWriteKeys.has(k))
-    if (!frozen.length) return { ...sqlFragment(whereSql, whereParams), frozen: [] }
-    return {
-      ...sqlFragment(
-        `(${whereSql}) AND "${_sealSelf.column}" NOT IN (${_sealSelf.states.map(() => '?').join(', ')})`,
-        [...whereParams, ..._sealSelf.states.map(_ecp)]),
-      frozen,
+    let sql = whereSql, params = whereParams
+    const frozen = []
+    for (const g of _selfFreezes) {
+      const named = Object.keys(data).filter(k => g.keys.has(k))
+      if (!named.length) continue
+      frozen.push(...named)
+      sql    = `(${sql}) AND "${g.column}" NOT IN (${g.states.map(() => '?').join(', ')})`
+      params = [...params, ...g.states.map(_ecp)]
     }
+    return { ...sqlFragment(sql, params), frozen }
   }
 
   function throwIfSealedSelf(frozen, whereSql, whereParams) {
     if (!frozen?.length) return
-    const row = readDb.query(
-      `SELECT "${_sealSelf.column}" AS s FROM "${tableName}" WHERE ${whereSql} LIMIT 1`).get(...whereParams)
-    if (row && _sealSelf.states.some(v => _ecp(v) === row.s))
-      throw new SealedDocumentError(modelName, {
-        parent: modelName, parentId: null, state: row.s, operation: 'freeze', fields: frozen,
-      })
+    for (const g of _selfFreezes) {
+      const named = frozen.filter(k => g.keys.has(k))
+      if (!named.length) continue
+      const row = readDb.query(
+        `SELECT "${g.column}" AS s FROM "${tableName}" WHERE ${whereSql} LIMIT 1`).get(...whereParams)
+      if (row && g.states.some(v => _ecp(v) === row.s))
+        throw new SealedDocumentError(modelName, {
+          parent: modelName, parentId: null, state: row.s, operation: 'freeze', fields: named,
+        })
+    }
   }
 
   function throwIfSealed(whereSql, whereParams, operation) {
@@ -2119,7 +2138,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function emitLog(dbName, entry) {
     const table = getLogTable(dbName)
     if (!table) return
-    fireLog(table, buildLogEntry(entry, ctx, ctx.onLog), ctx._logStats)
+    const built = buildLogEntry(entry, ctx, ctx.onLog)
+    fireLog(table, ctx.trailDbMap[dbName].kind === 'jsonl' ? jsonlTrailEntry(built) : built, ctx._logStats)
   }
 
   // ── Audit redaction ─────────────────────────────────────────────────────
@@ -3363,6 +3383,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // operators, naming neither the type nor the plugin; a `File[]` was worse —
   // it went through the Json path and stored `[{}]` (`FJS-1898`).
   const _fileFields = shape.model.fields.filter(f => f.type?.name === 'File').map(f => f.name)
+  // A single File is parsed on read like a Json column, but its stored text is
+  // FileStorage's to write: stringifying an object here would store a ref a
+  // caller sent, which `refuseUnbindable` below refuses by name (FJS-D666).
+  const _jsonWriteFields = new Set([...jsonFields].filter(f => {
+    const t = shape.model.fields.find(m => m.name === f)?.type
+    return !(t?.name === 'File' && !t.array)
+  }))
   const _needsStorage = (v) => v !== null && typeof v === 'object' && !(v instanceof Date)
   function refuseFileWithoutStorage(data) {
     if (!_fileFields.length || plugins?.handles('File')) return
@@ -3677,7 +3704,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         stripVirtual(transformed, generatedFields, computedFields, _hasFrom ? Object.keys(fromFields) : null),
         boolFields
       ),
-      jsonFields
+      _jsonWriteFields
     )
 
     // Everything above has run, so every remaining value is about to become a
@@ -6319,7 +6346,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const updCols = Object.keys(updRow).filter(c => c !== wKey)
       if (!insCols.length || !updCols.length) return null
       if (_sealInsertSql) return null
-      if (_sealSelf && _immutableWriteKeys.size) return null
+      if (_selfFreezes.length) return null
 
       return upsertPlan({ where, createData, updateData, insRow, updRow, wKey, insCols, updCols })
     }
@@ -11136,6 +11163,15 @@ function makeLockPrimitive(rawWriteDb) {
       if (!levelPasses(required, level ?? 0)) return null
     }
 
+    // 1b. The grid, where `@@capabilities(all)` puts read on it — the same
+    // `requireCapability` a query's `onBeforeRead` refuses with. Without it a
+    // member whose Role holds no `Model.read` was answered an empty list over
+    // HTTP and handed every row of the model over the socket (`FJS-2527`).
+    if (shapes[modelName].capabilities?.read) {
+      try { requireCapability(modelName, 'read', readCtx) }
+      catch { return null }
+    }
+
     // 2. The row policy.
     let verdict
     try { verdict = policyVerdict(modelName, row, readCtx, 'read') }
@@ -11235,11 +11271,24 @@ function makeLockPrimitive(rawWriteDb) {
     const modelName = model.name
     const gate = ctx.gateFor?.(modelName, 'read')
     if (gate != null && gate > 0) return 'graded'
+    if (shapes[modelName].capabilities?.read) return 'graded'
     const rules = shapes[modelName].policy
     if (rules?.read?.allows?.length || rules?.read?.denies?.length) return 'graded'
     const fp = shapes[modelName].fieldPolicy
     if (fp && Object.keys(fp).length) return 'graded'
     return 'open'
+  }
+
+  // ─── $readReach ─────────────────────────────────────────────────────────
+  //
+  // $readReach(accessor) → the model names whose writes can change who may
+  // read a row of this one, the model itself among them. `$readAs`
+  // grades a row someone was SENT; this says when a row someone already HOLDS
+  // must be asked again — a write to a Share changes no Page row and still
+  // takes the page from its reader. An unknown accessor reaches nothing.
+  function $readReach(accessor) {
+    const model = modelForAccessor(accessor)
+    return model?.name ? readReach(model.name, ctx) : []
   }
 
   // ─── $levelOf ───────────────────────────────────────────────────────────
@@ -11473,7 +11522,7 @@ function makeLockPrimitive(rawWriteDb) {
         `the respondent, or not at all (FJS-D349)`)
     }
 
-    return await table.create({ data: built })
+    return await table.create({ data: jsonlTrailEntry(built) })
   }
 
   // $transaction — wraps async callback in BEGIN IMMEDIATE / COMMIT
@@ -11903,9 +11952,11 @@ function makeLockPrimitive(rawWriteDb) {
     if (_attached.has(alias)) {
       throw new Error(`alias "${alias}" is already attached — call $detach("${alias}") first`)
     }
-    // Attach on both connections so reads and writes can both access it
+    // Attach on both connections so reads and writes can both access it. An
+    // in-memory client has one connection for both, and a second ATTACH on it
+    // fails with "database is already in use".
     rawWriteDb.prepare(`ATTACH DATABASE ? AS "${alias}"`).run(abs)
-    rawReadDb.prepare(`ATTACH DATABASE ? AS "${alias}"`).run(abs)
+    if (rawReadDb !== rawWriteDb) rawReadDb.prepare(`ATTACH DATABASE ? AS "${alias}"`).run(abs)
     _attached.add(alias)
     return clientProxy  // chainable: await db.$attach('a.db', 'a').$attach('b.db', 'b')
   }
@@ -11915,7 +11966,7 @@ function makeLockPrimitive(rawWriteDb) {
       throw new Error(`alias "${alias}" is not attached`)
     }
     rawWriteDb.prepare(`DETACH DATABASE "${alias}"`).run()
-    rawReadDb.prepare(`DETACH DATABASE "${alias}"`).run()
+    if (rawReadDb !== rawWriteDb) rawReadDb.prepare(`DETACH DATABASE "${alias}"`).run()
     _attached.delete(alias)
     return clientProxy
   }
@@ -11981,7 +12032,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -12008,6 +12059,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
+      if (prop === '$readReach')       return $readReach
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$commitments') return commitmentsInfo()
         if (prop === '$scopes') return $scopes
@@ -12115,7 +12167,7 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -12139,6 +12191,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
+      if (prop === '$readReach')       return $readReach
         if (prop === '$softDelete')     return softDeleteInfo()
         if (prop === '$commitments')    return commitmentsInfo()
         if (prop === '$scopes')         return $scopes
@@ -12188,7 +12241,7 @@ function makeLockPrimitive(rawWriteDb) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -12220,6 +12273,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
+      if (prop === '$readReach')       return $readReach
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$commitments') return commitmentsInfo()
         if (prop === '$scopes') return $scopes
@@ -12407,7 +12461,7 @@ function makeLockPrimitive(rawWriteDb) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -12447,6 +12501,7 @@ function makeLockPrimitive(rawWriteDb) {
       if (prop === '$inWindow')        return $inWindow
       if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
+      if (prop === '$readReach')       return $readReach
       if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy
       if (prop === '$audit')          return (entry, opts) => auditWith(ctx.auth ?? null, entry, opts)
