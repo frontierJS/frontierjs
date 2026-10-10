@@ -21,14 +21,16 @@
 //                is a task row, and the phase list stays `repo-map`'s to RENDER
 //                rather than to start.
 //
-// Zero dependencies, plain ESM, node or bun — same rule as `snapshots.js` and
-// `checks.js`, because a caller may run before install.
+// Plain ESM, node or bun, and one package — `@frontierjs/toolbelt`, the same
+// rule as `checks.js`, because a caller may run before install and the
+// substrate is the one import that is always there.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, basename }                        from 'node:path'
 import { findSnapshots }                                   from './snapshots.js'
 import { GLOBAL, appPorts, hostFor, toolHost, toolBaseHost } from './ports.js'
 import { preambleIndex, resolveNeeds }                     from './preflight.js'
+import { parseFrontmatter }                                from '@frontierjs/toolbelt/frontmatter'
 
 // ─── shared tree helpers ──────────────────────────────────────────────────────
 //
@@ -211,7 +213,8 @@ export function readCommands(dir, root, trail, depth = 3) {
     if (isDir(child)) { out.push(...readCommands(child, root, [...trail, name], depth - 1)); continue }
     if (!name.endsWith('.md')) continue
 
-    const head  = read(child)?.slice(0, 1200) ?? ''
+    const text  = read(child) ?? ''
+    const head  = text.slice(0, 1200)
     const stem  = name.replace(/\.md$/, '')
     const path  = [...trail, stem === 'index' ? null : stem].filter(Boolean)
 
@@ -227,10 +230,26 @@ export function readCommands(dir, root, trail, depth = 3) {
       // in the reserved block is matched to the command that starts it. Absent
       // where the command takes no port, which is almost all of them.
       port:        portDefault(head),
+      pages:       pagesOf(text),
     })
   }
 
   return out
+}
+
+/**
+ * `pages:` — the HTML files a command writes that are not snapshots, each with
+ * the flags that write it. Read from the WHOLE frontmatter, since it sits below
+ * `flags:` and past the head the other fields are matched in, and only when the
+ * key is there, because parsing 236 frontmatter blocks to find five is the
+ * inventory's cost on every GUI poll.
+ */
+function pagesOf(text) {
+  if (!/^pages:\s*$/m.test(text)) return []
+  try {
+    const list = parseFrontmatter(text).frontmatter?.pages
+    return Array.isArray(list) ? list.filter(p => typeof p?.file === 'string') : []
+  } catch { return [] }
 }
 
 /** `port:` under `flags:`, and its `defaultValue`. Null where there is none. */
@@ -244,6 +263,41 @@ function commandRows(root) {
   const dir = join(root, 'packages', 'cli', 'commands')
   if (!existsSync(dir)) return []
   return readCommands(dir, root, [])
+}
+
+// ─── pages ────────────────────────────────────────────────────────────────────
+//
+// A page a command writes and nobody commits — the rings, the work map, the
+// vocabulary, the codegraph, the live deck. Each is DECLARED by the command
+// that writes it (`pages:` in its frontmatter) and the command reads its own
+// default output name back from that declaration, so the row and the file
+// cannot name two different paths.
+//
+// A page is written at the workspace root and its generator is typed there, so
+// `dir` is `.` whatever namespace the command lives in.
+
+function pages(root, { commands } = {}) {
+  const out = []
+  for (const cmd of commands ?? commandRows(root)) {
+    for (const p of cmd.pages ?? []) {
+      const flags = String(p.flags ?? '').split(/\s+/).filter(Boolean)
+      const argv  = ['fli', cmd.alias ?? cmd.name, ...flags]
+      out.push({
+        kind:   'page',
+        id:     `page:${p.file}`,
+        name:   p.file,
+        dir:    '.',
+        start:  argv.join(' '),
+        argv,
+        port:   null,
+        open:   null,
+        page:   p.file,
+        needs:  [],
+        source: cmd.file,
+      })
+    }
+  }
+  return out.sort(byId)
 }
 
 // ─── drives and suites ────────────────────────────────────────────────────────
@@ -369,10 +423,11 @@ function tasks(root, claimed) {
 // carried — the phase fails such a file rather than skipping it, and a tile that
 // hid it would be quieter than the check.
 //
-// `viewable` is whether this artefact is a PAGE — the two `ws:atlas` writes are,
-// and a `.md` or a `.sql` is a diff rather than something to open. Decided here
-// rather than in the GUI, because a page re-deriving *is this openable* from a
-// filename is a second owner of the rule and only one of the two gets fixed.
+// `page` is the file to OPEN where this artefact is one — the two `ws:atlas`
+// writes are, and a `.md` or a `.sql` is a diff rather than something to open.
+// Decided here rather than in the GUI, because a page re-deriving *is this
+// openable* from a filename is a second owner of the rule and only one of the
+// two gets fixed. A `page` row carries the same field, so one reader serves both.
 
 function snapshots(root) {
   return findSnapshots({ root }).map(s => ({
@@ -387,7 +442,7 @@ function snapshots(root) {
     argv:   s.argv ?? null,
     port:   null,
     open:   null,
-    viewable: s.file.endsWith('.html'),
+    page:   s.file.endsWith('.html') ? s.file : null,
     needs:  [],
     source: s.file,
     error:  s.error ?? null,
@@ -421,7 +476,7 @@ export function runnables(root, { commands } = {}) {
   // Tasks last and told what is already claimed, so one script is one row: a
   // surface's `bun run api` must not also appear as a task called `api`.
   const claimed = new Set(named.filter(r => r.start).map(r => `${r.dir} ${r.start}`))
-  const rows    = [...named, ...tasks(root, claimed), ...snapshots(root)]
+  const rows    = [...named, ...tasks(root, claimed), ...snapshots(root), ...pages(root, { commands })]
 
   // A drive's preamble is attached here rather than inside `drives()` because a
   // step resolves to another ROW, and the rows it resolves against are only all
@@ -438,7 +493,19 @@ export function runnables(root, { commands } = {}) {
 }
 
 /** The kinds, in render order. Exported so a page groups without a copy. */
-export const KINDS = ['surface', 'tool', 'drive', 'suite', 'task', 'snapshot']
+export const KINDS = ['surface', 'tool', 'drive', 'suite', 'task', 'snapshot', 'page']
+
+/**
+ * The HTML of a row's page, or null where the row has none or it is not written.
+ *
+ * Takes a ROW, never a path: a caller looks the row up by id among the rows
+ * `runnables()` computed, so no caller-supplied text reaches a path, and `..`
+ * is not a case to handle because there is nothing for it to traverse.
+ */
+export function readPage(root, row) {
+  if (!row?.page) return null
+  return read(join(root, row.page))
+}
 
 // ─── probeState ───────────────────────────────────────────────────────────────
 //

@@ -18,6 +18,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { compileSource } from '../../mesa/src/compiler.js'
 import * as runtime from '../../mesa/src/runtime.js'
+import { remountKey } from '../src/router/internals.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const tick = () => new Promise((r) => setTimeout(r, 0))
@@ -38,7 +39,7 @@ const chainSrc = readFileSync(resolve(here, '../src/components/ChainRenderer.mes
 
 async function mount(chain, props = {}) {
   ChainRenderer ??= await build(chainSrc, '/ChainRenderer.mesa', {
-    page,
+    page, remountKey,
     ChainRendererInner: (...a) => ChainRenderer(...a),
   })
   const wrap = document.createElement('div')
@@ -96,7 +97,7 @@ describe('a route that throws while rendering', () => {
     const anchor = document.createElement('span')
     wrap.appendChild(anchor)
     ChainRenderer ??= await build(chainSrc, '/ChainRenderer.mesa', {
-      page, ChainRendererInner: (...a) => ChainRenderer(...a),
+      page, remountKey, ChainRendererInner: (...a) => ChainRenderer(...a),
     })
     runtime.mount(anchor, App, { props: { chain: [{ component: await Throws() }] } })
     await settle()

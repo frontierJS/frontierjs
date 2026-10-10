@@ -1,0 +1,17 @@
+<script>
+  let done = 3
+  let busy = true
+</script>
+
+<p>top</p>
+<progress value={done} max="10">{done} of 10</progress>
+<p>half</p>
+<progress value="1" max="2">half</progress>
+<p>over</p>
+<progress value="9" max="4"></progress>
+<p>no max</p>
+<progress value="0.25"></progress>
+<p>wait</p>
+<progress value={busy ? undefined : 1}>{busy ? 'busy' : 'idle'}</progress>
+<button on:click={() => done = Math.min(10, done + 5)}>more</button>
+<button on:click={() => busy = !busy}>flip</button>

@@ -58,11 +58,32 @@ export function linkHrefOf(el) {
  * every click, which looks like a working app that has lost its state (`FJS-1085`).
  *
  * @param {URL} url — already resolved against the current URL
+ * @param {{ protocol: string, host: string }} [here] — the router's location,
+ *        where it was handed a History rather than reading the window's
  * @returns {boolean}
  */
-export function isSameDocumentOrigin(url) {
-  const here = window.location
+export function isSameDocumentOrigin(url, here = window.location) {
   return url.protocol === here.protocol && url.host === here.host
+}
+
+/**
+ * What remounts a page whose component stays the same: its own params,
+ * joined, or every param when its meta says `remount: 'params'`. `null` when
+ * nothing does — no own params, or `remount: false`. `ChainRenderer` keys the
+ * page on it and the terminal shell keys its screen on it, so a route
+ * remounts on the same navigation in both.
+ *
+ * @param {{ meta?: object, ownParams?: string[] } | undefined} entry
+ * @param {Record<string, unknown>} params  the page's params
+ * @returns {string | null}
+ */
+export function remountKey(entry, params) {
+  const remount = entry?.meta?.remount
+  if (remount === false) return null
+  const own = entry?.ownParams ?? []
+  if (own.length === 0) return null
+  if (remount === 'params') return JSON.stringify(params)
+  return own.map(p => params[p]).join('/')
 }
 
 export function registerModule(routeId, module) {

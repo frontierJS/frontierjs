@@ -18,8 +18,12 @@
  * of many lines where Enter types a new line, `select` is one row showing its
  * chosen option where Up and Down choose another, `rule` is a line across the
  * parent's width, `image` is its `alt` text, as a browser shows an image it
- * cannot load, and takes no room while that text is empty. The optional style hints are terminal cell attributes, never colors
- * (Invariant 13).
+ * cannot load, and takes no room while that text is empty, and `progress` is
+ * a bar across its parent's width filled by `value` over `max`, as a browser
+ * draws one, or the words `in progress` with no `value`, where a browser
+ * animates. A progress's children are the fallback a browser shows only when
+ * it cannot draw the bar, so the terminal never builds them. The optional
+ * style hints are terminal cell attributes, never colors (Invariant 13).
  *
  * Layout hints: `inline` lays a box's children side by side; `indent` is
  * columns of left padding; `cell` takes an equal share of its row, which is
@@ -83,6 +87,7 @@ export const TERMINAL_TAGS = {
   output:   { role: 'box', inline: true },
   mark:     { role: 'box', inline: true, inverse: true },
   img:      { role: 'image', requires: ['alt'] },
+  progress: { role: 'progress' },
   button:   { role: 'button' },
   input:    { role: 'input' },
   textarea: { role: 'textarea' },

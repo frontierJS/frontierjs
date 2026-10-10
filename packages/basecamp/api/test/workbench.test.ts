@@ -7,7 +7,7 @@
 
 import { describe, test, expect, afterAll } from 'bun:test'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorkbench, pinId } from '../src/core/workbench.ts'
@@ -353,6 +353,189 @@ describe('diff', () => {
     expect(byPath['b.txt']).toMatchObject({ status: 'untracked', adds: 2, dels: 0 })
     expect(byPath['b.txt'].hunks[0].lines.map(l => l.new)).toEqual([1, 2])
     expect(byPath['c.bin']).toMatchObject({ status: 'binary', hunks: [] })
+  })
+
+})
+
+describe('branches', () => {
+
+  // A real repository, never clean: one tracked edit and one untracked file
+  // sit uncommitted, as they do in this repo every day.
+  function gitRepo(name: string) {
+    const dir = join(tmp, 'repos', name)
+    mkdirSync(dir, { recursive: true })
+    const git = (...a: string[]) => execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8' })
+    git('init', '-q', '-b', 'main')
+    writeFileSync(join(dir, 'a.txt'), 'one\ntwo\nthree\n')
+    writeFileSync(join(dir, 'gone.txt'), 'delete me\n')
+    writeFileSync(join(dir, '.gitignore'), '.env\n')
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    writeFileSync(join(dir, 'a.txt'), 'one\nTWO\nthree\n')
+    writeFileSync(join(dir, 'wip.txt'), 'half done\n')
+    writeFileSync(join(dir, '.env'), 'SECRET=1\n')
+    return { dir, git }
+  }
+
+  function forked(wb: ReturnType<typeof createWorkbench>, parentId: string, slug?: string) {
+    const r = wb.fork(parentId, { slug })
+    if (!('pin' in r)) throw new Error(r.refused)
+    return r.pin
+  }
+
+  test('fork: the dirty tree as the operator sees it, in a worktree outside the repo, pinned beside it', () => {
+    const wbDir = join(tmp, 'wb-fork')
+    const wb = createWorkbench({ dir: wbDir })
+    const { dir, git } = gitRepo('fork')
+    const parent = wb.pin(dir)
+    if (!('pin' in parent)) throw new Error(parent.refused)
+    const indexBefore = readFileSync(join(dir, '.git', 'index'))
+    const headBefore  = git('rev-parse', 'HEAD').trim()
+
+    const b = forked(wb, parent.pin.id)
+    expect(b).toMatchObject({ from: parent.pin.id, branch: 'wb/branch-1', name: 'fork · branch-1', forkOf: null })
+    expect(b.path.startsWith(join(wbDir, 'trees', parent.pin.id))).toBe(true)
+    expect(readFileSync(join(b.path, 'a.txt'), 'utf8')).toBe('one\nTWO\nthree\n')
+    expect(readFileSync(join(b.path, 'wip.txt'), 'utf8')).toBe('half done\n')
+    // Ignored files are the app's to copy, not the snapshot's.
+    expect(existsSync(join(b.path, '.env'))).toBe(false)
+    expect(b.carried).toEqual({ total: 2, files: ['a.txt', 'wip.txt'] })
+    expect(git('rev-parse', `${b.base}^`).trim()).toBe(headBefore)
+
+    // The parent's index, HEAD and branch are only read.
+    expect(readFileSync(join(dir, '.git', 'index')).equals(indexBefore)).toBe(true)
+    expect(git('rev-parse', 'HEAD').trim()).toBe(headBefore)
+    expect(git('status', '--porcelain')).toContain('?? wip.txt')
+    expect(wb.readPins().map(p => p.from)).toEqual([null, parent.pin.id])
+
+    expect(forked(wb, parent.pin.id).branch).toBe('wb/branch-2')
+    expect(wb.fork(parent.pin.id, { slug: 'branch-1' })).toEqual({ refused: expect.stringContaining('already exists') })
+    expect(wb.fork(parent.pin.id, { slug: '../x' })).toEqual({ refused: expect.stringContaining('not a branch name') })
+    expect(wb.fork(b.id)).toEqual({ refused: expect.stringContaining('itself a branch') })
+  })
+
+  test('a clean parent is cut at HEAD, and the diff reads against the base', () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-clean') })
+    const { dir, git } = gitRepo('clean')
+    git('add', '-A')
+    git('commit', '-qm', 'all')
+    const parent = wb.pin(dir)
+    if (!('pin' in parent)) throw new Error(parent.refused)
+    const b = forked(wb, parent.pin.id, 'tidy')
+    expect(b.base).toBe(git('rev-parse', 'HEAD').trim())
+    expect(b.carried).toEqual({ total: 0, files: [] })
+
+    writeFileSync(join(b.path, 'new.txt'), 'x\n')
+    writeFileSync(join(b.path, 'a.txt'), 'one\n')
+    const d = wb.diff(b.id)!
+    expect(d.base).toBe(b.base)
+    expect(d.files.map(f => [f.path, f.status])).toEqual([['a.txt', 'modified'], ['new.txt', 'added']])
+  })
+
+  test('the first message in a branch forks the parent\'s chat; the next resumes the fork', async () => {
+    const { bin, seen } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-fork-chat'), bin })
+    const parent = wb.pin(gitRepo('fork-chat').dir)
+    if (!('pin' in parent)) throw new Error(parent.refused)
+    wb.configure(parent.pin.id, { budget: 3 })
+    await wb.send(parent.pin.id, 'first')
+    await until(async () => !wb.getPin(parent.pin.id)!.pid && !!wb.getPin(parent.pin.id)!.session)
+
+    const b = forked(wb, parent.pin.id)
+    expect(b).toMatchObject({ forkOf: SESSION, session: null, budget: 3 })
+    await wb.send(b.id, 'in the branch')
+    await until(async () => !wb.getPin(b.id)!.pid && !!wb.getPin(b.id)!.session)
+    await wb.send(b.id, 'again')
+    await until(async () => seen().length === 3 && !wb.getPin(b.id)!.pid)
+
+    const [, first, second] = seen()
+    expect(first.cwd).toBe(b.path)
+    expect(first.argv.slice(-3)).toEqual(['--resume', SESSION, '--fork-session'])
+    expect(second.argv.slice(-2)).toEqual(['--resume', SESSION])
+    expect(second.argv).not.toContain('--fork-session')
+
+    // A new chat in a branch forks nothing.
+    wb.fresh(b.id)
+    expect(wb.getPin(b.id)).toMatchObject({ session: null, forkOf: null })
+  })
+
+  test('land: the branch\'s work, committed or not, into the parent\'s tree uncommitted; a second land carries only what came after', () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-land') })
+    const { dir, git } = gitRepo('land')
+    const parent = wb.pin(dir)
+    if (!('pin' in parent)) throw new Error(parent.refused)
+    const b = forked(wb, parent.pin.id)
+    const bgit = (...a: string[]) => execFileSync('git', ['-C', b.path, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8' })
+    const headBefore = git('rev-parse', 'HEAD').trim()
+
+    expect(wb.land(b.id)).toEqual({ refused: expect.stringContaining('nothing to land') })
+
+    writeFileSync(join(b.path, 'a.txt'), 'one\nTWO\nthree\nfour\n')
+    bgit('commit', '-qam', 'four')
+    writeFileSync(join(b.path, 'added.txt'), 'from the branch\n')
+    unlinkSync(join(b.path, 'gone.txt'))
+
+    const landed = wb.land(b.id)
+    expect(landed).toEqual({ landed: ['a.txt', 'added.txt', 'gone.txt'] })
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('one\nTWO\nthree\nfour\n')
+    expect(readFileSync(join(dir, 'added.txt'), 'utf8')).toBe('from the branch\n')
+    expect(existsSync(join(dir, 'gone.txt'))).toBe(false)
+    expect(readFileSync(join(dir, 'wip.txt'), 'utf8')).toBe('half done\n')
+    expect(git('rev-parse', 'HEAD').trim()).toBe(headBefore)
+    expect(git('diff', '--cached', '--name-only')).toBe('')
+
+    // The base moved to what landed: the diff is empty and so is a second land.
+    expect(wb.diff(b.id)!.total).toBe(0)
+    expect(wb.land(b.id)).toEqual({ refused: expect.stringContaining('nothing to land') })
+    writeFileSync(join(b.path, 'later.txt'), 'later\n')
+    expect(wb.land(b.id)).toEqual({ landed: ['later.txt'] })
+  })
+
+  test('land refuses, naming the file, when the parent moved under it — and writes nothing', () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-conflict') })
+    const { dir } = gitRepo('conflict')
+    const parent = wb.pin(dir)
+    if (!('pin' in parent)) throw new Error(parent.refused)
+    const b = forked(wb, parent.pin.id)
+    writeFileSync(join(b.path, 'a.txt'), 'one\nBRANCH\nthree\n')
+    writeFileSync(join(b.path, 'other.txt'), 'clean add\n')
+    writeFileSync(join(dir, 'a.txt'), 'one\nPARENT\nthree\n')
+
+    const r = wb.land(b.id)
+    expect(r).toMatchObject({ refused: expect.stringContaining('a.txt'), files: ['a.txt'] })
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('one\nPARENT\nthree\n')
+    expect(existsSync(join(dir, 'other.txt'))).toBe(false)
+    expect(wb.getPin(b.id)!.base).toBe(b.base)
+  })
+
+  test('archive asks before losing work, then removes the tree and keeps the branch; a parent with branches cannot be unpinned', () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-archive') })
+    const { dir, git } = gitRepo('archive')
+    const parent = wb.pin(dir)
+    if (!('pin' in parent)) throw new Error(parent.refused)
+    const b = forked(wb, parent.pin.id)
+
+    expect(wb.unpin(parent.pin.id)).toEqual({ refused: expect.stringContaining('1 branch first') })
+    expect(wb.unpin(b.id)).toEqual({ refused: expect.stringContaining('archive it') })
+    expect(wb.archive(parent.pin.id)).toEqual({ refused: expect.stringContaining('not a branch') })
+
+    writeFileSync(join(b.path, 'unlanded.txt'), 'x\n')
+    expect(wb.archive(b.id)).toEqual({ refused: expect.stringContaining('1 file not landed'), pending: 1 })
+    expect(existsSync(b.path)).toBe(true)
+
+    expect(wb.archive(b.id, { discard: true })).toEqual({ archived: 'wb/branch-1' })
+    expect(existsSync(b.path)).toBe(false)
+    expect(wb.getPin(b.id)).toBeNull()
+    expect(git('branch', '--list', 'wb/*').trim()).toBe('wb/branch-1')
+    expect(git('worktree', 'list')).not.toContain(b.path)
+
+    // A landed branch archives without asking.
+    const c = forked(wb, parent.pin.id)
+    expect(c.branch).toBe('wb/branch-2')
+    writeFileSync(join(c.path, 'kept.txt'), 'y\n')
+    expect(wb.land(c.id)).toEqual({ landed: ['kept.txt'] })
+    expect(wb.archive(c.id)).toEqual({ archived: 'wb/branch-2' })
+    expect(wb.unpin(parent.pin.id)).toBeNull()
   })
 
 })

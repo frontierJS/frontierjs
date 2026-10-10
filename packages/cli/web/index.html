@@ -1868,6 +1868,7 @@ const KIND_TITLE = {
   suite:    'suites',
   task:     'tasks',
   snapshot: 'snapshots',
+  page:     'pages',
 }
 
 // A state is a word and a tone. `unknown` is muted rather than absent: a row
@@ -2809,7 +2810,7 @@ function dashRow(r) {
   // `view` is NOT `open`: open is gated on the row answering, because a link to
   // a port nothing is listening on is a browser error page. A committed page is
   // a file and is there whether or not anything is running, so it is always
-  // shown — and whether a row has one is `viewable`, decided in `runnables.js`
+  // shown — and whether a row has one is `page`, decided in `runnables.js`
   // rather than re-derived from the filename here.
   const cmd = r.start
     ? `<code class="gui-cmd" title="${esc(r.dir)}">${esc(r.dir === '.' ? '' : r.dir + ' · ')}${esc(r.start)}</code>`
@@ -2845,7 +2846,7 @@ function dashRow(r) {
         ${r.start ? `<button class="btn ghost text-xs" data-start hidden onclick="${r.needs?.length ? 'startWithNeeds' : 'startRow'}(${esc(JSON.stringify(r.id))})">${r.needs?.length ? 'start it all' : 'start'}</button>` : ''}
         ${r.start ? `<button class="btn ghost text-xs" data-stop hidden onclick="stopRow(${esc(JSON.stringify(r.id))})">stop</button>` : ''}
         ${r.open ? `<a class="btn ghost text-xs" data-open hidden href="${esc(r.open)}" target="_blank" rel="noreferrer">open</a>` : ''}
-        ${r.viewable ? `<a class="btn ghost text-xs" href="${API}/api/page/${encodeURIComponent(r.id)}" target="_blank" rel="noreferrer">view</a>` : ''}
+        ${r.page ? `<a class="btn ghost text-xs" href="${API}/api/page/${encodeURIComponent(r.id)}" target="_blank" rel="noreferrer">view</a>` : ''}
       </div>
     </li>`
 }

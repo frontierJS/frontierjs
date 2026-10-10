@@ -119,7 +119,7 @@ unset value is `false`, not null.
 
 The second mode is `always` and not `mirror`: the cascade is one-way, parent to child, so
 *mirror* promises a reflection it does not give, and the word belongs to `@@mirror` — a
-model whose rows a sync holds equal to a source outside the database (`FJS-D829`).
+model whose rows a sync holds equal to a source outside the database (`FJS-D843`).
 
 Both modes are idempotent by construction — `once` because a stamped row no longer
 matches, `always` because an equal row no longer matches. `once` is the default
@@ -204,7 +204,7 @@ useful.
   - **Recommend A** — `FJS-D502` already answers this: `asSystem()` lifts authority and
     holds integrity rules, so a cascade holds under it, and `sys.sql` is the one
     bypass that says it is one.
-- **Does `updateMany` cascade?** Transitions explicitly do not fire on bulk ops, by a
+- ~~**Does `updateMany` cascade?**~~ **Answered 2026-10-09 (`FJS-D844`): B — cascade on `updateMany`: take the matched parent ids by `RETURNING`, as a bulk write on a logged model already does, and run the child statement over them.** Transitions explicitly do not fire on bulk ops, by a
   documented decision. A cascade that silently does not propagate on `updateMany`
   reproduces exactly the drift the feature exists to prevent, so the answer here
   probably has to differ — and then two schema rules behave differently on the same
@@ -219,7 +219,7 @@ useful.
     to grade; a cascade needs only the parent ids, and both mode guards make the
     child statement idempotent without the old value. The two rules then differ
     for a reason the docs can state in one line, rather than by habit.
-- **Gates on the child.** The cascade writes rows the caller may have no level to
+- ~~**Gates on the child.**~~ **Answered 2026-10-09 (`FJS-D845`): A — the child's gate is not checked: the parent's gate authorized the cause, and each child audit entry names the caller as actor and the parent write as the cause.** The cascade writes rows the caller may have no level to
   write. Soft delete already made this choice implicitly (it does not check). Stating
   it is the point: a cascade is a system write caused by an authorized one.
   - **A** — the child's gate is not checked: the parent's gate authorized the cause,
@@ -231,7 +231,7 @@ useful.
   - **Recommend A** — a cascade is integrity, and `FJS-D502` already splits integrity
     from authority. B lets a child model's gate veto a parent write the caller is
     allowed to make, and C is the silent drift the feature exists to end.
-- **How many hops?** BFS matches the cascade precedent; one hop is easier to reason
+- ~~**How many hops?**~~ **Answered 2026-10-09 (`FJS-D846`): C — one hop per declaration, chained: a child that declares its own `@@cascade` on the received field carries it a hop further, with a cycle guard.** BFS matches the cascade precedent; one hop is easier to reason
   about and easier to explain in an error message.
   - **A** — one hop: the declaring model's direct children.
   - **B** — the breadth-first walk with a cycle guard, as `@@softDelete(cascade)`

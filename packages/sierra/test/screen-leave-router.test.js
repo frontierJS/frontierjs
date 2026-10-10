@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { compileSource } from '../../mesa/src/compiler.js'
 import * as runtime from '../../mesa/src/runtime.js'
 import { initRouter, goto, page, _resetPage } from '../src/router/index.js'
-import { resolveChain, _resetInternals } from '../src/router/internals.js'
+import { resolveChain, remountKey, _resetInternals } from '../src/router/internals.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel) => readFileSync(resolve(here, rel), 'utf8')
@@ -90,7 +90,7 @@ async function boot() {
 <main>{@render children()}</main>`, '/Layout.mesa', {}) }) }
   let ChainRenderer
   const inner = (...a) => ChainRenderer(...a)
-  ChainRenderer = await build(read('../src/components/ChainRenderer.mesa'), '/ChainRenderer.mesa', { page, ChainRendererInner: inner })
+  ChainRenderer = await build(read('../src/components/ChainRenderer.mesa'), '/ChainRenderer.mesa', { page, remountKey, ChainRendererInner: inner })
   const RouterView = await build(read('../src/components/RouterView.mesa'), '/RouterView.mesa', { page, resolveChain, ChainRenderer: inner })
   initRouter(t, comps, {}, { trailingSlash: 'always' }, layouts)
   await settle()

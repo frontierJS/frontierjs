@@ -68,17 +68,4 @@ describe('changing the password ends the other sessions', () => {
     const rows = await h.sys.session.findMany({ where: { userId: user.id } })
     expect(rows.length).toBe(1)
   })
-
-  test('an unscoped API key that changes the password also ends every session', async () => {
-    // The key path is the one with no sessionId at all, so "others" has no
-    // exception to keep — every session is somebody else's tab.
-    const u = await person()
-    const a = await u.login()
-    const minted = await request(app).post('/api-keys').auth(a).send({ name: 'ops' })
-    expect(minted.status).toBe(201)
-    const key = (minted.body as any).key as string
-
-    expect((await change(key, 'pw-old-1', 'pw-new-3')).status).toBe(200)
-    expect((await me(a)).status).toBe(401)
-  })
 })

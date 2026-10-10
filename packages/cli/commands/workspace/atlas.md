@@ -49,6 +49,16 @@ flags:
     type: string
     description: Output path (default is named for the presentation, at the workspace root)
     defaultValue: ''
+pages:
+  -
+    file: repo-rings.html
+    flags: --as=rings
+  -
+    file: repo-work.html
+    flags: --as=rings
+  -
+    file: repo-atlas.live.html
+    flags: --live
 ---
 
 <script>
@@ -161,10 +171,15 @@ const body = page(model)
 
 if (flag.stdout || (as === 'json' && !flag.out)) { echo(body); return }
 
+// The two pages that are not snapshots are named once, in `pages:` above,
+// which is what lists them as runnable rows — a name typed here as well is
+// a row that opens a file this command stopped writing.
+const pageFile = flags => metadata.pages.find(p => p.flags === flags).file
+
 const DEFAULT_OUT = {
-  atlas:  flag.live ? 'repo-atlas.live.html' : 'repo-atlas.snapshot.html',
+  atlas:  flag.live ? pageFile('--live') : 'repo-atlas.snapshot.html',
   report: 'repo-report.snapshot.html',
-  rings:  'repo-rings.html',
+  rings:  pageFile('--as=rings'),
   json:   'repo-atlas.json',
 }
 

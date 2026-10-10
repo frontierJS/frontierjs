@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-46 services · 41 routes · 17 plugins · prefix (none)
+47 services · 41 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -820,6 +820,28 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `pages` · model `pages`
+
+- **methods** — `list`, `view`, `output`, `start`, `stop`
+- **custom methods** — `list`, `view`, `output`, `start`, `stop`
+- **who may call** —
+  - `list` — standing 5 or above — declared `gate: 5`
+  - `view` — standing 5 or above — declared `gate: 5`
+  - `output` — standing 5 or above — declared `gate: 5`
+  - `start` — standing 5 or above — declared `gate: 5`
+  - `stop` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `people`
 
 - **methods** — `get`, `remove`, `revokeSession`, `revokeApiKey`, `signOut`, `invite`
@@ -1095,8 +1117,8 @@ name when it declares none.
 
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`, `fork`, `land`, `archive`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`, `fork`, `land`, `archive`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
@@ -1111,6 +1133,9 @@ name when it declares none.
   - `seen` — standing 5 or above — declared `gate: 5`
   - `check` — standing 5 or above — declared `gate: 5`
   - `review` — standing 5 or above — declared `gate: 5`
+  - `fork` — standing 5 or above — declared `gate: 5`
+  - `land` — standing 5 or above — declared `gate: 5`
+  - `archive` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

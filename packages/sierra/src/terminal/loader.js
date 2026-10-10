@@ -30,11 +30,19 @@
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve, relative } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import { findMesaFile, prepareForCompile } from '../build/mesa-plugin.js'
 import { appSrcDir } from '../build/app-alias-plugin.js'
 
 let installed = null
+
+// `@frontierjs/sierra/router` is the router without its two DOM outlets,
+// which `entry.js` re-exports and which do not lower (`FJS-2271`). The shell
+// imports this same file, so a route's `page` is the shell's.
+const ROUTER = fileURLToPath(new URL('../router/index.js', import.meta.url))
+// Rewritten in the compiled output rather than resolved by the plugin: Bun
+// does not hand a plugin-loaded module's package imports to `onResolve`.
+const ROUTER_IMPORT = /(\bfrom\s*['"])@frontierjs\/sierra\/router(['"])/g
 
 /** A `.mesa` import or re-export, its clause and its specifier. A bare
  *  side-effect import has no clause and mounts nothing. */
@@ -81,7 +89,7 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
         filename: relative(root, path),
         warning:  () => {},
       })
-      entry = { code: ctx.result, refusal: ctx.terminalRefusal ?? null }
+      entry = { code: ctx.result.replace(ROUTER_IMPORT, `$1${ROUTER}$2`), refusal: ctx.terminalRefusal ?? null }
     } catch (e) {
       entry = { error: e.message }
     }

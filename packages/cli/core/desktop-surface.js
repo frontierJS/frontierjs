@@ -612,16 +612,20 @@ export function stopServer(child) {
  * WM_CLASS the shell's window carries — the identifier is not, and a mismatch
  * shows the window in the dock under a generic icon.
  *
+ * `release` makes the entry open the release shell; without it a click opens
+ * the debug one, whatever `desktop:run --release` built beside it.
+ *
  * @returns {{ file: string, body: string } | null} null with no crate
  */
-export function desktopLauncher({ root, surface, bun, fli, path, dataHome }) {
-  const binary = desktopBinary(surface, { platform: 'linux' })
+export function desktopLauncher({ root, surface, bun, fli, path, dataHome, release = false }) {
+  const binary = desktopBinary(surface, { release, platform: 'linux' })
   if (!binary) return null
   const conf  = JSON.parse(readFileSync(resolve(surface, 'shell', 'tauri.conf.json'), 'utf8'))
   const icon  = conf.bundle?.icon?.find(i => i.endsWith('.png')) ?? conf.bundle?.icon?.[0]
   // A relative entry would resolve against whatever directory the launcher is in.
   const dirs  = [...new Set(path.split(':').filter(d => d.startsWith('/')))].join(':')
-  const exec  = ['env', `PATH=${dirs}`, bun, fli, 'desktop:run', '--no-build'].map(execArg).join(' ')
+  const exec  = ['env', `PATH=${dirs}`, bun, fli, 'desktop:run', '--no-build', ...(release ? ['--release'] : [])]
+    .map(execArg).join(' ')
   const lines = [
     '[Desktop Entry]',
     'Type=Application',

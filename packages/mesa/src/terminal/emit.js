@@ -127,6 +127,9 @@ export function terminalDropped(ir) {
  * what was typed.
  */
 const isField = (n) => ['input', 'textarea'].includes(TERMINAL_TAGS[n.tag]?.role)
+// A `<progress>`'s children are the fallback a browser shows only when it
+// cannot draw the bar, so nothing in them is built or refused.
+const fallbackOnly = (n) => TERMINAL_TAGS[n.tag]?.role === 'progress'
 // The roles a person changes the value of, so the only ones a `bind:value`
 // hears back from.
 const CONTROLS = ['input', 'textarea', 'select']
@@ -181,7 +184,7 @@ export function terminalOffenses(ir) {
           return false
         }
         elementOffenses(n, add)
-        return
+        return fallbackOnly(n) ? false : undefined
       // A tag that is a read is checked against the same table when it is
       // built, naming the tag; only a literal one can be refused here.
       case 'dynamic-element': {
@@ -304,7 +307,7 @@ export function buildTerminal(ctx) {
     }
     // `n.styles` and `n.classes` are CSS, and a terminal paints no CSS: they
     // are inert here as a static `style` or `class` and the scoped rules are.
-    if (!field) emitChildren(n.children, el, ind)
+    if (!field && !fallbackOnly(n)) emitChildren(n.children, el, ind)
     for (const h of n.handlers) {
       dep(h.expr)
       line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)

@@ -2,3 +2,4 @@
   import { things } from '../resources/Thing.mesa'
 </script>
 <p>Things: {things.length}</p>
+<a href="deep/">Deeper</a>

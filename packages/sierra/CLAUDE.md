@@ -34,15 +34,18 @@ src/
   terminal/              — the terminal target of `web/` (`FJS-D809`): the same
                            routes, compiled with `target: 'terminal'`
     loader.js            a Bun plugin — `.mesa` through `prepareForCompile`,
-                         `@/` through `appSrcDir` — and `lowers(file)`, which
-                         compiles a route and its `.mesa` imports WITHOUT
+                         `@/` through `appSrcDir`, `sierra/router` rewritten to
+                         `router/index.js` (`FJS-2271`) — and `lowers(file)`,
+                         which compiles a route and its `.mesa` imports WITHOUT
                          running them, since a route's module runs its
                          resources at import
     shell.js             the boot (`virtual:sierra`'s Junction + schemas half),
-                         the route list, one route mounted at a time. No
-                         router, layout or autoImport yet — each named in its
-                         header where a route would need it
-    Shell.mesa           the list screen, compiled by the same loader
+                         the route list, and Sierra's own router over a memory
+                         History: a route mounts where the router lands, a
+                         link is `followLink`. No layout or autoImport yet
+    Shell.mesa           the heading, a note and the list, compiled by the same
+                         loader; `state` is a signal's read, since a prop's `$:`
+                         watch is local and would not hear the shell
 
   serve/                 — what the two static servers share
     hashed-asset.js      is this filename content-addressed? The only answer
@@ -70,7 +73,9 @@ src/
 
   router/                — the runtime router
     index.js, match.js, internals.js (used by RouterView.mesa),
-    signals.js, prefetch.js, page-fields.js (the fields the router owns on `page`)
+    signals.js, prefetch.js, page-fields.js (the fields the router owns on `page`),
+    memory-history.js    `createMemoryHistory` — the address `initRouter({ history })`
+                         reads and writes where there is no window (the terminal)
 
   build/                 — the Vite side
     index.js             createSierraViteConfig — start here
@@ -212,6 +217,13 @@ src/
   only the expiry. `session.awaitingCode` is what a page renders the box from and
   `submitCode(code)` finishes it; `retryable: false` closes the box, because the
   attempt is spent and every further code will be refused (`FJS-D261`).
+
+- **In a terminal process `typeof window` is `'object'` and nothing else of a
+  browser is there.** OpenTUI's renderer plants `globalThis.window = {
+  requestAnimationFrame }`, so a `typeof window` guard passes and the next
+  line's `document` throws. The router keys its document-only work (prefetch,
+  scroll, link delegation) on *not handed a History* for that reason; a new
+  browser-only branch reachable from the terminal shell needs the same test.
 
 - **A shadow root on the host element is not necessarily OURS.** `el.shadowRoot
   ?? el.attachShadow()` reads a root the host page attached as one to move into,

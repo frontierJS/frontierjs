@@ -112,7 +112,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
   /**
    * The caller, or a 401 — and a 403 for any API key, scoped or not. Every
-   * method below except `account.get` starts here.
+   * method on the caller's own credentials except `account.get` starts here.
    *
    * Managing credentials takes a session (`FJS-D615`). A key that reaches
    * these services mints itself another key, signs its owner out of every
@@ -128,6 +128,24 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     if (user.authMethod === 'apiKey') {
       throw new Forbidden(
         `An API key cannot manage this account's credentials — sign in to do it.`
+      )
+    }
+    return user
+  }
+
+  /**
+   * The caller acting on somebody ELSE's account — `people` and
+   * `account-recovery`. An unscoped key passes, because an agent reaches
+   * `/mcp` with one and reading people is what an admin agent is for; its
+   * writes are `refuseDelegated`'s. A scoped key is refused, since no scope an
+   * app declares names these services. `FJS-D615` ruled the caller's OWN
+   * credentials and not these.
+   */
+  function operatorOf(ctx: ServiceContext): SessionContext {
+    const user = identify(ctx)
+    if (user.scopes?.length) {
+      throw new Forbidden(
+        `An API key with scopes (${user.scopes.join(', ')}) cannot manage accounts — sign in to do it.`
       )
     }
     return user
@@ -218,7 +236,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
    * anybody standing at or above them.
    */
   async function aim(ctx: ServiceContext, what?: string): Promise<{ operator: SessionContext; person: SessionContext }> {
-    const operator = caller(ctx)
+    const operator = operatorOf(ctx)
     if (what) refuseDelegated(ctx, operator, what)
     const userId = String(ctx.id ?? '')
     if (!userId || userId === 'me' || userId === operator.userId) {
@@ -501,7 +519,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     methods: signedIn('resetTotp'),
 
     async resetTotp(ctx: ServiceContext) {
-      const operator = caller(ctx)
+      const operator = operatorOf(ctx)
       // An episode resolves as the subject, so the operator would be graded as
       // somebody else — and a reset outlives the episode that made it.
       refuseDelegated(ctx, operator, "reset somebody's second factor")
@@ -602,7 +620,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     // POST /people — no id: the person does not exist yet.
     async invite(ctx: ServiceContext) {
-      const operator = caller(ctx)
+      const operator = operatorOf(ctx)
       refuseDelegated(ctx, operator, 'invite somebody')
       const { email, name } = (ctx.data ?? {}) as { email?: unknown; name?: unknown }
       if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequest('email must be an address')

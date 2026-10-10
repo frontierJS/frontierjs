@@ -20,8 +20,8 @@ export async function run(t) {
   /* ── the link is on the row, and only on the rows that have a page ────── */
 
   const rows = await t.evaluate(`
-    const viewable = dashRows.filter(r => r.viewable);
-    const other    = dashRows.find(r => r.kind === 'snapshot' && !r.viewable);
+    const viewable = dashRows.filter(r => r.page);
+    const other    = dashRows.find(r => r.kind === 'snapshot' && !r.page);
     const li       = viewable[0] && document.querySelector('#dash-groups [data-id="' + viewable[0].id + '"]');
     const otherLi  = other && document.querySelector('#dash-groups [data-id="' + other.id + '"]');
     const link     = li && [...li.querySelectorAll('a')].find(a => a.textContent.trim() === 'view');

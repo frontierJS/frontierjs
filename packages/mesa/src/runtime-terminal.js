@@ -110,6 +110,29 @@ class SelectBox extends BoxRenderable {
 
 const NONE = Symbol('none')
 
+/**
+ * `<progress>`: one row the width of its parent, `value` over `max` of it
+ * filled. The fill is drawn when layout hands the box its width, since a
+ * bar sized to its own text would never widen past the text it started
+ * with. The numbers are read as a browser reads them: a `value` that is no
+ * number makes the bar indeterminate, a `max` that is no positive number is
+ * 1, and the value is held between 0 and `max`.
+ */
+class ProgressBar extends BoxRenderable {
+  onResize(width, height) {
+    super.onResize(width, height)
+    this.draw()
+  }
+  draw() {
+    const value = parseFloat(this.__attrs.value)
+    if (Number.isNaN(value)) { set_text(this.__label, 'in progress'); return }
+    const raw = parseFloat(this.__attrs.max)
+    const max = raw > 0 ? raw : 1
+    const filled = Math.round(this.width * Math.min(1, Math.max(0, value / max)))
+    set_text(this.__label, '█'.repeat(filled) + '░'.repeat(this.width - filled))
+  }
+}
+
 // ─── the current renderer ─────────────────────────────────────────────
 
 let _renderer = null
@@ -236,6 +259,11 @@ export function element(tag, attrs = {}) {
       node.__label = text('')
       node.add(node.__label)
       break
+    case 'progress':
+      node = new ProgressBar(r, { width: '100%', height: 1 })
+      node.__label = text('')
+      node.add(node.__label)
+      break
     case 'input':
       node = new InputRenderable(r, {})
       break
@@ -264,8 +292,8 @@ export function element(tag, attrs = {}) {
  * The one owner of an attribute on a terminal node, static or live: the
  * emitter hands a static attribute to `element()`, which routes it here, and
  * a live one arrives from a render effect. `null` and `false` remove, as on
- * the DOM path; a name with no terminal meaning (`class`, `href`, `aria-*`)
- * is kept on `__attrs` and paints nothing.
+ * the DOM path; a name with no terminal meaning (`class`, `aria-*`) is kept
+ * on `__attrs` and paints nothing. An `href` makes an `<a>` a link (`link`).
  *
  * `value` is the control's current text, the way the DOM property is: the
  * engine emits `input` when its value is written, which a DOM program write
@@ -295,6 +323,8 @@ export function set_attribute(node, name, value) {
     node.visible = str !== ''
     return
   }
+  if (node instanceof ProgressBar && (name === 'value' || name === 'max')) { node.draw(); return }
+  if (name === 'href' && node.__tag === 'a') { link(node, present); return }
   if (name === 'disabled') {
     // A disabled control takes no focus and no activation, and gives up the
     // focus it holds, as a browser's does.
@@ -509,6 +539,8 @@ function focusSource(node) {
     if (types(fields) && dispatch(node, 'keypress', fields).defaultPrevented) { k.preventDefault(); return }
     if (node.__keyAction?.(k.name)) { k.preventDefault(); return }
     if (!node.__activatable || node instanceof TextareaRenderable || !ACTIVATE_KEYS.has(k.name)) return
+    // Space scrolls past a link in a browser and follows nothing.
+    if (node.__link && k.name === 'space') return
     k.preventDefault()
     activate(node, fields)
   }
@@ -572,13 +604,70 @@ function pointer(node, e) {
   }
 }
 
-/** `click`, and then a button's default: submitting its form. */
+/** `click`, and then its default: a link is followed, a button submits its
+ *  form. */
 function activate(node, extra) {
   if (disabled(node)) return
   if (dispatch(node, 'click', extra).defaultPrevented) return
+  if (node.__link) { follow(node); return }
   if (node.__tag !== 'button' || !submits(node)) return
   const form = formOf(node)
   if (form) dispatch(form, 'submit', { submitter: node })
+}
+
+// ─── links ────────────────────────────────────────────────────────────
+
+const followers = new WeakMap()
+
+/**
+ * What following a link means on `renderer`: `fn(href)` is handed a link's
+ * `href`, as written, when it is activated and its `click` was not
+ * prevented. A terminal has no address of its own, so with no follower an
+ * activated link goes nowhere, as one does in a page that cannot navigate.
+ * Answers a function that takes it back off.
+ *
+ * @param {object} renderer
+ * @param {(href: string) => void} fn
+ */
+export function followLinks(renderer, fn) {
+  followers.set(renderer, fn)
+  return () => { if (followers.get(renderer) === fn) followers.delete(renderer) }
+}
+
+/** An `<a>` with an `href` is a link: focusable, activated by Enter or a
+ *  press, and inverted while focused, the frame's only focus cue for text.
+ *  Without one it is text again, unless something listens to its `click`. */
+function link(node, on) {
+  node.__link = on
+  if (on) {
+    activatable(node)
+    if (!node.__linkCue) {
+      node.__linkCue = true
+      let held = null
+      node.on('focused', () => {
+        held = descendants(node, (n) => n instanceof TextRenderable).map((t) => [t, t.attributes])
+        for (const [t, bits] of held) t.attributes = bits | TextAttributes.INVERSE
+      })
+      node.on('blurred', () => {
+        for (const [t, bits] of held ?? []) if (!t.isDestroyed) t.attributes = bits
+        held = null
+      })
+    }
+    return
+  }
+  if (node.__listeners?.click?.length) return
+  node.__activatable = false
+  node.__canFocus = false
+  node.focusable = false
+  if (node.focused) node.blur()
+}
+
+/** A link with a `target` or a `download` is not followed in the page, in
+ *  a browser either. */
+function follow(node) {
+  const { href, target, download } = node.__attrs
+  if (href == null || target != null || download != null) return
+  followers.get(_renderer)?.(String(href))
 }
 
 /** A `<button>` with no `type` is a submit button, as in HTML. */

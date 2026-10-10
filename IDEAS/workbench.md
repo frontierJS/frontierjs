@@ -60,7 +60,8 @@ every tool in the field leads with.
 **Recommended order: 1 → 2 → 3 → 4**, because each reuses code that already exists.
 Together they turn *a run ended* into *a run ended, here is the diff, the checks are
 green, and it cost $0.80*. Then build #6 as a project of its own —
-[`workbench-branches.md`](workbench-branches.md) is its design.
+[`workbench-branches.md`](workbench-branches.md) is its design, and its slice A
+(Fork, Land, Archive) is built.
 
 **1–4 built on 2026-10-09.** The checks are the checkout's own `fli done`, which
 already carries what `fli proves` names. The review is opt-in per pin, because

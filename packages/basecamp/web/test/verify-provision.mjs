@@ -1085,6 +1085,55 @@ try {
   await evaluate(foldButton('None'))
   await until(foldState, s => !/folded/.test(s), 'None left a message folded')
 
+  // A branch: Fork cuts alpha's dirty tree into a worktree of its own, drawn
+  // after its parent; a message there forks the chat; Land carries its work
+  // back uncommitted; Archive removes the tree and keeps the git branch.
+  // The dialogs are answered in the page -- a native one blocks the drive.
+  const answer = (fn, value) => evaluate(`window.${fn} = () => ${JSON.stringify(value)}`)
+  const button = (sel, label) => `[...${sel}.querySelectorAll('button')].find(b => b.textContent.trim() === '${label}')`
+  await answer('prompt', 'try')
+  await evaluate(`${button(card, 'Fork')}.click()`)
+  await until(`document.querySelectorAll('#workbench-grid article[data-state]').length`, n => n === 2, 'Fork drew no second card')
+  const branch = `document.querySelector('#workbench-grid article[data-branch]')`
+  const drawn  = await evaluate(`[...document.querySelectorAll('#workbench-grid article[data-state]')].map(a => a.dataset.branch ?? 'parent').join(' ')`)
+  check('Fork draws the branch right after its parent', drawn === 'parent wb/try', drawn)
+  const branchText = (await evaluate(`${branch}.textContent`)).replace(/\s+/g, ' ')
+  check('…naming its parent, its git branch and the uncommitted files it carried',
+    /branch of alpha/.test(branchText) && /wb\/try/.test(branchText) && /carried 2 uncommitted files/.test(branchText), branchText.slice(0, 300))
+  check('…and saying its first message forks the chat', /forks its chat/.test(branchText))
+  const TREE = join(WORKBENCH, 'trees')
+  check('the tree is outside the repository, holding the parent\'s uncommitted file',
+    spawnSync('cat', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'try', 'dirty.txt')], { encoding: 'utf8' }).stdout === 'y')
+
+  await evaluate(`(() => { const t = ${branch}.querySelector('textarea')
+    t.value = 'in the branch'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await evaluate(`${branch}.querySelector('form button[type=submit]').click()`)
+  await until(`${branch}.dataset.state`, s => s === 'done', 'the branch\'s run never finished', 15_000)
+  check('a message runs in the branch, not in alpha',
+    /in the branch/.test(spawnSync('cat', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'try', 'claude-was-here.txt')], { encoding: 'utf8' }).stdout)
+      && !/in the branch/.test(spawnSync('cat', [join(ALPHA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout))
+  await until(`${card}.textContent`, t => /\$1\.26 total/.test(t), 'the parent\'s total never took in the branch')
+  check('the parent\'s total takes in its branch', true)
+  check('a parent with a branch cannot be unpinned', await evaluate(`${button(card, 'Unpin')}.disabled`))
+
+  await evaluate(`(() => { const d = ${branch}.querySelector('.workbench-diff-panel'); d.open = true })()`)
+  const branchFiles = await until(`[...${branch}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
+    t => /claude-was-here\.txt/.test(t), 'the branch\'s diff never listed what its run wrote')
+  check('the branch\'s diff is its work alone, not what it carried', !/dirty\.txt/.test(branchFiles), branchFiles)
+
+  await evaluate(`${button(branch, 'Land')}.click()`)
+  const landed = await until(`document.getElementById('workbench-notice')?.textContent ?? ''`, t => /Landed/.test(t), 'Land said nothing')
+  check('Land carries the branch\'s work into alpha\'s tree, uncommitted',
+    /Landed 1 file/.test(landed) && /in the branch/.test(spawnSync('cat', [join(ALPHA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout)
+      && spawnSync('git', ['-C', ALPHA, 'diff', '--cached', '--name-only'], { encoding: 'utf8' }).stdout === '', landed.replace(/\s+/g, ' '))
+
+  await answer('confirm', true)
+  await evaluate(`${button(branch, 'Archive')}.click()`)
+  await until(`document.querySelectorAll('#workbench-grid article[data-state]').length`, n => n === 1, 'Archive left the branch\'s card')
+  check('Archive removes the branch\'s card and its tree, and keeps wb/try',
+    !spawnSync('ls', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim())], { encoding: 'utf8' }).stdout.includes('try')
+      && /wb\/try/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout))
+
   // Focus mode, on the screen it was asked for. A sidebar left in the DOM
   // would keep its grid column, so the screen's left edge is the proof.
   const panels = `[!!document.querySelector('.shell > .sidebar'), !!document.querySelector('.notice-rail')]`

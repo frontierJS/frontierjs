@@ -539,7 +539,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {} }: {
   function diff(id: string) {
     const p = getPin(id)
     if (!p) return null
-    return { id, base: p.base, ...readDiff(p.path, p.base ?? 'HEAD') }
+    return { id, base: p.base, ...readDiff(p.path, p.base) }
   }
 
   // ─── runs ─────────────────────────────────────────────────────────────

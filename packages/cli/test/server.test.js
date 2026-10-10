@@ -853,9 +853,9 @@ describe('GET /api/page/:id', () => {
   // draws a `view` link on, and this route decides which it will serve. Read
   // off `runnables()` rather than off `/api/runnables`, which caches per
   // process and would answer for whichever root ran first.
-  test('every row marked viewable can actually be opened', async () => {
+  test('every row carrying a page can actually be opened', async () => {
     const { runnables } = await import('../core/runnables.js')
-    const viewable = runnables(dir).filter(r => r.viewable)
+    const viewable = runnables(dir).filter(r => r.page)
 
     expect(viewable.map(r => r.id)).toEqual(['snapshot:thing.snapshot.html'])
     for (const r of viewable) {

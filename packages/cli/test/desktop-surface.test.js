@@ -246,6 +246,14 @@ describe('what desktop:install writes', () => {
     expect(body).toContain('StartupWMClass=install-app-desktop\n')
   })
 
+  test('release: the entry opens the release shell, and the debug default is unchanged', () => {
+    const root = appRoot('install-release')
+    scaffoldDesktopSurface({ root, appName: 'install-release' })
+    expect(launcher(root, { release: true }).body)
+      .toContain('Exec=env PATH=/opt/bun/bin:/usr/bin /opt/bun/bin/bun /src/cli/bin/fli.js desktop:run --no-build --release\n')
+    expect(launcher(root).body).not.toContain('--release')
+  })
+
   test('an Exec argument is quoted for both of the parses it gets', () => {
     const root = appRoot('install-quote')
     scaffoldDesktopSurface({ root, appName: 'install-quote' })

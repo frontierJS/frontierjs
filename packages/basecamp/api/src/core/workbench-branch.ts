@@ -48,11 +48,12 @@ function git(root: string, argv: string[], { env = {}, input }: { env?: Record<s
 const lines = (out: string) => out.split('\n').filter(Boolean)
 
 /**
- * The working tree as a commit, untracked files included and ignored ones
- * not. The tree is HEAD's own when nothing differs, and HEAD is the answer.
+ * The working tree as a git tree, untracked files included and ignored ones
+ * not. A branch is always compared through one: a file it never `git add`ed is
+ * untracked in its index but present in a base that landed it, so a plain
+ * `git diff <base>` reads it as deleted.
  */
-export function snapshot(root: string): { base: string, carried: { total: number, files: string[] } } {
-  const head = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']).trim()
+export function treeOf(root: string): string {
   const real = git(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index']).trim()
   const tmp  = mkdtempSync(join(tmpdir(), 'workbench-index-'))
   const index = join(tmp, 'index')
@@ -62,14 +63,20 @@ export function snapshot(root: string): { base: string, carried: { total: number
     if (existsSync(real)) copyFileSync(real, index)
     const env = { GIT_INDEX_FILE: index }
     git(root, ['add', '-A'], { env })
-    const tree = git(root, ['write-tree'], { env }).trim()
-    if (tree === git(root, ['rev-parse', `${head}^{tree}`]).trim()) return { base: head, carried: { total: 0, files: [] } }
-    const base  = git(root, ['commit-tree', tree, '-p', head, '-m', 'workbench snapshot'], { env: IDENT }).trim()
-    const files = lines(git(root, ['diff', '--name-only', '--no-renames', head, base]))
-    return { base, carried: { total: files.length, files: files.slice(0, MAX_CARRIED) } }
+    return git(root, ['write-tree'], { env }).trim()
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
+}
+
+/** The working tree as a commit on HEAD — or HEAD, when the tree is HEAD's own. */
+export function snapshot(root: string): { base: string, carried: { total: number, files: string[] } } {
+  const head = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']).trim()
+  const tree = treeOf(root)
+  if (tree === git(root, ['rev-parse', `${head}^{tree}`]).trim()) return { base: head, carried: { total: 0, files: [] } }
+  const base  = git(root, ['commit-tree', tree, '-p', head, '-m', 'workbench snapshot'], { env: IDENT }).trim()
+  const files = lines(git(root, ['diff', '--name-only', '--no-renames', head, base]))
+  return { base, carried: { total: files.length, files: files.slice(0, MAX_CARRIED) } }
 }
 
 /** `wb/<slug>`, or why a slug cannot name a branch. */
@@ -99,14 +106,9 @@ export function removeWorktree(root: string, path: string) {
   }
 }
 
-/**
- * What the branch's tree holds that `base` does not — committed or not,
- * untracked included — without writing anything.
- */
+/** What the branch's tree holds that `base` does not — committed or not, untracked included. */
 export function pendingFiles(path: string, base: string): string[] {
-  const tracked   = lines(git(path, ['diff', '--name-only', '--no-renames', base]))
-  const untracked = git(path, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean)
-  return [...new Set([...tracked, ...untracked])]
+  return lines(git(path, ['diff', '--name-only', '--no-renames', base, treeOf(path)]))
 }
 
 // `git apply` names a file in each of these; the rest of its stderr is context.

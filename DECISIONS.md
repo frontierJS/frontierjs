@@ -1374,6 +1374,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d845"></a>2026-10-09 · `FJS-D845` — Gates on the child — The child's gate is not checked: the parent's gate authorized the cause, and each child audit entry names the caller as actor and the parent write as the cause.
+
+Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **A** was picked over **B** (the caller needs update level on every child model, and the whole write is refused when it lacks one), **C** (children the caller cannot write are skipped).
+
+The paper's recommendation, taken as written: a cascade is integrity, and `FJS-D502` already splits integrity from authority. B lets a child model's gate veto a parent write the caller is allowed to make, and C is the silent drift the feature exists to end.
+
 ### <a id="fjs-d619"></a>2026-10-09 · `FJS-D619` — Is a workspace roster meant for viewers, and if so what of a colleague's `User` row does it carry — Yes: the roster projects `User` to name, email and avatar.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no: the roster is graded at the `User` read policy).
@@ -3664,6 +3670,24 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d846"></a>2026-10-09 · `FJS-D846` — How many hops — One hop per declaration, chained: a child that declares its own `@@cascade` on the received field carries it a hop further, with a cycle guard.
+
+Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **C** was picked over **A** (one hop: the declaring model's direct children), **B** (the breadth-first walk with a cycle guard, as `@@softDelete(cascade)` does).
+
+The paper's recommendation, taken as written: every hop is written on the model it leaves, so the walk can reach no model that did not say so and each error names one hop. `@@softDelete(cascade)` then desugars into one declaration per model on the walk, generated rather than inferred at runtime.
+
+### <a id="fjs-d844"></a>2026-10-09 · `FJS-D844` — Does `updateMany` cascade — Cascade on `updateMany`: take the matched parent ids by `RETURNING`, as a bulk write on a logged model already does, and run the child statement over them.
+
+Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **B** was picked over **A** (refuse the source key on a bulk write, as `FJS-D182` does for the transitions key, and leave per-row writes to `update()` or junction's `bulkByRow`).
+
+The paper's recommendation, taken as written: transitions refuse a bulk write because it has no *from* state to grade; a cascade needs only the parent ids, and both mode guards make the child statement idempotent without the old value. The two rules then differ for a reason the docs can state in one line, rather than by habit.
+
+### <a id="fjs-d843"></a>2026-10-09 · `FJS-D843` — Is a MIRRORED model a declaration — A model attribute, `@@mirror(key: externalId)`, `absent: 30d` added once a second caller shows the drop-out rule's shape: the model is declared a mirror, the key is named once, the three per-column attributes and gate 8 are DERIVED from it, `missingSince` is a derived `@system` column the sync maintains, a caller's write to a mirrored column is refused by construction, and `advise` stops asking a mirror for a machine.
+
+Asked in [`IDEAS/conversion-ela.md`](IDEAS/conversion-ela.md) § Open questions. **B** was picked over **A** (no new word: the three attributes per column and gate 8 as today, the key and the drop-out rule stay in the connector, and `advise` learns nothing), **C** (a field attribute only, `@externalKey`: names the key the sync matches on and leaves the drop-out rule to the connector, as the smaller first half. - *Spelling:* `@@mirror`. `IDEAS/cascading-fields.md`'s cascade mode of that name is now `always`, because a cascade is one-way and pairs with `once`; the two were never one concept — a cascade follows a parent inside the database, a mirror follows a source outside it).
+
+One declaration the schema, the connector and advise all derive from, where today the key and the drop-out rule are restated in three places and drift in silence. Spelling is @@mirror: the cascade mode that held the word is renamed always, since a cascade is one-way, parent to child, and pairs with once. absent: waits for a second caller — ELA drops by window, Transit by cursor — so the key ships first and the drop-out rule when two sources agree on its shape.
 
 ### <a id="fjs-d592"></a>2026-10-09 · `FJS-D592` — Q1 — does `@@extensible` take `FJS-D365`'s `scope:`, so a declaration is keyed per PARENT ROW as well as per tenant? (`FJS-D592`) — `@@extensible(column, declaredBy: Model, scope: field)`, `field` a foreign key on the extended model whose twin is on the declarer. The key is unique on `[scope, key]` (and the tenant, under row tenancy), and the pool is per scope row, the way FJS-1290 made it per tenant. Allocation, the mirror, the filter rewrite and `$declaredFields` read the scope off the row, the payload or the where; a where that pins no scope is refused. A write that changes the scope column re-mirrors the row against the new scope's declarations.
 

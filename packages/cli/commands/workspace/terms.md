@@ -44,6 +44,10 @@ flags:
     type: string
     description: Output path (default repo-terms.html at the workspace root)
     defaultValue: ''
+pages:
+  -
+    file: repo-terms.html
+    flags: --as=page
 ---
 
 **How big is the vocabulary, and which half of it did anybody define?** Three
@@ -143,7 +147,7 @@ if (flag.as === 'list') {
   return
 }
 
-const file = flag.out ? resolve(root, flag.out) : resolve(root, 'repo-terms.html')
+const file = flag.out ? resolve(root, flag.out) : resolve(root, metadata.pages[0].file)
 writeFileSync(file, renderPage(model, styleBundle(root)))
 
 echo('')

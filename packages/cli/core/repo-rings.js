@@ -451,6 +451,7 @@ h1.pkh { display: flex; align-items: center; gap: .35em }
 .ilist .t { color: var(--ink); min-width: 0; overflow-wrap: anywhere }
 .ilist .pkg { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-mute); margin-left: 6px }
 .ilist.two li { grid-template-columns: minmax(0, 14em) minmax(0, 1fr) }
+.ilist.wave li { grid-template-columns: 3em 6.2em minmax(0, 1fr) }
 .ilist.two .id { overflow-wrap: anywhere }
 @media (max-width: 820px) { .ilist.two li { grid-template-columns: minmax(0, 1fr); gap: 2px } }
 .cards + .invs { margin-top: 16px }
@@ -1016,7 +1017,7 @@ function client(D) {
           <div class="eyebrow" style="--eye:var(--r-tooling)">Ideas · ${esc(w.title)}</div>
           <h1>${esc(w.blurb ? w.blurb[0].toUpperCase() + w.blurb.slice(1) : w.title)}</h1>
           <p class="lede">${plural(w.rows.length, 'idea')} in this wave. A status of <em>shipped</em> means the idea became code; anything else is a proposal, not behavior.</p>
-          <div class="panel"><ul class="ilist">${w.rows.map(r => `<li><span class="id">${esc(r[0])}</span><span class="sev" style="--c:${ST[r[2]] || 'var(--ink-mute)'}">${esc(r[2])}</span><span class="t">${md(r[1])}${r[5] ? `<span class="pkg">${esc(r[5])}</span>` : ''}</span></li>`).join('')}</ul></div>
+          <div class="panel"><ul class="ilist wave">${w.rows.map(r => `<li><span class="id">${esc(r[0])}</span><span class="sev" style="--c:${ST[r[2]] || 'var(--ink-mute)'}">${esc(r[2])}</span><span class="t">${md(r[1])}${r[5] ? `<span class="pkg">${esc(r[5])}</span>` : ''}</span></li>`).join('')}</ul></div>
           <div class="next">${+arg > 0 ? `<button class="rg-btn" type="button" data-go="ideas-${+arg - 1}">← ${esc(W[+arg - 1].title)}</button>` : '<span></span>'}${W[+arg + 1] ? `<button class="rg-btn rg-primary" type="button" data-go="ideas-${+arg + 1}">${esc(W[+arg + 1].title)} →</button>` : ''}</div>`
         }
       }

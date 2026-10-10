@@ -39,6 +39,10 @@ flags:
     type: number
     description: Pixels per tile on the map, or per cell on the badge (default 8 and 6)
     defaultValue: 0
+pages:
+  -
+    file: codegraph.html
+    flags: --as=page
 ---
 
 ```js
@@ -105,7 +109,7 @@ const body    = as === 'json'  ? codegraphJson(model)
               : as === 'page'  ? renderPage(model, { css, theme, all: flag.all, name: basename(root) })
               : as === 'badge' ? renderBadge(model, { palette, scale })
               :                  renderMap(model, { palette, scale, all: flag.all })
-const outPath = flag.out ? resolve(flag.out) : resolve(root, { map: 'codegraph.png', page: 'codegraph.html', badge: 'codegraph-badge.png', json: 'codegraph.json' }[as])
+const outPath = flag.out ? resolve(flag.out) : resolve(root, { map: 'codegraph.png', page: metadata.pages[0].file, badge: 'codegraph-badge.png', json: 'codegraph.json' }[as])
 writeFileSync(outPath, body)
 
 const source = model.files.filter(f => f.kind === 'source')

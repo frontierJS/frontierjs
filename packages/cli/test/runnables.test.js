@@ -18,7 +18,8 @@ import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
 
-import { runnables, probeState, KINDS, appDirs, driveRows, readCommands } from '../core/runnables.js'
+import { runnables, probeState, KINDS, appDirs, driveRows, readCommands, readPage } from '../core/runnables.js'
+import { WORK_FILE } from '../core/repo-work.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -324,5 +325,39 @@ describe('sources', () => {
       expect(Array.isArray(r.argv)).toBe(true)
       expect(r.argv.join(' ')).toBe(r.start)
     }
+  })
+})
+
+describe('pages', () => {
+  // The pages nobody commits are the reason this kind exists: a person who
+  // does not remember `fli ws:atlas --as=rings` has no other way to find them.
+  test('a command declaring `pages:` makes one row per page, run from the root', () => {
+    const real = runnables(REPO).filter(r => r.kind === 'page')
+    const rings = real.find(r => r.id === 'page:repo-rings.html')
+    expect(rings).toMatchObject({
+      dir: '.', page: 'repo-rings.html', argv: ['fli', 'ws:atlas', '--as=rings'],
+      source: 'packages/cli/commands/workspace/atlas.md',
+    })
+    expect(real.map(r => r.page)).toEqual(expect.arrayContaining([
+      'codegraph.html', 'repo-atlas.live.html', 'repo-rings.html', 'repo-terms.html', 'repo-work.html',
+    ]))
+  })
+
+  // `ws:atlas` reads its own output name back from `pages:`, except for the
+  // work map, which `repo-work.js` names because the rings page links to it.
+  // The declaration is the row; this is what keeps the row opening the file
+  // the command writes.
+  test('the work map is declared under the name repo-work.js writes', () => {
+    const cmds  = readCommands(join(REPO, 'packages', 'cli', 'commands'), REPO, [])
+    const atlas = cmds.find(c => c.name === 'workspace:atlas')
+    expect(atlas.pages.map(p => p.file)).toContain(WORK_FILE)
+  })
+
+  test('readPage takes a row, answers null for a row with no page or an unwritten one', () => {
+    write('made.html', '<p>hi</p>')
+    expect(readPage(root, { page: 'made.html' })).toBe('<p>hi</p>')
+    expect(readPage(root, { page: 'never.html' })).toBeNull()
+    expect(readPage(root, { page: null })).toBeNull()
+    expect(readPage(root, null)).toBeNull()
   })
 })

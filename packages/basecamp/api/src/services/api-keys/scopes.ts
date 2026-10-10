@@ -31,6 +31,9 @@ const OFF_LIMITS = new Set([
   // A key acts unattended, and a send here runs Claude Code on the operator's
   // machine with every permission bypassed.
   'workbench',
+  // A start runs a command from the workspace's own tree on the operator's
+  // machine, and a view reads a file there.
+  'pages',
 ])
 
 /**
@@ -38,10 +41,11 @@ const OFF_LIMITS = new Set([
  *
  * The workbench: a send is `claude -p` with permissions bypassed in a checkout
  * on this machine, so an agent holding the tool reaches the operator's shell,
- * which no level in a workspace describes. `agentGuard` refuses the call and
- * `narrowForAgent` withholds the tool, off this one set.
+ * which no level in a workspace describes. Pages: a start runs a command on
+ * that machine. `agentGuard` refuses the call and `narrowForAgent` withholds
+ * the tool, off this one set.
  */
-const NOT_FOR_AGENTS = new Set(['workbench'])
+const NOT_FOR_AGENTS = new Set(['workbench', 'pages'])
 
 const READ_METHODS = new Set(['find', 'get'])
 

@@ -1,5 +1,6 @@
 <script>
   import { page } from '@frontierjs/sierra/router'
+  import { remountKey } from '@frontierjs/sierra/router/internals'
   import ChainRendererInner from './ChainRenderer.mesa'
 
   // `page` is a plain object — inert until watched. These declarations are what
@@ -35,13 +36,7 @@
   // The component at this depth is the same, but ownParams changed.
   function getRemountKey() {
     if (!isLast) return null
-    const entry = chain[depth]
-    const remount = entry?.meta?.remount
-    if (remount === false) return null
-    const own = entry?.ownParams ?? []
-    if (own.length === 0) return null
-    if (remount === 'params') return JSON.stringify(page.params)
-    return own.map(p => page.params[p]).join('/')
+    return remountKey(chain[depth], page.params)
   }
 </script>
 

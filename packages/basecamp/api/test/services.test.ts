@@ -3280,7 +3280,7 @@ describe('the workbench', () => {
   // machine. Asserted before the LOCAL_MACHINE refusal is reached, so a test
   // env with no LOCAL_MACHINE cannot pass this by refusing for the other reason.
   test('an agent is refused it at any standing, over /mcp', async () => {
-    for (const method of ['pins', 'send', 'transcript', 'diff', 'check', 'review'])
+    for (const method of ['pins', 'send', 'transcript', 'diff', 'check', 'review', 'fork', 'land', 'archive'])
       await expect(env.as(owner).service('workbench').call(method, 'abc', { prompt: 'hi' }, { transport: 'mcp' }))
         .rejects.toThrow(/not offered to an agent/)
   })
@@ -3292,5 +3292,31 @@ describe('the workbench', () => {
     expect(narrowForAgent({ service: 'servers',   method: 'find' }, owns)).toBe(true)
     expect(keyAllows(key, 'workbench', 'send')).toBe(false)
     expect(keyAllows(key, 'workbench', 'pins')).toBe(false)
+  })
+})
+
+describe('pages', () => {
+  test('a developer is refused a start by the declared gate', async () => {
+    await expect(env.as(developer).service('pages').call('start', 'page:repo-rings.html', undefined))
+      .rejects.toThrow(/requires level 5/)
+  })
+
+  test('an owner is told it is not offered here, before anything is listed or run', async () => {
+    await expect(env.as(owner).service('pages').call('list', undefined))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+    await expect(env.as(owner).service('pages').call('start', 'page:repo-rings.html', undefined))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+  })
+
+  // A start runs a command on the operator's machine. Asserted before the
+  // LOCAL_MACHINE refusal is reached, as the workbench's is.
+  test('an agent is refused it at any standing, and no key reaches it', async () => {
+    for (const method of ['list', 'view', 'output', 'start', 'stop'])
+      await expect(env.as(owner).service('pages').call(method, 'page:repo-rings.html', undefined, { transport: 'mcp' }))
+        .rejects.toThrow(/not offered to an agent/)
+    const key = { authMethod: 'apiKey', scopes: ['admin', 'pages:write', 'pages:read'] }
+    expect(narrowForAgent({ service: 'pages', method: 'start' }, { authMethod: 'session' })).toBe(false)
+    expect(keyAllows(key, 'pages', 'start')).toBe(false)
+    expect(keyAllows(key, 'pages', 'list')).toBe(false)
   })
 })

@@ -16,6 +16,10 @@ title: Workbench
   // When a run ends the card grows what came after it: the checks strip (the
   // checkout's own `fli done`), a reviewer's reply, and the diff, whose line
   // comments ride along with the next message.
+  //
+  // A BRANCH is a pin forked from another (api core/workbench-branch.ts): a
+  // worktree of its own, drawn right after its parent, with Land and Archive
+  // where the parent has Fork.
   import { ago }       from '../../datetime.js'
   import { workbench } from '../../resources/Workbench.mesa'
 
@@ -39,6 +43,7 @@ title: Workbench
   let drafts      = {}
   let path        = ''
   let error       = null
+  let notice      = null
   let offered     = true
   let loaded      = false
   let pinning     = false
@@ -199,6 +204,60 @@ title: Workbench
     status = { ...status, [p.id]: { ...status[p.id], unread: false } }
     retitle()
     await act('seen', p)
+  }
+
+  // ─── branches ────────────────────────────────────────────────────────
+
+  // Each parent followed by its branches, so a branch is drawn beside the
+  // checkout it lands in.
+  function ordered(list) {
+    const ids = new Set(list.map(p => p.id))
+    const out = []
+    for (const p of list) {
+      if (p.from && ids.has(p.from)) continue
+      out.push(p, ...list.filter(b => b.from === p.id))
+    }
+    return out
+  }
+
+  const branchesOf = (p) => pins.filter(b => b.from === p.id)
+  const parentOf   = (p) => pins.find(x => x.id === p.from)
+  const plural     = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+  // A parent's total is what it and its branches spent.
+  const totalOf = (p) => [p, ...branchesOf(p)].reduce((n, x) => n + (status[x.id]?.spent?.total ?? 0), 0)
+
+  async function fork(p) {
+    const slug = prompt(`Fork ${p.name} into a branch of its own. Name it (wb/…), or leave blank for the next free one.`, '')
+    if (slug === null) return
+    const out = await act('fork', p, { slug: slug.trim() || undefined })
+    if (!out) return
+    notice = `${out.name} is ${out.branch}${out.carried?.total ? `, carrying ${plural(out.carried.total, 'uncommitted file')}` : ''}.`
+    await loadPins()
+  }
+
+  async function land(p) {
+    const out = await act('land', p)
+    if (!out) return
+    notice = `Landed ${plural(out.landed.length, 'file')} from ${p.name} into ${parentOf(p)?.name ?? 'its parent'}, uncommitted.`
+    fetchedAt[p.id] = -1
+    if (diffOpen[p.id]) loadDiff(p.id)
+    await loadPins()
+  }
+
+  async function archive(p) {
+    let out
+    try { out = await workbench.service.invoke('archive', p.id) }
+    catch (err) {
+      // The refusal's body is on err.data; the count it carries is err.data.data.
+      if (err.code !== 409 || !err.data?.data?.pending) { error = `${p.name}: ${err.message}`; return }
+      if (!confirm(`${err.message}. Archive anyway? The worktree goes; ${p.branch} keeps only what was committed there.`)) return
+      out = await act('archive', p, { discard: true })
+      if (!out) return
+    }
+    error  = null
+    notice = `Archived ${p.name}; ${out.archived} is still in the repository.`
+    await loadPins()
   }
 
   async function stop(p)   { await act('stop', p) }
@@ -436,6 +495,14 @@ title: Workbench
       <div class="alert-content">{error}</div>
     </article>
   {/if}
+  {#if notice}
+    <article class="alert success" id="workbench-notice">
+      <div class="alert-content cluster">
+        <span>{notice}</span>
+        <Button size="xs" variant="ghost" aria-label="Dismiss" onclick={() => notice = null}>×</Button>
+      </div>
+    </article>
+  {/if}
 
   {#if loaded && !pins.length}
     <EmptyState title="Nothing pinned">
@@ -443,10 +510,10 @@ title: Workbench
     </EmptyState>
   {:else}
     <div class="grid workbench-grid" id="workbench-grid">
-      {#each pins as p (p.id)}
+      {#each ordered(pins) as p (p.id)}
         <Card>
           <article class="stack workbench-card" id={`workbench-${p.id}`} data-state={status[p.id]?.state}
-                   on:click={() => markSeen(p)}>
+                   data-branch={p.branch ?? null} on:click={() => markSeen(p)}>
             <div class="section-header">
               <h2 class="h5 cluster">
                 <Dot tone={status[p.id]?.unread ? 'success' : TONE[status[p.id]?.state ?? 'idle']}
@@ -459,6 +526,20 @@ title: Workbench
                 {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
               </span>
             </div>
+
+            {#if p.from}
+              <div class="text-sm text-muted workbench-from">
+                ↳ branch of <strong>{parentOf(p)?.name ?? 'a checkout no longer pinned'}</strong>{p.forkOf && !p.session ? ' — the first message forks its chat' : ''}
+                {#if p.carried?.total}
+                  <details class="workbench-carried">
+                    <summary>carried {plural(p.carried.total, 'uncommitted file')}</summary>
+                    <p>Cut from the parent's tree as it stood, so a file another session was halfway through came too.</p>
+                    {#each p.carried.files as f}<div><code>{f}</code></div>{/each}
+                    {#if p.carried.total > p.carried.files.length}<div>… {p.carried.total - p.carried.files.length} more</div>{/if}
+                  </details>
+                {/if}
+              </div>
+            {/if}
 
             <div class="cluster text-sm">
               {#if p.git.branch}<code>{p.git.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
@@ -477,8 +558,8 @@ title: Workbench
               {:else}
                 idle
               {/if}
-              {#if status[p.id]?.spent?.total}
-                <span title="Every run and review in this checkout">· {money(status[p.id].spent.total)} total</span>
+              {#if totalOf(p)}
+                <span title={branchesOf(p).length ? 'Every run and review in this checkout and its branches' : 'Every run and review in this checkout'}>· {money(totalOf(p))} total</span>
               {/if}
             </div>
 
@@ -598,7 +679,11 @@ title: Workbench
                 Diff{diffs[p.id] ? ` · ${diffs[p.id].total} file${diffs[p.id].total === 1 ? '' : 's'}` : ''}
               </summary>
               {#if diffs[p.id]}
-                <p class="text-muted">The working tree against HEAD — another session's edits show here too. Click a line to comment on it.</p>
+                {#if p.from}
+                  <p class="text-muted">The branch's tree against what it was cut from, or last landed — what Land would carry. Click a line to comment on it.</p>
+                {:else}
+                  <p class="text-muted">The working tree against HEAD — another session's edits show here too. Click a line to comment on it.</p>
+                {/if}
                 {#if !diffs[p.id].files.length}<p class="text-muted">Nothing changed.</p>{/if}
                 {#each diffs[p.id].files as f, fi (f.path)}
                   <details class="workbench-file">
@@ -673,6 +758,14 @@ title: Workbench
                   {/if}
                   <Button variant="ghost" onclick={() => review(p)}
                           disabled={status[p.id]?.review?.state === 'working'}>Review</Button>
+                  {#if p.from}
+                    <Button variant="outlined" onclick={() => land(p)}
+                            title={`Apply this branch's work to ${parentOf(p)?.name ?? 'its parent'}'s tree, uncommitted`}>Land</Button>
+                    <Button variant="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>
+                  {:else}
+                    <Button variant="ghost" onclick={() => fork(p)}
+                            title="A branch in a worktree of its own, with this chat forked into it">Fork</Button>
+                  {/if}
                 {/if}
                 {#if transcripts[p.id]?.resume}
                   <CopyButton text={transcripts[p.id].resume} label="Copy resume" />
@@ -690,7 +783,9 @@ title: Workbench
                           description="A fresh read-only Claude Code session reads the change, up to $2 a review." />
                 <div class="cluster">
                   <Button type="submit" variant="outlined">Save</Button>
-                  <Button variant="ghost" tone="danger" onclick={() => unpin(p)}>Unpin</Button>
+                  {#if !p.from}<Button variant="ghost" tone="danger" onclick={() => unpin(p)}
+                                       disabled={branchesOf(p).length > 0}
+                                       title={branchesOf(p).length ? 'Archive its branches first' : null}>Unpin</Button>{/if}
                 </div>
               </form>
             </details>
@@ -816,4 +911,7 @@ title: Workbench
   .workbench-comment { padding-block: var(--space-xs); }
   .workbench-comment input { flex: 1; }
   .workbench-card textarea { resize: vertical; inline-size: 100%; }
+  .workbench-card[data-branch] { border-inline-start: 3px solid var(--rule-strong); padding-inline-start: var(--space-sm); }
+  .workbench-carried summary { cursor: pointer; }
+  .workbench-carried code { overflow-wrap: anywhere; }
 </style>

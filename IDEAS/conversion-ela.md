@@ -178,7 +178,7 @@ As maid.tech's § *Running the port*, with these differences:
 
 ## Open questions
 
-- Is a MIRRORED model a declaration? ELA mirrors seven SA tables (`jobs`, `clients`,
+- ~~**Is a MIRRORED model a declaration?**~~ **Answered 2026-10-09 (`FJS-D843`): B — a model attribute, `@@mirror(key: externalId)`, `absent: 30d` added once a second caller shows the drop-out rule's shape: the model is declared a mirror, the key is named once, the three per-column attributes and gate 8 are DERIVED from it, `missingSince` is a derived `@system` column the sync maintains, a caller's write to a mirrored column is refused by construction, and `advise` stops asking a mirror for a machine.** ELA mirrors seven SA tables (`jobs`, `clients`,
   `employees`, `invoices`, `payments`, `credits`, `crews`) by `externalId`, and `.lite`
   can already say most of it without a new word — the SA columns are `@system`,
   `externalId` is `@unique @immutable`, a model only the sync creates is
@@ -190,9 +190,9 @@ As maid.tech's § *Running the port*, with these differences:
   tell one from a model the app owns. Transit's sources and quo's carrier state are
   the same shape; maid.tech's 20 shared models are next.
   - **A** — no new word: the three attributes per column and gate 8 as today, the key and the drop-out rule stay in the connector, and `advise` learns nothing.
-  - **B** — a model attribute, `@@mirror(key: externalId, absent: 30d)`: the model is declared a mirror, the key is named once, the three per-column attributes and gate 8 are DERIVED from it, `missingSince` is a derived `@system` column the sync maintains, a caller's write to a mirrored column is refused by construction, and `advise` stops asking a mirror for a machine.
+  - **B** — a model attribute, `@@mirror(key: externalId)`, `absent: 30d` added once a second caller shows the drop-out rule's shape: the model is declared a mirror, the key is named once, the three per-column attributes and gate 8 are DERIVED from it, `missingSince` is a derived `@system` column the sync maintains, a caller's write to a mirrored column is refused by construction, and `advise` stops asking a mirror for a machine.
   - **C** — a field attribute only, `@externalKey`: names the key the sync matches on and leaves the drop-out rule to the connector, as the smaller first half.
-  - *Collision to settle first:* `mirror` is already `IDEAS/cascading-fields.md`'s mode word for a cascade that copies a parent field, so B's spelling takes another name (`@@mirrored`, `@@replica`, `@@source(...)`) or a ruling that the two are one concept. Not decided here.
+  - *Spelling:* `@@mirror`. `IDEAS/cascading-fields.md`'s cascade mode of that name is now `always`, because a cascade is one-way and pairs with `once`; the two were never one concept — a cascade follows a parent inside the database, a mirror follows a source outside it.
   - **Recommend B** — the key and the window are facts with one owner that today are restated in three places (schema, connector, advise's guess), and every restatement is silent when it drifts; B is one declaration the other three derive from. C is the honest half if a second caller shows the drop-out rule differs per source — ELA's is a window, transit's is a cursor — in which case `absent:` is the part that waits.
 
 ## See also

@@ -1,0 +1,248 @@
+---
+title: Pages
+---
+<script>
+  // The pages fli writes about this workspace, and the fli tools beside them —
+  // so nobody has to remember `fli ws:atlas --as=rings` to get the rings back.
+  //
+  // The list is fli's own inventory (api services/pages), so a command that
+  // starts declaring a page shows up here with no edit. A page is OPENED as a
+  // blob in a new tab: a `file://` link from an http page is refused by the
+  // browser, and the API answers by row id, never by path.
+  //
+  // A link from one page to another (the rings and the work map name each
+  // other) has nowhere to resolve inside a blob, so the opened tab hands the
+  // click back here and this tab swaps the next page into it.
+  import { ago }   from '../../datetime.js'
+  import { pages } from '../../resources/Page.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+
+  const POLL_MS = 3000
+
+  let rows    = []
+  let root    = ''
+  let error   = null
+  let offered = true
+  let loaded  = false
+  let busy    = {}
+  let output  = {}
+
+  let timer = null
+  let destroyed = false
+
+  async function load() {
+    try {
+      const answer = await pages.service.invoke('list', null)
+      rows  = answer.rows
+      root  = answer.root
+      error = null
+      for (const r of rows) if (output[r.id]) refreshOutput(r.id)
+    } catch (err) {
+      if (err.code === 404) offered = false
+      error = err.message
+    } finally {
+      loaded = true
+    }
+  }
+
+  function schedule() {
+    if (destroyed || !offered) return
+    timer = setTimeout(() => load().then(schedule), POLL_MS)
+  }
+
+  load().then(schedule)
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer); removeEventListener('message', onPageLink) })
+
+  // A pid with no exit is a run this API started and is still holding.
+  const running = (r) => !!(r.state?.pid && !r.state?.exit)
+  const lastRun = (r) => r.state?.exit ?? r.state?.last?.exit ?? null
+
+  const generated = () => rows.filter(r => r.kind === 'page')
+  const committed = () => rows.filter(r => r.kind === 'snapshot')
+  const tools     = () => rows.filter(r => r.kind === 'tool')
+
+  async function act(r, method) {
+    busy = { ...busy, [r.id]: true }
+    error = null
+    try {
+      await pages.service.invoke(method, r.id)
+      if (method === 'start') output = { ...output, [r.id]: [] }
+      await load()
+    } catch (err) {
+      error = err.message
+    } finally {
+      busy = { ...busy, [r.id]: false }
+    }
+  }
+
+  async function refreshOutput(id) {
+    try {
+      const answer = await pages.service.invoke('output', id)
+      output = { ...output, [id]: answer.lines }
+    } catch {}
+  }
+
+  // The tab is opened BEFORE the request, inside the click: a window opened
+  // after an await is a popup the browser blocks.
+  async function view(r, into = window.open('', '_blank')) {
+    try {
+      const { html } = await pages.service.invoke('view', r.id)
+      const files = rows.filter(x => x.page).map(x => x.page)
+      const blob  = new Blob([html + relay(files)], { type: 'text/html' })
+      into.location.href = URL.createObjectURL(blob)
+    } catch (err) {
+      into?.close()
+      error = err.message
+    }
+  }
+
+  // Appended to the page: a click on a link naming another page is posted to
+  // this tab instead of followed. Every other link is left alone.
+  const relay = (files) => `<script>(() => {
+  const PAGES = ${JSON.stringify(files)}
+  addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href]')
+    if (!a || !PAGES.includes(a.getAttribute('href')) || !opener) return
+    e.preventDefault()
+    opener.postMessage({ fjsPage: a.getAttribute('href') }, '*')
+  }, true)
+})()<` + `/script>`
+
+  function onPageLink(e) {
+    if (e.origin !== location.origin || typeof e.data?.fjsPage !== 'string') return
+    const r = rows.find(x => x.page === e.data.fjsPage)
+    if (r && e.source) view(r, e.source)
+  }
+  addEventListener('message', onPageLink)
+
+  const stateTone = (s) => s === 'up' ? 'success' : s === 'claimed-dead' ? 'warning' : 'muted'
+  const written   = (r) => r.writtenAt ? `written ${ago(new Date(r.writtenAt).toISOString())}` : 'not written yet'
+</script>
+
+{#snippet pageRow(r)}
+  <li class="list-row" data-id={r.id}>
+    <div class="stack gap-3xs">
+      <div class="cluster gap-sm">
+        <strong>{r.name}</strong>
+        {#if running(r)}
+          <Pill tone="info">generating…</Pill>
+        {:else if lastRun(r) && lastRun(r).code !== 0}
+          <Pill tone="danger">last run failed</Pill>
+        {/if}
+      </div>
+      <div class="cluster gap-xs text-sm text-muted">
+        <code>{r.start}</code> <CopyButton text={r.start} />
+        <span>· {written(r)}</span>
+      </div>
+      {#if output[r.id]?.length}
+        <pre class="text-xs">{output[r.id].slice(-12).join('\n')}</pre>
+      {/if}
+    </div>
+    <div class="cluster gap-2xs">
+      <Button variant="ghost" size="sm" disabled={busy[r.id] || running(r)} onclick={() => act(r, 'start')}>
+        {running(r) ? 'Generating…' : r.writtenAt ? 'Regenerate' : 'Generate'}
+      </Button>
+      <Button size="sm" disabled={!r.writtenAt} onclick={() => view(r)}>Open</Button>
+    </div>
+  </li>
+{/snippet}
+
+<div class="section-header">
+  <h1>Pages</h1>
+  <span class="cluster">
+    <Button variant="ghost" href="/workbench/">Workbench</Button>
+  </span>
+</div>
+
+{#if !offered}
+  <Callout tone="muted" title="Not offered on this Basecamp">
+    <p class="text-body">
+      These are pages fli writes about the workspace Basecamp runs in, and the tools beside them, so
+      they are only offered by a Basecamp on your own machine, started with <code>LOCAL_MACHINE=1</code>
+      (<code>bun run api</code> sets it) and never under <code>NODE_ENV=production</code>.
+    </p>
+    <p class="text-sm text-muted">{error}</p>
+  </Callout>
+{:else}
+  {#if root}<p class="text-sm text-muted">From <code>{root}</code></p>{/if}
+
+  {#if error}
+    <article class="alert danger" id="screen-error">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+
+  {#if loaded}
+    <div class="stack" id="pages-groups">
+      <Card>
+        <div class="stack gap-xs">
+          <div class="stack gap-3xs">
+            <h2 class="h5">Generated pages</h2>
+            <p class="text-sm text-muted">Written on demand and never committed — regenerate one when it has gone stale</p>
+          </div>
+          <ul class="rows divided" id="pages-generated">
+          {#each generated() as r (r.id)}{@render pageRow(r)}{/each}
+          </ul>
+        </div>
+      </Card>
+
+      <Card>
+        <div class="stack gap-xs">
+          <div class="stack gap-3xs">
+            <h2 class="h5">Committed pages</h2>
+            <p class="text-sm text-muted">Snapshots CI rechecks — regenerating one changes a tracked file</p>
+          </div>
+          <ul class="rows divided" id="pages-committed">
+          {#each committed() as r (r.id)}{@render pageRow(r)}{/each}
+          </ul>
+        </div>
+      </Card>
+
+      <Card>
+        <div class="stack gap-xs">
+          <div class="stack gap-3xs">
+            <h2 class="h5">Tools</h2>
+            <p class="text-sm text-muted">fli's servers on the reserved ports — open one that is up, or start it here</p>
+          </div>
+          <ul class="rows divided" id="pages-tools">
+          {#each tools() as r (r.id)}
+            <li class="list-row" data-id={r.id}>
+              <div class="stack gap-3xs">
+                <div class="cluster gap-sm">
+                  <strong>{r.name}</strong>
+                  <span class="text-sm text-muted">:{r.port}</span>
+                  <Badge tone={stateTone(r.state?.state)}>{r.state?.state ?? 'unknown'}</Badge>
+                </div>
+                <div class="cluster gap-xs text-sm text-muted">
+                  {#if r.start}
+                    <code>{r.start}</code> <CopyButton text={r.start} />
+                  {:else}
+                    <span>no fli command declares this port — start it where it is configured</span>
+                  {/if}
+                </div>
+              </div>
+              <div class="cluster gap-2xs">
+                {#if running(r)}
+                  <Button variant="ghost" size="sm" disabled={busy[r.id]} onclick={() => act(r, 'stop')}>Stop</Button>
+                {:else if r.start && r.state?.state !== 'up'}
+                  <Button variant="ghost" size="sm" disabled={busy[r.id]} onclick={() => act(r, 'start')}>Start</Button>
+                {/if}
+                {#if r.state?.state === 'up'}
+                  <Button size="sm" href={r.open} target="_blank" rel="noreferrer">Open</Button>
+                {/if}
+              </div>
+            </li>
+          {/each}
+          </ul>
+        </div>
+      </Card>
+    </div>
+  {/if}
+{/if}

@@ -32,6 +32,7 @@
     "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit .outpost",
     "verify:screens": "bun web/test/verify-screens.mjs",
     "verify:provision": "bun web/test/verify-provision.mjs",
+    "verify:pages": "bun web/test/verify-pages.mjs",
     "verify:outpost": "bun api/test/verify-outpost.mjs",
     "verify:dns": "bun api/test/verify-dns.mjs",
     "verify:mcp": "bun api/test/verify-mcp.mjs",

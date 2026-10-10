@@ -17,6 +17,8 @@
  *   Utilities:
  *     isActive(path, options?), getDirection()
  *     url(path, params?)
+ *     followLink(href)              a link's href, followed as a click on it is
+ *     createMemoryHistory(initial)  an address for initRouter where there is no window
  *
  *   Internal (called by virtual:sierra):
  *     initRouter(tree, components, options)
@@ -42,6 +44,7 @@ import {
 
 /** Programmatic prefetch — preloads route chunk + data */
 export { _prefetch as prefetch }
+export { createMemoryHistory } from './memory-history.js'
 // RouterView and ChainRenderer are NOT exported from here: they are .mesa, and
 // this module has to load natively where no Mesa loader runs — the prerender
 // imports it under Bun to fill `page` for each route, and a prerendered layout
@@ -98,6 +101,14 @@ function _rememberScroll(index, y) {
 
 // The window whose click and popstate listeners this module already holds.
 let _boundWindow = null
+
+// The address the router reads and writes: the browser's, or the History
+// `initRouter` was handed (`createMemoryHistory`). Read per call, since a test
+// swaps `globalThis.window`. A router handed a History has no page to scroll
+// and binds no click: a link reaches it through `followLink`.
+const _hist = () => _options.history ?? window.history
+const _loc  = () => _options.history?.location ?? window.location
+let _unlisten = null
 
 // Guard/hook registries
 const _beforeGuards = []
@@ -285,7 +296,7 @@ export let nodes = null
 // ─── Router object (for escape-hatch access) ─────────────────────────────────
 
 export const router = {
-  get history() { return window.history },
+  get history() { return _hist() },
   setReturnPath(path) {
     sessionStorage.setItem('sierra_return_path', path)
   },
@@ -308,6 +319,10 @@ export const router = {
  * @param {object} options
  * @param {'always'|'never'|'preserve'} [options.trailingSlash='always']
  * @param {string} [options.base='/']
+ * @param {ReturnType<typeof import('./memory-history.js').createMemoryHistory>} [options.history]
+ *        the address to navigate, where there is no `window` to read one off —
+ *        the terminal shell's. The document's scroll, title and link clicks are
+ *        left alone
  * @param {object} [layouts]  — lazy layout map { filePath → () => import(...) }
  */
 export function initRouter(tree, components, loaders = {}, options = {}, layouts = {}) {
@@ -336,22 +351,22 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
   // chain is complete before activeRoute is set, so resolveChain() never sees a
   // hole, and layouts a session never visits are never fetched.
 
-  // Boot the prefetch system with the same tree/components/loaders
-  if (typeof window !== 'undefined') {
+  // Boot the prefetch system with the same tree/components/loaders. A router
+  // handed a History has no document to watch for links, and `window` alone
+  // does not say there is one: the terminal engine defines a `window` holding
+  // only `requestAnimationFrame`.
+  if (!options.history && typeof window !== 'undefined') {
     initPrefetch(tree, components, loaders, options, layouts)
   }
 
-  // Take control of scroll restoration
-  if (typeof window !== 'undefined') {
-    window.history.scrollRestoration = 'manual'
+  // A memory History is listened to as the window's is, once per init: a
+  // second init must not leave the first one's listener navigating too.
+  _unlisten?.()
+  _unlisten = options.history ? options.history.listen(_handlePopstate) : null
 
-    // Assign index to first history entry if not present
-    if (window.history.state?.index === undefined) {
-      window.history.replaceState(
-        { ...window.history.state, index: 0 },
-        ''
-      )
-    }
+  // Take control of scroll restoration
+  if (!options.history && typeof window !== 'undefined') {
+    window.history.scrollRestoration = 'manual'
 
     // Bound once. initRouter used to add a click and a popstate listener on
     // every call, and initPrefetch four more, so three inits — HMR of the boot
@@ -363,6 +378,16 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
       _boundWindow = window
       window.addEventListener('popstate', _handlePopstate)
       document.addEventListener('click', _handleClick)
+    }
+  }
+
+  if (options.history || typeof window !== 'undefined') {
+    // Assign index to first history entry if not present
+    if (_hist().state?.index === undefined) {
+      _hist().replaceState(
+        { ..._hist().state, index: 0 },
+        ''
+      )
     }
 
     // Navigate to current URL on boot.
@@ -395,8 +420,8 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
       // `|| ''` because a test double is a plain object and a missing `hash`
       // would concatenate the string "undefined" onto every boot URL — which
       // is a 404 on a route that plainly exists.
-      const hash = window.location.hash || ''
-      _navigate(window.location.pathname + window.location.search + hash, {
+      const hash = _loc().hash || ''
+      _navigate(_loc().pathname + _loc().search + hash, {
         replace: true,
         scroll: !!hash,
         isPopstate: false,
@@ -449,14 +474,14 @@ export async function goto(path, queryParams = {}, options = {}) {
  * @param {string} [fallback]  path to go to when this app owns no previous entry
  */
 export function back(fallback) {
-  const owned = (window.history.state?.index ?? 0) > 0
-  if (owned || !fallback) { window.history.back(); return }
+  const owned = (_hist().state?.index ?? 0) > 0
+  if (owned || !fallback) { _hist().back(); return }
   return goto(fallback, {}, { replace: true })
 }
 
 /** Navigate forward in history */
 export function forward() {
-  window.history.forward()
+  _hist().forward()
 }
 
 /**
@@ -483,7 +508,7 @@ function _sameParams(a, b) {
  * @param {Record<string, unknown>} obj
  */
 export function setParams(obj) {
-  const current = normalizePath(window.location.pathname, _options.trailingSlash)
+  const current = normalizePath(_loc().pathname, _options.trailingSlash)
   goto(current, obj, { replace: true, scroll: false })
 }
 
@@ -492,7 +517,7 @@ export function setParams(obj) {
  * @param {(current: Record<string, unknown>) => Record<string, unknown>} fn
  */
 export function updateParams(fn) {
-  const current = parseQueryParams(window.location.search)
+  const current = parseQueryParams(_loc().search)
   const next = fn(current)
   setParams(next)
 }
@@ -550,7 +575,7 @@ export function isActive(path, options = {}) {
   // (and keep the component's `$: page.route` watch, which is what makes that
   // read a tracked one). Verified by clicking through the example app.
   _w().route
-  const current = normalizePath(window.location.pathname, _options.trailingSlash)
+  const current = normalizePath(_loc().pathname, _options.trailingSlash)
   const target = normalizePath(path, _options.trailingSlash)
 
   if (exact) return current === target
@@ -568,7 +593,7 @@ export function isActive(path, options = {}) {
  */
 export function getDirection() {
   // Compare history state indices
-  const currentIndex = window.history.state?.index ?? 0
+  const currentIndex = _hist().state?.index ?? 0
   const previousIndex = _previousHistoryIndex ?? 0
 
   if (currentIndex > previousIndex) return 'next'
@@ -666,8 +691,8 @@ function _validRedirect(target) {
  * that refuses everything settles rather than looping.
  */
 function _restoreHistory(index) {
-  const now = window.history.state?.index ?? 0
-  if (now !== index) window.history.go?.(index - now)
+  const now = _hist().state?.index ?? 0
+  if (now !== index) _hist().go?.(index - now)
 }
 
 /**
@@ -728,8 +753,8 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
         ..._fromNode,
         // Override .path with the actual resolved URL (e.g. /blog/routing-signals/)
         // not the route pattern (/blog/:slug/)
-        path: normalizePath(window.location.pathname, _options.trailingSlash)
-          + window.location.search,
+        path: normalizePath(_loc().pathname, _options.trailingSlash)
+          + _loc().search,
         params: page.params,
         node: _fromNode,
       }
@@ -808,7 +833,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   if (seq !== _navSeq) return
 
   // Save current scroll position before navigating away
-  if (!isPopstate && !_hmr) {
+  if (!isPopstate && !_hmr && !_options.history) {
     const currentIndex = window.history.state?.index ?? _currentHistoryIndex
     _rememberScroll(currentIndex, window.scrollY)
   }
@@ -966,15 +991,15 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       _previousHistoryIndex = _currentHistoryIndex
 
       if (replace) {
-        const idx = window.history.state?.index ?? _currentHistoryIndex
-        window.history.replaceState({ index: idx }, '', normalized + search + hash)
+        const idx = _hist().state?.index ?? _currentHistoryIndex
+        _hist().replaceState({ index: idx }, '', normalized + search + hash)
       } else {
         _currentHistoryIndex++
-        window.history.pushState({ index: _currentHistoryIndex }, '', normalized + search + hash)
+        _hist().pushState({ index: _currentHistoryIndex }, '', normalized + search + hash)
       }
     } else {
       _previousHistoryIndex = _currentHistoryIndex
-      _currentHistoryIndex = window.history.state?.index ?? 0
+      _currentHistoryIndex = _hist().state?.index ?? 0
     }
   } catch (err) {
     _reportError('navigation', normalized + search + hash, err)
@@ -1040,7 +1065,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // covers hover/mousedown without any registration, but `visible` and
   // `immediate` need to find their elements. Deferred so the new route's DOM
   // exists by the time we query.
-  if (typeof window !== 'undefined') queueMicrotask(scanPrefetchLinks)
+  if (!_options.history && typeof window !== 'undefined') queueMicrotask(scanPrefetchLinks)
 
   // Run after-navigation hooks
   for (const hook of [..._afterHooks]) {
@@ -1052,7 +1077,7 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
  * Handle scroll after navigation.
  */
 function _handleScroll(scroll, hash, isPopstate) {
-  if (scroll === false) return
+  if (scroll === false || _options.history) return
 
   if (hash) {
     // Scroll to hash element
@@ -1074,7 +1099,7 @@ function _handleScroll(scroll, hash, isPopstate) {
 
   if (isPopstate) {
     // Restore saved scroll position for this history entry
-    const idx = window.history.state?.index ?? 0
+    const idx = _hist().state?.index ?? 0
     const savedY = _scrollPositions.get(idx) ?? 0
     window.scrollTo(0, savedY)
     return
@@ -1114,7 +1139,7 @@ export async function hmrReload(filePath, nodes) {
   }
 
   // Re-navigate to current route — forces fresh dynamic import + remount
-  const current = window.location.pathname + window.location.search
+  const current = _loc().pathname + _loc().search
   await _navigate(current, { replace: true, scroll: false, _hmr: true })
 }
 
@@ -1141,8 +1166,8 @@ function _handlePopstate(event) {
   // `FJS-447` fixed the boot half and left this one. `|| ''` because a test
   // double is a plain object and a missing `hash` concatenates the string
   // "undefined" onto every URL.
-  const hash = window.location.hash || ''
-  const url = window.location.pathname + window.location.search + hash
+  const hash = _loc().hash || ''
+  const url = _loc().pathname + _loc().search + hash
   _navigate(url, { isPopstate: true, scroll: true })
 }
 
@@ -1168,6 +1193,20 @@ function _handleClick(event) {
   if (a.hasAttribute('target')) return
   if (a.hasAttribute('download')) return
 
+  if (followLink(href)) event.preventDefault()
+}
+
+/**
+ * Follow a link's `href` the way a click on it would, and answer whether the
+ * router took it. `false` leaves it to whatever follows a link where the
+ * router runs: the browser loads the page, and a terminal does nothing. The
+ * click delegation above is one caller; the terminal shell, whose links are
+ * activated by `$$tui` rather than clicked in a document, is the other.
+ *
+ * @param {string} href  as written on the link
+ * @returns {boolean}
+ */
+export function followLink(href) {
   // Parse the href against the CURRENT URL, not the origin. `location.origin`
   // is scheme and host with no path, so every relative and every fragment href
   // resolved to the site root — `<a href="#comments">` clicked on /blog/my-post/
@@ -1176,13 +1215,13 @@ function _handleClick(event) {
   // right about the same concept for that reason.
   let url
   try {
-    url = new URL(href, window.location.href)
+    url = new URL(href, _loc().href)
   } catch {
-    return
+    return false
   }
 
   // A mailto:, a tel: and another host all differ in scheme or host.
-  if (!isSameDocumentOrigin(url)) return
+  if (!isSameDocumentOrigin(url, _loc())) return false
 
   const trailingSlash = _options.trailingSlash ?? 'always'
   const normalized = normalizePath(url.pathname, trailingSlash)
@@ -1193,18 +1232,17 @@ function _handleClick(event) {
   // of contents for.
   if (
     url.hash &&
-    normalized === normalizePath(window.location.pathname, trailingSlash) &&
-    url.search === window.location.search
+    normalized === normalizePath(_loc().pathname, trailingSlash) &&
+    url.search === _loc().search
   ) {
-    event.preventDefault()
     _previousHistoryIndex = _currentHistoryIndex
     _currentHistoryIndex++
-    window.history.pushState(
+    _hist().pushState(
       { index: _currentHistoryIndex }, '', normalized + url.search + url.hash,
     )
-    const target = document.getElementById(url.hash.slice(1))
+    const target = typeof document !== 'undefined' && document.getElementById(url.hash.slice(1))
     if (target) target.scrollIntoView()
-    return
+    return true
   }
 
   // Match BEFORE cancelling the browser's own navigation. preventDefault used to
@@ -1217,11 +1255,10 @@ function _handleClick(event) {
   // somebody TYPED or a goto the app made, not for a link the app itself wrote
   // to a URL it does not route — and an app that serves its own index.html for
   // unknown paths still lands on the catch-all, one full page load later.
-  if (!_tree) return
+  if (!_tree) return false
   const match = matchRoute(normalized, _tree, _options)
-  if (!match || match.node.meta?.spread) return
-
-  event.preventDefault()
+  if (!match || match.node.meta?.spread) return false
 
   _navigate(normalized + url.search + url.hash, { scroll: true })
+  return true
 }

@@ -79,8 +79,9 @@ describe('portability counting', () => {
   })
 
   it('reads the calls off a real compile, inside slots and blocks', async () => {
+    // A default import with named ones beside it is still the call's import.
     const source = `<script>
-  import Card from './Card.mesa'
+  import Card, { cardSize } from './Card.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   let on = true
 </script>

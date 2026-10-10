@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Page.mesa — the Resource layer for the pages fli writes about
+  // this workspace, and the fli tools beside them (api services/pages).
+  //
+  // No model, like Workbench: the rows are fli's own inventory, read off the
+  // tree on the machine the API runs on, not anything in this app's database.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const pages = createResource('pages', { model: null })
+</script>

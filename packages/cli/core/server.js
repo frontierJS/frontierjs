@@ -426,7 +426,7 @@ let _runnablesAt     = 0
 // serves them.
 //
 // **The id is looked up, never joined.** What arrives is compared against the
-// rows `runnables()` computed; a row that is not a viewable snapshot is a 404
+// rows `runnables()` computed; a row with no `page` is a 404
 // with the same wording as one that does not exist. So no caller-supplied text
 // reaches a path, which is Invariant 8's rule one realm over, and `..` is not a
 // case to handle because there is nothing for it to traverse.
@@ -434,21 +434,21 @@ let _runnablesAt     = 0
 async function handlePage(req, res, id) {
   const row = await rowById(id)
 
-  if (!row?.viewable) {
+  if (!row?.page) {
     json(res, 404, { error: `no page ${id}` })
     return
   }
 
-  try {
-    const file = resolve(global.projectRoot, row.source)
-    const body = readFileSync(file, 'utf8')
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    res.end(body)
-  } catch {
+  const { readPage } = await import('./runnables.js')
+  const body = readPage(global.projectRoot, row)
+  if (body == null) {
     // Generated and gitignored, or generated and never run. The generator is on
     // the row that linked here, so the answer says which button to press.
-    json(res, 404, { error: `${row.source} is not written — run \`${row.start ?? 'its generator'}\`` })
+    json(res, 404, { error: `${row.page} is not written — run \`${row.start ?? 'its generator'}\`` })
+    return
   }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+  res.end(body)
 }
 
 async function handleRunnables(req, res) {

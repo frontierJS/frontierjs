@@ -29,6 +29,7 @@ bun run build:desktop  # desktop/: web/ bundled into a Tauri shell, at
 bun run verify:desktop # that shell, signed in and scanning, on 7120 — rebuild after
 fli desktop:run        # build it, start the API if nothing answers on 8120, open the window
 fli desktop:install    # add it to the app launcher; a click opens it through desktop:run
+                       # (--release: the release shell, after fli desktop:run --release)
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
 bun run image        # build the container image from the WORKING TREE
 bun run image:up     # …and bring the stack up on 8020  · image:down stops it
@@ -134,7 +135,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           where the pin asks, a read-only reviewer; each is stamped with when it
           started and hidden once a newer message is sent. core/workbench-diff.ts
           is the diff panel — the TREE against HEAD, so another session's edits
-          show there too. verify:provision
+          show there too. core/workbench-branch.ts is a BRANCH: Fork snapshots
+          the parent's tree through a temporary index (its real index and HEAD
+          are only read), cuts wb/<slug> into a worktree under WORKBENCH_DIR/trees
+          and pins it; Land is `git apply --check` then apply, into the parent's
+          working tree only. verify:provision
           drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
           or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
           services/api-keys/scopes.ts, proved by verify:mcp
@@ -170,6 +175,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           lookup is `asSystem()` confined to the workspace, since a developer
           is below `Secret`'s 5; the portal's `edge` entry reads the same lookup
           services/hub/ is the ONLY service that takes no workspace
+          services/pages/ is fli's own inventory (`runnables`, `children`
+          from packages/cli/core) over the workspace this API runs in — the
+          pages commands declare, and fli's tools — behind the workbench's
+          refusal and off-limits to agents and keys. /pages/ opens a page as a
+          blob, and a link between two pages is posted back to that tab
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
           storing either would be a second answer that goes stale

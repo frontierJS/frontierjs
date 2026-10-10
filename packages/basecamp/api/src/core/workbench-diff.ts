@@ -15,6 +15,7 @@
 import { execFileSync }                   from 'node:child_process'
 import { closeSync, openSync, readSync, statSync } from 'node:fs'
 import { join }                           from 'node:path'
+import { treeOf }                         from './workbench-branch.ts'
 
 export type DiffLine = { kind: 'add' | 'del' | 'ctx', text: string, old: number | null, new: number | null }
 export type DiffHunk = { header: string, lines: DiffLine[] }
@@ -120,12 +121,16 @@ function untrackedFile(root: string, path: string): DiffFile {
 }
 
 /**
- * The working tree against `base`, untracked files included. `cut` says some
- * file or line was left out of the answer; `files` counts what the tree has.
+ * The working tree against HEAD, untracked files included — or, given a
+ * branch's `base`, the tree against that, where an untracked file is an added
+ * one. `cut` says some file or line was left out of the answer; `files` counts
+ * what the tree has.
  */
-export function readDiff(root: string, base = 'HEAD'): { files: DiffFile[], total: number, cut: boolean } {
-  const tracked   = parseUnifiedDiff(git(root, ['diff', base, '--no-color', '--no-ext-diff', '--no-renames', '-U3']) ?? '')
-  const untracked = (git(root, ['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean)
+export function readDiff(root: string, base: string | null = null): { files: DiffFile[], total: number, cut: boolean } {
+  let tree: string | null = null
+  if (base) try { tree = treeOf(root) } catch { return { files: [], total: 0, cut: false } }
+  const tracked   = parseUnifiedDiff(git(root, ['diff', ...(tree ? [base!, tree] : ['HEAD']), '--no-color', '--no-ext-diff', '--no-renames', '-U3']) ?? '')
+  const untracked = tree ? [] : (git(root, ['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean)
   const total     = tracked.length + untracked.length
 
   const files: DiffFile[] = []

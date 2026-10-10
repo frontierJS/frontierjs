@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-09 — `fli desktop:install --release`: the launcher opens the release shell
+
+Without the flag the entry ran `desktop:run --no-build` and so always opened the debug binary, even after `desktop:run --release` had built a release one beside it. `--release` writes `desktop:run --no-build --release` into Exec and refuses when no release binary exists, naming `fli desktop:run --release`. The default is unchanged. `desktopLauncher` in `core/desktop-surface.js` takes `release`. Proof: `test/desktop-surface.test.js` § what desktop:install writes, 22/22. On basecamp, `--release --dry` refused with no release build present, and the plain `--dry` still writes `desktop:run --no-build`. Not proved: a click on an installed release entry, because no release shell has been built here yet.
+
 ## 2026-10-08 — `fli advise --strict` (`FJS-1825`)
 
 Passes litestone's new `--strict` through, so a CI step or a grading harness gets exit 1 on an error or warn rule and never on a suggestion. Plain `fli advise` still exits 0 whatever it prints; the command page says why that 0 is not *clean*.

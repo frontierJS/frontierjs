@@ -64,7 +64,12 @@ core/
                 at this tree. `scripts/ci.mjs` and `scaffold-build.mjs` fence
                 themselves at start (`FJS-1364`)
   runnables.js  what this project can START — surfaces, tools, drives, suites,
-                tasks, snapshots, each a row with an id, a command and a port.
+                tasks, snapshots, pages, each a row with an id, a command and a port.
+                A PAGE is an HTML file a command declares in its frontmatter
+                (`pages:` — file and flags) and reads its own default output
+                name back from (`metadata.pages`), so the row and the file
+                cannot disagree; `readPage(root, row)` serves one by ROW, never
+                by path, for `fli gui` and basecamp's /pages/.
                 Derived from files that would break something else if they were
                 wrong; `repo-map.js` reads the same readers. `probeState` is the
                 one answer to which of them are up, and it has FOUR — `unknown`

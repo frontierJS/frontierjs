@@ -1,0 +1,14 @@
+<script>
+  let live = '/orders/7/'
+  let kept = 0
+  let heard = 0
+</script>
+
+<p>kept {kept} live {live ?? 'none'} heard {heard}</p>
+<a href="/orders/">Orders</a>
+<a href={live}>Live</a>
+<a href="/x/" on:click={(e) => { kept++; e.preventDefault() }}>Kept</a>
+<a href="/report.csv" download>File</a>
+<a>Plain</a>
+<button type="button" on:click={() => live = live ? null : '/orders/8/'}>Swap</button>
+<a href={live} on:click={() => heard++}>Heard</a>

@@ -3,8 +3,13 @@ title: desktop:install
 description: Add the desktop app to this machine's app launcher, so searching for it opens it
 examples:
   - fli desktop:install
+  - fli desktop:install --release
   - fli desktop:install --remove
 flags:
+  release:
+    type: boolean
+    description: Open the release shell from the launcher instead of the debug one
+    defaultValue: false
   remove:
     char: r
     type: boolean
@@ -26,6 +31,8 @@ Nothing in the app is written.
 **The entry runs `fli desktop:run --no-build`**, so a click starts the API when
 nothing answers, as the terminal command does, and opens the build already
 there. A change under the screens is seen after the next `fli desktop:run`.
+With `--release` the entry opens the release shell, and the rebuild that
+reaches it is `fli desktop:run --release`.
 
 **The entry carries this shell's PATH and this checkout's path.** A launcher
 starts the process without the shell's rc files, so bun would not be found
@@ -50,6 +57,7 @@ const entry   = desktopLauncher({
   fli:      resolve(global.fliRoot, 'bin', 'fli.js'),
   path:     process.env.PATH ?? '',
   dataHome: process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'),
+  release:  flag.release,
 })
 
 if (!entry) {
@@ -68,10 +76,10 @@ if (flag.remove) {
   return
 }
 
-const binary = desktopBinary(surface)
+const binary = desktopBinary(surface, { release: flag.release })
 if (!existsSync(binary)) {
   log.error(`No shell at ${relative(root, binary)}, and the entry opens the build already there.`)
-  log.error('Run fli desktop:run once to build it.')
+  log.error(`Run fli desktop:run${flag.release ? ' --release' : ''} once to build it.`)
   process.exit(1)
 }
 

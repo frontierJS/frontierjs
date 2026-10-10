@@ -901,6 +901,92 @@ with the terminal backend as its second consumer, not ahead of it.
    drop-target event until a drag-source lowering is built. What fails:
    `press.spec`. *Ergonomics vs. strictness*: ergonomics, bounded to the
    target side. Tier: Assessment.
+   *Slice 18 2026-10-09, `<progress>`, the rule the owner chose (A of two
+   offered, over the fallback text):* role `progress` is one row the width
+   of its parent, `value` over `max` of it filled in `█`/`░`, drawn when
+   layout hands the box its width (`ProgressBar.onResize`), since a bar
+   sized to its own text never widens. Numbers read as a browser's: no
+   numeric `value` is indeterminate and says `in progress`, `max` that is
+   no positive number is 1, the value is held to `[0, max]`. The children
+   are the fallback a browser never shows while it can draw, so the emitter
+   neither builds nor refuses them (`fallbackOnly`). Proved by
+   `specs/progress.spec.mjs` 9/9 over `fixtures/Bars.mesa`; five breaks
+   red. Found on the way: the report's import read missed a default import
+   with named ones beside it (`import FileUpload, { isImage }`), so
+   FileField counted as calling an unimported component; fixed and pinned
+   in `test/portability.test.js`. Report 329 → 340 of 540, ui 60 → 67.
+   Routes 9 → 12 listed, 7 open; the other 5 are `FJS-2271`. The FileField
+   routes were promised as 11 and were not: past `<progress>` they stop at
+   `<dialog>` (Drawer), `<mesa:window>` (ConfirmPanel) and `<svg>`
+   (Avatar). A `<progress>` laid in a row takes the row's full width,
+   since it is `width: 100%`; no corpus use sits in one.
+   *The nine for slice 18, answered late:* (1) origin: none new; the
+   table names the tag, the runtime builds the role. (2) concept: one role.
+   (3) complexity: one class of a dozen lines. (4) predictability: the bar
+   a browser draws, from the same two numbers. (5) derived: the fill is
+   computed from `value`/`max` and the laid-out width, never stored. (6)
+   owner: `set_attribute` and `onResize` both call `draw`, the one
+   reading. (7) boundary: the children a browser never shows are skipped
+   at the emitter, so nothing in them can be refused. (8) failure: an
+   unparseable value is indeterminate, as in a browser, not an error. (9)
+   must stay true: the fill follows a live value, and the fallback never
+   paints. What fails: `progress.spec`. That a bar inside a row leaves its
+   siblings room is asserted by nothing (`none`), and neither is a
+   `<mesa:element this="progress">`, whose tag is a read the emitter
+   cannot see, so its fallback children are built. No § IV adjudication is
+   in tension. Tier: Assessment.
+   *Slice 19 2026-10-09, the router (the owner chose it over `FJS-2271` and
+   `<dialog>`):* the shell runs Sierra's own router rather than a second
+   one. `initRouter` takes `history`, a `createMemoryHistory` (Vue Router's
+   and React Router's word for the same thing), and reads and writes the
+   address through it where it read `window.location` and `window.history`;
+   a router handed one scrolls nothing, binds no click and starts no
+   prefetch. `_handleClick` split in two: the DOM half (modifiers, the
+   anchor, `target`/`download`) and `followLink(href)`, the half that
+   resolves against the current entry, keeps another origin and an
+   uncovered path out, and navigates. In mesa's terminal runtime an `<a
+   href>` is a link: focusable, inverted while focused, followed on Enter
+   or a press (not Space) when its `click` is not prevented, handed to what
+   `followLinks(renderer, fn)` registered; the shell registers
+   `followLink`. The shell mounts a route where the router lands, remounts
+   on the route's own params by `ChainRenderer`'s key, refuses a route
+   that does not lower in a `beforeNavigate` guard with the reason as a
+   note, and opens a route that takes a param from a typed path. Esc walks
+   the History back, then to the list. `FJS-2271` closed on the way: the
+   loader rewrites `@frontierjs/sierra/router` to `router/index.js`, since
+   Bun gives a plugin-loaded module's package imports to no `onResolve`.
+   Found: OpenTUI plants `globalThis.window = { requestAnimationFrame }`,
+   so `typeof window` passes in a terminal process and the prefetch threw on
+   `document`; and a `$:` watch on a PROP is component-local, so Shell takes
+   a signal's read. Proved by `test/memory-history.test.js` 10/10 (four
+   breaks red), `specs/links.spec.mjs` 13/13 (seven breaks red), and
+   `example` `verify:tui` 26/26, which now reads a modeled screen rather
+   than the pty stream, since the renderer writes only changed cells.
+   `--list` 12 → 15 of 34: `/people/:id/`, `/plans/:id/`, `/products/:id/`.
+   The other six param routes stop at `on:focusin` (Json), `<mesa:window>`,
+   `<dialog>` and `{#key}`. `/cart/` lowers and throws at mount on its own
+   `location` read (`FJS-2280`).
+   *The nine for slice 19, answered before the first edit and written after:*
+   (1) origin: none new. Navigation stays in `_navigate`, following a link
+   in `followLink`, which both entrances call. (2) concept: two names, both
+   borrowed whole, `history`/`createMemoryHistory`, and `followLinks` for
+   the one thing a terminal lacks, somewhere for a followed link to go. (3)
+   complexity: the problem's; a terminal has no address bar. (4)
+   predictability: `page`, guards, `load()` and `goto` behave as in the
+   browser, because they are the browser's. (5) derived: the route list is
+   the scanner's, params `matchRoute`'s, the remount key `ChainRenderer`'s
+   rule. (6) owner: the router owns navigation, mesa owns activation, the
+   shell only wires them. (7) boundary: `history` is documented on
+   `initRouter` and `followLinks` on the runtime; both tested. (8) failure:
+   a link to an uncovered path or a route that does not lower says so in
+   the shell's note rather than doing nothing. *Familiarity vs.
+   precision*: the ecosystem's word, and it fits. (9) must stay true: the
+   browser router is unchanged (sierra's 2006 tests, now 2016) and a route
+   opened in the terminal reads the params its path names. What fails:
+   the memory-history test, the links spec, `verify:tui`. A `ChainRenderer`
+   remount rule reached through `meta.remount` is copied, not shared
+   (`screenKey`), and nothing asserts the two agree (`none`). Layouts are
+   still not mounted. Tier: Assessment.
    *The nine for slices 14 and 15, answered late, after both were green:*
    (1) origin: one fewer. `constDeclaration` is the one reading of a `{@const}`, and
    `pointer()` the one reading of a mouse event. (2) concept: none. (3)

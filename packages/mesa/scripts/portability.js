@@ -17,7 +17,9 @@
 import { dirname, join, normalize } from 'node:path'
 import { eachNode } from '../src/ir.js'
 
-const IMPORT = /import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"]+\.mesa)['"]/g
+// The default binding, with or without named ones after it:
+// `import FileUpload, { isImage } from './FileUpload.mesa'` is a call to follow.
+const IMPORT = /import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\}\s*)?from\s+['"]([^'"]+\.mesa)['"]/g
 
 /**
  * Where a `.mesa` specifier imported by `from` lands, as a root-relative

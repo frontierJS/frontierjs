@@ -1,14 +1,15 @@
 ---
 id: workbench-branches
-status: proposed
+status: partial
 dated: 2026-10-09
 ---
 
 # Idea — a branch per chat in the Workbench
 
-**Status: IDEA.** Item 6 of [`workbench.md`](workbench.md). The owner took every
-recommendation below on 2026-10-09; the port scheme is ruled in `FJS-D841`. Nothing
-is built.
+**Status: PARTIAL.** Item 6 of [`workbench.md`](workbench.md). The owner took every
+recommendation below on 2026-10-09; the port scheme is ruled in `FJS-D841`. **Slice A
+is built** (2026-10-09) — `core/workbench-branch.ts` in basecamp, `fork` in
+`askArgv`; slice B and `FJS-2277` are not. Verified against a stand-in claude only.
 
 A pin is one checkout today, and two chats in one repo share one working tree. This
 gives a chat its own tree: **Fork** on a pin makes a git branch in a linked worktree,
@@ -111,6 +112,16 @@ that starts a branch's dev server, automatic cleanup.
 - Then `FJS-2277`, a drive reading its port, which is the larger job and what lets
   a branch run `fli prove`.
 
+**As built, where it differs.** A branch is compared through a snapshot TREE of its
+own working tree, never `git diff <base>` against its index: after a Land, a file
+the branch never `git add`ed sits in the new base and is untracked in the branch,
+so the plain diff reads it as deleted. The diff panel, Land and Archive's count all
+go through `treeOf`, so an untracked file in a branch is drawn as added. The pin
+carries `forkOf` beside `session` — the session the first message forks, cleared by
+**New chat** — so fork-once is a field, not a flag on the run. A branch takes its
+parent's budget, hooks and review settings. Unpinning a branch is refused (Archive
+is the way out), and forking a branch is refused (fork its parent).
+
 **Proved by** basecamp's workbench tests against a real temp repo (fork, a dirty
 parent, Land with and without a conflict, Archive), the `verify:provision` drive
 for the card, and cli's ports tests for the offset.
@@ -131,3 +142,20 @@ never a shell string. **Failure** — Land refuses on a conflict; Archive asks
 before discarding work. **Silence** — a snapshot that caught a half-written file
 is not refused, and the card naming what it carried is the only artefact. No
 § IV adjudication is in tension. Tier: Assessment, until built.
+
+**The as-built departures, graded LATE** — decided while building slice A, after the
+nine above. **Origin** — `base` is still the one stored commit; the branch's tree is
+computed per read, never stored. `forkOf` is stored because the parent's session
+moves on and cannot be read back. **Concept** — none; *tree* is git's. **Complexity**
+— the problem's: a linked worktree's index and a landed base disagree about
+untracked files. **Predictability** — one seam differs: the parent's diff calls a
+new file `untracked` and a branch's calls it `added`. **Derived** — the inherited
+budget, hooks and review are a starting copy, configured per branch afterwards,
+not a value kept in step. **Owner** — `treeOf` is the one snapshot; `snapshot`,
+`readDiff`, `pendingFiles` and `land` all go through it. **Boundary** — Archive's
+`discard` is stated by the caller and the refusal carries the count it would lose.
+**Failure** — unpinning a branch is refused, since it would leave a worktree nothing
+points at; forking a branch is refused, since the grid draws one level. **Silence**
+— the deleted-misread is caught by the land test asserting an empty diff after a
+land; fork-once by the argv test. No § IV adjudication is in tension. Tier:
+Assessment.

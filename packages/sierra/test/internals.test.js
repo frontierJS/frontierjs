@@ -11,6 +11,7 @@ import {
   buildLayoutMap,
   resolveChain,
   getComponents,
+  remountKey,
 } from '../src/router/internals.js'
 
 import {
@@ -146,23 +147,8 @@ describe('buildLayoutMap + resolveChain', () => {
 // ─── remount key computation ──────────────────────────────────────────────────
 
 describe('remount key computation', () => {
-  // Simulate what ChainRenderer does to compute the remount key
-
-  function computeRemountKey(entry, currentParams) {
-    if (!entry.ownParams?.length) return null
-    const remount = entry.meta?.remount
-
-    if (remount === false) return null
-
-    if (remount === 'params') {
-      return JSON.stringify(currentParams)
-    }
-
-    // Default auto: key on own params only
-    const own = entry.ownParams ?? []
-    if (own.length === 0) return null
-    return own.map(p => currentParams[p]).join('/')
-  }
+  // `remountKey` itself: ChainRenderer and the terminal shell both key on it.
+  const computeRemountKey = remountKey
 
   test('dynamic route page entry auto-keys on own param', () => {
     const entry = { ownParams: ['leadId'], meta: {} }
