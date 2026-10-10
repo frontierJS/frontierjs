@@ -137,6 +137,39 @@ describe('the gap fill\'s other two edges', () => {
   })
 })
 
+// FJS-2401: the CTE stepped from the bound's own day. Found by a CRM's
+// monthly report (maidtech Q2) whose range began on 31 December in New York.
+describe('the gap fill walks whole buckets (FJS-2401)', () => {
+  const labels = (rows: any[]) => rows.map((r: any) => r.placedAt)
+  const fill = (db: any, interval: string, start: string, end: string, timeZone?: string) =>
+    db.order.groupBy({ by: ['placedAt'], interval: { placedAt: interval }, _count: true, orderBy: { placedAt: 'asc' }, fillGaps: { start, end }, ...(timeZone ? { timeZone } : {}) })
+
+  it('a month fill from the 31st reaches February', async () => {
+    const db = await seeded([[1, '2025-01-10T12:00:00.000Z', 1]])
+    expect(labels(await fill(db, 'month', '2025-01-31', '2025-04-30'))).toEqual(['2025-01', '2025-02', '2025-03', '2025-04'])
+  })
+
+  it('a start later in its month than the end still reaches the end\'s month', async () => {
+    const db = await seeded([[1, '2025-01-20T12:00:00.000Z', 1]])
+    expect(labels(await fill(db, 'month', '2025-01-15', '2025-03-10'))).toEqual(['2025-01', '2025-02', '2025-03'])
+    expect(labels(await fill(db, 'quarter', '2025-03-31', '2025-07-01'))).toEqual(['2025-Q1', '2025-Q2', '2025-Q3'])
+    expect(labels(await fill(db, 'year', '2024-12-31', '2025-01-01'))).toEqual(['2024', '2025'])
+  })
+
+  it('a bound that is the 31st on the zone\'s wall clock, as a report\'s range is', async () => {
+    // 2025-01-01T03:00Z is 31 December, 22:00 in New York.
+    const db = await seeded([[1, '2025-01-10T12:00:00.000Z', 1]])
+    expect(labels(await fill(db, 'month', '2025-01-01T03:00:00Z', '2025-03-15T12:00:00Z', 'America/New_York')))
+      .toEqual(['2024-12', '2025-01', '2025-02', '2025-03'])
+  })
+
+  it('a week fill holds the days before a year\'s first Monday, once each', async () => {
+    // Monday 29 December 2025 is 2025-W52; Thursday 1 January 2026 is 2026-W00.
+    const db = await seeded([[1, '2026-01-07T12:00:00.000Z', 1]])
+    expect(labels(await fill(db, 'week', '2025-12-29', '2026-01-12'))).toEqual(['2025-W52', '2026-W00', '2026-W01', '2026-W02'])
+  })
+})
+
 describe('a SELECT-list value is bound before the WHERE\'s', () => {
   it('_stringAgg beside a where joins the matching rows with the separator', async () => {
     const db  = await createClient({ schema: `model Order {

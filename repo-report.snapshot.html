@@ -1147,7 +1147,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Aggregation</td>
-      <td class="m sub">Returns a single object of computed values across all matching rows.</td>
+      <td class="m sub">The examples on this page use this schema:</td>
       <td class="m sub">packages/litestone/docs/aggregation.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1197,7 +1197,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Filtering</td>
-      <td class="m sub">// Equality</td>
+      <td class="m sub">The examples on this page use this schema:</td>
       <td class="m sub">packages/litestone/docs/filtering.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1262,7 +1262,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">onQuery — Production Query Logging</td>
-      <td class="m sub">onQuery gives you visibility into every SQL query Litestone executes.</td>
+      <td class="m sub">onQuery sees every SQL statement Litestone executes.</td>
       <td class="m sub">packages/litestone/docs/onquery-logging.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1287,7 +1287,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Relations</td>
-      <td class="m sub">model Account {</td>
+      <td class="m sub">The examples on this page use this schema unless a section declares its own:</td>
       <td class="m sub">packages/litestone/docs/relations.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1312,7 +1312,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Sorting</td>
-      <td class="m sub">An orderBy key must be something SQLite can put in an ORDER BY: a stored</td>
+      <td class="m sub">The examples on this page use this schema:</td>
       <td class="m sub">packages/litestone/docs/sorting.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1447,12 +1447,12 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Query API</td>
-      <td class="m sub">db.user.findMany({ where, orderBy, limit, offset, include, select, withDeleted,…</td>
+      <td class="m sub">The models the examples in this section read:</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">onQuery — production query logging</td>
-      <td class="m sub">const db = await createClient({ path: './schema.lite',</td>
+      <td class="m sub">import { appendFileSync } from 'node:fs'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1472,7 +1472,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Migrations</td>
-      <td class="m sub">import { create, apply, status, verify, autoMigrate } from '@frontierjs/litestone'</td>
+      <td class="m sub">import { create, apply, status, verify, autoMigrate, parseFile } from…</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1496,11 +1496,6 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
-      <td class="m">Recursive tree queries</td>
-      <td class="m sub">Self-referential models (a field referencing the same model) automatically support CTE-based tree traversal:</td>
-      <td class="m sub">README.md</td>
-    </tr>,<tr data-row>
-      <td class="m"></td>
       <td class="m">Window functions</td>
       <td class="m sub">Window functions add computed columns to each row based on a set of surrounding rows — rankings, running totals, moving averages, period comparisons.</td>
       <td class="m sub">README.md</td>
@@ -1513,6 +1508,11 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m"></td>
       <td class="m">Scopes</td>
       <td class="m sub">Reusable named query fragments registered per model.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Recursive tree queries</td>
+      <td class="m sub">Self-referential models (a field referencing the same model) automatically support CTE-based tree traversal:</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>

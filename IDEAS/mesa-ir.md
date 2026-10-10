@@ -1191,6 +1191,65 @@ with the terminal backend as its second consumer, not ahead of it.
    box, as a press on blank space does. (9) must stay true: a link keeps
    its focus when it joins a run; `FlowFocus` fails when it stops.
    Adjudication: none in tension. Tier: Assessment.
+   *Slice 24 2026-10-10, `<mesa:portal>` (the owner said "go" to the pick
+   named at the end of slice 23):* the IR has a `portal` node, its children
+   and `to` as a read (null when unwritten, the DOM's body). The terminal
+   paints the children where the portal is written and never reads `to`: it
+   has one surface and no other node to name. Every kit portal is written
+   beside its trigger, so a menu or a confirmation opens under it and moves
+   what follows down. Lifting it into the dialog's top layer was priced and
+   cut: an overlay has to be placed against its anchor, the kit places it
+   through `style:left`/`top`, which the terminal leaves inert (slice 5), and
+   in place nothing overlaps. Past the tag, ConfirmPanel and DropdownMenu were
+   DOM-bound: `document.body` read at load, a `document` click listener,
+   `el.animate`, `getBoundingClientRect`, `querySelector`. Click-away is now
+   `<mesa:window on:click|capture>` (MultiSelect's shape, slice 21); the
+   panel's host is a function only the portal calls; measuring, animating
+   and reaching into the trigger are `?.`, a no-op on a terminal node.
+   DropdownMenu's click-away returns while the menu is closed, since its
+   listener is no longer added at open and a close pulls focus to the
+   trigger. ConfirmPanel takes its Escape (`preventDefault`), and the shell
+   leaves a prevented Escape alone, so cancelling a confirmation does not
+   also leave the route. Found and fixed: `FJS-2395`, the terminal's late
+   blocks (a branch, a keyed element, a row, an `{:else}`) never reinstated
+   the `$context` stack, so a DropdownItem behind `{#if open}` had no
+   `close`; they now call the DOM's `captureContext`. Filed: `FJS-2391`,
+   the kit's menu walk and focus restores query the DOM, so on a terminal
+   the menu is mouse-only and a close drops focus. Proved by
+   `specs/portal.spec.mjs` 8/8 (`Portal.mesa`, whose `to={document.body}`
+   throws if read) and `specs/context.spec.mjs` 6/6, 9 deliberate breaks
+   all red; the drive 285; `ir.test.js` and `terminal-emit.test.js` for the
+   node and a refusal inside a portal; the ui suite 1296, with click-away,
+   Escape taken and the closed-menu focus pinned in Chrome (4 breaks red);
+   `verify:tui` green with a fixture route `/confirm/` that opens the kit's
+   ConfirmationPopover under its trigger and cancels it with Esc on the
+   route (dropping the shell's `defaultPrevented` test turns it red);
+   `verify:ui` 35/35, `verify:site` 45/45, `verify` stops at `FJS-1642`;
+   corpus moves the new fixtures and the three kit files, baseline
+   `s24base`. Report 390 of 550, ui 90 of 135. Routes 22 → 26 of 34:
+   `/invoices/:id/`, `/payroll/`, `/subscriptions/`, `/subscriptions/:id/`.
+   `/orders/` and `/orders/:id/` now stop at `on:mouseenter` (DatePicker,
+   Tooltip).
+   *The nine for slice 24, answered after it was green:* (1) origin: one
+   fewer. Context capture has one owner both runtimes call. (2) concept:
+   none; a portal is the platform's word and in place is what it means with
+   one surface. (3) complexity: under the problem's; the terminal half is
+   one line. (4) predictability: a confirmation opens where it was asked
+   for and Esc closes it and nothing else. (5) derived: nothing stored. (6)
+   owner: the emitter's `portal` case; the kit owns its listeners through
+   `<mesa:window>`. (7) boundary: `to` is never read on the terminal, so a
+   portal aimed elsewhere paints in place too. (8) failure: a panel in a
+   narrow cell wraps inside it, visibly. (9) must stay true: `to` is never
+   evaluated (`Portal.mesa` throws if it is) and a late-built child hears
+   its provider (`context.spec`). In place against the top layer is no
+   § IV row; it is question 3 and the six-months tiebreak, and the top
+   layer returns if a panel in a table cell proves unreadable.
+   Adjudication: *paved road vs. the workaround*. A kit `?.` on a DOM
+   method a terminal node lacks is now in five files (Json, Form,
+   ConfirmPanel, DropdownMenu, ConfirmationPopover), which measures the
+   road: the reach-ins that cost behavior are `FJS-2391`, whose candidate
+   (bind the control, register the rows through `$context`) removes the
+   query on both targets. Tier: Assessment.
    *The nine for slice 21, answered before the `<pre>`/`{@html}` code
    (the focus half and the inline tags had landed first):* (1) origin:
    one fewer copy. Entity decoding has one home that both readers import,

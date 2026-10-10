@@ -7209,9 +7209,21 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         }
         return timeZone ? plainDateIn(ms, timeZone) : new Date(ms).toISOString().slice(0, 10)
       }
+      // The CTE steps from a bucket's FIRST day. Stepped from the bound's own
+      // day, '+1 month' from 31 January is 3 March and February never filled,
+      // and a start later in its month than the end (the 15th, then the 10th)
+      // stopped one bucket short. A week is walked a day at a time instead,
+      // because `%W` names the days before a year's first Monday week 00, and
+      // no seven-day walk from the Monday before lands in it.
+      const bucketStart = (d) => {
+        if (intervalUnit === 'month')   return `${d.slice(0, 7)}-01`
+        if (intervalUnit === 'year')    return `${d.slice(0, 4)}-01-01`
+        if (intervalUnit === 'quarter') return `${d.slice(0, 4)}-${String(Math.floor((Number(d.slice(5, 7)) - 1) / 3) * 3 + 1).padStart(2, '0')}-01`
+        return d
+      }
       if (gapStart && gapEnd) {
-        gapStart = gapDate(gapStart, 'start')
-        gapEnd   = gapDate(gapEnd, 'end')
+        gapStart = bucketStart(gapDate(gapStart, 'start'))
+        gapEnd   = bucketStart(gapDate(gapEnd, 'end'))
         // A recursive CTE makes one row per interval, and both bounds are the
         // caller's: a century of hours is 876,000 rows built per request.
         const MAX_GAP_INTERVALS = 10_000
@@ -7226,7 +7238,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
       if (gapStart && gapEnd && intervalField) {
         // Gap-fill path: recursive CTE generates all intervals, LEFT JOIN data
-        const step   = cteStep(intervalUnit)
+        const step   = intervalUnit === 'week' ? '+1 day' : cteStep(intervalUnit)
         const fmt    = cteDateFormat(intervalUnit)
         // date() drops the time, so date(d, '+1 hour') is d again and the CTE
         // never ended: one request with interval hour and a gap fill held a
@@ -7293,7 +7305,7 @@ WITH RECURSIVE intervals(d) AS (
   UNION ALL
   SELECT ${at}(d, '${step}') FROM intervals WHERE ${at}(d, '${step}') <= ${at}(?)
 )
-SELECT ${gapCols.join(', ')}
+SELECT DISTINCT ${gapCols.join(', ')}
 FROM intervals
 WHERE ${cteLabel} NOT IN (${existsSubquery})
 UNION ALL
