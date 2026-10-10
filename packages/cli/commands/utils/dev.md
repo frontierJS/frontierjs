@@ -6,6 +6,7 @@ examples:
   - fli dev
   - fli dev --dry
   - fli dev --no-check
+  - fli dev --debug
 flags:
   check:
     type: boolean
@@ -62,6 +63,12 @@ would have taken (`FJS-568`). `devPorts()` narrows `appPorts()` by walking the
 `dev` script's `bun run` targets, transitively. A `dev` that runs no other
 script cannot be narrowed and is not: that is a single-surface app whose `dev`
 IS the surface command, and every surface it has is one it starts.
+
+**`--debug` is the flag every command has, carried one process further**: it
+also sets `DEBUG=1` on the servers `fli dev` starts. That is the switch
+Junction already reads — its boot diagnostics, and `config.debug`, which puts
+`mode=debug` on the banner and a 5xx's detail in the response — so it asks the
+servers the same thing it asks fli: the whole error, not the clean line.
 
 **The runner is decided by a lockfile found by walking UP.** A package inside a
 workspace has no lockfile of its own — the one lockfile is at the workspace root
@@ -133,7 +140,7 @@ if (flag.check) {
 
 const runner = detectRunner(root)
 // `env:` and never an assignment to process.env, which a child under bun does not see.
-const env = { ...process.env, ...session.vars }
+const env = { ...process.env, ...session.vars, ...(flag.debug && { DEBUG: '1' }) }
 
 const composed = composedSurfaces(manifest.scripts, session.rows)
 if (!composed) {

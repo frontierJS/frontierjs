@@ -44,7 +44,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
 | `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
 | `SubscriptionStatus` | `active` · `cancelled` · `pastDue` · `trialing` |
-| `VerificationPurpose` | `emailVerify` · `oauthLink` · `passwordReset` |
+| `VerificationPurpose` | `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
 
 ## Value sets
 
@@ -719,6 +719,7 @@ table `outbox_message` · db `main` · gate `8`
 | `lastError` | `String` | yes | — | — |
 | `nextAttemptAt` | `DateTime` | yes | — | — |
 | `payload` | `Json` | no | — | **required on write** |
+| `tenantId` | `String` | yes | — | — |
 
 ```
 @@index(claimedAt)
@@ -1299,6 +1300,8 @@ table `verification` · db `main` · gate `8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `attempts` | `Int` | no | `0` | — |
+| `code` | `String` | yes | — | @guarded |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |

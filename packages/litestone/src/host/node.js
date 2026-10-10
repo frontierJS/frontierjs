@@ -20,6 +20,9 @@
 // ─── paths ────────────────────────────────────────────────────────────────
 export { resolve, join, dirname, basename, extname, isAbsolute } from 'path'
 
+// ─── the environment, for `path env(...)` ─────────────────────────────────
+export const envVar = (name) => process.env[name]
+
 // ─── the filesystem ───────────────────────────────────────────────────────
 export {
   existsSync, statSync, mkdirSync, mkdtempSync, readdirSync,

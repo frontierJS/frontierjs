@@ -59,7 +59,42 @@ export type TargetAuth =
   // hash of the body. `header_prefix` names the three headers this emits
   // (default 'X-Fjs' → X-Fjs-Signature, X-Fjs-Timestamp, X-Fjs-Nonce).
   | { type: 'hmac';    ref: string; header_prefix?: string; refusal?: CredentialRefusal[]; per_caller?: true }
+  // A vendor's own scheme (Basic, a secret in the body, a minted JWT, SigV4),
+  // supplied as a function by the connector: `signer` names one of
+  // `ConduitOptions.signers`, `ref` is the secret handed to it (`FJS-D891`).
+  // A name and not the function, because a descriptor round-trips through the
+  // registry as JSON.
+  | { type: 'signed';  ref: string; signer: string; refusal?: CredentialRefusal[]; per_caller?: true }
   | { type: 'none' }
+
+// What a signer is handed: the resolved secret and the request as it will go on
+// the wire. `body` is what `serialize()` produced, because the bytes signed must
+// be the bytes sent (`FJS-D153`). `url` is the full address with its query, and
+// `headers` every header already set, lowercased, auth excluded.
+export interface SignInput {
+  secret:  string
+  method:  string
+  url:     string
+  path:    string
+  query:   string
+  body:    string | Uint8Array | undefined
+  headers: Record<string, string>
+}
+
+// What goes on the wire in addition. `headers` replace any of the same name; a
+// `body` replaces the serialized one, for a vendor that wants the secret inside
+// it. A signer that returns a body is the one that signs it.
+//
+// A credential the signer mints (an ES256 JWT, an OAuth access token) is minted
+// by the CredentialResolver, whose `get()` is that mint: its expiry is the
+// resolver's TTL (`withCache`'s `ttl_ms`), and a 401 forgets it through
+// `invalidate` like any other. Conduit never holds a credential's lifetime.
+export interface SignOutput {
+  headers?: Record<string, string>
+  body?:    string | Uint8Array
+}
+
+export type Signer = (input: SignInput) => SignOutput | Promise<SignOutput>
 
 export type FollowRedirects = 'never' | 'same-origin'
 
@@ -603,6 +638,11 @@ export interface ConduitOptions {
   // Resolves TargetAuth.ref to secret material at send time.
   // Defaults to createEnvResolver() — refs are read from process.env.
   credentials?: CredentialResolver
+
+  // The functions a `{ type: 'signed', signer }` target names, by name. A
+  // connector exports its own to spread in here (`FJS-D891`). A target naming
+  // one that is not here is refused at put().
+  signers?:     Record<string, Signer>
 
   // Targets to register immediately on init.
   // Use for provider integrations known at startup time.

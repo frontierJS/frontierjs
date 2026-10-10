@@ -59,7 +59,7 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
   // — the way a provider integration is actually declared — skipped the refusal
   // entirely (`FJS-733`).
   if (descriptor.follow_redirects === 'same-origin'
-      && (descriptor.auth.type === 'hmac' || descriptor.auth.type === 'api_key')) {
+      && (descriptor.auth.type === 'hmac' || descriptor.auth.type === 'api_key' || descriptor.auth.type === 'signed')) {
     throw new TypeError(
       `Target '${descriptor.id}': follow_redirects 'same-origin' cannot be combined with `
       + `auth type '${descriptor.auth.type}' — a followed redirect re-sends the credential.`,
@@ -230,6 +230,7 @@ export function createConduit(
 ): IConduit {
   const store       = opts.store ?? createMemoryStore()
   const credentials = opts.credentials ?? createEnvResolver()
+  const signers     = opts.signers ?? {}
   const observers   = opts.observers ?? {}
   // Observers are arbitrary user code. A throwing one must not take down the
   // caller's request: send() documents that it never throws, and a failed
@@ -249,7 +250,8 @@ export function createConduit(
     observers,
     safe,
     learn,
-    _overrides
+    _overrides,
+    signers,
   )
 
   const resilience = new Resilience(opts.resilience)
@@ -327,6 +329,11 @@ export function createConduit(
         `Target '${descriptor.id}' declares auth.per_caller, and the installed CredentialResolver has no getFor(ref, who). `
         + `A per-caller credential is resolved for whoever the send is for (FJS-D848): give the resolver getFor, `
         + `or wrap one that has it — withCache() keeps it.`,
+      )
+    if (descriptor.auth.type === 'signed' && !Object.hasOwn(signers, descriptor.auth.signer))
+      throw new TypeError(
+        `Target '${descriptor.id}' names signer '${descriptor.auth.signer}', which is not in ConduitOptions.signers `
+        + `(installed: ${Object.keys(signers).join(', ') || 'none'}). A connector exports its signer; spread it into createConduit.`,
       )
     learn(descriptor)
     const previous = await store.get(descriptor.id)

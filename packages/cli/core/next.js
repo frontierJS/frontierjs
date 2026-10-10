@@ -72,9 +72,13 @@ const BY_HAND    = /(^|·)\s*`?by hand`?\s*(·|\|?\s*$)/im
  * could decide now.
  *
  * `touched` is the set of repository-relative paths counted as recent; it is
- * read from git when absent, and handed in by a test.
+ * read from git when absent, and handed in by a test. `sev` is a list of
+ * severities to keep; a name no table has is refused, since it would narrow to
+ * nothing and read as an empty register.
  */
-export function rankNext(root, { pkg = null, touched = null } = {}) {
+export function rankNext(root, { pkg = null, sev = null, touched = null } = {}) {
+  const unknown = (sev ?? []).filter(s => !(s in WEIGHTS.severity))
+  if (unknown.length) throw new Error(`unknown severity ${unknown.join(', ')} — one of ${Object.keys(WEIGHTS.severity).join(', ')}`)
   const doc    = readRegisters(root)
   const open   = doc.issues.filter(r => !r.closed)
   const openId = new Set(open.map(r => r.id))
@@ -142,8 +146,9 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
   })
 
   const inPkg = r => !pkg || r.pkg.includes(pkg)
+  const inSev = r => !sev || sev.includes(r.severity)
   // Ties keep file order, which is the register's own order within a severity.
-  const ranked = scored.filter(inPkg).sort((a, b) => b.score - a.score)
+  const ranked = scored.filter(r => inPkg(r) && inSev(r)).sort((a, b) => b.score - a.score)
 
   const decisions = openDecisions(root)
   // A row whose id leads a bullet with options is answered by `fli decide`;

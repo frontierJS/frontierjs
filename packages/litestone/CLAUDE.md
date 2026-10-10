@@ -92,6 +92,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | an example to `docs/`, `README.md` or `AGENTS.md` | nothing — `test/doc-examples.test.ts` runs every fence (`FJS-D860`): a ```lite block is built, a ```js block runs under the nearest ```lite above it; `fragment`, `throws` and `failing` on the info string are the whole contract, and `DOC_EXAMPLES_REPORT=1 DOC_EXAMPLES_ONLY=docs/x.md` lists what a page still fails |
 | a `src/` directory, or an axis import of a battery | `test/edge.test.ts` — classified, or a ruling |
 | a runtime global in `src/` | `HOST_GLOBALS` in `test/undeclared-names.test.ts` — by name, never all of lib.dom |
+| a use of `process`, `Buffer`, `Bun` or `setImmediate` in a module the browser graph reaches | `CEILING` in `test/audit-browser-globals.test.ts` — a new use fails, a beaten ceiling must be lowered (`FJS-2404`) |
 
 ## What the default gets wrong
 

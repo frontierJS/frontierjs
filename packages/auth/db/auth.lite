@@ -110,13 +110,13 @@ model Session {
   @@index([expiresAt])
 }
 
-/// What a `Verification` row is for. Three acts and one question — does this
+/// What a `Verification` row is for. Four acts and one question — does this
 /// person control this address? — which is what makes them one table rather
-/// than three, and what `purpose` stops them being: without it both lookups
+/// than four, and what `purpose` stops them being: without it both lookups
 /// matched on the token alone, so a token minted for one act was accepted by
 /// another's endpoint and refused two steps later by a coincidence of string
 /// handling (FJS-476).
-enum VerificationPurpose { passwordReset emailVerify oauthLink }
+enum VerificationPurpose { passwordReset emailVerify oauthLink magicLink }
 
 model Verification {
   id          String               @id @default(uuid())
@@ -129,9 +129,19 @@ model Verification {
   value       String               @unique @guarded
 
   /// oauthLink only: which identity is waiting to be attached once the address
-  /// answers for itself. Null for the other two, which attach nothing.
+  /// answers for itself. Null for the other three, which attach nothing.
   provider    String?
   subject     String?
+
+  /// magicLink only: the six digits a person types on a device other than the
+  /// one reading the mail. Found by `identifier` and compared, never looked up
+  /// by itself — a million values cannot be unique across every address in
+  /// flight, and a lookup by code alone would sign in whoever's code it was.
+  code        String?              @guarded
+  /// magicLink only: wrong codes against this row. Counted on the row for the
+  /// reason `LoginChallenge.attempts` is — a process-local count resets on a
+  /// redeploy, and here that is six digits with no ceiling.
+  attempts    Int                  @default(0)
 
   expiresAt   DateTime
   createdAt   DateTime             @default(now())
@@ -139,7 +149,7 @@ model Verification {
   @@db(main)
   @@gate("8")
 
-  /// A lapsed proof is not a proof. Declared rather than filtered, so the three
+  /// A lapsed proof is not a proof. Declared rather than filtered, so the four
   /// purposes cannot drift — the reset path and the verify path used to carry
   /// the same clause and one of them could have lost it silently.
   @@expires(expiresAt)
@@ -154,9 +164,8 @@ model Verification {
 /// ticket and no session. It is its own model rather than a fifth
 /// `VerificationPurpose` for the reason `OauthFlow` below is not one either:
 /// nobody is proving control of an ADDRESS here — there is no `identifier` and
-/// the address was settled a step ago — and `attempts` is a column the other
-/// purposes have no use for. Three answers to what a column means is three
-/// tables wearing one name (`FJS-D261`).
+/// the address was settled a step ago. Three answers to what a column means is
+/// three tables wearing one name (`FJS-D261`).
 ///
 /// `attempts` is the whole of what stands between a six-digit code and a
 /// million guesses, so it is counted on the row rather than in a limiter: a

@@ -77,7 +77,8 @@ export class EmailTakenError extends AuthError {
  * tells an attacker whether a token ever existed. → 400
  */
 export class InvalidTokenError extends AuthError {
-  constructor(message = 'Invalid or expired token') { super(message) }
+  /** `retryable` is set where a typed code may be typed again — a magic link's. */
+  constructor(message = 'Invalid or expired token', readonly retryable?: boolean) { super(message) }
   readonly status = 400
 }
 

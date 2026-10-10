@@ -197,6 +197,16 @@ index.ts     public API
   OBSERVE belongs on Junction's `app.events`, which is a separate question and
   is not answered here. The cost is stated rather than hidden: an app handler is
   now a failure mode on the login path, and a slow one slows every sign-in.
+- **A magic link is a FIRST factor** (`FJS-D888`). `verifyMagicLink` ends at
+  `firstFactorProven()`, the tail `login()` shares, so a `totp` account owes its
+  code after the click. A new first factor goes through that function, not
+  `issueSession`, or it is a way past the second; OAuth still calls
+  `issueSession` directly (`FJS-2541`). The flow exists only where
+  `onMagicLinkRequested` is set, which, like `onPasswordResetRequested`, runs
+  after the request answers. The six-digit code is compared against the row
+  the ADDRESS names and is never used to find one, and `Verification.attempts`
+  counts misses up to `loginChallengeAttempts`. An unknown address gets its
+  account at the click, through `onRegister`, never at the request.
 - **`onRegistered({ user, db })` is the fifth and the one that runs INSIDE the
   registration** (`FJS-D520`, `FJS-1458`): after the row and its credential,
   before the commit, for a password and an identity provider alike, through
@@ -220,7 +230,7 @@ index.ts     public API
   rather than instead of them.** `login.succeeded`, `login.failed`,
   `login.challenged`, `totp.confirm.failed`, `logout`, `session.revoked`, `password.reset.refused`,
   the `oauth.*` events (`oauth.signin`, `oauth.registered`, `oauth.refused`,
-  `oauth.link.refused`) and the `support.*` pair (`support.started`,
+  `oauth.link.refused`), `magiclink.registered` and the `support.*` pair (`support.started`,
   `support.ended`) — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
   `actorId: null`, because an `asSystem()` write names no principal) and missed
   the failed attempt entirely, which is the one an app rate-limits on

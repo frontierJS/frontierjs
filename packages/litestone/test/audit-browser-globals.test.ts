@@ -15,7 +15,7 @@
 // bare `path` or `node:crypto` to a polyfill without a warning (0.9 MB for the
 // two), so a build that succeeds says nothing about what the module reached for.
 
-import { describe, it, expect, test } from 'bun:test'
+import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join, relative } from 'path'
 
@@ -83,10 +83,76 @@ describe('the browser graph', () => {
     expect(graph.length).toBeGreaterThan(20)
   })
 
-  // FJS-2404: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('names no server global outside a typeof guard', () => {
-    const uses = serverGlobalUses(graph)
-    if (uses.length) console.warn(`[audit-browser-globals] ${uses.length} use(s) of a server global in the browser graph:\n  ${uses.join('\n  ')}`)
-    expect(uses).toEqual([])
+  // Per-file ceilings, the same ratchet as sql-idents.test.ts: most of these
+  // modules are IMPORTED by the browser graph and their server paths are never
+  // run there, so the number is the debt, not a verdict on each line. A new use
+  // in any file fails; a conversion through #host lowers the number here.
+  // client.js: the lock owner and the crossProcess writer id (FJS-2400);
+  // encryption.js: FJS-2398; backup.js: FJS-2401.
+  const CEILING: Record<string, number> = {
+    'core/backup.js':        2,
+    'core/client.js':        2,
+    'core/encryption.js':    15,
+    'core/tenancy.js':       1,
+  }
+
+  const perFile = (uses: string[]) => {
+    const n: Record<string, number> = {}
+    for (const u of uses) { const f = u.slice(0, u.indexOf(':')); n[f] = (n[f] ?? 0) + 1 }
+    return n
+  }
+
+  it('names no server global outside a typeof guard that a ceiling has not admitted', () => {
+    const n = perFile(serverGlobalUses(graph))
+    const over = Object.entries(n)
+      .filter(([f, c]) => c > (CEILING[f] ?? 0))
+      .map(([f, c]) => `${f}: ${c} > ${CEILING[f] ?? 0}`)
+    expect(over,
+      `a server global is a ReferenceError in a browser worker. Reach the facility through #host, ` +
+      `or guard it with \`typeof\`; do not raise a ceiling.`,
+    ).toEqual([])
+  })
+
+  it('a ceiling that has been beaten is lowered, not left', () => {
+    const n = perFile(serverGlobalUses(graph))
+    const slack = Object.entries(CEILING)
+      .filter(([f, c]) => (n[f] ?? 0) < c)
+      .map(([f, c]) => `${f}: ${n[f] ?? 0} < ${c}`)
+    expect(slack, `lower these in CEILING (delete the entry at 0): ${slack.join(', ')}`).toEqual([])
+  })
+
+  it('reads a use it should: a bare Buffer call is an offender, a typeof guard is not', () => {
+    const tmp = join(import.meta.dir, '../.tmp-audit-globals.js')
+    const { writeFileSync, rmSync } = require('fs')
+    try {
+      writeFileSync(tmp, 'const a = Buffer.from(x)\nconst b = typeof process !== \'undefined\' && process.env\n')
+      const uses = serverGlobalUses([tmp])
+      expect(uses.length).toBe(1)
+      expect(uses[0]).toContain('Buffer')
+    } finally { rmSync(tmp, { force: true }) }
+  })
+})
+
+// A browser worker has no `setImmediate`. The static walk above says no line
+// names it unguarded; this runs the two paths that used to, with it removed.
+describe('a runtime without setImmediate', () => {
+  it('still delivers an onEvent listener and a $tapEvents tap', async () => {
+    const { createClient } = await import('../src/index.js')
+    const real = globalThis.setImmediate
+    const heard: string[] = []
+    const tapped: string[] = []
+    try {
+      const db: any = await createClient({
+        db: ':memory:',
+        schema: 'model Note {\n  id   Int    @id\n  body String\n}\n',
+        onEvent: { create: () => { heard.push('onEvent') } },
+      })
+      db.$tapEvents((e: any) => { tapped.push(e.event) })
+      ;(globalThis as any).setImmediate = undefined
+      await db.note.create({ data: { id: 1, body: 'x' } })
+      await new Promise((r) => setTimeout(r, 20))
+    } finally { globalThis.setImmediate = real }
+    expect(heard).toEqual(['onEvent'])
+    expect(tapped).toEqual(['create'])
   })
 })

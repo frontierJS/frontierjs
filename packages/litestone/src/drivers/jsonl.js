@@ -28,8 +28,8 @@ import { noteMintedDirectory } from '../core/db-path.js'
 import { buildWhere } from '../core/query.js'
 import { ID_GENERATORS } from '../core/ids.js'
 import { compactJsonl } from '../core/retention.js'
-import { indexPathFor, indexShapeFor, openIndexDb, ensureIndexTable, withWriteLock }
-  from './jsonl-index.js'
+import { indexPathFor, indexShapeFor, openIndexDb, ensureIndexTable, withWriteLock,
+  utf8Bytes, utf8Length, utf8Text } from './jsonl-index.js'
 
 // ─── File I/O ─────────────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ import { indexPathFor, indexShapeFor, openIndexDb, ensureIndexTable, withWriteLo
 // instead of once per result row.
 function readLineAtFd(fd, offset) {
   const chunks = []
-  const buf    = Buffer.allocUnsafe(2048)
+  const buf    = new Uint8Array(2048)
   let   pos    = offset
 
   while (true) {
@@ -47,7 +47,7 @@ function readLineAtFd(fd, offset) {
     if (n === 0) break
     const nl = buf.indexOf(0x0a, 0)       // 0x0a = '\n'
     const end = (nl >= 0 && nl < n) ? nl : n
-    chunks.push(buf.slice(0, end).toString('utf8'))
+    chunks.push(utf8Text(buf.subarray(0, end)))
     if (nl >= 0 && nl < n) break
     pos += n
   }
@@ -113,7 +113,7 @@ function makeAppender(filePath) {
       let st
       try { st = statSync(filePath) } catch { st = null }
       if (fd === null || !st || st.ino !== ino) { reopen(); st = fstatSync(fd) }
-      const buf = Buffer.from(line, 'utf8')
+      const buf = utf8Bytes(line)
       writeSync(fd, buf)
       return { offset: st.size, bytes: buf.length, mtimeMs: fstatSync(fd).mtimeMs }
     },
@@ -386,14 +386,14 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
       const fd = openSync(filePath, 'r')
       try {
         const len = st.size - _cache.size
-        const buf = Buffer.allocUnsafe(len)
+        const buf = new Uint8Array(len)
         let read = 0
         while (read < len) {
           const n = readSync(fd, buf, read, len - read, _cache.size + read)
           if (n === 0) break
           read += n
         }
-        parseLinesInto(_cache.records, buf.slice(0, read).toString('utf8'))
+        parseLinesInto(_cache.records, utf8Text(buf.subarray(0, read)))
         _cache.size    = st.size
         _cache.mtimeMs = st.mtimeMs
         return _cache.records
@@ -541,7 +541,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     const write = () => {
       const { offset, mtimeMs } = appender.append(lines.join(''))
       let pos = offset
-      const offsets = lines.map(l => { const o = pos; pos += Buffer.byteLength(l, 'utf8'); return o })
+      const offsets = lines.map(l => { const o = pos; pos += utf8Length(l); return o })
       if (_cache && _cache.size === offset) {
         for (const r of records) _cache.records.push({ ...r })
         _cache.size    = pos

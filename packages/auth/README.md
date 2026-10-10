@@ -125,6 +125,8 @@ relative to `apiPrefix` for the same reason.
 | `POST` | `/auth/logout` | Revoke current session |
 | `POST` | `/auth/password-reset/request` | Send reset email |
 | `POST` | `/auth/password-reset/confirm` | Confirm reset with token. On an account with no credential — one an operator created — this sets the first password, which is what makes an invitation a reset link. An account whose only way in is an OAuth provider is refused (409) |
+| `POST` | `/auth/magic-link/request` | Mail a sign-in link and a six-digit code. Answers `{ ok: true }` for any address. Mounted only when `onMagicLinkRequested` is set — see [Magic link](#magic-link) |
+| `POST` | `/auth/magic-link/verify` | `{ token }`, or `{ email, code }` from another device. Returns what `/auth/login` does: a token, or a challenge ticket when the account has a second factor |
 | `POST` | `/auth/email/verify/request` | Re-send verification email |
 | `POST` | `/auth/email/verify` | Verify email with a token. The mailed link lands on a page of the app's web surface and that page posts the token — a GET that spent it would be burned by a mail scanner's prefetch |
 | `POST` | `/auth/support/start` · `/auth/support/end` | Begin and end acting as another account — bounded by that account's standing, refused for one standing above yours, and recorded under the operator. Needs `canStartSupport` and a level resolver (`services: { standingLevel }` or `{ level }`); the account is told through `onCredentialChanged` |
@@ -192,13 +194,56 @@ reaches them:
   gate is graded from are exactly the ones a caller must not write. `@@trail(audit)`
 - `Credential` — passwords + API keys (`@@gate("8")` — SYSTEM)
 - `Session` — active sessions (`@@gate("8")`, `@@trail(audit)`)
-- `Verification` — reset + verify tokens (`@@gate("8")`)
+- `Verification` — reset, verify, OAuth-link and magic-link tokens (`@@gate("8")`)
 - `LoginChallenge` — a password accepted, a second factor owed (`@@gate("8")`)
 - `OauthFlow` — one in-flight OAuth redirect (`@@gate("8")`)
 
 `8` is for a model nothing outside `asSystem()` has anything to say to. That is
 true of credential material and false of the table an app's own screens list —
 see `litestone/docs/access-control.md` § The identity models.
+
+## Magic link
+
+Passwordless sign-in by mail. Setting `onMagicLinkRequested` turns it on; without
+it the methods do not exist and the routes are not mounted (`FJS-D888`).
+
+```ts
+const auth = createLitestoneAuth(db, {
+  onMagicLinkRequested: async ({ email, token, code }) => {
+    await mailer.send({
+      to:      email,
+      subject: `Your sign-in code is ${code}`,
+      html:    `<a href="${env.APP_URL}/sign-in/link?token=${token}">Sign in</a>`,
+    })
+  },
+  magicLinkTtl: '15 minutes',   // the default
+})
+```
+
+The link lands on a page of the app's web surface. That page posts the token,
+for the reason `/auth/email/verify` does it that way: a mail scanner's prefetch
+would spend a GET. In the browser:
+
+```ts
+await client.auth.requestMagicLink(email)
+// the token from the link's page, or the address and code typed on another device
+const result = await client.auth.signInWithMagicLink(token ? { token } : { email, code })
+if ('challenge' in result) await client.auth.completeSignIn(totpCode)
+```
+
+What the click does depends on the account:
+
+| Account | The click |
+| --- | --- |
+| None holds the address | Creates a verified account through `onRegister`, so a closed signup refuses here, then signs it in. The request makes no row |
+| Has a password, or no credential at all | Signs in and marks the address verified |
+| Has a second factor | Returns a challenge ticket — the mailbox is one factor |
+| Its only way in is an OAuth provider | Refused, and the request mails nothing (`FJS-987`) |
+
+The link and the code are spent together, by either one's first use, and a new
+request replaces both. A wrong code answers `retryable: true` until
+`loginChallengeAttempts` misses, which spends the link. `onLogin` and
+`onLoginFailed` run as they do for a password, with `stage: 'magic-link'`.
 
 ## Two-factor authentication
 
@@ -332,7 +377,7 @@ does not gain one. Under `NODE_ENV=production` it refuses unless given `--force`
 ## Escape hatch
 
 OAuth sign-in is native — `oauthProviders` built with `defineProvider` (`oauth.ts`).
-For anything this package does not do, magic links among them, an app implements
+For anything this package does not do, an app implements
 junction's `IAuth` (an exported type from `@frontierjs/junction`) over the library it
 wants and mounts that library's handler on a raw route
 (`app.post('/auth/{path}', ctx => lib.handler(ctx.$raw.$req))`). Junction ships no

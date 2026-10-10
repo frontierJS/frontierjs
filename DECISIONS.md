@@ -1374,6 +1374,17 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d888"></a>2026-10-10 · `FJS-D888` — Magic-link sign-in: what a mailbox proves — It is a FIRST factor. An unknown address gets its account at the click, through `onRegister`; an account with a second factor owes its code after the click, as after a password; an account whose only way in is an OAuth provider is refused. The mail carries a link and a six-digit code, either one spends it.
+
+Asked in chat on [`FJS-2537`](ISSUES.md#fjs-2537). Four questions, each answered with the recommended option except the last, where the owner chose to add the code over shipping the link alone.
+
+- **Unknown address — create at the click** over refuse. It is `oauthResolve` § 3 (create only on a proven address), and the click is the proof. A row made at the request would squat the address (`FJS-D612`). A closed signup refuses in `onRegister`, so the flow needs no flag of its own.
+- **Second factor — owed** over *the link is enough*. Password and link both end at one `firstFactorProven()` in `auth.ts`, so neither one gets around the other's code.
+- **Provider-only account — refused**, at the request (no mail) and again at the click, for `FJS-987`'s reason: the mailbox never secured that account. The test is `confirmPasswordReset`'s, so an account with no credential at all (an invitation) is let in.
+- **A six-digit code beside the link**, for a person reading the mail on another device. The code is compared against the row the ADDRESS names and never used to find a row. Misses count on `Verification.attempts` up to `loginChallengeAttempts`, at which the row is spent.
+
+The flow exists only where `onMagicLinkRequested` is set; without it `auth.ts` defines neither method and the plugin mounts no route. Default TTL is 15 minutes, request is rate-limited like a reset, verify sits behind login's limiter.
+
 ### <a id="fjs-d880"></a>2026-10-10 · `FJS-D880` — Anonymize vs delete — Derive it from the gate: erasure deletes a row whose delete gate admits SYSTEM, anonymizes it (each `@pii` field nulled, or blanked where required) where only the update gate does, and refuses naming the model where neither does.
 
 Asked in [`IDEAS/compliance-from-the-seed.md`](IDEAS/compliance-from-the-seed.md) § Open questions. **A** was picked over **B** (declare it per model, `@@erasure(delete | anonymize | refuse)`, with `refuse` the default for a model that declares nothing), **C** (no anonymize: erasure deletes what it can reach and refuses the whole request when any reached model is undeletable; anything subtler is a hook).
@@ -15701,6 +15712,101 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d892"></a>2026-10-10 · `FJS-D892` — AWS Signature V4 has one owner, and it is `@frontierjs/toolbelt`.
+
+Litestone's `File` columns sign S3 requests today (`src/storage/sigv4.js`), and
+`conduit-s3` (`FJS-D889`) signs the same requests. Conduit peers on junction, so
+litestone may never import a conduit connector (Invariant 1). Two copies of one
+signing scheme is the drift `toolbelt/signature` was created to end, so the
+scheme goes below the dependency graph (`FJS-D26`). Litestone and `conduit-s3`
+both read it.
+
+The signer is WebCrypto, which the browser build of litestone already has
+(`FJS-D305`). **The signing-key cache stays with the caller**: a cache is state,
+and toolbelt exports pure functions (`FJS-D111`).
+
+Work: `FJS-2543`.
+*Lives in:* `packages/toolbelt/src/` (to move) · `packages/litestone/src/storage/sigv4.js` (to become a caller).
+
+### <a id="fjs-d891"></a>2026-10-10 · `FJS-D891` — A vendor's authentication reaches conduit through ONE signer seam, never through a new `TargetAuth` variant per scheme.
+
+`TargetAuth` holds `bearer`, `api_key`, `hmac` and `none`. The next connectors
+need five more schemes:
+
+- Basic auth (Twilio)
+- a secret in the request body (Turnstile)
+- an ES256 JWT minted hourly (APNs)
+- an OAuth service-account token (FCM, Google)
+- SigV4 (S3)
+
+A variant for each means five edits to conduit core, each made for one vendor and
+versioned on that vendor's schedule. That is `FJS-D153`'s first cost again,
+landing inside the package the ruling kept vendor-free.
+
+**Through the seam, a connector supplies the function that turns the resolved
+credential and the serialized request into what goes on the wire.** Conduit
+keeps `serialize()`, because the bytes signed must be the bytes sent
+(`FJS-D153`), and the resolver keeps the secret out of every log. Two questions
+are decided when the seam is built, not here: whether the four existing variants
+move onto it as built-in signers, and how a minted credential states when it
+expires.
+
+Work: `FJS-2542`.
+*Lives in:* `packages/conduit/src/types.ts` (`TargetAuth`, to gain the seam).
+
+**Built as one variant, `{ type: 'signed', signer, ref }`,** naming a function in
+`ConduitOptions.signers` — a name, because a descriptor is stored as JSON. The
+two questions it left, answered when built: **the four existing types stay**,
+since no connector needs them moved; **a minted credential's expiry is the
+resolver's**, the `withCache` TTL over a `get()` that mints, which `invalidate`
+already forgets on a 401 — conduit gains no credential lifetime.
+
+### <a id="fjs-d890"></a>2026-10-10 · `FJS-D890` — What an official connector contains: a target builder, payload types, an error mapping onto `ConduitErrorKind`, a sink and a drive, always. Add a webhook verifier where the vendor sends webhooks, and a fixture where a conforming server exists.
+
+Asked in [`IDEAS/conduit-connectors.md`](IDEAS/conduit-connectors.md) § The order.
+The list is read off the eight connectors already written in app code, not
+designed ahead of them. Stripe and Telnyx carry all six pieces. DigitalOcean and
+Hetzner carry four, because a compute vendor sends no webhook.
+
+**It binds `@frontierjs/conduit-*`**, the connectors this project maintains. A
+third-party connector (`@kobami/conduit-*`) may follow it, and nothing grades it
+against the contract. A connector is TypeScript, like conduit.
+
+It also answers the three questions `FJS-D153` left to a second connector:
+
+- **Sink or fixture: both.** The sink owns chaos: a duplicate delivery, a lost
+  response, a moved clock, each mapped onto `ConduitErrorKind`. That is most of
+  what a connector is for. The fixture checks the sink, because one drive runs
+  against both.
+- **Return or install: return.** The builder returns a `TargetDescriptor` and
+  installs nothing, which is what `stripeTarget()` already does. The app's
+  conduit config owns installation.
+- **Function or hook: a pure function** from raw body, headers and secret to the
+  event or a refusal, called from a raw route over `ctx.$raw.rawBody`. A hook
+  wrapping it is added once two apps write the same wrapper.
+
+Nothing enforces the contract yet. The `fli check` rule that would is `FJS-2544`.
+*Lives in:* this ruling · the first extraction, `@frontierjs/conduit-stripe`.
+
+### <a id="fjs-d889"></a>2026-10-10 · `FJS-D889` — A connector may own a PROTOCOL, and is then named for the protocol: `conduit-s3`, `conduit-oidc`, `conduit-openai`.
+
+Asked in [`IDEAS/conduit-connectors.md`](IDEAS/conduit-connectors.md) § The open
+question the ruling does not cover. `FJS-D153` names connectors after vendors and
+assumes one vendor per connector. But five storage vendors speak S3, and every
+identity provider that publishes a discovery document speaks OIDC. Five
+near-copies of one connector diverge by the third.
+
+**The rule: a connector may own a protocol that more than one server implements,
+and it is named for the protocol.** Conformance is measured, not claimed: the
+connector's drive passes against at least two implementations. So a protocol
+connector always ships a fixture beside its sink, such as MinIO for S3, a local
+OIDC provider, or Ollama for the OpenAI chat shape. **A vendor's extension to the
+protocol belongs to the app** until a second implementation shares it, so the
+connector does not grow a flag per vendor (R2's `region: 'auto'`, path-style
+addressing).
+
+*Lives in:* this ruling · `IDEAS/conduit-connectors.md` § The order.
 
 ### <a id="fjs-d767"></a>2026-10-09 · `FJS-D767` — Is `unknown` allowed to ship — Yes, with a warning: `unknown` ships and is printed in the release output beside the bump.
 

@@ -14,6 +14,8 @@ import {
   generateApiKey,
   hashApiKey,
   generateToken,
+  generateCode,
+  codesMatch,
   generateSessionToken,
   expiresAt,
   API_KEY_PREFIX,
@@ -86,6 +88,8 @@ export function createLitestoneAuth(
     oauthReturnToAllow   = [],
     oauthLinkTtl         = '1 hour',
     onOAuthLinkRequested,
+    magicLinkTtl         = '15 minutes',
+    onMagicLinkRequested,
   } = opts
 
   const sys = db.asSystem()
@@ -334,6 +338,41 @@ export function createLitestoneAuth(
     return codes
   }
 
+  // What a proven FIRST factor earns: a session, or a ticket when the account
+  // has a second. A password and a magic link both end here, so neither can be
+  // the way past the other's code (`FJS-D888`). Whether a ticket is owed is a
+  // `totp` credential EXISTING — enrollment writes `totpPending` and only
+  // `confirmTotp` promotes it, so an unproven secret never gates a login
+  // (`FJS-D261`).
+  async function firstFactorProven(user: any, meta: Record<string, unknown> = {}): Promise<LoginResult> {
+    const totp = await liveTotp(user.id)
+    if (!totp) return issueSession(user, 'session', meta)
+
+    // One live ticket per person. A second sign-in supersedes the first rather
+    // than adding to it: two open tickets are two independent attempt budgets,
+    // so the ceiling in `completeLogin` could be walked around by signing in
+    // again.
+    await sys.loginChallenge.deleteMany({ where: { userId: user.id }, ...PURGE })
+
+    const value = generateToken()
+    const row   = await sys.loginChallenge.create({
+      data: { userId: user.id, value, expiresAt: expiresAt(loginChallengeTtl, sys.$now()) }
+    })
+
+    // Recorded, because a first factor that was accepted and never finished is
+    // the shape a stolen password makes: the attacker gets this far every time
+    // and no further, and nothing else in the trail would say so.
+    await audit('login.challenged', {
+      model:   'LoginChallenge',
+      records: [String(row.id)],
+      actorId: user.id,
+      actorType: 'user',
+      meta:    { ...meta, factor: 'totp' },
+    })
+
+    return { challenge: value, expiresAt: String(row.expiresAt) }
+  }
+
   // Wrong codes against a pending enrollment, by credential id. In memory, unlike
   // the login ticket's `attempts` column: the only caller is a session that
   // already holds the account, and the service limiter in front of it is
@@ -444,9 +483,143 @@ export function createLitestoneAuth(
       && new Date(session.impersonationEndsAt as string) > sys.$now()
   }
 
+  // ─── Magic link ───────────────────────────────────────────────────────────
+  //
+  // The mailbox as a first factor (`FJS-D888`). It proves the address and
+  // nothing more, so three accounts are answered three ways:
+  //   · nobody holds the address — the click creates the account, through
+  //     `onRegister`. Never at the request: a row made before the mailbox
+  //     answers squats the address (see `oauthResolve` § 3).
+  //   · a second factor is on — the click earns a ticket, as a password does.
+  //   · the only way in is an OAuth provider — refused, at the request and
+  //     again at the click. The mailbox never secured that account (FJS-987).
+
+  const MAGIC = 'magicLink'
+  const MAGIC_META = { method: MAGIC }
+
+  // `confirmPasswordReset`'s test, and for its reason: a password account is
+  // already one reset away from its mailbox, a provider-only one is not.
+  async function providerOnly(userId: string): Promise<boolean> {
+    const creds = await sys.credential.findMany({ where: { userId } })
+    return !creds.some((c: any) => c.type === 'password')
+      && creds.some((c: any) => String(c.type).startsWith('oauth:'))
+  }
+
+  async function refuseMagicLink(reason: string, userId: string | null, email: string | null, retryable = false): Promise<never> {
+    await audit('login.failed', {
+      model:   'User',
+      records: userId ? [userId] : [],
+      actorId: userId,
+      meta:    { ...MAGIC_META, reason, email },
+    })
+    if (onLoginFailed) await onLoginFailed({ email, userId, reason, stage: 'magic-link' })
+    throw new InvalidTokenError('Invalid or expired sign-in link', retryable)
+  }
+
+  // Answers before anything that tells a held address from a free one runs —
+  // `requestPasswordReset`'s rule (FJS-1832), and this one mails a free address
+  // too, so the lookup is all there is to hide.
+  async function requestMagicLink(email: string): Promise<void> {
+    setTimeout(async () => {
+      try {
+        // `@lower` reaches a `User` where-clause and not `identifier`, so the
+        // row is minted under the address the click will create the user with.
+        const address = email.toLowerCase()
+        const user    = await sys.user.findFirst({ where: { email: address } })
+        if (user && await providerOnly(user.id)) {
+          await audit('login.failed', {
+            model: 'User', records: [user.id], actorId: user.id,
+            meta:  { ...MAGIC_META, reason: 'no-password-credential', email: address, stage: 'request' },
+          })
+          return
+        }
+
+        await sys.verification.deleteMany({
+          where: { purpose: MAGIC, identifier: address }, ...PURGE,
+        })
+
+        const token = generateToken()
+        const code  = generateCode()
+        await sys.verification.create({
+          data: {
+            purpose:    MAGIC,
+            identifier: address,
+            value:      token,
+            code,
+            expiresAt:  expiresAt(magicLinkTtl, sys.$now()),
+          }
+        })
+
+        // Still in memory — after this both are @guarded.
+        await onMagicLinkRequested!({ email: address, token, code })
+      } catch (err) {
+        console.warn('[auth] magic link request failed after answering:', (err as Error)?.message)
+      }
+    }, 0)
+  }
+
+  async function verifyMagicLink(
+    proof: { token: string } | { email: string; code: string },
+  ): Promise<LoginResult> {
+    let row: any
+    if ('token' in proof) {
+      row = await sys.verification.findFirst({ where: { purpose: MAGIC, value: proof.token } })
+      if (!row) return refuseMagicLink('no-such-link', null, null)
+    } else {
+      const address = proof.email.toLowerCase()
+      row = await sys.verification.findFirst({ where: { purpose: MAGIC, identifier: address } })
+      if (!row) return refuseMagicLink('no-such-link', null, address)
+
+      if (!codesMatch(proof.code, String(row.code ?? ''))) {
+        // The ceiling is `completeLogin`'s: both are six digits standing in
+        // front of a session, so one number answers how many guesses that is.
+        const misses = Number(row.attempts ?? 0) + 1
+        if (misses < loginChallengeAttempts) {
+          await sys.verification.update({ where: { id: row.id }, data: { attempts: misses } })
+          return refuseMagicLink('bad-code', null, address, true)
+        }
+        await sys.verification.deleteMany({ where: { id: row.id } })
+        return refuseMagicLink('bad-code', null, address)
+      }
+    }
+
+    // Spent before anything is issued, and by a delete that must find the row,
+    // so two clicks that both read it sign in once.
+    const spent = await sys.verification.deleteMany({ where: { id: row.id } })
+    if (!spent.count) return refuseMagicLink('no-such-link', null, String(row.identifier))
+
+    const email = String(row.identifier)
+    const user  = await sys.user.findFirst({ where: { email } })
+
+    if (!user) {
+      // The app's gate, before the row, per the ordering rule.
+      if (onRegister) await onRegister({ email, name: null })
+      const made = await registerUser(tx => tx.user.create({ data: { email, emailVerified: true } }))
+      await audit('magiclink.registered', {
+        model: 'User', records: [String(made.id)], actorId: String(made.id), actorType: 'user',
+        meta:  MAGIC_META,
+      })
+      return issueSession(made, 'session', MAGIC_META)
+    }
+
+    // Re-asked at the click: a provider linked between the mail and the click
+    // makes it the account the request would have refused.
+    if (await providerOnly(user.id)) return refuseMagicLink('no-password-credential', user.id, email)
+
+    // The click is the same proof `verifyEmail` takes.
+    if (user.emailVerified !== true) {
+      await sys.user.update({ where: { id: user.id }, data: { emailVerified: true } })
+    }
+
+    return firstFactorProven({ ...user, emailVerified: true }, MAGIC_META)
+  }
+
   // ─── IAuth ────────────────────────────────────────────────────────────────
 
   return {
+
+    // Present only where the app mails them — see `onMagicLinkRequested`.
+    ...(onMagicLinkRequested ? { requestMagicLink, verifyMagicLink } : {}),
 
     // Exposed so createAuthPlugin can read it without requiring the caller
     // to pass sessionTtl to both createLitestoneAuth and createAuthPlugin.
@@ -704,35 +877,7 @@ export function createLitestoneAuth(
         await sys.credential.update({ where: { id: cred.id }, data: { value: await hashPassword(password) } })
       }
 
-      // The password is right. Whether that is enough is the next question, and
-      // a `totp` credential existing IS the answer — enrollment writes
-      // `totpPending` and only `confirmTotp` promotes it, so there is no state
-      // here where an unproven secret can gate a login (`FJS-D261`).
-      const totp = await liveTotp(user.id)
-      if (!totp) return issueSession(user, 'session')
-
-      // One live ticket per person. A second password login supersedes the first
-      // rather than adding to it: two open tickets are two independent attempt
-      // budgets, so the ceiling below could be walked around by logging in again.
-      await sys.loginChallenge.deleteMany({ where: { userId: user.id }, ...PURGE })
-
-      const value = generateToken()
-      const row   = await sys.loginChallenge.create({
-        data: { userId: user.id, value, expiresAt: expiresAt(loginChallengeTtl, sys.$now()) }
-      })
-
-      // Recorded, because a password that was accepted and never finished is the
-      // shape a stolen password makes: the attacker gets this far every time and
-      // no further, and nothing else in the trail would say so.
-      await audit('login.challenged', {
-        model:   'LoginChallenge',
-        records: [String(row.id)],
-        actorId: user.id,
-        actorType: 'user',
-        meta:    { factor: 'totp' },
-      })
-
-      return { challenge: value, expiresAt: String(row.expiresAt) }
+      return firstFactorProven(user)
     },
 
     // ── The second step ──────────────────────────────────────────────────

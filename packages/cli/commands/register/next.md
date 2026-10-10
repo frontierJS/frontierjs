@@ -5,6 +5,7 @@ alias: next
 examples:
   - fli next
   - fli next --pkg junction
+  - fli next --sev S3,S4
   - fli next --limit 25
   - fli next --json
 flags:
@@ -12,6 +13,10 @@ flags:
     char: p
     type: string
     description: Only rows filed against this package
+  sev:
+    char: s
+    type: string
+    description: Only rows of these severities, comma-separated (S1,S2)
   limit:
     char: l
     type: string
@@ -32,7 +37,8 @@ const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/register
 // The nearest package.json declaring `registers`, so a run from inside a
 // package or a surface means the project's registers.
 const root = findRegisterRoot(process.cwd()) ?? $.paths.root
-const out  = rankNext(root, { pkg: flag.pkg || null })
+const sev  = flag.sev ? flag.sev.split(',').map(s => s.trim().replace(/^s(\d)$/, 'S$1')).filter(Boolean) : null
+const out  = rankNext(root, { pkg: flag.pkg || null, sev })
 
 if (flag.json) {
   echo(JSON.stringify(out, null, 2))
@@ -40,7 +46,7 @@ if (flag.json) {
 }
 
 const limit = Math.max(1, Number.parseInt(flag.limit ?? '10', 10) || 10)
-const scope = flag.pkg ? ` in ${flag.pkg}` : ''
+const scope = (flag.pkg ? ` in ${flag.pkg}` : '') + (sev ? ` at ${sev.join(', ')}` : '')
 
 echo('')
 echo(`  fli register:next — ${out.ready.length} ready${scope} · ${out.blocked.length} blocked · ${out.decide.decidable} to decide`)

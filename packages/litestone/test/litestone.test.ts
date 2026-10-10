@@ -4679,6 +4679,17 @@ describe('findFirstOrThrow / findUniqueOrThrow', () => {
 
 
 describe('global query filters', () => {
+  test('a filters key that names no accessor is refused at build, by name', async () => {
+    const schema = `model Post { id Int @id; published Boolean }`
+    // The plural, the PascalCase model name and a stranger all filter nothing.
+    for (const key of ['posts', 'Post', 'nope']) {
+      await expect(makeDb(schema, 'filter-unknown', { filters: { [key]: { published: true } } }))
+        .rejects.toThrow(new RegExp(`filters.*'${key}'.*no model`))
+    }
+    await expect(makeDb(schema, 'filter-unknown', { filters: { posts: { published: true } } }))
+      .rejects.toThrow(/Did you mean 'post'/)
+  })
+
   test('static filter applied to findMany', async () => {
     const db = await makeDb(`
       model Post {
@@ -21543,6 +21554,27 @@ describe('doc comments — generateJsonSchema', () => {
     const { schema } = parse(MULTI)
     const js = generateJsonSchema(schema, { mode: 'full' })
     expect(js.$defs.T.properties.val.description).toBe('First line Second line')
+  })
+
+  // FJS-2386 — a trailing `///` documents the field it ends, the last one included
+  test('a trailing doc comment describes its own field, not the next', () => {
+    const TRAIL = `
+      model T {
+        id    Int @id
+        email String /// The address.
+        role  String @default("a") /// Access level.
+      }
+    `
+    const { schema } = parse(TRAIL)
+    const props = generateJsonSchema(schema, { mode: 'full' }).$defs.T.properties
+    expect(props.id.description).toBeUndefined()
+    expect(props.email.description).toBe('The address.')
+    expect(props.role.description).toBe('Access level.')
+  })
+
+  test('a trailing and a leading doc comment on one field join', () => {
+    const { schema } = parse(`model T {\n  id Int @id\n  /// Lead.\n  v String /// Trail.\n}`)
+    expect(schema.models[0].fields[1].comments).toEqual(['Lead.', 'Trail.'])
   })
 
   test('field without doc comment has no "description"', () => {

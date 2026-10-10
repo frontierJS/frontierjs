@@ -68,7 +68,7 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 
 Match the file you are in first. The code rules load from `.claude/rules/code-style.md` when a source file is read; these are the ones a new file needs before any read.
 
-- **No semicolons**, single quotes, 2-space indent. TypeScript in junction, auth, caravan, conduit, notifications, mcp and testing; plain ESM JavaScript in every other package.
+- **No semicolons**, single quotes, 2-space indent. TypeScript in junction, auth, caravan, conduit and every `conduit-*` connector (`FJS-D890`), notifications, mcp and testing; plain ESM JavaScript in every other package.
 - **A comment explains the failure, not the mechanism, and must be load-bearing.** Edit history, dates and narration of your own change belong in `DECISIONS.md` and git (`FJS-D675`).
 - **A comment inside a template literal uses plain words or `--` quoting** — a backtick there closes the literal and the file fails to parse.
 - **American spelling** in prose and identifiers (`FJS-D192`); `cancelled`, a persisted enum value, is the one exception, and `fli check` grades it.

@@ -167,8 +167,9 @@ export interface LitestoneAuthOptions {
    * `reason` is 'no-such-user' | 'no-password-credential' | 'bad-password' at
    * the password step, and 'no-such-challenge' | 'challenge-expired' |
    * 'no-such-user' | 'factor-removed' | 'code-replayed' | 'bad-code' at the
-   * second. `stage` says which, so an app can lock an account on ten bad codes
-   * without counting them against ten bad passwords.
+   * second, and 'no-such-link' | 'bad-code' | 'no-password-credential' at a
+   * magic link. `stage` says which, so an app can lock an account on ten bad
+   * codes without counting them against ten bad passwords.
    *
    * `userId` is null when the address matched nobody. `email` is null at the
    * second step, where there is a ticket rather than an address — a hook keying
@@ -180,7 +181,7 @@ export interface LitestoneAuthOptions {
     email:  string | null
     userId: string | null
     reason: string
-    stage:  'password' | 'second-factor'
+    stage:  'password' | 'second-factor' | 'magic-link'
   }) => Promise<void> | void
 
   /** Before the session row is deleted. `sessionId` is null for an unknown token. */
@@ -320,6 +321,41 @@ export interface LitestoneAuthOptions {
     token:    string
     provider: string
   }) => Promise<void> | void
+
+  // How long a magic link and its code live. Default: '15 minutes'.
+  //
+  // Shorter than a reset: a reset ends at a form that still asks for a new
+  // password, and this ends at a session.
+  magicLinkTtl?: string
+
+  /**
+   * Passwordless sign-in by mail. **Setting it is what turns the flow on** —
+   * without it `requestMagicLink` and `verifyMagicLink` do not exist and the
+   * plugin mounts no `/magic-link/*` route, because a route that answered
+   * `{ ok: true }` and mailed nothing is a sign-in that silently never arrives.
+   *
+   * An Observer (`FJS-D06`): called after `requestMagicLink` has answered, for
+   * `requestPasswordReset`'s reason (FJS-1832), and a throw is logged. `token`
+   * goes in a link to a web page that POSTs it; `code` is six digits for the
+   * person reading the mail on another device. Either one signs in, once.
+   *
+   * Called for an address nobody holds as well — the click is what creates the
+   * account, through `onRegister`, so a closed signup refuses there. Never
+   * called for an account whose only way in is an OAuth provider (FJS-987).
+   *
+   *   onMagicLinkRequested: async ({ email, token, code }) => {
+   *     await mailer.send({
+   *       to:      email,
+   *       subject: `Your sign-in code is ${code}`,
+   *       html:    `<a href="${APP_URL}/sign-in/link?token=${token}">Sign in</a>`,
+   *     })
+   *   }
+   */
+  onMagicLinkRequested?: (event: {
+    email: string
+    token: string
+    code:  string
+  }) => Promise<void> | void
 }
 
 // ─── createAuthServices options ───────────────────────────────────────
@@ -450,6 +486,13 @@ export interface AuthPluginOptions {
    * stranger is one nobody should win (FJS-992).
    */
   passwordResetRateLimit?: RateLimitHookOptions
+  /**
+   * `POST /auth/magic-link/request` — mails an address the caller names, so it
+   * is limited like a reset and for the same reason. Default:
+   * `{ max: 3, window: '15 minutes' }`. `/magic-link/verify` sits behind
+   * `loginRateLimit`, since it takes a six-digit code.
+   */
+  magicLinkRateLimit?: RateLimitHookOptions
 
   // The three services this plugin registers — `account`, `sessions`,
   // `api-keys`. On by default: they are the other half of the auth surface,

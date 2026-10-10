@@ -212,19 +212,25 @@ C.  11 anthropic + openai · 12 twilio · 13 postmark · 14 turnstile
     15 slack · 16 plausible · 17 tax + shipping
 ```
 
-Two rulings this ordering needs before step A:
+Ruled 2026-10-10, before step A:
 
-- **The protocol rule** § *The open question* asks for — `conduit-s3`, `conduit-oidc`
-  and `conduit-openai` each serve many vendors, and the first of them is in step A.
-- **What a connector package contains** — the sample is now eight rather than one,
-  and the answer should be read off them: a target builder, payload types, a webhook
-  verifier where the vendor has one, an error mapping onto `ConduitErrorKind`, a
-  sink, and a drive. Telnyx and Stripe both carry all six; DigitalOcean and Hetzner
-  carry four, because a compute vendor sends no webhook.
+- **The protocol rule** — `FJS-D889`. A connector may own a protocol that more than
+  one server implements, and is named for it; its drive passes against two of them.
+- **What a connector package contains** — `FJS-D890`, read off the eight above. It
+  binds `@frontierjs/conduit-*` only, and answers `FJS-D153`'s three questions:
+  sink and fixture, return, pure-function verifier.
+- **Auth goes through one signer seam** — `FJS-D891`. Every connector after Stripe and
+  Telnyx in the order needs a scheme `TargetAuth` lacks, so the seam (`FJS-2542`)
+  comes before twilio, turnstile, push and s3. google-maps fits today's `api_key`.
+- **SigV4 moves to toolbelt** — `FJS-D892` (`FJS-2543`), because litestone cannot
+  import `conduit-s3`.
 
 ---
 
 ## The open question the ruling does not cover
+
+**Both questions below are ruled: `FJS-D889` and `FJS-D890`.** The argument is kept as
+the record of why.
 
 `FJS-D153` names connectors after vendors — `@frontierjs/conduit-stripe`, not
 `@frontierjs/stripe` — and the reasoning is right. But it assumes a connector maps

@@ -287,6 +287,31 @@ describe('emitted access, on a real client', () => {
       env.close()
     }
   })
+
+  // The finding reads `publicWhen` as AND and the person approves that; the
+  // emitter once joined its entries with ||, so a listed draft was public.
+  test('a publicWhen of two fields opens a row only when both hold (FJS-2549)', async () => {
+    const a = clone(hiring)
+    a.entities[2].fields.push({ name: 'listed', type: 'bool' })
+    a.entities[2].access.publicWhen = { status: 'open', listed: true }
+    expect(checkAnswer(a).findings.map(f => f.message).join('\n')).toContain('where status is open and listed is true')
+    const env = await createTestEnv({ schema: emit(a, { scaffold: SCAFFOLD }).text })
+    try {
+      const sys = env.system
+      const owner = await sys.user.create({ data: { email: 'o@example.com' } })
+      const company = await sys.company.create({ data: { name: 'o co' } })
+      const job = async (status, listed) => {
+        const row = await sys.job.create({ data: { title: 'Engineer', companyId: company.id, managerId: owner.id, listed } })
+        return status === 'open' ? sys.job.update({ where: { id: row.id }, data: { status } }) : row
+      }
+      await job('draft', true)
+      await job('open', false)
+      const both = await job('open', true)
+      expect((await env.actingAs(null).job.findMany({})).map(j => j.id)).toEqual([both.id])
+    } finally {
+      env.close()
+    }
+  })
 })
 
 describe('checkAnswer refuses', () => {

@@ -2321,7 +2321,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * an id falls through to the id, because `17 (unavailable)` is worse than the
    * bug being fixed.
    */
-  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, isArray, strength = 'required' }) {
+  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, isArray, strength = 'required', within = null }) {
     const held = record?.[fieldName]
     if (held == null) return answer
     const wanted = (isArray ? (Array.isArray(held) ? held : [held]) : [held]).filter(v => v != null)
@@ -2330,6 +2330,39 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const have    = new Set((answer.options ?? []).map(o => o.value))
     const missing = [...new Set(wanted.filter(v => !have.has(v)))]
     if (!missing.length) return answer
+
+    // Off the PAGE is not off the LIST (`FJS-2555`). A picker is capped, so a
+    // value missing from `options` is out of the list only when the list was
+    // complete; past a cap it is usually a member the page never reached — a
+    // property's contact on an account with 5,669 of them. So a capped (or
+    // uncounted) answer asks first, through the filter the list itself was
+    // read through: what that finds is a member, pinned as itself, and only
+    // what it does not find goes on to be judged below.
+    if (answer.truncated !== false) {
+      return service
+        .getOptions({ ...(within ?? {}), [valueField]: { in: missing } }, { limit: missing.length })
+        .then(res => {
+          const rows = Array.isArray(res) ? res : (res?.data ?? [])
+          return new Map(rows.map(r => [r?.[valueField], r?.[shown]]))
+        })
+        // Unknown is not a member: the judgement below is the one that cannot
+        // pass a refused value.
+        .catch(() => new Map())
+        .then(listed => {
+          const members = missing.filter(v => listed.has(v))
+          const rest    = missing.filter(v => !listed.has(v))
+          const withMembers = { ...answer, options: [
+            ...members.map(v => ({ value: v, label: listed.get(v) ?? v })),
+            ...(answer.options ?? []),
+          ] }
+          return rest.length ? judgeMissing(withMembers, rest, { service, valueField, shown, strength }) : withMembers
+        })
+    }
+    return judgeMissing(answer, missing, { service, valueField, shown, strength })
+  }
+
+  /** The held values that are NOT in the list, shown and marked by strength. */
+  function judgeMissing(answer, missing, { service, valueField, shown, strength = 'required' }) {
 
     // Whether a held value outside the list is REFUSED is the binding's
     // strength, not the list's (`FJS-2501`). `required` refuses it. `open`
@@ -2489,7 +2522,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
             // the page beneath drops it rather than the total growing.
             { options: opts, total, truncated: total == null ? null : total > rows.length },
             { fieldName, record, service: setService.service, valueField: vs.value, labelField: shown,
-              isArray: rule?.type === 'array', strength: vs.strength },
+              isArray: rule?.type === 'array', strength: vs.strength, within: narrowed },
           )
         })
         .catch(err => {
@@ -2571,7 +2604,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         return withUnavailable(
           { options: opts, total, truncated: total == null ? null : total > opts.length },
           { fieldName, record, service: related.service, valueField: ref.field, labelField: shown,
-            isArray: rule?.type === 'array' },
+            isArray: rule?.type === 'array', within: query ?? null },
         )
       })
       .catch(err => {

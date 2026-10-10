@@ -19,7 +19,8 @@
 //   }
 
 import { existsSync, readFileSync, writeFileSync, renameSync, statSync, openSync, readSync, closeSync } from '#host'
-import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex } from '../drivers/jsonl-index.js'
+import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex, utf8Length, utf8Text }
+  from '../drivers/jsonl-index.js'
 import { modelToTableName, fieldToColumnName } from './ddl.js'
 import { quoteIdent }       from './query.js'
 
@@ -230,7 +231,7 @@ export async function runSqliteRetention(rawWriteDb, models, retention, {
 // Read just the first line of a file (bounded chunks, no full-file decode).
 function readFirstLine(filePath) {
   const fd  = openSync(filePath, 'r')
-  const buf = Buffer.allocUnsafe(8192)
+  const buf = new Uint8Array(8192)
   const chunks = []
   let pos = 0
   try {
@@ -239,7 +240,7 @@ function readFirstLine(filePath) {
       if (n === 0) break
       const nl = buf.indexOf(0x0a)
       const end = (nl >= 0 && nl < n) ? nl : n
-      chunks.push(buf.slice(0, end).toString('utf8'))
+      chunks.push(utf8Text(buf.subarray(0, end)))
       if (nl >= 0 && nl < n) break
       pos += n
     }
@@ -333,7 +334,7 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
 
   if (maxBytes) {
     // Measure byte size including newlines
-    const totalBytes = lines.reduce((sum, l) => sum + Buffer.byteLength(l, 'utf8') + 1, 0)
+    const totalBytes = lines.reduce((sum, l) => sum + utf8Length(l) + 1, 0)
 
     if (totalBytes > maxBytes) {
       // Single pass from the end: keep the largest suffix that fits.
@@ -342,7 +343,7 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
       let keepBytes = 0
       let cut = lines.length
       for (let i = lines.length - 1; i >= 0; i--) {
-        const b = Buffer.byteLength(lines[i], 'utf8') + 1
+        const b = utf8Length(lines[i]) + 1
         if (keepBytes + b > maxBytes) break
         keepBytes += b
         cut = i
@@ -388,7 +389,8 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
   // `writeFileSync` truncates first, so a crash inside it leaves a TRUNCATED
   // trail, and a concurrent reader sees a half-written file. `rename` is atomic
   // — a reader gets the old file or the new one and never something between.
-  const tmp = `${filePath}.compact-${process.pid}.tmp`
+  const pid = typeof process === 'undefined' ? 'host' : process.pid
+  const tmp = `${filePath}.compact-${pid}.tmp`
   writeFileSync(tmp, newContent, 'utf8')
   renameSync(tmp, filePath)
 

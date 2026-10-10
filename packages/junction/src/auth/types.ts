@@ -178,6 +178,18 @@ export interface IAuth {
   verifyEmail?(token: string):                         Promise<SessionContext>
 
   /**
+   * Passwordless sign-in: mail a link and a code, then spend either one.
+   *
+   * Optional, and the plugin mounts its routes only where both exist. The
+   * request answers before it knows whether the address is held. The proof is
+   * the mailed token, or the address with its six digits for a person reading
+   * the mail on another device. It answers a `LoginResult` because the mailbox
+   * is one factor, so an account with a second one still owes its code.
+   */
+  requestMagicLink?(email: string):                    Promise<void>
+  verifyMagicLink?(proof: { token: string } | { email: string; code: string }): Promise<LoginResult>
+
+  /**
    * SUPPORT MODE — start an episode on the session this token belongs to.
    *
    * Optional: a provider that cannot impersonate does not implement it, and the

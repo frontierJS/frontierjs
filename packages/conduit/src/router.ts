@@ -10,7 +10,7 @@ import { UnixTransport }           from './transports/unix.ts'
 import { NotImplementedTransport } from './transports/not_implemented.ts'
 import { BrokerTransport }         from './transports/broker.ts'
 import { BaseTransport }           from './transports/base.ts'
-import type { ConduitStore, CredentialResolver } from './types.ts'
+import type { ConduitStore, CredentialResolver, Signer } from './types.ts'
 import { observedRequest }         from './address.ts'
 import { createObserverGuard }     from './observe.ts'
 import type {
@@ -38,7 +38,8 @@ export class Router {
     private onDescriptor: (d: TargetDescriptor) => void = () => {},
     // Internal only — not part of ConduitOptions.
     // Use createTestConduit() to inject stubs; do not pass this directly.
-    private overrides:   Map<string, BaseTransport> = new Map()
+    private overrides:   Map<string, BaseTransport> = new Map(),
+    private signers:     Record<string, Signer> = {},
   ) {}
 
   // Async since the store may be networked.
@@ -61,6 +62,7 @@ export class Router {
 
     this.onDescriptor(descriptor)
     const transport = this.createTransport(descriptor)
+    transport.signers = this.signers
     this.pool.set(targetId, transport)
     return transport
   }

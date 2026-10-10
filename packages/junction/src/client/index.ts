@@ -733,9 +733,34 @@ export class AuthClient {
     // previous account's ticket redeemable by this one's code.
     this._pendingChallenge = null
 
-    const raw = await this._c._request(
+    return this._signedIn(await this._c._request(
       'POST', `${this._prefix}/login`, { email, password }, { skipAuth: true }
-    ) as Record<string, unknown>
+    ))
+  }
+
+  /**
+   * Mail a sign-in link and code. Answers the same whether or not the address
+   * has an account — the click makes one where it does not.
+   */
+  async requestMagicLink(email: string): Promise<void> {
+    await this._c._request('POST', `${this._prefix}/magic-link/request`, { email }, { skipAuth: true })
+  }
+
+  /**
+   * Sign in with what the mail carried: the link's `token`, or the address and
+   * its six-digit `code` on another device. Answers what `signIn` does — a
+   * challenge when the account has a second factor, finished by `completeSignIn`.
+   */
+  async signInWithMagicLink(proof: { token: string } | { email: string; code: string }): Promise<SignInResult> {
+    this._pendingChallenge = null
+    return this._signedIn(await this._c._request(
+      'POST', `${this._prefix}/magic-link/verify`, proof, { skipAuth: true }
+    ))
+  }
+
+  // A session, or a ticket that owes a code — what both first factors answer.
+  private _signedIn(answer: unknown): SignInResult {
+    const raw = answer as Record<string, unknown>
 
     if (raw && 'challenge' in raw) {
       this._pendingChallenge = String(raw.challenge)

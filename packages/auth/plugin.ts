@@ -48,6 +48,7 @@ export function createAuthPlugin(
     loginRateLimit    = { max: 10, window: '15 minutes' },
     registerRateLimit = { max: 5,  window: '15 minutes' },
     passwordResetRateLimit = { max: 3, window: '15 minutes' },
+    magicLinkRateLimit     = { max: 3, window: '15 minutes' },
     services          = {},
     oauth,
     canStartSupport,
@@ -63,6 +64,7 @@ export function createAuthPlugin(
   const loginLimiter    = rateLimitHook(loginRateLimit)
   const registerLimiter = rateLimitHook(registerRateLimit)
   const resetLimiter    = rateLimitHook(passwordResetRateLimit)
+  const magicLimiter    = rateLimitHook(magicLinkRateLimit)
   // Starting a flow writes a row, unauthenticated, once per click.
   const oauthLimiter    = rateLimitHook(oauth?.rateLimit ?? { max: 20, window: '15 minutes' })
 
@@ -303,6 +305,42 @@ export function createAuthPlugin(
         await auth.confirmPasswordReset(token, password)
         return ctx.json({ ok: true })
       })
+
+      // ── POST /auth/magic-link/request · /verify ──────────────────────
+      //
+      // Mounted only where the provider has both, which `createLitestoneAuth`
+      // grants only where the app mails the link: unmounted is a 404 a screen
+      // can see, where a mounted route mailing nothing is a sign-in that never
+      // arrives. Verify is a POST for `/email/verify`'s reason — a mail
+      // scanner's prefetch spends a GET (`FJS-D616`) — and answers what `/login`
+      // does, a session or a ticket (`FJS-D888`).
+
+      const { requestMagicLink, verifyMagicLink } = auth
+      if (requestMagicLink && verifyMagicLink) {
+        app.post(`${prefix}/magic-link/request`, async (ctx: TransportContext) => {
+          // Before the body, for `/password-reset/request`'s reason (FJS-992).
+          magicLimiter(ctx)
+
+          const { email } = body(ctx)
+          if (!email) throw new BadRequest('email is required')
+
+          await requestMagicLink.call(auth, email)
+          return ctx.json({ ok: true })
+        })
+
+        app.post(`${prefix}/magic-link/verify`, async (ctx: TransportContext) => {
+          // `/login`'s limiter: a code here is six digits in front of a session.
+          loginLimiter(ctx)
+
+          const { token, email, code } = body(ctx)
+          let result
+          if (token)              result = await verifyMagicLink.call(auth, { token })
+          else if (email && code) result = await verifyMagicLink.call(auth, { email, code })
+          else throw new BadRequest('token, or email and code, is required')
+
+          return respond(ctx, result, cookieAuth, cookieMaxAge)
+        })
+      }
 
       // ── POST /auth/email/verify/request ──────────────────────────────
       // Requires authentication — user must be logged in to request

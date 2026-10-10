@@ -960,13 +960,15 @@ looks exactly like an app with no services.
 The boot banner carries the answer either way:
 
 ```
-🚀 shop v1.0.0                                🚀 shop v1.0.0
-    …                                             …
-    services  20                                  services  3
-    autoload  api/src/services                    autoload  none — probed api/services, api/src/services
+🚀 shop v1.0.0
+    services  20
+    autoload  api/src/services
+🚀 shop v1.0.0
+    services  3
+    autoload  none — probed api/services, api/src/services
 ```
 
-The second line is an app that loaded nothing and will 404 every route those
+The second banner is an app that loaded nothing and will 404 every route those
 services would have mounted. Nothing throws — a missing directory is a
 deliberate no-op — so the banner is where that shows.
 
@@ -1052,6 +1054,10 @@ auth.confirmPasswordReset?(token, newPassword)           // consumes token, sets
 // Email verification flow
 auth.requestEmailVerification?(userId)                   // sends verification email
 auth.verifyEmail?(token)                                 // consumes token, returns session
+
+// Magic link — the mailbox as a first factor
+auth.requestMagicLink?(email)                            // mails a link and a six-digit code
+auth.verifyMagicLink?({ token } | { email, code })       // a LoginResult, as login() answers
 ```
 
 These are optional on `IAuth` — if your provider handles them differently (e.g. the library has its own email flows), implement them in your `IAuth` or leave them unset and handle the routes yourself.
@@ -1862,6 +1868,8 @@ await client.auth.revokeOtherSessions()
 const { key }  = await client.auth.createApiKey({ name: 'ci' })  // the key exists once
 await client.auth.changePassword(current, next)
 await client.auth.requestPasswordReset(email)
+await client.auth.requestMagicLink(email)
+await client.auth.signInWithMagicLink({ token })       // or { email, code } — answers what signIn does
 ```
 
 A Sierra app gets a reactive `session` object and a `ready` promise over the

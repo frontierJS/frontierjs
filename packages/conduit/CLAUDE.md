@@ -237,6 +237,16 @@ src/
   into twenty logins.
   A minted session is `withCache({ get: login }, { ttl_ms: Infinity })`;
   `meta.headers['set-cookie']` is newline-joined, since `Expires` holds a comma.
+- **A vendor's scheme is a `signed` target, and the function is the connector's**
+  (`FJS-D891`). `auth: { type: 'signed', signer, ref }` names an entry of
+  `ConduitOptions.signers`, because a descriptor is JSON in the registry and a
+  function is not. The four older types did not move onto it. The signer gets the
+  bytes `serialize()` produced and may return a replacement body — an http
+  transport sends `authorize().body`, never its own `rawBody`, or the signed bytes
+  were not the ones sent. A minted JWT or OAuth token is the RESOLVER's:
+  `withCache({ get: mint }, { ttl_ms })` is its expiry, so conduit holds no
+  credential lifetime. `put()` refuses an unknown signer by name, and a signed
+  target beside `follow_redirects` or `address_from`.
 - **A credential that belongs to the caller is `per_caller`, and it never goes
   through `get(ref)`** (`FJS-D848`). One target and one ref, a login per
   tenant: the transport asks `getFor(ref, who)` with

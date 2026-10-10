@@ -13,6 +13,7 @@ import type {
   CredentialCaller,
   CredentialResolver,
   Protocol,
+  Signer,
   TargetDescriptor
 } from '../types.ts'
 
@@ -23,6 +24,10 @@ export abstract class BaseTransport {
     protected descriptor:  TargetDescriptor,
     protected credentials: CredentialResolver
   ) {}
+
+  // Set by the router for every transport it builds, so a `signed` target finds
+  // its function without a third constructor argument on each transport.
+  signers: Record<string, Signer> = {}
 
   // Whether the inbound request's trace may reach this target — only one that
   // declared itself ours (`FJS-D507`).
@@ -174,23 +179,19 @@ export abstract class BaseTransport {
     return out
   }
 
-  protected async buildAuthHeaders(ctx: {
-    method?: string
-    path?:   string
-    /** The raw search string, `?a=1&b=2` — signed since `FJS-678`. */
-    query?:  string
-    // A string for json/form, the raw bytes for binary. `sha256Hex` takes
-    // either — stringifying bytes first would sign something never sent, and
-    // the far side would compute a different digest.
-    body?:   string | Uint8Array
-    // Filled with the secret these headers carry, so a 401 can name the one
-    // the target refused to `CredentialResolver.invalidate`.
-    spent?:  { value?: string }
-    // Whose credential a `per_caller` target spends (`FJS-D848`).
-    who?:    CredentialCaller
-  } = {}): Promise<Record<string, string>> {
+  protected async buildAuthHeaders(ctx: AuthContext = {}): Promise<Record<string, string>> {
+    return (await this.authorize(ctx)).headers
+  }
+
+  // buildAuthHeaders plus the body, for the one scheme that rewrites it: a
+  // `signed` target whose signer puts the secret inside the payload. A caller
+  // that sends a body sends THIS `body`, or the signed bytes were never sent.
+  protected async authorize(ctx: AuthContext = {}): Promise<{
+    headers: Record<string, string>
+    body:    string | Uint8Array | undefined
+  }> {
     const auth = this.descriptor.auth
-    if (auth.type === 'none') return {}
+    if (auth.type === 'none') return { headers: {}, body: ctx.body }
 
     const secret = auth.per_caller
       ? await this.secretFor(auth.ref, ctx.who)
@@ -199,10 +200,25 @@ export abstract class BaseTransport {
 
     switch (auth.type) {
       case 'bearer':
-        return { 'Authorization': `Bearer ${secret}` }
+        return { headers: { 'Authorization': `Bearer ${secret}` }, body: ctx.body }
 
       case 'api_key':
-        return { [auth.header]: secret }
+        return { headers: { [auth.header]: secret }, body: ctx.body }
+
+      case 'signed': {
+        // Registered at put(), so a miss here is a conduit rebuilt without the
+        // signers a stored descriptor was written under, and it fails closed.
+        const sign = this.signers[auth.signer]
+        if (!sign) throw new CredentialError(this.descriptor.id, auth.ref, `no signer named '${auth.signer}' is installed`)
+        const { method, path, query } = this.authContext(ctx)
+        const out = await sign({
+          secret, method, path, query,
+          url:     ctx.url ?? this.descriptor.address,
+          body:    ctx.body,
+          headers: ctx.headers ?? {},
+        })
+        return { headers: out.headers ?? {}, body: out.body ?? ctx.body }
+      }
 
       case 'hmac': {
         const { method, path, query, body } = this.authContext(ctx)
@@ -217,16 +233,19 @@ export abstract class BaseTransport {
         // kit: it is the substrate package, importable by litestone and mesa
         // because it computes nothing it is not given, and CI fails a
         // `Date.now()` inside it.
-        return signRequest({
-          secret,
-          method:    method ?? 'GET',
-          path:      path ?? '/',
-          query,
-          body:      body ?? '',
-          prefix:    auth.header_prefix ?? 'X-Fjs',
-          timestamp: Math.floor(Date.now() / 1000),
-          nonce:     crypto.randomUUID(),
-        })
+        return {
+          headers: await signRequest({
+            secret,
+            method:    method ?? 'GET',
+            path:      path ?? '/',
+            query,
+            body:      body ?? '',
+            prefix:    auth.header_prefix ?? 'X-Fjs',
+            timestamp: Math.floor(Date.now() / 1000),
+            nonce:     crypto.randomUUID(),
+          }),
+          body: ctx.body,
+        }
       }
     }
   }
@@ -271,4 +290,24 @@ export abstract class BaseTransport {
 }
 
 // ─── Internal ────────────────────────────────────────────────
+
+interface AuthContext {
+  method?:  string
+  path?:    string
+  /** The raw search string, `?a=1&b=2` — signed since `FJS-678`. */
+  query?:   string
+  // A string for json/form, the raw bytes for binary. `sha256Hex` takes
+  // either — stringifying bytes first would sign something never sent, and
+  // the far side would compute a different digest.
+  body?:    string | Uint8Array
+  // The full address and the headers already set, for a `signed` target: SigV4
+  // signs the host and the content type, which the other schemes never read.
+  url?:     string
+  headers?: Record<string, string>
+  // Filled with the secret these headers carry, so a 401 can name the one
+  // the target refused to `CredentialResolver.invalidate`.
+  spent?:   { value?: string }
+  // Whose credential a `per_caller` target spends (`FJS-D848`).
+  who?:     CredentialCaller
+}
 

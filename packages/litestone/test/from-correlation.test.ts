@@ -174,3 +174,41 @@ describe('writing a @from field (FJS-395)', () => {
     expect((await sys.author.findUnique({ where: { id: 1 } })).noteCount).toBe(1)
   })
 })
+
+// ─── a nested create's returned row (FJS-2388) ──────────────────────────────
+
+const NESTED = `
+model Account {
+  id         Int     @id @default(autoincrement())
+  name       String
+  orderCount Int     @from(Order, count: true)
+  hasOrders  Boolean @from(Order, exists: true)
+  orders     Order[]
+}
+model Order {
+  id        Int     @id @default(autoincrement())
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
+}
+`
+
+describe('a write that lands children answers @from after they land (FJS-2388)', () => {
+  it('create with a nested hasMany create', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: NESTED })
+    const made = await db.asSystem().account.create({ data: { name: 'a', orders: { create: [{}, {}] } } })
+    const again = await db.asSystem().account.findUnique({ where: { id: made.id } })
+    expect(again.orderCount).toBe(2)
+    expect(made.orderCount).toBe(2)
+    expect(made.hasOrders).toBe(true)
+  })
+
+  it('update with a nested hasMany create', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: NESTED })
+    const sys = db.asSystem()
+    const a = await sys.account.create({ data: { name: 'a' } })
+    expect(a.orderCount).toBe(0)
+    const made = await sys.account.update({ where: { id: a.id }, data: { orders: { create: [{}, {}, {}] } } })
+    expect(made.orderCount).toBe(3)
+    expect(made.hasOrders).toBe(true)
+  })
+})

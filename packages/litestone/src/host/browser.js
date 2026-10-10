@@ -80,6 +80,12 @@ export function extname(p) {
   return i <= 0 ? '' : b.slice(i)
 }
 
+// ─── the environment there isn't ──────────────────────────────────────────
+//
+// Nothing is set in a browser, so `env("X", "default")` takes its default and
+// one with none reaches the caller's own "is not set and has no default".
+export const envVar = () => undefined
+
 // ─── the filesystem there isn't ───────────────────────────────────────────
 
 const FS = 'a browser has no filesystem — a database is a name in OPFS, and the schema arrives already parsed.'

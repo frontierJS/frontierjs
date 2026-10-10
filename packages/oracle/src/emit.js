@@ -345,7 +345,12 @@ function accessFor(m, of, backs) {
       terms.read.push(member)
       terms.update.push(member)
     }
-    if (a.publicWhen) terms.read.push(...Object.entries(a.publicWhen).map(([k, v]) => `${k} == ${typeof v === 'string' ? `'${v}'` : v}`))
+    // One term, every entry holding: checkAnswer's finding reads the entries
+    // with *and*, and that sentence is what the person approves.
+    if (a.publicWhen) {
+      const when = Object.entries(a.publicWhen).map(([k, v]) => `${k} == ${typeof v === 'string' ? `'${v}'` : v}`)
+      terms.read.push(when.length > 1 ? `(${when.join(' && ')})` : when[0])
+    }
   }
 
   const gate = []

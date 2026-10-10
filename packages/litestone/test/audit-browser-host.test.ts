@@ -50,30 +50,25 @@ d('the fixture is a browser-shaped host', () => {
   it('an @encrypted schema with no key is refused the same way as on a server', () => {
     expect(answers['encrypted-no-key']?.message).toContain('no encryption key')
   })
+  it('an encryptionKey on a device is refused by #host, naming the attribute', () => {
+    const v = answers['encrypted-with-key']
+    expect(v.name).not.toBe('ReferenceError')
+    expect(v.code).toBe('HOST_UNAVAILABLE')
+    expect(v.message).toContain('@encrypted')
+  })
 })
 
 d('a server global named outside #host', () => {
-  // FJS-2399: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  // core/databases.js resolveDbPath reads process.env for `path env(...)`.
-  test.failing('a `database { path env(...) }` resolves its default, or is refused by name', () => {
+  // core/databases.js resolveDbPath asks `#host` for the env var behind `path env(...)`.
+  test('a `database { path env(...) }` resolves its default, or is refused by name', () => {
     const v = answers['env-path']
     expect(v.name).not.toBe('ReferenceError')
     expect(v.opened === true || /not set|HOST_UNAVAILABLE/.test(`${v.message}${v.code}`)).toBe(true)
   })
 
-  // FJS-2398: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  // core/encryption.js normalizeKey is Buffer.from, reached at createClient
-  // before #host's createCipheriv refusal can say what is wrong.
-  test.failing('an @encrypted write on a device is refused by #host, naming the attribute', () => {
-    const v = answers['encrypted-with-key']
-    expect(v.name).not.toBe('ReferenceError')
-    expect(v.code).toBe('HOST_UNAVAILABLE')
-  })
-
-  // FJS-2396: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // core/audit-log.js armExitFlush: `typeof process?.on` evaluates `process`
   // before `typeof` can protect it, inside the create() that fired the log.
-  test.failing('a @@trail write lands and the write resolves; the trail failure is a warning', () => {
+  test('a @@trail write lands and the write resolves; the trail failure is a warning', () => {
     const v = answers['trail']
     expect(v.landed).toBe(1)
     expect(v.threw).toBeNull()
@@ -87,10 +82,9 @@ d('a server global named outside #host', () => {
     expect(v.opened === true || v.code === 'HOST_UNAVAILABLE').toBe(true)
   })
 
-  // FJS-2397: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  // core/hooks.js emit() and core/client.js dispatchEvent() defer with a bare
-  // setImmediate; audit-log.js already falls back to setTimeout for the same call.
-  test.failing('an onEvent listener fires after the write, and the write resolves', () => {
+  // core/hooks.js emit() and core/client.js dispatchEvent() defer through
+  // `defer`, which falls back to setTimeout where there is no setImmediate.
+  test('an onEvent listener fires after the write, and the write resolves', () => {
     const v = answers['on-event-hook']
     expect(v.threw).toBeNull()
     expect(v.fired).toBe(1)

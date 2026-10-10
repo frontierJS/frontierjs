@@ -433,7 +433,8 @@ const db = await createClient({
 
 Dynamic filters (function form) receive `ctx` so they can reference `ctx.auth`.
 A static filter naming a field the model does not have is refused when the
-client is built — see *Refused before the first query* above.
+client is built — see *Refused before the first query* above — and so is a key
+that is no model's accessor (`posts`, `Post`), which would otherwise filter nothing.
 
 ## Relation filters
 

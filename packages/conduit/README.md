@@ -184,6 +184,7 @@ Auth is declared on the target and applied automatically on every request. Calle
 | `bearer`  | Adds `Authorization: Bearer <secret>` |
 | `api_key` | Adds a custom header: `{ header: 'X-Api-Key', ref: 'STRIPE_KEY' }` |
 | `hmac`    | Signs a canonical string with HMAC-SHA256 — see below |
+| `signed`  | A vendor's own scheme, as a function a connector supplies — see *Signers* |
 | `none`    | No auth headers added |
 
 Applied on **every** protocol: HTTP and Unix on each request, WebSocket on the connection upgrade.
@@ -209,6 +210,33 @@ X-Fjs-Nonce:     <uuid>
 This binds each signature to one method, one path and one query, so a captured signature cannot be replayed against a different endpoint on the same target, and the timestamp and nonce let the receiver reject stale or repeated requests. Requests with no body sign the hash of the empty string, so `POST /reboot` and `DELETE /servers/42` are signed like anything else.
 
 **The receiving outpost must do its part:** recompute the same canonical string, compare in constant time, reject signatures outside a freshness window (60s is typical), and remember recent nonces. A signature check that ignores the timestamp gives you no replay protection.
+
+#### Signers
+
+Basic, a secret inside the body, SigV4 and a minted JWT are not new `type`s. One
+`signed` type names a function in `ConduitOptions.signers`, which a connector
+exports for the app to spread in:
+
+```ts
+const basic: Signer = ({ secret }) => ({ headers: { authorization: `Basic ${btoa(secret)}` } })
+
+createConduit({ signers: { basic }, targets: [
+  { id: 'provider:twilio', …, auth: { type: 'signed', signer: 'basic', ref: 'TWILIO_BASIC' } },
+] })
+```
+
+The signer is handed the resolved `secret`, the `method`, `url`, `path`, `query`,
+the serialized `body` and the `headers` already set. It returns `headers` to add
+and, where the vendor wants the secret in the payload, a replacement `body`;
+auth headers still win over a caller's. A name is refused at `register()` when
+no such signer is installed, and so is `follow_redirects` or `address_from`
+beside it, for `hmac`'s reason.
+
+**A minted credential's lifetime is the resolver's.** A JWT or an OAuth access
+token is what the resolver's `get(ref)` returns — mint it there, and
+`withCache(resolver, { ttl_ms })` is its expiry. A 401 forgets it through
+`invalidate` and the send replays once on a fresh one, as for any credential.
+The signer sees only the string.
 
 #### WebSocket auth
 

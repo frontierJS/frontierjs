@@ -469,7 +469,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">333 across 24 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">334 across 24 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">Setup</td>
@@ -489,6 +489,11 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m"></td>
       <td class="m">Schema models</td>
       <td class="m sub">fli auth:install appends User to db/schema.lite — it is yours to extend —</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Magic link</td>
+      <td class="m sub">Passwordless sign-in by mail. Setting onMagicLinkRequested turns it on; without</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -2414,7 +2419,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">146 rows · 247 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">146 rows · 248 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>a migration, db/migrations/, or a column whose KIND of time changed</td>
       <td>example: verify:migrate — the only thing that reads the committed files, since autoMigrate means nothing else ever does</td>
@@ -2756,9 +2761,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>packages/basecamp: bun run test (api/test/registers.test.ts, the prompt per intent) + packages/basecamp: verify:registers — the only place a register record reaches a screen, is ruled on there, and is handed to a workbench run</td>
       <td><span class="tally"><b>packages/basecamp</b>bun run test</span><span class="tally"><b>packages/basecamp</b>verify:registers</span></td>
     </tr><tr data-row>
-      <td>a preview's Open — basecamp's api/src/core/preview.ts, the workbench's fork with preview, outpost's /route with a port</td>
-      <td>packages/basecamp: api/test/workbench.test.ts + verify:provision — the unit file holds the settings, the marker and the port claimed at the cut; the drive is the only place the four rows are written by the real services and the route is read off a machine's TLS port rather than off Open's own answer. packages/outpost: bun run test for the port half of /route</td>
-      <td><span class="tally"><b>packages/basecamp</b>api/test/workbench.test.ts</span><span class="tally"><b>packages/basecamp</b>verify:provision</span><span class="tally"><b>packages/outpost</b>bun run test</span></td>
+      <td>a preview — basecamp's api/src/core/preview.ts, the workbench's fork with preview, freeze, thaw and a preview's archive; a release that names a digest (deployments.create with builtImage); outpost's /route with a port, /static/activate with hosts, /static/retire</td>
+      <td>packages/basecamp: api/test/workbench.test.ts + api/test/inline-app.test.ts + verify:provision — the unit files hold the settings, the marker, the port claimed at the cut, and a digest release's three steps and empty snapshot; the drive is the only place the rows are written by the real services, the machine is outpost's own server and static store on a TLS port, and the hostname is answered by the static origin with the Host the route sets: Open dials the dev server, Freeze serves the built page with VITEAPIURL in its bundle, Thaw dials back, Archive leaves the hostname unrouted and the files gone. Dropping the job's hosts reds the two serving checks. packages/outpost: bun run test for /route's port and the static routes, incl. a second app taking the same slug</td>
+      <td><span class="tally"><b>packages/basecamp</b>api/test/workbench.test.ts</span><span class="tally"><b>packages/basecamp</b>api/test/inline-app.test.ts</span><span class="tally"><b>packages/basecamp</b>verify:provision</span><span class="tally"><b>packages/outpost</b>bun run test</span></td>
     </tr><tr data-row>
       <td>a cloud account, a provisioned machine, the spend guard, cloud-init or the enrollment route — api/src/providers/compute/, Secret.providerKind, Server's three enrollment columns</td>
       <td>packages/basecamp: bun run test + verify:provision — the suite for the dialect and the pure halves, and the drive is the only place a machine is BOUGHT, and the only one that puts a real request at the enrollment route. The unit file is the other half and its sharpest row is the grant tripwire: provision and destroy landed gated and refused every caller including an owner, because core/capabilities.ts is hand-kept and the schema had grown two moves it had never heard of</td>

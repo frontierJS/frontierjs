@@ -10,7 +10,7 @@
 
 import { openDatabase, currentEngine } from './engine.js'
 import { applyWal, applyBusyTimeout, busyTimeoutFor } from './pragmas.js'
-import { resolve, dirname, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname } from '#host'
+import { resolve, dirname, envVar, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname } from '#host'
 import { noteMintedDirectory } from './db-path.js'
 import { ClientClosedError } from './errors.js'
 
@@ -366,7 +366,7 @@ function resolveDbPath(pathDef, override, anchor = null) {
                      : resolve(v)
 
   if (pathDef.kind === 'env') {
-    const val = process.env[pathDef.var] ?? pathDef.default
+    const val = envVar(pathDef.var) ?? pathDef.default
     if (!val) throw new Error(`database path: env var '${pathDef.var}' is not set and has no default`)
     return against(val)
   }

@@ -237,6 +237,7 @@ export const DEFAULT_MESSAGES = {
       ? cap
       : `${cap}; at ${places} decimal place(s) that is ${Math.floor(EXACT_INT_MAX / 10 ** places).toLocaleString('en-GB')}`
   },
+  intRange:    ()  => `must be at most ${EXACT_INT_MAX.toLocaleString('en-GB')} in magnitude — past that a JS number cannot carry the value; declare the column @big to hold more`,
   // The two array rules that come from the TYPE rather than an attribute. They
   // are in this table for the same reason as the rest: it is the one definition
   // of the wording, and `x-messages` falls back to it.
@@ -632,6 +633,14 @@ export function validate(data, model, computedFns, typeMap, enums = null) {
       }
     }
 
+    // A plain Int past 2^53 reads back a rounded Number on bun:sqlite and an
+    // exact BigInt on the wasm engine, which JSON.stringify throws on. Refused
+    // on the way in so neither engine is asked to read it; @big carries digits
+    // and @scale/@money refuse the same range themselves (`FJS-2403`).
+    if (isPlainInt(field) && typeof value === 'number' && !Number.isSafeInteger(value) && Number.isInteger(value)) {
+      errors.push({ path: [field.name], message: DEFAULT_MESSAGES.intRange() })
+    }
+
     // An array column's SHAPE, before its rules. `@minItems` asked about a
     // string answers by its length, which is a plausible wrong answer rather
     // than a refusal; and the element check exists because SQLite stores the
@@ -707,6 +716,13 @@ export const VALIDATOR_KINDS = new Set([
   'vector',
 ])
 
+// An Int column whose value is a JS number on the way in and out: not an array,
+// and not one of the attributes that grade the same range under their own name.
+const OWN_RANGE = new Set(['big', 'scale', 'money'])
+function isPlainInt(field) {
+  return field.type.name === 'Int' && !field.type.array && !field.attributes.some(a => OWN_RANGE.has(a.kind))
+}
+
 export function buildValidationMap(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -726,7 +742,8 @@ export function buildValidationMap(schema) {
     // its shape and its element type are checked there, and a model whose only
     // array column is a bare `String[]` would otherwise skip the pass entirely.
     const hasArrayField = model.fields.some(f => f.type.array)
-    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField
+    const hasPlainInt = model.fields.some(isPlainInt)
+    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField || hasPlainInt
   }
   return map
 }

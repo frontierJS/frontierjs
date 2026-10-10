@@ -271,6 +271,10 @@ export function isCiphertext(value) {
 // Normalize key: hex string, Buffer, or Uint8Array → 32-byte Buffer
 export function normalizeKey(raw) {
   if (!raw || (typeof raw === 'string' && !raw.trim())) return null
+  // No Buffer means a device. Everything after this line is Buffer arithmetic,
+  // so the first thing a given key reaches would be a ReferenceError; asking
+  // #host's cipher instead gets its refusal, which names the attribute.
+  if (typeof Buffer === 'undefined') createCipheriv('aes-256-gcm', raw, null)
   if (typeof raw === 'string') return Buffer.from(raw, 'hex')
   return Buffer.from(raw)
 }

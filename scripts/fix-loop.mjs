@@ -4,6 +4,7 @@
 //
 //   bun run fix:loop                       # up to 5 rows
 //   bun run fix:loop -- --rows 10 --pkg sierra
+//   bun run fix:loop -- --sev S3,S4        # only these severities
 //   bun run fix:loop -- --budget 3 --dry-run
 //   bun run fix:loop -- --rows 8 --lanes 3   # three rows at a time
 //
@@ -225,6 +226,7 @@ function laneNote() {
 function nextRow() {
   const argv = ['next', '--json', '--limit', String(rows + skipped.size + inFlight.size + 5)]
   if (args.pkg) argv.push('--pkg', args.pkg)
+  if (args.sev) argv.push('--sev', args.sev)
   const log = readLog(LOG)
   const running = [...inFlight.values()].flatMap(f => f.pkg)
   let wait = false

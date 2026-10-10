@@ -68,6 +68,9 @@ export type {
   TargetDescriptor,
   TargetKind,
   TargetAuth,
+  Signer,
+  SignInput,
+  SignOutput,
   CredentialRefusal,
 
   // Broker subscriptions

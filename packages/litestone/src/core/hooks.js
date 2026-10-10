@@ -262,6 +262,14 @@ export function installHooks(table, ctx, modelName) {
 }
 
 /** @param {Record<string, Function | Function[]> | null | undefined} onEvent */
+// Run `fn` after the caller's await resolves. `setImmediate` skips the
+// timer-heap overhead and ~1ms clamp of `setTimeout(0)`, but a browser worker
+// has none and naming it bare is a ReferenceError on the first write.
+export function defer(fn) {
+  if (typeof setImmediate === 'function') setImmediate(fn)
+  else setTimeout(fn, 0)
+}
+
 export function buildEventEmitter(onEvent) {
   if (!onEvent) return null
   // Normalize: onEvent.create, onEvent.update, onEvent.remove, onEvent.change
@@ -288,9 +296,7 @@ export function buildEventEmitter(onEvent) {
       // Fire-and-forget — never blocks the caller
       const fns = merged[event] ?? changeOnly
       if (!fns.length) return
-      // setImmediate fires after the caller's await resolves, without the
-      // timer-heap overhead and ~1ms clamping of setTimeout(0)
-      setImmediate(() => {
+      defer(() => {
         for (const fn of fns) {
           try { fn(eventCtx, clientCtx) } catch (e) { console.warn(`litestone event listener error (${event}):`, e) }
         }

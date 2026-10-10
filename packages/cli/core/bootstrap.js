@@ -580,11 +580,11 @@ export async function run(process) {
     return
   }
 
-  // Strip internal bootstrap flags before passing to the command.
-  // --debug is consumed by bin/fli.js for the clean-error path; --project is
-  // consumed there too (it pins global.projectRoot). Stripping them here avoids
-  // them bleeding into commands that don't expect them.
-  const { help: _help, h: _h, debug: _debug, project: _project, ...cmdFlag } = flag
+  // Strip internal bootstrap flags before passing to the command. --project is
+  // consumed by bin/fli.js (it pins global.projectRoot). --debug is read there
+  // too, for the clean-error path, and still reaches the command: it is a
+  // DEFAULT_FLAGS entry, and `fli dev` carries it on to the servers it starts.
+  const { help: _help, h: _h, project: _project, ...cmdFlag } = flag
   const { Command } = await import('./runtime.js')
   const command = await Command({ file: entry.filePath, arg: rawArgs, flag: cmdFlag })
   return command()

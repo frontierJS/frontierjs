@@ -172,6 +172,16 @@ class Parser {
     return comments
   }
 
+  // A `///` on the line a field ends on documents THAT field. Left for the
+  // next loop turn it would lead the following field, or, after the last one,
+  // meet the closing brace and fail.
+  trailingComments() {
+    const comments = []
+    const last = this.tokens[this.pos - 1]
+    while (this.check(TK.COMMENT) && this.peek().line === last.line) comments.push(this.advance().value)
+    return comments
+  }
+
   // ── Top level ───────────────────────────────────────────────────────────────
 
   parseSchema() {
@@ -570,8 +580,8 @@ class Parser {
         const fieldComments = pending.length ? pending : this.docComments()
         const fieldName = this.eat(TK.IDENT).value
         const type      = this.parseFieldType()
-        fields.push({ name: fieldName, type, comments: fieldComments })
         this.maybeEat(TK.COMMA)
+        fields.push({ name: fieldName, type, comments: [...fieldComments, ...this.trailingComments()] })
       }
     }
 
@@ -840,7 +850,7 @@ class Parser {
       attributes.push(this.parseFieldAttribute())
     }
 
-    return { name, type, attributes, comments }
+    return { name, type, attributes, comments: [...comments, ...this.trailingComments()] }
   }
 
   parseFieldType() {

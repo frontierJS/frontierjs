@@ -351,7 +351,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/testing`
 
-`packages/testing` · ships `LICENSE` `README.md` `package.json` `src/`
+`packages/testing` · ships `AGENTS.md` `LICENSE` `README.md` `package.json` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |

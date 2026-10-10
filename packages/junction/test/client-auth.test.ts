@@ -198,6 +198,57 @@ describe('client.auth — the routes', () => {
     expect(store.value).toBe('tok-1')
   })
 
+  it('requestMagicLink posts the address, unauthenticated', async () => {
+    const { calls, restore } = mockFetch([{ ok: true }])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: memoryStore('stale') })
+
+    await c.auth.requestMagicLink('a@b.c')
+
+    expect(calls[0].url).toBe('http://x/auth/magic-link/request')
+    expect(calls[0].body).toEqual({ email: 'a@b.c' })
+    expect(calls[0].headers.Authorization).toBeUndefined()
+  })
+
+  it('signInWithMagicLink adopts a session from a token or a code', async () => {
+    const { calls, restore } = mockFetch([
+      { token: 'tok-m1', user: { email: 'a@b.c' } },
+      { token: 'tok-m2', user: { email: 'a@b.c' } },
+    ])
+    cleanup = restore
+    const store = memoryStore()
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: store })
+
+    await c.auth.signInWithMagicLink({ token: 'link-1' })
+    expect(calls[0].url).toBe('http://x/auth/magic-link/verify')
+    expect(calls[0].body).toEqual({ token: 'link-1' })
+    expect(store.value).toBe('tok-m1')
+
+    await c.auth.signInWithMagicLink({ email: 'a@b.c', code: '123456' })
+    expect(calls[1].body).toEqual({ email: 'a@b.c', code: '123456' })
+    expect(store.value).toBe('tok-m2')
+  })
+
+  it('signInWithMagicLink that owes a code leaves a ticket for completeSignIn', async () => {
+    // The mailbox is one factor, so a link into an account with a second one
+    // answers exactly what a password does.
+    const { calls, restore } = mockFetch([
+      { challenge: 'tik-m', expiresAt: '2030-01-01T00:00:00.000Z' },
+      { token: 'tok-m3', user: {} },
+    ])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: memoryStore() })
+
+    const r = await c.auth.signInWithMagicLink({ token: 'link-2' })
+    expect('challenge' in r).toBe(true)
+    expect(c.token).toBeNull()
+    expect(c.auth.awaitingSecondFactor).toBe(true)
+
+    await c.auth.completeSignIn('654321')
+    expect(calls[1].body).toEqual({ challenge: 'tik-m', code: '654321' })
+    expect(c.token).toBe('tok-m3')
+  })
+
   it('signUp registers and adopts the session in one call', async () => {
     const { calls, restore } = mockFetch([{ token: 'tok-2', user: {} }])
     cleanup = restore

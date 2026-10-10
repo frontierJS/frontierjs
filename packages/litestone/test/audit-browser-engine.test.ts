@@ -21,20 +21,21 @@ describe('an Int past 2^53 in a column that is not @big', () => {
   // Browser half: the same row reads back as a BigInt (`1152921504606846976n`),
   // because oo1 answers a BigInt for an integer a double cannot hold. The two
   // engines therefore hand the same client two TYPES for one stored value, and
-  // a page that JSON.stringifies the browser's answer throws.
+  // a page that JSON.stringifies the browser's answer throws. A row like this
+  // reaches the file by raw SQL or an older writer, since the write path now
+  // refuses it.
   it('bun:sqlite answers a rounded Number', async () => {
     const db = (await createClient({ parsed: parse('model Num { id Int @id @default(autoincrement())  n Int }'), db: ':memory:' })).asSystem()
-    await db.num.create({ data: { n: 2 ** 60 } })
+    await db.sql`INSERT INTO "Num" (n) VALUES (${2 ** 60})`
     const row = await db.num.findFirst()
     expect(typeof row.n).toBe('number')
     expect(row.n).toBe(1152921504606847000)
   })
 
-  // FJS-2403: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  // The fixed behavior is one answer on both engines: a value an Int cannot hold
-  // exactly is refused on the way in, the way `@exact` already refuses it, so
-  // neither engine is asked to read it.
-  test.failing('a value past Number.MAX_SAFE_INTEGER is refused for an Int that is not @big', async () => {
+  // One answer on both engines: a value an Int cannot hold exactly is refused
+  // on the way in, the way `@scale` and `@money` already refuse it, so neither
+  // engine is asked to read it (`FJS-2403`).
+  test('a value past Number.MAX_SAFE_INTEGER is refused for an Int that is not @big', async () => {
     const db = (await createClient({ parsed: parse('model Num { id Int @id @default(autoincrement())  n Int }'), db: ':memory:' })).asSystem()
     await expect(db.num.create({ data: { n: 2 ** 60 } })).rejects.toThrow()
   })

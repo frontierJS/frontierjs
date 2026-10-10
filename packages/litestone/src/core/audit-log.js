@@ -380,7 +380,8 @@ export function flushPendingLogs() {
 }
 
 function armExitFlush() {
-  if (_exitFlushArmed || typeof process?.on !== 'function') return
+  const proc = typeof process === 'undefined' ? undefined : process
+  if (_exitFlushArmed || typeof proc?.on !== 'function') return
   _exitFlushArmed = true
-  process.on('exit', flushPendingLogs)
+  proc.on('exit', flushPendingLogs)
 }

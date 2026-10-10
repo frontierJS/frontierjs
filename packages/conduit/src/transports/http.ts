@@ -353,8 +353,7 @@ export class HttpTransport extends BaseTransport {
         ? serialize(req.body, encoding)
         : undefined
 
-      const { res, url: finalUrl } = await this.dispatch(url, method, async (target) => this.fetchInit({
-        method,
+      const { res, url: finalUrl } = await this.dispatch(url, method, async (target) => {
         // Later source wins, and it has to be mergeHeaders rather than a spread:
         // object keys are case-sensitive, header names are not, so a spread keeps
         // both spellings and fetch joins them with a comma (`FJS-656`).
@@ -363,7 +362,7 @@ export class HttpTransport extends BaseTransport {
         // caller's, then auth. Auth is last because any path where user data
         // reaches req.headers must not be able to substitute or strip the
         // target's credential.
-        headers: this.mergeHeaders(
+        const plain = this.mergeHeaders(
           {
             'Content-Type': CONTENT_TYPE[encoding],
             'Accept':       'application/json',
@@ -371,30 +370,36 @@ export class HttpTransport extends BaseTransport {
           req.idempotency_key ? { [this.idempotencyHeader()]: req.idempotency_key } : undefined,
           this.descriptor.headers,
           req.headers,
-          // Signed over the same path AND query the URL carries, so a captured
-          // signature cannot be replayed against another endpoint — nor against
-          // the same endpoint with different parameters, which it could until
-          // `FJS-678`: only the pathname was signed, so a captured
-          // `?amount=1&to=alice` verified unchanged as `?amount=1000000&to=mallory`.
-          await this.buildAuthHeaders({
-            method,
-            path:  new URL(target).pathname,
-            query: new URL(target).search,
-            body:  rawBody,
-            spent,
-            who:   req.who,
-          }),
-        ),
-        // `Uint8Array<ArrayBufferLike>` does not structurally satisfy this
-        // lib's `BodyInit` union even though fetch accepts it; the cast is
-        // about the type declaration, not about the value.
-        body:   rawBody as BodyInit | undefined,
-        signal: controller.signal,
-        // `fetch` follows redirects by default and re-sends every header it was
-        // given except `Authorization` — so an `api_key` header and an HMAC
-        // signature both went to whatever host the 3xx named (`FJS-679`).
-        redirect: 'manual' as RequestRedirect,
-      }))
+        )
+        // Signed over the same path AND query the URL carries, so a captured
+        // signature cannot be replayed against another endpoint — nor against
+        // the same endpoint with different parameters, which it could until
+        // `FJS-678`: only the pathname was signed, so a captured
+        // `?amount=1&to=alice` verified unchanged as `?amount=1000000&to=mallory`.
+        const signed = await this.authorize({
+          method,
+          path:    new URL(target).pathname,
+          query:   new URL(target).search,
+          body:    rawBody,
+          url:     target,
+          headers: plain,
+          spent,
+          who:     req.who,
+        })
+        return this.fetchInit({
+          method,
+          headers: this.mergeHeaders(plain, signed.headers),
+          // `Uint8Array<ArrayBufferLike>` does not structurally satisfy this
+          // lib's `BodyInit` union even though fetch accepts it; the cast is
+          // about the type declaration, not about the value.
+          body:   signed.body as BodyInit | undefined,
+          signal: controller.signal,
+          // `fetch` follows redirects by default and re-sends every header it was
+          // given except `Authorization` — so an `api_key` header and an HMAC
+          // signature both went to whatever host the 3xx named (`FJS-679`).
+          redirect: 'manual' as RequestRedirect,
+        })
+      })
 
       // The timeout deliberately stays armed through the body read below.
       // Clearing it here — as this did previously — leaves the body read

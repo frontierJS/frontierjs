@@ -3795,6 +3795,21 @@ describe('a model graded by capability is not also graded by ladder', () => {
     expect(only(root, 'capability-ladder').findings).toEqual([])
   })
 
+  test('a write only the system makes (8) is not a climb, and says nothing', () => {
+    // A site provisioned by the operator: members read it by the grid, and no
+    // grant can create one, because nobody climbs to SYSTEM. The grid cannot
+    // say "nobody's" — an owner holding every capability could grant it.
+    const root = tree('cap-system', grid('@@gate("4.8")'))
+    expect(only(root, 'capability-ladder').findings).toEqual([])
+  })
+
+  test('beside a system-only write, a write that does climb is still reported, alone', () => {
+    const root = tree('cap-system-mixed', grid('@@gate("2.5.8.9")'))
+    const { findings } = only(root, 'capability-ladder')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/create needs level 5 where read needs 2/)
+  })
+
   test('it skips rather than passing when no model declares the grid', () => {
     // A rule reporting nothing because it found nothing to look at has not
     // passed, and this file is written to keep the two apart.

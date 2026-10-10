@@ -2,7 +2,7 @@
 // Internal cryptographic utilities.
 // Nothing here is exported from the package — all usage is via auth.ts.
 
-import { createHmac, randomBytes, randomUUID } from 'crypto'
+import { createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto'
 import { parseTtl }                from '@frontierjs/junction'
 
 // ─── Password hashing ─────────────────────────────────────────────────────
@@ -93,6 +93,22 @@ export function hashApiKey(rawKey: string, secret: string): string {
 
 export function generateToken(): string {
   return randomBytes(32).toString('base64url')
+}
+
+// ─── Typed codes ──────────────────────────────────────────────────────────
+//
+// Six digits a person reads off one screen and types into another. Guessable
+// by design, so a code is never a lookup key: the caller names the row and the
+// code is compared against it, and the row counts the misses.
+
+export function generateCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0')
+}
+
+export function codesMatch(offered: string, stored: string): boolean {
+  const a = Buffer.from(offered)
+  const b = Buffer.from(stored)
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 // ─── Session tokens ───────────────────────────────────────────────────────

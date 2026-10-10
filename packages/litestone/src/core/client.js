@@ -87,7 +87,7 @@ import { fromSelectExpr, resolveFromRowRefs, coerceEdgeValue, resolveIncludes } 
 import { gatedFromFields } from './from-gate.js'
 import { refuseUntrustedSchema } from './untrusted.js'
 import {
-  checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter,
+  checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter, defer,
 } from './hooks.js'
 import { makeLoggerAutoModel, buildLogMap, buildLogEntry, jsonlTrailEntry, fireLog, flushPendingLogs } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
@@ -1888,7 +1888,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Deferred and swallowed, exactly like the emitter's own dispatch: a
     // subscriber is an Observer (FJS-D06) and may not fail the write that
     // announced it.
-    setImmediate(() => {
+    defer(() => {
       for (const fn of ctx._eventListeners) {
         try { const r = fn(e, ctx); if (r?.catch) r.catch(() => {}) }
         catch (err) { console.warn(`litestone event tap error (${event}):`, err) }
@@ -2483,6 +2483,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
       .query(`SELECT ${cols} FROM "${tableName}" WHERE "${idField}" = ?`)
       .get(row[idField])
     return vals ? { ...row, ...vals } : row
+  }
+
+  // A hasMany child lands AFTER the parent's INSERT/UPDATE, so the row the unit
+  // read back counted none of them: `orderCount` answered 0 where a re-read
+  // answers 2, and a @computed over it inherits the stale value. The row is
+  // shaped again once the children are in — from the statement's RETURNING, or
+  // from the table when the statement carried none (an update answers its
+  // prefetched row).
+  function rehydrateAfterChildren(outcome) {
+    if (!_hasFrom || !outcome.row) return outcome
+    const raw = outcome.rows?.[0]
+      ?? readDb.query(`SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(idField)} = ?`).get(outcome.row[idField])
+    return raw ? { ...outcome, row: read(raw, { mode: 'single', hydrateFrom: true }) } : outcome
   }
 
   // Which computed fields this read should run. `selectedFields` is the
@@ -7600,7 +7613,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
           await processHasManyNested(nested, created[pkField], created)
           applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
-          return inserted
+          return hasNested || edgeWrites.length ? rehydrateAfterChildren(inserted) : inserted
         })
       }
       // ── Committed from here ──────────────────────────────────────────────
@@ -7634,7 +7647,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
         await processHasManyNested(u.nested, outcome.row[pkField], outcome.row)
         applyEdgeWrites(u.edgeWrites, outcome.row[pkField], u.scopedBy)
-        return outcome
+        return u.hasNested || u.edgeWrites.length ? rehydrateAfterChildren(outcome) : outcome
       }
       const out = u.ownUnit ? await body() : await tx.exclusive(body)
       // ── Committed from here ──────────────────────────────────────────────
@@ -9961,11 +9974,21 @@ function makeLockPrimitive(rawWriteDb) {
   //
   // Static filters only: a function form is given `ctx` and cannot be judged
   // without one. Its keys go through the ordinary per-query check.
+  //
+  // A key is looked up by the accessor a model is read through (`post`), so one
+  // that is no model's accessor — the plural, the PascalCase name, a typo — is
+  // never looked up at all and the model it meant reads unfiltered.
   for (const [accessor, f] of Object.entries(globalFilters)) {
-    if (typeof f === 'function' || !f) continue
-    const model = schema.models.find(m =>
-      m.name === accessor || m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
-    if (!model?.fields) continue
+    const model = schema.models.find(m => modelToAccessor(m.name) === accessor)
+    if (!model) {
+      const near = schema.models.map(m => modelToAccessor(m.name)).find(a =>
+        a.toLowerCase() === accessor.toLowerCase() || a.toLowerCase() + 's' === accessor.toLowerCase())
+      throw new Error(
+        `createClient: filters['${accessor}'] names no model — a global filter is keyed by the accessor ` +
+        `a model is read through, so it would be ignored and every read of the model unfiltered` +
+        (near ? `. Did you mean '${near}'?` : `. Accessors: ${schema.models.map(m => modelToAccessor(m.name)).sort().join(', ')}`))
+    }
+    if (typeof f === 'function' || !f || !model.fields) continue
     const keys = globalFilterKeysFor(model, shapes[model.name].edges)
     const [bad] = collectWhereKeyProblems(f, keys.filterable, keys.computed, keys.encrypted, [], null, keys.transient)
     if (bad) throw new Error(`createClient: ${globalFilterRefusal(accessor, model.name, bad)}`)

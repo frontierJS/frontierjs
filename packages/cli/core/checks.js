@@ -2306,6 +2306,12 @@ const CHECKS = {
   // A warning rather than an error: two authorities in front of one operation is
   // legitimate where the ladder is guarding something the grid does not model,
   // and this cannot tell that from a leftover.
+  //
+  // 8 and 9 are excluded, as `gate-unreachable` excludes them: nobody CLIMBS to
+  // SYSTEM or LOCKED. An operation there is the application's alone, which the
+  // grid cannot say — a grid only grants, and an owner holding every
+  // capability could grant one — so the ladder is the only word for it, not a
+  // leftover narrowing a grant.
   'capability-ladder': ({ root }) => {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
@@ -2316,7 +2322,7 @@ const CHECKS = {
     const findings = []
     for (const m of models) {
       if (!m.gate) continue
-      const above = ['create', 'update', 'delete'].filter(op => m.gate[op] > m.gate.read)
+      const above = ['create', 'update', 'delete'].filter(op => m.gate[op] > m.gate.read && m.gate[op] < 8)
       if (!above.length) continue
       findings.push({
         file: schema.path, line: m.gateLine,

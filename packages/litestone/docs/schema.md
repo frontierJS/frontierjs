@@ -1399,10 +1399,9 @@ model User {
 }
 ```
 
-A trailing `///` on the LAST field of a model is a parse error (`Unexpected token '}'`); on any other field it parses:
+A `///` on the same line as a field documents that field, the last one in the model included; a `///` on its own line documents the field below it:
 
-```lite failing
-// FJS-2386 — a doc comment on the last field fails at the closing brace
+```lite
 model User {
   id   Int @id
   role String    /// Access level — affects what the user can see and do.

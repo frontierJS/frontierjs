@@ -108,10 +108,11 @@ function isDir(p) {
  * same relative string and name different files.
  */
 export function noteMintedDirectory(dir, absPath) {
+  const cwd = typeof process === 'undefined' ? '(none)' : process.cwd()
   console.warn(
     `[litestone] Created ${dir} for a database that was not there.\n` +
     `            path: ${absPath}\n` +
-    `            cwd:  ${process.cwd()}\n` +
+    `            cwd:  ${cwd}\n` +
     `            A relative \`database { path }\` resolves against the working directory. ` +
     `If this is not where the data lives, the command was run from the wrong place — ` +
     `anchor it with createClient({ resolveFrom }).`

@@ -16,7 +16,7 @@
 // beats the declaration, which beats the default. A caller passing nothing gets
 // what the seed says.
 
-import { resolve, dirname } from '#host'
+import { resolve, dirname, envVar } from '#host'
 
 const DEFAULTS = {
   dir:      'tenants',
@@ -28,7 +28,7 @@ const DEFAULTS = {
 function readValue(def, what) {
   if (def == null) return null
   if (def.kind === 'env') {
-    const val = process.env[def.var] ?? def.default
+    const val = envVar(def.var) ?? def.default
     if (!val) throw new Error(`tenancy: ${what} reads env var '${def.var}', which is not set and has no default`)
     return val
   }

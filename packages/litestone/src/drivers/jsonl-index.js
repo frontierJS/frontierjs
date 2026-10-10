@@ -57,6 +57,18 @@ import { existsSync, readFileSync } from '#host'
 import { openDatabase } from '../core/engine.js'
 import { applyBusyTimeout } from '../core/pragmas.js'
 
+// A byte offset in the file is the index's key, so the bytes a line takes are
+// counted the way the file holds them. `Buffer` is a server global.
+const ENCODER = new TextEncoder()
+const DECODER = new TextDecoder('utf-8', { ignoreBOM: true })   // a BOM is data in a file
+
+/** The UTF-8 bytes of `text`, as a writable chunk. */
+export const utf8Bytes  = (text) => ENCODER.encode(text)
+/** How many bytes `text` takes on disk. */
+export const utf8Length = (text) => ENCODER.encode(text).length
+/** Text from a byte range, which may be a Uint8Array or a subarray of one. */
+export const utf8Text   = (bytes) => DECODER.decode(bytes)
+
 /** SQLite type per `.lite` scalar, for the index's own columns. */
 export const FIELD_TYPES = {
   String: 'TEXT', Int: 'INTEGER', Float: 'REAL', Boolean: 'INTEGER',
@@ -256,7 +268,7 @@ function refill(db, model, shape, filePath) {
   )
   let offset = 0
   for (const line of readFileSync(filePath, 'utf8').split('\n')) {
-    const bytes = Buffer.byteLength(line, 'utf8') + 1   // + the newline
+    const bytes = utf8Length(line) + 1   // + the newline
     if (line.trim()) {
       try {
         const record = JSON.parse(line)

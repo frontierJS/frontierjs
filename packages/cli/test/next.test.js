@@ -152,6 +152,15 @@ describe('the terms', () => {
     try { expect(ids(rankNext(root, { pkg: 'mesa', touched: new Set() }).ready)).toEqual(['FJS-002', 'FJS-003']) }
     finally { cleanup() }
   })
+
+  test('--sev narrows to rows of those severities, and refuses one no table has', () => {
+    const { root, cleanup } = fixture([S2('FJS-001', 'cli', 'High.'), S3('FJS-002', 'cli', 'Medium.')])
+    try {
+      expect(ids(rankNext(root, { sev: ['S3'], touched: new Set() }).ready)).toEqual(['FJS-002'])
+      expect(ids(rankNext(root, { sev: ['S2', 'S3'], touched: new Set() }).ready)).toEqual(['FJS-001', 'FJS-002'])
+      expect(() => rankNext(root, { sev: ['S9'], touched: new Set() })).toThrow(/unknown severity S9/)
+    } finally { cleanup() }
+  })
 })
 
 describe('the declaration', () => {
