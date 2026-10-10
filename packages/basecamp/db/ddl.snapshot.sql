@@ -20,9 +20,11 @@ CREATE TABLE IF NOT EXISTS "verification" (
   "value" TEXT NOT NULL UNIQUE,
   "provider" TEXT,
   "subject" TEXT,
+  "code" TEXT,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
   "expiresAt" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("purpose" IN ('passwordReset', 'emailVerify', 'oauthLink'))
+  CHECK ("purpose" IN ('passwordReset', 'emailVerify', 'oauthLink', 'magicLink'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_verification_purpose_identifier" ON "verification" ("purpose", "identifier");
 CREATE INDEX IF NOT EXISTS "idx_verification_expiresAt" ON "verification" ("expiresAt");
@@ -33,9 +35,8 @@ CREATE INDEX IF NOT EXISTS "idx_verification_expiresAt" ON "verification" ("expi
 -- ticket and no session. It is its own model rather than a fifth
 -- `VerificationPurpose` for the reason `OauthFlow` below is not one either:
 -- nobody is proving control of an ADDRESS here — there is no `identifier` and
--- the address was settled a step ago — and `attempts` is a column the other
--- purposes have no use for. Three answers to what a column means is three
--- tables wearing one name (`FJS-D261`).
+-- the address was settled a step ago. Three answers to what a column means is
+-- three tables wearing one name (`FJS-D261`).
 -- 
 -- `attempts` is the whole of what stands between a six-digit code and a
 -- million guesses, so it is counted on the row rather than in a limiter: a

@@ -280,6 +280,7 @@ rather than refusing the row.
 | `User` | `isStaff` | `@allow('write', auth().isAdmin)` |
 | `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
 | `Verification` | `value` | `@guarded` |
+| `Verification` | `code` | `@guarded` |
 
 ## State transitions
 

@@ -54,7 +54,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
 | `UserKind` | `ai` · `bot` · `human` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
-| `VerificationPurpose` | `emailVerify` · `oauthLink` · `passwordReset` |
+| `VerificationPurpose` | `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
 | `WidgetKind` | `activity_feed` · `alert_status` · `app_status` · `deploy_feed` · `job_history` · `server_fleet` · `server_health` · `service_health` · `stat_counter` |
 | `WorkspaceRole` | `admin` · `billing` · `developer` · `owner` · `viewer` |
 | `WorkspaceStatus` | `active` · `suspended` |
@@ -1710,6 +1710,8 @@ table `verification` · db `main` · gate `8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `attempts` | `Int` | no | `0` | — |
+| `code` | `String` | yes | — | @guarded |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
