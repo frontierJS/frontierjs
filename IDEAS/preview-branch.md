@@ -6,8 +6,8 @@ dated: 2026-10-09
 
 # Idea — a preview branch: a client edits the UI on live data and submits it for review
 
-**Status: PROPOSED. Slices 1, 2 and 3 are built (2026-10-10, § Game plan);
-nothing else is.** Do not cite this file as describing behavior — see `VERIFYING.md`. Prior art is from memory on 2026-10-09, not
+**Status: PROPOSED. Slices 1, 2, 3 and 4 are built (2026-10-10, § Game plan),
+less Retire on PR close; slice 0 is not run and nothing else is built.** Do not cite this file as describing behavior — see `VERIFYING.md`. Prior art is from memory on 2026-10-09, not
 fetched; each FJS claim was checked against the tree that day.
 
 A superadmin or a client opens the app on a subdomain of its own, works in it
@@ -485,22 +485,22 @@ The plan as written:
   off the App row and the hostnames off its Domain rows, never off `opened`,
   which records what Open made. The static release stays on the machine;
   which of the two serves is what the route dials.
-- **Retire is what Archive does to a preview, first.** `apps.remove` — the
-  owner of *deleting an app retires it from the machine*, which now answers
-  what the machine said — sends `/static/retire`, which takes the files AND
-  the route off (whichever port it dialed); then the Environment is removed
-  and its Variables and Domain cascade. Not the Environment alone: a cascade
-  retires nothing on a machine (`FJS-2536`). It runs
+- **Retire is what Archive does to a preview, first, and it is
+  `environments.remove` alone.** Removing an Environment retires each live
+  App through `retireFromMachine` — the one owner of *deleting an app retires
+  it from the machine*, which `apps.remove` calls too — and `/static/retire`
+  takes the files AND the route off (whichever port it dialed); then the
+  cascade stamps the App, Variables and Domain. A cascade alone told no
+  machine (`FJS-2536`), and the delete stays the cascade so a restore brings
+  the App back, stopped. It runs
   BEFORE the worktree goes, because Archive releases the port: a route left
   dialing a released port serves whichever branch claims it next. Archive's
   refusal (work not landed) is asked before anything is retired. A machine
   that cannot be reached does not keep the rows; it is reported in
   `retired.machine`, in its words.
-- **Not built: Retire on PR close.** The poll is a cron with no caller, and
-  every write here goes through a service as the caller, in their workspace.
-  It needs the opener recorded at Open and a way to replay a call as them in
-  that workspace — which is the question to settle before it is a job, not a
-  detail of one. Owed with it: `apps.service` refusing a non-static App under
+- **Not built: Retire on PR close** — § Open questions. The poll is a cron
+  with no caller, and every write here goes through a service as the caller,
+  in their workspace. Owed after slice 0, not with it: `apps.service` refusing a non-static App under
   a preview Environment, and the *Fork for a client* control.
 - *Proved:* `verify:provision` 13 checks beyond slice 3's, against outpost's
   own server and static store on the command port's TLS (docker and Caddy
@@ -614,13 +614,39 @@ decides, not temperament), *paved road vs. the workaround* (a client emailing
 screenshots of what to change is the workaround this measures). Tier:
 Assessment (`IDEAS/`).
 
-## Open, for the owner
+## Open questions
 
-- **Where the preview machine runs.** **A** — the owner's dev machine, under
-  `LOCAL_MACHINE=1`, exposed through a tunnel; **B** — a fleet machine outpost
-  runs, with the Workbench's local-machine refusal relaxed for a worktree it
-  owns. **Recommend A first** — it is what exists, and B is a ruling about the
-  refusal that should wait for the measurement.
-- **CORS.** **A** — production's allow-list stays a config file and Open edits it over ssh; **B** — the API derives it from preview `Domain` rows at boot and on change; **C** — a hostname rule, `o.endsWith('.preview.<app>')`, since `cors.origins` takes a function. **Recommend C** — no list at all, so nothing to drift; A and B each keep one. § Game plan slice 3 assumes C.
+- **Where the preview machine runs.**
+  - **A** — the owner's dev machine, under `LOCAL_MACHINE=1`, exposed through
+    a tunnel.
+  - **B** — a fleet machine outpost runs, with the Workbench's local-machine
+    refusal relaxed for a worktree it owns.
+  - **Recommend A** — first: it is what exists, and B is a ruling about the
+    refusal that should wait for slice 0's measurement.
+- **CORS.**
+  - **A** — production's allow-list stays a config file and Open edits it
+    over ssh.
+  - **B** — the API derives it from preview `Domain` rows at boot and on
+    change.
+  - **C** — a hostname rule, `o.endsWith('.preview.<app>')`, since
+    `cors.origins` takes a function.
+  - **Recommend C** — no list at all, so nothing to drift; A and B each keep
+    one. § Game plan slice 3 assumes C.
 - **Whether the client sees a diff at all.** Shopify shows none; Vercel shows
-  comments. **Recommend none** — the preview is the diff a client can read.
+  comments.
+  - **A** — none.
+  - **B** — the diff, beside the preview.
+  - **Recommend A** — the preview is the diff a client can read; slice 0
+    measures whether a client asks for more.
+- **Retire when the pull request closes.**
+  - **A** — record who opened the preview at Open, and a Caravan cron reads
+    `gh pr view --json state` and retires as them in that workspace, through
+    `app.runAs(userId, fn)`.
+  - **B** — no automatic retire. Archive already retires, and the Workbench
+    card shows the pull request's state so a person archives it.
+  - **C** — a GitHub webhook through junction's `webhooks` battery; it needs a
+    machine reachable from outside.
+  - **Recommend B** — few previews are open and Archive covers it. A is a
+    job acting as a user who is not present, a new boundary that needs
+    slice 0's numbers before it is worth building; revisit A when the number
+    of open previews grows.

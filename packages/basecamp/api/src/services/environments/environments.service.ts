@@ -13,6 +13,7 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, re
   from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
+import { retireAppsIn }         from '../apps/apps.service.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -79,10 +80,12 @@ export function createEnvironmentsService(app: BasecampApp) {
       if (env.isProtected)
         throw new Forbidden('Cannot delete a protected environment — unprotect it first')
 
-      // @@softDelete(cascade) — this stamps the environment's Apps and Jobs too.
+      // @@softDelete(cascade) stamps the environment's Apps and Jobs and tells
+      // no machine, so the Apps are retired first.
+      const apps    = await retireAppsIn(app, [env.id])
       const removed = await removeScoped('environment', 'Environment')
       app.events.emit('environment:deleted', { id: $.id })
-      return removed
+      return { ...removed, apps }
     },
 
     hooks: {

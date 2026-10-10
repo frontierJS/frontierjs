@@ -2874,6 +2874,28 @@ describe('the trash lists what was deleted, and each service brings its own back
     expect((await trash()).some((i: any) => i.ref === a.id)).toBe(true)
   })
 
+  test('removing an environment retires each live app before the cascade, and restoring it brings them back stopped', async () => {
+    const { e, a, b } = await projectTree()
+    await (env.system as any).app.update({ where: { id: a.id }, data: { status: 'running' }, system: ['status'] })
+
+    const removed = await env.as(owner).service('environments').remove(e.id)
+    expect(removed.apps.map((x: any) => x.id).sort()).toEqual([a.id, b.id].sort())
+    // No machine in this suite, so each answer is the reason it could not be told.
+    for (const x of removed.apps) expect(x.machine).toMatchObject({ ok: false, why: expect.any(String) })
+
+    await env.as(owner).service('environments').restore(e.id)
+    for (const id of [a.id, b.id]) {
+      expect(await live('app', id)).toBe(true)
+      expect((await (env.system as any).app.findFirst({ where: { id } })).status).toBe('stopped')
+    }
+  })
+
+  test('removing a project retires the apps of every environment in it', async () => {
+    const { proj, a, b } = await projectTree()
+    const removed = await env.as(owner).service('projects').remove(proj.id)
+    expect(removed.apps.map((x: any) => x.id).sort()).toEqual([a.id, b.id].sort())
+  })
+
   test('a viewer sees the trash without the kinds it cannot read, and cannot restore', async () => {
     const sys    = env.system as any
     const secret = await sys.secret.create({ data: { workspaceId: ws.id, name: `GONE_${uniq()}`, kind: 'generic' } })

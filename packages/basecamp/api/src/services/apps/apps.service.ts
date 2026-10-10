@@ -57,6 +57,49 @@ function mint(generator: string): string {
 // this is a second query for the whole page, not one per app.
 const WITH_DETAIL = { environment: true, domains: true }
 
+export type MachineAnswer = { ok: true } | { ok: false, why: string }
+
+/**
+ * An App off its machine — the one owner of *deleting an app retires it*.
+ * Neither kind stops on its own. Files go on serving their last release at
+ * their own address, and a container is started `unless-stopped` with a Caddy
+ * route in front of it — a row removed from a console and an app still on the
+ * internet. A machine that cannot be reached does not block the delete: the
+ * row is the operator's decision and the retire is best effort, said in the
+ * log rather than swallowed, and in the answer for a caller that has to act
+ * on it. Marked stopped as well: a deleted app that still reads "running"
+ * keeps showing up as live in any status rollup, and a restored one is not
+ * on the machine until it is released again.
+ */
+export async function retireFromMachine(app: BasecampApp, target: { id: string, slug: string, source: unknown }): Promise<MachineAnswer> {
+  await db().app.update({ where: { id: target.id }, data: { status: 'stopped' }, system: ['status'] })
+  const executor = await resolveExecutor(app, target.id)
+  if (!isExecutor(executor)) {
+    app.logger.warn(`app ${target.id} deleted with no machine to retire it from: ${executor.reason}`)
+    return { ok: false, why: executor.reason }
+  }
+  const reply = sourceKindOf(target.source) === 'inline'
+    ? await executor.call('/static/retire', { app_id: target.id, slug: target.slug })
+    : await executor.call('/stop', { app_id: target.id })
+  if (!reply.error) return { ok: true }
+  app.logger.warn(`app ${target.id} deleted, but the machine still serves it: ${reply.error.message}`)
+  return { ok: false, why: reply.error.message }
+}
+
+/**
+ * Every live App in these Environments, retired before a parent's delete
+ * cascades to them. `@@softDelete(cascade)` stamps the rows and sends nothing
+ * (`FJS-2536`); the cascade, not `apps.remove`, stays the delete, so restoring
+ * the parent brings its Apps back with it.
+ */
+export async function retireAppsIn(app: BasecampApp, environmentIds: string[]): Promise<{ id: string, machine: MachineAnswer }[]> {
+  if (!environmentIds.length) return []
+  const live = await db().app.findMany({ where: { environmentId: { in: environmentIds } }, select: { id: true, slug: true, source: true } })
+  const out: { id: string, machine: MachineAnswer }[] = []
+  for (const target of live) out.push({ id: target.id, machine: await retireFromMachine(app, target) })
+  return out
+}
+
 export function createAppsService(app: BasecampApp) {
 
   /**
@@ -236,33 +279,8 @@ export function createAppsService(app: BasecampApp) {
     },
 
     async remove() {
-      const target = await getScoped('app', 'App')
-      // Mark it stopped as well as deleted: a soft-deleted app that still reads
-      // "running" would keep showing up as live in any status rollup.
-      await db().app.update({ where: { id: $.id as string }, data: { status: 'stopped' }, system: ['status'] })
-
-      // Neither kind stops on its own. Files go on serving their last release
-      // at their own address, and a container is started `unless-stopped` with
-      // a Caddy route in front of it — a row removed from a console and an app
-      // still on the internet. So the machine is told, and a machine that
-      // cannot be reached does not block the delete: the row is the operator's
-      // decision and the retire is best effort, said in the log rather than
-      // swallowed.
-      // `machine` says which, for a caller that has to act on it.
-      const executor = await resolveExecutor(app, target.id)
-      let machine: { ok: true } | { ok: false, why: string }
-      if (isExecutor(executor)) {
-        const reply = sourceKindOf(target.source) === 'inline'
-          ? await executor.call('/static/retire', { app_id: target.id, slug: target.slug })
-          : await executor.call('/stop', { app_id: target.id })
-        machine = reply.error ? { ok: false, why: reply.error.message } : { ok: true }
-        if (reply.error)
-          app.logger.warn(`app ${target.id} deleted, but the machine still serves it: ${reply.error.message}`)
-      } else {
-        machine = { ok: false, why: executor.reason }
-        app.logger.warn(`app ${target.id} deleted with no machine to retire it from: ${executor.reason}`)
-      }
-
+      const target  = await getScoped('app', 'App')
+      const machine = await retireFromMachine(app, target)
       const removed = await removeScoped('app', 'App')
       app.events.emit('app:deleted', { id: $.id, workspace_id: ws() })
       return { ...removed, machine }

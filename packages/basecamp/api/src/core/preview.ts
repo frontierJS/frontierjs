@@ -12,8 +12,8 @@
 // several megabytes, every row here is in the audit trail, and a Deployment is
 // pushed whole to every browser in the workspace. The commit names the bytes.
 // Activating routes the hostname to the static origin. Thaw routes it back to
-// the dev server's port. Retire takes it off the machine and removes the
-// Environment, whose App, Variables and Domain go with it.
+// the dev server's port. Retire removes the Environment, which takes its App
+// off the machine before the App, Variables and Domain go with it.
 //
 // The rows are written through each row's own service, as the caller, so
 // every check a person's create meets is met here too. Nothing here stores
@@ -33,6 +33,7 @@ import { snapshotVariables }        from './variables.ts'
 import { db }                       from './resource.ts'
 import { routedHosts }              from './runtime.ts'
 import type { BasecampApp }         from '../basecamp.types.ts'
+import type { MachineAnswer }       from '../services/apps/apps.service.ts'
 
 export type PreviewSettings = {
   projectId: string
@@ -258,16 +259,14 @@ export async function thawPreview(app: BasecampApp, settings: PreviewSettings, o
 }
 
 /**
- * The preview off the machine — `apps.remove` retires its files and its
- * hostname's route, whichever port that dialed — then the Environment
- * removed, its Variables and Domain with it. A machine that cannot be reached
+ * The preview off the machine: the Environment removed, which retires its
+ * App's files and its hostname's route — whichever port that dialed — before
+ * its App, Variables and Domain cascade. A machine that cannot be reached
  * does not keep the rows and is reported: its route still dials the branch's
  * port, which Archive then gives back for another branch to claim.
  */
-export async function retirePreview(app: BasecampApp, opened: Opened): Promise<{ machine: { ok: true } | { ok: false, why: string } }> {
-  const svc = (name: string) => app.service(name) as any
-  const gone = (e: { code?: number }) => { if (e?.code !== 404) throw e; return null }
-  const removed = await svc('apps').remove(opened.appId).catch(gone) as { machine: { ok: true } | { ok: false, why: string } } | null
-  await svc('environments').remove(opened.environmentId).catch(gone)
-  return { machine: removed?.machine ?? { ok: true } }
+export async function retirePreview(app: BasecampApp, opened: Opened): Promise<{ machine: MachineAnswer }> {
+  const gone    = (e: { code?: number }) => { if (e?.code !== 404) throw e; return null }
+  const removed = await (app.service('environments') as any).remove(opened.environmentId).catch(gone) as { apps: { id: string, machine: MachineAnswer }[] } | null
+  return { machine: removed?.apps.find(a => a.id === opened.appId)?.machine ?? { ok: true } }
 }

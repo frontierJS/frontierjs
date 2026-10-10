@@ -13,6 +13,7 @@ import { createService, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
+import { retireAppsIn }         from '../apps/apps.service.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 export function createProjectsService(app: BasecampApp) {
@@ -56,10 +57,14 @@ export function createProjectsService(app: BasecampApp) {
     async remove() {
       // @@softDelete(cascade) on Project — this also stamps its Environments,
       // and through them their Apps and Jobs. That cascade is why archiving a
-      // project cannot leave live children behind.
+      // project cannot leave live rows behind; it tells no machine, so the
+      // Apps are retired first.
+      const project = await getScoped('project', 'Project')
+      const envs    = await db().environment.findMany({ where: { projectId: project.id }, select: { id: true } })
+      const apps    = await retireAppsIn(app, envs.map((e: { id: string }) => e.id))
       const removed = await removeScoped('project', 'Project')
       app.events.emit('project:deleted', { id: $.id, workspace_id: ws() })
-      return removed
+      return { ...removed, apps }
     },
 
     hooks: {
