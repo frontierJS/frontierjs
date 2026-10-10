@@ -2,37 +2,197 @@
 
 ## Defining relations
 
-```prisma
+The examples on this page use this schema unless a section declares its own:
+
+```lite
 model Account {
-  id    Int @id
-  name  String
-  users users[]      // hasMany (inferred from the other side)
+  id     Int    @id
+  name   String
+  planId Int?
+  plan   Plan?  @relation(fields: [planId], references: [id])
+  users  User[]      // hasMany (inferred from the other side)
+}
+
+model Plan {
+  id       Int       @id
+  name     String
+  accounts Account[]
 }
 
 model User {
-  id        Int  @id
-  account   accounts @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id        Int     @id
+  name      String?
+  email     String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId Int
-  posts     posts[]
+  posts     Post[]
 }
 
 model Post {
-  id       Int @id
-  author   users   @relation(fields: [authorId], references: [id])
+  id       Int       @id
+  title    String
+  views    Int       @default(0)
+  author   User      @relation(fields: [authorId], references: [id])
   authorId Int
-  tags     tags[]  // implicit many-to-many (no join model needed)
+  tags     Tag[]     // implicit many-to-many (no join model needed)
+  comments Comment[]
 }
 
 model Tag {
-  id    Int @id
+  id    Int    @id
   label String
-  posts posts[]
+  posts Post[]
+}
+
+model Comment {
+  id       Int     @id
+  body     String
+  approved Boolean @default(false)
+  postId   Int
+  post     Post    @relation(fields: [postId], references: [id])
 }
 ```
 
-The `@relation` attribute lives on the **belongsTo** side (the model with the FK column). The reverse side (`users[]`, `posts[]`) is inferred and doesn't need `@relation`.
+The `@relation` attribute lives on the **belongsTo** side (the model with the FK column). The reverse side (`User[]`, `Post[]`) is inferred and doesn't need `@relation`. A relation field names the MODEL — `Account`, `Post[]` — never a table or a plural.
 
-### One-to-one
+## Include (eager loading)
+
+```js
+await db.account.create({ data: { name: 'Acme', users: { create: [{ email: 'ann@example.com', name: 'Ann',
+  posts: { create: [{ title: 'Hello', tags: { create: [{ label: 'intro' }] } }] } }] } } })
+
+// Single level
+const posts = await db.post.findMany({
+  include: { author: true, tags: true }
+})
+// posts[0].author → { id, name, email, accountId }
+// posts[0].tags   → [{ id, label }, ...]
+
+// Nested
+const users = await db.user.findMany({
+  include: { account: { include: { plan: true } } }
+})
+
+// Select specific fields on included relations
+const authored = await db.post.findMany({
+  include: {
+    author: { select: { id: true, name: true } }
+  }
+})
+```
+
+## Relation counts
+
+```js
+// Count all relations
+const posts = await db.post.findMany({
+  include: { _count: true }
+})
+// posts[0]._count → { comments: 3, tags: 1 }
+
+// Count specific relations only
+const posts2 = await db.post.findMany({
+  include: { _count: { select: { comments: true } } }
+})
+
+// Filtered count
+const posts3 = await db.post.findMany({
+  include: {
+    _count: {
+      select: {
+        comments: { where: { approved: true } }
+      }
+    }
+  }
+})
+```
+
+## Nested writes
+
+Create related records in a single call. A foreign key is enforced, so a parent named by id has to exist:
+
+```js
+await db.account.create({ data: { id: 1, name: 'Acme' } })
+const existing = await db.user.create({ data: { email: 'bob@example.com', accountId: 1 } })
+
+// create with nested belongs-to (parent created first)
+const post = await db.post.create({
+  data: {
+    title:    'Hello World',
+    author: {
+      create: { name: 'Alice', email: 'alice@example.com', accountId: 1 }
+    }
+  }
+})
+
+// create with connect (use existing parent)
+const post2 = await db.post.create({
+  data: {
+    title:    'Hello World',
+    author: { connect: { id: existing.id } }
+  }
+})
+
+// create with nested hasMany (children created after parent)
+const user = await db.user.create({
+  data: {
+    email: 'carol@example.com',
+    accountId: 1,
+    posts: {
+      create: [
+        { title: 'First post' },
+        { title: 'Second post' },
+      ]
+    }
+  }
+})
+
+// `select: false` is honored and still returns null, but it does NOT skip the
+// RETURNING when there are children: a hasMany create needs the parent's id, so
+// the row is fetched internally and simply not handed back (`FJS-615`).
+
+// update: connect / disconnect on manyToMany
+await db.tag.createMany({ data: [{ id: 1, label: 'a' }, { id: 2, label: 'b' }, { id: 3, label: 'c' }] })
+await db.post.update({
+  where: { id: post.id },
+  data: {
+    tags: {
+      connect:    [{ id: 1 }, { id: 2 }],
+      disconnect: [{ id: 3 }],
+    }
+  }
+})
+```
+
+## Relation orderBy
+
+Sort by a field on a related model (LEFT JOIN, no row duplication):
+
+```js
+// Sort posts by author name
+await db.post.findMany({ orderBy: { author: { name: 'asc' } } })
+
+// Two-hop: sort posts by their author's account name
+await db.post.findMany({ orderBy: { author: { account: { name: 'asc' } } } })
+```
+
+Sort by relation aggregate (correlated subquery):
+
+```js
+await db.user.findMany({ orderBy: { posts: { _count: 'desc' } } })
+await db.user.findMany({ orderBy: { posts: { _sum: { views: 'desc' } } } })
+await db.post.findMany({ orderBy: { tags:  { _count: 'asc' } } })  // manyToMany
+```
+
+See [sorting.md](./sorting.md) for the full sorting reference. One combination is a filed defect — a relation sort beside `select: { id: true }`:
+
+```js failing
+// FJS-2299
+await db.post.findMany({ orderBy: { author: { name: 'asc' } }, select: { id: true } })
+// ambiguous column name: id
+```
+
+## One-to-one
 
 The side holding the foreign key declares it; the other side names the model and
 nothing else. No label is needed, exactly as with a list back-reference.
@@ -57,6 +217,11 @@ would answer one of them arbitrarily, so it is refused by name. A field
 all count:
 
 ```lite
+model EventType {
+  id       Int               @id
+  settings CalVideoSettings?
+}
+
 model CalVideoSettings {
   eventTypeId Int       @id                                     // the FK is the PK
   eventType   EventType @relation(fields: [eventTypeId], references: [id])
@@ -67,10 +232,21 @@ model CalVideoSettings {
 one. Where two relations run between the same pair of models, label both ends the
 way you would a list.
 
-### The implicit join table
+```js throws
+await createClient({ db: ':memory:', schema: `
+  model User    { id Int @id  profile Profile? }
+  model Profile { id Int @id  userId Int  user User @relation(fields: [userId], references: [id]) }
+` })
+// Model 'User', field 'profile': 'Profile.user' is not unique, so many 'Profile'
+// rows can point back — write 'profile Profile[]' for a to-many, or add @unique
+// to 'Profile.userId' for a one-to-one.
+```
+
+## The implicit join table
 
 A mutual `Model[]` pair generates the join table for you — you never write it,
-but it is an ordinary table and worth knowing the shape of:
+but it is an ordinary table and worth knowing the shape of. For
+`model Post { slug String @id  tags Tag[] }` and `model Tag { code String @id  posts Post[] }`:
 
 ```sql
 CREATE TABLE "_post_tag" (
@@ -94,7 +270,17 @@ A membership, a placement, a subscription: a relationship that is a ROW. It is
 of them — and the one thing about it a reader cannot derive is whether the same
 pair may appear again.
 
-```
+```lite
+model Workspace {
+  id      String            @id @default(uuid())
+  members WorkspaceMember[]
+}
+
+model User {
+  id          String            @id @default(uuid())
+  memberships WorkspaceMember[]
+}
+
 model WorkspaceMember {
   id          String    @id @default(uuid())
   workspaceId String
@@ -164,14 +350,43 @@ new one. The declaration is what makes that refusable: a relator states how its
 rows are identified, so an upsert addressing them any other way is provably not
 the write the caller meant.
 
-```js
+```lite
+model Recipe { id Int @id  runs RecipeRun[] }
+model Server { id Int @id  runs RecipeRun[]  apps AppServer[] }
+model App    { id Int @id  servers AppServer[] }
+
+model RecipeRun {
+  id       Int    @id
+  recipeId Int
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  serverId Int
+  server   Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@relator([recipeId, serverId], many)
+}
+
+model AppServer {
+  id           Int    @id
+  appId        Int
+  app          App    @relation(fields: [appId], references: [id], onDelete: Cascade)
+  serverId     Int
+  server       Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  replicaIndex Int
+
+  @@relator([appId, serverId], many: replicaIndex)
+}
+```
+
+```js throws
 // @@relator([recipeId, serverId], many)
-await db.recipeRun.upsert({ where: { recipeId: 1, serverId: 2 }, create, update })
+await db.recipeRun.upsert({ where: { recipeId: 1, serverId: 2 }, create: { recipeId: 1, serverId: 2 }, update: {} })
 // ValidationError: …the same pair may happen any number of times and there is
 // no row for these columns to name. Use create(), or address the row by its id.
+```
 
+```js throws
 // @@relator([appId, serverId], many: replicaIndex)
-await db.appServer.upsert({ where: { appId: 1, serverId: 2 }, create, update })
+await db.appServer.upsert({ where: { appId: 1, serverId: 2 }, create: { appId: 1, serverId: 2, replicaIndex: 0 }, update: {} })
 // ValidationError: …what identifies a row is appId + serverId + replicaIndex,
 // and this where names replicaIndex nowhere.
 ```
@@ -188,120 +403,18 @@ worth having — without it, tightening `many: replicaIndex` to `once` looks
 correct from the outside, which is precisely the change that costs an app the
 ability to run two replicas of one thing on one machine.
 
-## Include (eager loading)
-
-```js
-// Single level
-const posts = await db.post.findMany({
-  include: { author: true, tags: true }
-})
-// posts[0].author → { id, name, email }
-// posts[0].tags   → [{ id, label }, ...]
-
-// Nested
-const users = await db.user.findMany({
-  include: { account: { include: { plan: true } } }
-})
-
-// Select specific fields on included relations
-const posts = await db.post.findMany({
-  include: {
-    author: { select: { id: true, name: true } }
-  }
-})
-```
-
-## Relation counts
-
-```js
-// Count all relations
-const posts = await db.post.findMany({
-  include: { _count: true }
-})
-// posts[0]._count → { comments: 3, tags: 1 }
-
-// Count specific relations only
-const posts2 = await db.post.findMany({
-  include: { _count: { select: { comments: true } } }
-})
-
-// Filtered count
-const posts3 = await db.post.findMany({
-  include: {
-    _count: {
-      select: {
-        comments: { where: { approved: true } }
-      }
-    }
-  }
-})
-```
-
-## Nested writes
-
-Create related records in a single call:
-
-```js
-// create with nested belongs-to (parent created first)
-const post = await db.post.create({
-  data: {
-    title:    'Hello World',
-    author: {
-      create: { name: 'Alice', email: 'alice@example.com', accountId: 1 }
-    }
-  }
-})
-
-// create with connect (use existing parent)
-const post2 = await db.post.create({
-  data: {
-    title:    'Hello World',
-    author: { connect: { id: existingUserId } }
-  }
-})
-
-// create with nested hasMany (children created after parent)
-const user = await db.user.create({
-  data: {
-    email: 'alice@example.com',
-    accountId: 1,
-    posts: {
-      create: [
-        { title: 'First post' },
-        { title: 'Second post' },
-      ]
-    }
-  }
-})
-
-// `select: false` is honored and still returns null, but it does NOT skip the
-// RETURNING when there are children: a hasMany create needs the parent's id, so
-// the row is fetched internally and simply not handed back (`FJS-615`).
-
-// update: connect / disconnect on manyToMany
-await db.post.update({
-  where: { id: 1 },
-  data: {
-    tags: {
-      connect:    [{ id: 1 }, { id: 2 }],
-      disconnect: [{ id: 3 }],
-    }
-  }
-})
-```
-
 ## @from — derived relation fields
 
 Computed aggregates from related models, declared in the schema and evaluated at query time:
 
-```prisma
+```lite
 model Account {
   id         Int      @id
   name       String
   orders     Order[]                                   // the relation @from reads
   orderCount Int      @from(Order, count: true)
   revenue    Float    @from(Order, sum: amount)
-  biggest    Float    @from(Order, max: amount)
+  biggest    Float?   @from(Order, max: amount)
   lastOrder  Order?   @from(Order, last: true)         // the whole row, not a column
   hasBig     Boolean  @from(Order, exists: true, where: "amount > 100")
 }
@@ -346,6 +459,13 @@ other virtual field kind — the value has nowhere to land and the next read ans
 aggregate, so a caller who seeded a count would otherwise read back the real one and
 believe they had set it.
 
+```js throws
+await db.account.update({ where: { id: 1 }, data: { orderCount: 5 } })
+// ValidationError: orderCount is @from(Order, count) — it is a subquery over
+// Order evaluated on read, not a column, so it cannot be written. Write the
+// Order rows it counts instead
+```
+
 **A composite key correlates on all of it.** A relation declaring
 `@relation(fields: [workspaceId, userId], references: [workspaceId, userId])` joins on both
 columns, in the aggregate, in a `first`/`last` repick under a row policy, and in a `select`
@@ -365,37 +485,6 @@ subquery aliases the target, so a model may derive from **itself** — a task co
 own subtasks correlates a table to itself, and without the alias the correlation is
 captured by the subquery's own `FROM` and every row answers `0`.
 
-### `via:` — which relation, when there is more than one
-
-Two relations can join one pair of models, and then the target model name is not enough to
-say which one a `@from` reads. That is **refused**, naming both and the cure:
-
-```
-Model 'User', field 'msgCount': @from(Message, ...) is ambiguous — 2 relations join
-'User' and 'Message' (Message.sender, Message.recipient). Say which with via: —
-@from(Message, ..., via: sender)
-```
-
-```prisma
-model User {
-  id       Int       @id
-  sent     Message[] @relation("sent")
-  received Message[] @relation("received")
-
-  sentCount Int @from(Message, count: true, via: sent)        // the field on THIS model
-  gotCount  Int @from(Message, count: true, via: recipient)   // or the field on the target
-}
-```
-
-`via` names either side — the relation field on this model, the one on the target, the
-`@relation` name they share, or the FK column itself. A name matching none of them is
-refused with the candidates listed.
-
-This is routine on a self-relational model: `parent` + `children` is **one** relation and
-needs no `via`, but add a second (`blocker`/`blocked`) and both need naming. Picking the
-first that fits was the old behavior, and the count it returned answered a different
-question with nothing in the value to say so.
-
 ### Operations
 
 Exactly one is required.
@@ -411,21 +500,66 @@ Exactly one is required.
 Options: `where: "sql"` filters the rows considered; `orderBy: field` picks what `first`/`last`
 order by (default is `id`).
 
-Against the schema above, with one account holding orders of 50, 120 and 30 and a second holding none:
+Against the `Account` / `Order` schema above, with one account holding orders of 50, 120 and 30 and a second holding none:
 
 ```js
-{ name: 'Acme',  orderCount: 3, revenue: 200, biggest: 120,  hasBig: true,  lastOrder: { id: 3, accountId: 1, amount: 30 } }
-{ name: 'Empty', orderCount: 0, revenue: 0,   biggest: null, hasBig: false, lastOrder: null }
+await db.account.createMany({ data: [{ id: 1, name: 'Acme' }, { id: 2, name: 'Empty' }] })
+await db.order.createMany({ data: [
+  { accountId: 1, amount: 50 }, { accountId: 1, amount: 120 }, { accountId: 1, amount: 30 },
+] })
+
+await db.account.findMany({ select: { name: true, orderCount: true, revenue: true, biggest: true, hasBig: true, lastOrder: true } })
+// → [{ name: 'Acme',  orderCount: 3, revenue: 200, biggest: 120,  hasBig: true,  lastOrder: { id: 3, accountId: 1, amount: 30 } },
+//    { name: 'Empty', orderCount: 0, revenue: 0,   biggest: null, hasBig: false, lastOrder: null }]
 ```
 
 Note the two different empties: `sum` coalesces to `0`, `max` stays `null`.
+
+### `via:` — which relation, when there is more than one
+
+Two relations can join one pair of models, and then the target model name is not enough to
+say which one a `@from` reads. That is **refused**, naming both and the cure:
+
+```
+Model 'User', field 'msgCount': @from(Message, ...) is ambiguous — 2 relations join
+'User' and 'Message' (Message.sender, Message.recipient). Say which with via: —
+@from(Message, ..., via: sender)
+```
+
+```lite
+model User {
+  id       Int       @id
+  sent     Message[] @relation("sent")
+  received Message[] @relation("received")
+
+  sentCount Int @from(Message, count: true, via: sent)        // the field on THIS model
+  gotCount  Int @from(Message, count: true, via: recipient)   // or the field on the target
+}
+
+model Message {
+  id          Int  @id
+  senderId    Int
+  sender      User @relation("sent", fields: [senderId], references: [id])
+  recipientId Int
+  recipient   User @relation("received", fields: [recipientId], references: [id])
+}
+```
+
+`via` names either side — the relation field on this model, the one on the target, the
+`@relation` name they share, or the FK column itself. A name matching none of them is
+refused with the candidates listed.
+
+This is routine on a self-relational model: `parent` + `children` is **one** relation and
+needs no `via`, but add a second (`blocker`/`blocked`) and both need naming. Picking the
+first that fits was the old behavior, and the count it returned answered a different
+question with nothing in the value to say so.
 
 ## Recursive tree queries
 
 A model with a relation to itself — a task with subtasks, a category with
 subcategories — is walked with `recursive`:
 
-```prisma
+```lite
 model Task {
   id       Int    @id
   title    String
@@ -433,17 +567,45 @@ model Task {
   parent   Task?  @relation(fields: [parentId], references: [id])
   children Task[]
 }
+
+model Employee {
+  id        Int        @id
+  name      String
+  managerId Int?
+  manager   Employee?  @relation("reports", fields: [managerId], references: [id])
+  reports   Employee[] @relation("reports")
+  mentorId  Int?
+  mentor    Employee?  @relation("mentees", fields: [mentorId], references: [id])
+  mentees   Employee[] @relation("mentees")
+}
+
+model Folder {
+  id       Int      @id
+  name     String
+  ownerId  Int
+  parentId Int?
+  parent   Folder?  @relation(fields: [parentId], references: [id])
+  children Folder[]
+
+  @@allow('read', ownerId == auth().id)
+}
 ```
 
 ```js
+await db.task.createMany({ data: [
+  { id: 5, title: 'root' }, { id: 6, title: 'a', parentId: 5 }, { id: 7, title: 'b', parentId: 6 },
+] })
+
 // Everything below task 5
 const subtree = await db.task.findMany({ where: { id: 5 }, recursive: true })
+// → [{ id: 6, …, _depth: 1 }, { id: 7, …, _depth: 2 }]
 
 // The path up to the root — a breadcrumb
 const path = await db.task.findMany({
-  where:     { id: 42 },
+  where:     { id: 7 },
   recursive: { direction: 'ancestors' },
 })
+// → [{ id: 5, …, _depth: 2 }, { id: 6, …, _depth: 1 }]
 
 // A tree: each node carries a `children` array
 const tree = await db.task.findMany({
@@ -451,10 +613,11 @@ const tree = await db.task.findMany({
   recursive: { direction: 'descendants', nested: true, maxDepth: 3 },
 })
 
-// Two self-relations on one model — say which
+// Two self-relations on one model — `via` names the belongsTo field or its FK
+// column; without it the walk follows every self-relation at once
 const reports = await db.employee.findMany({
   where:     { id: 1 },
-  recursive: { direction: 'descendants', via: 'reports' },
+  recursive: { direction: 'descendants', via: 'manager' },
 })
 ```
 
@@ -470,11 +633,20 @@ apply **at every level, not just to the row you named**. A node the caller
 cannot see hides its whole subtree:
 
 ```js
-// @@allow('read', ownerId == auth().id)
-await me.task.findMany({ where: { id: 1 }, recursive: true })
-// → the walk stops at the first row the policy refuses; its children are not
-//   reachable through it. Same for a soft-deleted node — `withDeleted: true`
-//   opts the walk back in, exactly as it does a flat read.
+// Folder declares @@allow('read', ownerId == auth().id)
+await db.asSystem().folder.createMany({ data: [
+  { id: 1, name: 'mine',   ownerId: 1 },
+  { id: 2, name: 'theirs', ownerId: 2, parentId: 1 },
+  { id: 3, name: 'deep',   ownerId: 1, parentId: 2 },   // mine, but below a row I cannot see
+  { id: 4, name: 'also',   ownerId: 1, parentId: 1 },
+] })
+
+const me = db.$setAuth({ id: 1 })
+await me.folder.findMany({ where: { id: 1 }, recursive: true })
+// → [{ id: 4, name: 'also', … }] — the walk stops at the first row the policy
+//   refuses; its children are not reachable through it. Same for a
+//   soft-deleted node — `withDeleted: true` opts the walk back in, exactly as
+//   it does a flat read.
 ```
 
 That is the deliberate reading of a hidden node: it takes its branch with it,
@@ -494,14 +666,23 @@ answering about the anchor row alone. `nested: true` refuses `limit`/`offset`
 for the same reason — they would cut branches out of the middle of a tree. Use
 `maxDepth`, or page the flat result.
 
+```js throws
+await db.task.count({ where: { id: 5 }, recursive: true })
+// ValidationError: recursive: count() does not take 'recursive' — only findMany walks a tree.
+```
+
 ### Cycles
 
 A row cannot be made its own ancestor. The write is refused, naming the field:
 
-```js
+```js throws
+await db.task.create({ data: { id: 1, title: 'root' } })
 await db.task.update({ where: { id: 1 }, data: { parentId: 1 } })
 // ValidationError: parentId points at the row itself — a row cannot be its own parent
+```
 
+```js throws
+await db.task.createMany({ data: [{ id: 1, title: 'root' }, { id: 2, title: 'a', parentId: 1 }, { id: 3, title: 'b', parentId: 2 }] })
 await db.task.update({ where: { id: 1 }, data: { parentId: 3 } })   // 3 is below 1
 // ValidationError: parentId would make "1" its own ancestor — the parent chain
 // above 3 already passes through it
@@ -511,25 +692,3 @@ Refused at the write because that is the only place that can name the field
 that was wrong. A loop already in the table — written before this guard, or
 through raw SQL — is survived rather than trusted: the walk tracks the path it
 came by and visits each row once.
-
-## Relation orderBy
-
-Sort by a field on a related model (LEFT JOIN, no row duplication):
-
-```js
-// Sort posts by author name
-db.post.findMany({ orderBy: { author: { name: 'asc' } } })
-
-// Two-hop: sort users by their company's country
-db.user.findMany({ orderBy: { company: { country: { name: 'asc' } } } })
-```
-
-Sort by relation aggregate (correlated subquery):
-
-```js
-db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
-db.author.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
-db.author.findMany({ orderBy: { tags:  { _count: 'asc' } } })  // manyToMany
-```
-
-See [sorting.md](./sorting.md) for the full sorting reference.

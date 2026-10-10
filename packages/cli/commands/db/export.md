@@ -34,7 +34,8 @@ flags:
   format:
     char: f
     type: string
-    description: Override the declared format — ndjson or csv
+    choices: [ndjson, csv]
+    description: Override the declared format
     defaultValue: ''
   out:
     char: o

@@ -28,7 +28,7 @@
 
 import { AccessDeniedError }   from './plugin.js'
 import { modelToTableName, sqlType, columnMapFor } from './ddl.js'
-import { sqlFragment } from './query.js'
+import { sqlFragment, inList } from './query.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
 import { NOW_SQL, rawClause }  from './query.js'
@@ -1449,7 +1449,10 @@ function compileSql(node, params, ctx, modelName, op, visited) {
           : compileSql(left, params, ctx, modelName, op, visited)
         // `pathSql` is reached through the line above, which is what keeps the
         // parameter ORDER right: the subquery binds nothing, so the list's
-        // values stay the only params and they are pushed after it.
+        // values stay the only params and they are pushed after it. A column
+        // takes `inList`; a path is an expression whose affinity the cast would
+        // not match, so it keeps the bound list.
+        if (left.type === 'field') return inList(L, list, params)
         params.push(...list)
         return `${L} IN (${list.map(() => '?').join(', ')})`
       }

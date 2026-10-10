@@ -130,7 +130,7 @@ let mark = out.length
 // no text, so the moves go together.
 const buttons = rows.filter((l) => l.startsWith('✓ ') && !l.includes(':')).map((l) => l.slice(2).trim())
 shell.stdin.write('\t'.repeat(Math.max(0, buttons.indexOf('/reports/'))) + '\r')
-check(await until(() => plain(out.slice(mark)).includes('administrator-only')), 'Enter opens it', plain(out.slice(mark)).slice(-500))
+check(await until(() => seen('administrator-only')), 'Enter opens it', screen(out))
 mark = out.length
 // The heading's Orders link is the route's first focus; /orders/ does not lower.
 shell.stdin.write('\r')
@@ -159,7 +159,7 @@ check(await until(() => seen('/people/ · Esc goes back') && seen('[ New employe
 shell.stdin.write('\t')
 await new Promise((r) => setTimeout(r, 300))
 shell.stdin.write('\r')
-check(await until(() => /│ New employee +│/.test(screen(out)) && /│ \[ Save \] +│/.test(screen(out))),
+check(await until(() => /│ New employee +│/.test(screen(out)) && /│ \[ Save \] \[ Cancel \] +│/.test(screen(out))),
   'its Drawer opens in a border over the page', screen(out))
 mark = out.length
 shell.stdin.write('\x1b')
@@ -200,6 +200,25 @@ check(await until(() => seen('Things: 2')), 'Esc goes back through the History',
 mark = out.length
 walk.stdin.write('\x1b')
 check(await until(() => seen('Tab moves, Enter opens')), 'and from its first entry to the list', screen(out))
+
+// `/confirm/` mounts the kit's ConfirmationPopover, which no route of the app
+// opens without rows from an API. Its panel is a `<mesa:portal>` and paints
+// under its trigger; the Esc it takes closes it and leaves the route open.
+const fixtureButtons = irows.filter((l) => l.startsWith('✓ ') && !l.includes(':')).map((l) => l.slice(2).trim())
+mark = out.length
+walk.stdin.write('\t'.repeat(Math.max(0, fixtureButtons.indexOf('/confirm/'))) + '\r')
+check(await until(() => seen('/confirm/ · Esc goes back') && seen('Cancels: 0') && seen('[ Ask ]')), '/confirm/ opens', screen(out))
+mark = out.length
+walk.stdin.write('\r')
+check(await until(() => /\[ Ask \][\s\S]*Remove it\?[\s\S]*\[ Cancel \][\s\S]*\[ Remove \]/.test(screen(out))),
+  'the confirmation, a portal, paints under its trigger', screen(out))
+mark = out.length
+walk.stdin.write('\x1b')
+check(await until(() => seen('Cancels: 1') && !seen('Remove it?')), 'Esc cancels it', screen(out))
+check(seen('/confirm/ · Esc goes back'), 'and leaves the route open, since the panel took the key', screen(out))
+mark = out.length
+walk.stdin.write('\x1b')
+check(await until(() => seen('Tab moves, Enter opens')), 'a second Esc leaves the route', screen(out))
 walk.stdin.write('\x03')
 const walkCode = await Promise.race([walked, new Promise((r) => setTimeout(() => r('timeout'), 5000))])
 if (walkCode === 'timeout') walk.kill('SIGKILL')

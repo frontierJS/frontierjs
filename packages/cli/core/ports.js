@@ -38,6 +38,9 @@ import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, openSyn
 import { execSync, execFileSync } from 'child_process'
 import { homedir } from 'os'
 import { basename, dirname, join, relative } from 'path'
+import { fileURLToPath } from 'url'
+import { stripComments } from './codegraph.js'
+import { findProjectRoot } from './utils.js'
 
 // ─── Schema maps ──────────────────────────────────────────────────────────────
 
@@ -555,6 +558,8 @@ export function slotFor(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
  * A text search over the surface directory, stopping at the first hit. It is
  * the one fact available without running the app, and it answers the only
  * question asked: would this surface follow a slot, or bind its literal.
+ * Comments are blanked first: a config that only MENTIONS the variable still
+ * binds its literal.
  */
 export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
   if (!row.env) return true
@@ -569,7 +574,7 @@ export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
       if (e.isDirectory()) { if (!SKIP.has(e.name)) stack.push(join(dir, e.name)); continue }
       if (!/\.(m?[jt]s|cjs)$/.test(e.name)) continue
       seen++
-      try { if (readFileSync(join(dir, e.name), 'utf8').includes(row.env)) return true } catch {}
+      try { if (stripComments(readFileSync(join(dir, e.name), 'utf8')).includes(row.env)) return true } catch {}
     }
   }
   return false
@@ -730,6 +735,42 @@ function freeBranch(sessions, appRoot, tree) {
     `All ${MAX_BRANCH} branch port blocks of this repository are held by other worktrees. ` +
     'Archive a branch, or forget an idle one with `fli ports:status --clean`.'
   )
+}
+
+/**
+ * The port a test binds or a drive reaches, moved by this checkout's branch
+ * (`FJS-D857`). A literal in a test stays the parent's number in a branch, so a
+ * drive passes against a server running code it was not given.
+ *
+ * `from` is the caller's `import.meta.url` or any path inside the app; the app
+ * root is the one `fli dev` runs at. `project` names a `PROJECTS` row for a
+ * server the app's tests start but do not own — basecamp's drive starts an
+ * outpost. A linked worktree the lock holds no number for claims one through
+ * `claimSession`, so a test and a dev server in one branch cannot disagree
+ * (`FJS-D858`); a main checkout never writes the lock.
+ *
+ *   await portFor(import.meta.url, 'be', { env: 'dev' })           // 8110 · 18110
+ *   await portFor(import.meta.url, 'be', { service: 3 })           // 7123 · 17123
+ *
+ * @param {string} from
+ * @param {string} category  a `CAT` key
+ * @param {{env?: 'test'|'dev'|'prod', project?: string, service?: number, lockFile?: string}} [opts]
+ */
+export async function portFor(from, category, { env = 'test', project, service = 0, lockFile = LOCK_FILE } = {}) {
+  const appRoot = findProjectRoot(from.startsWith('file:') ? fileURLToPath(from) : from)
+  let manifest = {}
+  try { manifest = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')) } catch {}
+  if (project !== undefined && PROJECTS[project] === undefined) {
+    throw new Error(`Unknown project "${project}" — one of ${Object.keys(PROJECTS).join(', ')}`)
+  }
+  const projectId = project !== undefined ? PROJECTS[project] : projectIdFor(manifest.name, basename(appRoot))
+  let branch = branchFor(appRoot, { lockFile })
+  if (branch === null) {
+    branch = worktreeOf(appRoot)
+      ? (await claimSession(appRoot, { name: manifest.name, scripts: manifest.scripts, lockFile })).branch
+      : 0
+  }
+  return port(category, { env, projectId, serviceId: service }) + branch * BRANCH_STEP
 }
 
 /** Forget a root's slot — and every app root inside it, so a removed worktree

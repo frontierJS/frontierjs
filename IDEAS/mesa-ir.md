@@ -1102,6 +1102,95 @@ with the terminal backend as its second consumer, not ahead of it.
    its text paints the pieces over each other. Cut on the way: keeping
    whitespace-only text inside a `<pre>`, which no break could turn red,
    because a column box already stacks what it would have separated.
+   *Slice 22 2026-10-10, `FJS-2179` (the owner said "go" to the pick named
+   at the end of slice 21):* the engine lays out boxes and has no line
+   boxes, so a sentence with a `<kbd>` in it was three rows and a row
+   narrower than its pieces painted them over each other. A box from the
+   tag table is now a `FlowBox`: each frame, before layout (the engine's
+   lifecycle pass, the one `<select>` already reads its options in), it
+   paints each run of text and text-only inline tags as one engine text
+   built from their chunks and cell attributes, which the engine wraps
+   between words, and hides the run. The run's own nodes stay in the tree,
+   so a live text, an attribute and a block marker keep writing where they
+   always did, and the emitter is unchanged for them. A box whose every
+   child is inline-level is a row that wraps, so a button sits on the line
+   beside its words; one holding a block stacks, as a block breaks a
+   line. White space is collapsed by the runtime, which alone knows
+   whether a text sits in a `<pre>`: a run of it is one space, across tag
+   edges too, and none starts a line, while a no-break space is kept. The
+   emitter keeps the white space between two siblings that may share a
+   line, which it used to drop, so `</kbd> <kbd>` is `K J`. A button is a
+   flow as well, its brackets in the run, so the kit Button's edge spaces
+   collapse into them (`[ New employee ]`), and a field is 20 cells wide
+   unless `size` says, as a browser's is. `tr` is the one box that is a
+   row whatever it holds (`row` in the table, where `inline` now means
+   *joins its neighbors' words*). Cut on the way: a per-space neighbor scan
+   (the line-start trim and the row rule already decide every space), the
+   emitter's own collapse (one owner, the runtime, which also reaches a
+   live value), and trimming a line's end, which nothing can see. A link
+   keeps a node of its own, since Tab stops at it and a press lands on the
+   node under it, so prose breaks at a link's edges: `FJS-2326`. Proved by
+   `specs/flow.spec.mjs` 28/28 with 16 deliberate breaks, all red; the
+   drive 255/255, where the Consts and Hover fixtures had padded a row with
+   a leading space a browser collapses and now mark it with `-`; vitest
+   2281; corpus moves only those two fixtures (and a peer's Json edit),
+   baseline `s22base`; `verify:tui` green after two checks moved off the
+   old layout (one read a raw patch instead of the modeled screen). Routes
+   stay 22 of 34; `/invoices/` now reads as prose.
+   *The nine for slice 22, answered after it was green:* (1) origin: one.
+   The run is read off the nodes each frame rather than kept beside them.
+   (2) concept: none new to a reader of CSS; a run is a line box's
+   contents. (3) complexity: the problem's; the engine has no inline
+   layout. (4) predictability: a sentence reads as it does in a browser,
+   and a press on a word lands on the nearest tagged element above it,
+   the block, rather than on an inline tag nothing listens to. (5)
+   derived: the run's text is recomputed each frame and written only when
+   it changed. (6) owner: `flow` in the terminal runtime. (7) boundary:
+   what joins a run is text and inline tags nothing listens to or presses;
+   everything else is a node of its own. (8) failure: a link in prose
+   breaks the line, visibly (`FJS-2326`). (9) must stay true: no piece of
+   a sentence paints over another and every word appears once, in order;
+   `flow.spec` fails when either stops. Adjudication: none in tension;
+   `inline` changing meaning is the evolution policy, nothing shipped.
+   Tier: Assessment.
+   *Slice 23 2026-10-10, `FJS-2326` (the owner said "go" to the pick named
+   at the end of slice 22):* a link, and an inline tag something listens
+   to, now joins its run like any other words, so prose wraps between words
+   across it and nothing starts a row with a space. The run is one engine
+   text, so each of its chunks records the text node that wrote it, and a
+   press or a move on the run's cells is mapped back through the engine's
+   `lineInfo` (each visual line's starting column) to that node and handed
+   to the nearest member that is a press or move source (`relay`); above the
+   box the engine's own walk carries on, and `pointer` reads the cell's
+   node off the event. Tab still stops at a hidden link: `focusables`
+   counts a node the run paints. The focus cue needed nothing new, because
+   it inverts the link's own texts and the run reads their attributes each
+   frame. `verify:tui` found the one hazard: the engine blurs a node it
+   hides, and `/people/` focuses its Pay runs link before the first frame
+   lays it out, so the link joined a run, lost focus, and the next Tab
+   followed it off the route. `hide` hands focus straight back without
+   firing focus or blur events. Cut: the engine's OSC 8 `link` on a chunk,
+   since an `href` here is a route path the app follows, which a terminal
+   would open as a URL. Proved by `specs/flow.spec.mjs` 44/44 (fixture
+   `FlowFocus.mesa`, a link that gains words while focused), 10 deliberate
+   breaks all red; drive 271; corpus moves only the two fixtures, baseline
+   `s23base`; `verify:tui` green. Routes stay 22 of 34; `/reports/` reads
+   as one paragraph.
+   *The nine for slice 23, answered after it was green:* (1) origin: one.
+   A cell's owner is read off the run's own chunks, not stored beside the
+   tree. (2) concept: none; a press on a word reaches the element that
+   wrote it, as in a browser. (3) complexity: the problem's; the engine
+   gives a run one hit target, and the mapping is twelve lines. (4)
+   predictability: Tab, Enter, a press and the focus cue act on a link
+   inside a sentence as they do on a link standing alone. (5) derived:
+   the cell map is the chunk list the run was built from that frame. (6)
+   owner: `flow`, `relay` and `cellAt` in the terminal runtime. (7)
+   boundary: an inline tag joins whatever listens to it; a button, field
+   or select never does, since they are not inline tags in the table. (8)
+   failure: a press past a line's end reaches no member and goes to the
+   box, as a press on blank space does. (9) must stay true: a link keeps
+   its focus when it joins a run; `FlowFocus` fails when it stops.
+   Adjudication: none in tension. Tier: Assessment.
    *The nine for slice 21, answered before the `<pre>`/`{@html}` code
    (the focus half and the inline tags had landed first):* (1) origin:
    one fewer copy. Entity decoding has one home that both readers import,

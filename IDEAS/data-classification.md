@@ -103,7 +103,7 @@ guess.
 
 ### **A** — one word, `@personal`
 
-```prisma
+```lite
 model Candidate {
   email String  @personal
   ip    String? @personal
@@ -119,7 +119,7 @@ cannot group by them; a declared retention clock (`forgetting.md` Q3).
 
 ### **B** — a graded `@sensitivity(level)` and a field `@retain`
 
-```prisma
+```lite
 model Patient {
   email     String  @sensitivity(personal)
   diagnosis String  @sensitivity(special)
@@ -137,7 +137,7 @@ catch.
 
 ### **C** — `@personal(category)`, read through the existing owner
 
-```prisma
+```lite
 model Candidate {
   email       String  @personal(contact)
   coverLetter String? @personal

@@ -1,5 +1,92 @@
 # Sorting
 
+The examples on this page use this schema:
+
+```lite
+model Client {
+  id         Int      @id
+  name       String
+  createdAt  DateTime @default(now())
+  notes      Note[]
+  noteCount  Int      @from(Note, count: true)
+  chattiness Int      @computed
+}
+
+model Note {
+  id       Int    @id
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+}
+
+model Country {
+  id        Int       @id
+  name      String
+  companies Company[]
+}
+
+model Company {
+  id        Int     @id
+  countryId Int
+  country   Country @relation(fields: [countryId], references: [id])
+  users     User[]
+}
+
+model User {
+  id        Int      @id
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id])
+}
+
+model Author {
+  id    Int    @id
+  name  String
+  books Book[]
+  posts Post[]
+  tags  Tag[]
+}
+
+model Book {
+  id       Int    @id
+  price    Float
+  rating   Float?
+  authorId Int
+  author   Author @relation(fields: [authorId], references: [id])
+}
+
+model Tag {
+  id      Int      @id
+  authors Author[]
+}
+
+model Post {
+  id        Int      @id
+  title     String
+  status    String   @default("draft")
+  createdAt DateTime @default(now())
+  authorId  Int
+  author    Author   @relation(fields: [authorId], references: [id])
+}
+
+model Task {
+  id           Int       @id
+  name         String?
+  status       String    @default("open")
+  priority     Int?
+  weight       Int       @default(1)
+  dueAt        DateTime?
+  snoozedUntil DateTime?
+  deletedAt    DateTime?
+}
+
+model Order {
+  id        Int      @id
+  accountId Int
+  status    String
+  amount    Float
+  createdAt DateTime @default(now())
+}
+```
+
 ## What can be sorted
 
 An `orderBy` key must be something SQLite can put in an `ORDER BY`: a stored
@@ -10,12 +97,12 @@ into the SELECT list), or a relation — see the two relation sections below.
 that has already been fetched, so SQLite has never heard of it and cannot order
 or paginate by it. Sorting by one throws, naming what is sortable:
 
-```js
-db.client.findMany({ orderBy: { chattiness: 'asc' } })
-// ValidationError: Cannot orderBy 'chattiness' on Client.findMany — it is a
-// @computed field, which is a JS function over a row, so SQLite can neither
-// sort nor paginate by it. To sort by a derived value make it @from or
-// @generated, or store it. Sortable: createdAt, id, name, noteCount
+```js throws
+await db.client.findMany({ orderBy: { chattiness: 'asc' } })
+// ValidationError: orderBy.chattiness: Cannot orderBy 'chattiness' on
+// Client.findMany — it is a @computed field, which is a JS function over a row,
+// so SQLite can neither sort nor paginate by it. To sort by a derived value make
+// it @from or @generated, or store it. Sortable: createdAt, id, name, noteCount
 ```
 
 An unknown key throws too, with a typo suggestion — as an unknown `where` key
@@ -45,9 +132,9 @@ denormalized column written on change.
 ### Asking without running the query
 
 ```js
-db.$checkOrderBy('client', { chattiness: 'asc' })
+await db.$checkOrderBy('client', { chattiness: 'asc' })
 // → [{ key: 'chattiness', reason: 'computed', suggestion: null,
-//      sortable: [...], message: '...' }]
+//      sortable: ['createdAt', 'id', 'name', 'noteCount'], message: 'Cannot orderBy …' }]
 ```
 
 `$checkWhere`'s sibling, same contract: `[]` means no problems, an unknown
@@ -63,26 +150,28 @@ calls it and turns a problem into a 400.
 
 ```js
 // Single field
-orderBy: { createdAt: 'desc' }
+await db.post.findMany({ orderBy: { createdAt: 'desc' } })
 
 // Multiple fields — array, applied left-to-right
-orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }]
+await db.post.findMany({ orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }] })
 ```
 
 ## NULLS FIRST / LAST
 
-By default SQLite sorts NULLs last on ASC and first on DESC. Override with the object form:
+By default SQLite sorts NULLs first on ASC and last on DESC — a NULL is smaller than every value. Override with the object form:
 
 ```js
 // NULLs sorted to the end regardless of direction
-orderBy: { deletedAt: { dir: 'asc',  nulls: 'last'  } }
-orderBy: { priority:  { dir: 'desc', nulls: 'first' } }
+await db.task.findMany({ orderBy: { deletedAt: { dir: 'asc',  nulls: 'last'  } } })
+await db.task.findMany({ orderBy: { priority:  { dir: 'desc', nulls: 'first' } } })
 
 // Mixed in a multi-field sort
-orderBy: [
-  { name:      { dir: 'asc', nulls: 'last' } },
-  { createdAt: 'desc' },   // plain string still works
-]
+await db.task.findMany({
+  orderBy: [
+    { name:  { dir: 'asc', nulls: 'last' } },
+    { dueAt: 'desc' },   // plain string still works
+  ]
+})
 ```
 
 ## Relation field orderBy (belongsTo)
@@ -91,13 +180,13 @@ Sort by a field on a related model. Emits a `LEFT JOIN` — no row duplication, 
 
 ```js
 // Single hop — sort posts by author name
-db.post.findMany({ orderBy: { author: { name: 'asc' } } })
+await db.post.findMany({ orderBy: { author: { name: 'asc' } } })
 
 // Two-hop — sort users by their company's country name
-db.user.findMany({ orderBy: { company: { country: { name: 'asc' } } } })
+await db.user.findMany({ orderBy: { company: { country: { name: 'asc' } } } })
 
 // Mixed flat + relation
-db.post.findMany({
+await db.post.findMany({
   orderBy: [
     { author:    { name: 'asc' } },
     { createdAt: 'desc' },
@@ -107,22 +196,29 @@ db.post.findMany({
 
 **Restriction:** only `belongsTo` (FK on this model's table) relations work. `hasMany` is inherently ambiguous for sorting. Use aggregate orderBy instead.
 
+A relation sort beside a `select` that names a column both tables carry (`select: { id: true }`) fails on `ambiguous column name: id`:
+
+```js failing
+// FJS-2299
+await db.post.findMany({ orderBy: { author: { name: 'asc' } }, select: { id: true } })
+```
+
 ## Relation aggregate orderBy (hasMany / manyToMany)
 
 Sort by COUNT/SUM/AVG/MIN/MAX of a related collection. Uses a correlated subquery — no row duplication, works on any table size:
 
 ```js
 // Sort authors by number of books (hasMany)
-db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
+await db.author.findMany({ orderBy: { books: { _count: 'desc' } } })
 
 // Sort authors by total revenue (hasMany _sum)
-db.author.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
+await db.author.findMany({ orderBy: { books: { _sum: { price: 'desc' } } } })
 
 // Sort authors by highest-rated book (hasMany _max)
-db.author.findMany({ orderBy: { books: { _max: { rating: 'asc' } } } })
+await db.author.findMany({ orderBy: { books: { _max: { rating: 'asc' } } } })
 
 // Sort authors by number of tags (manyToMany — _count only)
-db.author.findMany({ orderBy: { tags: { _count: 'asc' } } })
+await db.author.findMany({ orderBy: { tags: { _count: 'asc' } } })
 ```
 
 **Available:** `_count` on `hasMany` and `manyToMany`. `_sum`, `_avg`, `_min`, `_max` on `hasMany` only (aggregating a scalar through a join table requires specifying which field, which manyToMany doesn't have).
@@ -132,7 +228,7 @@ db.author.findMany({ orderBy: { tags: { _count: 'asc' } } })
 Window function `orderBy` uses the same syntax, including NULLS FIRST/LAST:
 
 ```js
-db.order.findMany({
+await db.order.findMany({
   window: {
     rn: {
       rowNumber: true,
@@ -148,7 +244,7 @@ See [window-functions.md](./window-functions.md).
 ## groupBy orderBy
 
 ```js
-db.order.groupBy({
+await db.order.groupBy({
   by:      ['status'],
   _count:  true,
   _sum:    { amount: true },
@@ -167,11 +263,11 @@ regardless of due date*, a weighted score — could not be said at all.
 ```js
 import { sql, now } from '@frontierjs/litestone'
 
-db.task.findMany({
+await db.task.findMany({
   orderBy: { $raw: sql`CASE WHEN "snoozedUntil" > ${now()} THEN 1 ELSE 0 END ASC, "dueAt" ASC` },
 })
 
-db.task.findMany({ orderBy: { $raw: sql`("weight" * ${10} + "id") DESC` } })
+await db.task.findMany({ orderBy: { $raw: sql`("weight" * ${10} + "id") DESC` } })
 ```
 
 The fragment is the **whole ORDER BY tail**, direction included, because a sort
@@ -179,7 +275,7 @@ no builder can express usually needs several keys in an order only the caller
 knows. It composes with ordinary keys in the position it is written:
 
 ```js
-orderBy: [{ status: 'asc' }, { $raw: sql`"weight" DESC` }]
+await db.task.findMany({ orderBy: [{ status: 'asc' }, { $raw: sql`"weight" DESC` }] })
 ```
 
 **It must be a `sql` tag. A plain string is refused by name.** The tag's static
@@ -187,6 +283,12 @@ text is written by the app author and its interpolations are bound as
 parameters, so a caller-supplied value never enters the pattern (Invariant 8). A
 bare string is exactly how a caller-supplied one would arrive, so accepting it
 would turn the hatch into an injection.
+
+```js throws
+await db.task.findMany({ orderBy: { $raw: '"weight" DESC' } })
+// Error: orderBy $raw must be a sql`` tag, not a string — the tag binds its
+// values, a string would put them in the pattern.
+```
 
 Two places refuse it, because it cannot mean anything there:
 

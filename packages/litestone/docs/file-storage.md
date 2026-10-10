@@ -23,7 +23,7 @@ const db = await createClient({
 
 ## Schema
 
-```prisma
+```lite
 model User {
   avatar  File?              // single file — uploaded on create/update, deleted on row delete
   resume  File?  @keepVersions  // keep old S3 object when field is updated

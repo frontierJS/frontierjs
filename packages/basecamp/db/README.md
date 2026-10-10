@@ -273,7 +273,7 @@ char) key.` It fails closed, which is what we want, but the API pass has to add
 
 ## Audit logging
 
-```prisma
+```lite
 database audit { path "./audit/" driver trail retention 90d }
 ```
 

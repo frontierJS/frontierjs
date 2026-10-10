@@ -274,10 +274,10 @@ export function buildIndex(root) {
   // Comments are blanked rather than dropped, so a line number still names the
   // line: this module's own comment quoting `return function $levelOf` was
   // counted as a declaration of it. One owner for that reading, in codegraph.
-  return files.map(f => ({
-    path:  relative(root, f),
-    lines: stripComments(read(f) ?? '').split('\n'),
-  }))
+  return files.map(f => {
+    const text = stripComments(read(f) ?? '')
+    return { path: relative(root, f), text, lines: text.split('\n') }
+  })
 }
 
 /**
@@ -302,6 +302,10 @@ export function sitesFor(index, id) {
   const re = declarations(id)
   const hits = []
   for (const f of index) {
+    // Only a file holding the name can declare it. The five-branch regex over
+    // every line of nine hundred files, once per seam, is twenty seconds
+    // without this line and under one with it.
+    if (!f.text.includes(id)) continue
     const n = f.lines.findIndex(l => re.test(l))
     if (n >= 0) hits.push(`${f.path}:${n + 1}`)
   }
@@ -321,16 +325,21 @@ export function seamOwnership({ root, index = null } = {}) {
   if (!seams.length) return []
   const idx = index ?? buildIndex(root)
 
+  // `held` asks for the first name's sites a second time, and two seams can
+  // share a name.
+  const cache = new Map()
+  const sitesOf = x => cache.get(x) ?? (cache.set(x, sitesFor(idx, x)), cache.get(x))
+
   return seams.map(seam => {
     const id    = identifierOf(seam.names[0])
     const ids   = [...new Set(seam.names.map(identifierOf))]
-    const sites = seam.kind === 'fn' ? sitesFor(idx, id) : []
+    const sites = seam.kind === 'fn' ? sitesOf(id) : []
     const impl  = sites.filter(s => !TYPEONLY.test(s.split(':')[0]))
 
     // Every name on the bullet, because `ctx.enqueue` / `deliverOutbox` is one
     // seam with two verbs and the owner need only declare one of them.
     const held = seam.kind === 'fn' && seam.owner !== null
-      && ids.some(x => sitesFor(idx, x).some(s => s.startsWith(`${seam.owner}:`)))
+      && ids.some(x => sitesOf(x).some(s => s.startsWith(`${seam.owner}:`)))
 
     // A key is graded by MENTION in its owner, the only question a file can
     // answer about a string that is never declared.

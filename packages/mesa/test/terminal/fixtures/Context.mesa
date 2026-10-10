@@ -1,0 +1,9 @@
+<script>
+  import Provide from './Provide.mesa'
+  import Hear from './Hear.mesa'
+  let on = false
+  let items = ['x']
+</script>
+<button on:click={() => { on = true; items = ['x', 'a'] }}>open</button>
+<button on:click={() => items = []}>empty</button>
+<Provide {on} {items}><Hear where="slot" /></Provide>

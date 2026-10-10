@@ -166,6 +166,12 @@ describe('terminal target', () => {
         'on:resize at R.mesa:1:14 has no terminal lowering')
     })
 
+    // A portal's children are checked where they paint, which is in place.
+    it('an offender inside a <mesa:portal>', async () => {
+      await refusal(`<mesa:portal to={document.body}>\n  <div on:dblclick={() => {}}></div>\n</mesa:portal>\n`, 'P.mesa',
+        'on:dblclick at P.mesa:2:8 has no terminal lowering')
+    })
+
     // A browser moves live text into a field only until someone types.
     it('live text in a <textarea> with no value=', async () => {
       await refusal(`<script>let t = 'a'</script>\n<textarea>{t}</textarea>\n`, 'T.mesa',

@@ -4,7 +4,7 @@ Litestone builds FTS5 virtual tables and sync triggers automatically for full te
 
 ## Setup
 
-```prisma
+```lite
 model Message {
   id        Int @id
   userId    Int
@@ -116,7 +116,7 @@ Best run as a scheduled job (weekly or after large bulk imports).
 
 Query a FTS5 virtual table you manage yourself:
 
-```prisma
+```lite
 model search_index {
   rowid Int @id
   title String

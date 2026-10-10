@@ -17,12 +17,12 @@ export async function run(t) {
   await t.settle()
 
   let frame = await t.frame()
-  t.expectFrame(frame, ['> ann 6', '  bo 20'], 'a row const reads the index and outer state, a pattern reads the row')
+  t.expectFrame(frame, ['> ann 6', '- bo 20'], 'a row const reads the index and outer state, a pattern reads the row')
   t.expectFrame(frame, ['in 4 plain', 'out outer signal', 'z 3'], 'a const ends with its block, and a plain one shadows a signal')
 
   await t.click('next')
   frame = await t.frame()
-  t.expectFrame(frame, ['  ann 6', '> bo 20'], 'the row const follows the state it reads')
+  t.expectFrame(frame, ['- ann 6', '> bo 20'], 'the row const follows the state it reads')
 
   await t.click('more')
   frame = await t.frame()

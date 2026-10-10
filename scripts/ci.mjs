@@ -740,10 +740,10 @@ function registers() {
 // be absent because an app never adopted one, and that is not a failure — but
 // one that existed at the base ref and is gone now is.
 
-function snapshots() {
+async function snapshots() {
   const from = phase('snapshots')
 
-  const { results, checked } = checkSnapshots({ root: ROOT, timeoutMs: TIMEOUT_MS, maxBuffer: MAX_BUFFER })
+  const { results, checked } = await checkSnapshots({ root: ROOT, timeoutMs: TIMEOUT_MS, maxBuffer: MAX_BUFFER })
 
   if (!checked) {
     note('no snapshot anywhere — `litestone access` and `litestone ddl` write one beside a schema')

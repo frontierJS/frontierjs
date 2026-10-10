@@ -42,7 +42,7 @@
   function handleCancel()  { open = false; restoreFocus(); oncancel?.() }
 
   function restoreFocus() {
-    triggerEl?.querySelector('button, a, [tabindex]')?.focus()
+    triggerEl?.querySelector?.('button, a, [tabindex]')?.focus()
   }
 </script>
 

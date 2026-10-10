@@ -9,7 +9,8 @@ flags:
   browser:
     char: b
     type: string
-    description: chrome | firefox | both
+    choices: [chrome, firefox, both]
+    description: Which browser to build for
     defaultValue: chrome
   launch:
     type: boolean

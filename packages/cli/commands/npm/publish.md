@@ -22,7 +22,8 @@ flags:
   access:
     char: a
     type: string
-    description: "Package access: public or restricted"
+    choices: [public, restricted]
+    description: Package access
     defaultValue: ''
 ---
 

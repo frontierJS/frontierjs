@@ -9,10 +9,25 @@ bun add @frontierjs/litestone
 ## Scaffold
 
 ```bash
-bunx litestone init              # creates schema.lite + litestone.config.js
+bunx litestone init              # creates schema.lite, litestone.config.js and migrations/
 bunx litestone migrate create initial
-bunx litestone migrate apply
+bunx litestone migrate apply     # builds ./development.db — the config's default db
 bunx litestone studio            # browser UI at http://localhost:8502
+```
+
+`init` writes one model to start from; the rest of this page runs against it:
+
+```lite
+model User {
+  id        Int      @id
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  @@softDelete
+  @@index([email])
+}
 ```
 
 ## Quick start
@@ -20,17 +35,16 @@ bunx litestone studio            # browser UI at http://localhost:8502
 ```js
 import { createClient } from '@frontierjs/litestone'
 
-const db = await createClient({ path: './schema.lite', db: './app.db' })
+const db = await createClient({ path: './schema.lite', db: './development.db' })
 
 // Create
 const user = await db.user.create({
-  data: { email: 'alice@example.com', name: 'Alice', accountId: 1 }
+  data: { email: 'alice@example.com', name: 'Alice' }
 })
 
 // Read
 const users = await db.user.findMany({
-  where:   { role: 'admin' },
-  include: { account: true },
+  where:   { name: 'Alice' },
   orderBy: { createdAt: 'desc' },
   limit:   20,
 })
@@ -42,9 +56,15 @@ await db.user.update({ where: { id: user.id }, data: { name: 'Alice Smith' } })
 await db.user.remove({ where: { id: user.id } })
 ```
 
+A database file that is not there yet is created with the schema's tables, so
+the quick start also runs against a path `migrate apply` never built. Under
+`@@softDelete` the removed row keeps its `@unique` email, so running this twice
+against the same file refuses the second create by name — `restore` it, or
+`delete({ …, withDeleted: true })`.
+
 ## createClient options
 
-```js
+```js fragment
 const db = await createClient({
   // Schema source — pick one
   path:    './schema.lite',        // path to .lite file
@@ -57,7 +77,7 @@ const db = await createClient({
 
   plugins: [
     new GatePlugin({ getLevel }),
-    FileStorage({ provider: 'r2', ... }),
+    FileStorage({ provider: 'r2', ... }),   // from '@frontierjs/litestone/storage'
   ],
 
   // Production query logging
@@ -116,7 +136,9 @@ Schema text the app did not write — a row holding a landing schema, a model a
 tenant defined — is built with `untrusted: true`:
 
 ```js
+const row = { id: 7, schemaText: 'model Note { id Int @id\n body String }' }   // read from a table, say
 const landing = await createClient({ schema: row.schemaText, db: `./landing/${row.id}.db`, untrusted: true })
+await landing.note.create({ data: { body: 'hello' } })
 ```
 
 The text is parsed as text (a one-line string ending in `.lite` is never read
@@ -137,16 +159,11 @@ the view, rather than the first read (`FJS-1632`).
 Every request should use a scoped client so policies and field rules see the current user:
 
 ```js
-// Middleware
-app.use((req, res, next) => {
-  req.db = db.$setAuth(req.user)
-  next()
-})
+// One scoped client per request — a handler never sees the unscoped one
+const forRequest = (user) => db.$setAuth(user)
 
-// Route handler
-app.get('/posts', async (req) => {
-  return req.db.post.findMany()  // policies applied
-})
+const alice = await db.user.create({ data: { email: 'alice@example.com' } })
+const users = await forRequest(alice).user.findMany()   // policies applied
 
 // System bypass — use sparingly
 const sysDb = db.asSystem()   // bypasses @@gate, @@allow/@@deny, @guarded fields
@@ -160,7 +177,7 @@ If your schema uses `import` statements, use `parseFile()` so paths resolve corr
 import { parseFile, createClient } from '@frontierjs/litestone'
 
 const result = parseFile('./schema.lite')
-const db     = await createClient({ parsed: result })
+const db     = await createClient({ parsed: result, db: './development.db' })
 ```
 
 See [schema.md](./schema.md) for the full schema reference.

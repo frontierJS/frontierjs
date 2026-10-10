@@ -113,9 +113,30 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.querySelectorAll('body > .popover').length;`), 0,
     'confirming closes the panel')
 
-  // The capture listener is added on open and removed on close and on destroy.
-  // One left behind swallows the NEXT fixture's first click, which reads as a
-  // component that stopped responding.
+  // The two ways out that are not a button. Escape is TAKEN: a host that also
+  // answers Escape, the terminal shell going back a screen, reads
+  // defaultPrevented to know the panel had it.
+  await t.clickAt('#stage #confirm-trigger')
+  await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.clickAt('#outside')
+  await t.eventually(`document.querySelector('#cancels').textContent`, '2', 'a click outside cancels')
+  await t.evaluate(`await waitFor(() => !document.querySelector('body > .popover')); return true;`)
+
+  await t.clickAt('#stage #confirm-trigger')
+  await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.evaluate(`
+    window.__escTaken = null;
+    window.addEventListener('keydown', (e) => { window.__escTaken = e.defaultPrevented }, { once: true });
+    return true;
+  `)
+  await t.press('Escape')
+  await t.eventually(`document.querySelector('#cancels').textContent`, '3', 'Escape cancels')
+  t.is(await t.evaluate(`return window.__escTaken;`), true, 'and takes the key')
+  await t.evaluate(`await waitFor(() => !document.querySelector('body > .popover')); return true;`)
+
+  // The window listener goes with the panel. One left behind swallows the
+  // NEXT fixture's first click, which reads as a component that stopped
+  // responding.
   await t.clickAt('#stage #confirm-trigger')
   await t.evaluate(`return await waitVisible('body > .popover');`)
   await t.evaluate(`return window.kitUnmount();`)

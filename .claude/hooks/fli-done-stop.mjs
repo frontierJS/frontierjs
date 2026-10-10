@@ -10,10 +10,13 @@
 // `stop_hook_active` is set when the agent is already continuing because a Stop
 // hook blocked, so this answers nothing then and cannot hold a session in a loop.
 //
-// `--baseline` records every item in the tree as shown and blocks nothing.
-// `scripts/fix-loop.mjs` runs it before each session, because the shown state is
-// the TREE's, not the session's: without it a headless fix is blocked, and pays
-// a full-context turn, on an item another session made while it ran.
+// `--baseline` records every item in the tree as shown and blocks nothing, for
+// a session whose stops should never be held on another session's items.
+//
+// `FLI_DONE_STOP=off` in the environment skips it whole. `scripts/headless.mjs`
+// sets it: the fix and frame skills run `fli done` themselves as a step, so in
+// a headless session this hook was a second forty-second run of the same
+// report, and the `--baseline` it needed first was a third.
 
 import { execFileSync }                                   from 'node:child_process'
 import { createHash }                                     from 'node:crypto'
@@ -24,6 +27,7 @@ import { pathToFileURL }                                  from 'node:url'
 const baseline = process.argv.includes('--baseline')
 
 try {
+  if (process.env.FLI_DONE_STOP === 'off') process.exit(0)
   const input = JSON.parse(readFileSync(0, 'utf8') || '{}')
   if (input.stop_hook_active) process.exit(0)
 
@@ -50,7 +54,7 @@ try {
   const { runDone, stopVerdict } = await import(pathToFileURL(done).href)
   if (!baseline && !stopVerdict({ state, head, fingerprint }).run) process.exit(0)
 
-  const verdict = stopVerdict({ state, head, fingerprint, report: runDone(root) })
+  const verdict = stopVerdict({ state, head, fingerprint, report: await runDone(root) })
   writeFileSync(stateFile, JSON.stringify(verdict.state))
   if (verdict.block && !baseline) process.stdout.write(JSON.stringify({ decision: 'block', reason: verdict.reason }))
 } catch {}

@@ -4,7 +4,7 @@ Add `@@softDelete` to a model and Litestone handles all the details: filtering, 
 
 ## Setup
 
-```prisma
+```lite
 model Post {
   id        Int  @id
   title     String
@@ -40,7 +40,7 @@ await db.post.delete({ where: { id: 1 } })
 
 Use `@@softDelete(cascade)` to propagate soft-deletes through FK children:
 
-```prisma
+```lite
 model Account {
   id        Int @id
   name      String
@@ -77,7 +77,7 @@ When `accounts.remove()` is called:
 
 Overrides cascade behavior for a specific child model:
 
-```prisma
+```lite
 model Account {
   users    users[]                 // soft-deleted when account is soft-deleted
   sessions sessions[] @hardDelete  // hard-deleted (rows gone) when account is soft-deleted
@@ -91,7 +91,7 @@ The third fate, and the one that used to have no spelling. `@hardDelete`
 destroys the children; cascade stamps them; `@keep` says they stay live and that
 this was the intention:
 
-```prisma
+```lite
 model Customer {
   id        Int @id
   orders    Order[] @keep   // a receipt outlives the customer record it names
@@ -142,7 +142,7 @@ The two are independent. `@@transitions` is enforced on `update()` and `upsert()
 
 So a state machine cannot, by itself, stop a row being removed:
 
-```prisma
+```lite
 enum OrderStatus { pending  cancelled }
 
 model Order {
@@ -162,7 +162,7 @@ await db.order.remove({ where: { id: 1 } })                                  // 
 
 To require a state before deletion, express it as access rather than as a transition. A row-level policy narrows the `WHERE`, and `remove()` does honor it:
 
-```prisma
+```lite
 @@deny('delete', status != 'cancelled')
 ```
 

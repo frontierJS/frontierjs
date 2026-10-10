@@ -10,7 +10,8 @@ flags:
   shell:
     char: s
     type: string
-    description: "Shell to configure: bash | zsh | fish (default: auto-detect)"
+    choices: [bash, zsh, fish]
+    description: Shell to configure (default auto-detect)
     defaultValue: ''
 ---
 

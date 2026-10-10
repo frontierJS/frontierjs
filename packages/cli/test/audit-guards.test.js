@@ -1,0 +1,123 @@
+// ─── audit-guards — the guards fli check and fli proves claim and do not keep ──
+//
+// Audit run 1.4 (IDEAS/fable-audit-plan.md). Each `test.failing` asserts the
+// FIXED behavior, so it fails today and starts passing when the fix lands; drop
+// `.failing` then. Every case builds its own tree under a temp directory, so
+// nothing here reads this workspace.
+
+import { test, expect }                                   from 'bun:test'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync } from 'node:fs'
+import { tmpdir }                                         from 'node:os'
+import { join, dirname }                                  from 'node:path'
+
+import { runChecks }                 from '../core/checks.js'
+import { matchChanged, resolveRun }  from '../core/proofs.js'
+
+function tree(files) {
+  const root = mkdtempSync(join(tmpdir(), 'fjs-audit-1.4-'))
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, rel)), { recursive: true })
+    writeFileSync(join(root, rel), body)
+  }
+  return root
+}
+
+// FJS-2368: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+test.failing('a proof row naming a directory with a trailing slash matches a file under it', () => {
+  const m = matchChanged('the deploy pipeline — `_steps-docker/`, `core/machine.js`', {
+    files: ['packages/cli/commands/deploy/_steps-docker/01-preflight.md'], packages: [],
+  })
+  expect(m?.tier).toBe('path')
+})
+
+// FJS-2378: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+test.failing('runChecks refuses an --only id that names no rule in this scope', () => {
+  const root = tree({ 'db/schema.lite': 'model A {\n  id Int @id\n}\n' })
+  try {
+    expect(() => runChecks({ root, only: ['vite-strict-prot'] })).toThrow(/vite-strict-prot/)
+    expect(() => runChecks({ root, only: ['proof-target'] })).toThrow(/proof-target/)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// FJS-2377: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+test.failing('vite-strict-port fires on strictPort: false and on strictPort only in a comment', () => {
+  const root = tree({
+    'db/schema.lite':                 'model A {\n  id Int @id\n}\n',
+    'web/config/vite.config.js':      'export default { server: { strictPort: false } }\n',
+    'widgets/config/vite.config.js':  '// strictPort: true\nexport default { server: {} }\n',
+  })
+  try {
+    const { findings } = runChecks({ root, only: ['vite-strict-port'] })
+    expect(findings.map(f => f.file.slice(root.length + 1)).sort()).toEqual([
+      'web/config/vite.config.js', 'widgets/config/vite.config.js',
+    ])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// FJS-2370: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+test.failing('proof-target reports a Run cell that resolves to no target at all', () => {
+  const root = tree({
+    'package.json': '{ "name": "ws", "scripts": {} }',
+    'DRIVES.md': [
+      '## Which drive proves a change', '',
+      '| Changed | Run |', '| --- | --- |',
+      "| `core/release.js` | `bun run ci`'s `deployJournalCycle`, whose assertion is the only one that can see it |",
+      '',
+    ].join('\n'),
+  })
+  try {
+    expect(resolveRun("`bun run ci`'s `deployJournalCycle`", { root })).toHaveLength(0)
+    const { findings } = runChecks({ root, scope: 'repo', only: ['proof-target'] })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/no target|nothing to run/i)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// FJS-2366: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+test.failing('command-resolves finds a typescript hoisted to a parent node_modules', () => {
+  const real = join(import.meta.dir, '..', '..', '..', 'node_modules', 'typescript')
+  if (!existsSync(real)) return
+  const ws = tree({
+    'app/package.json':            '{ "name": "app" }',
+    'app/.fli.json':               '{ "routesDir": "cli/src/routes" }',
+    'app/cli/src/routes/x/zz.md':  '---\ntitle: x:zz\ndescription: zz\n---\n```js\nzzUndeclared()\n```\n',
+  })
+  mkdirSync(join(ws, 'node_modules'))
+  symlinkSync(real, join(ws, 'node_modules', 'typescript'))
+  try {
+    const out = runChecks({ root: join(ws, 'app'), only: ['command-resolves'] })
+    expect(out.skipped).toHaveLength(0)
+    expect(out.findings).toHaveLength(1)
+  } finally { rmSync(ws, { recursive: true, force: true }) }
+})
+
+// FJS-2374: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+test.failing('migration-history reads an exec-form CMD that runs db:migrate', () => {
+  const root = tree({
+    'db/schema.lite': 'model A {\n  id Int @id\n}\n',
+    'Dockerfile':     'FROM oven/bun\nCMD ["bun", "run", "db:migrate"]\n',
+  })
+  try {
+    const out = runChecks({ root, only: ['migration-history'] })
+    expect(out.skipped).toHaveLength(0)
+    expect(out.findings).toHaveLength(1)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// What holds today, pinned so a fix to the above cannot loosen it.
+test('vite-strict-port fires on a config with no strictPort at all', () => {
+  const root = tree({
+    'db/schema.lite':            'model A {\n  id Int @id\n}\n',
+    'web/config/vite.config.js': 'export default { server: { port: 8010 } }\n',
+  })
+  try {
+    expect(runChecks({ root, only: ['vite-strict-port'] }).findings).toHaveLength(1)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('a proof row naming a file path matches that file', () => {
+  const m = matchChanged('the deploy pipeline — `_steps-docker/`, `core/machine.js`', {
+    files: ['packages/cli/core/machine.js'], packages: [],
+  })
+  expect(m?.tier).toBe('path')
+})

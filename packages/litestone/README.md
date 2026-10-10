@@ -4,7 +4,7 @@
 
 A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behavior, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded and fast, with no third-party dependency.
 
-```
+```lite
 // schema.lite
 type Address {
   street     String
@@ -31,12 +31,16 @@ model User {
 
 ```js
 // One declaration produces a typed, validated, access-controlled client
-const db = await createClient({ schema: './schema.lite', db: './app.db' })
+const db   = await createClient({ path: './schema.lite', db: './app.db' })
+const mine = db.$setAuth({ id: 1 })            // every policy grades this principal
 
-const me = await db.user.findUnique({ where: { id: 1 } })
+await mine.user.create({ data: { id: 1, name: 'Ann', email: 'ann@example.com',
+  address: { street: '1 Main St', city: 'Boston', postalCode: '02101' } } })
+
+const me = await mine.user.findUnique({ where: { id: 1 } })
 me.address.city                                // typed as string
 
-await db.user.findMany({
+await mine.user.findMany({
   where: { address: { city: 'Boston' } }       // compiles to json_extract
 })
 ```
@@ -250,7 +254,9 @@ The full layout is in the [root README](../../README.md#project-structure).
 
 Schemas live in a `.lite` file. Syntax is close to Prisma's SDL with SQLite-native additions.
 
-```prisma
+```lite
+database audit { path "./audit/"; driver trail }   // where @@trail(audit) writes
+
 enum Plan { starter  pro  enterprise }
 enum Role { admin  member  viewer }
 
@@ -299,7 +305,7 @@ model User {
 | `Boolean` | `INTEGER` 0/1 | `boolean` (auto-coerced) |
 | `DateTime` | `TEXT` ISO-8601 | `string` |
 | `Json` | `TEXT` | `object` (auto-parsed) |
-| `Bytes` | `BLOB` | `Buffer` |
+| `Bytes` | `BLOB` | `Uint8Array` |
 | `File` | `TEXT` JSON ref | stored in S3/R2/local via FileStorage plugin |
 | `File[]` | `TEXT` JSON array | multiple files, each ref stored in S3/R2/local |
 | `EnumName` | `TEXT` + CHECK | `string` |
@@ -337,7 +343,8 @@ model User {
                                  explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
                                  still WRITABLE by a non-system caller
-@encrypted(deterministic: true)  encrypted equality search, and the value still reads back
+@encrypted(deterministic: true)  encrypted equality search — hidden from a non-system read
+                                 like any @encrypted, and still ciphertext, so it re-keys
 @hashed                          HMAC-SHA256, one-way — matchable, never readable
 @secret                          @encrypted + @guarded + @trail(audit) + $rotateKey
 @secret(rotate: false)           the same but excluded from key rotation — and therefore
@@ -414,7 +421,7 @@ model User {
 
 Route models to separate SQLite files, JSONL logs, or auto-schema audit loggers:
 
-```prisma
+```lite
 database main      { path env("MAIN_DB", "./app.db") }
 database analytics { path env("ANALYTICS_DB", "./analytics.db") }
 database logs      { path "./logs/"; driver jsonl; retention 30d }
@@ -436,19 +443,20 @@ model ApiRequest {
 }
 ```
 
-```js
+```js failing
 // Single createClient — routes automatically
 const db = await createClient({ path: './schema.lite' })
 
 await db.pageView.create({ data: { path: '/home', duration: 142 } })  // → analytics.db
 await db.apiRequest.create({ data: { method: 'GET', path: '/', status: 200 } })  // → logs/
-await db.auditTrail.findMany({ where: { model: 'user' } })  // → audit/ (auto-created by trail driver)
+await db.asSystem().auditTrail.findMany({ where: { model: 'user' } })  // → audit/ — system-only
+// FJS-2379: a trail nothing has written yet refuses the read
 ```
 
 **Drivers:**
 - `sqlite` (default) — standard SQLite file with full ORM support
 - `jsonl` — append-only log files, one `.jsonl` per model, `findMany` supported
-- `trail` — auto-schema audit log, receives `@trail` / `@@trail` entries; queries via `db.auditTrail`
+- `trail` — auto-schema audit log, receives `@trail` / `@@trail` entries; queries via `db.asSystem().auditTrail` — the trail is readable in a system context only
 
 ---
 
@@ -457,25 +465,30 @@ await db.auditTrail.findMany({ where: { model: 'user' } })  // → audit/ (auto-
 **Declared in the schema, one block, two strategies.** At most one per schema, and
 it may not arrive through an import — only the app knows what its own tenants are.
 
-```prisma
-tenancy {                          tenancy {
-  strategy database                  strategy row
-  dir      "./tenants"               column   workspaceId
-  registry "./tenants-registry.db"   claim    workspaceId   // default: the column
-  maxOpen  100                     }
-  key      env("TENANT_KEY")
-  resolve  subdomain               // subdomain | header("X-Tenant-Id") | claim(field)
-}
-```
-
 **`strategy database`** is one SQLite file per tenant plus a registry that indexes
 them:
 
+```lite
+tenancy {
+  strategy database
+  dir      "./tenants"
+  registry "./tenants-registry.db"
+  maxOpen  100
+  resolve  subdomain               // subdomain | header("X-Tenant-Id") | claim(field)
+}
+
+model User { id Int @id  email String }
+```
+
+`key env("TENANT_KEY")` names the per-tenant encryption key's variable, and the
+registry refuses to open while it is unset.
+
 ```js
-const tenants = await createTenantRegistry({ path: './db/schema.lite' })
-const db      = await tenants.get('acme')
-await tenants.query(db => db.user.count())
-await tenants.migrate()
+const tenants = await createTenantRegistry({ path: './schema.lite', migrationsDir: './migrations' })
+await tenants.create('acme')
+const db = await tenants.get('acme')               // one tenant's client
+await tenants.query(db => db.user.count())         // every tenant → [{ tenantId, result }]
+await tenants.migrate()                            // every tenant, from migrationsDir
 ```
 
 **`strategy row`** is one database and a tenant column, and it **desugars into
@@ -486,7 +499,13 @@ scoped model, because `checkCreatePolicy` runs **before** the
 `@default(auth().<claim>)` stamp: on create the column is legitimately absent, and
 on read a row holding no tenant belongs to nobody.
 
-```prisma
+```lite
+tenancy {
+  strategy row
+  column   workspaceId
+  claim    workspaceId             // default: the column
+}
+
 model Project { id Int @id  workspaceId Int  name String }
 model Plan    { id Int @id  code String  @@tenant(none) }        // spans tenants
 model Invoice { id Int @id  accountId Int  @@tenant(column: "accountId") }
@@ -516,7 +535,16 @@ litestone tenant list | create <id> | delete <id> | migrate
 
 `@@external` marks a model whose table is managed outside Litestone — a SQLite view, an FTS5 virtual table, a table created by a migration tool, or a shared table from another process. Litestone skips DDL and migrations for it entirely, but exposes full query support: `findMany`, `findFirst`, `count`, `exists`, `aggregate`, `search`, etc.
 
-```prisma
+```lite
+model User {
+  id        Int @id
+  email     String
+  name      String?
+  accountId Int
+  deletedAt DateTime?
+  @@softDelete
+}
+
 // SQLite view — created manually or in a .sql migration
 model active_users {
   id        Int @id
@@ -524,6 +552,12 @@ model active_users {
   name      String?
   accountId Int
   @@external
+}
+
+model Post {
+  id       Int @id
+  authorId Int
+  author   active_users @relation(fields: [authorId], references: [id])
 }
 
 // FTS5 virtual table managed by a third-party tool
@@ -546,6 +580,10 @@ model legacy_audit_log {
 ```
 
 ```js
+// What the .sql migration below does — a view Litestone never emits DDL for
+await db.sql`CREATE VIEW IF NOT EXISTS active_users AS
+  SELECT id, email, name, accountId FROM user WHERE deletedAt IS NULL`
+
 // Fully queryable — all read ops work
 const users = await db.active_users.findMany({ where: { accountId: 1 } })
 const n     = await db.active_users.count()
@@ -570,7 +608,7 @@ FROM user
 WHERE deletedAt IS NULL;
 ```
 
-```prisma
+```lite
 model active_users {
   id        Int @id
   email     String
@@ -587,19 +625,20 @@ This is also how you expose read-only projections, denormalized reporting tables
 ## createClient
 
 ```js
-import { createClient } from '@frontierjs/litestone'
+import { createClient, parseFile } from '@frontierjs/litestone'
 
-// Schema string with inline db path
+// A schema file, and the path of its main database
 const db = await createClient({ path: './schema.lite', db: './app.db' })
 
-// Schema file with database blocks (no db: option needed)
-const db = await createClient({ path: './schema.lite' })
+// Pre-parsed — one parse, several clients
+const parsed = parseFile('./schema.lite')
+const second = await createClient({ parsed, db: ':memory:' })
+```
 
-// Pre-parsed result
-const result = parseFile('./schema.lite')
-const db = await createClient({ parsed: result })
+`schema:` is the schema TEXT — an editor buffer, a template literal — and
+`path:` is a file. A schema declaring its own `database` blocks needs no `db:`.
 
-// Full options
+```js fragment
 const db = await createClient({ path: './schema.lite',
   db:         './app.db',
   databases:  ':memory:',                 // or { main: { path } } — see the note below
@@ -629,13 +668,15 @@ trail included. Most specific wins:
 `databases: ':memory:'` > `databases: { main: { path } }` > `db` > the declaration.
 
 **`encryptionKey` is parsed as hex**, so 64 *characters* is not necessarily 32
-bytes — non-hex padding decodes short and is rejected with `must be 32 bytes (got 1)`.
+bytes — non-hex padding decodes short and is rejected with `must be 32 bytes`,
+naming how many it got.
 
 ### Auth scoping
 
 ```js
-const userDb = db.$setAuth(req.user)   // scoped per request — policies + field rules apply
-const sysDb  = db.asSystem()           // bypasses @@gate + @@allow/@@deny, unlocks @guarded fields
+const user   = { id: 1, role: 'member' }   // the request's principal
+const userDb = db.$setAuth(user)           // scoped per request — policies + field rules apply
+const sysDb  = db.asSystem()               // bypasses @@gate + @@allow/@@deny, unlocks @guarded fields
 ```
 
 **`$setAuth` RETURNS a scoped client; it does not mutate.** `db.$setAuth(u)`
@@ -649,10 +690,11 @@ the question to ask.
 
 ### Raw SQL needs `asSystem()`
 
-Once a schema declares any access rule (`@@gate`, `@@allow`, `@guarded`,
-`@@scope`), `db.sql` and `db.$setAuth(u).sql` **throw**:
+Once a schema declares any access rule — `@@gate`, `@@allow`/`@@deny` on a
+model; `@guarded`, `@encrypted`, `@secret`, `@system`, `@scoped` or `@allow` on a
+field — `db.sql` and `db.$setAuth(u).sql` **throw**:
 
-```js
+```js fragment
 db.asSystem().sql`SELECT …`                    // the deliberate bypass — and it can write
 db.post.findMany({ where: { $raw: sql`…` } })  // keeps every policy — reach for this
 ```
@@ -668,7 +710,7 @@ purpose: deciding per statement means parsing it, and a wrong validator grants a
 
 `@@allow` and `@@deny` compile to SQL WHERE injections — filtering happens in SQLite, not JS:
 
-```prisma
+```lite
 model Post {
   id        Int  @id
   accountId Int
@@ -700,8 +742,9 @@ const all = await db.asSystem().post.findMany()
 
 Level-based access control. Assign levels 0–9, declare required levels per operation:
 
-```prisma
+```lite
 model Post {
+  id Int @id
   @@gate("1.3.4.6")   // read=VISITOR, create=CREATOR, update=USER, delete=OWNER
 }
 ```
@@ -717,7 +760,7 @@ const gate = new GatePlugin({
   }
 })
 
-const db = await createClient({ path: './schema.lite', plugins: [gate] })
+const db = await createClient({ path: './schema.lite', db: ':memory:', plugins: [gate] })
 ```
 
 Levels: `STRANGER=0  VISITOR=1  READER=2  CREATOR=3  USER=4  ADMINISTRATOR=5  OWNER=6  SYSADMIN=7`
@@ -755,7 +798,7 @@ naming a guarded column is refused with an `AccessDeniedError` naming the field.
 `@system` is the orthogonal sibling: the column an application writes and its
 caller does not. A tracking code, a computed hint, a status the server owns.
 
-```prisma
+```lite
 model Order {
   id           Int     @id
   reference    String  @unique
@@ -769,15 +812,16 @@ gate, the row policies and the audit actor — where `asSystem()` drops all thre
 to set one value:
 
 ```js
-await db.order.update({ where: { id }, data: { trackingCode }, system: ['trackingCode'] })
+const app = db.$setAuth({ id: 7, role: 'member' })    // grades USER — the gate still applies
+await app.order.update({ where: { id: 1 }, data: { trackingCode: 'TRK-1' }, system: ['trackingCode'] })
 ```
 
 Three things follow. **Both refuse a write by name rather than dropping it**,
 because the client is told the column is `readOnly` and a generated form does not
 offer it — so a payload naming one is code that meant to write it. A field
 `@allow('write', …)` still drops silently, and must: there the same payload is
-legitimate for another caller. **`@guarded` is not a level** — it takes only
-`(all)`, and `@guarded(5)` does not parse; per-role column access is field-level
+legitimate for another caller. **`@guarded` is not a level** — it takes no
+argument, and `@guarded(5)` does not parse; per-role column access is field-level
 `@allow`. And a **required** `@guarded` column makes its model uncreatable below
 level 8.
 
@@ -793,7 +837,7 @@ may set, `@guarded` for one only `asSystem()` touches.
 An enum field whose legal moves are declared, enforced on every write, and
 readable by the client:
 
-```prisma
+```lite
 enum OrderStatus { pending  paid  shipped  refunded  cancelled }
 
 model Order {
@@ -809,8 +853,9 @@ model Order {
 ```
 
 ```js
-await db.order.transition(1, 'pay')          // → the updated row
-db.order.transitions(row)                     // → what this row may do NOW
+const order = await db.order.create({ data: {} })
+await db.order.transition(order.id, 'pay')    // → the updated row
+await db.order.transitions(order)             // → what this row may do NOW, with the gate's verdict
 ```
 
 A name is optional — an unnamed clause names itself after its target state, so
@@ -834,7 +879,7 @@ and `PATCH /orders?status=draft` would not, for the identical move.
 
 ## `@version` — optimistic concurrency
 
-```prisma
+```lite
 model Order {
   id      Int    @id
   title   String
@@ -845,8 +890,8 @@ model Order {
 An `update()` must carry back the version it read, in `data`:
 
 ```js
-const order = await db.order.findUnique({ where: { id: 1 } })
-await db.order.update({ where: { id: 1 }, data: { title: 'New', version: order.version } })
+const order = await db.order.create({ data: { title: 'Draft' } })      // version 1
+await db.order.update({ where: { id: order.id }, data: { title: 'New', version: order.version } })
 ```
 
 A row that moved underneath throws `VersionConflictError` (**409, `retryable`** —
@@ -869,7 +914,7 @@ every record it read and puts it on the next patch with nobody wiring anything.
 
 The policy compiler, made explicit and opt-in:
 
-```prisma
+```lite
 model Task {
   id          Int       @id
   ownerId     Int
@@ -903,7 +948,7 @@ publishes the list — which is what `$checkWhere` validates against.
 
 ## `@derived` — a value SQLite computes, so you can filter and sort by it
 
-```prisma
+```lite
 model Task {
   id          Int       @id
   priority    Int
@@ -936,7 +981,7 @@ expression.
 A category most apps grow by hand: rows that are a *definition* sitting in the
 same table as rows that are an *instance* of it.
 
-```prisma
+```lite
 model Workout {
   id   Int    @id
   name String
@@ -950,7 +995,7 @@ Every read **and every write** excludes templates unless asked:
 db.workout.findMany()                                 // instances only
 db.workout.findMany({ withTemplates: true })          // both
 db.workout.findMany({ onlyTemplates: true })          // the definitions
-db.workout.update({ where: { id }, data: { isTemplate: false }, withTemplates: true })
+db.workout.update({ where: { id: 1 }, data: { isTemplate: false }, withTemplates: true })
 ```
 
 It is the same two flags `@@softDelete` gives, on the same methods — and
@@ -966,36 +1011,52 @@ caller cannot anticipate.
 
 ## Encryption
 
-```prisma
+```lite
 model User {
-  ssn    String  @encrypted                        // AES-256-GCM, guarded — asSystem() only
-  email  String  @encrypted(deterministic: true)   // equality WHERE works, and it reads back
+  id     Int     @id
+  ssn    String  @encrypted                        // AES-256-GCM — hidden from a non-system read
+  email  String  @encrypted(deterministic: true)   // equality WHERE works; still ciphertext, so it re-keys
   pwHash String  @hashed                           // one-way — matchable, never readable
-  apiKey String  @secret                           // @encrypted + @guarded + @trail(audit)
+  apiKey String? @secret                           // @encrypted + @guarded + @trail(audit)
 }
 ```
 
+The client takes the key: `createClient({ encryptionKey })`, 64 hex characters.
+
 ```js
-const db = await createClient({ path: './schema.lite',
-  encryptionKey: process.env.ENC_KEY,     // 64 hex chars = 32 bytes
-})
+await db.user.create({ data: { ssn: '123-45-6789', email: 'alice@example.com', pwHash: 'hunter2' } })
+const submitted = 'hunter2'
 
 // A stable encoding is what makes a WHERE possible — deterministic ciphertext or a digest
-await db.user.findFirst({ where: { email: 'alice@example.com' } })  // ✓ works, and email reads back
-await db.user.findFirst({ where: { pwHash: submitted } })            // ✓ works, and pwHash never reads back
-await db.user.findFirst({ where: { ssn: '123-45-6789' } })           // ✗ refused: random IV, nothing can match
-
-// Rotate encryption key
-await db.$rotateKey(newKey)
+await db.user.findFirst({ where: { email: 'alice@example.com' } })  // ✓ the row; email reads back under asSystem()
+await db.user.findFirst({ where: { pwHash: submitted } })            // ✓ the row; pwHash never reads back
+await db.user.findFirst({ where: { ssn: '123-45-6789' } })           // ✗ ValidationError: random IV, nothing can match
+  .catch(e => e.name)
 ```
+
+Every `@encrypted` value, deterministic or not, is hidden from a non-system
+read; what `deterministic` adds is the filter. `db.$rotateKey(newKey)` re-keys
+every `@encrypted` and `@secret` column, and **refuses while a column it cannot
+carry forward exists** — `@hashed` has no plaintext to re-key, and
+`@secret(rotate: false)` opted out.
 
 ---
 
 ## Query API
 
+The models the examples in this section read:
+
+```lite
+model Account { id Int @id  name String  users User[] }
+model User    { id Int @id  email String  accountId Int  account Account @relation(fields: [accountId], references: [id])
+                createdAt DateTime @default(now())  deletedAt DateTime?  @@softDelete }
+model Product { id Int @id  name String  price Float  stock Int  state String @default("new") }
+model Order   { id Int @id  accountId Int  amount Float  status String @default("pending")  meta Json? }
+```
+
 ### Read
 
-```js
+```js fragment
 db.user.findMany({ where, orderBy, limit, offset, include, select, withDeleted, onlyDeleted })
 db.user.findMany({ where, distinct: true })                    // SELECT DISTINCT
 db.user.findMany({ where, window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })
@@ -1018,7 +1079,7 @@ db.user.findMany({ where, recursive: { direction: 'ancestors', nested: true, max
 
 ### Write
 
-```js
+```js fragment
 // Single-row ops — return the full row (with include/select applied)
 db.user.create({ data, include, select })          // → TRow
 db.user.update({ where, data, include, select })   // → TRow | null
@@ -1057,11 +1118,11 @@ holding row) rather than by SQLite. Releasing a slot is a decision the app makes
 stops keeping the row.
 
 **A per-call flag the model cannot satisfy is refused, and so is a method.**
-`onlyDeleted` on a model with no `@@softDelete` used to answer the *live* rows —
-the opposite of the question, with nothing saying the flag had not applied — and
-`search()` below `@@fts` threw a bare `Error` that reached a caller as a 500. Both
-are `CapabilityNotDeclaredError` now: **400**, naming the model and the attribute
-that would make the request legal. It covers `onlyDeleted` / `onlyTemplates` on
+`onlyDeleted` on a model with no `@@softDelete` would otherwise answer the *live*
+rows — the opposite of the question, with nothing saying the flag had not
+applied — and `search()` below `@@fts` would be a bare `Error` reaching a caller
+as a 500. Both are `CapabilityNotDeclaredError`: **400**, naming the model and
+the attribute that would make the request legal. It covers `onlyDeleted` / `onlyTemplates` on
 every read and write, plus `search()`, `optimizeFts()`, `restore()` and
 `transition()`.
 
@@ -1071,7 +1132,7 @@ generic tooling (a row browser, a *show deleted* toggle) is asking for.
 
 ### Where clause
 
-```js
+```js fragment
 { id: 1 }
 { status: { in: ['active', 'pending'] } }
 { score: { gte: 0, lte: 100 } }
@@ -1094,7 +1155,7 @@ Over the wire it is a 400. `db.$checkWhere(accessor, where)` is how to ask first
 
 ### Sorting
 
-```js
+```js fragment
 // Flat field — standard
 orderBy: { createdAt: 'desc' }
 orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]   // multi-field
@@ -1134,13 +1195,15 @@ For predicates the structured `where` builder can't express — `json_extract`, 
 ```js
 import { sql } from '@frontierjs/litestone'
 
+const state = 'clearance', minPrice = 5
+
 // Simple
-db.product.findMany({
-  where: { $raw: sql`price > IF(state = ${state}, ${minPrice}, 100)` }
+await db.product.findMany({
+  where: { $raw: sql`price > CASE WHEN state = ${state} THEN ${minPrice} ELSE 100 END` }
 })
 
 // Mixed with structured where — ANDed together
-db.order.findMany({
+await db.order.findMany({
   where: {
     status: 'active',
     $raw: sql`json_extract(meta, '$.tier') = ${3}`,
@@ -1148,11 +1211,11 @@ db.order.findMany({
 })
 
 // Composed inside AND / OR
-db.user.findMany({
+await db.user.findMany({
   where: {
     AND: [
       { accountId: 1 },
-      { $raw: sql`DATEDIFF(next_review_dt, added_dt) <= ${30}` },
+      { $raw: sql`julianday('now') - julianday(createdAt) <= ${30}` },
     ]
   }
 })
@@ -1189,7 +1252,9 @@ await db.$transaction(async tx => {
 ## onQuery — production query logging
 
 ```js
-const db = await createClient({ path: './schema.lite',
+import { appendFileSync } from 'node:fs'
+
+const db = await createClient({ path: './schema.lite', db: ':memory:',
   onQuery: (event) => {
     appendFileSync('./query.log', JSON.stringify(event) + '\n')
   }
@@ -1198,12 +1263,13 @@ const db = await createClient({ path: './schema.lite',
 
 Event shape:
 
-```js
+```js fragment
 {
   model:     'User',
   operation: 'findMany',        // all ORM operations
   database:  'main',
   actorId:   'user_abc',        // ctx.auth?.id
+  system:    false,             // asSystem() ran it
   sql:       'SELECT * FROM "user" WHERE "status" = ? LIMIT ?',
   params:    ['active', 20],
   duration:  1.4,               // ms — SQLite call only
@@ -1214,7 +1280,7 @@ Event shape:
 
 Common patterns:
 
-```js
+```js fragment
 // Slow query detection
 onQuery: (e) => e.duration > 100 && logger.warn('slow query', e)
 
@@ -1246,7 +1312,20 @@ actor or the attempt.
 
 `db.$audit()` is the one way to put a row there by hand:
 
+```lite
+database audit { path "./audit/"; driver trail }
+
+model User {
+  id       Int    @id
+  email    String
+  fullName String @computed
+  @@trail(audit)
+}
+```
+
 ```js
+const user = { id: 1 }
+
 await db.$audit({
   operation: 'login.failed',
   model:     'User',
@@ -1296,7 +1375,7 @@ a count of zero sending every open tab back to the server is worse than silence.
 
 **`announce` is the dial on a bulk write, and it is per call:**
 
-```js
+```js fragment
 db.user.updateMany({ where, data })                      // 'collection' — one event, O(1)
 db.user.updateMany({ where, data, announce: 'rows' })    // one event per row, off RETURNING
 db.user.updateMany({ where, data, announce: 'none' })
@@ -1319,11 +1398,11 @@ A layer above needs to grade a caller-supplied `where` or `orderBy` *before*
 running it, and re-deriving the rules would be a second answer to one question:
 
 ```js
-db.$checkWhere('post', { titel: 'x' })
-// → [{ key: 'titel', suggestion: 'title', allowed: false }]
+db.$checkWhere('user', { emial: 'x' })
+// → [{ key: 'emial', reason: 'unknown', suggestion: 'email', allowed: ['email', 'id'], message: '…' }]
 
-db.$checkOrderBy('post', { fullName: 'asc' })
-// → [{ key: 'fullName', reason: 'computed', sortable: false, message: '…' }]
+db.$checkOrderBy('user', { fullName: 'asc' })
+// → [{ key: 'fullName', reason: 'computed', suggestion: null, sortable: ['email', 'id'], message: '…' }]
 ```
 
 `reason` separates *no such field* from **`computed`** (a JS function over a
@@ -1336,26 +1415,34 @@ An unknown accessor answers `[]` — *I cannot judge this* is not *this is wrong
 Both live on **every** flavor of client: filterability is a fact about the
 schema, and auth has no bearing on it.
 
-**A bad key throws in both**, with a *Did you mean* — a wrong filter answers the
-wrong rows and a wrong sort the right rows in the wrong order, and neither is
-visible in the result.
+Both ANSWER rather than throw — an empty list is a clean filter. The query
+itself is where **a bad key throws**, in `where` and `orderBy` alike, with a
+*Did you mean* — a wrong filter answers the wrong rows and a wrong sort the right
+rows in the wrong order, and neither is visible in the result.
 
 ---
 
 ## Migrations
 
 ```js
-import { create, apply, status, verify, autoMigrate } from '@frontierjs/litestone'
+import { create, apply, status, verify, autoMigrate, parseFile } from '@frontierjs/litestone'
+import { openDatabase } from '@frontierjs/litestone/engine'
+
+const parseResult = parseFile('./schema.lite')
 
 // Dev — apply changes directly, no files (like prisma db push)
-autoMigrate(db)
+autoMigrate(db, parseResult)
 
-// Production — file-based
-create(db, parseResult, 'add-users', './migrations')  // generate SQL file
-apply(db, './migrations')                              // apply pending
-status(db, './migrations')                             // show applied/pending
-verify(db, parseResult, './migrations')               // check live vs schema
+// Production — file-based, over the raw handle of ONE database
+const raw = openDatabase('./app.db')
+create(raw, parseResult, 'add-users', './migrations')  // generate SQL file
+await apply(raw, './migrations')                       // apply pending
+status(raw, './migrations')                            // show applied/pending
+verify(raw, parseResult, './migrations')               // check live vs schema
 ```
+
+`autoMigrate` takes the client and walks every database it holds; the four
+file-based calls take a raw SQLite handle, one database at a time.
 
 ```bash
 litestone migrate create [label]   # generate migration SQL file
@@ -1371,7 +1458,7 @@ litestone migrate dry-run [label]  # preview SQL, no file written
 
 Reusable named SQL expressions — define once, use on any model:
 
-```prisma
+```lite
 function slug(text: String): String {
   @@expr("lower(trim(replace({text}, ' ', '-')))")
 }
@@ -1381,12 +1468,14 @@ function fullName(first: String, last: String): String {
 }
 
 model User {
+  id          Int     @id
   firstName   String?
   lastName    String?
   displayName String  @fullName(firstName, lastName)  // STORED generated column
 }
 
 model Post {
+  id    Int     @id
   title String
   slug  String  @slug(title)   // same function, different model
 }
@@ -1403,7 +1492,7 @@ await db.user.findMany({ orderBy: { displayName: 'asc' } })
 
 ## @sequence — per-scope auto-increment
 
-```prisma
+```lite
 model Quote {
   id          Int @id
   accountId   Int
@@ -1414,7 +1503,7 @@ model Quote {
 Each account gets its own counter starting at 1:
 
 ```js
-const q = await db.quote.create({ data: { accountId: 5, ... } })
+const q = await db.quote.create({ data: { accountId: 5 } })
 // q.quoteNumber → 1  (first quote for account 5)
 String(q.quoteNumber).padStart(4, '0')  // → '0001'
 ```
@@ -1425,7 +1514,7 @@ String(q.quoteNumber).padStart(4, '0')  // → '0001'
 
 Computed aggregates and lookups from related models — evaluated at query time, not stored.
 
-```prisma
+```lite
 model Account {
   id         Int      @id
   name       String
@@ -1438,10 +1527,12 @@ model Account {
 }
 
 model Order {
-  id        Int     @id
+  id        Int      @id
   accountId Int
-  account   Account @relation(fields: [accountId], references: [id])
+  account   Account  @relation(fields: [accountId], references: [id])
   amount    Float
+  status    String   @default("paid")
+  createdAt DateTime @default(now())
 }
 ```
 
@@ -1525,51 +1616,9 @@ const monthly = await db.order.groupBy({
 // → [{ createdAt: '2024-01', _count: 18, _sum: { amount: 4200 } }, ...]
 
 // findManyAndCount — single query, total for pagination
-const { rows, total } = await db.post.findManyAndCount({
-  where: { status: 'published' },
+const { rows, total } = await db.order.findManyAndCount({
+  where: { status: 'paid' },
   limit: 20, offset: 40,
-})
-```
-
----
-
-## Recursive tree queries
-
-Self-referential models (a field referencing the same model) automatically support CTE-based tree traversal:
-
-```prisma
-model Category {
-  id       Int     @id
-  name     String
-  parent   Category? @relation(fields: [parentId], references: [id])
-  parentId Int?
-  children Category[]
-}
-```
-
-```js
-// All descendants of node 5
-const tree = await db.category.findMany({
-  where:     { id: 5 },
-  recursive: true,             // direction: 'descendants' (default)
-})
-
-// All ancestors (path to root)
-const breadcrumb = await db.category.findMany({
-  where:     { id: 42 },
-  recursive: { direction: 'ancestors' },
-})
-
-// Nested tree structure (children array on each node)
-const nested = await db.category.findMany({
-  where:     { parentId: null },
-  recursive: { direction: 'descendants', nested: true, maxDepth: 3 },
-})
-
-// Multiple self-relations — disambiguate with via:
-const reports = await db.employee.findMany({
-  where:     { id: 1 },
-  recursive: { direction: 'descendants', via: 'reports' },
 })
 ```
 
@@ -1601,8 +1650,8 @@ db.order.findMany({
     runningTotal: { sum:   'amount', orderBy: { id: 'asc' } },
     runningCount: { count: true,     orderBy: { id: 'asc' } },
 
-    // Rolling window — 7-day moving average
-    ma7: { avg: 'price', orderBy: { date: 'asc' }, rows: [-6, 0] },
+    // Rolling window — 7-row moving average
+    ma7: { avg: 'amount', orderBy: { createdAt: 'asc' }, rows: [-6, 0] },
 
     // Conditional aggregate window — FILTER (WHERE ...)
     paidRunning: { sum: 'amount', filter: sql`status = 'paid'`, orderBy: { id: 'asc' } },
@@ -1624,12 +1673,14 @@ Available functions: `rowNumber`, `rank`, `denseRank`, `cumeDist`, `percentRank`
 
 Routes a single args object to `findMany`, `groupBy`, or `aggregate` based on its shape. Designed for API layers that receive query descriptors from request parameters:
 
-```js
+```js fragment
 // One handler, all query types
 app.get('/orders', async (req) => {
   return db.order.query(req.query)
 })
+```
 
+```js
 // → findMany (no aggregate keys, no by)
 db.order.query({ where: { status: 'paid' }, orderBy: { id: 'asc' }, limit: 20 })
 
@@ -1654,8 +1705,8 @@ Routing rules — checked in order: `by` present → `groupBy`; `_count`/`_sum`/
 
 ```js
 // Page-load fan-out — keys match model accessors, all run in one snapshot
-const { user, order, revenue } = await db.query({
-  user:    { where: { active: true } },                          // → findMany
+const { account, order, revenue } = await db.query({
+  account: { where: { name: 'Acme' } },                          // → findMany
   order:   { _count: true, _sum: { amount: true } },             // → aggregate
   revenue: { model: 'order', by: ['status'], _count: true },     // → groupBy (aliased)
 })
@@ -1667,15 +1718,16 @@ const { paid, pending } = await db.query({
 })
 
 // Auth scoping composes — each entry inherits the proxy's auth
+const req  = { user: { id: 1 }, body: { order: { _count: true } } }
 const data = await db.$setAuth(req.user).query(req.body)
 
 // Or trusted server work bypassing policies
-const data = await db.asSystem().query({ jobs: { _count: true }, alerts: { _count: true } })
+const all  = await db.asSystem().query({ order: { _count: true }, account: { _count: true } })
 ```
 
 The spec is JSON-shaped (no methods, no promises — just args), so the simplest possible read API is one HTTP endpoint:
 
-```js
+```js fragment
 app.post('/query', async (req, res) => {
   res.json(await db.$setAuth(req.user).query(req.body))
 })
@@ -1689,29 +1741,35 @@ Whole-batch failure: any throw rolls back the transaction. For per-entry toleran
 
 Reusable named query fragments registered per model. A scope is a plain object shaped like findMany args; the `where` may be a function for dynamic filtering.
 
-```js
-// api/src/models/customer.model.js
-export const active = { where: { status: 'active' } }
-export const premium = { where: { tier: 'premium' } }
-export const mine = { where: (ctx) => ({ ownerId: ctx.auth?.id }) }
+```lite
+model Customer {
+  id      Int    @id
+  status  String @default("active")
+  tier    String @default("basic")
+  ownerId Int?
+}
 ```
 
 ```js
-import * as CustomerScopes from './models/customer.model.js'
+// db/scopes/customer.js — a module of named fragments, keyed by MODEL name on the client
+const CustomerScopes = {
+  active:  { where: { status: 'active' } },
+  premium: { where: { tier: 'premium' } },
+  mine:    { where: (ctx) => ({ ownerId: ctx.auth?.id }) },
+}
 
 const db = await createClient({
-  schema: './schema.lite',
+  path:   './schema.lite',
+  db:     ':memory:',
   scopes: { Customer: CustomerScopes },
 })
-```
 
-Scopes appear as callable function-with-properties on the table accessor. The default call runs `findMany`; `count`, `findFirst`, `aggregate`, `groupBy`, `query`, and `search` are all available as methods. Scopes also chain.
-
-```js
+// Callable function-with-properties on the accessor: the default call is findMany,
+// and every read method is there under the scope. Scopes chain.
 await db.customer.active()                          // findMany under one scope
 await db.customer.active.count()                     // count under scope
 await db.customer.active.premium.findMany()          // chained
-await db.$setAuth(req.user).customer.mine.aggregate({ _count: true })
+await db.$setAuth({ id: 1 }).customer.mine.aggregate({ _count: true })
 ```
 
 **Merge rules:** all `where` clauses (scope + caller) AND-merge; everything else is last-write-wins, with caller args overriding all scope args. Soft-delete filtering still applies.
@@ -1721,6 +1779,59 @@ await db.$setAuth(req.user).customer.mine.aggregate({ _count: true })
 **Scopes are not policies.** Scopes are opt-in — you have to call them. If a where clause must apply for security, write it as `@@allow`/`@@deny`, not as a scope.
 
 **Parameterized scopes are not supported.** Write a function that returns a `where` clause and pass it as a caller override. See [docs/querying.md](./docs/querying.md#scopes) for full details.
+
+---
+
+## Recursive tree queries
+
+Self-referential models (a field referencing the same model) automatically support CTE-based tree traversal:
+
+```lite
+model Category {
+  id       Int     @id
+  name     String
+  parent   Category? @relation(fields: [parentId], references: [id])
+  parentId Int?
+  children Category[]
+}
+
+model Employee {
+  id        Int       @id
+  name      String
+  managerId Int?
+  manager   Employee? @relation("reports", fields: [managerId], references: [id])
+  reports   Employee[] @relation("reports")
+  mentorId  Int?
+  mentor    Employee? @relation("mentoring", fields: [mentorId], references: [id])
+  mentees   Employee[] @relation("mentoring")
+}
+```
+
+```js
+// All descendants of node 5
+const tree = await db.category.findMany({
+  where:     { id: 5 },
+  recursive: true,             // direction: 'descendants' (default)
+})
+
+// All ancestors (path to root)
+const breadcrumb = await db.category.findMany({
+  where:     { id: 42 },
+  recursive: { direction: 'ancestors' },
+})
+
+// Nested tree structure (children array on each node)
+const nested = await db.category.findMany({
+  where:     { parentId: null },
+  recursive: { direction: 'descendants', nested: true, maxDepth: 3 },
+})
+
+// Multiple self-relations — disambiguate with via: the parent-side field (or its FK)
+const reports = await db.employee.findMany({
+  where:     { id: 1 },
+  recursive: { direction: 'descendants', via: 'manager' },
+})
+```
 
 ---
 
@@ -1748,10 +1859,15 @@ export default {
 }
 ```
 
-```prisma
+```lite
 model User {
-  fullName String    @computed
-  isActive Boolean @computed
+  id        Int       @id
+  firstName String?
+  lastName  String?
+  email     String
+  deletedAt DateTime?
+  fullName  String    @computed
+  isActive  Boolean   @computed
 }
 ```
 
@@ -1762,7 +1878,7 @@ model User {
 ```js
 import { FileStorage, fileUrl, fileUrls, useStorage } from '@frontierjs/litestone/storage'
 
-const db = await createClient({ path: './schema.lite',
+const db = await createClient({ path: './schema.lite', db: ':memory:',
   plugins: [FileStorage({
     provider:   'r2',
     bucket:     'my-app',
@@ -1774,8 +1890,9 @@ const db = await createClient({ path: './schema.lite',
 })
 ```
 
-```prisma
+```lite
 model User {
+  id      Int @id
   avatar  File?              // single file — upload on create/update, delete on row delete
   resume  File?  @keepVersions  // keep old S3 object on update
   photos  File[]             // multiple files — array of refs stored as JSON
@@ -1784,7 +1901,7 @@ model User {
 }
 ```
 
-```js
+```js fragment
 // Single file
 const user = await db.user.update({ where: { id: 1 }, data: { avatar: file } })
 fileUrl(user.avatar)                              // → 'https://cdn.example.com/...'
@@ -1850,7 +1967,7 @@ Junction and adds the API half, because Litestone may not import Junction.
 
 ```js
 import {
-  createTestEnv, makeTestClient, session,
+  createTestEnv, makeTestClient,
   Factory, defineFactory, Seeder, loadFixture,
   factoryFrom, generateFactory, generateGateMatrix, generateValidationCases,
   deriveAccess, gateLadder, schemaMutants, mutationScore,
@@ -1858,28 +1975,55 @@ import {
 } from '@frontierjs/litestone/testing'
 ```
 
+The schema the examples below run against:
+
+```lite
+model Account { id Int @id  name String  leads Lead[]  users User[] }
+model Lead    { id Int @id  email String @email  score Int @gte(0) @lte(100)  loadId String?
+                accountId Int  account Account @relation(fields: [accountId], references: [id]) }
+model User    { id Int @id  email String @email  role String @default("member")
+                accountId Int  account Account @relation(fields: [accountId], references: [id])  posts Post[] }
+model Post    { id Int @id  title String @length(3, 80)  authorId Int  author User @relation(fields: [authorId], references: [id])
+                tags Tag[]  @@gate("1.3.4.6") }
+model Tag     { id Int @id  name String  posts Post[] }
+```
+
 ### createTestEnv — the environment
 
 A migrated database, a client, factories and a principal. Tables arrive as a
-**file copy** from a template migrated once per schema per process — 476ms → 13ms
-per database on a 37-model schema.
+**file copy** from a template migrated once per schema per process, which is
+what makes one environment per test affordable.
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
 const env = await createTestEnv({
-  schema:     'db/schema.lite',
-  migrations: 'db/migrations',   // replay the committed files instead of generating DDL,
-  plugins:    [myGatePlugin],    //   so the tests run against the database a deploy produces
+  schema:        './schema.lite',  // the text, or a path to it — imports spliced in
+  autoFactories: true,             // env.factories.<accessor> for every sqlite model
 })
+const user = { id: 1, role: 'member' }
 
 env.actingAs(user)      // the app's own getLevel — anything about behavior
 await env.atLevel(4)    // a SYNTHETIC standing — the gate grid only
-env.seal(); env.reset(); env.close()
+env.seal()
+env.reset()
+env.close()
 ```
+
+`migrations: './migrations'` replays the committed files instead of generating
+DDL, so the tests run against the database a deploy produces; `plugins` and every
+other `createClient` option pass through.
 
 **Arrange / act / assert as three clients rather than three comments.** `setup`
 is the arrange every scenario shares — run once, restored by each `phases()` call:
 
 ```js
+import { expect }        from 'bun:test'
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env       = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const developer = { id: 1, role: 'developer' }
+
 const fx = await env.setup(({ factories }) => factories.account.createOne())
 const t  = env.phases({ as: developer })
 
@@ -1888,11 +2032,14 @@ await t.act(as => as.lead.remove({ where: { id: lead.id } }))
 await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
 ```
 
-### The four executed checks
+### The five executed checks
 
 Not assertions you write — the declared surface, **run**:
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+
 await env.verifyGateLadder()      // every gated model × every level × all four ops
 await env.verifyReadLadder()      // the read column alone — no fixtures needed
 await env.verifyConstraints()     // every declared rule, against a real write
@@ -1916,20 +2063,31 @@ Mutate the schema, run the **original's** checks against the mutant. A mutant
 nothing notices is a hole in the suite, and it names itself:
 
 ```js
+import { createTestEnv, mutationScore } from '@frontierjs/litestone/testing'
+
+const schema = await Bun.file('./schema.lite').text()
 const { score, survived } = await mutationScore({
   schema, build: (text) => createTestEnv({ schema: text }),
 })
 ```
 
 `litestone mutate` is the CLI. **Only a verdict disagreement kills a mutant** —
-counting harness errors was worth 36 points on a 14-mutant schema, reading 93%
-while four mutations went completely unnoticed. Mutation is code-only and
-quote-aware: an attribute named inside a doc comment is prose, and editing it
-produces a mutant identical in behavior that survives everything.
+counting a harness error as a kill reads as a high score while mutations go
+unnoticed. Mutation is code-only and quote-aware: an attribute named inside a
+doc comment is prose, and editing it produces a mutant identical in behavior
+that survives everything.
 
 ### makeTestClient
 
 ```js
+import { makeTestClient, Factory } from '@frontierjs/litestone/testing'
+
+class UserFactory extends Factory {
+  model = 'User'
+  definition(seq, rng) { return { email: `user${seq}@test.com`, role: 'member', accountId: 1 } }
+}
+
+const schemaText = await Bun.file('./schema.lite').text()
 const { db, factories } = await makeTestClient(schemaText, {
   seed:         42,               // deterministic RNG for all factories
   autoFactories: true,            // auto-generate factories for all sqlite models
@@ -1943,6 +2101,8 @@ const { db, factories } = await makeTestClient(schemaText, {
 ### Factory
 
 ```js
+import { makeTestClient, Factory } from '@frontierjs/litestone/testing'
+
 class UserFactory extends Factory {
   model = 'User'
 
@@ -1956,6 +2116,15 @@ class UserFactory extends Factory {
   }
 }
 
+const schemaText = await Bun.file('./schema.lite').text()
+const { db, factories } = await makeTestClient(schemaText, {
+  autoFactories: true,
+  factories:     { user: UserFactory },
+  data:          async (db) => { await db.account.create({ data: { id: 1, name: 'Test Co' } }) },
+})
+const users = factories.user
+const posts = factories.post.asSystem()          // Post declares @@gate
+
 // Usage
 const user    = await users.admin().createOne()
 const users5  = await users.createMany(5)
@@ -1963,25 +2132,25 @@ const seeded  = users.seed(42).buildMany(10)   // deterministic
 
 // withRelation — auto-create parent
 const post = await posts.withRelation('author', users).createOne()
-// post.userId = (auto-created user).id, post.author = the created user
+// post.authorId = (auto-created user).id, post.author = the created user
 
 // for() — use existing parent
-const post2 = await posts.for('author', existingUser).createOne()
+const post2 = await posts.for('author', user).createOne()
 
 // withParents() — auto-create EVERY required parent, recursively, from the schema.
 // The only way to seed a uuid-keyed model: a String FK has no fallback value.
-const deployment = await factories.deployment.withParents().createOne()
+const post3 = await posts.withParents().createOne()
 
 // has() — hasMany children, FK pointed back at the parent
-const author = await factories.author.has('posts', 3).createOne()
+const author = await users.asSystem().has('posts', 3).createOne()
 author.posts   // → 3 posts, each with authorId = author.id
 
 // attach() — implicit many-to-many
-await factories.post.withParents().attach('tags', 3).createOne()
+await posts.withParents().attach('tags', 3).createOne()
 
 // asSystem() / actingAs() — a schema with @@gate refuses an anonymous factory.
 // The client propagates through the whole wired graph.
-await factories.order.asSystem().withParents().createOne()
+await factories.post.asSystem().withParents().createOne()
 
 // create()/build() overload on the FIRST argument: a number is a count,
 // anything else is overrides.
@@ -1997,14 +2166,15 @@ a **clone**, so `f.seed(42)` does not mutate `f`.
 ### defineFactory — no subclass
 
 ```js
-import { defineFactory } from '@frontierjs/litestone'
+import { defineFactory, makeTestClient } from '@frontierjs/litestone/testing'
 
 export const UserFactory = defineFactory({
   model:      'User',
-  definition: (seq, rng) => ({ email: `u${seq}@x.com`, role: 'member' }),
+  definition: (seq, rng) => ({ email: `u${seq}@x.com`, role: 'member', accountId: 1 }),
   traits:     { admin: { role: 'admin' } },
 })
 // returns a CLASS — registers like any other:
+const schemaText = await Bun.file('./schema.lite').text()
 await makeTestClient(schemaText, { factories: { user: UserFactory } })
 ```
 
@@ -2015,9 +2185,9 @@ await makeTestClient(schemaText, { factories: { user: UserFactory } })
 ```js
 import { snapshot, restore } from '@frontierjs/litestone/testing'
 
-await seedEverything(db)
+await db.account.create({ data: { name: 'Acme' } })   // the seed every test shares
 const clean = snapshot(db)
-beforeEach(() => restore(db, clean))
+restore(db, clean)                                     // in beforeEach
 ```
 
 Raw rows through the write connection: `@encrypted` keeps its exact ciphertext, no
@@ -2034,12 +2204,15 @@ A cell that is not its type is a **reject** and the load goes on.
 ```js
 import { loadRows } from '@frontierjs/litestone'
 
-const { loaded, rejects } = await loadRows(db.asSystem(), 'Order', csvText, {
+await db.account.create({ data: { id: 1, name: 'Acme' } })
+const csvText = 'id,email,score,accountId\n1,a@example.com,50,1\n2,b@example.com,high,1\n'
+
+const { loaded, rejects } = await loadRows(db.asSystem(), 'Lead', csvText, {
   key:   'id',                                  // a repeat in the file is a reject
   mode:  'replace',                             // or 'insert' (default), 'upsert'
-  stamp: { _loadId: run.id, _syncedAt: now },   // what every row carries
+  stamp: { loadId: 'run-7' },                   // what every row carries
 })
-// rejects: [{ row: 49, line: 51, key: 'o002189', field: 'items', reason: 'not a whole number' }]
+// rejects: [{ row: 1, line: 3, key: '2', field: 'score', reason: 'not a whole number' }]
 ```
 
 - `loaded + rejects.length` is always the number of input rows.
@@ -2058,8 +2231,11 @@ const { loaded, rejects } = await loadRows(db.asSystem(), 'Order', csvText, {
 ```js
 import { loadFixture } from '@frontierjs/litestone'
 
-await loadFixture(db, 'Country', './db/fixtures/countries.json')
-await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { mode: 'upsert', key: 'code' })
+await Bun.write('./fixtures/accounts.json', JSON.stringify([{ id: 1, name: 'Acme' }, { id: 2, name: 'Globex' }]))
+await Bun.write('./fixtures/leads.csv', 'id,email,score,accountId\n1,a@example.com,50,1\n2,b@example.com,70,2\n')
+
+await loadFixture(db, 'Account', './fixtures/accounts.json')
+await loadFixture(db, 'Lead',    './fixtures/leads.csv', { mode: 'upsert', key: 'id' })
 ```
 
 `loadRows` with one difference: a fixture is authored, so any reject throws, naming the rows.
@@ -2067,75 +2243,93 @@ await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { mode: 'upsert', ke
 ### Seeder ordering
 
 ```js
-class OrderSeeder extends Seeder {
-  static dependsOn = [AccountSeeder, ProductSeeder]   // run first, once each
-  async run(db) { … }
+import { Seeder } from '@frontierjs/litestone/testing'
+
+class AccountSeeder extends Seeder { async run(db) { await db.account.create({ data: { id: 1, name: 'Acme' } }) } }
+class TagSeeder     extends Seeder { async run(db) { await db.tag.create({ data: { name: 'red' } }) } }
+
+class LeadSeeder extends Seeder {
+  static dependsOn = [AccountSeeder, TagSeeder]       // run first, once each
+  async run(db) { await db.lead.create({ data: { email: 'a@example.com', score: 50, accountId: 1 } }) }
 }
 ```
 
 ### factoryFrom — zero-config
 
 ```js
-const { schema } = parse(schemaText)
-const users = factoryFrom(schema, 'User', db)
-const admin = await users.state({ role: 'admin' }).createOne()
+import { factoryFrom } from '@frontierjs/litestone/testing'
+
+const { schema } = parse(await Bun.file('./schema.lite').text())
+const accounts   = factoryFrom(schema, 'Account', db)
+const acme       = await accounts.state({ name: 'Acme' }).createOne()
 ```
 
 ### generateFactory — schema-derived definition
 
 ```js
-const defFn = generateFactory(schema, 'User')
+import { generateFactory } from '@frontierjs/litestone/testing'
+
+const { schema } = parse(await Bun.file('./schema.lite').text())
+const defFn = generateFactory(schema, 'Lead')
 // Returns a definition(seq, rng) function that generates valid data from field types + constraints
-// @email → 'users1@test.com', @gte(0) @lte(100) → 50, String? → null, etc.
+// @email → an address, @gte(0) @lte(100) → a number in range, String? → null, etc.
 ```
 
 ### generateGateMatrix — permission test cases
 
 ```js
-const matrix = generateGateMatrix(schema, 'Post')
-// → [{ op: 'read', level: 1, label: 'VISITOR', expect: 'allow' }, ...]
+import { generateGateMatrix } from '@frontierjs/litestone/testing'
 
-for (const { op, level, label, expect: expected } of matrix) {
-  test(`${op} as ${label} → ${expected}`, async () => { ... })
-}
+const { schema } = parse(await Bun.file('./schema.lite').text())
+const matrix = generateGateMatrix(schema, 'Post')
+// → [{ op: 'read', required: 1, level: 1, label: 'VISITOR', expect: 'allow' }, ...]
+
+for (const { op, level, label, expect: expected } of matrix)
+  console.log(`${op} as ${label} (${level}) → ${expected}`)   // one test() per row in a suite
 ```
 
 ### generateValidationCases — constraint boundary data
 
 ```js
+import { expect }                  from 'bun:test'
+import { generateValidationCases } from '@frontierjs/litestone/testing'
+
+const { schema } = parse(await Bun.file('./schema.lite').text())
 const { valid, invalid, boundary } = generateValidationCases(schema, 'Lead')
 
-// valid   — a complete valid record (correct by construction)
-// invalid — one failing case per constraint: { field, value, rule, expect: 'fail', message }
+// valid    — a complete valid record (correct by construction)
+// invalid  — one failing case per constraint: { field, value, rule, expect: 'fail', message }
 // boundary — boundary values that should pass: { field, value, rule, expect: 'pass' }
 
-test('valid data passes', async () => {
-  await db.lead.create({ data: valid })
-})
+await db.account.create({ data: { id: 1, name: 'Acme' } })
+await db.lead.create({ data: { ...valid, accountId: 1 } })        // valid data passes
 
-for (const c of invalid) {
-  test(`${c.field}: ${c.rule} rejects ${c.value}`, async () => {
-    await expect(db.lead.create({ data: { ...valid, [c.field]: c.value } }))
-      .rejects.toThrow(c.message)
-  })
-}
+for (const c of invalid)                                          // one test() per case in a suite
+  await expect(db.lead.create({ data: { ...valid, accountId: 1, [c.field]: c.value } }))
+    .rejects.toThrow(c.message)
 ```
 
 ### Teardown
 
 ```js
-await truncate(db, 'Post')    // hard-delete all rows in one table
-await reset(db)                // hard-delete all tables in FK-safe order
-await factory.truncate()       // instance method shorthand
+import { makeTestClient, truncate, reset } from '@frontierjs/litestone/testing'
+
+const { db, factories } = await makeTestClient(await Bun.file('./schema.lite').text(), { autoFactories: true })
+
+await truncate(db, 'Post')         // hard-delete all rows in one table
+await reset(db)                    // hard-delete all tables in FK-safe order
+await factories.post.truncate()    // instance method shorthand
 ```
 
 ### Seeder.once — idempotent seed blocks
 
 ```js
+import { Seeder } from '@frontierjs/litestone/testing'
+
 class BaseSeeder extends Seeder {
   async run(db) {
     await this.once(db, 'base-v1', async () => {
-      await db.account.createMany({ data: [...] })
+      await db.account.createMany({ data: [{ name: 'Acme' }, { name: 'Globex' }] })
     })
     // runs once and never again, even across deploys
   }
@@ -2146,7 +2340,7 @@ class BaseSeeder extends Seeder {
 
 ## SQLite utilities
 
-```js
+```js fragment
 // Hot backup — safe during writes
 await db.$backup('./backups/prod.db')
 await db.$backup('./backups/compact.db', { vacuum: true })
@@ -2170,7 +2364,7 @@ db.$cacheSize        // { read: 24, write: 8 }
 db.$close()
 
 // Writes and the trail
-await db.$rotateKey(newKey)             // re-encrypt every @secret(rotate: true)
+await db.$rotateKey(newKey)             // re-key every @encrypted/@secret; refused while @hashed or rotate: false exists
 await db.$audit({ operation, model, records, actorId, meta })
 const stop = db.$tapEvents(e => …)      // every write, announced
 db.$checkWhere('post', where)           // is this a valid filter?
@@ -2199,7 +2393,7 @@ bunx litestone studio   # → http://localhost:8502
 - **Migrations** — applied/pending status + live schema diff per database
 - **Stats** — per-database: page size, WAL mode, row counts, cache size
 - **REPL** — Litestone query REPL with autocomplete, history, and **SQL log** per expression
-- **schema.lite** — live editor with debounced validation (600ms), Ctrl+S save, error tray
+- **schema.lite** — live editor with debounced validation, Ctrl+S save, error tray
 - **Transform** — anonymize/shard pipeline (dev tool)
 - **Performance** — schema advisor + query analyzer (EXPLAIN QUERY PLAN)
 
@@ -2215,13 +2409,14 @@ the release starting share one database?*
 
 ```bash
 litestone release --from=<ref|path>     # expand, contract, or unknown
-litestone release --strict              # exit 1 on anything but expand
+litestone release --strict              # exit 1 on anything but expand or unchanged
 ```
 
 **Expand** — N-1 keeps working, so the deploy can be taken back. **Contract** —
 it cannot, and that deploy is the **pivot**, after which only forward. Unknown
 counts as contract. `db/release.snapshot.md` is the surface it diffs, and
-`--strict` fails a branch on anything but expand *including no baseline at all*.
+`--strict` fails a branch on anything but expand or unchanged, *including no
+baseline at all*.
 
 **Access is in the comparison, which is the half no generic deployer can reach**:
 raising a `@@gate` takes reads away from a release still serving them, and adding
@@ -2257,6 +2452,8 @@ rather than a surprise.
 litestone init                       scaffold schema.lite + litestone.config.js
 
 litestone migrate create [label]     diff schema → write a migration file
+  --rename Model.old=new               keep a renamed column's values (repeatable)
+  --operations ops.json                the same, as a document
 litestone migrate dry-run [label]    preview the SQL, write nothing
 litestone migrate apply              apply pending migrations
                                        --backup[=dir]  copy every database first —
@@ -2264,6 +2461,7 @@ litestone migrate apply              apply pending migrations
 litestone migrate status             applied / pending / modified
 litestone migrate verify             does the live db match the schema
 litestone db push                    apply the schema directly, no files (dev)
+  --accept-data-loss                   allow a change that drops a column and its values
 
 litestone types [out.d.ts]           TypeScript declarations from the schema
   --only=User,Post                     specific models only
@@ -2272,11 +2470,22 @@ litestone types [out.d.ts]           TypeScript declarations from the schema
 litestone jsonschema                 JSON Schema from the schema
 litestone jsonschema --snapshot      the committed snapshot (--check in CI)
 
-litestone studio                     the browser UI
+litestone studio [--no-open]         the browser UI
+  --gate <path[#export]>               grade previews with this app's own getLevel
+  --host <addr> --token <secret>       serve beyond loopback; the token is required there
 litestone repl                       a console that boots at a standing
   --as <who> | --level <0-9> | --gate <path[#export]>
+  --eval '<expr>'                      evaluate one line, print it as JSON
+  --tenant <id>                        whose database, under strategy database
+litestone export <dataset> --as <who>  take an @@export extract, graded as that account
 litestone doctor                     check setup, audit health
 litestone diagram                    ER diagram (opens in studio)
+litestone explain [@word]            what a .lite word is, what it accepts, where it is legal
+litestone catalog --snapshot         write the language surface (--check in CI)
+litestone catalog --reference        write docs/reference.snapshot.md (--check in CI)
+litestone advise                     what this schema says wrong, and what it never said
+litestone validate                   which STORED rows this schema would now refuse
+litestone assistant                  a chat-model schema assistant, with this schema, to paste
 
 litestone seed [SeederClass]         seed the database
 litestone seed run [name]            run an infrastructure seed (--force to re-run)
@@ -2290,8 +2499,8 @@ litestone transform [config.js]      anonymize / shard pipeline (dev only)
 litestone backup [dest]              back up every database (SQLite + JSONL/trail)
                                        --vacuum  compact first
 litestone replicate [config.js]      stream every SQLite WAL to S3/R2 via litestream
-                                       (restore is `litestream restore`, by hand,
-                                        one per database — docs/replication.md)
+litestone restore [config.js]        bring every db back from its replica — all or nothing
+                                       --at=<instant> --from-backup=<dir> --verify=<dir>
 litestone rsync <dest>               sync every SQLite db via sqlite3_rsync
 
 litestone tenant list|create <id>|delete <id>|migrate
@@ -2300,6 +2509,7 @@ litestone access                     the access snapshot (--check in CI)
 litestone access --from=<ref>        the permission diff (--strict to gate a branch)
 litestone ddl                        the DDL snapshot (--check in CI)
 litestone release --from=<ref>       classify the deploy: expand / contract / unknown
+                                       (--strict: exit 1 unless expand or unchanged)
 litestone mutate                     mutate the schema, report what the checks miss
 
 Global flags:
@@ -2349,7 +2559,7 @@ Targets: `bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-x64`, `bun-darwin-arm64
 ./dist/litestone studio            # full UI, HTML embedded in the binary
 ```
 
-Roughly 100 MB on Linux x64, ~63 MB for darwin-arm64 — almost entirely the Bun runtime. Bytecode compilation is on by default: 4.5 MB larger (95.3 → 99.8 MB), and startup drops from ~54 ms to ~34 ms (10-run average, Bun 1.3.11, Linux x64).
+The binary is almost entirely the Bun runtime. Bytecode compilation is on by default — a larger file that starts faster; `--no-bytecode` trades the other way.
 
 **What still reads from disk.** Your `litestone.config.js`, `schema.lite`, migration files, and user seeds in `./seeds/` are loaded from the working directory as usual — a JS seed gets the full ORM client exactly as it does from source. Only files that ship *inside* the package (Studio's HTML, built-in seeds) are embedded.
 
@@ -2373,27 +2583,21 @@ bun run build:lib             # dist/lib/litestone.js + .d.ts + .js.map
 bun run build:lib:testing     # also emits testing.js (makeTestClient, Factory)
 ```
 
-| Output | Size |
-| --- | --- |
-| `litestone.js` (minified) | 311 KB |
-| gzipped | 94 KB |
-| `litestone.d.ts` | 33 KB |
-
 `src/index.d.ts` has no relative imports, so it's copied as-is — one `.js` plus one `.d.ts` is a complete typed drop-in with no build step for the consumer.
 
-```js
+```js fragment
 import { createClient, parse } from './vendor/litestone.js'
 ```
 
-**Why this exists: vendoring.** Dropping the bundle into another package pins it to *this* workspace build, instead of whatever `"@frontierjs/litestone": "latest"` resolves to from npm. The two are not interchangeable — 1.1.0 uses `Int`/`String`/`Float` and hard-rejects the older `Integer`/`Text`/`Real` scalars still served by npm's `latest`, so a package silently loading the registry copy fails on schemas that are valid here. Every bundle carries a banner naming its version and git SHA:
+**Why this exists: vendoring.** Dropping the bundle into another package pins it to *this* workspace build, instead of whatever `"@frontierjs/litestone": "latest"` resolves to from npm. The two are not interchangeable — the schema language moves between releases (`Int`/`String`/`Float` replaced `Integer`/`Text`/`Real` and the old spellings are refused), so a package silently loading the registry copy fails on schemas that are valid here. Every bundle carries a banner naming its version and git SHA:
 
-```js
-// @frontierjs/litestone 1.1.0 (git 3560dba) — bundled single-file build
+```js fragment
+// @frontierjs/litestone <version> (git <sha>) — bundled single-file build
 ```
 
-Sourcemaps are emitted by default (`--no-sourcemap` to skip) — without them, stack traces point into minified output. `--no-minify` gives readable source at 549 KB.
+Sourcemaps are emitted by default (`--no-sourcemap` to skip) — without them, stack traces point into minified output. `--no-minify` gives readable source.
 
-**`--with-testing` uses code splitting** rather than emitting two standalone files, because `src/testing.js` pulls in the whole core: two independent bundles cost ~547 KB against ~340 KB split across a shared chunk. Test helpers stay out of the default build.
+**`--with-testing` uses code splitting** rather than emitting two standalone files, because `src/testing.js` pulls in the whole core and two independent bundles would carry it twice. Test helpers stay out of the default build.
 
 Like the binary, this is Bun-only — it imports `bun:sqlite`, so it is a single *file*, not a portable one.
 
@@ -2401,7 +2605,7 @@ Like the binary, this is Bun-only — it imports `bun:sqlite`, so it is a single
 
 ## Multi-file schemas
 
-```prisma
+```lite
 // schema.lite
 import "./functions.lite"
 import "./models/users.lite"
@@ -2433,16 +2637,19 @@ Circular imports are safe (deduplicated).
 **Anything that loads a schema from a PATH must use `parseFile`, never `parse`:**
 
 ```js
-const db = await createClient({ path: './schema.lite' })   // parseFile, internally
-const db = await createClient({ parsed: parseFile('./schema.lite') })
+await Bun.write('./models/user.lite', 'model User { id Int @id }')
+await Bun.write('./root.lite',        'import "./models/user.lite"')
+
+const db    = await createClient({ path: './root.lite', db: ':memory:' })                // parseFile, internally
+const again = await createClient({ parsed: parseFile('./root.lite'), db: ':memory:' })
 ```
 
 `parse` is for **text with no file behind it** — an editor buffer, a git blob —
-and there the caller owes the imports. Three readers once had this wrong and each
-failed differently, all silently: a CLI that read the root file for every command
-reported *already in sync* while three tables were never created; a build handed
-the browser a `$defs` table with the imported models missing, so a generated form
-rendered nothing; and a test environment **graded a partial schema and passed** —
+and there the caller owes the imports. A reader that gets this wrong fails
+silently, in one of three shapes: a CLI reading the root file alone reports
+*already in sync* while imported tables are never created; a build hands the
+browser a `$defs` table with the imported models missing, so a generated form
+renders nothing; and a test environment **grades a partial schema and passes** —
 a green gate ladder over models it never saw, which is the worst of the three
 because it is the thing that exists to catch the other two.
 

@@ -4098,9 +4098,9 @@ describe('healthPlugin', () => {
   })
 })
 
-// ─── createLogger / fileWriter ────────────────────────────────────────────
+// ─── createLogger ─────────────────────────────────────────────────────────
 
-import { createLogger, consoleWriter, fileWriter, noopLogger } from '../src/core/logger.ts'
+import { createLogger, consoleWriter, noopLogger } from '../src/core/logger.ts'
 
 describe('createLogger', () => {
 
@@ -4178,26 +4178,6 @@ describe('createLogger', () => {
     const parsed = JSON.parse(lines[lines.length - 1])
     expect(parsed.level).toBe('info')
     expect(parsed.message).toBe('json test')
-  })
-
-  it('fileWriter appends JSON to a temp file', async () => {
-    const tmpPath = `/tmp/junction-log-test-${Date.now()}.log`
-    const writer  = fileWriter(tmpPath)
-
-    writer({ level: 'info', message: 'line one', time: new Date().toISOString() })
-    writer({ level: 'warn', message: 'line two', time: new Date().toISOString() })
-
-    // FileSink buffers — give it a tick to flush
-    await new Promise(r => setTimeout(r, 50))
-
-    const content = await Bun.file(tmpPath).text().catch(() => '')
-    const lines   = content.trim().split('\n').filter(Boolean)
-
-    expect(lines.length).toBe(2)
-    expect(JSON.parse(lines[0]).message).toBe('line one')
-    expect(JSON.parse(lines[1]).message).toBe('line two')
-
-    await import('node:fs/promises').then(({ unlink }) => unlink(tmpPath).catch(() => {}))
   })
 
   it('noopLogger does nothing', () => {

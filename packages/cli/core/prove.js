@@ -31,6 +31,18 @@
 // could share an API, but a drive's `db:seed` runs before its servers, and a
 // server kept across a reseed is serving rows the drive did not seed.
 //
+// ── A drive an open row says is broken is skipped ───────────────────────────
+//
+// Three example drives failed at HEAD for a fortnight, each with its own open
+// row, and every `fli prove` over the example paid a minute to run them and
+// print the same three `open:` tags; eight sessions in forty then ran the whole
+// set a second time to see whether the tags were theirs. `skip(target)` is the
+// caller's rule for which drives are not this change's to prove — `fli prove`
+// passes `brokenDrives`, a row whose TITLE opens with the drive's name, and
+// exempts a drive whose own file the change touches, since that change IS the
+// fix the row waits on. A skipped drive is listed with its row, never folded
+// into the passes.
+//
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 const TAIL   = 30
@@ -44,13 +56,14 @@ const POLLMS = 250
  * @param {object[]} o.rows       `runnables()` — drive rows carry `needs`
  * @param {object}   o.procs      `{ startRow, stopRow, childOf, outputOf }` from `children.js`
  * @param {Function} o.answering  `port → Promise<boolean>`
+ * @param {Function} [o.skip]     `target → string[] | null` — the open rows a drive is skipped on
  * @param {Function} [o.say]      one progress line
- * @returns {Promise<{ ran: object[], read: object[], gone: object[] }>}
+ * @returns {Promise<{ ran: object[], skipped: object[], read: object[], gone: object[] }>}
  */
-export async function prove({ proofs, rows, procs, answering, say = () => {}, bootMs = 60_000, runMs = 600_000, sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
+export async function prove({ proofs, rows, procs, answering, skip = () => null, say = () => {}, bootMs = 60_000, runMs = 600_000, sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
   const byId = new Map(rows.map(r => [r.id, r]))
   const seen = new Set()
-  const out  = { ran: [], read: [], gone: [] }
+  const out  = { ran: [], skipped: [], read: [], gone: [] }
 
   for (const proof of proofs) {
     for (const t of proof.targets) {
@@ -60,6 +73,13 @@ export async function prove({ proofs, rows, procs, answering, say = () => {}, bo
       const key = `${t.dir}::${t.command}`
       if (seen.has(key)) continue
       seen.add(key)
+
+      const open = skip(t)
+      if (open?.length) {
+        say(`– ${t.dir}: ${t.command} — skipped, open: ${open.join(', ')}`)
+        out.skipped.push({ name: t.name, dir: t.dir, command: t.command, open })
+        continue
+      }
 
       const drive = t.id ? byId.get(t.id) : null
       const argv  = t.command.split(/\s+/)
@@ -84,9 +104,24 @@ export async function prove({ proofs, rows, procs, answering, say = () => {}, bo
  */
 export function knownFailures(issues, name) {
   if (!/:/.test(name ?? '')) return []
-  const word = new RegExp(`(^|[^\\w:-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w:-]|$)`)
+  const word = new RegExp(`(^|[^\\w:-])${rx(name)}([^\\w:-]|$)`)
   return issues.filter(r => !r.closed && word.test(r.body ?? '')).map(r => r.id)
 }
+
+/**
+ * The open rows whose TITLE opens with the drive's name — `verify:values
+ * hangs: …` — which is a row about the drive, where `knownFailures`' body
+ * match is any row that so much as cites it as the proof it needs. Only the
+ * first is grounds to skip: a row waiting on `verify:live` to prove its fix is
+ * the reason to run it.
+ */
+export function brokenDrives(issues, name) {
+  if (!/:/.test(name ?? '')) return []
+  const opens = new RegExp(`^${rx(name)}([^\\w:-]|$)`)
+  return issues.filter(r => !r.closed && opens.test((r.title ?? '').trim())).map(r => r.id)
+}
+
+const rx = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 async function one(row, needs, ctx) {
   const t0      = Date.now()

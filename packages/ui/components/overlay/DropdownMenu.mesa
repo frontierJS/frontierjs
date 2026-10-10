@@ -45,15 +45,15 @@
   $context.keepOpen = keepOpen
 
   const panelAnim = $.entrance({
-    in:  el => el.animate(
+    in:  el => el.animate?.(
       [{ opacity: 0, transform: 'scale(0.96) translateY(-4px)' },
        { opacity: 1, transform: 'scale(1) translateY(0)' }],
       { duration: 130, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
     ),
-    out: el => el.animate(
+    out: el => el.animate?.(
       [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.96)' }],
       { duration: 90, fill: 'forwards' }
-    ).finished,
+    )?.finished,
   })
 
   function openMenu() {
@@ -76,26 +76,29 @@
       // no tabindex, so focusing it moved nothing and the keyboard walk below
       // only worked because an absent focus and a focused panel both make
       // `indexOf(activeElement)` -1.
-      queueMicrotask(() => panelEl?.querySelector('[role="menu"]')?.focus())
+      queueMicrotask(() => panelEl?.querySelector?.('[role="menu"]')?.focus())
     })
-    document.addEventListener('click', onClickAway, { capture: true })
   }
 
   function closeMenu() {
     open = false
-    document.removeEventListener('click', onClickAway, { capture: true })
     // Restore focus to the trigger element
-    triggerEl?.querySelector('button,a,[tabindex="0"]')?.focus()
+    triggerEl?.querySelector?.('button,a,[tabindex="0"]')?.focus()
   }
 
+  // A terminal node has no pixel box: the panel paints where it is written,
+  // under its trigger, and needs no placing.
   function position() {
-    if (!triggerEl || !panelEl) return
+    if (!triggerEl?.getBoundingClientRect || !panelEl?.getBoundingClientRect) return
     const at = placeAgainst(triggerEl.getBoundingClientRect(), panelEl.getBoundingClientRect(), { placement, offset })
     x = at.x
     y = at.y
   }
 
+  // Heard on every click, open or not: closing a closed menu would still
+  // take focus back to its trigger.
   function onClickAway(e) {
+    if (!open) return
     if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
     closeMenu()
   }
@@ -110,7 +113,7 @@
     // Query live items from the DOM rather than a registry — simpler and handles
     // conditionally rendered items automatically.
     const items = Array.from(
-      panelEl?.querySelectorAll(
+      panelEl?.querySelectorAll?.(
         ':is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):not([disabled]):not([aria-disabled="true"])'
       ) ?? []
     )
@@ -133,10 +136,6 @@
     next?.focus()
   }
 
-  $.onDestroy(() => {
-    document.removeEventListener('click', onClickAway, { capture: true })
-  })
-
   // Keep the caller's control in sync with the menu's state.
   //
   // `triggerEl` is in the watch list, not just `open`. Watching `open` alone
@@ -145,14 +144,14 @@
   // somebody had already used it. A screen reader met an ordinary button,
   // which is the one thing this component exists to prevent.
   $: (open, triggerEl), () => {
-    const control = triggerEl?.querySelector('button, a, [role="button"], [tabindex]') ?? triggerEl
-    if (!control) return
+    const control = triggerEl?.querySelector?.('button, a, [role="button"], [tabindex]') ?? triggerEl
+    if (!control?.setAttribute) return
     control.setAttribute('aria-haspopup', 'menu')
     control.setAttribute('aria-expanded', open ? 'true' : 'false')
   }
 </script>
 
-<mesa:window on:keydown={handleKeydown} />
+<mesa:window on:keydown={handleKeydown} on:click|capture={onClickAway} />
 
 <!--
   The trigger announces the menu it controls. Without aria-haspopup and

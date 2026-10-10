@@ -38,7 +38,7 @@ read — a non-deterministic ciphertext has nothing to hand back. A non-system
 caller may still WRITE one: whoever supplies a secret is routinely not the
 system. For a column no caller may set either, add `@guarded`.
 
-```prisma
+```lite
 model User {
   ssn  String @encrypted
   dob  String @encrypted
@@ -64,7 +64,7 @@ The same value therefore encrypts to the same bytes, which is what makes an equa
 filter work — and it is still ciphertext, so it reads back and `$rotateKey` can re-key
 it.
 
-```prisma
+```lite
 model User {
   // Looked up at sign-in AND mailed to. Both, so both must work.
   email String @encrypted(deterministic: true)
@@ -88,7 +88,7 @@ same fact and stores less.
 HMAC-SHA256. **One-way**: there is no ciphertext, no key that recovers it, and
 `$rotateKey` cannot touch it. Equality filters work; the value never comes back.
 
-```prisma
+```lite
 model User {
   // Matched at sign-in, never shown to anyone, including an admin.
   loginToken String @hashed
@@ -178,7 +178,7 @@ migrating means re-collecting the values from wherever they still exist. See
 
 Composite attribute — expands at parse time to `@encrypted + @guarded + @trail(audit)`. Every read and write is logged to the audit trail database.
 
-```prisma
+```lite
 database audit {
   path "./audit/"
   driver trail
@@ -246,7 +246,7 @@ Not encryption, but related. **A system-context column, in both directions**:
 stripped from every read, and refused on every write, unless the client is
 `asSystem()`.
 
-```prisma
+```lite
 model User {
   passwordHash String @guarded   // system only, and a select cannot unlock the read
   internalNote String @guarded

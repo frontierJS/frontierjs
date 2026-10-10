@@ -1,0 +1,32 @@
+<script>
+  let open = false
+  let count = 0
+  let menu = null
+  let trigger = null
+  // The kit's click-away: heard at the window before the target's own
+  // handler, and a no-op while closed.
+  const away = (e) => {
+    if (!open) return
+    if (trigger?.contains(e.target) || menu?.contains(e.target)) return
+    open = false
+  }
+</script>
+
+<mesa:window on:click|capture={away} />
+<p>before</p>
+<div>
+  <span bind:this={trigger}><button on:click={() => open = !open}>menu</button></span>
+  {#if open}
+    <mesa:portal to={document.body}>
+      <div bind:this={menu}>
+        <p>count {count}</p>
+        <button on:click={() => count++}>more</button>
+      </div>
+    </mesa:portal>
+  {/if}
+</div>
+<mesa:portal>
+  <p>unaddressed</p>
+</mesa:portal>
+<p>after</p>
+<button>elsewhere</button>

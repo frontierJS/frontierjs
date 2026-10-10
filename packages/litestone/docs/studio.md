@@ -3,9 +3,14 @@
 Litestone Studio is the browser UI. Launch it with:
 
 ```bash
-bunx litestone studio            # http://localhost:8502
-bunx litestone studio --port=3000
+bunx litestone studio                       # http://localhost:8502, opened in the browser
+bunx litestone studio --port=3000 --no-open
+bunx litestone studio --gate ./api/src/core/gate.ts#getLevel   # grade previews with the app's own getLevel
+bunx litestone studio --host=0.0.0.0 --token=<secret>          # beyond loopback; refused without the token
+bunx litestone studio --readonly                               # every mutating endpoint answers 403
 ```
+
+The server is `src/tools/studio.js`, the page `src/tools/studio.html`. The sidebar holds the **Acting as** picker, the tables, and the tools in this order: Overview, Browse, SQL Query, Models, Explore, Access, Compare, Migrations, Stats, REPL, Tenants (shown when the schema declares `tenancy`), Query Log, Transform, Performance, Schema. Each panel is proven by a drive under `test/verify-studio-*.mjs` or `bench/studio-*.mjs`, real Chrome against a real server.
 
 ## Panels
 
@@ -71,7 +76,17 @@ Verified by `bench/studio-factory.mjs` (endpoint) and `bench/studio-factory-clic
 
 #### `{ } Query`
 
-Browse builds a real query object on every load. The button shows it:
+Browse builds a real query object on every load. The button shows it — for a schema like
+
+```lite
+model Product {
+  id   Int    @id
+  name String
+  sku  String
+}
+```
+
+a search for `wid`, sorted by name, emits
 
 ```js
 await db.asSystem().product.findMany({
@@ -100,19 +115,11 @@ compares its rows against the grid's.
 
 ### SQL Query
 
-Raw SQL editor with:
-- Syntax highlighting
-- Results grid with column sorting
-- Multiple result sets (UNION, multiple statements)
-- Runs against the read connection — safe to use in production
+Raw SQL editor. A `SELECT` is read through a `LIMIT` one past the row cap, so the grid can say *more than this* rather than render a million rows. **It runs on the raw connection, past every policy** — the SQL panel is the system context whoever is picked in the sidebar. Under `--readonly` only `SELECT`, `EXPLAIN`, `WITH` and the three table-describing `PRAGMA`s are accepted. Every statement is pushed to the Query Log.
 
-### Schema
+### Models
 
-Interactive ER diagram:
-- Draggable nodes, auto-layout
-- Color-coded by database
-- Auto-generated models (FTS5 tables, audit models) badged distinctly
-- Click any model to jump to its Browse view
+Interactive ER diagram: draggable nodes, auto-layout, colored by database, the models Litestone generated for a trail database badged `generated`. Click a model to jump to its Browse view.
 
 ### Explore
 
@@ -122,10 +129,10 @@ top-level declarations, field attributes and model attributes. The committed lis
 is `catalog.snapshot.md`; a number written here would be wrong by the next
 attribute, which is what that file exists to make visible.
 
-- Boxes for the nine declarations, then one per attribute group, each carrying
+- Boxes for the declarations, then one per attribute group, each carrying
   how many of its words this schema uses
 - **Cards or a table**, one button in the bar. Cards reach an attribute through
-  its group, because 63 boxes is not a place to start looking; the table skips
+  its group, because a box per word is not a place to start looking; the table skips
   the grouping and draws every word at once — by level, then A–Z — for the
   reader who knows roughly what they want and would rather scan than click. The
   toggle holds across navigation and applies to search results too
@@ -204,7 +211,8 @@ is shown **beside** the answer rather than as a fourth question, because a field
 `@allow('read', …)` multiplies with every row instead of partitioning them.
 
 **Legal and worth a look** is the other half. Every rule fires on a schema the
-parser accepts — measured, each case parses clean and is still wrong:
+parser accepts — each case parses clean and is still wrong. The list is `RULES`
+in `src/core/advise.js`; among them:
 
 | Rule | What it costs |
 | --- | --- |
@@ -222,7 +230,7 @@ parser accepts — measured, each case parses clean and is still wrong:
 | `declared-and-unreferenced` | an enum or type nothing uses |
 | `check-without-an-operation-in-a-write-rule` | a bare `check(rel)` takes its rule's operation, so `@@allow('create', check(inbox))` asks who may create an inbox, not who may see one |
 
-The rules live in `src/core/advise.js` and run on the **proposed** schema in the
+The rules run on the **proposed** schema in the
 preview, with anything already true of the file marked as such — a warning that
 was there before this edit is not this edit's fault. `GET /api/advise` answers
 them for the schema as it stands.
@@ -242,6 +250,11 @@ the schema says nothing, everything works, and a word would have said it better.
 | `json-column-with-no-shape` | a `Json` column with no `@type` — the one place the schema stops |
 | `field-group-repeated-across-models` | the same columns in three models and no `trait` |
 | `text-model-with-no-search` | two prose columns and no `@@fts` |
+| `an-open-window-with-nothing-holding-it-open-once` | a second open validity window — a decision that cannot be taken back |
+| `a-document-priced-through-a-relation` | a document reading its price through a relation, so the catalog reprices what is already written |
+| `a-standing-spelled-on-the-global-row` | a standing spelled on a model that spans tenants |
+
+The list is `OPPORTUNITIES` in `src/core/opportunities.js`. The last three are about a decision that cannot be taken back, which is why they are here rather than in a rule: each is legal, each works, and each loses information nothing can recover once it is wrong.
 
 Every finding names the WORD it is about and the word is a button: clicking it
 opens that word's card, which is what makes this a route rather than a lint.
@@ -293,7 +306,7 @@ refusing afterwards — so the arms a source scan reads are the HOME arms, and n
 amount of reading can see the rest.
 
 `POSITION_RULES` states them once, in the shape the parser states them (four
-named Sets), rather than as a key on the fifteen rows they constrain. The test
+named Sets), rather than as a key on every row they constrain. The test
 binds each list to the parser's own Set, and drives the parser for the one
 position that is a throw rather than a Set — every field attribute tried on an
 enum member, where exactly `@label` is accepted.
@@ -307,13 +320,28 @@ demands the field be typed as the target model while `@from(count:)` demands an
 `Int`, and `tenancy strategy database` refuses the `column` key that `strategy
 row` requires.
 
-Proven by `bun run verify:studio:explore` — 46 assertions, real Chrome against a
-real server.
+Proven by `bun run verify:studio:explore`, real Chrome against a real server.
+
+### Access
+
+What the schema declares about who may do what — the gate ladder, row policies
+and protected fields per model, read from `deriveAccess` the way `litestone
+access` reads it — and a **drift** badge, polled, that says when the live
+database no longer matches the schema. `bun run verify:studio:access`.
+
+### Compare
+
+Every other panel answers *what is true now*; this one answers *what this branch
+did*. It reads a second schema out of git and grades the pair with two verdicts
+that disagree by construction: **Deploy** (`expand` / `contract`, from
+`classifyPivot`) and **Access** (`widens` / `narrows`, from `classifyAccess`).
+The ref is picked by name from a list the server enumerated — never typed —
+because the value lands on a git command line. `bun run verify:studio:compare`.
 
 ### Migrations
 
 - Applied/pending status per database
-- Live schema diff showing exactly what's changed
+- Live schema diff showing exactly what changed, and a *create migration* that writes the file
 - Per-migration SQL viewer
 
 ### Schema Advisor
@@ -335,50 +363,50 @@ schema is the better route: **a migration only drops what litestone named**
 (`idx_<table>_<cols>` and `uniq_<table>_<cols>`), so an index created by hand under another name survives
 every later migration.
 
-**Why index a foreign key at all**, measured on 50k rows:
-
-| | no index | index |
-| --- | --- | --- |
-| 2,000 lookups by the FK | 4,023 ms | 56 ms |
-| cascade-delete 200 parents | 656 ms | 8 ms |
-| insert 50,000 children | 31 ms | 53 ms |
-| database size | 0.86 MB | 1.40 MB |
-
-The cost is real but small; the win is two orders of magnitude. Note the direction:
-reading the **parent** from the child (`include({ environment: true })`) resolves by
-primary key and was never affected. What scans is everything starting from the other
-side — the parent's `hasMany`, a `where` on the FK column, and `ON DELETE CASCADE`.
+**Why index a foreign key at all.** SQLite indexes a primary key and a UNIQUE and
+nothing else. Reading the **parent** from the child (`include({ environment: true })`)
+resolves by primary key and is never affected. What scans is everything starting
+from the other side — the parent's `hasMany`, a `where` on the FK column, and
+every `ON DELETE CASCADE` walk — and the index costs a little on insert and some
+file size for a lookup that stops being a table scan.
 
 ### Stats
 
-Per-database health dashboard:
-- Page size, WAL mode, cache size
-- Row counts per model
-- Database file size
-- WAL checkpoint status
+Per-database health, from `GET /api/stats`: file size, page size and page count,
+freelist pages, whether WAL mode and foreign keys are on, table and index counts,
+rows per table (live and soft-deleted apart). A `jsonl` or `trail` database reports
+its file size alone.
+
+**Maintenance** sits on the same panel, one button each: backup (`VACUUM INTO`),
+vacuum, a bounded `ANALYZE`, WAL checkpoint and truncate, `PRAGMA quick_check`,
+FTS5 segment merge, and key rotation for `@encrypted` columns. All of them are
+blocked under `--readonly`.
 
 ### REPL
 
-Interactive Litestone query REPL:
-- Full ORM API available (`db.user.findMany(...)`)
+Interactive Litestone query REPL, `POST /api/repl`:
+- Full ORM API available (`db.user.findMany(...)`), bound as the principal the sidebar selects
 - Autocomplete on model names and methods
 - History (up/down arrows)
-- **SQL log** — shows the actual SQL + params for every expression executed
-- Timing per query
+- Elapsed time per expression; the SQL and params each one ran land in the Query Log
 
-### schema.lite
+### Query Log
 
-Live schema editor:
-- Syntax highlighting for `.lite` DSL
-- Debounced validation (600ms) — error tray shows parse errors in real time
-- Ctrl+S to save to disk
+Every ORM operation Studio's own client ran — Browse, edits, the REPL, imports —
+captured through `$tapQuery`, plus every SQL-panel statement. A ring buffer on the
+server, newest last, read by `POST /api/querylog`; `clear` empties it.
+
+### Schema
+
+Live `schema.lite` editor:
+- Syntax highlighting for `.lite`
+- Validation on the server, debounced — the error tray shows parse errors as you type
+- Save writes the file; *create migration* writes the diff as a file through the Migrations panel
 
 ### Transform (dev tool)
 
-Anonymize/shard pipeline runner:
-- Load a transform config
-- Preview output before executing
-- Download anonymized database
+Anonymize/shard pipeline runner: a step editor, the config it generates, and the
+run's output as a log (`POST /api/transform/preview`, `/api/transform/run`).
 
 ### Performance
 
@@ -387,15 +415,15 @@ Anonymize/shard pipeline runner:
 
 ## Acting-as picker
 
-Select any user from your `@@auth` model to browse with row-level policies enforced. Useful for testing what a specific user can see.
+Select any user from your `@@auth` model to browse with row-level policies enforced — Browse, the REPL and `🎲 Random` all run as that principal. The default is **System (no policies)**, which is `asSystem()`.
 
 ## Production use
 
-Studio reads from the read connection — safe to run against production databases. It does not bypass any policies or access control. The raw SQL editor runs with the system context (no policy filtering) — consider restricting access in production.
+Studio is the schema's own client with the gate lifted by default, and the SQL panel and the REPL execute whatever is typed, so it is a development tool. Binding beyond loopback (`--host`) is refused without `--token`, which every `/api` call must then carry; `--readonly` turns off every mutating endpoint. Prefer a tunnel to a loopback-bound Studio over exposing the port.
 
 ```bash
 # Host on the server, not localhost
-kamal app exec --no-interactive -- litestone studio --port=8502
+kamal app exec --no-interactive -- litestone studio --port=8502 --readonly
 ```
 
 > Note: Running Studio via `kamal app exec` spawns a new container — if your SQLite file is on the host, use the host directly to avoid WAL contention.

@@ -89,6 +89,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | an access rule | one row admitted and one refused, through a real scoped client |
 | a `@map`-sensitive path | `test/column-mapping.test.ts` — mapped and unmapped, compared |
 | a `.lite` word | `test/catalog.test.ts` fails until the catalog has its row, a tier, and an axis in `AXES` (`FJS-D635`) |
+| an example to `docs/`, `README.md` or `AGENTS.md` | nothing — `test/doc-examples.test.ts` runs every fence (`FJS-D860`): a ```lite block is built, a ```js block runs under the nearest ```lite above it; `fragment`, `throws` and `failing` on the info string are the whole contract, and `DOC_EXAMPLES_REPORT=1 DOC_EXAMPLES_ONLY=docs/x.md` lists what a page still fails |
 | a `src/` directory, or an axis import of a battery | `test/edge.test.ts` — classified, or a ruling |
 | a runtime global in `src/` | `HOST_GLOBALS` in `test/undeclared-names.test.ts` — by name, never all of lib.dom |
 

@@ -143,7 +143,7 @@ Three things in that table are not app mistakes:
 
 ## 4. What it would look like in `.lite`
 
-```prisma
+```lite
 model Candidate {
   name   String   @personal(contact) @length(1, 120)
   email  String   @personal(contact) @email

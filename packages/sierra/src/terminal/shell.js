@@ -254,8 +254,10 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   tui.followLinks(renderer, (href) => {
     if (!followLink(href) && shown) set({ note: `${href} is not a route here` })
   })
+  // An Escape the page prevented was the page's: a confirm panel closing
+  // must not also leave the route.
   renderer.keyInput.on('keypress', (k) => {
-    if (k.name !== 'escape' || !shown) return
+    if (k.name !== 'escape' || !shown || k.defaultPrevented) return
     if ((history?.state?.index ?? 0) > 0) back()
     else showList()
   })

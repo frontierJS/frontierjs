@@ -12,7 +12,7 @@ import { introspect }                               from '../core/migrate.js'
 import { schemaAnchor }                             from '../core/db-path.js'
 import { resolveTenancy }                           from '../core/tenancy.js'
 import { CATALOG, GROUPS, POSITIONS, positionsOf, docFor, synonymsFor, tierFor } from '../core/catalog.js'
-import { modelToAccessor }                          from '../core/ddl.js'
+import { modelToAccessor, modelToTableName }        from '../core/ddl.js'
 import { authModelOf }                              from './principal.js'
 import { openSavedQueries, sidecarFor }           from './studio-queries.js'
 import { bold, dim, green, red, cyan, rel, header, flag, getFlag,
@@ -362,6 +362,7 @@ export async function cmdStudio(cfg) {
   // client executes (Browse, edits, REPL, import/export), plus raw SQL-panel
   // queries pushed manually. Newest entries last; capped at QUERY_LOG_MAX.
   const QUERY_LOG_MAX = 2000
+  const QUERY_ROW_CAP = 1000   // rows the SQL panel returns; the panel renders every one
   const queryLog = []
   let queryLogSeq = 0
   function pushQueryLog(e) {
@@ -474,10 +475,19 @@ export async function cmdStudio(cfg) {
     return src
   }
 
-  async function getRowCounts() {
+  // Per-model row counts read off the table counts getDbStats already took, so
+  // a table is scanned once per /api/info and the ORM's tap never sees it —
+  // 123 Query Log entries existed before the developer ran anything. A
+  // soft-deleted row is not counted, matching what Browse shows by default.
+  // Only a model with no SQLite table (a jsonl or trail model) goes through
+  // the ORM.
+  async function getRowCounts(stats) {
     const counts = {}
     const sysDb  = activeDb.asSystem()  // bypass policies — counts should reflect actual data
     for (const model of activeDb.$schema.models) {
+      const t = modelToTableName(model, cfg.pluralize ?? false)
+      const n = stats.live?.[t] ?? stats.tables?.[t]
+      if (n != null) { counts[model.name] = n; continue }
       const accessor = modelToAccessor(model.name)
       try { counts[model.name] = await sysDb[accessor].count() } catch { counts[model.name] = 0 }
     }
@@ -495,6 +505,8 @@ export async function cmdStudio(cfg) {
 
       const databases = []
       let rollupSize = 0, rollupRows = 0, rollupTables = 0, rollupIndexes = 0
+      const softTables = new Set(activeDb.$schema.models
+        .filter(isSoftDelete).map(m => modelToTableName(m, cfg.pluralize ?? false)))
 
       for (const [name, meta] of entries) {
         const { driver = 'sqlite', path: absPath } = meta
@@ -541,10 +553,19 @@ export async function cmdStudio(cfg) {
           entry.indexCount  = conn.query(`SELECT COUNT(*) as n FROM sqlite_master WHERE type='index'`).get().n
           entry.tableCount  = tables.length
           entry.tables      = {}
+          entry.live        = {}
           entry.totalRows   = 0
 
           for (const t of tables) {
-            const n = conn.query(`SELECT COUNT(*) as n FROM "${t}"`).get().n
+            let n, deleted = 0
+            if (softTables.has(t)) {
+              try {
+                const r = conn.query(`SELECT COUNT(*) AS n, COUNT("deletedAt") AS d FROM "${t}"`).get()
+                n = r.n; deleted = r.d
+                entry.live[t] = n - deleted
+              } catch { /* no deletedAt column yet — a migration is pending */ }
+            }
+            n ??= conn.query(`SELECT COUNT(*) as n FROM "${t}"`).get().n
             entry.tables[t] = n
             entry.totalRows += n
           }
@@ -582,6 +603,7 @@ export async function cmdStudio(cfg) {
         walMode:       mainEntry.walMode,
         foreignKeys:   mainEntry.foreignKeys,
         tables:        Object.assign({}, ...databases.map(d => d.tables ?? {})),
+        live:          Object.assign({}, ...databases.map(d => d.live ?? {})),
       }
     } catch (e) {
       console.error('[litestone:studio] getDbStats error:', e)
@@ -722,7 +744,7 @@ export async function cmdStudio(cfg) {
       try {
         if (path === '/api/info') {
           const stats     = getDbStats()
-          const counts    = await getRowCounts()
+          const counts    = await getRowCounts(stats)
           // Use db.$schema — the augmented schema that includes auto-generated
           // trail models (e.g. auditTrail) and view stubs. parseResult.schema
           // is the raw parsed result and is missing these synthetic models.
@@ -765,9 +787,15 @@ export async function cmdStudio(cfg) {
           const where    = buildSearchWhere(model, search)
           const ob       = buildOrderBySpec(model, orderBy)
           const result   = await tableDb[accessor].findManyCursor({ cursor, limit, where, withDeleted, orderBy: ob })
-          // Filtered total so the UI can show "N matching rows" (best effort)
-          let total = null
-          try { total = await tableDb[accessor].count({ where, withDeleted }) } catch {}
+          // Filtered total so the UI can show "N matching rows" (best effort).
+          // Counted on the first page only: the filter and sort that produced a
+          // later page are the ones the client already holds a total for, and a
+          // count is a scan of the whole table on every page click.
+          let total
+          if (!cursor) {
+            total = null
+            try { total = await tableDb[accessor].count({ where, withDeleted }) } catch {}
+          }
           const columns  = model.fields
             .filter(f => f.type.kind !== 'relation' && !f.attributes.find(a => a.kind === 'computed' || a.kind === 'transient'))
             .map(f => f.name) ?? []
@@ -931,10 +959,18 @@ export async function cmdStudio(cfg) {
           if (!sql?.trim()) return json({ rows: [] })
           const t0   = performance.now()
           try {
-            const rows = activeRawDb.prepare(sql.trim()).all()
+            // A SELECT is read through a LIMIT of cap + 1, so one more row than
+            // the cap says "there was more" without SQLite producing, or the page
+            // receiving, the rest of a million-row table. The newline before the
+            // closing paren keeps a trailing -- comment from swallowing it.
+            const text   = sql.trim().replace(/;+\s*$/, '')
+            const capped = /^(SELECT|WITH)\b/i.test(text)
+            const found  = activeRawDb.prepare(capped ? `SELECT * FROM (\n${text}\n) LIMIT ${QUERY_ROW_CAP + 1}` : sql.trim()).all()
+            const truncated = capped && found.length > QUERY_ROW_CAP
+            const rows   = truncated ? found.slice(0, QUERY_ROW_CAP) : found
             const ms   = (performance.now() - t0).toFixed(1)
             pushQueryLog({ operation: 'sql', sql: sql.trim(), duration: performance.now() - t0, rowCount: rows.length, database: 'main' })
-            return json({ rows, ms })
+            return json({ rows, ms, truncated, cap: QUERY_ROW_CAP })
           } catch (e) {
             pushQueryLog({ operation: 'sql', sql: sql.trim(), duration: performance.now() - t0, rowCount: 0, database: 'main' })
             throw e

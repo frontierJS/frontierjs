@@ -63,6 +63,7 @@ Detail: `references/secrets-and-the-log-line.md`
 - **The logger redacts a credential by NAME, on both paths, and it is a floor rather than a proof** (`FJS-775`)
 - **`defineEnv` will not quote a value it must not, and infers that from the NAME.**
 - **An adapter cache is keyed on `$schema`, never on the client** (`FJS-777`)
+- **`$.log` inside a call, `app.logger` outside one** (`FJS-D772`)
 
 ## Plugins, config and autoload
 Detail: `references/plugins-config-and-autoload.md`

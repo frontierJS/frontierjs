@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { prove, knownFailures } from '../core/prove.js'
+import { prove, knownFailures, brokenDrives } from '../core/prove.js'
 
 const API  = { id: 'surface:example/api', name: 'api', dir: 'example', kind: 'surface', port: 8110, argv: ['bun', 'run', 'api'] }
 const SEED = { id: 'task:example/db:seed', name: 'db:seed', dir: 'example', kind: 'task', port: null, argv: ['bun', 'run', 'db:seed'] }
@@ -117,6 +117,21 @@ describe('prove', () => {
     expect(out.gone.map(t => t.name)).toEqual(['verify:gone'])
   })
 
+  test('a drive the caller skips starts nothing and is listed with its rows, not among the passes', async () => {
+    const values = drive('verify:values', [need(SEED, 'db:seed'), need(API, 'api')])
+    const cart   = drive('verify:cart')
+    const w      = world()
+    const out    = await prove({
+      proofs: [{ targets: [target(values), target(cart)] }], rows: [API, SEED, values, cart],
+      procs: w.procs, answering: w.answering, sleep: async () => {},
+      skip: t => t.name === 'verify:values' ? ['FJS-1366'] : null,
+    })
+
+    expect(w.log).toEqual(['start verify:cart', 'stop verify:cart'])
+    expect(out.ran.map(r => r.name)).toEqual(['verify:cart'])
+    expect(out.skipped).toEqual([{ name: 'verify:values', dir: 'example', command: 'bun run verify:values', open: ['FJS-1366'] }])
+  })
+
   test('a script target with no runnable row still runs, under an id of its own', async () => {
     const w   = world()
     const out = await run(w, [{ targets: [{ name: 'test:widgets', dir: 'packages/sierra', kind: 'script', id: null, command: 'bun run test:widgets' }] }], [])
@@ -141,5 +156,23 @@ describe('knownFailures', () => {
   test('a name with no colon is prose and looks nothing up', () => {
     expect(knownFailures(issues, 'verify')).toEqual([])
     expect(knownFailures(issues, 'bun run test')).toEqual([])
+  })
+})
+
+describe('brokenDrives', () => {
+  const issues = [
+    { id: 'FJS-1', closed: false, title: 'verify:values hangs: a CDP evaluate times out at HEAD',        body: 'verify:values hangs' },
+    { id: 'FJS-2', closed: false, title: 'relation filters drop a row — prove with verify:values',       body: 'prove with verify:values' },
+    { id: 'FJS-3', closed: true,  title: 'verify:values was red once',                                   body: 'verify:values was red once' },
+    { id: 'FJS-4', closed: false, title: 'verify:values:strict is a different drive',                    body: 'verify:values:strict' },
+  ]
+
+  test('only an open row whose title opens with the drive — a row citing it as its proof is the reason to run it', () => {
+    expect(brokenDrives(issues, 'verify:values')).toEqual(['FJS-1'])
+    expect(knownFailures(issues, 'verify:values')).toEqual(['FJS-1', 'FJS-2'])
+  })
+
+  test('a name with no colon looks nothing up', () => {
+    expect(brokenDrives(issues, 'verify')).toEqual([])
   })
 })

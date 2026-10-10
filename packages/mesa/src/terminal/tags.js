@@ -35,7 +35,10 @@
  * for the screen wraps, where a browser scrolls the block, because no
  * terminal node scrolls and clipping would hide the end of the line.
  *
- * Layout hints: `inline` lays a box's children side by side; `indent` is
+ * Layout hints: `inline` marks a tag a browser lays out inside a line, so
+ * its text joins its neighbors' as one run of words (the runtime's `flow`);
+ * `row` lays a box's children side by side whatever they are, which is a
+ * table row's cells; `indent` is
  * columns of left padding; `cell` takes an equal share of its row, which is
  * what lines a table's columns up — a terminal has no auto table layout, so
  * columns are equal widths rather than sized to their content. `refuses`
@@ -72,7 +75,7 @@ export const TERMINAL_TAGS = {
   thead:    { role: 'box' },
   tbody:    { role: 'box' },
   tfoot:    { role: 'box' },
-  tr:       { role: 'box', inline: true },
+  tr:       { role: 'box', row: true },
   th:       { role: 'box', cell: true, bold: true, refuses: ['colspan', 'rowspan'] },
   td:       { role: 'box', cell: true, refuses: ['colspan', 'rowspan'] },
   hr:       { role: 'rule' },
@@ -110,6 +113,20 @@ export const TERMINAL_TAGS = {
   option:   { role: 'box', hidden: true },
   optgroup: { role: 'box', hidden: true },
   datalist: { role: 'box', hidden: true }
+}
+
+/**
+ * The roles a browser lays out inside a line, beside text, rather than as a
+ * block of their own. With every tag the table marks `inline`, these are
+ * what a terminal box lays side by side, and what keeps the white space
+ * between two of them (`isInline`).
+ */
+export const INLINE_ROLES = new Set(['button', 'input', 'select', 'image'])
+
+/** Whether `tag` sits inside a line; an unknown tag answers no. */
+export const isInline = (tag) => {
+  const spec = TERMINAL_TAGS[tag]
+  return !!spec && (!!spec.inline || INLINE_ROLES.has(spec.role))
 }
 
 /**

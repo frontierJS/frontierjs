@@ -1037,7 +1037,7 @@ export const context = { use: useContext, provide: provideContext }
  *
  * @returns {(fn: Function) => any} run `fn` with the captured stack installed
  */
-function captureContext() {
+export function captureContext() {
   const frames = _contextStack.slice()
   return (fn) => {
     const saved = _contextStack.splice(0, _contextStack.length, ...frames)

@@ -404,6 +404,21 @@ function lowerGlobal(ctx, n) {
 
 const GLOBALS = ['window', 'document', 'body']
 
+/**
+ * `<mesa:portal to={node}>`: children built where they are written and placed
+ * in another node. `to` is null when unwritten, which the DOM reads as the
+ * body; a target with one surface has no other node to name.
+ */
+function lowerPortal(ctx, n) {
+  const to = n.attributes.find((a) => a.name === 'to')
+  return {
+    kind: 'portal',
+    to: to?.value ? read(ctx, unwrapExp(to.value)) : null,
+    loc: ctx.posOf(n.start),
+    children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
+  }
+}
+
 function lowerNode(ctx, n) {
   switch (n.type) {
     case 'script':
@@ -422,6 +437,7 @@ function lowerNode(ctx, n) {
     case 'node': {
       if (n.name === 'mesa' && n.elArg === 'element') return lowerDynamicElement(ctx, n)
       if (n.name === 'mesa' && GLOBALS.includes(n.elArg)) return lowerGlobal(ctx, n)
+      if (n.name === 'mesa' && n.elArg === 'portal') return lowerPortal(ctx, n)
       if (n.name === 'mesa') return unlowered(ctx, 'mesa-element', n)
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)
@@ -520,6 +536,7 @@ export function eachNode(children, visit) {
         break
       case 'dynamic-element':
       case 'snippet':
+      case 'portal':
         eachNode(n.children, visit)
         break
       case 'component':

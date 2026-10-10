@@ -88,7 +88,7 @@ Most models want the pair on the model instead — see
 Without it, two people editing the same row both `PATCH`, both succeed, and the
 second silently erases the first. Declare the column and that becomes a 409:
 
-```prisma
+```lite
 model Order {
   id      Int    @id
   status  String
@@ -96,7 +96,9 @@ model Order {
 }
 ```
 
-```js
+```js throws
+await db.order.create({ data: { id: 1, status: 'new' } })               // version 1
+
 const alice = await db.order.findUnique({ where: { id: 1 } })   // version 1
 const bob   = await db.order.findUnique({ where: { id: 1 } })   // version 1
 
@@ -104,7 +106,7 @@ await db.order.update({ where: { id: 1 }, data: { status: 'paid',  version: alic
 // → { status: 'paid', version: 2 }
 
 await db.order.update({ where: { id: 1 }, data: { status: 'void',  version: bob.version } })
-// → throws VersionConflictError — expected 1, row is at 2
+// → throws VersionConflictError — expected version 1, row is at 2
 ```
 
 Mechanically it is the compare-and-swap `@@transitions` already runs, with the
@@ -215,8 +217,24 @@ A computed function written bare resolves its own dependencies, and pays for it:
 naming the field in a `select` widens the SQL to every column of the row, plus
 every `@from` subquery on the model, and the result is trimmed back afterwards.
 
+```lite
+model Client {
+  id         Int    @id
+  name       String
+  notes      Note[]
+  noteCount  Int    @from(Note, count: true)
+  chattiness Int    @computed
+}
+
+model Note {
+  id       Int    @id
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+}
+```
+
 ```js
-// computed.js
+// computed.js — passed as createClient({ computed })
 export default {
   Client: {
     chattiness: row => row.noteCount * 2,                       // → SELECT *
@@ -227,7 +245,7 @@ export default {
 Declaring the inputs narrows the fetch to exactly them:
 
 ```js
-export default {
+const computed = {
   Client: {
     chattiness: {
       needs:   ['noteCount'],                                   // stored columns and @from fields
@@ -235,9 +253,11 @@ export default {
     },
   },
 }
+const db = await createClient({ path: './schema.lite', db: ':memory:', computed })
+await db.client.create({ data: { name: 'Acme', notes: { create: [{}, {}] } } })
 
-db.client.findMany({ select: { chattiness: true } })
-// SELECT (SELECT COUNT(*) …) AS "noteCount" FROM "client"   → [{ chattiness: 20 }]
+await db.client.findMany({ select: { chattiness: true } })
+// SELECT (SELECT COUNT(*) …) AS "noteCount" FROM "client"   → [{ chattiness: 4 }]
 ```
 
 The dependency is fetched and then trimmed — asking for a computed field never
@@ -398,7 +418,11 @@ against a job on `db.`, a migration, a seed, an atomic operator, and against
 `asSystem()`, which drops the gate, every row policy and `@@softDelete` and
 cannot drop a CHECK.
 
-```
+```lite
+model Tag     { id Int @id  attachments Attachment[] }
+model Order   { id Int @id  attachments Attachment[] }
+model Product { id Int @id  attachments Attachment[] }
+
 model Attachment {
   id        Int      @id
   tagId     Int
@@ -441,10 +465,11 @@ constraint in this section holds: against a migration, a seed, an atomic
 operator and `asSystem()`. It also reaches the browser as a set, so a generated
 form offers a picker instead of a text box for a model name.
 
-```
+```lite
 enum NoteSubject { Order Product }
 
 model Note {
+  id          Int         @id
   subjectType NoteSubject
   subjectId   Int
   @@index([subjectType, subjectId])
@@ -481,10 +506,18 @@ closed twice and left open sixteen times in the same codebase.
 
 The same two words that bound a `Json` array bound a relation's child rows:
 
-```
+```lite
 model Order {
-  id    Int @id @default(autoincrement())
+  id    Int         @id
+  total Int
   lines OrderLine[] @minItems(1) @maxItems(50)
+}
+
+model OrderLine {
+  id      Int   @id
+  orderId Int
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount  Int
 }
 ```
 
@@ -495,16 +528,26 @@ because nothing says it was the last. Outside `$transaction` a single call is
 that unit, so the rule reads the same everywhere — and the practical
 consequence is worth knowing before you meet it:
 
-```js
+```js throws
 // Refused. An Order with no lines cannot exist, so this create cannot either —
 // refused before the INSERT, naming the spelling that works.
 await db.order.create({ data: { total: 10 } })
+```
 
+```js
 // Accepted. The children are in the same call.
 await db.order.create({ data: { total: 10, lines: { create: [{ amount: 10 }] } } })
+```
+
+```js throws
+const { id: orderId } = await db.order.create({ data: { total: 10, lines: { create: [{ amount: 10 }] } } })
 
 // Refused: the order is left with none.
 await db.orderLine.deleteMany({ where: { orderId } })
+```
+
+```js
+const { id: orderId } = await db.order.create({ data: { total: 10, lines: { create: [{ amount: 10 }] } } })
 
 // Accepted: the unit is the transaction, and by the end the order has one.
 await db.$transaction(async tx => {
@@ -536,18 +579,18 @@ them, which makes it a contract for `fli release:check` rather than an expand.
 
 **Model names** are `PascalCase` singular:
 
-```prisma
-model User { ... }
-model ServiceAgreement { ... }
-model BlogPost { ... }
+```lite
+model User             { id Int @id }
+model ServiceAgreement { id Int @id }
+model BlogPost         { id Int @id  title String }
 ```
 
 **Client accessors** are `camelCase` singular — always, regardless of config:
 
 ```js
-db.user.findMany()
-db.serviceAgreement.findFirst()
-db.blogPost.create({ data: {...} })
+await db.user.findMany()
+await db.serviceAgreement.findFirst()
+await db.blogPost.create({ data: { title: 'Hello' } })
 ```
 
 **Table names** are `snake_case` of the model name by default:
@@ -568,8 +611,9 @@ With `pluralize: true` passed to `createClient`, table names are pluralized. The
 
 `@@map("custom_name")` always wins over any derivation — use it for irregular plurals or legacy table names:
 
-```prisma
+```lite
 model Person {
+  id Int @id
   @@map("people")    // table: people, accessor: db.person
 }
 ```
@@ -652,8 +696,9 @@ model Person {
 active membership per person.* Every one of those is uniqueness over SOME rows,
 and it is what effective dating is built on.
 
-```
+```lite
 model PayWindow {
+  id            Int       @id
   employeeId    Int
   effectiveFrom DateTime
   effectiveTo   DateTime?
@@ -705,7 +750,7 @@ Where a row is identified by several columns together — a membership, a join
 table with its own columns, a partitioned table, a reading keyed by
 `(key, action)` — the key is declared once at the model level:
 
-```
+```lite
 model Membership {
   orgId  String
   userId String
@@ -782,7 +827,19 @@ one a row is. **Every read and every write excludes templates by default** —
 reporting, list screens and operational queries see only real rows without
 saying so — and both take the same two flags to opt out:
 
+```lite
+model Quote {
+  id    Int @id
+  total Int @default(0)
+
+  @@hasTemplates
+}
+```
+
 ```js
+const { id } = await db.quote.create({ data: { total: 1, isTemplate: true } })
+const data   = { total: 2 }
+
 await db.quote.findMany()                            // instances
 await db.quote.findMany({ withTemplates: true })     // instances + templates
 await db.quote.findMany({ onlyTemplates: true })     // templates
@@ -800,6 +857,8 @@ maintain — the thing every instance was cloned from — and the marker is
 writable, so an instance can be promoted and a template demoted:
 
 ```js
+const { id } = await db.quote.create({ data: { total: 1 } })
+
 await db.quote.update({ where: { id }, data: { isTemplate: true } })                        // promote
 await db.quote.update({ where: { id }, data: { isTemplate: false }, withTemplates: true })  // demote
 ```
@@ -834,8 +893,17 @@ client's clock as a `Date`, and a deadline written as `Date.now() + ttl` lapses
 on the host's clock while the window reads the client's — they agree
 everywhere but the test that moves one.
 
+```lite
+model Hold {
+  id        Int      @id
+  expiresAt DateTime
+
+  @@expires(expiresAt)
+}
+```
+
 ```js
-await db.hold.create({ data: { …, expiresAt: new Date(db.$now().getTime() + 15 * 60_000) } })
+await db.hold.create({ data: { expiresAt: new Date(db.$now().getTime() + 15 * 60_000) } })
 await db.hold.findMany()                                      // not yet expired
 await db.hold.findMany({ asOf: '2026-06-01T09:00:00.000Z' })  // … as of then
 await db.hold.findMany({ withExpired: true })                 // every row
@@ -855,7 +923,20 @@ computed under — pointed at and listed far more often than filtered. Imposed,
 the pointer answers null and nothing says so. So a read that states `asOf` gets
 the rows in force at that moment, and a read that states nothing gets them all:
 
+```lite
+model PayWindow {
+  id            Int       @id
+  employeeId    Int
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  @@effective(from: effectiveFrom, to: effectiveTo)
+}
+```
+
 ```js
+const employeeId = 1
+
 await db.payWindow.findMany({ where: { employeeId } })                    // the history
 await db.payWindow.findFirst({ where: { employeeId }, asOf: '2026-03-31' })  // in force then
 await db.payWindow.findMany({ asOf: '2026-03-31', onlyExpired: true })    // … and not
@@ -932,13 +1013,40 @@ duration `@unit` and `@immutable`, stamped when the terms are agreed — the gra
 on an invoice is a receipt, so editing the plan does not move a deadline
 somebody was already given. Never a hop: the read is one table.
 
+```lite
+enum OrderStatus { pending  paid  abandoned }
+
+model Order {
+  id        Int         @id
+  status    OrderStatus @default(pending)
+  createdAt DateTime    @default(now())
+
+  @@transitions(status, pay: pending -> paid, abandon: pending -> abandoned)
+  @@commitment(abandon, on: createdAt + 14d)
+}
+
+enum InvoiceStatus { issued  lapsed }
+
+model Invoice {
+  id        Int           @id
+  status    InvoiceStatus @default(issued)
+  dueOn     String        @date
+  graceDays Int           @unit(d) @immutable
+
+  @@transitions(status, lapse: issued -> lapsed)
+  @@commitment(lapse, on: dueOn + graceDays, while: status == 'issued')
+}
+```
+
 ```js
+const { id } = await db.order.create({ data: { createdAt: '2026-09-01T00:00:00.000Z' } })
+
 await db.order.due()                                             // owed by now
 await db.order.due({ by: '2026-10-05T00:00:00.000Z' })           // … by then
 await db.invoice.due({ timeZone: 'Pacific/Auckland' })           // a day kind, read there
 await db.order.due({ where: { id } })                            // this row, asked again
-// → [{ transition: 'abandon', id: 7, dueAt: '2026-10-05T00:00:00.000Z',
-//      target: { model: 'Order', accessor: 'order', transition: 'abandon', id: 7 } }]
+// → [{ transition: 'abandon', id: 1, dueAt: '2026-09-15T00:00:00.000Z',
+//      target: { model: 'Order', accessor: 'order', transition: 'abandon', id: 1 } }]
 ```
 
 `due()` makes no transition. It is a read through `findMany`, so the caller's
@@ -970,7 +1078,7 @@ Sugar. Each one expands at parse time into the two fields you would otherwise
 hand-write — a nullable FK carrying the stamp, and a named relation to the
 `@@auth` model:
 
-```prisma
+```lite
 model User { id Int @id  name String  @@auth }
 
 model Doc {
@@ -979,8 +1087,12 @@ model Doc {
   @@createdBy
   @@updatedBy
 }
+```
 
-// …is exactly:
+…is exactly:
+
+```lite
+model User { id Int @id  name String  @@auth }
 
 model Doc {
   id          Int    @id
@@ -1034,7 +1146,7 @@ See [audit-logging.md](./audit-logging.md).
 
 ## Enums
 
-```prisma
+```lite
 enum Plan { starter  pro  enterprise }
 enum Role { admin  member  viewer }
 
@@ -1049,7 +1161,7 @@ model User {
 A closed set in the wild is usually written for a person to read, and a space is
 all it takes to put it out of reach. So a member may be a quoted string:
 
-```prisma
+```lite
 enum PurchaseStatus {
   Draft
   "On Hold"
@@ -1087,7 +1199,7 @@ A member's own name is what a picker shows, which is fine while the code reads
 as the words and useless the moment it does not. `@label` — the same attribute
 a field takes — gives one member its human text:
 
-```prisma
+```lite
 enum Plan {
   starter     @label("Starter")
   pro         @label("Professional")
@@ -1105,7 +1217,7 @@ label falls back to its own name.
 as documentation. A label is the short string a person sees in a picker. Both
 can sit on one member:
 
-```prisma
+```lite
 enum Plan {
   /// Five seats, no SSO, monthly billing only.
   starter  @label("Starter")
@@ -1121,7 +1233,7 @@ A field can hold *several* of the declared values. It is one declaration, and it
 feeds the column, the API validation and the picker the same way a single-valued
 enum does:
 
-```prisma
+```lite
 enum ReclaimTarget { logs  cache  artifacts }
 
 model ReclaimRule {
@@ -1155,7 +1267,7 @@ db.reclaimRule.findMany({ where: { targets: { equals: ['logs'] } } })     // is 
 
 An `Order` can go `pending → paid → shipped` but never `shipped → pending`, and only an admin can refund. Declare that once on the model and Litestone enforces it at the Data boundary:
 
-```prisma
+```lite
 enum OrderStatus { pending  paid  shipped  refunded  cancelled }
 
 model Order {
@@ -1195,9 +1307,13 @@ Any move that isn't declared throws `TransitionViolationError`; a declared one t
 #### Asking what's legal
 
 ```js
-await db.order.transitions(row)   // or transitions(id)
-// → [{ name: 'ship',   field: 'status', from: 'paid', to: 'shipped',  gate: null, allowed: true,  refusedBy: null },
-//    { name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5,    allowed: false, refusedBy: 'gate' }]
+const row = await db.order.create({ data: {} })
+await db.order.transition(row.id, 'pay')
+
+await db.order.transitions(row)   // or transitions(row.id)
+// → [{ name: 'ship',   field: 'status', from: 'paid', to: 'shipped',   gate: null, system: false, allowed: true,  refusedBy: null },
+//    { name: 'refund', field: 'status', from: 'paid', to: 'refunded',  gate: 5,    system: false, allowed: false, refusedBy: 'gate' },
+//    { name: 'cancel', field: 'status', from: 'paid', to: 'cancelled', gate: null, system: false, allowed: true,  refusedBy: null }]
 ```
 
 The legal next states for *this* record, for *this* caller. A move the caller can't make is returned with `allowed: false` rather than dropped — a disabled button is usually better UI than a missing one.
@@ -1214,7 +1330,7 @@ The same list reaches the browser: `generateJsonSchema` emits `x-transitions` on
 
 When one enum means the same thing everywhere it's used, declare the machine once and every model with a field of that type picks it up:
 
-```prisma
+```lite
 enum OrderStatus {
   pending  paid  shipped
 
@@ -1233,7 +1349,7 @@ This is shorthand: it desugars into a `@@transitions` on each model using the en
 
 Reusable named SQL expressions — define once, reference on any model:
 
-```prisma
+```lite
 function slug(text: String): String {
   @@expr("lower(trim(replace({text}, ' ', '-')))")
 }
@@ -1258,7 +1374,7 @@ Generated columns are `STORED` in SQLite and indexable.
 
 ## Multi-file schemas
 
-```prisma
+```lite
 // schema.lite
 import "./functions.lite"
 import "./enums.lite"
@@ -1272,12 +1388,24 @@ Paths resolve relative to the importing file. Circular imports are deduplicated.
 
 `///` triple-slash comments become JSDoc on generated TypeScript types and `description` in JSON Schema output:
 
-```prisma
+```lite
+enum Role { admin  member }
+
 /// A registered user account.
 model User {
   id    Int @id
   email String    /// The user's primary email address.
-  role  Role    /// Access level — affects what the user can see and do.
+  role  Role      @default(member)
+}
+```
+
+A trailing `///` on the LAST field of a model is a parse error (`Unexpected token '}'`); on any other field it parses:
+
+```lite failing
+// FJS-2386 — a doc comment on the last field fails at the closing brace
+model User {
+  id   Int @id
+  role String    /// Access level — affects what the user can see and do.
 }
 ```
 
@@ -1292,13 +1420,14 @@ The commonest `@generated` by a distance is a string joined out of two or three
 columns, and the reason that shape earns a second language is not length. It is
 the null rule:
 
-```
+```lite
 model Person {
+  id        Int     @id
   firstName String
   middle    String?
   lastName  String?
 
-  fullName  String? @format("{firstName} {middle} {lastName}")
+  fullName  String? @generated(`{firstName} {middle} {lastName}`)
 }
 ```
 
@@ -1356,8 +1485,9 @@ The double-quoted form takes arbitrary SQL and is still how to write
 so it cannot be filtered or sorted by. `@derived` is the same idea one layer
 down — an expression over the row's own columns, emitted into the SELECT:
 
-```
+```lite
 model Task {
+  id          Int       @id
   priority    Int
   dueAt       DateTime?
   completedAt DateTime?
@@ -1376,8 +1506,8 @@ within 2 days". `mo` and `yr` are calendar months, so Jan 31 + 1mo is Mar 3 in
 all of them.
 
 ```js
-db.task.findMany({ where: { overdue: true }, orderBy: { urgency: 'desc' } })
-db.task.groupBy({ by: ['urgency'], _count: true })
+await db.task.findMany({ where: { overdue: true }, orderBy: { urgency: 'desc' } })
+await db.task.groupBy({ by: ['urgency'], _count: true })
 ```
 
 It is not a column: no DDL, no migration, and a write naming it is refused by

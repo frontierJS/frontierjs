@@ -134,7 +134,7 @@ function inlineSpans(text) {
 /** Fenced blocks carrying one of `langs`, joined with their offsets kept. */
 function fences(text, langs) {
   const out = []
-  for (const m of text.matchAll(/```([A-Za-z0-9_-]*)\n([\s\S]*?)```/g))
+  for (const m of text.matchAll(/```([A-Za-z0-9_-]*)[^\n]*\n([\s\S]*?)```/g))
     if (langs.includes(m[1].toLowerCase())) out.push({ body: m[2], index: m.index })
   return out
 }

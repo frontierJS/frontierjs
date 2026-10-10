@@ -38,7 +38,19 @@ An undeclared key in the blob is **accepted**. Declaring says what a form OFFERS
 This is also why the column may not carry `@type`. A type is closed on write, so a key the tenant declares on Tuesday would be refused until the `.lite` changes and the app deploys, which is what `@@extensible` exists to avoid. The two are refused together, by name. Where an app wants both, they are two columns, because they answer to two different people:
 
 ```lite
+type Address { street String  city String }
+enum CustomFieldType { text number }
+
+model CustomField {
+  id    Int             @id
+  model String
+  key   String          @lower
+  type  CustomFieldType
+  @@unique([model, key])
+}
+
 model Client {
+  id      Int  @id
   address Json @type(Address)      // yours   — closed, typed, validated
   fields  Json @default("{}")      // theirs  — open, whatever they declared
 
@@ -49,16 +61,31 @@ model Client {
 ## Reading the declarations
 
 ```js
-const declared = await db.product.$declaredFields()
+await db.customField.create({ data: { model: 'Client', key: 'tier', type: 'text' } })
+await db.customField.create({ data: { model: 'Other',  key: 'size', type: 'text' } })
+
+const declared = await db.client.$declaredFields()
+if (declared.length !== 1 || declared[0].key !== 'tier') throw new Error('expected only the Client declaration')
 ```
 
-Scoped to this model, and a caller cannot widen it. That matters more than it looks: **one declaring table serves every extensible model**, so a plain `findMany({})` answers with another model's keys and the failure is total silence — a key declared on a product becomes an accepted term in a query over customers, matching nobody, request succeeding, count plausible. A model with no `@@extensible` refuses rather than answering an empty list.
+Scoped to this model, and a caller cannot widen it. It reads the declaring model through the caller's own access, so a `@@gate` on `CustomField` applies to it as to any read. That matters more than it looks: **one declaring table serves every extensible model**, so a plain `findMany({})` answers with another model's keys and the failure is total silence — a key declared on a product becomes an accepted term in a query over customers, matching nobody, request succeeding, count plausible. A model with no `@@extensible` refuses rather than answering an empty list.
 
 ## Making a declared key filterable — `max:`
 
 A key in a blob cannot be indexed, so a query naming one is a scan. `max:` buys an index, and it is the half that costs:
 
 ```lite
+enum CustomFieldType { text number }
+
+model CustomField {
+  id    Int             @id
+  model String
+  key   String          @lower
+  type  CustomFieldType
+  slot  String?         @system   // the allocator's column, required once max: is declared
+  @@unique([model, key])
+}
+
 model Customer {
   id     Int  @id
   fields Json @default("{}")
@@ -104,8 +131,8 @@ A key declared once the pool is full gets no slot, and that is an **answer** rat
 A declaration is an ordinary create and states no slot:
 
 ```js
-await db.customField.create({ data: { model: 'Customer', key: 'tier', type: 'text' } })
-// → slot: 't1'
+const tier = await db.customField.create({ data: { model: 'Customer', key: 'tier', type: 'text' } })
+if (tier.slot !== 't1') throw new Error(`expected the first text slot, got ${tier.slot}`)
 ```
 
 First free of the matching kind, in the composite's own order, out of the pool the **named model** declares — so a `Product` declaration gets `null` and a `Customer` one gets a column, from the same call on the same table. `slot` is `@system`, so a caller cannot send one; the column is filled the way the mirror is, in `writeData`.
@@ -118,7 +145,7 @@ An `update` never re-allocates. Re-pointing a live field would leave every exist
 
 ## The declaring model is found by convention
 
-`declaredBy:` names a model and nothing else. Four columns are looked for by name — `model`, `key`, `type`, and `slot` where `max:` is present — and whichever is missing is named at parse time. Convention rather than named arguments, because a second spelling for columns the app has already written is a second thing to keep in step; the refusal is what keeps it from being a silent guess.
+`declaredBy:` names a model and nothing else. Four columns are looked for by name — `model`, `key`, `type` (an enum: what KIND of field it is), and `slot` where `max:` is present — and whichever is missing or of the wrong shape is named at parse time. Convention rather than named arguments, because a second spelling for columns the app has already written is a second thing to keep in step; the refusal is what keeps it from being a silent guess.
 
 `@@unique([model, key])` on the declaring model is required. Without it one model can declare a key twice, and the second declaration is a field whose value nothing can find.
 

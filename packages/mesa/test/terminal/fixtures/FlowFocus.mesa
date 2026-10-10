@@ -1,0 +1,6 @@
+<script>
+  let heard = []
+  let joined = false
+</script>
+<p>{#if joined}See {/if}<a href="/x/" on:focus={() => { joined = true; heard = [...heard, 'focus'] }} on:blur={() => { heard = [...heard, 'blur'] }}>this</a></p>
+<p>heard {heard.join(' ')}</p>

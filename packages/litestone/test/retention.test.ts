@@ -69,11 +69,31 @@ describe('the sweep names the TABLE', () => {
     expect(await bodies(sys, 'log')).toEqual(['fresh'])
   })
 
-  test('a model with no createdAt is left alone rather than failing', async () => {
+  test('a model with no createdAt is left alone rather than failing, and the report says so', async () => {
     const { sys } = await seeded()
     const swept = await sys.$retain()
-    expect(swept.some((r: { model: string }) => r.model === 'Setting')).toBe(false)
+    expect(swept.find((r: { model: string }) => r.model === 'Setting'))
+      .toMatchObject({ database: 'main', table: 'setting', removed: 0, skipped: 'no createdAt DateTime' })
     expect((await sys.setting.findMany()).length).toBe(1)
+  })
+
+  test('a model dated by another name is reported skipped, not absent (FJS-2285)', async () => {
+    const dir = tmp()
+    const db  = await createClient({ schema: `
+      database main { path "${join(dir, 'app.db')}" }
+      database serp { path "${join(dir, 'serp.db')}"  retention 90d }
+      model Ranking { id Int @id @default(autoincrement())  createdAt DateTime @default(now())  @@db(serp) }
+      model Raw     { id Int @id @default(autoincrement())  fetchedAt DateTime @default(now())  @@db(serp) }
+    ` })
+    const sys = db.asSystem()
+    await sys.ranking.create({ data: { createdAt: ago(200) } })
+    await sys.raw.create({ data: { fetchedAt: ago(200) } })
+
+    const swept = await sys.$retain()
+    expect(swept.find((r: { model: string }) => r.model === 'Ranking')).toMatchObject({ removed: 1 })
+    expect(swept.find((r: { model: string }) => r.model === 'Raw'))
+      .toMatchObject({ database: 'serp', removed: 0, skipped: 'no createdAt DateTime' })
+    expect((await sys.raw.findMany()).length).toBe(1)
   })
 })
 
@@ -97,7 +117,7 @@ describe('$retain() — because startup is not a schedule', () => {
     await sys.$retain()
     const second = await sys.$retain()
     expect(second.every((r: { removed: number }) => r.removed === 0)).toBe(true)
-    expect(second.map((r: { model: string }) => r.model).sort()).toEqual(['AuditEvent', 'Log'])
+    expect(second.map((r: { model: string }) => r.model).sort()).toEqual(['AuditEvent', 'Log', 'Setting'])
   })
 
   test('each row names the database it swept and its driver, as RetainResult declares', async () => {

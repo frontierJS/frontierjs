@@ -126,6 +126,19 @@ describe('lower()', () => {
     expect(global.handlers[0].expr.code).toMatch(/preventDefault\(\)/)
   })
 
+  it('lowers <mesa:portal> to a portal node holding its children and reading `to`', async () => {
+    const tree = await ir(`<script>
+  let host = null
+</script>
+<mesa:portal to={host}><p>in</p></mesa:portal>
+<mesa:portal><p>body</p></mesa:portal>
+`, 'P.mesa')
+    const [aimed, bare] = tree.children.filter((c) => c.kind === 'portal')
+    expect(aimed).toMatchObject({ kind: 'portal', loc: 'P.mesa:4:1', to: { raw: 'host' } })
+    expect(aimed.children.map((c) => c.tag)).toEqual(['p'])
+    expect(bare.to).toBe(null)
+  })
+
   it('lowers {@html} to an html node reading its expression', async () => {
     const tree = await ir(`<script>
   let markup = '<b>x</b>'

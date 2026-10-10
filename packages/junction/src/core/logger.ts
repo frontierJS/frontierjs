@@ -269,33 +269,6 @@ export function consoleWriter(format: 'pretty' | 'json' = 'pretty'): LogWriter {
   }
 }
 
-// ─── File writer ──────────────────────────────────────────────────────────
-// Uses Bun.file().writer() — a FileSink that buffers writes and flushes
-// efficiently. Much faster than appendFileSync for high-volume logging
-// because it avoids a syscall per log line.
-
-export function fileWriter(filePath: string): LogWriter {
-  // FileSink is append-mode by default when the file already exists.
-  // It's lazily opened on first write and reused across all calls.
-  let sink: ReturnType<ReturnType<typeof Bun.file>['writer']> | null = null
-
-  function getSink() {
-    if (!sink) {
-      sink = Bun.file(filePath).writer({ highWaterMark: 4096 })
-    }
-    return sink
-  }
-
-  return (entry) => {
-    try {
-      getSink().write(JSON.stringify(entry, secretReplacer) + '\n')
-    } catch {
-      // If the sink breaks, recreate it on next write
-      sink = null
-    }
-  }
-}
-
 // ─── Multi-writer ─────────────────────────────────────────────────────────
 
 export function multiWriter(...writers: LogWriter[]): LogWriter {

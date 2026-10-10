@@ -41,7 +41,7 @@ export const db = await createClient({
 
 ## Schema
 
-```prisma
+```lite
 model User {
   id     Int @id
   email  String    @unique

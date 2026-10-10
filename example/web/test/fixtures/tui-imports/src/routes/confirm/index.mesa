@@ -1,0 +1,10 @@
+<script>
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+
+  let cancels = 0
+</script>
+
+<p>Cancels: {cancels}</p>
+<ConfirmationPopover title="Remove it?" confirmLabel="Remove" oncancel={() => cancels++}>
+  {#snippet trigger()}<button type="button">Ask</button>{/snippet}
+</ConfirmationPopover>

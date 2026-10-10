@@ -1,0 +1,5 @@
+<script>
+  export let where = ''
+  const word = $context.word
+</script>
+<p>{where} {word ?? 'deaf'}</p>

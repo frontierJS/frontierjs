@@ -20,7 +20,7 @@ import {
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
-  aggregatableKeysFor, LIKE_SQL, likePattern,
+  aggregatableKeysFor, LIKE_SQL, likePattern, inList,
   sqlFragment, ident, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
@@ -717,6 +717,31 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return a ? [{ relation: f.name, target: f.type.name, fields: [a.fields].flat(), references: [a.references].flat() }] : []
   })
 
+  // ── a key to a row holding a grant is that grant ──────────────────────────
+  //
+  // The resolver flattens a role row onto whoever holds a key to it, so the
+  // column guard alone is walked around: an admin refused writing a role with
+  // more than they hold points their own key at the owner's role and takes all
+  // of it (FJS-2324). The parent is read past every rule, since a policy
+  // stripping the list would grade it as empty. One hop — a key to a row that
+  // keys a role is the resolver's to flatten, and nothing here can see it.
+  function grantColumnsOf(target) {
+    return (ctx.shapes[target]?.model?.fields ?? []).filter(f => f.type?.name === 'Capability').map(f => f.name)
+  }
+
+  function parentRows(sink, references, values) {
+    return sink.rowsWhere(references[0], [values[0]]).filter(r => references.every((f, j) => r[f] == values[j]))
+  }
+
+  function requireParentGrants(target, fields, references, values) {
+    if (ctx.isSystem) return
+    const grants = grantColumnsOf(target)
+    const sink   = grants.length && ctx.cascadeSinkFor?.(target)
+    if (!sink) return
+    for (const r of parentRows(sink, references, values))
+      for (const g of grants) requireGrantSubset(modelName, fields.join(', '), r[g], ctx)
+  }
+
   async function canRead(tbl, where) {
     try { return await tbl.exists({ where }) }
     catch (e) { if (e instanceof AccessDeniedError) return false; throw e }
@@ -751,6 +776,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // `hidden`, for the create policy to read as missing: a rule reading a
   // hidden parent's column answers by that column, and the caller chose both
   // the key and the payload it is compared with (FJS-1712).
+  //
+  // A parent holding a `Capability[]` is graded here too, only once the caller
+  // can read it: a hidden one answers as hidden, and naming its list would read it.
   async function hiddenParents(rows, stamped = [], system = null) {
     const out = []
     if (ctx.isSystem || !_parentKeys.length) return out
@@ -759,7 +787,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const tbl  = ctx.tables?.[modelToAccessor(p.target)]
       const sink = ctx.cascadeSinkFor?.(p.target)
       if (!tbl || !sink) continue
-      if (await hidesNothing(tbl, p.target)) continue
+      const grants = grantColumnsOf(p.target)
+      const blind  = await hidesNothing(tbl, p.target)
+      if (blind && !grants.length) continue
       const verdict = new Map()
       for (const [i, row] of rows.entries()) {
         if (!row || typeof row !== 'object' || !p.fields.every(f => f in row)) continue
@@ -767,10 +797,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
         const values = p.fields.map(f => row[f])
         if (values.some(v => v == null || typeof v === 'object')) continue
         const key = JSON.stringify(values)
-        if (!verdict.has(key)) verdict.set(key,
+        if (!verdict.has(key)) verdict.set(key, blind ||
           await canRead(tbl, Object.fromEntries(p.references.map((r, j) => [r, values[j]]))) ||
-          !sink.rowsWhere(p.references[0], [values[0]]).some(r => p.references.every((f, j) => r[f] == values[j])))
-        if (verdict.get(key)) continue
+          !parentRows(sink, p.references, values).length)
+        if (verdict.get(key)) {
+          requireParentGrants(p.target, p.fields, p.references, values)
+          continue
+        }
         if (out[i]) { out[i].hidden.add(p.relation); continue }
         out[i] = parentRefusal(p.relation, p.fields, values, p.target)
         Object.defineProperty(out[i], 'hidden', { value: new Set([p.relation]), enumerable: false })
@@ -864,7 +897,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function refusedChildDelete(err, childModel, childTable, foreignKey, parentPKs) {
     if (!isForeignKeyFailure(err) || err instanceof ForeignKeyError) return err
     let rows
-    try { rows = writeDb.query(`SELECT * FROM "${childTable}" WHERE "${foreignKey}" IN (${parentPKs.map(() => '?').join(',')})`).all(...parentPKs) }
+    const binds = []
+    try { rows = writeDb.query(`SELECT * FROM "${childTable}" WHERE ${inList(`"${foreignKey}"`, parentPKs, binds)}`).all(...binds) }
     catch { return err }
     return asRestrictedDelete(err, rows, childModel)
   }
@@ -1255,11 +1289,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
       const hostIds = [...new Set(rows.map(r => r[_pkField]).filter(v => v != null))]
       if (!hostIds.length) continue
-      const ph      = hostIds.map(() => '?').join(', ')
+      const binds   = []
+      const hostIn  = inList(`"${d0.hostCol}"`, hostIds, binds)
       const colList = g.cols.map(c => `"${c.col}"`).join(', ')
       const found   = readDb
-        .query(`SELECT "${d0.hostCol}" AS __h, ${colList} FROM "${d0.table}" WHERE "${d0.hostCol}" IN (${ph}) AND "${d0.dimCol}" = ?`)
-        .all(...hostIds, dimId)
+        .query(`SELECT "${d0.hostCol}" AS __h, ${colList} FROM "${d0.table}" WHERE ${hostIn} AND "${d0.dimCol}" = ?`)
+        .all(...binds, dimId)
       const byHost = new Map()
       for (const fr of found) byHost.set(fr.__h, fr)
       for (const row of rows) {
@@ -1303,7 +1338,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           else if (op === 'gte') { inner.push(`${col} >= ?`); innerParams.push(_ecp(v)) }
           else if (op === 'lt')  { inner.push(`${col} < ?`);  innerParams.push(_ecp(v)) }
           else if (op === 'lte') { inner.push(`${col} <= ?`); innerParams.push(_ecp(v)) }
-          else if (op === 'in')  { inner.push(`${col} IN (${v.map(() => '?').join(', ')})`); v.forEach(x => innerParams.push(_ecp(x))) }
+          else if (op === 'in')  { inner.push(inList(col, v.map(_ecp), innerParams)) }
           else if (op === 'contains') { inner.push(`${col} ${LIKE_SQL}`); innerParams.push(likePattern(op, v)) }
         }
       } else {
@@ -1391,17 +1426,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // root's `ts`, and its keys are read back only when something hangs off it.
   function cascadeSoftRemove(rootPKs, ts, doomed) {
     walkCascade(rootPKs, ({ childModel, childTable, foreignKey, referencedKey, hardDelete }, parentPKs) => {
-      const ph = parentPKs.map(() => '?').join(',')
+      const binds = []
+      const keyIn = inList(`"${foreignKey}"`, parentPKs, binds)
       if (hardDelete) {
         const heard = hardChildDoomed(childModel, foreignKey, parentPKs)
         if (heard) doomed.push(...heard)
-        try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
+        try { writeDb.run(`DELETE FROM "${childTable}" WHERE ${keyIn}`, ...binds) }
         catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
         return null
       }
-      writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
+      writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE ${keyIn} AND "deletedAt" IS NULL`, ts, ...binds)
       if (!_cascadeParents.has(childModel)) return null
-      return readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
+      return readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE ${keyIn}`).all(...binds).map(r => r[referencedKey])
     })
   }
 
@@ -2137,6 +2173,22 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return out ?? row
   }
 
+  // The trail's image of a row a write read back. That row is shaped for the
+  // CALLER, whose read strips a protected column, so a scoped caller's
+  // `system: ['apiKey']` write logged null to null and an image without the
+  // column (FJS-2297). Where the stored row holds a value the caller's row
+  // lacks, the image carries its mark — never the value.
+  function trailImage(raw, shaped) {
+    if (!raw || !shaped || !hasProtectedLogFields) return shaped
+    let out = null
+    for (const [f, mark] of logMarks) {
+      if (raw[f] == null || f in shaped) continue
+      if (!out) out = { ...shaped }
+      out[f] = mark
+    }
+    return out ?? shaped
+  }
+
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
@@ -2231,7 +2283,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const out = []
       for (let i = 0; i < keys.length; i += 500) {
         const chunk = keys.slice(i, i + 500)
-        out.push(...readDb.query(`SELECT * FROM "${tableName}" WHERE "${col(fk)}" IN (${chunk.map(() => '?').join(',')})`).all(...chunk))
+        const binds = []
+        out.push(...readDb.query(`SELECT * FROM "${tableName}" WHERE ${inList(`"${col(fk)}"`, chunk, binds)}`).all(...binds))
       }
       return readAll(out)
     },
@@ -4839,6 +4892,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           const byKey = Object.keys(ops.connect).length === 1 && rel.referencedKey in ops.connect
           throw parentRefusal(fieldName, [rel.foreignKey], [byKey ? ops.connect[rel.referencedKey] : ops.connect], rel.targetModel)
         }
+        requireParentGrants(rel.targetModel, [rel.foreignKey], [rel.referencedKey], [target[rel.referencedKey]])
         extra[rel.foreignKey] = target[rel.referencedKey]
       } else if (ops.create) {
         const target = await tbl.create({ data: ops.create })
@@ -4846,7 +4900,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       } else if (ops.connectOrCreate) {
         const { where: coWhere, create: coCreate } = ops.connectOrCreate
         let target = await tbl.findFirst({ where: coWhere })
-        if (!target) target = await tbl.create({ data: coCreate })
+        if (target) requireParentGrants(rel.targetModel, [rel.foreignKey], [rel.referencedKey], [target[rel.referencedKey]])
+        else target = await tbl.create({ data: coCreate })
         extra[rel.foreignKey] = target[rel.referencedKey]
       }
     }
@@ -4899,6 +4954,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
         // deleted target announces itself; one only joined or left has no write
         // of its own, so it is announced after the join rows land.
         const joined = new Set()
+        // A join row hands whichever side holds a `Capability[]` to the other,
+        // so either side's list is a grant here.
+        const requireJoinGrants = (target) => {
+          requireParentGrants(rel.targetModel, [fieldName], [tpk], [keyOf(target)])
+          requireParentGrants(modelName, [fieldName], [idField], [parentPk])
+        }
 
         // A join row is written with INSERT OR IGNORE so connecting twice is
         // idempotent — which also means a NULL key is ignored rather than
@@ -4924,6 +4985,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) throw new Error(`m2m connect on "${fieldName}": no "${rel.targetModel}" found`)
+            requireJoinGrants(target)
             const res = writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
             if (res.changes) joined.add(keyOf(target))
           }
@@ -4955,6 +5017,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           for (const where of wheres) {
             const target = await tbl.findFirst({ where })
             if (!target) throw new Error(`m2m set on "${fieldName}": no "${rel.targetModel}" found matching ${JSON.stringify(where)}`)
+            requireJoinGrants(target)
             writeDb.run(`INSERT OR IGNORE INTO "${jt}" ("${sk}", "${tk}") VALUES (?, ?)`, parentPk, keyOf(target))
             after.add(keyOf(target))
           }
@@ -5170,7 +5233,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       refuseNoRow(plan.refuse)
       const got = readDb.query(plan.count.sql).get(...plan.count.params)
       const row = plan.result ? read(got, { mode: 'single', hydrateFrom: true }) : null
-      return { rows: [], count: plan.result ? (row ? 1 : 0) : got?.n ?? 0, row, doomed: null, affected: [], duration: 0 }
+      return { rows: [], count: plan.result ? (row ? 1 : 0) : got?.n ?? 0, row, image: trailImage(got, row), doomed: null, affected: [], duration: 0 }
     }
     const notes  = WRITE_NOTES[plan.op]
     const wSql   = where?.sql ?? null
@@ -5188,7 +5251,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const hears = hearsOwn || (plan.prefetch && cascadeHeard())
     const sel = hears || wantRow ? selectWhere(where) : null
     const readOwn = hearsOwn || wantRow
-    const affected = sel && readOwn ? readAll(readDb.query(sel.sql).all(...sel.params)) : []
+    const affectedRaw = sel && readOwn ? readDb.query(sel.sql).all(...sel.params) : []
+    const affected = affectedRaw.length ? readAll(affectedRaw) : affectedRaw
     let rows = returning ? [] : null
     let count = 0
     let doomed = null
@@ -5251,9 +5315,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // A row result is read once here — the post-update rule, the notes, the
     // trail and the caller all take the same row. A statement with no
     // RETURNING answers the prefetch, or nothing.
-    let row = null
+    let row = null, image = null
     if (plan.result) {
       row = rows?.length ? read(rows[0], { mode: 'single', hydrateFrom: true }) : wantRow ? affected[0] ?? null : null
+      image = trailImage(rows?.length ? rows[0] : wantRow ? affectedRaw[0] : null, row)
       // The throw is the rollback: the refused write is never visible.
       if (plan.post && row) checkPostUpdatePolicy(modelName, row, ctx)
     }
@@ -5265,7 +5330,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       else noteCardinalityBySql(wSql, wBinds)
     }
     if (rootPKs?.length) { doomed = []; cascadeSoftRemove(rootPKs, plan.softCascade.ts, doomed) }
-    return { rows, count, row, doomed, affected, duration: _nt ? performance.now() - t0 : 0 }
+    return { rows, count, row, image, doomed, affected, duration: _nt ? performance.now() - t0 : 0 }
   }
 
   // The lock (`FJS-638`): a bulk write run bare joins whatever transaction is
@@ -5289,7 +5354,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // `select: false` still means *do not hand me the row*, and the announcement
   // keeps the row because it HAS one: `null` there means the RETURNING was
   // skipped, which is a different fact.
-  async function finishWrite(plan, { rows, count, row, doomed, affected, duration }) {
+  async function finishWrite(plan, { rows, count, row, image, doomed, affected, duration }) {
     fireQuery({ operation: plan.verb, args: plan.args, sql: plan.query.sql, params: plan.query.params, duration, rowCount: count })
     if (plan.result) {
       // No row reached is three different things, and the plan says which are
@@ -5313,8 +5378,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (plan.logs && row) {
           const b = LOG_BEFORE[plan.op]
           emitLogs(LOG_OP[plan.op], [row], {
-            before: b === 'prefetch' ? plan.before : b === 'row' ? row : b === 'undeleted' ? { ...row, deletedAt: null } : null,
-            after: LOG_AFTER[plan.op] ? row : null, transition: name, system: plan.system, written: writtenOf(plan),
+            before: b === 'prefetch' ? plan.before : b === 'row' ? image : b === 'undeleted' ? { ...image, deletedAt: null } : null,
+            after: LOG_AFTER[plan.op] ? image : null, transition: name, system: plan.system, written: writtenOf(plan),
           })
         }
       }
@@ -5902,7 +5967,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const beforeRaw = tableHasLogWork || _postUpdatePolicy
         ? readDb.query(selAll).get(...whereParams)
         : null
-      const beforeRow = beforeRaw ? read(beforeRaw, { mode: 'single' }) : null
+      const beforeRow = beforeRaw ? trailImage(beforeRaw, read(beforeRaw, { mode: 'single' })) : null
 
       // ── Transition enforcement ────────────────────────────────────────────
       // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
@@ -7919,12 +7984,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       for (const [stamp, rootPKs] of byStamp) {
         walkCascade(rootPKs, ({ childModel, childTable, foreignKey, referencedKey, hardDelete }, parentPKs) => {
           if (hardDelete) return null  // hard-deleted children are gone — cannot restore
-          const ph = parentPKs.map(() => '?').join(',')
+          const binds = []
+          const keyIn = inList(`"${foreignKey}"`, parentPKs, binds)
           // Read before the write: after it, the stamp that names them is gone.
           const childPKs = _cascadeParents.has(childModel)
-            ? readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`).all(...parentPKs, stamp).map(r => r[referencedKey])
+            ? readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE ${keyIn} AND "deletedAt" = ?`).all(...binds, stamp).map(r => r[referencedKey])
             : null
-          writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`, ...parentPKs, stamp)
+          writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE ${keyIn} AND "deletedAt" = ?`, ...binds, stamp)
           return childPKs
         })
       }
@@ -8328,9 +8394,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       let whereSql = buildWhereWithEncryption(searchWhere, baseParams)
       // The index is keyed on the source rowid, not `id` (a String id cannot be
       // an FTS5 rowid), so the hits are rejoined on rowid.
-      const rowidSql = `rowid IN (${rowids.map(() => '?').join(', ')})`
+      const rowidBinds = []
+      const rowidSql   = inList('rowid', rowids, rowidBinds)
       whereSql = whereSql && whereSql !== '1=1' ? `${rowidSql} AND (${whereSql})` : rowidSql
-      baseParams.unshift(...rowids)
+      baseParams.unshift(...rowidBinds)
       // The pre-filter above already narrowed the rowids, so this is belt and
       // braces — and it is the half that must not be dropped: step 2 is what
       // returns the rows, and a future edit that skips the pre-filter for a
@@ -9598,7 +9665,7 @@ function makeLockPrimitive(rawWriteDb) {
     // Which client instance wrote a row, so a process skips its own — it has
     // already announced them in-process, and re-announcing would double every
     // event and re-enter any subscriber that writes.
-    origin:    `${process.pid}:${Math.random().toString(36).slice(2, 10)}`,
+    writer:    `${process.pid}:${Math.random().toString(36).slice(2, 10)}`,
     recorders: {},
     watchers:  {},
     dbs:       crossProcessDbs,
@@ -9607,7 +9674,7 @@ function makeLockPrimitive(rawWriteDb) {
   if (crossProcess) {
     for (const [name, conn] of Object.entries(crossProcessDbs)) {
       ensureEventsTable(conn.rawWriteDb)
-      crossProcess.recorders[name] = makeEventRecorder(conn.rawWriteDb, crossProcess.origin, nowDate)
+      crossProcess.recorders[name] = makeEventRecorder(conn.rawWriteDb, crossProcess.writer, nowDate)
     }
   }
 
@@ -12060,7 +12127,7 @@ function makeLockPrimitive(rawWriteDb) {
       cp.watchers[name] = createEventWatcher({
         db:     conn.rawWriteDb,
         file:   conn.absPath,
-        origin: cp.origin,
+        writer: cp.writer,
         now:    nowDate,
         // Serialized, in arrival order. Each delivery re-reads its row, so
         // firing them off in parallel lets a later event's read finish first

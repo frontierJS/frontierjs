@@ -329,6 +329,10 @@ function drives(root) {
     dir:    d.where,
     start:  `bun run ${d.script}`,
     argv:   ['bun', 'run', d.script],
+    // The script's own line, as package.json states it — the one place that
+    // says which file the drive IS, for a caller asking whether a change
+    // touched the drive itself.
+    run:    d.run,
     port:   null,
     open:   null,
     // §7 — a drive's preamble is prose and an exit-1 string today. Empty is

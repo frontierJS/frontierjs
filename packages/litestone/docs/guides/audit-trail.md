@@ -17,7 +17,7 @@ Set up a complete audit trail that records every write, captures before/after im
 
 ## Schema
 
-```prisma
+```lite
 // schema.lite
 database audit {
   path      "./audit/"
@@ -169,7 +169,7 @@ const deletesPerDay = await db.asSystem().auditTrail.groupBy({
 
 Log reads/writes of a specific field, not the whole model:
 
-```prisma
+```lite
 model User {
   salary Float? @trail(audit)    // log every read and write of salary
 }
@@ -183,7 +183,7 @@ Produces entries with `field: 'salary'` for reads (via `asSystem()`) and writes.
 
 `@secret` fields are logged automatically — no `@@trail` needed:
 
-```prisma
+```lite
 model User {
   apiKey String? @secret    // @encrypted + @guarded + auto-logged
 }
@@ -197,7 +197,7 @@ Every access (read via `asSystem()`) and every write produces an audit entry.
 
 The `retention` config on the trail database prunes old entries on startup:
 
-```prisma
+```lite
 database audit {
   path      "./audit/"
   driver    trail

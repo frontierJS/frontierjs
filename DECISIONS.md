@@ -1374,6 +1374,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d511"></a>2026-10-10 · `FJS-D511` — Should a named move's `@gate` be able to LOWER the model's update level, rather than only floor it — Keep the floor; *many may submit, few may edit* is a capability grant, not a gate. Everyone who makes the move sits at the update level, and `@@capabilities` (which covers moves by default, `FJS-D140`) grants `Timesheet.submit` to many roles and `Timesheet.update` to few. No new gate spelling, and the access stays in the schema.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **D** was picked over **A** (A move's `@gate` REPLACES the update level for a write that is exactly that move (only the state column, or `transition(id, name)`); an ungated move keeps the update level. Any other field in the payload still needs update. `fli check` warns on a move gated below update, naming it as a deliberate drop box), **B** (Keep the floor; add an explicit move attribute (e.g. `@open` / `@gate(4) @replaces`) that opts one move out of the update level. Two spellings of gate, but the lowering is visible at the move), **C** (Keep the floor; the drop box is a custom method under `asSystem()`. No framework change; the access leaves the schema (strains Invariant 6)).
+
+the owner's 2026-09-28 note held: the drop box is level-5 users told apart by capabilities, and capabilities now exist — FJS-D140 has @@capabilities cover moves by default, so the move and the edit are granted separately with no second meaning for @gate. A stays the answer if a gate-ladder app that has not opted into capabilities needs a below-update move.
+
+### <a id="fjs-d855"></a>2026-10-10 · `FJS-D855` — **What stops text one principal wrote from steering tools another principal — A write the model proposes is shown to the person and runs only on their confirmation; reads run unasked. A custom method counts as a write unless it is declared read-only, the direction `mcp`'s `gradedNeed` already reads it in, so a wrong guess asks too often rather than too rarely. And the surface never auto-loads a URL out of the model's output, since an image link carrying a read value is a write to the attacker's server.
+
+Asked in [`IDEAS/chat-surface.md`](IDEAS/chat-surface.md) § Open questions. **C** was picked over **A** (accept it as the caller's own authority: the model can do nothing the caller could not, and that is the bound), **B** (taint the turn: once a tool result or a retrieved row enters context, methods that write are withdrawn for the rest of the turn).
+
+The paper's recommendation, taken as written: whether a method writes is already derived from its verb, so C needs no new concept and holds whatever the model read. B needs the turn to track which text came from where, which is a new concept. A treats the victim's authority as the bound, and the victim's authority is exactly what the attack uses.
+
 ### <a id="fjs-d845"></a>2026-10-09 · `FJS-D845` — Gates on the child — The child's gate is not checked: the parent's gate authorized the cause, and each child audit entry names the caller as actor and the parent write as the cause.
 
 Asked in [`IDEAS/cascading-fields.md`](IDEAS/cascading-fields.md) § Open questions. **A** was picked over **B** (the caller needs update level on every child model, and the whole write is refused when it lacks one), **C** (children the caller cannot write are skipped).
@@ -4774,7 +4786,7 @@ declaration. Sierra's suite asserted `getOptions()`, which an app calls
 directly, and never `options()`, so the crossing had no test at all and every
 picker in every app was alphabetical with no way to say otherwise.
 
-```prisma
+```lite
 valueset ProductColor {
   source Color
   value  name
@@ -4857,7 +4869,7 @@ may not be one, and the sharing `FJS-D120` just adopted is precisely what their
 mechanism cannot do. A dependency that is a JOIN has neither limit: the fact
 lives on the source row as a column, and both readers derive it.
 
-```prisma
+```lite
 model Address {
   countryId String @values(Country)
   stateId   String @values(State, dependsOn: countryId)
@@ -6498,7 +6510,7 @@ part of the table — it has no objection to the same expression in a `SELECT`, 
 in all three positions against one bound instant. The restriction was about a
 storage strategy and was mistaken for a restriction on derivation.
 
-```prisma
+```lite
 overdue Boolean @derived(dueAt < now() && completedAt == null)
 ```
 
@@ -10830,6 +10842,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d856"></a>2026-10-10 · `FJS-D856` — Is `part:` the spelling — `part="header"` on the child, `part:header="dense"` on the parent.
+
+Asked in [`IDEAS/child-part-styling.md`](IDEAS/child-part-styling.md) § Open questions. **A** was picked over **B** (custom properties per styled property, the DatePicker shape), **C** (a prop map, `parts={{ header: 'dense' }}`, as Tailwind-ish kits pass a class string per slot).
+
+The paper's recommendation, taken as written: the platform's word with the platform's meaning, so the shape is stolen whole (*familiarity vs. precision*). B is what `FJS-128` walked away from, and C is a runtime object the compiler cannot see, which leaves question 2's parent-scoped resolution nowhere to happen.
+
 ### <a id="fjs-d838"></a>2026-10-09 · `FJS-D838` — A preview build has no `data-fjs-loc` — A preview build stamps `data-fjs-loc`, behind a named `site-kit build --preview` mode that production cannot reach by default.
 
 Asked in [`IDEAS/anchored-feedback.md`](IDEAS/anchored-feedback.md) § Open questions. **A** was picked over **B** (the anchor stores a selector and a quote, and the dev server maps it to a `loc` at handoff).
@@ -12987,6 +13005,36 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d860"></a>2026-10-10 · `FJS-D860` — What grades an example in a package's hand-written docs — The package's own suite runs every fence: a ```lite block is parsed and built, a ```js/```ts block runs as a module under the nearest preceding ```lite of its file, and three words on the info string are the whole contract — `fragment` (runs nothing), `throws` (passes only by throwing), `failing` (pinned to a filed defect, `test.failing`'s way). The `prisma` fence is gone: litestone's language is fenced ```lite.
+
+The 2026-10-09 litestone docs audit read ~1300 claims and found 165 wrong, 17 of them examples that fail as written, and every one had lived because the only grader over a hand-written page was a link check (`catalog.test.ts`) and a byte comparison of the generated ones. Invariant 16 says a runnable example is verified; `packages/litestone/test/doc-examples.test.ts` is the first place that is true of prose.
+
+The nine, answered after the runner was drafted and named as late. Origin: none — the docs are the origin and the runner reads them; a block's status is a word on its own fence, beside the code. Concept: two info words added and one fence name removed; `failing` is bun's own word. Complexity: the problem's — an example either runs or is a sliver, and only its author can say which, so the sliver is marked where the next reader sees it. Predictability: up — an unmarked block runs, the way an unmarked `*.test.*` is collected. Derived: the verdict is derived by running; nothing is restated. Owner: the package's suite, beside `catalog.test.ts`; when a second package wants one the extraction moves to `fli check` and the package stays the owner of its words (`FJS-2331`). Boundary: the three words, typed on the info string, tested by the runner. Failure: a wrong example is a red test — proportional, since the audit measured a wrong one at a session. Silence: a block marked `fragment` runs nothing and nothing says so, which is why the runner holds a ceiling on the count that ratchets down only (Invariant 14's shape).
+
+**Why the nearest preceding schema and not a hidden default.** A page's examples follow the schema they talk about, so the reading a person makes is the one the runner makes; a page with none gets one block near its top, introduced by a sentence, which is also the page saying what its examples are about. A default schema in the test file would be a second origin the page never shows.
+
+**Why `prisma` goes.** Familiarity vs. precision (§ IV): the ecosystem fence buys GitHub highlighting and says the language is Prisma's, which it is not, and the runner keying on `lite` is the loud failure the row asks for — a `prisma` block is an unverified one.
+
+*Lives in:* `packages/litestone/test/doc-examples.test.ts` · the fences under `packages/litestone/docs/` and its root `README.md`, `AGENTS.md`, `CLAUDE.md`.
+
+### <a id="fjs-d859"></a>2026-10-10 · `FJS-D859` — Does `fli check` flag a port literal in a test dir — Yes, `error`, landing after the 52 files move, so `structure` fails the next one.
+
+Asked in [`IDEAS/workbench-branches.md`](IDEAS/workbench-branches.md) § Open questions. **A** was picked over **B** (yes, `warn`), **C** (no rule; FJS-2277 closes when the 52 have moved).
+
+The paper's recommendation, taken as written: the failure is silent (a drive passing against the parent's server), and § V 9 asks for the artefact that turns it red; a warn is read only by whoever already knows. C leaves the 53rd file to whoever writes it. The pattern is text, so a fixture string (`memory: 8192`) can trip it — the rule's own test carries those as the negatives.
+
+### <a id="fjs-d858"></a>2026-10-10 · `FJS-D858` — A test runs in a linked worktree the lock holds no branch number for — The helper claims it, through `claimSession` — the number `fli dev` would take, under the same lock, released by Archive as now.
+
+Asked in [`IDEAS/workbench-branches.md`](IDEAS/workbench-branches.md) § Open questions. **A** was picked over **B** (the helper refuses, naming the worktree and saying to run `fli dev` there once), **C** (offset 0).
+
+The paper's recommendation, taken as written: one claim path means a test and a dev server in one branch cannot disagree about the number. B makes every hand-made `git worktree add` a chore that teaches nothing, and C is the parent's ports, the silent wrong answer.
+
+### <a id="fjs-d857"></a>2026-10-10 · `FJS-D857` — Who owns the port a test asks for — `ports.js`: one more export, a port by surface or by `{ category, service }` with the branch offset applied, imported as `@frontierjs/cli/core/ports.js`. example and basecamp already depend on `@frontierjs/cli`.
+
+Asked in [`IDEAS/workbench-branches.md`](IDEAS/workbench-branches.md) § Open questions. **A** was picked over **B** (`@frontierjs/toolbelt/ports`: the formula moves there and cli imports it. The branch number is lock-file and git state, which a zero-dependency pure kit cannot read, so it would reach the test as an env var — and inherit D's gap), **C** (`@frontierjs/testing`: it would import cli's `ports.js` (a new edge from the Testing realm into tooling) or copy the formula, and example's drives are plain `.mjs` that import nothing from it today), **D** (no helper: every command fli runs sets `FLI_PORT_OFFSET`, and a test adds `Number(process.env.FLI_PORT_OFFSET ?? 0)` to its literal).
+
+The paper's recommendation, taken as written: `ports.js` already owns the formula, the lock and the branch numbers, so A adds a reader to the owner (Invariant 4) where B and C add a second origin of the formula. D is the silent case this issue exists to close: `bun run test` in a branch, outside fli, gets an offset of 0 and drives the parent.
 
 ### <a id="fjs-d842"></a>2026-10-09 · `FJS-D842` — Config sprawl is the default outcome — Each config file has a closed key table, and its loader refuses an unknown key by name, pointing at the bucket it belongs in (`.lite`, env, or the other config file).
 

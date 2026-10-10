@@ -150,6 +150,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 ## Where to look
 
 - **Starting cold** → `HANDOFF.md`, the two most recent sessions.
+- **Working beside the owner, not on their branch** → `ALONGSIDE.md` — lanes, where findings go, the rebase routine.
 - **What is wrong** → `ISSUES.md` (closed rows age out to `ISSUES_ARCHIVE.md`; search both). **What to work on next** → `fli next`.
 - **What is settled** → `DECISIONS.md`; check it before relitigating. **What is waiting on the owner** → `fli decisions`; write the options into the question's bullet (`**A** — …`, `**Recommend X** — why`) rather than answering in chat.
 - **What is not started** → `IDEAS/`, never cited as behavior; `IDEAS/overview.md` ranks it.

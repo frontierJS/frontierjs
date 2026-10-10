@@ -6,7 +6,7 @@ dated: 2026-10-05
 
 # Idea — The Fable 5 audit plan: what is still unread, and how each run reports
 
-**Status: 6 of 17 runs reported** (1.1, 1.2, 1.3, 2.2, 3.1, 4.1, all on 2026-10-05). Open: 1.4, 1.5, 2.1, 2.3, 2.4, 3.2, 4.2–4.4, 5.1, 5.2. Findings so far are `FJS-1816`–`1820` and `FJS-1831`–`1876`; questions `FJS-D615`–`D619`. Which run filed a row is in the row (*Fable audit 2026-10-05, run N.N*). Dated 2026-10-05. A queue of audits to run
+**Status: 10 of 17 runs reported** (1.1, 1.2, 1.3, 2.2, 3.1, 4.1 on 2026-10-05; 1.4, 1.5, 4.3 and 5.2 on 2026-10-10). Open: 2.1, 2.3, 2.4, 3.2, 4.2, 4.4, 5.1. Findings so far are `FJS-1816`–`1820`, `FJS-1831`–`1876`, `FJS-2334`–`2378` (less the litestone ids another session filed in between); questions `FJS-D615`–`D619`, `FJS-D861`. Which run filed a row is in the row (*Fable audit 2026-10-05, run N.N*). Dated 2026-10-05. A queue of audits to run
 on Fable 5 (`claude-fable-5-1`), ordered by unaudited risk first and judgment-heavy
 work second. A finding lands in `ISSUES.md` with an id. This file stays the plan, and
 it is not a register.

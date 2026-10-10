@@ -2,7 +2,7 @@
 
 A `type` is a reusable shape for JSON values. Used as `Json @type(T)` on a field, the type's structure is validated on every write and the field gets a real TypeScript interface instead of `unknown`.
 
-```
+```lite
 type Address {
   street     String
   city       String
@@ -41,13 +41,27 @@ await db.user.create({ data: {
   name: 'Alice',
   address: { street: '1 Main', city: 'Boston', postalCode: '02101', country: 'US' },
 }})
+```
 
-// Bad writes throw ValidationError with precise paths
+Bad writes throw `ValidationError` with precise paths, one entry per key:
+
+```js throws
 await db.user.create({ data: {
   name: 'Bob',
-  address: { street: 's', city: 'c' },     // missing postalCode
+  address: { street: 's', city: 'c', country: 'US' },     // missing postalCode
 }})
 // → ValidationError: address.postalCode: is required
+```
+
+A `@default` on a member is parsed and never applied, so a write that leaves
+`country` out is refused as missing rather than filled in:
+
+```js failing
+// FJS-2301
+await db.user.create({ data: {
+  name: 'Cy',
+  address: { street: '1 Main', city: 'Boston', postalCode: '02101' },   // country should default to 'US'
+}})
 ```
 
 ## Why typed JSON
@@ -84,7 +98,7 @@ A type describes a JSON value, which means anything that doesn't make sense in J
 | Validators (`@email`, `@regex`, `@length`, `@gte`, `@lt`, `@url`, `@minItems`, ...) | ✓ |
 | Transforms (`@trim`, `@lower`, `@upper`) | ✓ |
 | `@computed` fields | ✓ |
-| Literal `@default("US")` | ✓ |
+| Literal `@default("US")` | ✓ parses — not applied on write (`FJS-2301`) |
 | Relations (`@relation`) | ✗ |
 | `Bytes`, `File` field types | ✗ |
 | `@id`, `@unique`, `@map` | ✗ |
@@ -100,27 +114,43 @@ The reasoning is consistent: anything that needs a SQL column to work (encryptio
 
 By default, types are **strict** — extra keys in the JSON value cause validation to fail.
 
-```js
+```js throws
 await db.user.create({ data: {
-  address: { street: 's', city: 'c', bogus: 'x' }      // ← rejects
+  name: 'Bob',
+  address: { street: 's', city: 'c', postalCode: 'p', country: 'US', bogus: 'x' }      // ← rejects
 }})
-// → ValidationError: address.bogus: unknown field — type Address has no 'bogus'
+// → ValidationError: address.bogus: unknown field — type Address has no 'bogus' (set strict: false to allow)
 ```
 
 This catches typos at write time and prevents schema drift inside JSON. If you need to accept evolving shapes (e.g. consuming events from an external service that may add new keys), opt out per field:
 
-```
+```lite
+type Address {
+  street String
+}
+
 model User {
+  id      Int  @id
   address Json @type(Address, strict: false)
 }
 ```
 
 In loose mode, extra keys are silently kept on write and returned on read. The declared keys are still validated.
 
+```js
+await db.user.create({ data: { address: { street: 's', bogus: 'x' } } })
+// → { id: 1, address: { street: 's', bogus: 'x' } }
+```
+
 **Strict is what makes a type unsuitable for a blob whose keys somebody else decides.** A tenant-declared field — a key a customer of your app adds at three o'clock on a Tuesday — is refused by a strict type until the `.lite` changes and the app deploys, which is the one thing that kind of column exists to avoid. Where an app wants both, they are two columns, because they answer to two different people:
 
-```
+```lite
+type Address {
+  street String
+}
+
 model Client {
+  id      Int  @id
   address Json @type(Address)      // yours   — closed, typed, validated
   fields  Json @default("{}")      // theirs  — open, whatever they declared
 }
@@ -130,10 +160,15 @@ model Client {
 
 A `@default` on a typed column has to be a document the type accepts, and the parser refuses one that is not:
 
-```
-type Care  { symbol String }
-model Item { care Json @default("{}") @type(Care) }
+```js throws
+await createClient({ db: ':memory:', schema: `
+  type Care  { symbol String }
+  model Item { id Int @id  care Json @default("{}") @type(Care) }
+` })
 // → Model 'Item', field 'care': @default("{}") is a value @type(Care) refuses — symbol: is required.
+//   A row written with no value for this column would hold a document the same
+//   schema rejects from a caller. Give the default every key the type requires,
+//   or make those keys optional
 ```
 
 Without that, a row written with no value for the column would hold a document the same schema rejects from a caller. Give the default every key the type requires, or make those keys optional.
@@ -142,7 +177,7 @@ Without that, a row written with no value for the column would hold a document t
 
 Validators work the same inside a type as they do on columns:
 
-```
+```lite
 type Contact {
   email String @email
   phone String? @regex("^\\+[0-9]+$")
@@ -155,7 +190,7 @@ model User {
 }
 ```
 
-```js
+```js throws
 await db.user.create({ data: { contact: { email: 'not-email', age: 30 } } })
 // → ValidationError: contact.email: must be a valid email address
 ```
@@ -165,6 +200,32 @@ Errors include the full path into the JSON value, so a validator on `Contact.ema
 ## Filtering inside JSON
 
 Where queries can drill into typed JSON values using the same shape syntax as the type itself. Litestone compiles the traversal to SQLite `json_extract()` calls — no need to drop into raw SQL:
+
+```lite
+type Coordinates {
+  lat Float
+  lng Float
+}
+
+type Address {
+  street String
+  city   String
+  state  String?
+  coords Json? @type(Coordinates)
+}
+
+model User {
+  id      Int    @id
+  name    String
+  address Json   @type(Address)
+}
+
+model Place {
+  id      Int  @id
+  coords  Json @type(Coordinates)
+  address Json @type(Address)
+}
+```
 
 ```js
 // Equality on a sub-key
@@ -212,9 +273,9 @@ await db.place.findMany({
 
 **Unknown sub-keys are caught at query-build time** with a precise error pointing at the bad path:
 
-```js
+```js throws
 await db.user.findMany({ where: { address: { bogus: 'x' } } })
-// → Error: Unknown field 'bogus' on type Address in WHERE clause
+// → Error: Unknown field 'bogus' on type Address in WHERE clause (at "address"). Address has: street, city, state, coords
 ```
 
 This is the same type info that drives validation on writes — type drift between client and database is impossible.
@@ -227,7 +288,7 @@ This is the same type info that drives validation on writes — type drift betwe
 
 **Indexing a path is a `@generated` column with an `@@index` on it**, and it is declared in the schema like anything else:
 
-```
+```lite
 type Addr { city String  zip String }
 
 model Place {
@@ -265,8 +326,8 @@ The column is VIRTUAL, so it costs no stored bytes and cannot drift from the doc
 
 Types can reference other types:
 
-```
-type Coordinates { lat Float; lng Float }
+```lite
+type Coordinates { lat Float  lng Float }
 
 type Address {
   street String
@@ -282,9 +343,24 @@ model Place {
 
 Validation walks recursively and the error path names where it failed. An invalid `lat` reports at `address.coords.lat`. Cycles (`A` references `B` references `A`) are detected at parse time and rejected.
 
+```js throws
+await db.place.create({ data: { address: { street: '1', city: 'c', coords: { lat: 'north', lng: 1 } } } })
+// → ValidationError: address.coords.lat: must be a number
+```
+
 **Three shapes are the same walk**, and each is graded to the bottom: a field reached through `Json @type(Other)` as above, a field typed as another type directly (`coords Coordinates`), and **every element of an array**:
 
-```js
+```lite
+type Item { key String @regex("^[a-z]+$") }
+type Doc  { items Item[] }
+
+model Thing {
+  id  Int  @id
+  doc Json @type(Doc)
+}
+```
+
+```js throws
 await db.thing.create({ data: { doc: { items: [{ key: 'ok' }, { key: 'BAD KEY' }] } } })
 // → ValidationError: doc.items.1.key: must match pattern ^[a-z]+$
 ```
@@ -295,7 +371,9 @@ An enum used inside a type is checked for membership the way a column-level enum
 
 Mark the field optional with `Json?` to allow null at the column level:
 
-```
+```lite
+type Address { street String }
+
 model User {
   id      Int @id
   address Json? @type(Address)     // can be null
@@ -303,6 +381,10 @@ model User {
 ```
 
 When the value is null, the type validation is skipped entirely. When it's present, the full shape is enforced.
+
+```js
+await db.user.create({ data: { address: null } })    // → { id: 1, address: null }
+```
 
 ## TypeScript output
 
@@ -345,12 +427,10 @@ The shape-change scenario:
 
 - **Add a required field** → existing rows are missing the key → reads succeed but rewriting an existing row may fail validation
 - **Add an optional field** → no impact
-- **Remove a field** → existing rows have an extra key → strict mode reads fail; loose mode keeps the value
+- **Remove a field** → existing rows have an extra key → strict mode refuses the next write of that row; loose mode keeps the value
 - **Tighten a validator** (e.g. add `@email`) → existing rows may not validate → same as above
 
-For now, Litestone doesn't validate on read — only on write. Existing rows that no longer match the type are returned as-is. If you need to find or fix non-compliant rows after a shape change, you'll have to walk the rows yourself.
-
-A future `litestone validate` CLI command may help with this; not yet built.
+Litestone doesn't validate on read — only on write. Existing rows that no longer match the type are returned as-is. If you need to find or fix non-compliant rows after a shape change, you'll have to walk the rows yourself.
 
 ## When to use `Json @type` vs a separate model
 

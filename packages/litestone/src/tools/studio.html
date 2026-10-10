@@ -1789,8 +1789,20 @@ async function api(path, body, method) {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
+// /api/info counts every table, so the Overview load that follows boot (or a
+// database switch) takes that answer instead of asking again. One-shot and
+// short-lived: counts older than a few seconds are re-read.
+let _infoHandoff = null
+const handOffInfo = info => { _infoHandoff = info && { info, at: Date.now() } }
+const takeInfo = () => {
+  const h = _infoHandoff
+  _infoHandoff = null
+  return h && Date.now() - h.at < 5000 ? h.info : api('/info').catch(() => null)
+}
+
 async function boot() {
   const info = await api('/info')
+  handOffInfo(info)
   tenantsEnabled = !!info.tenantsEnabled
   if (info.tenantsEnabled) document.getElementById('navTenantsItem').hidden = false
   if (info.activeTenant) {
@@ -2310,7 +2322,9 @@ async function loadTable(name) {
   if (data.error) { document.getElementById('dataGrid').innerHTML = `<div class="empty">${esc(data.error)}</div>`; return }
   allRows      = data.items || []
   filteredRows = allRows
-  currentTotal = data.total ?? null
+  // The server counts the first page only; a later page keeps the total the
+  // same filter and sort already produced.
+  if (!data.paged || data.total !== undefined) currentTotal = data.total ?? null
   currentQuery = data.query || null
   currentPaged = Boolean(data.paged)
   document.getElementById('btnViewQuery').hidden = !currentQuery
@@ -2727,7 +2741,9 @@ async function runSQL() {
     return
   }
 
-  document.getElementById('sqlStatus').textContent = `${res.rows.length} rows · ${ms}ms`
+  document.getElementById('sqlStatus').textContent = res.truncated
+    ? `first ${res.rows.length.toLocaleString()} rows (more exist — add a LIMIT or WHERE) · ${ms}ms`
+    : `${res.rows.length} rows · ${ms}ms`
   if (!res.rows.length) {
     document.getElementById('sqlResults').innerHTML = '<div class="empty">No results</div>'
     return
@@ -2852,7 +2868,7 @@ async function ovInit() {
       api('/perf/advisor').catch(() => null),
       api('/access').catch(() => null),
       tenantsEnabled ? api('/tenants').catch(() => null) : null,
-      api('/info').catch(() => null),
+      takeInfo(),
     ])
 
     // Counts are re-read rather than taken from boot. Opening a tenant
@@ -7250,6 +7266,7 @@ function applyDatabaseFacts(info) {
  */
 async function reopenDatabase(what) {
   const info = await api('/info').catch(() => null)
+  handOffInfo(info)
   applyDatabaseFacts(info)
   activeTenantId = info?.activeTenant ?? null
 

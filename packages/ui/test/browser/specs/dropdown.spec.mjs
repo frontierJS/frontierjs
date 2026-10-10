@@ -165,11 +165,18 @@ export async function run(t) {
 
   /* ── the ways out ─────────────────────────────────────────────────────── */
 
-  // Click-away is a capture-phase listener on document, added when the menu
-  // opens. Added a moment too early it would eat the click that opened it.
+  // Click-away is a capture-phase listener on the window, heard before the
+  // trigger's own click. Acting while the menu is closed, it would eat the
+  // click that opened it.
   await t.clickAt('#stage')
   await t.eventually(`document.querySelectorAll('[role=menu]').length`, 0,
     'a click outside closes it')
+
+  // Closing a closed menu still hands focus to its trigger, so every click
+  // on the page would pull focus to one.
+  await t.clickAt('#stage')
+  t.ok(await t.evaluate(`return !document.activeElement.matches('[aria-haspopup]');`),
+    'a click while the menu is closed leaves focus off its trigger')
 
   await t.clickAt('#dd-trigger')
   await t.evaluate(`return await waitVisible('[role=menu]');`)

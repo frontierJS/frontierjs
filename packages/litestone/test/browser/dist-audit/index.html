@@ -1,0 +1,9 @@
+<!doctype html><meta charset=utf8><title>audit</title>
+<script type=module>
+window.results = new Promise((resolve, reject) => {
+  const w = new Worker(new URL('./worker.js', location.href), { type: 'module' })
+  w.onmessage = ({ data }) => data.err ? reject(new Error(data.err.message)) : resolve(data.ok)
+  w.onerror   = (e) => reject(new Error('worker failed: ' + e.message))
+  w.postMessage({ wasmUrl: new URL('./index.mjs', location.href).href })
+})
+</script>

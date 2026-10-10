@@ -405,3 +405,5 @@ are in the ruling rather than restated here.
 - `IDEAS/operational-edge.md` 4 — durable workflows (4.19), the noun the hold needs
 - `CLAUDE.md` § Bridge index — `bridge.toContext()`, `sessionGateLevel()`,
   `generateJsonSchema()`, `canAtLevel()` are the four seams this is assembled from
+- `IDEAS/agent-client-ui.md` — the other half: the screen the agent's client shows
+  while a tool runs, as a Mesa target (MCP Apps, A2UI)

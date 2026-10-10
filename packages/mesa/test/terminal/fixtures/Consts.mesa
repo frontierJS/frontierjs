@@ -11,7 +11,7 @@
 {#each items as item, i (item.id)}
   {@const isActive = i === active}
   {@const [w, h] = item.size}
-  <p>{isActive ? '>' : ' '} {item.name} {w * h}</p>
+  <p>{isActive ? '>' : '-'} {item.name} {w * h}</p>
 {/each}
 {#if n}
   {@const x = n * 2}

@@ -11,7 +11,8 @@ examples:
 flags:
   layer:
     type: string
-    description: "Scope check to one layer: schema | services | resources | env"
+    choices: [schema, services, resources, env]
+    description: Scope the check to one layer
     defaultValue: ''
 ---
 

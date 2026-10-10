@@ -13,7 +13,8 @@ flags:
   from:
     char: f
     type: string
-    description: "Source type: caprover | url | gist | ssh | file"
+    choices: [caprover, url, gist, ssh, file]
+    description: Where the variables come from
     defaultValue: caprover
   to:
     char: t

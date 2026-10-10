@@ -275,7 +275,7 @@ framework does not have.
   - **Recommend B** — for now: a transcript's gate, its retention and its tenancy
     differ per app, and a shipped `@@gate` is final. Revisit once two apps here
     have written one.
-- **What stops text one principal wrote from steering tools another principal
+- ~~****What stops text one principal wrote from steering tools another principal**~~ **Answered 2026-10-10 (`FJS-D855`): C — a write the model proposes is shown to the person and runs only on their confirmation; reads run unasked. A custom method counts as a write unless it is declared read-only, the direction `mcp`'s `gradedNeed` already reads it in, so a wrong guess asks too often rather than too rarely. And the surface never auto-loads a URL out of the model's output, since an image link carrying a read value is a write to the attacker's server.**
   holds?** Scoping the tool list to the caller's standing caps escalation and
   does nothing about injection: a review, a ticket or a product description
   retrieved by `findSimilar()` enters the context of a model holding the READER's
@@ -286,7 +286,11 @@ framework does not have.
   - **B** — taint the turn: once a tool result or a retrieved row enters context,
     methods that write are withdrawn for the rest of the turn.
   - **C** — a write the model proposes is shown to the person and runs only on
-    their confirmation; reads run unasked.
+    their confirmation; reads run unasked. A custom method counts as a write unless
+    it is declared read-only, the direction `mcp`'s `gradedNeed` already reads it in,
+    so a wrong guess asks too often rather than too rarely. And the surface never
+    auto-loads a URL out of the model's output, since an image link carrying a read
+    value is a write to the attacker's server.
   - **Recommend C** — whether a method writes is already derived from its verb, so
     C needs no new concept and holds whatever the model read. B needs the turn to
     track which text came from where, which is a new concept. A treats the victim's

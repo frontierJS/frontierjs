@@ -138,8 +138,9 @@ keeps its meaning too; an app whose surfaces ignore their variable gets no branc
 number, as it gets no slot; `releaseSession(root)` now drops every app root inside
 `root`, so Archive gives the number back whichever of the worktree's apps ran.
 basecamp's API and SPA read `FLI_PORT_BE`/`FLI_PORT_FE` beside their own `PORT`/
-`API_PORT`/`UI_PORT`, without which the offset reached nothing; `example`'s API reads
-neither yet, so it takes no number.
+`API_PORT`/`UI_PORT`, without which the offset reached nothing, and `example`'s do the
+same. `readsPortVar` blanks comments first, so a config naming the variable only in
+prose grades as binding its literal.
 
 **Proved by** basecamp's workbench tests against a real temp repo (fork, a dirty
 parent, Land with and without a conflict, Archive, the copy list and an install that
@@ -202,3 +203,68 @@ the workbench setup test asserting `bun.lock` byte-identical and an empty diff. 
 app that ignores `FLI_PORT_*` lands on its parent's port and `fli dev`'s busy check
 refuses it there. No § IV
 adjudication is in tension. Tier: Assessment.
+
+## Open questions
+
+`FJS-2277`'s three, probed 2026-10-10. What they must leave true: a test run in a
+branch reaches the branch's servers and binds the branch's ports, and a test that
+does not fails loudly rather than driving the parent. Today a literal does the
+second silently — `example/web/test/verify-collect.mjs` defaults to 8110, which in a
+branch is the PARENT's API, so the drive passes against code it was not given
+(the `FJS-740` shape). 52 files under example's and basecamp's test dirs name a
+port in 7100–8199, an upper bound.
+
+- ~~**Who owns the port a test asks for?**~~ **Answered 2026-10-10 (`FJS-D857`): A — `ports.js`: one more export, a port by surface or by `{ category, service }` with the branch offset applied, imported as `@frontierjs/cli/core/ports.js`. example and basecamp already depend on `@frontierjs/cli`.** The answer is a dev or test port plus the
+  branch's offset; the formula (`port()`, `BRANCH_STEP`) and the branch number
+  (`branchFor`, read from the lock `claimSession` writes) both live in
+  `packages/cli/core/ports.js` today.
+  - **A** — `ports.js`: one more export, a port by surface or by `{ category,
+    service }` with the branch offset applied, imported as
+    `@frontierjs/cli/core/ports.js`. example and basecamp already depend on
+    `@frontierjs/cli`.
+  - **B** — `@frontierjs/toolbelt/ports`: the formula moves there and cli imports it.
+    The branch number is lock-file and git state, which a zero-dependency pure kit
+    cannot read, so it would reach the test as an env var — and inherit D's gap.
+  - **C** — `@frontierjs/testing`: it would import cli's `ports.js` (a new edge from
+    the Testing realm into tooling) or copy the formula, and example's drives are
+    plain `.mjs` that import nothing from it today.
+  - **D** — no helper: every command fli runs sets `FLI_PORT_OFFSET`, and a test adds
+    `Number(process.env.FLI_PORT_OFFSET ?? 0)` to its literal.
+  - **Recommend A** — `ports.js` already owns the formula, the lock and the branch
+    numbers, so A adds a reader to the owner (Invariant 4) where B and C add a
+    second origin of the formula. D is the silent case this issue exists to close:
+    `bun run test` in a branch, outside fli, gets an offset of 0 and drives the
+    parent.
+- ~~**A test runs in a linked worktree the lock holds no branch number for.**~~ **Answered 2026-10-10 (`FJS-D858`): A — the helper claims it, through `claimSession` — the number `fli dev` would take, under the same lock, released by Archive as now.** Fork
+  does not claim one; only `fli dev` does, so a branch whose first act is a test
+  run has none.
+  - **A** — the helper claims it, through `claimSession` — the number `fli dev`
+    would take, under the same lock, released by Archive as now.
+  - **B** — the helper refuses, naming the worktree and saying to run `fli dev`
+    there once.
+  - **C** — offset 0.
+  - **Recommend A** — one claim path means a test and a dev server in one branch
+    cannot disagree about the number. B makes every hand-made `git worktree add` a
+    chore that teaches nothing, and C is the parent's ports, the silent wrong answer.
+- ~~**Does `fli check` flag a port literal in a test dir?**~~ **Answered 2026-10-10 (`FJS-D859`): A — yes, `error`, landing after the 52 files move, so `structure` fails the next one.** A number in 7000–8999
+  (8500–8509 excepted) beside `localhost`, `listen` or `port` in a `test/` or
+  `tests/` directory, in an app with a `db/`.
+  - **A** — yes, `error`, landing after the 52 files move, so `structure` fails the
+    next one.
+  - **B** — yes, `warn`.
+  - **C** — no rule; FJS-2277 closes when the 52 have moved.
+  - **Recommend A** — the failure is silent (a drive passing against the parent's
+    server), and § V 9 asks for the artefact that turns it red; a warn is read
+    only by whoever already knows. C leaves the 53rd file to whoever writes it.
+    The pattern is text, so a fixture string (`memory: 8192`) can trip it — the
+    rule's own test carries those as the negatives.
+
+The nine, for the three recommendations together, answered before any code: origin —
+`ports.js`, the one place the formula lives; concept — none, a port is a port;
+complexity — the problem's, two checkouts of one app on one machine; predictability —
+a test's port is a dev server's port by the same function; derived — the port is
+computed, never written; owner — `ports.js`, read through `bridge-index` first and
+nothing else owns a port; boundary — a test names its surface and never knows the
+branch; failure — a full branch block throws the existing `freeBranch` refusal;
+silence — the `fli check` rule is the artefact, and until it lands, `none`. No § IV
+adjudication is in tension. Tier: Assessment, until ruled.

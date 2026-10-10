@@ -78,7 +78,7 @@ export function parseSize(str) {
 
 // ─── SQLite retention ─────────────────────────────────────────────────────────
 // Deletes rows older than the retention period from every model in the database
-// that has a `createdAt DateTime` field.
+// that has a `createdAt DateTime` field; one without answers a `skipped` line.
 //
 // Safe to call at startup — silently skips tables that don't exist yet,
 // and no-ops when nothing needs deleting.
@@ -107,7 +107,8 @@ export function parseSize(str) {
 //                           under those rows, read before the DELETE takes them
 // @param opts.batches      most batches per table; the boot pass takes one
 // @param opts.stopped      () → true once the client closed, checked between batches
-// @returns [{ model, table, removed }] for every table it touched
+// @returns [{ model, table, removed }] for every model in the database; `error`
+//          on one that would not sweep, `skipped` on one with no createdAt
 
 export const RETENTION_BATCH = 1000
 
@@ -131,7 +132,13 @@ export async function runSqliteRetention(rawWriteDb, models, retention, {
     const createdAt = model.fields.find(
       f => f.name === 'createdAt' && f.type.name === 'DateTime'
     )
-    if (!createdAt) continue
+    // Said, not dropped: a model dated by another name (`fetchedAt`) keeps every
+    // row under a declared window, and a report with no line for it cannot be
+    // told from one that swept it (FJS-2285).
+    if (!createdAt) {
+      swept.push({ model: model.name, table: modelToTableName(model, pluralize), removed: 0, skipped: 'no createdAt DateTime' })
+      continue
+    }
 
     // The TABLE, not the model. `DELETE FROM "AuditEvent"` names nothing — the
     // table is `audit_event` — and the throw landed in a catch commented *table

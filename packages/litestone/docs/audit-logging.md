@@ -6,7 +6,7 @@ Litestone provides field-level and model-level audit logging via the `trail` dat
 
 Declare a trail database in your schema:
 
-```prisma
+```lite
 database audit {
   path      "./audit/"
   driver    trail
@@ -18,7 +18,7 @@ database audit {
 
 Log every write (create, update, delete) on a model:
 
-```prisma
+```lite
 model User {
   id    Int @id
   email String
@@ -33,7 +33,7 @@ Every `create`, `update`, and `delete` on `users` produces an entry in the audit
 
 Log reads and writes of a specific sensitive field:
 
-```prisma
+```lite
 model User {
   salary Float?   @trail(audit)
   apiKey String?   @secret    // @secret implies @trail(audit) automatically
@@ -72,7 +72,7 @@ An unlogged model pays none of this — the `RETURNING` path is taken only when 
 
 The audit trail records **that** a protected field was written — by whom, to which rows, when — never what it holds. Any field carrying `@encrypted`, `@guarded`, `@hashed`, or `@secret` (which implies the first two) has its value replaced with `'[redacted]'` in every log entry, in both the field-level entry and the model-level `before`/`after` snapshot:
 
-```prisma
+```lite
 model Vault {
   id      Int     @id
   name    String
@@ -104,7 +104,7 @@ The value returned to the caller is never affected — redaction happens on the 
 
 A column about a person is `@personal`, optionally with a category. A reader the gate admits still sees it; the trail does not keep it, because the trail outlives the row and an erased person's email would otherwise stay in every before- and after-image. It logs as `'[personal]'`, so an entry still says which kind of value was dropped:
 
-```prisma
+```lite
 model Candidate {
   id          Int     @id
   email       String  @personal(contact)
@@ -190,7 +190,7 @@ The auto-generated model name for a trail database is `<dbName>Trail` — `audit
 
 `@secret` is a composite that bundles all three security attributes:
 
-```prisma
+```lite
 model User {
   apiKey String? @secret                 // @encrypted + @guarded + @trail(audit)
   token  String? @secret(rotate: false)  // same, but excluded from $rotateKey
@@ -209,7 +209,7 @@ order lines up with the answer table's rowid order, which SQLite keeps whether
 the schema mentions it or not. So a comment on the answer model protects
 nothing. `@@anonymous` is a declaration the parser and client refuse from:
 
-```prisma
+```lite
 model SurveyResponse {
   id         String @id @default(uuid())
   rating     Int
@@ -235,7 +235,7 @@ attributable stay attributable, so declare it before the first row (`FJS-D349`).
 
 The `retention` value on a trail database prunes old entries on startup:
 
-```prisma
+```lite
 database audit {
   path      "./audit/"
   driver    trail
@@ -257,9 +257,10 @@ export default defineJob('retention', () => db.asSystem().$retain(), { cron: '0 
 
 `asSystem()` because a sweep is a DELETE against the base table and applies no gate, no
 row policy and no `@@softDelete`; every other flavor of client refuses it by name. It
-answers one row per table it touched — `{ model, table, removed }`, plus `error` where a
-table would not sweep, which is worth logging: a declared policy quietly not applying is
-the failure the whole declaration exists to prevent.
+answers one row per model in a retained SQLite database — `{ model, table, removed }`, plus
+`error` where a table would not sweep and `skipped` where the model has no `createdAt DateTime`
+(a model dated `fetchedAt` keeps every row). Both are worth logging: a declared policy quietly
+not applying is the failure the whole declaration exists to prevent.
 
 **A SQLite sweep is batches of a thousand rows, yielding to the event loop between
 them**, so requests keep being served while it runs. The startup pass takes ONE batch a

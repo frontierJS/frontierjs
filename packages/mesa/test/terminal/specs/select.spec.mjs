@@ -84,7 +84,7 @@ export async function run(t) {
   t.expectFrame(await t.frame(), ['kind number qty 25'], 'a number input binds back a number')
   await t.press('BACKSPACE')
   await t.press('BACKSPACE')
-  t.expectFrame(await t.frame(), ['kind undefined qty  city'], 'an empty number input binds back undefined')
+  t.expectFrame(await t.frame(), ['kind undefined qty city'], 'an empty number input binds back undefined')
 
   const Multi = await t.compile('Multi')
   await t.mount(Multi, {})

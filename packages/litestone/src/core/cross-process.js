@@ -53,10 +53,15 @@ export const DEFAULT_RETENTION_MS = 10 * 60 * 1000
 export const DEFAULT_POLL_MS = 2000
 
 export function ensureEventsTable(db) {
+  // A table from before the column was renamed has no `writer` column, so
+  // every announcement would fail to record and only warn. The table is
+  // litestone's own and holds minutes of history, so it is dropped (`FJS-D781`).
+  const cols = db.prepare(`PRAGMA table_info("${EVENTS_TABLE}")`).all()
+  if (cols.some(c => c.name === 'origin')) db.run(`DROP TABLE "${EVENTS_TABLE}"`)
   db.run(`
     CREATE TABLE IF NOT EXISTS "${EVENTS_TABLE}" (
       id      INTEGER PRIMARY KEY AUTOINCREMENT,
-      origin  TEXT    NOT NULL,
+      writer  TEXT    NOT NULL,
       event   TEXT    NOT NULL,
       model   TEXT    NOT NULL,
       scope   TEXT    NOT NULL,
@@ -76,14 +81,14 @@ export function ensureEventsTable(db) {
  * The writer. Prepared once per client and called on every announced write, so
  * it takes the statement rather than the database.
  */
-export function makeEventRecorder(db, origin, now) {
+export function makeEventRecorder(db, writer, now) {
   const stmt = db.prepare(
-    `INSERT INTO "${EVENTS_TABLE}" (origin, event, model, scope, count, recordId, detail, at)
+    `INSERT INTO "${EVENTS_TABLE}" (writer, event, model, scope, count, recordId, detail, at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 
   return function record({ event, model, scope, count, recordId, detail }) {
     try {
-      stmt.run(origin, event, model, scope ?? 'row', count ?? 1,
+      stmt.run(writer, event, model, scope ?? 'row', count ?? 1,
         recordId == null ? null : String(recordId),
         detail ? JSON.stringify(detail) : null,
         now().toISOString())
@@ -106,7 +111,7 @@ export function makeEventRecorder(db, origin, now) {
  * signal, and it is reported rather than hidden.
  */
 export function createEventWatcher({
-  db, file, origin, onEvent, onGap,
+  db, file, writer, onEvent, onGap,
   pollMs = DEFAULT_POLL_MS,
   retentionMs = DEFAULT_RETENTION_MS,
   now = () => new Date(),
@@ -159,7 +164,7 @@ export function createEventWatcher({
           // Its own: already announced in-process the moment it was written.
           // Re-announcing would double every event and re-enter any subscriber
           // that writes.
-          if (row.origin === origin) continue
+          if (row.writer === writer) continue
           try { onEvent(decode(row)) } catch (err) { onError(err) }
         }
         if (rows.length < 500) break
@@ -228,6 +233,6 @@ function decode(row) {
     recordId: row.recordId,
     detail:   row.detail ? JSON.parse(row.detail) : null,
     at:       row.at,
-    origin:   row.origin,
+    writer:   row.writer,
   }
 }

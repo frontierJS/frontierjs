@@ -7,7 +7,10 @@ Attach a field value to a **relationship** instead of a row. Two things want thi
 
 Both are the same shape: a value keyed by two things. Without edge fields you'd hand-write a join model and rewrite every query through it. `@edge` lets you keep the value on a managed side table and read/write it like a normal field — and **eject** to a real model, losslessly, only when the relationship actually grows up.
 
-```prisma
+```lite
+model User    { id Int @id  @@auth }           // @scoped binds to the @@auth model
+model Project { id Int @id  tasks Task[] }
+
 model Task {
   id          Int @id
   title       String
@@ -31,7 +34,7 @@ Rule of thumb: if the value is the same for everyone, use a column or a relation
 
 `@scoped` — shorthand for the per-viewer case. Equivalent to `@edge` pointed at your `@@auth` model, bound automatically from `auth()`. `myFlag Boolean @scoped` is "my flag", resolved for the current viewer with no extra plumbing.
 
-```prisma
+```lite
 model User { id Int @id  @@auth }   // @scoped needs a model marked @@auth
 ```
 
@@ -61,12 +64,18 @@ Edge fields are **not** columns on the host table. This is what makes eject a re
 
 Multiple fields sharing a namespace form one group on one side table:
 
-```prisma
+```lite
+model User    { id Int @id  @@auth }
+model Project { id Int @id  name String  tasks Task[] }
+
 model Task {
   id       Int @id
+  title    String
+  status   String @default("open")
   projects Project[]
   isImportant Boolean @edge(ref: Project) @default(false)  // projectEdge.isImportant
   note        String? @edge(ref: Project)                  // projectEdge.note
+  myFlag      Boolean @scoped @default(false)              // mine.myFlag
 }
 ```
 
@@ -79,53 +88,76 @@ Edge values surface under their namespace. The dimension can be bound three ways
 Reach the edge *through* its ref relation and the dimension is pinned by the path — no `scopedBy` needed:
 
 ```js
+await db.project.create({ data: { id: 123, name: 'Launch' } })
+await db.task.create({
+  data:     { id: 1, title: 'Design', projects: { connect: { id: 123 } }, projectEdge: { isImportant: true, note: 'blocking' } },
+  scopedBy: { projectId: 123 },
+})
+
 const project = await db.project.findFirst({
   where: { id: 123 },
   include: { tasks: true },
 })
 // project.tasks[0].projectEdge → { isImportant: true, note: 'blocking' }  (resolved for project 123)
+if (project.tasks[0].projectEdge.note !== 'blocking') throw new Error('expected the edge resolved for project 123')
 ```
 
 ### By `scopedBy` (flat access)
 
 ```js
-await db.task.findMany({ scopedBy: { projectId: 123 } })
-// each task.projectEdge → resolved for project 123
+await db.project.create({ data: { id: 123, name: 'Launch' } })
+await db.task.create({ data: { id: 1, title: 'Design', projects: { connect: { id: 123 } } } })
+
+const tasks = await db.task.findMany({ scopedBy: { projectId: 123 } })
+// each task.projectEdge → resolved for project 123; nothing set yet, so the @default
+if (tasks[0].projectEdge.isImportant !== false) throw new Error('expected the @default')
 ```
 
 ### By `auth()` (@scoped)
 
 ```js
-const me = db.$setAuth(req.user)
-const t  = await me.task.findFirst({ where: { id } })
+await db.user.create({ data: { id: 7 } })
+await db.task.create({ data: { id: 1, title: 'Design' } })
+const me = db.$setAuth({ id: 7 })
+await me.task.update({ where: { id: 1 }, data: { mine: { myFlag: true } } })
+
+const t = await me.task.findFirst({ where: { id: 1 } })
 // t.mine → { myFlag: true }  (this viewer's value)
+if (t.mine.myFlag !== true) throw new Error('expected this viewer\'s flag')
 ```
 
-A task never set for the current viewer reads as the field's `@default`. Under `asSystem()` / no auth, a `@scoped` field reads as its `@default` for every row (there's legitimately no viewer). A non-auth edge read with no bound dimension simply leaves the namespace absent — the "you forgot to bind" error is reserved for *filtering*, where the intent is explicit.
+A task never set for the current viewer reads as the field's `@default`. Under `asSystem()` / no auth, a `@scoped` field reads as its `@default` for every row (there's legitimately no viewer). A non-auth edge read with no bound dimension simply leaves the namespace absent — the "you forgot to bind" error is reserved for *filtering*, where the intent is explicit. The side table holds a real foreign key to the viewer, so a `@scoped` write for a principal with no row on the `@@auth` model fails on the constraint.
 
 ## Writing
 
 Write edge values under the namespace, alongside normal columns:
 
 ```js
+await db.user.create({ data: { id: 7 } })
+await db.project.create({ data: { id: 123, name: 'Launch' } })
+await db.task.create({ data: { id: 1, title: 'Draft', projects: { connect: { id: 123 } } } })
+
 await db.task.update({
-  where: { id },
+  where: { id: 1 },
   data:  { title: 'Ship it', projectEdge: { isImportant: true, note: 'blocking' } },
   scopedBy: { projectId: 123 },
 })
 
 // @scoped writes bind from auth automatically:
-await db.$setAuth(user).task.update({ where: { id }, data: { mine: { myFlag: true } } })
+await db.$setAuth({ id: 7 }).task.update({ where: { id: 1 }, data: { mine: { myFlag: true } } })
 ```
 
 The base row and the edge row are written together. A create can set edge data if the link is established in the same call:
 
 ```js
+await db.project.create({ data: { id: 123, name: 'Launch' } })
 await db.task.create({
-  data: { title: 'Design', projects: { connect: { id: 123 } }, projectEdge: { isImportant: true } },
+  data: { id: 1, title: 'Design', projects: { connect: { id: 123 } }, projectEdge: { isImportant: true } },
   scopedBy: { projectId: 123 },
 })
 ```
+
+The row a create answers carries the base columns only; the edge values come back on a read that binds the dimension.
 
 **Membership is required for a decorate edge.** Setting `projectEdge` for a task that isn't in that project throws `EDGE_NO_MEMBERSHIP` — the write never silently creates the link. (`@scoped` / create-own edges have no separate membership, so they just upsert their own row.)
 
@@ -136,20 +168,29 @@ await db.task.create({
 Filter on an edge under its namespace; it compiles to an `EXISTS` scoped to the bound dimension and composes with any normal `where`:
 
 ```js
+await db.user.create({ data: { id: 7 } })
+await db.project.create({ data: { id: 123, name: 'Launch' } })
+await db.task.create({ data: { id: 1, title: 'Design', projects: { connect: { id: 123 } }, projectEdge: { isImportant: true } }, scopedBy: { projectId: 123 } })
+await db.task.create({ data: { id: 2, title: 'Docs',   projects: { connect: { id: 123 } } } })
+await db.$setAuth({ id: 7 }).task.update({ where: { id: 2 }, data: { mine: { myFlag: true } } })
+
 // the important tasks in project 123
-await db.task.findMany({
+const important = await db.task.findMany({
   where:    { projectEdge: { isImportant: true } },
   scopedBy: { projectId: 123 },
 })
+if (important.length !== 1 || important[0].id !== 1) throw new Error('expected task 1 only')
 
 // my flagged tasks
-await db.$setAuth(user).task.findMany({ where: { mine: { myFlag: true } } })
+const flagged = await db.$setAuth({ id: 7 }).task.findMany({ where: { mine: { myFlag: true } } })
+if (flagged.length !== 1 || flagged[0].id !== 2) throw new Error('expected task 2 only')
 
 // composes with scalar filters, and count honors it
-await db.task.count({
+const n = await db.task.count({
   where:    { status: 'open', projectEdge: { isImportant: true } },
   scopedBy: { projectId: 123 },
 })
+if (n !== 1) throw new Error(`expected 1, got ${n}`)
 ```
 
 Operators supported inside the namespace: equality, `not`, `gt`/`gte`/`lt`/`lte`, `in`, `contains`. Filtering a non-auth edge with no bound dimension is an error — bind it with `scopedBy`.
@@ -159,12 +200,18 @@ Operators supported inside the namespace: equality, `not`, `gt`/`gte`/`lt`/`lte`
 Bind a dimension once instead of per query, and chain it with `$setAuth`:
 
 ```js
+await db.user.create({ data: { id: 7 } })
+await db.project.create({ data: { id: 123, name: 'Launch' } })
+await db.task.create({ data: { id: 1, title: 'Design', projects: { connect: { id: 123 } } } })
+
 const proj = db.$scopedBy({ projectId: 123 })
-await proj.task.update({ where: { id }, data: { projectEdge: { isImportant: true } } })
+await proj.task.update({ where: { id: 1 }, data: { projectEdge: { isImportant: true } } })
 await proj.task.findMany({ where: { projectEdge: { isImportant: true } } })
 
 // both dimensions active at once:
-const both = db.$scopedBy({ projectId: 123 }).$setAuth(user)
+const both = db.$scopedBy({ projectId: 123 }).$setAuth({ id: 7 })
+const t = await both.task.findFirst({ where: { id: 1 } })
+if (t.projectEdge.isImportant !== true || t.mine.myFlag !== false) throw new Error('expected both namespaces resolved')
 ```
 
 A bound dimension applies to **every** edge that declares that key name, across all models — so `scopedBy({ projectId })` resolves a project edge on `Task` and a project edge on `Message` in one binding. Sharing is intentional: same key name, same binding.
@@ -177,7 +224,13 @@ A bound dimension applies to **every** edge that declares that key name, across 
 
 If a model has two *different* relationships to the same ref, disambiguate both the namespace and the key:
 
-```prisma
+```lite
+model Project {
+  id          Int    @id
+  teamTasks   Task[] @relation("team")
+  clientTasks Task[] @relation("client")
+}
+
 model Task {
   id       Int @id
   teamProjects   Project[] @relation("team")
@@ -201,7 +254,10 @@ litestone edge eject Task.projectEdge --apply
 
 This prints the model to add, the fields to remove, the m2m to rewire (for a decorate edge), and runs the physical `ALTER TABLE "_project_task" RENAME TO "project_task"`:
 
-```prisma
+```lite
+model Project { id Int @id  links ProjectTask[] }
+model Task    { id Int @id  links ProjectTask[] }
+
 model ProjectTask {
   projectId Int @id
   taskId    Int @id

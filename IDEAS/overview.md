@@ -2,7 +2,7 @@
 id: overview
 status: index
 dated: 2026-08-06
-revised: 2026-10-09
+revised: 2026-10-10
 ---
 
 # Ideas — the overview
@@ -714,6 +714,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 
 ### proposed
 
+- `agent-client-ui.md` — a Resource rendered inside the agent's client: MCP Apps and A2UI as Mesa targets
 - `api-ontology.md` — the API realm's primitives: the words Junction spells and no register defines
 - `bun-1.4-upgrade.md` — moving the workspace to Bun 1.4
 - `bun-natives.md` — what Bun 1.4's natives can replace here
@@ -730,6 +731,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `kernel-and-projections.md` — Kernel and projections: the structure the seed thesis implies
 - `manual-order.md` — A position a person drags, declared on the column
 - `mesa-kit-primitives.md` — the primitives the Mesa kit keeps re-writing
+- `no-port-app.md` — the app with no port: vendor-hosted and never-deployed as release artifact kinds
 - `on-page-editing.md` — the ask panel's next four moves, ranked by what on-page editors love
 - `oracle-reasoning.md` — how it should reason
 - `orion-decision-step.md` — A decision step for orion: lookup tables and a stated reason

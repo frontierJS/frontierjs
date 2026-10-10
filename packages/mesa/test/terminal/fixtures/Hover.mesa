@@ -9,6 +9,6 @@
 <p>active {active} moves {moves} heard {heard} picked {picked}</p>
 <ul on:mousemove={() => heard++}>
   {#each rows as row, i}
-    <li on:mousemove={() => { moves++; if (active !== i) active = i }} on:click={() => picked = row}>{i === active ? '>' : ' '} {row}</li>
+    <li on:mousemove={() => { moves++; if (active !== i) active = i }} on:click={() => picked = row}>{i === active ? '>' : '-'} {row}</li>
   {/each}
 </ul>

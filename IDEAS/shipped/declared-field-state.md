@@ -176,7 +176,7 @@ The only one of the four that was genuinely absent — and it is spelled
 proposed, because `@@unique([a], where: …)` and `@@index([a], where: …)` are the
 same shape and neither coined a second word.
 
-```prisma
+```lite
 model Order {
   status       OrderStatus  @default(draft)
   trackingCode String?      @required(where: status == 'shipped',

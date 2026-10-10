@@ -27,7 +27,7 @@
 import { xNode, Q, PRESERVE_WHITESPACE } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS } from './tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline } from './tags.js'
 
 const IDENT = /^[A-Za-z_$][\w$]*$/
 
@@ -154,6 +154,23 @@ function preEdges(n, starts, ends) {
   while (last?.kind === 'element' && last.children.length) last = last.children.at(-1)
   if (last?.kind === 'text' || last?.kind === 'html') ends.add(last)
 }
+/**
+ * The white space between two siblings that may sit in one line, which a
+ * browser paints as one space: `</kbd> <kbd>`, `</button> <button>`. Kept as
+ * one space unless either neighbor is a block tag, beside which a browser
+ * paints none. One beside a component, a block or a slot cannot be judged
+ * here, and the runtime drops it where it starts a line (`flow`).
+ */
+function spacesIn(children) {
+  const out = new Set()
+  const real = children.filter((c) => c.kind !== 'comment' && c.kind !== 'snippet' && c.kind !== 'const')
+  const block = (c) => c?.kind === 'element' && !isInline(c.tag)
+  real.forEach((c, i) => {
+    if (i === 0 || i === real.length - 1 || !blank(c)) return
+    if (!block(real[i - 1]) && !block(real[i + 1])) out.add(c)
+  })
+  return out
+}
 const LEADING_NEWLINE = /^\r?\n/
 const TRAILING_NEWLINE = /\r?\n$/
 
@@ -231,6 +248,7 @@ export function terminalOffenses(ir) {
         for (const d of n.directives) add(`${d.name} on <slot>`, 'attribute on <slot>', d.loc)
         return
       case 'comment':
+      case 'portal':
       case 'component':
       case 'if':
       case 'each':
@@ -279,10 +297,12 @@ export function buildTerminal(ctx) {
   let inPre = 0
   const startsPre = new Set()
   const endsPre = new Set()
+  const spaces = new Set()
 
   // A body's snippets are declared before anything in it, since a
   // `{@render}` may come first in the source.
   const emitChildren = (children, parent, ind) => {
+    for (const c of spacesIn(children)) spaces.add(c)
     for (const c of children) if (c.kind === 'snippet') emitSnippet(c, c.varName, ind)
     for (const c of children) if (c.kind !== 'snippet' && !dropped.has(c)) emitNode(c, parent, ind)
   }
@@ -371,7 +391,10 @@ export function buildTerminal(ctx) {
     })
     if (n.static) {
       const value = parts.map((p) => p.value).join('')
-      if (!value.trim()) return
+      if (!value.trim()) {
+        if (spaces.has(n)) line(ind, `$$tui.append(${parent}, $$tui.text(' '));`)
+        return
+      }
       line(ind, `$$tui.append(${parent}, $$tui.text(${q1(htmlEntitiesToText(value))}));`)
       return
     }
@@ -386,9 +409,9 @@ export function buildTerminal(ctx) {
     liveText(parent, ind, tpl)
   }
 
-  const liveText = (parent, ind, value) => {
+  const liveText = (parent, ind, value, node = "$$tui.text('')") => {
     const t = `$$t${seq.t++}`
-    line(ind, `const ${t} = $$tui.text('');`)
+    line(ind, `const ${t} = ${node};`)
     line(ind, `$$tui.append(${parent}, ${t});`)
     line(ind, '$$runtime.render((__prev) => {')
     line(ind + 1, `var __a; try { __a = ${value}; } catch (e) { __a = $$runtime.contain(e, __prev.a); }`)
@@ -402,7 +425,7 @@ export function buildTerminal(ctx) {
     dep(n.value)
     let value = `$$tui.markupText((${n.value.code}), ${inPre > 0})`
     if (endsPre.has(n)) value += `.replace(${TRAILING_NEWLINE}, '')`
-    liveText(parent, ind, value)
+    liveText(parent, ind, value, '$$tui.markup()')
   }
 
   const marker = (parent, ind) => {
@@ -539,6 +562,10 @@ export function buildTerminal(ctx) {
       case 'dynamic-element': return emitDynamicElement(n, parent, ind)
       case 'const':     dep(n.value); for (const l of n.lines) line(ind, l); return
       case 'global':    return emitGlobal(n, ind)
+      // `to` names a DOM node and is never read: a terminal has one surface,
+      // so the children paint where the portal is written, beside the
+      // element it was opened from in every kit use.
+      case 'portal':    return emitChildren(n.children, parent, ind)
       default:          throw new Error(`terminal emitter reached a ${n.kind} node that terminalOffenses passed`)
     }
   }

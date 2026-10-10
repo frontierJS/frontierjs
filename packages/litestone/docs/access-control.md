@@ -20,7 +20,7 @@ WHERE "accountId" = ? -- bound to ctx.auth.accountId
 
 That clause is part of every `SELECT`, `UPDATE`, and `DELETE` that touches this model from a scoped client. It cannot be forgotten.
 
-```prisma
+```lite
 model Post {
   id        Int  @id
   accountId Int
@@ -420,7 +420,7 @@ The gate is checked before the query runs, so it names the model it refused.
 It compiles to a correlated `EXISTS` over the parent's table, so it is exact and
 it costs one subquery; an **absent** foreign key allows, in SQL and in JS alike.
 
-```prisma
+```lite
 model Deploy {
   app   App @relation(fields: [appId], references: [id])
   appId Int
@@ -446,7 +446,7 @@ predicate reaches, so a parent held **only** by a gate delegates as *no
 restriction at all* — `createClient` warns, naming the model, the operation and
 what the parent is actually protected by.
 
-```prisma
+```lite
 model Vault { id Int @id  @@gate("7") }        // ← no row policy
 model Doc   { vault Vault @relation(…)  @@allow('read', check(vault)) }
 // [litestone] Doc: … delegates to Vault, whose protection for 'read' is a @@gate
@@ -472,7 +472,7 @@ carries, compared directly.
 
 A policy may name a column on the model this one belongs to, written as a path.
 
-```prisma
+```lite
 model OrderLine {
   order   Order  @relation(fields: [orderId], references: [id])
   orderId String
@@ -527,7 +527,7 @@ identically from the summary while only one of them is a broken policy.
 *The caller is one of this row's members* is a question about the CHILD rows:
 does any of them match.
 
-```prisma
+```lite
 model Team {
   private Boolean      @default(false)
   members TeamMember[]
@@ -579,7 +579,7 @@ spent the one hop. Refused, each naming the rule:
 
 ### Field-level policies
 
-```prisma
+```lite
 model User {
   salary Float?   @allow('read',  auth().role == 'admin')   // hidden unless admin
   apiKey String?   @allow('write', auth().role == 'admin')   // read-only unless admin
@@ -781,7 +781,7 @@ the app had installed.
 A gate is a digit string: four positions, `Read.Create.Update.Delete`, each one
 the level that operation requires.
 
-```prisma
+```lite
 @@gate("R.C.U.D")      // four positions — required level for each op
 @@gate("4")            // one position: every op requires USER (level 4+)
 @@gate("2.4.4.6")      // READER to read, USER to write, OWNER to delete
@@ -807,7 +807,7 @@ say to this model*, which is true of a table holding credential material and
 false of the table your own screens list. `@frontierjs/auth` ships the
 distinction:
 
-```prisma
+```lite
 model User {
   emailVerified  Boolean  @default(false) @allow('write', auth().isAdmin)
   role           String   @default("user") @allow('write', auth().isAdmin)
@@ -972,7 +972,7 @@ GatePlugin runs before row-level policies. A caller below the `@@gate` threshold
 rejected before any SQL runs; a caller who clears it then meets the policies as
 `WHERE` injections.
 
-```prisma
+```lite
 model Post {
   ownerId Int @default(auth().id)
 
@@ -1042,7 +1042,7 @@ disclose the contents of the database, so it has to be silent.
 
 Stamp a field from `ctx.auth` at create time — no SQL DEFAULT emitted:
 
-```prisma
+```lite
 model Post {
   ownerId   Int  @default(auth().id)
   ownerType String     @default(auth().type)

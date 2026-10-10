@@ -1,0 +1,30 @@
+<script>
+  let name = 'Ada'
+  let shown = false
+  let clicks = 0
+  let taps = 0
+  const greet = () => { clicks += 1 }
+</script>
+<div>
+  <p>Press <kbd>Enter</kbd> on <button on:click={greet}>Add</button> to go.</p>
+  <p>Every cell came out of <code>db/schema.lite</code>, so the <strong>status</strong> filters by membership and nothing on this page restates it.</p>
+  <p>Hello <em>{name}</em>{#if shown}, <mark>welcome back</mark>{/if}!</p>
+  <p>Read <a href="/docs/">the docs</a> first.</p>
+  <span>An inline span whose words are wider than the screen it sits in.</span>
+  <label>Name <input value={name} on:input={(e) => { name = e.target.value }} /></label>
+  <div><button on:click={() => { shown = !shown }}>Toggle</button> <button on:click={greet}>Count {clicks}</button></div>
+  <p>Ctrl <kbd>K</kbd> <kbd>J</kbd> opens <b> it</b></p>
+  <p><i>solo</i>{#if shown}<mark> pair</mark>{/if}</p>
+  <label>Code <input size="6" value="xy" /> end</label>
+  <p>A sentence long enough to fill the row before its <button>Go</button></p>
+  <div>{#if shown}<b>on</b>{/if} <button>B</button> <button>C</button></div>
+  <p>{' '}edges <b>trimmed</b>{' '}</p>
+  <p>&nbsp;&nbsp;kept <i>in</i></p>
+  {#if clicks >= 0}<p>wrapped
+      across {name.length}
+      lines</p>{/if}
+  <p><button>x</button><span> label <button>{' '}Spaced{' '}</button></span></p>
+  <div><p>Block</p><button>One</button> <button>Two</button></div>
+  <p>You can open any order on <a href="/orders/">the orders list</a> — the totals across all of them.</p>
+  <p>Or tap <span on:click={() => { taps += 1 }}>here</span> for taps {taps}.</p>
+</div>

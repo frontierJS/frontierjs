@@ -15,7 +15,7 @@ Full language server for Litestone schema files:
 
 ### Quick start
 
-```prisma
+```lite
 // schema.lite
 
 enum Plan { starter  pro  enterprise }

@@ -36,6 +36,12 @@ keeps the answer. A failed drive that an open register row names says so
 (`open: FJS-1272`): the failure was known before this change, which is a lead
 and not an acquittal.
 
+**A drive an open row's TITLE names is skipped**, listed as `skipped — open:
+FJS-1366`: that row says the drive fails at HEAD, so running it answers nothing
+about this change. It runs anyway when the change touches the drive's own file,
+because that change is the fix the row waits on. A prove whose every ✗ carries
+`open:` is finished; a second run prints the same tags.
+
 A target that is a test FILE is listed, not run — the runner differs per
 package. The package's own suite is still first; this is what runs after it.
 
@@ -44,7 +50,7 @@ const root = (await $.wsRoot?.()) ?? $.paths.root
 
 const { provesFor, changedTree } = await import(resolve(global.fliRoot, 'core/proofs.js'))
 const { runnables }              = await import(resolve(global.fliRoot, 'core/runnables.js'))
-const { prove, knownFailures }   = await import(resolve(global.fliRoot, 'core/prove.js'))
+const { prove, knownFailures, brokenDrives } = await import(resolve(global.fliRoot, 'core/prove.js'))
 const { readRegisters }          = await import(resolve(global.fliRoot, 'core/registers.js'))
 const children                   = await import(resolve(global.fliRoot, 'core/children.js'))
 const { isPortInUse }            = await import(resolve(global.fliRoot, 'core/ports.js'))
@@ -76,8 +82,20 @@ const procs = {
   outputOf: children.outputOf,
 }
 
+const issues = readRegisters(root).issues
+
+// A drive an open row's title names fails at HEAD — unless this change touches
+// the drive's own file, which is the fix that row is waiting on.
+const skip = t => {
+  const open = brokenDrives(issues, t.name)
+  if (!open.length) return null
+  const run = (t.id && rows.find(r => r.id === t.id)?.run) || ''
+  const own = files.some(f => run.includes(f.startsWith(`${t.dir}/`) ? f.slice(t.dir.length + 1) : f))
+  return own ? null : open
+}
+
 const out = await prove({
-  proofs, rows, procs,
+  proofs, rows, procs, skip,
   answering: port => isPortInUse(port, '0.0.0.0'),
   say:       line => echo(chalk.dim(line)),
 })
@@ -93,7 +111,6 @@ for (const r of failures) {
   for (const line of r.tail) echo(chalk.dim(`      ${line}`))
 }
 
-const issues = failures.length ? readRegisters(root).issues : []
 echo('')
 for (const r of out.ran) {
   const secs = `${Math.round(r.ms / 1000)}s`
@@ -101,11 +118,12 @@ for (const r of out.ran) {
   const known = knownFailures(issues, r.name)
   echo(`  ${chalk.red('✗')} ${r.dir}: ${r.command}  ${chalk.dim(secs)} — ${r.reason}${known.length ? chalk.yellow(`  open: ${known.join(', ')}`) : ''}`)
 }
+for (const s of out.skipped) echo(`  ${chalk.yellow('–')} ${s.dir}: ${s.command}  ${chalk.dim('skipped')} — ${chalk.yellow(`open: ${s.open.join(', ')}`)} names this drive broken at HEAD`)
 for (const t of out.read) echo(`  ${chalk.dim('read')} ${t.dir ?? t.where}/${t.name}`)
 for (const t of out.gone) echo(`  ${chalk.red('gone')} ${t.where}: ${t.name} — the proof table names what nothing declares`)
 echo('')
 
 const failed = failures.length
 if (failed) process.exitCode = 1
-log.info(`${out.ran.length - failed}/${out.ran.length} passed`)
+log.info(`${out.ran.length - failed}/${out.ran.length} passed${out.skipped.length ? `, ${out.skipped.length} skipped on an open row` : ''}`)
 ```

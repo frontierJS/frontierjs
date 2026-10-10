@@ -12,7 +12,7 @@ args:
   -
     name: type
     choices: [secret, aes]
-    description: "Key type: secret or aes"
+    description: Which kind of key
     defaultValue: secret
 flags:
   length:
@@ -23,7 +23,8 @@ flags:
   format:
     char: f
     type: string
-    description: "Output format: hex, base64, base64url"
+    choices: [hex, base64, base64url]
+    description: How the key is written out
     defaultValue: base64
   name:
     char: n

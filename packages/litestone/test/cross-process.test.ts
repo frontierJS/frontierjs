@@ -312,3 +312,24 @@ describe('two processes booting against one file', () => {
     expect(states).toEqual(['in-sync', 'migrated'])
   })
 })
+
+// Single-process on purpose: the question is the table's shape on open, not
+// what another process hears.
+describe('ensureEventsTable', () => {
+  test('a table from before the writer column is dropped, so a record lands instead of warning (FJS-D781)', async () => {
+    const { ensureEventsTable, makeEventRecorder, EVENTS_TABLE } = await import('../src/core/cross-process.js')
+    const db = new Database(join(dir, 'old.db'))
+    db.run(`CREATE TABLE "${EVENTS_TABLE}" (id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT NOT NULL, event TEXT NOT NULL, model TEXT NOT NULL, scope TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 1, recordId TEXT, detail TEXT, at TEXT NOT NULL)`)
+    db.run(`INSERT INTO "${EVENTS_TABLE}" (origin, event, model, scope, at) VALUES ('p1', 'created', 'Post', 'row', '2026-01-01T00:00:00.000Z')`)
+
+    ensureEventsTable(db)
+
+    const cols = (db.prepare(`PRAGMA table_info("${EVENTS_TABLE}")`).all() as { name: string }[]).map(c => c.name)
+    expect(cols).toContain('writer')
+    expect(cols).not.toContain('origin')
+
+    makeEventRecorder(db, 'p2', () => new Date())({ event: 'created', model: 'Post', scope: 'row' })
+    expect(db.prepare(`SELECT writer FROM "${EVENTS_TABLE}"`).all()).toEqual([{ writer: 'p2' }])
+    db.close()
+  })
+})

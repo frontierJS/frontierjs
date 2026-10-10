@@ -2,55 +2,161 @@
 
 Litestone ships a `/testing` subpath with everything needed for fast, deterministic test suites: in-memory clients, factories, seeders, and schema-derived test case generators.
 
+Every example on this page runs against one schema, which is the `./schema.lite`
+a block opens. `Lead` is gated and carries a `@guarded` column, `Note` has a row
+policy, `Order` a state machine, `Node` a required self-reference, and `Message`
+two relations to one parent — each is the shape a section below exists for.
+
+```lite
+model Account {
+  id    Int    @id
+  name  String
+  users User[]
+  leads Lead[]
+}
+
+model User {
+  id        Int       @id
+  email     String    @unique @email
+  role      String    @default("member")
+  accountId Int?
+  account   Account?  @relation(fields: [accountId], references: [id])
+  posts     Post[]
+  notes     Note[]
+  sent      Message[] @relation("sent")
+  received  Message[] @relation("received")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@auth
+}
+
+model Post {
+  id       Int    @id
+  title    String @length(3, 80)
+  authorId Int
+  author   User   @relation(fields: [authorId], references: [id])
+  tags     Tag[]
+}
+
+model Tag {
+  id    Int    @id
+  name  String @unique
+  posts Post[]
+}
+
+model Message {
+  id         Int    @id
+  body       String
+  senderId   Int
+  receiverId Int
+  sender     User   @relation("sent", fields: [senderId], references: [id])
+  receiver   User   @relation("received", fields: [receiverId], references: [id])
+}
+
+model Lead {
+  id        Int     @id
+  email     String  @email
+  token     String? @guarded
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
+
+  @@gate("4.4.4.5")
+}
+
+enum OrderStatus { draft paid shipped }
+
+model Order {
+  id     Int         @id
+  status OrderStatus @default(draft)
+
+  @@transitions(status, pay: draft -> paid, ship: paid -> shipped)
+}
+
+model Note {
+  id        Int       @id
+  body      String
+  ownerId   Int
+  owner     User      @relation(fields: [ownerId], references: [id])
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@softDelete
+  @@allow('read', ownerId == auth().id)
+}
+
+model Node {
+  id       Int    @id
+  name     String
+  parentId Int
+  parent   Node   @relation(fields: [parentId], references: [id])
+  children Node[]
+}
+
+model Country {
+  id   Int    @id
+  code String @unique
+  name String
+}
+```
+
 ## At a glance
 
 ```js
-import { createTestEnv, makeTestClient, Factory, defineFactory, truncate, reset,
-         snapshot, restore, generateFactory, generateGateMatrix,
-         generateValidationCases, deriveAccess, renderAccessSnapshot, gateLadder,
-         expectedVerdict, factoryFrom, loadFixture, parseCsv,
-         readOnly, schemaMutants, mutationScore } from '@frontierjs/litestone/testing'
+import { createTestEnv, makeTestClient, defineFactory, truncate, reset,
+         snapshot, restore, generateGateMatrix, generateValidationCases,
+         deriveAccess, factoryFrom, mutationScore } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+import { expect } from 'bun:test'
+import { readFileSync } from 'node:fs'
 
-// The environment: migrated database, client, factories, principal. Tables
-// arrive as a file copy from a template migrated once per schema per process —
-// 476ms → 13ms per database on a 37-model schema.
-// `migrations:` replays the committed files instead of generating DDL, so the
-// tests run against the database a deploy produces. basecamp uses it.
+const schemaText = readFileSync('./schema.lite', 'utf8')
+const getLevel   = (user) => user?.level ?? 0        // the app's own resolver
+
+// The environment: migrated database, client, principal, and a factory per
+// model. Tables arrive as a file copy from a template migrated once per schema
+// per process — 476ms → 13ms per database on a 37-model schema.
+// `migrations: 'db/migrations'` replays the committed files instead of
+// generating DDL, so the tests run against the database a deploy produces.
 const env = await createTestEnv({
-  schema:     'db/schema.lite',
-  migrations: 'db/migrations',
-  plugins:    [myGatePlugin],
+  schema:        './schema.lite',
+  autoFactories: true,
+  plugins:       [new GatePlugin({ getLevel })],
 })
 
-env.actingAs(user)                  // the app's own getLevel — anything about behavior
+const developer = { id: 1, level: 5 }
+env.actingAs(developer)             // the app's own getLevel — anything about behavior
 await env.atLevel(4)                // a SYNTHETIC standing — the gate grid only
-await env.verifyGateLadder()        // every gated model × every level × all four ops
-await env.verifyReadLadder()        // the read column alone — no fixtures needed
-await env.verifyConstraints()       // every declared rule, against a real write
-await env.verifyFieldProtection()   // @guarded/@encrypted/@secret, actually read
-await env.verifyRowPolicies()       // @@allow/@@deny, rows on BOTH sides
+expect(await env.verifyGateLadder()).toEqual([])      // every gated model × every level × all four ops
+expect(await env.verifyReadLadder()).toEqual([])      // the read column alone — no fixtures needed
+expect(await env.verifyConstraints()).toEqual([])     // every declared rule, against a real write
+expect(await env.verifyFieldProtection()).toEqual([]) // @guarded/@encrypted/@secret, actually read
+expect(await env.verifyRowPolicies({ principal: { id: 42 } })).toEqual([])  // @@allow/@@deny, rows on BOTH sides
 await env.verifyTenantIsolation()   // tenancy { }, actually crossed — one tenant reaching into another
-
-// Mutate the schema, run the ORIGINAL's checks against the mutant's database.
-// A mutant nothing notices is a hole in the SUITE, and it names itself.
-const { score, survived } = await mutationScore({
-  schema, build: (text) => createTestEnv({ schema: text }),
-})
-env.seal(); env.reset(); env.close()
 
 // Arrange / Act / Assert as three clients rather than three comments. `setup` is
 // the arrange every scenario shares — run once, restored by each phases() call.
 const fx = await env.setup(({ factories }) => factories.account.createOne())
 const t  = env.phases({ as: developer })
-const lead = await t.arrange(({ factories }) => factories.lead.createOne())
+const lead = await t.arrange(({ factories }) => factories.lead.asSystem().createOne({ accountId: fx.id }))
 await t.act(as => as.lead.remove({ where: { id: lead.id } }))
 await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
 
+// Mutate the schema, run the ORIGINAL's checks against the mutant's database.
+// A mutant nothing notices is a hole in the SUITE, and it names itself.
+const { score, survived } = await mutationScore({
+  schema: schemaText, build: (text) => createTestEnv({ schema: text }),
+})
+env.seal()
+env.reset()
+env.close()
+
+const UserFactory = defineFactory({ model: 'User', definition: (seq) => ({ email: `u${seq}@x.co` }) })
 const { db, factories } = await makeTestClient(schemaText, {
   seed:          42,           // deterministic RNG seed
   autoFactories: true,         // auto-generate factories for all SQLite models
-  factories:     { user: MyUserFactory },
-  data:          async (db) => { /* seed data */ },
+  factories:     { user: UserFactory },
+  data:          async (db) => { await db.country.create({ data: { code: 'FR', name: 'France' } }) },
 })
 // Always a throwaway tmpdir — a `database` block in the schema is overridden, so a
 // test pointed at a real app schema can never open the app's real database.
@@ -64,9 +170,10 @@ const clean = snapshot(db)
 restore(db, clean)
 
 // Test generation — the second argument is the MODEL name, never the accessor
-const matrix  = generateGateMatrix(schema, 'Post')        // every op × every level 0–8
-const edges   = generateGateMatrix(schema, 'Post', { levels: 'edges' })  // 2 per op
-const cases   = generateValidationCases(schema, 'User')   // valid + invalid + boundary
+const schema  = db.$schema
+const matrix  = generateGateMatrix(schema, 'Lead')        // every op × every level 0–8
+const edges   = generateGateMatrix(schema, 'Lead', { levels: 'edges' })  // 2 per op
+const cases   = generateValidationCases(schema, 'Lead')   // valid + invalid + boundary + uncheckable
 const factory = factoryFrom(schema, 'User', db)
 
 // The declared access surface — gates, policies, protected fields, and per move
@@ -77,18 +184,24 @@ const access  = deriveAccess(schema)
 
 ## createTestEnv
 
-A migrated database, a client, factories and a principal, in one call.
+A migrated database, a client, a principal and — with `autoFactories: true` —
+a factory per model, in one call.
 
 ```js
 import { createTestEnv } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+import { expect } from 'bun:test'
 
+const myAppsResolver = (user) => user?.level ?? 0
 const env = await createTestEnv({
-  schema:  'db/schema.lite',          // the text, or a path to it
-  plugins: [new GatePlugin({ getLevel: myAppsResolver })],
+  schema:        './schema.lite',     // the text, or a path to it
+  autoFactories: true,
+  plugins:       [new GatePlugin({ getLevel: myAppsResolver })],
 })
 
-const doc = await env.factories.doc.withParents().createOne()   // arrange, below the boundary
-await expect(env.actingAs(viewer).doc.delete({ where: { id: doc.id } })).rejects.toThrow()
+const viewer = { id: 2, level: 1 }
+const lead = await env.factories.lead.asSystem().withParents().createOne()   // arrange, below the boundary
+await expect(env.actingAs(viewer).lead.remove({ where: { id: lead.id } })).rejects.toThrow()
 env.close()
 ```
 
@@ -97,9 +210,15 @@ process into a template, and every env after the first is `copyFileSync`. On
 basecamp's 37-model schema that is 476ms → 13ms per database. Migration cost is
 what dominates a test suite; in SQLite, a database per test is a file copy.
 
+**`env.factories` are bound to the unscoped client**, so on a gated model they
+grade as STRANGER like any other unauthenticated call. `.asSystem()` on a factory
+is what seeds past the gate — see [Seeding past gates](#seeding-past-gates).
+Without `autoFactories: true` the map is empty; `env.system` is the client to
+arrange with by hand.
+
 ### migrations — test the database a deploy produces
 
-```js
+```js fragment
 const env = await createTestEnv({ schema: 'db/schema.lite', migrations: 'db/migrations' })
 ```
 
@@ -111,7 +230,7 @@ Worth reaching for whenever the migrations are the thing you ship. Without it a
 suite proves the schema works, and says nothing about whether the migration that
 builds production agrees with it — which is a question with an answer:
 
-```js
+```js fragment
 const fromMigrations = await createTestEnv({ schema, migrations: 'db/migrations' })
 const fromSchema     = await createTestEnv({ schema })
 // introspect both and compare — basecamp does exactly this
@@ -142,6 +261,10 @@ through it.
 ### verifyReadLadder
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { expect } from 'bun:test'
+
+const env = await createTestEnv({ schema: './schema.lite' })
 expect(await env.verifyReadLadder()).toEqual([])
 ```
 
@@ -171,9 +294,20 @@ rather than refusing, so a policy matching nothing still reads as `allow`.
 ### phases — Arrange / Act / Assert, scoped rather than commented
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+import { expect } from 'bun:test'
+
+const env = await createTestEnv({
+  schema:        './schema.lite',
+  autoFactories: true,
+  plugins:       [new GatePlugin({ getLevel: (user) => user?.level ?? 0 })],
+})
+const developer = { id: 1, level: 5 }
+
 const t = env.phases({ as: developer })
 
-const lead = await t.arrange(({ factories }) => factories.lead.createOne())
+const lead = await t.arrange(({ factories }) => factories.lead.asSystem().withParents().createOne())
 await t.act(as => as.lead.remove({ where: { id: lead.id } }))
 await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
 ```
@@ -183,7 +317,7 @@ still be commented out to bisect. What the phases buy is not tidiness:
 
 | Phase | Reaches | Why |
 | --- | --- | --- |
-| `arrange` | the **system** client + factories | fixtures are set up below the boundary, so a gate that refuses the principal does not refuse the setup |
+| `arrange` | `system`, `factories` and `db` | fixtures are set up below the boundary through `system`, so a gate that refuses the principal does not refuse the setup. The factories are the unscoped client's — `.asSystem()` on one puts a gated model's fixture below the boundary too |
 | `act` | the **principal's** client | graded by the app's own `getLevel`. **One per scenario** |
 | `assert` | the principal's **read-only** client | graded, so *the row exists* cannot stand in for *this user can see it*; read-only, so retrying the scenario is sound |
 
@@ -195,6 +329,10 @@ Not tied to a runner: call it inside whatever `test()` the package uses.
 ### verifyGateLadder
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { expect } from 'bun:test'
+
+const env = await createTestEnv({ schema: './schema.lite' })
 expect(await env.verifyGateLadder()).toEqual([])      // all four operations
 await env.verifyGateLadder({ ops: ['read'] })          // == verifyReadLadder()
 ```
@@ -217,6 +355,10 @@ stops a lowered gate on a policied model being graded at all.
 ### verifyFieldProtection
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { expect } from 'bun:test'
+
+const env = await createTestEnv({ schema: './schema.lite' })
 expect(await env.verifyFieldProtection()).toEqual([])
 ```
 
@@ -233,6 +375,10 @@ to `asSystem()`, because one absent for everyone is broken rather than protected
 ### verifyConstraints
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { expect } from 'bun:test'
+
+const env = await createTestEnv({ schema: './schema.lite' })
 expect(await env.verifyConstraints()).toEqual([])   // rows are already sentences
 await env.verifyConstraints('Lead')                 // one model
 ```
@@ -258,17 +404,27 @@ the coverage the count implies.
 | `rejected` | a `ValidationError` — the rule fired |
 | `accepted` | the write succeeded. If the case was `invalid`, the rule is not enforced |
 | `error` | the write failed before validation could refuse it — this case proves nothing |
+| `rejected-by-another-rule` | refused, but by a different rule on the same field, so the case proves nothing about the one it names |
+| `uncheckable` | no value could isolate the rule, so it was not asked — reported rather than dropped |
 
 ### setup — the arrange every scenario shares
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+
+const env = await createTestEnv({
+  schema:        './schema.lite',
+  autoFactories: true,
+  plugins:       [new GatePlugin({ getLevel: (user) => user?.level ?? 0 })],
+})
+const developer = { id: 1, level: 5 }
+
 const fx = await env.setup(({ factories }) => factories.account.createOne())
 
-test('a developer archives a lead', async () => {
-  const t = env.phases({ as: developer })     // rows are back at fx
-  const lead = await t.arrange(({ factories }) => factories.lead.createOne({ accountId: fx.id }))
-  …
-})
+// inside each test():
+const t = env.phases({ as: developer })     // rows are back at fx
+const lead = await t.arrange(({ factories }) => factories.lead.asSystem().createOne({ accountId: fx.id }))
 ```
 
 `setup` takes the **same tools** `arrange` takes — `{ system, factories, db }` —
@@ -309,16 +465,20 @@ this could say.
 ### seal / reset
 
 ```js
-await seedTheWorld(env.system)
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite' })
+await env.system.country.create({ data: { code: 'FR', name: 'France' } })   // seed the world, once
 env.seal()
-beforeEach(() => env.reset())
+env.reset()                                 // beforeEach(() => env.reset())
 ```
 
 ### sampleWrites — a row and its payloads, per model
 
 ```js
-import { sampleWrites } from '@frontierjs/litestone/testing'
+import { createTestEnv, sampleWrites } from '@frontierjs/litestone/testing'
 
+const env = await createTestEnv({ schema: './schema.lite' })
 const s = await sampleWrites(env.schema, env.system)
 s.Lead    // → { idField: 'id', row: {…}, create: {…}, patch: {…} }
 ```
@@ -348,13 +508,18 @@ past a retention — every one of those is two assertions with a move between
 them, and a frozen instant can only ever make one of them.
 
 ```js
-const env = await createTestEnv({ schema, now: '2026-06-01T00:00:00Z' })
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { expect } from 'bun:test'
 
-await env.db.sale.findMany()        // the spring window is open
+const env = await createTestEnv({ schema: './schema.lite', now: '2026-06-01T00:00:00Z' })
+
+const user = await env.system.user.create({ data: { email: 'a@x.co' } })
+expect(user.createdAt).toBe('2026-06-01T00:00:00.000Z')        // stamped by the frozen clock
 env.clock.advance('20d')
-await env.db.sale.findMany()        // it closed on the 15th
+const moved = await env.system.user.update({ where: { id: user.id }, data: { role: 'admin' } })
+expect(moved.updatedAt).toBe('2026-06-21T00:00:00.000Z')       // and the crossing is visible
 env.clock.set('2026-09-15T00:00:00Z')
-await env.db.sale.findMany()        // autumn
+expect(env.clock.now().toISOString()).toBe('2026-09-15T00:00:00.000Z')
 ```
 
 `now` takes a `Date`, an ISO string, or a function. `env.clock` is the holder
@@ -383,9 +548,12 @@ Everything this client writes or grades against: `now()` in a row policy,
 and the retention cutoff. So the crossing this exists for is one call:
 
 ```js
-await env.db.note.create({ data: { body: 'x' } })   // stamped 2020
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', now: '2020-01-01T00:00:00Z' })
+await env.db.user.create({ data: { email: 'old@x.co' } })   // stamped 2020
 env.clock.advance('100d')
-env.db.asSystem().$retain()                          // and now it is old enough to go
+await env.db.asSystem().$retain()                           // and now it is old enough to go
 ```
 
 Until `FJS-531` those stamps were SQLite's own clock — a column DEFAULT and an
@@ -394,7 +562,10 @@ window over it was quietly wrong. Stating the timestamp on the write is still
 supported and still wins, because key PRESENCE decides:
 
 ```js
-await env.db.note.create({ data: { body: 'x', createdAt: '2019-05-06T07:08:09.000Z' } })
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', now: '2020-01-01T00:00:00Z' })
+await env.db.user.create({ data: { email: 'older@x.co', createdAt: '2019-05-06T07:08:09.000Z' } })
 ```
 
 ### What it does not move
@@ -409,13 +580,22 @@ database's own clock rather than of yours.
 The primary entry point for tests. Creates an in-memory Litestone client:
 
 ```js
-import { makeTestClient } from '@frontierjs/litestone/testing'
+import { makeTestClient, defineFactory } from '@frontierjs/litestone/testing'
+
+const MyUserFactory = defineFactory({ model: 'User', definition: (seq) => ({ email: `u${seq}@x.co` }) })
 
 const { db, factories } = await makeTestClient(`
+  model Account {
+    id    Int    @id
+    name  String
+    users User[]
+  }
   model User {
-    id    Int @id
-    email String    @unique
-    role  String    @default("member")
+    id        Int      @id
+    email     String   @unique
+    role      String   @default("member")
+    accountId Int?
+    account   Account? @relation(fields: [accountId], references: [id])
   }
 `, {
   seed:          42,           // deterministic RNG — same seed = same data every run
@@ -450,12 +630,13 @@ class UserFactory extends Factory {
   definition(seq, rng) {
     return {
       email: `user${seq}@test.com`,
-      role:  rng.pick(['admin', 'member', 'viewer']),
+      role:  rng ? rng.pick(['admin', 'member', 'viewer']) : 'member',   // rng is null until seed(n)
     }
   }
 }
 
 // Usage
+const users   = new UserFactory(db)
 const user    = await users.createOne()
 const admin   = await users.admin().createOne()
 const five    = await users.createMany(5)
@@ -467,7 +648,10 @@ const custom  = await users.state({ role: 'admin', email: 'custom@test.com' }).c
 
 `model` is the model name as the schema declares it — **PascalCase singular**
 (`'User'`, not `'users'`); the accessor is derived from it. Factory names in the
-`factories` map follow the accessor (`db.user` → `factories.user`).
+`factories` map follow the accessor (`db.user` → `factories.user`). The `rng` a
+definition receives is `null` until the factory is seeded — `seed(n)`, or the
+`seed` option of `makeTestClient` — so a definition that draws from it says what
+the unseeded value is.
 
 ### create() / build() — count or overrides
 
@@ -475,6 +659,12 @@ const custom  = await users.state({ role: 'admin', email: 'custom@test.com' }).c
 anything else is overrides.
 
 ```js
+import { makeTestClient } from '@frontierjs/litestone/testing'
+import { readFileSync } from 'node:fs'
+
+const { factories } = await makeTestClient(readFileSync('./schema.lite', 'utf8'), { autoFactories: true })
+const users = factories.user
+
 await users.create()                      // → 1 row   (= createOne)
 await users.create({ role: 'admin' })     // → 1 row with overrides
 await users.create(5)                     // → 5 rows  (= createMany)
@@ -497,6 +687,11 @@ or an override — creates the row at the entry and makes the declared moves tha
 reach it: the fewest, the first declared on a tie, never a `@gate(9)` move.
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const orders = env.factories.order
+
 await orders.asSystem().create({ status: 'shipped' })   // create, then pay, then ship
 ```
 
@@ -514,8 +709,13 @@ schema can declare, and they compose.
 ### withParents() — every required parent, recursively
 
 ```js
-// Deployment → App → Environment → Project → Workspace → Account, in one call
-const deployment = await factories.deployment.withParents().createOne()
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories } = env
+
+// Lead → Account, in one call; a deeper chain is the same call
+const lead = await factories.lead.asSystem().withParents().createOne()
 ```
 
 Reads the schema and auto-creates a parent for every **required** belongsTo, then
@@ -533,10 +733,17 @@ a single-column relation over one of those columns (`team` beside `project`) is 
 wired separately, because it would point the column at a second, unrelated row.
 
 ```js
-withParents({ optional: true })   // nullable relations get parents too (default: skipped)
-withParents({ fresh: true })      // a new parent per row instead of one shared
-withParents({ depth: 3 })         // backstop; cycles are what actually terminate it
-withParents({ pins: { Account: acct } })   // reuse a row you already have
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories } = env
+
+const posts = factories.post
+await posts.withParents({ optional: true }).createOne()   // nullable relations get parents too (default: skipped)
+await posts.withParents({ fresh: true }).createMany(2)    // a new parent per row instead of one shared
+await posts.withParents({ depth: 3 }).createOne()         // backstop; cycles are what actually terminate it
+const author = await factories.user.createOne()
+await posts.withParents({ pins: { User: author } }).createOne()   // reuse a row you already have
 ```
 
 Without this, an `Int` FK falls back to `1` and a `String`/uuid FK gets placeholder
@@ -546,10 +753,15 @@ auto-seeded at all.
 #### pins — one parent, shared by everything below
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories } = env
+
 const account = await factories.account.createOne()
 // Every generated row lands inside that one Account, however deep it sits
-await factories.deployment.withParents({ pins: { Account: account } }).createOne()
-await factories.user.withParents({ pins: { Account: account } }).createOne()
+await factories.lead.asSystem().withParents({ pins: { Account: account } }).createOne()
+await factories.user.withParents({ optional: true, pins: { Account: account } }).createOne()
 ```
 
 **Keyed by model, applied at every depth.** That is the difference from `.for()`,
@@ -571,6 +783,11 @@ A pin is also the cure for a **required** cyclic relation, which is why pins are
 consulted before the cycle check:
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories, db } = env
+
 const root  = await db.node.create({ data: { name: 'root', parentId: 1 } })
 const child = await factories.node.withParents({ pins: { Node: root } }).createOne()
 ```
@@ -578,7 +795,12 @@ const child = await factories.node.withParents({ pins: { Node: root } }).createO
 ### has() — hasMany children
 
 ```js
-const author = await factories.author.has('posts', 3).createOne()
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories } = env
+
+const author = await factories.user.has('posts', 3).createOne()
 author.posts            // → the 3 created posts, each with authorId = author.id
 ```
 
@@ -587,13 +809,26 @@ found from the child's own `@relation`; when a child declares two relations to t
 same parent, name it:
 
 ```js
-factories.user.has('messages', 2, { fk: 'senderId', overrides: { receiverId: 1 } })
-factories.author.has('posts', 3, { factory: draftPosts })
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories } = env
+
+const other  = await factories.user.createOne()
+const drafts = factories.post.state({ title: 'Draft' })
+await factories.user.has('sent', 2, { fk: 'senderId', overrides: { receiverId: other.id } }).createOne()
+await factories.user.has('posts', 3, { factory: drafts }).createOne()
 ```
 
 ### attach() — implicit many-to-many
 
 ```js
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories } = env
+
+const [tagA, tagB] = await factories.tag.createMany(2)
 await factories.post.withParents().attach('tags', 3).createOne()   // generate 3 tags
 await factories.post.withParents().attach('tags', [tagA, tagB]).createOne()  // existing rows
 ```
@@ -601,9 +836,16 @@ await factories.post.withParents().attach('tags', [tagA, tagB]).createOne()  // 
 ### withRelation() / for() — one named parent
 
 ```js
-// Creates a user, then creates a post with post.userId = user.id
+import { createTestEnv } from '@frontierjs/litestone/testing'
+
+const env = await createTestEnv({ schema: './schema.lite', autoFactories: true })
+const { factories } = env
+
+const posts = factories.post, users = factories.user
+
+// Creates a user, then creates a post with post.authorId = user.id
 const post = await posts.withRelation('author', users).createOne()
-post.userId   // → (auto-created user).id
+post.authorId // → (auto-created user).id
 post.author   // → the created user (included)
 
 // One parent shared across the whole createMany (the default) …
@@ -612,6 +854,7 @@ await posts.withRelation('author', users).createMany(3)                       //
 await posts.withRelation('author', users, 'authorId', 'id', { fresh: true }).createMany(3)  // 3
 
 // for() — use an existing parent, no auto-create
+const existingUser = await users.createOne()
 const p = await posts.for('author', existingUser).createOne()
 ```
 
@@ -621,9 +864,37 @@ A schema declaring any `@@gate` auto-installs `GatePlugin`, so an unauthenticate
 factory grades `STRANGER` and cannot create anything. Seeding is a system concern:
 
 ```js
-await factories.order.asSystem().withParents().createOne()
-await factories.order.actingAs(adminUser).createOne()   // or seed as a principal
-await factories.order.usingDb(otherClient).createOne()  // any client
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+
+const env = await createTestEnv({
+  schema:        './schema.lite',
+  autoFactories: true,
+  plugins:       [new GatePlugin({ getLevel: (user) => user?.level ?? 0 })],
+})
+const { factories } = env
+
+await factories.lead.asSystem().withParents().createOne()
+await factories.lead.usingDb(env.system).withParents().createOne()   // any client
+```
+
+Or seed as a principal the app's own `getLevel` admits:
+
+```js failing
+// FJS-2367 — the generated factory sends the @guarded column, so a non-system seed is refused
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+
+const env = await createTestEnv({
+  schema:        './schema.lite',
+  autoFactories: true,
+  plugins:       [new GatePlugin({ getLevel: (user) => user?.level ?? 0 })],
+})
+const adminUser = { id: 1, level: 5 }
+
+// Refused today: the generated payload carries `token: null`, and a @guarded
+// column is a system-context write whoever the caller is.
+await env.factories.lead.actingAs(adminUser).withParents().createOne()
 ```
 
 The client propagates through the **whole** wired graph — parents, children and m2m
@@ -637,8 +908,9 @@ Generates a factory from schema introspection — no class needed:
 ```js
 import { factoryFrom } from '@frontierjs/litestone/testing'
 import { parse } from '@frontierjs/litestone'
+import { readFileSync } from 'node:fs'
 
-const { schema } = parse(schemaText)
+const { schema } = parse(readFileSync('./schema.lite', 'utf8'))
 const users = factoryFrom(schema, 'User', db)
 
 const admin = await users.state({ role: 'admin' }).createOne()
@@ -651,7 +923,8 @@ Returns a `definition(seq, rng)` function that generates valid data from field t
 ```js
 import { generateFactory } from '@frontierjs/litestone/testing'
 
-const defFn = generateFactory(schema, 'User')
+const defFn = generateFactory(db.$schema, 'User')
+defFn(1, null)   // → { email: 'User1@test.com', role: 'member' }
 ```
 
 The generated value satisfies the field's own declared rules — a factory that emits
@@ -683,9 +956,22 @@ and friends draw from a small built-in catalog, matched case- and
 separator-insensitively (`first_name` = `firstName`):
 
 ```js
-// makeTestClient(schema, { seed: 42, autoFactories: true })
-{ firstName: 'Luca', lastName: 'Dubois', company: 'Kestrel Labs',
-  city: 'Medellin', email: 'lena.quintero601001@test.dev' }
+import { makeTestClient } from '@frontierjs/litestone/testing'
+
+const { factories } = await makeTestClient(`
+  model Person {
+    id        Int    @id
+    firstName String
+    lastName  String
+    company   String
+    city      String
+    email     String @email
+  }
+`, { seed: 42, autoFactories: true })
+
+factories.person.buildOne()
+// → { firstName: 'Luca', lastName: 'Dubois', company: 'Kestrel Labs',
+//     city: 'Medellin', email: 'lena.quintero601001@test.dev' }
 ```
 
 Only when a seed was set. **Unseeded output is unchanged** (`FirstName 1`,
@@ -724,6 +1010,8 @@ parent with `withRelation()` / `for()` / `fkDefaults`.
 
 ```js
 import { defineFactory } from '@frontierjs/litestone'
+import { makeTestClient } from '@frontierjs/litestone/testing'
+import { readFileSync } from 'node:fs'
 
 export const UserFactory = defineFactory({
   model:      'User',
@@ -733,6 +1021,7 @@ export const UserFactory = defineFactory({
 })
 
 // Returns a CLASS, so it registers exactly like a hand-written subclass:
+const schemaText = readFileSync('./schema.lite', 'utf8')
 await makeTestClient(schemaText, { factories: { user: UserFactory } })
 ```
 
@@ -746,7 +1035,13 @@ path never runs.
 ## Seeder
 
 ```js
-import { Seeder, runSeeder } from '@frontierjs/litestone'
+import { Seeder, runSeeder, defineFactory } from '@frontierjs/litestone'
+
+const UserFactory = defineFactory({
+  model:      'User',
+  definition: (seq) => ({ email: `u${seq}@x.com` }),
+  traits:     { admin: { role: 'admin' } },
+})
 
 class DatabaseSeeder extends Seeder {
   async run(db) {
@@ -761,14 +1056,17 @@ await runSeeder(db, DatabaseSeeder)
 ### dependsOn — order without a caller who knows it
 
 ```js
-class AccountSeeder extends Seeder { async run(db) { … } }
+import { Seeder, runSeeder } from '@frontierjs/litestone'
+
+class AccountSeeder extends Seeder { async run(db) { await db.account.create({ data: { name: 'Acme' } }) } }
+class TagSeeder     extends Seeder { async run(db) { await db.tag.createMany({ data: [{ name: `t${Date.now()}` }] }) } }
 
 class OrderSeeder extends Seeder {
-  static dependsOn = [AccountSeeder, ProductSeeder]
-  async run(db) { … }
+  static dependsOn = [AccountSeeder, TagSeeder]
+  async run(db) { await db.order.create({ data: {} }) }
 }
 
-await runSeeder(db, OrderSeeder)          // seeds accounts and products first
+await runSeeder(db, OrderSeeder)          // seeds accounts and tags first
 await new Seeder().call(db, [OrderSeeder, AccountSeeder])   // AccountSeeder still runs once
 ```
 
@@ -781,29 +1079,40 @@ Reference data (countries, plans, currencies) is written down, not invented.
 
 ```js
 import { loadFixture } from '@frontierjs/litestone'
+import { writeFileSync } from 'node:fs'
 
-await loadFixture(db, 'Country', './db/fixtures/countries.json')
-await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { upsert: 'code' })
-await loadFixture(db, 'Plan',    [{ code: 'pro', price: 20 }])   // or inline
+writeFileSync('./countries.json', JSON.stringify([{ code: 'FR', name: 'France' }, { code: 'DE', name: 'Germany' }]))
+writeFileSync('./countries.csv',  'code,name\nBR,"Brazil, Federative Republic of"\nJP,Japan\n')
+
+await loadFixture(db, 'Country', './countries.json')
+await loadFixture(db, 'Country', './countries.csv', { mode: 'upsert', key: 'code' })
+await loadFixture(db, 'Country', [{ code: 'NZ', name: 'New Zealand' }])   // or inline
 ```
 
-`upsert` names the column to match on, which makes the fixture re-runnable. Rows go
-through the ORM, so defaults, validators, `@encrypted` and hooks all apply — a
-fixture is an ordinary write. CSV is RFC-4180 (quoted fields, embedded commas, `""`
-escapes); unquoted `true`/`false`/numbers/empty are coerced, quoted values stay
-strings.
+`mode: 'upsert'` with `key` naming the column to match on makes the fixture
+re-runnable; the default is `insert`, and a second run then refuses every row the
+first one stored. Rows go through the ORM, so defaults, validators, `@encrypted`
+and hooks all apply — a fixture is an ordinary write; `asSystem: true` takes it
+past gates and policies. CSV is RFC-4180 (quoted fields, embedded commas, `""`
+escapes). A cell is text and the column decides what it means — `20` lands in an
+`Int` column as a number — and an empty unquoted cell is `null`.
 
 ### Seeder.once — idempotent blocks
 
 ```js
+import { Seeder, runSeeder } from '@frontierjs/litestone'
+
 class BaseSeeder extends Seeder {
   async run(db) {
     await this.once(db, 'base-v1', async () => {
       // runs once and never again, even across deploys
-      await db.plan.createMany({ data: [...] })
+      await db.country.createMany({ data: [{ code: 'FR', name: 'France' }, { code: 'DE', name: 'Germany' }] })
     })
   }
 }
+
+await runSeeder(db, BaseSeeder)
+await runSeeder(db, BaseSeeder)   // the block is skipped
 ```
 
 The key (`'base-v1'`) is stored in a `_litestone_seeds` table. Re-running the seeder skips already-run blocks.
@@ -811,11 +1120,14 @@ The key (`'base-v1'`) is stored in a `_litestone_seeds` table. Re-running the se
 ## Teardown
 
 ```js
-import { truncate, reset } from '@frontierjs/litestone/testing'
+import { makeTestClient, truncate, reset } from '@frontierjs/litestone/testing'
+import { readFileSync } from 'node:fs'
 
-await truncate(db, 'posts')   // hard-delete all rows in one table
-await reset(db)               // hard-delete all tables in FK-safe order (dependency order)
-await factory.truncate()      // factory instance shorthand
+const { db, factories } = await makeTestClient(readFileSync('./schema.lite', 'utf8'), { autoFactories: true })
+
+await truncate(db, 'Post')          // hard-delete all rows in one table — the MODEL name
+await reset(db)                     // hard-delete all tables in FK-safe order (dependency order)
+await factories.user.truncate()     // factory instance shorthand
 ```
 
 `reset()` respects foreign key dependencies — children deleted before parents.
@@ -823,13 +1135,14 @@ await factory.truncate()      // factory instance shorthand
 ### snapshot / restore — seed once, reset between tests
 
 ```js
-import { snapshot, restore } from '@frontierjs/litestone/testing'
+import { makeTestClient, snapshot, restore } from '@frontierjs/litestone/testing'
+import { readFileSync } from 'node:fs'
 
-const { db, factories } = await makeTestClient(schemaText, { seed: 42, autoFactories: true })
-await seedEverything(db)          // the expensive part, once
+const { db, factories } = await makeTestClient(readFileSync('./schema.lite', 'utf8'), { seed: 42, autoFactories: true })
+await factories.post.withParents().createMany(5)   // the expensive part, once
 const clean = snapshot(db)
 
-beforeEach(() => restore(db, clean))
+restore(db, clean)                 // beforeEach(() => restore(db, clean))
 ```
 
 `restore()` truncates and re-inserts the exact rows, which is far cheaper than
@@ -845,14 +1158,14 @@ test, which is why it is the primitive here.
 
 ## generateGateMatrix — permission test cases
 
-The second argument is the **model** name — PascalCase singular, `'Post'` and not
-`'posts'`. Three resolvers depend on the two spellings not being confused.
+The second argument is the **model** name — PascalCase singular, `'Lead'` and not
+`'leads'`. Three resolvers depend on the two spellings not being confused.
 
 ```js
 import { generateGateMatrix } from '@frontierjs/litestone/testing'
 
-const matrix = generateGateMatrix(schema, 'Post')
-// → [{ op: 'read', required: 1, level: 0, label: 'STRANGER', expect: 'deny' }, ...]
+const matrix = generateGateMatrix(db.$schema, 'Lead')
+// → [{ op: 'read', required: 4, level: 0, label: 'STRANGER', expect: 'deny' }, ...]
 ```
 
 **Every operation against every reachable level (0–8), by default** — 36 cases per
@@ -865,16 +1178,27 @@ whatever the installed `getLevel` says it grades, and the extra key is ignored �
 the level comes from the plugin. Drive it from there:
 
 ```js
+import { makeTestClient, generateGateMatrix } from '@frontierjs/litestone/testing'
+import { GatePlugin } from '@frontierjs/litestone'
+import { expect } from 'bun:test'
+import { readFileSync } from 'node:fs'
+
 let level = 0
-const { db } = await makeTestClient(SCHEMA, {
+const { db } = await makeTestClient(readFileSync('./schema.lite', 'utf8'), {
   plugins: [new GatePlugin({ getLevel: () => level })]
 })
+const account = await db.asSystem().account.create({ data: { name: 'Acme' } })
+const args = {
+  create: { data: { email: 'lead@x.co', accountId: account.id } },
+  update: { where: { id: 1 }, data: { email: 'moved@x.co' } },
+  delete: { where: { id: 1 } },
+}
 
-for (const c of generateGateMatrix(schema, 'Post')) {
+for (const c of generateGateMatrix(db.$schema, 'Lead')) {
   level = c.level
   // getLevel is clamped to 0–7, so SYSTEM is not reachable through it at all.
   const as = c.level === 8 ? db.asSystem() : db.$setAuth({ id: 1 })
-  const run = () => c.op === 'read' ? as.post.findMany() : as.post[c.op](args[c.op])
+  const run = () => c.op === 'read' ? as.lead.findMany() : as.lead[c.op](args[c.op])
 
   if (c.expect === 'allow') await expect(run()).resolves.toBeDefined()
   else                      await expect(run()).rejects.toThrow(/requires level/i)
@@ -913,8 +1237,8 @@ error. The snapshot is tens of lines and names exactly which access moved.
 ```js
 import { deriveAccess, gateLadder } from '@frontierjs/litestone/testing'
 
-const access = deriveAccess(schema)
-access.counts        // { models, gated, unrestricted, policied, protected, transitions, systemMoves }
+const access = deriveAccess(db.$schema)
+access.counts        // { models, views, exportable, gated, unrestricted, policied, protected, transitions, systemMoves, sealingMoves }
 access.models        // sorted by name — inserting a model does not shift every row
 
 for (const model of access.models)
@@ -977,22 +1301,23 @@ CI can find and recheck one without being told it exists.
 
 ```js
 import { generateValidationCases } from '@frontierjs/litestone/testing'
+import { expect } from 'bun:test'
 
-const { valid, invalid, boundary } = generateValidationCases(schema, 'Lead')
-// valid    — complete valid record (correct by construction)
-// invalid  — one failing case per constraint: { field, value, rule, expect: 'fail', message }
-// boundary — edge values that should pass: { field, value, rule, expect: 'pass' }
+const { valid, invalid, boundary, uncheckable } = generateValidationCases(db.$schema, 'Lead')
+// valid       — complete valid record (correct by construction)
+// invalid     — one failing case per constraint: { field, value, rule, expect: 'fail', message }
+// boundary    — edge values that should pass: { field, value, rule, expect: 'pass' }
+// uncheckable — rules no value could isolate, reported rather than dropped
 
-test('valid data passes', async () => {
-  await db.lead.create({ data: valid })
-})
+const system  = db.asSystem()                       // the question is the rule, not the gate
+const account = await system.account.create({ data: { name: 'Acme' } })
 
-for (const c of invalid) {
-  test(`${c.field}: ${c.rule} rejects "${c.value}"`, async () => {
-    await expect(db.lead.create({ data: { ...valid, [c.field]: c.value } }))
-      .rejects.toThrow(c.message)
-  })
-}
+// valid data passes
+await system.lead.create({ data: { ...valid, accountId: account.id } })
+
+for (const c of invalid)   // `${c.field}: ${c.rule} rejects "${c.value}"`
+  await expect(system.lead.create({ data: { ...valid, accountId: account.id, [c.field]: c.value } }))
+    .rejects.toThrow(c.message)
 ```
 
 **`c.message` is the field's own message where it declares one.** `@email("Use
@@ -1015,24 +1340,30 @@ three rule families generated nothing at all.
 When `autoFactories: true`, `makeTestClient` generates factories for every SQLite model automatically. Access them via `factories`:
 
 ```js
-const { db, factories } = await makeTestClient(schemaText, { autoFactories: true })
+import { makeTestClient } from '@frontierjs/litestone/testing'
+import { readFileSync } from 'node:fs'
+
+const { db, factories } = await makeTestClient(readFileSync('./schema.lite', 'utf8'), { autoFactories: true })
 
 await factories.user.createOne()
-await factories.account.admin().createMany(3)
+await factories.account.createMany(3)
 ```
 
-Auto-factories use `generateFactory` under the hood — sensible defaults, no manual definition required.
+Auto-factories use `generateFactory` under the hood — sensible defaults, no manual
+definition required, and no traits: `state()` is how a generated factory is moved.
 
 ## Schema mutation testing
 
 ```js
 import { createTestEnv, mutationScore, schemaMutants } from '@frontierjs/litestone/testing'
+import { readFileSync } from 'node:fs'
 
+const schema = readFileSync('./schema.lite', 'utf8')
 const r = await mutationScore({
   schema,
   build: (text) => createTestEnv({ schema: text }),
 })
-// { total, graded, killed, score, survived, refused, errored }
+// { total, graded, killed, byParser, score, survived, refused, errored }
 ```
 
 **Mutate the schema, not the code.** Drop a `@@gate`, grade one down, remove a
@@ -1080,7 +1411,8 @@ named rather than hidden:
 ### Kinds
 
 `gate-drop` · `gate-lower` · `allow-drop` · `deny-drop` · `guarded-drop` ·
-`encrypted-drop` · `unique-drop` · `validator-drop` · `validator-widen`
+`encrypted-drop` · `unique-drop` · `validator-drop` · `validator-widen` ·
+`relator-tighten` · `relator-loosen`
 
 Pass `{ kinds: [...] }` to narrow. Mutation is **code-only and quote-aware**: an
 attribute named inside a doc comment is prose, and editing it produces a mutant
@@ -1089,8 +1421,13 @@ identical to the original that survives everything.
 ## verifyRowPolicies
 
 ```js
-expect(await env.verifyRowPolicies()).toEqual([])
-await env.verifyRowPolicies({ ops: ['read'] })
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { expect } from 'bun:test'
+
+const env = await createTestEnv({ schema: './schema.lite' })
+const owner = { id: 42 }                      // a principal whose id fits User.id
+expect(await env.verifyRowPolicies({ principal: owner })).toEqual([])
+await env.verifyRowPolicies({ principal: owner, ops: ['read'] })
 ```
 
 Every `@@allow`/`@@deny`, executed against rows on **both sides** of its
@@ -1103,8 +1440,10 @@ reads through the compiled WHERE and asks `evalJs` which rows should have come
 back. Independent implementations of one rule, so one can grade the other — the
 opposite of the oracle problem, and the comparison that found FJS-195.
 
-Covers `read`, `update` and `delete`. **`create` is absent on purpose**: it is
-checked by `evalJs` alone, so grading it with `evalJs` would be circular.
+Covers `read`, `update` and `delete`. **`create` has no WHERE and one
+evaluator**, so without a second schema the verdict and the create are one
+implementation grading itself; it is graded only under `against`, and only its
+column-only `@@deny` rules.
 
 | `got` | Means |
 | --- | --- |
@@ -1119,4 +1458,7 @@ every row matches — which is the exact shape this realm exists to stop.
 Values are taken off the predicate: the principal's own value for an `auth()`
 comparison, the literal for a literal one. Where that field is a **foreign key**
 — `workspaceId == auth().workspaceId` is the common case — the parent row is
-created first, or the candidate would break the FK and never exist.
+created first, or the candidate would break the FK and never exist. The default
+principal's `id` is a string, so a policy comparing an `Int` key to `auth().id`
+is reported as *all excluded* until `principal` names one whose `id` the column
+accepts.

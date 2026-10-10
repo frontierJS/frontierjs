@@ -28,6 +28,13 @@
  *   `strike` in the tag table) are cell attributes on a TextRenderable, so a
  *   box carries its bits and stamps every text that lands under it, through
  *   boxes appended later.
+ * - The engine lays out boxes and has no line boxes, so a box paints each
+ *   run of text and text-only inline tags as one engine text it keeps beside
+ *   them, and hides the run (`FlowBox`). Without it, every piece of a
+ *   sentence took a row of its own, and a row narrower than its pieces
+ *   painted them over each other. A link in the run is hidden with it, so
+ *   a press on the run's cells is handed to the node that wrote them
+ *   (`relay`), and Tab still stops at a hidden link.
  * - A button paints as `[ label ]` on one row rather than a bordered box: a
  *   bordered box fills the parent's width and three rows, which in a 40x12
  *   frame is a quarter of the screen per button.
@@ -52,9 +59,9 @@
  *   background is a color. A modal dialog blanks its own cells instead, and
  *   the backdrop sets the dim bit on everything drawn before it.
  */
-import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment } from './runtime.js'
+import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS } from './terminal/tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline } from './terminal/tags.js'
 import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
@@ -64,7 +71,7 @@ import { htmlEntitiesToText } from './entities.js'
 setRenderEnvironment(false, true)
 
 const core = await import('@opentui/core').catch(missingPeer('@opentui/core', 'the terminal target'))
-const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, TextAttributes, RGBA } = core
+const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, TextAttributes, RGBA, StyledText } = core
 
 /**
  * `<textarea>`: the engine's multi-line field, given the half of its one-line
@@ -199,6 +206,23 @@ class DialogBox extends BoxRenderable {
   }
 }
 
+/**
+ * A box from the tag table, laid out as a browser lays out line boxes. Text,
+ * and inline tags holding only text, that sit side by side are painted as one
+ * run of words (`phrasing`), which the engine wraps between words. The run's
+ * own nodes stay in the tree and are never laid out, so a live text, an
+ * attribute and a block marker keep writing to them, and the run is read off
+ * them each frame, before layout. A box whose every child is inline-level
+ * lays them in a row that wraps, so a button sits on the line beside its
+ * words; one holding a block stacks them, as a block breaks the line.
+ */
+class FlowBox extends BoxRenderable {
+  // The first node of each run → the text that paints the run.
+  __runs = new Map()
+  __direction = null
+  onLifecyclePass = () => flow(this)
+}
+
 const CLEAR = RGBA.fromValues(0, 0, 0, 0)
 
 // ─── the current renderer ─────────────────────────────────────────────
@@ -286,8 +310,8 @@ export function element(tag, attrs = {}) {
   let node
   switch (spec.role) {
     case 'box':
-      node = new BoxRenderable(r, {
-        flexDirection: spec.inline ? 'row' : 'column',
+      node = new (spec.row || spec.hidden ? BoxRenderable : FlowBox)(r, {
+        flexDirection: spec.row || spec.inline ? 'row' : 'column',
         ...(spec.indent && { paddingLeft: spec.indent }),
         // flexBasis 0 is what makes the share equal: an auto basis starts each
         // cell at its content's width, and the columns drift row to row.
@@ -299,7 +323,10 @@ export function element(tag, attrs = {}) {
       node = new BoxRenderable(r, { border: ['top'], height: 1 })
       break
     case 'button': {
-      node = new BoxRenderable(r, { flexDirection: 'row', focusable: true })
+      // A button's content is a line of its own, as an inline-block's is, so
+      // its brackets and its label are one run and the label's edge spaces
+      // collapse into the brackets'.
+      node = new FlowBox(r, { flexDirection: 'row', focusable: true })
       const open = text('[ ')
       const tail = text(' ]')
       node.add(open)
@@ -341,7 +368,10 @@ export function element(tag, attrs = {}) {
       })
       break
     case 'input':
-      node = new InputRenderable(r, {})
+      // A browser's text field is 20 characters wide unless `size` says
+      // otherwise; with no width of its own, a field beside its label in a
+      // row shrinks to one cell.
+      node = new InputRenderable(r, { minWidth: 20 })
       break
     case 'textarea':
       node = new FieldArea(r, {})
@@ -410,6 +440,7 @@ export function set_attribute(node, name, value) {
     return
   }
   if (name === 'href' && node.__tag === 'a') { link(node, present); return }
+  if (name === 'size' && node.__tag === 'input') { node.minWidth = parseInt(value, 10) > 0 ? parseInt(value, 10) : 20; return }
   if (name === 'disabled') {
     // A disabled control takes no focus and no activation, and gives up the
     // focus it holds, as a browser's does.
@@ -476,6 +507,14 @@ export function markupText(html, pre) {
   return s.split('\n').map((l) => l.trim()).filter(Boolean).join('\n')
 }
 
+/** The text of `{@html}`: `markupText` has laid its white space out already,
+ *  and each newline in it is a line break. */
+export function markup() {
+  const t = text('')
+  t.__laid = true
+  return t
+}
+
 export function set_text(node, value) {
   const str = value == null ? '' : String(value)
   if (str !== node.__t) { node.__t = str; node.content = str }
@@ -495,6 +534,146 @@ function focusCue(node, texts) {
   node.on('focused', () => cue(TextAttributes.INVERSE))
   node.on('blurred', () => cue(TextAttributes.NONE))
 }
+
+// ─── flow ─────────────────────────────────────────────────────────────
+
+const inlineLevel = (n) => n instanceof TextRenderable || isInline(n.__tag)
+
+/** Text, or an inline tag holding only text: what can join its neighbors as
+ *  one run of words. A link, or a tag something listens to, joins too: the
+ *  run hands a press or a move on its cells to the node that wrote them
+ *  (`relay`), and Tab stops at a node the layout never sees (`focusables`). */
+function phrasing(n) {
+  if (n instanceof TextRenderable) return !n.__proxy
+  if (!TERMINAL_TAGS[n.__tag]?.inline) return false
+  return n.getChildren().every((c) => !laidOut(c) || phrasing(c))
+}
+
+// A child the layout sees, counting one hidden only because its run paints it.
+const laidOut = (n) => !n.__marker && !n.__proxy && (n.visible !== false || n.__merged)
+
+// HTML's white space, which a browser collapses; a no-break space is not in it.
+const WS = /[ \t\n\r\f]+/g
+const LEADING_WS = /^[ \t\n\r\f]+/
+
+/** The run's text as engine chunks, each with its cell attributes. Outside a
+ *  `<pre>` a run of white space is one space, across tag edges too. */
+function words(n, out, pre) {
+  if (n instanceof TextRenderable) {
+    let text = pre || n.__laid ? n.plainText : n.plainText.replace(WS, ' ')
+    if (!pre && out.at(-1)?.text.endsWith(' ') && text.startsWith(' ')) text = text.slice(1)
+    if (text) out.push({ __isChunk: true, text, attributes: n.attributes, from: n })
+    return out
+  }
+  for (const c of n.getChildren()) if (laidOut(c)) words(c, out, pre)
+  return out
+}
+
+function flow(box) {
+  const kids = box.getChildren()
+  // Each child the layout sees stands alone or is one of a run of phrasing.
+  const units = []
+  for (const c of kids) {
+    if (!laidOut(c)) continue
+    if (!phrasing(c)) units.push(c)
+    else if (Array.isArray(units.at(-1))) units.at(-1).push(c)
+    else units.push([c])
+  }
+  const dir = units.length > 1 && units.every((u) => Array.isArray(u) || inlineLevel(u)) ? 'row' : 'column'
+
+  let pre = false
+  for (let n = box; n && !pre; n = n.parent) pre = n.__tag === 'pre'
+  // A line starts with no white space: in a block, every run in a column
+  // starts one, and the first run in a row does. An inline tag's edges are
+  // inside its parent's line.
+  const edges = !pre && !isInline(box.__tag)
+  const merged = new Set()
+  const next = new Map()
+  units.forEach((u, i) => {
+    if (!Array.isArray(u)) return
+    const [only] = u
+    if (u.length === 1 && !(only instanceof TextRenderable)) return
+    const chunks = []
+    for (const m of u) words(m, chunks, pre)
+    if (edges && (dir === 'column' || i === 0)) {
+      while (chunks.length && !(chunks[0].text = chunks[0].text.replace(LEADING_WS, ''))) chunks.shift()
+    }
+    if (u.length === 1 && chunks[0]?.text === only.plainText) return
+    for (const m of u) merged.add(m)
+    if (!chunks.length) return
+    let t = box.__runs.get(only)
+    box.__runs.delete(only)
+    if (!t) {
+      t = new TextRenderable(box.ctx, { content: '' })
+      t.__proxy = true
+      t.onMouseDown = (e) => relay(t, box, e, '__pressSource')
+      t.onMouseMove = (e) => relay(t, box, e, '__moveSource')
+    }
+    t.__chunks = chunks
+    next.set(only, t)
+    const now = box.getChildren()
+    if (now[now.indexOf(only) - 1] !== t) box.insertBefore(t, only)
+    const sig = chunks.map((c) => `${c.attributes}\u0001${c.text}`).join('\u0000')
+    if (sig !== t.__sig) { t.__sig = sig; t.content = new StyledText(chunks) }
+  })
+  for (const t of box.__runs.values()) t.destroyRecursively()
+  box.__runs = next
+
+  // Only what a run hid is shown again: a box can be hidden for a reason of
+  // its own, an image with no alt or a closed dialog.
+  for (const c of kids) {
+    const was = !!c.__merged
+    c.__merged = merged.has(c)
+    if (was !== c.__merged) hide(c, c.__merged)
+  }
+  if (dir !== box.__direction) {
+    box.__direction = dir
+    box.flexDirection = dir
+    box.flexWrap = dir === 'row' ? 'wrap' : 'no-wrap'
+  }
+}
+
+/** Hide `n` from layout, or show it again. The engine blurs a node it hides,
+ *  and a link that joins a run after it took focus — a route focuses its
+ *  first control as it mounts, before the first frame lays it out — would
+ *  lose it, so focus is handed straight back with its events held: in the
+ *  page nothing moved. */
+function hide(n, on) {
+  const focused = on ? n.ctx.currentFocusedRenderable : null
+  const held = focused && within(focused, n) ? focused : null
+  if (held) held.__still = true
+  n.visible = !on
+  if (held) { held.focus(); held.__still = false }
+}
+
+// A cell is a display column; the engine counts a newline in a run as one.
+const stringWidth = globalThis.Bun?.stringWidth ?? ((s) => [...s].length)
+const cellsOf = (text) => stringWidth(text.replace(/\n/g, ' '))
+
+/** The text node that wrote the cell of `run` under a mouse event, or null
+ *  past the end of a line. */
+function cellAt(run, e) {
+  const x = e.x - run.screenX
+  const y = e.y - run.screenY + run.scrollY
+  const { lineStartCols: starts, lineWidthCols: widths } = run.lineInfo
+  if (x < 0 || y < 0 || y >= starts.length || x >= widths[y]) return null
+  let col = starts[y] + x
+  for (const c of run.__chunks) if ((col -= cellsOf(c.text)) < 0) return c.from
+  return null
+}
+
+/** A press or a move on a run's cells, at the node that wrote them. The
+ *  engine sends it up from the run, past every member, so the nearest member
+ *  that is a source handles it here; above the box the engine's own walk
+ *  carries on, and `pointer` reads the cell's node off the event. */
+function relay(run, box, e, source) {
+  const at = cellAt(run, e)
+  if (!at) return
+  e.__at = at
+  for (let n = at.parent; n && n !== box; n = n.parent) if (n[source]) { n[source](e); return }
+}
+
+const show = (n, on) => { if (n.visible !== on) n.visible = on }
 
 // ─── options ──────────────────────────────────────────────────────────
 
@@ -637,11 +816,15 @@ function dispatch(target, type, extra = {}) {
 function focusSource(node) {
   if (node.__focusSource) return
   node.__focusSource = true
-  node.on('focused', () => { dispatch(node, 'focus'); dispatch(node, 'focusin') })
+  node.on('focused', () => {
+    if (node.__still) return
+    dispatch(node, 'focus')
+    dispatch(node, 'focusin')
+  })
   // `destroy` blurs a node it has already marked destroyed; a browser fires
   // nothing at an element removed while focused.
   node.on('blurred', () => {
-    if (node.isDestroyed) return
+    if (node.isDestroyed || node.__still) return
     dispatch(node, 'blur')
     dispatch(node, 'focusout')
   })
@@ -822,8 +1005,7 @@ function activatable(node) {
  *  engine would then hand focus back to the button pressed. */
 function pressSource(node) {
   if (node.__pressSource) return
-  node.__pressSource = true
-  node.onMouseDown = (e) => {
+  node.onMouseDown = node.__pressSource = (e) => {
     const { target, fields } = pointer(node, e)
     e.preventDefault()
     if (!dispatch(target, 'mousedown', fields).defaultPrevented) {
@@ -839,8 +1021,7 @@ function pressSource(node) {
  *  drag sends none. */
 function moveSource(node) {
   if (node.__moveSource) return
-  node.__moveSource = true
-  node.onMouseMove = (e) => {
+  node.onMouseMove = node.__moveSource = (e) => {
     const { target, fields } = pointer(node, e)
     dispatch(target, 'mousemove', fields)
   }
@@ -848,10 +1029,11 @@ function moveSource(node) {
 
 /** The element a mouse event happened to, and its DOM fields. The engine
  *  sends one event through every ancestor's slot, and the first slot delivers
- *  for the whole path, so an ancestor that listens hears it once. */
+ *  for the whole path, so an ancestor that listens hears it once. On a run,
+ *  the engine's target is the run and `relay` names the cell's node. */
 function pointer(node, e) {
   e.stopPropagation()
-  let target = e.target
+  let target = e.__at ?? e.target
   while (target && !target.__tag) target = target.parent
   return {
     target: target ?? node,
@@ -1009,7 +1191,12 @@ function mountBlock(marker, factory) {
   })
 }
 
+// A branch, a keyed block and a row are built later than the component that
+// declares them, inside an effect, so each reinstates the `$context` stack
+// captured where it is written: a DropdownItem behind `{#if open}` read no
+// `close` and choosing it never closed the menu.
 export function ifBlock(marker, selectFn, blocks) {
+  const withContext = captureContext()
   let current = null, dispose = null
   createEffect(() => {
     const index = selectFn()
@@ -1017,24 +1204,26 @@ export function ifBlock(marker, selectFn, blocks) {
     current = index
     if (dispose) { dispose(); dispose = null }
     if (index == null) return
-    dispose = mountBlock(marker, blocks[index])
+    dispose = mountBlock(marker, () => withContext(blocks[index]))
   })
 }
 
 /** Build `factory(key)` before `marker`, and rebuild it whenever `keyFn`
  *  answers a different key — `<mesa:element this>`, whose tag is the key. */
 export function keyBlock(marker, keyFn, factory) {
+  const withContext = captureContext()
   let current, dispose = null
   createEffect(() => {
     const key = keyFn()
     if (dispose && key === current) return
     current = key
     if (dispose) dispose()
-    dispose = mountBlock(marker, () => factory(key))
+    dispose = mountBlock(marker, () => withContext(() => factory(key)))
   })
 }
 
 export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
+  const withContext = captureContext()
   const rows = new Map()
   let elseDispose = null
   let warned = false
@@ -1062,7 +1251,7 @@ export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
       const [getIndex, setIndex] = createSignal(i)
       const made = { nodes: [], dispose: null, setItem, setIndex }
       made.dispose = createRoot((dispose) => {
-        made.nodes = toNodes(rowFn(getItem, getIndex))
+        made.nodes = toNodes(withContext(() => rowFn(getItem, getIndex)))
         onCleanup(() => { for (const n of made.nodes) detach(n) })
         return dispose
       })
@@ -1072,7 +1261,7 @@ export function eachBlock(marker, getItems, keyFn, rowFn, elseFn) {
     // sequence ends in order whether a row moved, arrived or stayed.
     for (const key of keys) for (const n of rows.get(key).nodes) placeBefore(marker, n)
     if (items.length === 0) {
-      if (elseFn && !elseDispose) elseDispose = mountBlock(marker, elseFn)
+      if (elseFn && !elseDispose) elseDispose = mountBlock(marker, () => withContext(elseFn))
     } else if (elseDispose) {
       elseDispose()
       elseDispose = null
@@ -1090,8 +1279,9 @@ export function slot(marker, block, fallback) {
 
 // ─── focus ────────────────────────────────────────────────────────────
 
+// A node a run paints is hidden from layout and is still where Tab stops.
 function focusables(node, out = []) {
-  if (!node || node.__marker || node.visible === false) return out
+  if (!node || node.__marker || (node.visible === false && !node.__merged)) return out
   if (node.focusable) out.push(node)
   if (typeof node.getChildren === 'function') for (const c of node.getChildren()) focusables(c, out)
   return out

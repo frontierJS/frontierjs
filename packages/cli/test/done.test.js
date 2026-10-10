@@ -68,12 +68,12 @@ describe('module-named', () => {
 })
 
 describe('the diff', () => {
-  test('an untracked file is changed and added, and a clean tree reports nothing', () => {
+  test('an untracked file is changed and added, and a clean tree reports nothing', async () => {
     const { root, cleanup } = tree({ 'a.js': 'one\n' })
     const git = (...a) => execFileSync('git', ['-C', root, ...a], { stdio: 'ignore' })
     try {
       git('init', '-q'); git('add', '.'); git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x')
-      expect(runDone(root, { engines: false }).changed).toBe(0)
+      expect((await runDone(root, { engines: false })).changed).toBe(0)
 
       writeFileSync(join(root, 'b.js'), '')
       writeFileSync(join(root, 'a.js'), 'two\n')

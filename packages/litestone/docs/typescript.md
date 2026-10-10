@@ -131,7 +131,7 @@ export type WindowSpec = Record<string, WindowFnSpec>
 
 `///` triple-slash comments in `.lite` files are emitted as JSDoc in the generated TypeScript:
 
-```prisma
+```lite
 /// User account — represents a single company or individual.
 model Account {
   id    Int @id

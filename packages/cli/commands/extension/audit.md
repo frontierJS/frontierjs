@@ -9,7 +9,8 @@ flags:
   browser:
     char: b
     type: string
-    description: chrome | firefox
+    choices: [chrome, firefox]
+    description: Which browser to audit against
     defaultValue: chrome
 ---
 

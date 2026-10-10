@@ -10,13 +10,12 @@ import sierraConfig from './sierra.config.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
-// The literal is the static default and the env is what a drive sets, which is
-// the same shape a scaffolded app has for `FLI_PORT_FE`/`FLI_PORT_BE`. A drive
-// that cannot move off 8010/8110 cannot run beside a dev server somebody else
-// is already holding the port with, and `verify:stripe` already reads
-// `API_PORT` for its own reason.
-const API_PORT = process.env.API_PORT ?? '8110'
-const UI_PORT  = Number(process.env.UI_PORT ?? 8010)
+// The literals are the dev slot, `API_PORT`/`UI_PORT` are what a drive sets, and
+// the `fli dev` variables are what it hands a second checkout (18010 in branch 1).
+// A drive that cannot move off 8010/8110 cannot run beside a dev server somebody
+// else is already holding the port with.
+const API_PORT = process.env.API_PORT ?? process.env.FLI_PORT_BE ?? '8110'
+const UI_PORT  = Number(process.env.UI_PORT ?? process.env.FLI_PORT_FE ?? 8010)
 const API  = `http://localhost:${API_PORT}`
 const UI   = resolve(HERE, '../../../packages/ui')
 

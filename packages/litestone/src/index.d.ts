@@ -1544,13 +1544,15 @@ export declare function generateLiteSchema(db: unknown, opts?: { camelCase?: boo
 export declare function parseDuration(str: string, what?: string): number
 export declare function parseSize(str: string): number
 
-/** One row per table the sweep touched. */
+/** One row per model in a retained database. */
 export interface RetentionResult {
   model:    string
   /** The table, or for a jsonl database the file. */
   table:    string
   removed:  number
   error?:   string
+  /** Why the model was not swept: it has no `createdAt DateTime`, so the window does not apply to it. */
+  skipped?: string
 }
 
 /**

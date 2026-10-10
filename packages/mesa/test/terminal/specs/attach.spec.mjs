@@ -19,7 +19,7 @@ export async function run(t) {
 
   let frame = await t.frame()
   t.expectFrame(frame, ['runs 1 placed cleanups 0'], 'the attachment ran once, on a node already in the tree')
-  t.expectFrame(frame, ['seen BoxRenderable'], 'it receives the renderable, and a callback argument writes state')
+  t.expectFrame(frame, ['seen FlowBox'], 'it receives the renderable, and a callback argument writes state')
 
   await t.tab()          // Arm
   await t.enter()

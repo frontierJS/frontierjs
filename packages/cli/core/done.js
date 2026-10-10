@@ -117,7 +117,7 @@ function verdictMessage(v, doc) {
 }
 
 /** The engines that already exist, asked about this tree. */
-export function engineItems(root) {
+export async function engineItems(root) {
   const out = []
 
   for (const f of runChecks({ root, only: ['test-files-run'], scope: 'both' }).findings) {
@@ -130,7 +130,7 @@ export function engineItems(root) {
     for (const e of errors) out.push({ check: 'registers', subject: `${e.rule}:${e.id ?? e.file}`, ok: false, message: `${e.file ?? ''}${e.line ? `:${e.line}` : ''} ${e.message}` })
   }
 
-  const snaps = checkSnapshots({ root })
+  const snaps = await checkSnapshots({ root })
   if (snaps.checked && !snaps.failed) out.push({ check: 'snapshots', subject: 'snapshots', ok: true, message: `${snaps.checked} snapshot(s) current` })
   for (const r of snaps.results.filter(r => !r.ok)) {
     out.push({
@@ -149,7 +149,7 @@ export function engineItems(root) {
  * engines and the drives read the real tree and are skipped with `engines:
  * false`.
  */
-export function runDone(root, { changes = null, engines = true } = {}) {
+export async function runDone(root, { changes = null, engines = true } = {}) {
   root = resolve(root)
   const c = changes ?? collectChanges(root)
   if (!c.changed.length) return { root, changed: 0, items: [], drives: [], unfinished: 0 }
@@ -157,7 +157,7 @@ export function runDone(root, { changes = null, engines = true } = {}) {
   const items = [
     ...layoutNamed({ root, ...c }),
     ...moduleNamed({ root, ...c }),
-    ...(engines ? engineItems(root) : []),
+    ...(engines ? await engineItems(root) : []),
   ]
 
   let drives = []

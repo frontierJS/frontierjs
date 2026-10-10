@@ -180,7 +180,7 @@ this feature and it is not the shape this feature takes.
 
 ## Open questions
 
-1. **Is `part:` the spelling?** `class:` is taken; `::part()` is the platform's and
+1. ~~**Is `part:` the spelling?**~~ **Answered 2026-10-10 (`FJS-D856`): A — `part="header"` on the child, `part:header="dense"` on the parent.** `class:` is taken; `::part()` is the platform's and
    argues for `part`. A third option is `--`-style custom properties, which is what
    `@frontierjs/ui`'s DatePicker went **107 declared properties → 6** to get away
    from (`FJS-128`) — per-property, does not compose, enumerate-everything.

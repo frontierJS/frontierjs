@@ -24,7 +24,8 @@ flags:
   lens:
     char: l
     type: string
-    description: With --as=list, which vocabulary — concept, language or api
+    choices: [concept, language, api]
+    description: With --as=list, which vocabulary
     defaultValue: concept
   limit:
     type: number

@@ -143,6 +143,10 @@ artifact kinds* rather than one deploy command:
 - **static + API** — Sierra's `static` target (implemented 2026-08-02) plus a
   Junction host
 - **offline-capable PWA** — service worker, precached shell, local SQLite, sync
+- **browser-only** — static shell + Litestone over OPFS + host identity, no
+  Junction; the promise narrows and the kind says how (`no-port-app.md`)
+- **local-only** — the default `fli new` app, declared a destination rather
+  than the stage before deploy (`no-port-app.md`)
 
 A Rig (`IDEAS/rigs.md`) should be able to contribute to a release — migrations,
 secrets, ports — which is the open question that document already raised. These

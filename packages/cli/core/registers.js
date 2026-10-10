@@ -9,15 +9,13 @@
 // that wants the registers — the map, the atlas, `register:check`, an editor —
 // asks here and gets the same JSON.
 //
-// ── Source form, and the migration ───────────────────────────────────────────
+// ── Source form ──────────────────────────────────────────────────────────────
 //
-// The registers are moving from three hand-parsed shapes to one: a markdown
-// file per record, frontmatter for what must be typed, prose for the argument.
-// `IDEAS/` is already file-per-record and reads its frontmatter here; issues and
-// decisions are still a table and a run of bold paragraphs, and are read in
-// their CURRENT form. Each record carries `form` — `frontmatter` or the legacy
-// shape it came from — so a half-migrated tree is legible rather than silently
-// mixed, and so parity between the two can be asserted while both exist.
+// Three shapes on purpose: `IDEAS/` is a markdown file per record with
+// frontmatter for what must be typed, `ISSUES.md` stays one table (`FJS-D743`),
+// and `DECISIONS.md` a run of dated paragraphs. Each record carries `form` —
+// `frontmatter`, `table`, `heading` or `prose` — so a reader that needs a typed
+// field knows which parser produced it rather than guessing from the id.
 //
 // ── What is derived and what is declared ─────────────────────────────────────
 //

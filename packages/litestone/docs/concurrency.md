@@ -180,7 +180,7 @@ process** unless you start a separate one, so a long handler blocks the API.
 serving process's subscribers never — every live list, `record(id)` and `changed`
 reload stale with nothing marking it (`FJS-642`). Declare it:
 
-```prisma
+```lite
 database main {
   path     "./db/app.db"
   announce crossProcess     // default: inProcess
@@ -236,7 +236,7 @@ A booking, a shift, a leave request: *no two of these may share an instant for
 one person* is uniqueness over a RANGE, and a check written in a service guards
 only the callers that run it. Declare it instead:
 
-```prisma
+```lite
 scope person(employeeId)
 
 model Shift {

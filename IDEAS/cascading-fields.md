@@ -61,7 +61,7 @@ Elsewhere in the schema, derivation is read-side only and cannot express this:
 
 ## Shape
 
-```prisma
+```lite
 model Task {
   id          Int       @id
   completedAt DateTime?

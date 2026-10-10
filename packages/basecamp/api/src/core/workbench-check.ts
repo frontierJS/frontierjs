@@ -4,8 +4,8 @@
 //   bun workbench-check.ts <done.js> <checkout> <out file> <started at>
 //
 // A process of its own, detached, for the reason a run is one
-// (`core/workbench.ts`): `runDone` is synchronous and takes tens of seconds,
-// and `bun --watch` restarts the API under it. The done.js is the CHECKOUT's,
+// (`core/workbench.ts`): `runDone` takes tens of seconds, and `bun --watch`
+// restarts the API under it. The done.js is the CHECKOUT's,
 // not this app's, because the checkout's copy is what states what finished
 // means there — the same file its Stop hook runs.
 
@@ -22,7 +22,7 @@ function write(value: object) {
 
 try {
   const { runDone } = await import(pathToFileURL(done).href)
-  const report = runDone(root)
+  const report = await runDone(root)
   write({ state: report.unfinished ? 'fail' : 'pass', at, pid: process.pid, report })
 } catch (e) {
   write({ state: 'error', at, pid: process.pid, error: String((e as Error)?.message ?? e).slice(0, 2000) })

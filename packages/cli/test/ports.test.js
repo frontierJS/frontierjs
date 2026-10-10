@@ -13,10 +13,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync
 import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
-         readLock, readsPortVar, decode, worktreeOf } from '../core/ports.js'
+         readLock, readsPortVar, decode, worktreeOf, portFor } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -425,6 +426,57 @@ describe('worktreeOf — is this a second checkout', () => {
   })
 })
 
+describe('portFor — the port a test asks for', () => {
+  let dir, main, linked, lockFile
+  const git = (cwd, ...argv) => execFileSync('git', ['-C', cwd, ...argv], { stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+  const app = (top) => {
+    const root = join(top, 'basecamp')
+    mkdirSync(join(root, 'db'), { recursive: true })
+    mkdirSync(join(root, 'api', 'test'), { recursive: true })
+    mkdirSync(join(root, 'web'), { recursive: true })
+    writeFileSync(join(root, 'db', 'schema.lite'), '')
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@frontierjs/basecamp' }))
+    writeFileSync(join(root, 'api', 'server.js'), 'Bun.serve({ port: process.env.FLI_PORT_BE })')
+    writeFileSync(join(root, 'web', 'vite.config.js'), 'export default { server: { port: process.env.FLI_PORT_FE } }')
+    return root
+  }
+
+  beforeEach(() => {
+    dir      = realpathSync(mkdtempSync(join(tmpdir(), 'fli-portfor-')))
+    lockFile = join(dir, 'sessions.lock')
+    main     = join(dir, 'main')
+    linked   = join(dir, 'linked')
+    mkdirSync(main)
+    git(main, 'init', '-q')
+    git(main, 'commit', '-q', '--allow-empty', '-m', 'x')
+    git(main, 'worktree', 'add', '-q', linked)
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('a main checkout gets the formula and never writes the lock', async () => {
+    const root = app(main)
+    expect(await portFor(join(root, 'api', 'test'), 'be', { service: 3, lockFile })).toBe(7123)
+    expect(await portFor(join(root, 'api', 'test'), 'be', { env: 'dev', lockFile })).toBe(8120)
+    expect(existsSync(lockFile)).toBe(false)
+  })
+
+  test("a branch with no number claims the one fli dev would take, and fli dev's claim then agrees", async () => {
+    const root = app(linked)
+    const from = pathToFileURL(join(root, 'api', 'test', 'compute.test.ts')).href
+    expect(await portFor(from, 'be', { service: 3, lockFile })).toBe(17123)
+    expect(readLock(lockFile)[root]).toMatchObject({ branch: 1, worktree: linked })
+    const dev = await claimSession(root, { name: '@frontierjs/basecamp', lockFile })
+    expect(dev.vars.FLI_PORT_BE).toBe('18120')
+  })
+
+  test("a number the lock already holds is used as is, and a project the app does not own moves with it", async () => {
+    const root = app(linked)
+    writeFileSync(lockFile, JSON.stringify({ [root]: { branch: 2, repo: join(main, '.git'), worktree: linked } }))
+    expect(await portFor(root, 'be', { env: 'dev', project: 'outpost', lockFile })).toBe(28180)
+    await expect(portFor(root, 'be', { project: 'outposts', lockFile })).rejects.toThrow(/Unknown project "outposts"/)
+  })
+})
+
 describe('readsPortVar — would this surface follow a slot', () => {
   let root
   beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'fli-reads-')) })
@@ -439,6 +491,16 @@ describe('readsPortVar — would this surface follow a slot', () => {
     expect(readsPortVar(root, row)).toBe(false)
 
     writeFileSync(join(root, 'web/config/vite.config.js'), "port: parseInt(process.env.FLI_PORT_FE ?? '8000')")
+    expect(readsPortVar(root, row)).toBe(true)
+  })
+
+  test('a variable named only in a comment is not read', () => {
+    mkdirSync(join(root, 'web/config'), { recursive: true })
+    const row = { surface: 'web', env: 'FLI_PORT_FE' }
+    writeFileSync(join(root, 'web/config/vite.config.js'), "// the shape a scaffold has for FLI_PORT_FE\n/* FLI_PORT_FE */\nconst UI_PORT = Number(process.env.UI_PORT ?? 8010)")
+    expect(readsPortVar(root, row)).toBe(false)
+
+    writeFileSync(join(root, 'web/config/vite.config.js'), "const API = `http://localhost:${process.env.FLI_PORT_FE}`")
     expect(readsPortVar(root, row)).toBe(true)
   })
 

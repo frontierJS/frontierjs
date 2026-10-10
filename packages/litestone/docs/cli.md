@@ -9,38 +9,49 @@ All commands read `litestone.config.js` by default. Override with `--config`.
 ## Every command
 
 ```bash
-litestone init
-litestone migrate create [label]
+litestone init [--force]
+litestone migrate create [label] [--rename Model.old=new]... [--operations ops.json]
 litestone migrate dry-run [label]
-litestone migrate apply
+litestone migrate dev [label]                            # create, then apply — the everyday verb
+litestone migrate apply [--backup[=dir]]
 litestone migrate status
 litestone migrate verify
-litestone studio [--port=8502]
-litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>]
+litestone migrate check                                  # does the history build the schema? no database opened
+litestone migrate baseline                               # record the files as applied, running none
+litestone db push [--accept-data-loss]                   # apply the schema directly, no file written (dev)
+litestone studio [--port=8502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
+litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>] [--tenant <id>] [--eval '<expr>']
 litestone doctor
-litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction]
+litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction] [--out=<path>] [--stdout]
 litestone seed [SeederClass]
-litestone seed run [name] [--db=main] [--force]
+litestone seed run [name] [--db=<path>] [--force]
 litestone introspect <db> [--out=schema.lite] [--report=<path>] [--strict] [--no-camel]
 litestone import <path> [--from=prisma|rails|sql|frappe] [--out=<path>] [--report=<path>] [--strict]
-litestone transform config.js [--preview] [--dry-run]
+litestone export <dataset> --as <who> | --system [--since=<cursor>] [--format=ndjson|csv] [--out=<dir>] [--stdout]
+                 [--include-protected] [--with-deleted] [--gate <path[#export]>] [--tenant <id>]
+litestone edge eject <Model>.<field> [--apply]           # promote an @edge/@scoped field to a model
+litestone transform [config.js] [--preview] [--dry-run] [--out=<path>] [--only=A,B] [--concurrency=8]
 litestone explain [@word] [--visibility] [--json]        # the language, no schema needed
-litestone catalog --snapshot [--check]                   # the language surface, committed
-litestone catalog --reference [--check]                  # docs/reference.snapshot.md, the A-Z page
-litestone advise [--json]                                # legal-and-wrong, plus legal-and-MISSING
+litestone catalog --snapshot [--check] [--stdout] [--out=<path>]   # the language surface, committed
+litestone catalog --reference [--check] [--stdout] [--out=<path>]  # docs/reference.snapshot.md, the A-Z page
+litestone advise [--json] [--strict]                     # legal-and-wrong, plus legal-and-MISSING
 litestone validate [--only=A,B] [--json]                 # which STORED rows the schema would now refuse; exits 1
 litestone assistant [--bare] [--out=<path>] [--purpose=<path>]  # a chat-model schema assistant + this schema + PURPOSE.md, to paste
 litestone assistant --snapshot [--check]                 # assistant.snapshot.md — the URL form, no schema
-litestone jsonschema [--out=./schemas/] [--format=flat]
+litestone jsonschema [--out=<path>] [--stdout] [--mode=create|update|full] [--all-modes] [--format=definitions|flat]
 litestone jsonschema --snapshot [--check] [--stdout] [--out=<path>]
 litestone access [--check] [--json] [--stdout] [--out=<path>]
+litestone access --for <who> [--json]                    # what this person can do, live
 litestone access --from=<ref|path> [--strict] [--json]   # the permission diff
 litestone ddl [--check] [--stdout] [--pluralize] [--out=<path>]
 litestone release [--from=<ref|path>] [--strict] [--check] [--json] [--out=<path>]
-litestone replicate config.js
-litestone backup [dest] [--vacuum]
+litestone mutate                                         # mutate the schema, report what the checks miss
+litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
+litestone restore [config.js] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]]
+litestone rsync <dest>                                   # every SQLite db to a destination via sqlite3_rsync
+litestone backup [dest] [--vacuum] [--zip] [--db=<name>]
 litestone optimize [table]
-litestone tenant list|create|delete|migrate
+litestone tenant list|create|info|delete|migrate
 ```
 
 ## Migration commands
@@ -60,49 +71,68 @@ litestone migrate create rename --operations ops.json                # the same,
 On a terminal with neither, `create` asks about each column that left beside one of the same type that arrived. `migrate dev` takes the same flags. The document is `{ "operations": [{ "op": "rename", "model": "Issue", "from": "description", "to": "brief" }] }`; `@frontierjs/oracle`'s `emit()` returns it as `document`.
 
 ```bash
-litestone migrate apply
+litestone migrate dev [label]
 ```
-Apply all pending migration files in chronological order. Records applied migrations in `_litestone_migrations`.
+Create, then apply, in one verb — the one a developer runs constantly. It refuses when the live database is ahead of its history (a column pushed and never written down) and says the way out, rather than failing on `duplicate column name` from the middle of a file.
+
+```bash
+litestone migrate apply [--backup[=dir]]
+```
+Apply all pending migration files in chronological order. Records applied migrations in `_litestone_migrations`. Before applying, it asks the same question `migrate check` asks and refuses when the history does not build the declared schema, so a container does not start over a database holding litestone's bookkeeping table and nothing else. `--backup` copies every database first — there is no down. A file whose DESTRUCTIVE box still says `Accept data loss: no` is refused.
+
+```bash
+litestone migrate check
+```
+Does the migration history build the schema this app declares? Asked of the repo alone — the files are replayed into a shadow database and diffed against the schema, no database of yours is opened — which is what lets CI and `fli deploy:doctor` ask it before an image exists. Exits 1 when the history falls short.
+
+```bash
+litestone migrate baseline
+```
+Record the migration files as applied without running them, for a database that already holds what they build: an app developed through `db push`, or your own database the moment `migrate create` writes a delta you had already pushed.
 
 ```bash
 litestone migrate status
 ```
-Show migration state: `applied`, `pending`, or `modified` (applied file changed on disk).
+Show migration state per file: `applied`, `pending`, `modified` (applied file changed on disk — checksum mismatch), `orphaned` or `skipped`.
 
 ```bash
 litestone migrate verify
 ```
-Confirm the live database schema matches what the migration files would produce. Exits non-zero if drift detected — useful in CI.
+Confirm the live database matches the DECLARED schema — the schema is built into a pristine database and the two are diffed. Exits non-zero on drift, and prints the corrective diff; `migrate check` is the other comparison, history against schema.
 
 ```bash
 litestone migrate dry-run [label]
 ```
 Preview the SQL that would be generated, without writing a file.
 
+```bash
+litestone db push [--accept-data-loss]
+```
+Apply the schema to the database directly, writing no migration file — prototyping only, because a history that falls behind is what `migrate apply` refuses at deploy. A change that drops a column and its values asks `y/N` at a terminal and refuses anywhere else unless `--accept-data-loss` is passed.
+
 ## Development commands
 
 ```bash
-litestone studio [--port=8502]
+litestone studio [--port=8502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
 ```
-Launch the browser UI at `http://localhost:8502`. Includes table browser, SQL editor, schema viewer, migration status, REPL, and performance advisor.
+Launch the browser UI at `http://localhost:8502` and open it (`--no-open` to not). `--gate` grades access previews with the app's own `getLevel`; `--host` beyond loopback is refused without `--token`; `--readonly` blocks every mutating endpoint. [studio.md](studio.md) is the full reference.
 
 ```bash
-litestone repl
+litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>] [--tenant <id>] [--eval '<expr>']
 ```
-Interactive Litestone query REPL with autocomplete and history.
+A console that boots at a gate level, with `db`, the model accessors and tab completion. `--as` resolves an account the way `export --as` does; `--level` fixes the standing with no user; `--eval` runs one expression, prints it as JSON and exits 1 on a throw. A `tinker.js` beside the schema adds commands.
 
 ```bash
 litestone doctor
 ```
-Analyze schema and database health: missing FK indexes, large tables without covering indexes, fragmented FTS5 segments, WAL growth.
+Check setup and database health: Bun version, config, schema validity, database reachability and stale `-wal`/`-shm` files, migration state, and performance — FK columns with no index, large tables with no index at all, stale `ANALYZE` statistics, WAL checkpoint pressure.
 
 ## Type generation
 
 ```bash
-litestone types [out.d.ts]
-litestone types --only=User,Post
+litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction] [--stdout]
 ```
-Generate TypeScript declarations from your schema. Outputs `<Model>` (the row), `<Model>Create`, `<Model>Update`, `<Model>Where` and `<Model>OrderBy` for every model — `User`, `UserCreate`, … `--only` takes model names and refuses one that names no model.
+Generate TypeScript declarations from your schema, to `<schema>.d.ts` beside it by default. Outputs `<Model>` (the row), `<Model>Create`, `<Model>Update`, `<Model>Where` and `<Model>OrderBy` for every model — `User`, `UserCreate`, … `--only` takes model names and refuses one that names no model. `--audience=system` includes the fields a client never sees; `--augment=junction` adds the module augmentation Junction's `ServiceTypes` reads. [typescript.md](typescript.md) shows what is generated.
 
 ## Schema tools
 
@@ -120,7 +150,7 @@ answering neither. `--visibility` asks the question that runs the other way —
 answers. An unknown word suggests the near ones and exits 1.
 
 ```bash
-litestone advise [--json]
+litestone advise [--json] [--strict]
 ```
 The one command that reads YOUR schema and says something no generated artefact
 can. Two lists, and they are two questions.
@@ -150,7 +180,7 @@ Each suggestion names the word it is about and prints the next thing to type —
 `severity` because it is a defect; a suggestion carries a `confidence` because
 the schema is not wrong and you may have meant it. **Neither list is a gate**:
 `litestone access --strict` and `litestone release --strict` are the two that
-fail a branch.
+fail a branch, and `advise --strict` exits 1 on an error or warn RULE alone.
 
 ```bash
 litestone catalog --snapshot  [--check] [--stdout] [--out=<path>]
@@ -227,12 +257,18 @@ litestone seed [SeederClass]
 Run the default seeder or a named seeder class.
 
 ```bash
-litestone seed run [name] [--db=main] [--force]
+litestone seed run [name] [--db=<path>] [--force]
 ```
-Run a named data seed (e.g. calendar table). `--force` re-runs even if already applied.
+Run a named infrastructure seed (e.g. a calendar table), from `src/tools/seeds/`. `--force` re-runs one already applied; `--db` names the database file.
 
 ```bash
-litestone backup [dest] [--vacuum]
+litestone export <dataset> --as <who> | --system [--since=<cursor>] [--format=ndjson|csv] [--out=<dir>] [--stdout]
+                 [--include-protected] [--with-deleted] [--gate <path[#export]>] [--tenant <id>]
+```
+Take a bulk extract of a dataset that declares `@@export`, graded as the account `--as` names — the rows that leave are the rows that account can read. Writes `<dataset>.<format>` and `<dataset>.manifest.json` into `--out` (default: the working directory); `--stdout` streams the rows and prints the manifest to stderr. `--since` resumes from the cursor a previous manifest recorded. [export.md](export.md) is the full reference.
+
+```bash
+litestone backup [dest] [--vacuum] [--zip] [--db=<name>]
 ```
 Create a hot backup — with no `dest`, into a new `db/backups/<stamp>/` beside the schema, so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the schema in `db/`, every other file under `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db).
 
@@ -244,9 +280,9 @@ Merge FTS5 index segments for optimal search performance. Omit `table` to optimi
 ## Infrastructure
 
 ```bash
-litestone replicate [config.js]
+litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
 ```
-Start Litestream WAL replication. Runs as a managed subprocess — signal-forwarded, YAML config auto-generated.
+Start Litestream WAL replication. Runs as a managed subprocess — signal-forwarded, YAML config auto-generated. Each flag overrides the same key under `replicate:` in the config.
 
 ```bash
 litestone restore [config.js] [--url=<url>] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]] [--json]
@@ -254,9 +290,14 @@ litestone restore [config.js] [--url=<url>] [--at=<instant>] [--from-backup=<dir
 Bring every database `replicate` streams back from its replica — all or nothing. `--from-backup` with no `--url`, `--at` or `--verify` restores every database from a `litestone backup` directory instead, with no litestream (§ From a local backup). `--verify` restores into `<dir>` instead and grades the copy. See `docs/replication.md` § Restoring and § Proving a copy.
 
 ```bash
-litestone transform [config.js] [--preview] [--dry-run]
+litestone transform [config.js] [--preview] [--dry-run] [--out=<path>] [--only=A,B] [--concurrency=8]
 ```
-Run the anonymize/shard pipeline (dev tool). `--preview` shows output without writing.
+Run the anonymize/shard pipeline (dev tool). `--preview` shows output without writing; `--dry-run` runs the pipeline and writes nothing.
+
+```bash
+litestone rsync <dest>
+```
+Sync every SQLite database to a destination with `sqlite3_rsync`.
 
 ## Tenant management
 
@@ -267,6 +308,8 @@ litestone tenant info <id>
 litestone tenant delete <id>
 litestone tenant migrate [--only=id1,id2] [--concurrency=8]
 ```
+
+`tenant create` takes `--meta '<json>'` to store alongside the id.
 
 Reads the schema's own `tenancy { }` block for the tenant directory, the
 registry file, the pool size and the key. `--dir` / `--registry` and a
@@ -283,4 +326,7 @@ writing files nothing will read. See `docs/multi-tenancy.md`.
 | `--schema=<path>` | Path to `.lite` schema file |
 | `--db=<path>` | Path to SQLite database file |
 | `--migrations=<dir>` | Path to migrations directory |
-| `--port=<n>` | Litestone Studio port (default: 8502) |
+| `--env-file=<path>` | Load env vars from this file (default: `./.env.local`, then `./.env`) |
+| `--no-env` | Skip loading `.env` files |
+| `--debug` | Print stack traces on error |
+| `--version` | Print the version and exit |

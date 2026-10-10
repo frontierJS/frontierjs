@@ -6,7 +6,7 @@ A single Litestone schema can route models to multiple SQLite databases, append-
 
 Declare databases at the top of your schema file. Models without `@@db` go to the default database:
 
-```prisma
+```lite
 database main      { path env("MAIN_DB", "./app.db") }
 database analytics { path env("ANALYTICS_DB", "./analytics.db") }
 database logs      { path "./logs/";  driver jsonl;   retention 30d }
@@ -17,11 +17,17 @@ database audit     { path "./audit/"; driver trail;  retention 90d }
 
 ## Assigning models
 
-```prisma
+```lite
+database main      { path env("MAIN_DB", "./app.db") }
+database analytics { path env("ANALYTICS_DB", "./analytics.db") }
+database logs      { path "./logs/";  driver jsonl;   retention 30d }
+database audit     { path "./audit/"; driver trail;  retention 90d }
+
 model User {
   id    Int @id
   email String
   // no @@db — goes to 'main' (first database block, or db: option)
+  @@trail(audit)    // writes fire entries into the audit trail database
 }
 
 model PageView {
@@ -38,25 +44,40 @@ model ApiRequest {
   status  Int
   @@db(logs)      // append-only JSONL, no migrations
 }
-
-model User {
-  @@trail(audit)    // writes fire entries into the audit trail database
-}
 ```
 
 ## createClient
 
-For multi-DB schemas, omit `db:` — the client reads paths from the `database` blocks:
+For multi-DB schemas, omit `db:` — the client reads paths from the `database` blocks. A relative `path` resolves against the process's working directory, not the schema file; `createClient({ resolveFrom })` anchors it elsewhere, and the client says so once when a relative path is in play:
 
 ```js
 const db = await createClient({ path: './schema.lite' })
 
 // Queries route automatically
-await db.user.findMany()                  // → main.db
-await db.pageView.create({ data: {...} }) // → analytics.db
-await db.apiRequest.create({ data: {...} }) // → logs/
-await db.auditTrail.findMany()            // → audit/ (auto-generated model)
+await db.user.create({ data: { id: 1, email: 'a@example.com' } })               // → app.db
+await db.pageView.create({ data: { id: 1, path: '/', duration: 12 } })          // → analytics.db
+await db.apiRequest.create({ data: { method: 'GET', path: '/', status: 200 } }) // → logs/ApiRequest.jsonl
+
+// audit/ (auto-generated model, @@gate("8") — read it as the system; an entry
+// lands one event-loop tick after the write that produced it)
+await new Promise(r => setTimeout(r, 0))
+const entries = await db.asSystem().auditTrail.findMany()
+if (entries.length !== 1) throw new Error(`expected the user create in the trail, got ${entries.length}`)
 ```
+
+## Raw SQL across databases
+
+```js
+const db = await createClient({ path: './schema.lite' })
+db.$attach('./archive.db', 'archive')   // synchronous; SQLite creates the file if it is absent
+await db.asSystem().sql`CREATE TABLE IF NOT EXISTS archive.user (id INTEGER PRIMARY KEY, email TEXT)`
+// asSystem(): raw SQL enforces no access rule, so on a schema that declares
+// one it is available through the documented bypass only.
+const rows = await db.asSystem().sql`SELECT * FROM user UNION ALL SELECT * FROM archive.user`
+db.$detach('archive')
+```
+
+`$attach` needs a client over files: an in-memory client (`db: ':memory:'`, `databases: ':memory:'`) refuses it with `database archive is already in use`, because its read and write handles are one connection and the alias is attached twice.
 
 ## Drivers
 
@@ -68,7 +89,7 @@ Standard SQLite file with full ORM support — all queries, migrations, soft del
 
 Append-only log files, one `.jsonl` file per model under the specified directory. No migrations, no UPDATE/DELETE. Ideal for event logs, API request logs, analytics events.
 
-Supports: `create`, `createMany`, `findMany`, `findFirst`, `count`. Retention pruning on startup.
+Supports: `create`, `createMany`, `findMany`, `findFirst`, `findUnique` (and their `OrThrow` forms), `count`; `findManyCursor` answers a single page. Every other verb — `update`, `delete`, `upsert`, `remove`, `restore` and their bulk forms, `search` — throws by name. Retention pruning on startup.
 
 ### trail
 
@@ -80,7 +101,7 @@ See [audit-logging.md](audit-logging.md) for full details.
 
 Mark a model as externally managed — Litestone skips DDL/migrations but still queries it:
 
-```prisma
+```lite
 model active_users {
   id        Int @id
   email     String
@@ -98,16 +119,6 @@ A write is inside the transaction whichever database its model is in. A bulk wri
 The COMMIT is the one thing that is not shared. Each database FILE commits on its own, one after another with `main` last, because SQLite makes a commit atomic within one connection and never across two. A commit that fails part way throws, naming the databases that committed and the ones that rolled back (`err.committed`, `err.rolledBack`). Two `database` blocks on one path are one file and one commit, so under `strategy database`, which puts every sqlite database into the tenant's own file, a `$transaction` is atomic outright (`FJS-D232`).
 
 A transaction takes a write lock on every sqlite file the client writes to, not only the ones it touches. Another process writing one of those files waits for it, up to that database's `busyTimeout`.
-
-## Raw SQL across databases
-
-```js
-db.$attach('./archive.db', 'archive')
-// asSystem(): raw SQL enforces no access rule, so on a schema that declares
-// one it is available through the documented bypass only.
-const rows = await db.asSystem().sql`SELECT * FROM users UNION ALL SELECT * FROM archive.users`
-db.$detach('archive')
-```
 
 ## Migration directories
 

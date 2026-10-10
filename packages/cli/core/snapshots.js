@@ -32,8 +32,9 @@
 // data, and data that CI executes is a supply chain — so the binary must be one
 // of a known few and every argument a plain flag or path, no shell.
 
-import { spawnSync }                              from 'node:child_process'
+import { execFile }                               from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { availableParallelism }                   from 'node:os'
 import { join, dirname, relative }                from 'node:path'
 
 /**
@@ -333,37 +334,42 @@ export function missingSnapshots({ root, found = findSnapshots({ root }) } = {})
 //
 // It is the same argv with one fewer argument. Nothing new reaches a shell, so
 // the allow-list above still governs what may run.
+//
+// ── Checks run side by side, writes one at a time ───────────────────────────
+//
+// A `--check` reads the tree and writes nothing, so the generators share no
+// state and run `concurrency` at once — one core each; serial, twenty-nine of
+// them were the forty seconds of every `fli done`, paid three times a fix
+// session. A write is kept in order: `repo-report` lists every other snapshot,
+// and a page written while a sibling is being rewritten is a snapshot that
+// settles only on the second run.
 
-export function checkSnapshots({ root, only = null, write = false, timeoutMs = 15 * 60 * 1000, maxBuffer = 64 * 1024 * 1024 } = {}) {
+export async function checkSnapshots({ root, only = null, write = false, timeoutMs = 15 * 60 * 1000, maxBuffer = 64 * 1024 * 1024, concurrency = write ? 1 : availableParallelism() } = {}) {
   const found   = findSnapshots({ root })
   const seeds   = write ? missingSnapshots({ root, found }).map(e => ({ ...e, seeded: true })) : []
   const entries = [...found, ...seeds].filter(e => !only || only.includes(e.file))
-  const results = []
+  const results = new Array(entries.length)
 
-  for (const entry of entries) {
-    if (entry.error) {
-      results.push({ ...entry, ok: false, stdout: '', stderr: '' })
-      continue
-    }
+  const one = async (entry) => {
+    if (entry.error) return { ...entry, ok: false, stdout: '', stderr: '' }
 
     const generator = resolveGenerator(entry.argv[0], join(root, entry.dir))
     if (!generator) {
-      results.push({
+      return {
         ...entry,
         ok:    false,
         error: `names generator \`${entry.argv[0]}\`, and ${SNAPSHOT_BINS.get(entry.argv[0])} does not ` +
                `resolve from ${entry.dir}. Install it — a generator is resolved through its package, ` +
                'never off PATH.',
         stdout: '', stderr: '',
-      })
-      continue
+      }
     }
 
     const argv = write ? entry.argv.slice(1) : [...entry.argv.slice(1), '--check']
     // Marked on the result so a formatter can tell a stale file from a
     // generator that never ran.
     const wrote = write
-    const run  = spawnSync('bun', [generator, ...argv], {
+    const run  = await generate(generator, argv, {
       cwd:        join(root, entry.dir),
       encoding:   'utf8',
       shell:      false,
@@ -374,21 +380,41 @@ export function checkSnapshots({ root, only = null, write = false, timeoutMs = 1
     })
 
     if (run.error) {
-      results.push({ ...entry, wrote, ok: false, error: `could not run \`${entry.argv.join(' ')}\` — ${run.error.message}`, stdout: '', stderr: '' })
-      continue
+      return { ...entry, wrote, ok: false, error: `could not run \`${entry.argv.join(' ')}\` — ${run.error.message}`, stdout: '', stderr: '' }
     }
 
-    results.push({
+    return {
       ...entry,
       wrote,
       ok:     run.status === 0,
       error:  run.status === 0 ? null : entry.seeded ? 'could not be written' : write ? 'could not be regenerated' : 'no longer matches its source',
       stdout: run.stdout ?? '',
       stderr: run.stderr ?? '',
-    })
+    }
   }
 
+  // Results land at the entry's own index, so the order a reader sees is the
+  // sorted discovery order whatever finished first.
+  let next = 0
+  const lane = async () => { while (next < entries.length) { const i = next++; results[i] = await one(entries[i]) } }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, entries.length)) }, lane))
+
   return { results, checked: results.length, failed: results.filter(r => !r.ok).length }
+}
+
+// `spawnSync`'s answer — `{ status, stdout, stderr }`, or `{ error }` when the
+// generator did not run or did not exit — off the async call. A non-zero exit
+// is a status and not an error: that is the stale snapshot this reports.
+function generate(file, argv, options) {
+  return new Promise(resolve => {
+    execFile('bun', [file, ...argv], options, (err, stdout, stderr) => {
+      if (err && typeof err.code !== 'number') {
+        const why = err.killed ? `no exit after ${options.timeout / 1000}s` : err.message
+        return resolve({ error: { message: why }, stdout, stderr })
+      }
+      resolve({ status: err ? err.code : 0, stdout, stderr })
+    })
+  })
 }
 
 // ─── formatSnapshotResults ────────────────────────────────────────────────────

@@ -1,19 +1,136 @@
 # Querying
 
+The examples on this page use this schema:
+
+```lite
+model Account {
+  id       Int     @id
+  name     String
+  settings Json?
+  planId   Int?
+  plan     Plan?   @relation(fields: [planId], references: [id])
+  users    User[]
+}
+
+model Plan {
+  id       Int       @id
+  name     String
+  accounts Account[]
+}
+
+model User {
+  id        Int       @id
+  email     String    @unique
+  name      String?
+  role      String    @default("member")
+  status    String    @default("active")
+  accountId Int?
+  account   Account?  @relation(fields: [accountId], references: [id])
+  posts     Post[]
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@softDelete
+}
+
+model Post {
+  id        Int       @id
+  slug      String    @unique
+  title     String
+  body      String?
+  status    String    @default("draft")
+  views     Int       @default(0)
+  rating    Float     @default(1)
+  labels    String[]
+  authorId  Int
+  author    User      @relation(fields: [authorId], references: [id])
+  tags      Tag[]
+  comments  Comment[]
+  createdAt DateTime  @default(now())
+
+  @@fts([title, body])
+}
+
+model Tag {
+  id    Int    @id
+  label String
+  posts Post[]
+}
+
+model Comment {
+  id       Int     @id
+  body     String
+  approved Boolean @default(false)
+  postId   Int
+  post     Post    @relation(fields: [postId], references: [id])
+}
+
+model Order {
+  id        Int      @id
+  status    String   @default("pending")
+  amount    Float
+  createdAt DateTime @default(now())
+}
+
+model Product {
+  id    Int    @id
+  sku   String @unique
+  price Float
+}
+
+model Customer {
+  id        Int      @id
+  name      String
+  status    String   @default("active")
+  tier      String   @default("basic")
+  revenue   Float    @default(0)
+  ownerId   Int?
+  createdAt DateTime @default(now())
+
+  @@fts([name])
+}
+
+model Contact {
+  id      Int     @id
+  name    String
+  type    String  @default("lead")
+  ownerId Int?
+  shared  Boolean @default(false)
+}
+
+type Commute {
+  source  String
+  minutes Int
+}
+
+type Prefs {
+  theme   String?
+  commute Json? @type(Commute)
+}
+
+model Trip {
+  id    Int  @id
+  prefs Json @type(Prefs) @default("{}")
+}
+```
+
 ## Read operations
 
 ```js
+const where   = { role: 'admin' }
+const orderBy = { createdAt: 'desc' }
+
 // Return all matching rows
-db.user.findMany({ where, orderBy, limit, offset, include, select })
+await db.user.findMany({ where, orderBy, limit: 20, offset: 0, include: { account: true } })
 
 // Soft-delete options (@@softDelete models)
-db.user.findMany({ withDeleted: true })    // include soft-deleted rows
-db.user.findMany({ onlyDeleted: true })    // only soft-deleted rows
+await db.user.findMany({ withDeleted: true })    // include soft-deleted rows
+await db.user.findMany({ onlyDeleted: true })    // only soft-deleted rows
 
 // SELECT DISTINCT — a boolean, and it dedupes the whole PROJECTED row, so it is
 // paired with `select`. SQLite has no DISTINCT ON: a column list is refused by
 // name, and one whole row per value is `groupBy`, which also says which row.
-db.user.findMany({ select: { role: true }, distinct: true })
+await db.user.findMany({ select: { role: true }, distinct: true })
 
 // Return first match or null
 const user = await db.user.findFirst({ where: { role: 'admin' }, orderBy: { createdAt: 'desc' } })
@@ -24,8 +141,8 @@ const alice = await db.user.findUnique({ where: { email: 'alice@example.com' } }
 // → { id: 1, email: 'alice@example.com', ... } | null
 
 // Throw if not found
-db.user.findFirstOrThrow({ where })   // throws { code: 'NOT_FOUND', model: 'user' }
-db.user.findUniqueOrThrow({ where })
+await db.user.findFirstOrThrow({ where }).catch(e => e.code)    // 'NOT_FOUND', with e.model = 'user'
+await db.user.findUniqueOrThrow({ where: { email: 'nobody@example.com' } }).catch(e => e.code)
 
 // Count
 const n = await db.user.count({ where: { role: 'admin' } })
@@ -60,12 +177,12 @@ const users = await db.user.findMany({
 })
 
 // Count relations without fetching
-const posts = await db.post.findMany({
+const counted = await db.post.findMany({
   include: { _count: true }   // adds _count: { comments: 3, tags: 1 }
 })
 
 // Filtered relation count
-const posts = await db.post.findMany({
+const approved = await db.post.findMany({
   include: {
     _count: { select: { comments: { where: { approved: true } } } }
   }
@@ -86,8 +203,8 @@ const posts = await db.post.findMany({
 })
 
 // Skip RETURNING — fastest write path (no row returned)
-await db.order.update({ where: { id: 1 }, data: { status: 'paid' }, select: false })
 await db.order.create({ data: { amount: 100 }, select: false })
+await db.order.update({ where: { id: 1 }, data: { status: 'paid' }, select: false })
 ```
 
 An object is the only spelling, and `false` on a write is the one exception.
@@ -95,9 +212,14 @@ Anything else is refused by name — a list projects no columns and would answer
 `{}` with no error, and the list is the WIRE form (`$select=id,title`), which
 the API boundary converts before a read.
 
-```js
-db.user.findMany({ select: ['id', 'email'] })   // refused: 'select' must be an object
-db.user.findFirst({ select: false })            // refused: it means nothing on a read
+```js throws
+await db.user.findMany({ select: ['id', 'email'] })
+// Refused: 'select' on User.findMany must be an object naming columns — got an array
+```
+
+```js throws
+await db.user.findFirst({ select: false })
+// Refused: 'select' on User.findFirst must be an object naming columns — got boolean
 ```
 
 ## Cursor pagination
@@ -109,7 +231,7 @@ const page1 = await db.post.findManyCursor({
   limit:   50,
   orderBy: { createdAt: 'desc' },
 })
-// → { rows: [...], nextCursor: 'eyJ...', hasMore: true }
+// → { items: [...], nextCursor: 'eyJ...' | null, hasMore: true }
 
 const page2 = await db.post.findManyCursor({
   limit:   50,
@@ -118,10 +240,10 @@ const page2 = await db.post.findManyCursor({
 })
 ```
 
-The cursor encodes all `orderBy` field values from the last row. Multi-field ordering is supported:
+The cursor encodes all `orderBy` field values from the last row, and `nextCursor` is `null` on the last page. Multi-field ordering is supported:
 
 ```js
-db.post.findManyCursor({
+await db.post.findManyCursor({
   orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'asc' }],
   limit:   25,
 })
@@ -129,32 +251,32 @@ db.post.findManyCursor({
 
 ## Full-text search
 
-Requires `@@fts` on the model:
+Requires `@@fts` on the model. `highlight` and `snippet` each name ONE indexed
+field and come back as `_highlight` and `_snippet` strings on the row, beside
+`_rank`:
 
 ```js
 const results = await db.post.search('sqlite full text', {
   where:     { status: 'published' },
   limit:     10,
-  highlight: { fields: ['title', 'body'], tags: ['<b>', '</b>'] },
-  snippet:   { fields: ['body'], length: 64 },
+  highlight: { field: 'title', open: '<b>', close: '</b>' },
+  snippet:   { field: 'body', length: 16 },    // length is in tokens; default 15
 })
-// results[0] has: title, body, _highlight: { title: '...', body: '...' }, _snippet: { body: '...' }
+// results[0] → { id, title, body, ..., _rank: -1.2, _highlight: '<b>SQLite</b> …', _snippet: '… <mark>full</mark> …' }
 ```
+
+The tags default to `<mark>` / `</mark>`, and a snippet's gap marker is `ellipsis` (default `…`).
 
 Use `db.post.optimizeFts()` periodically to merge FTS5 index segments for better read performance.
 
 ## Unified dispatcher
 
-`query()` routes a single args object to `findMany`, `groupBy`, or `aggregate` based on its shape — useful for API layers:
+`query()` routes a single args object to `findMany`, `groupBy`, or `aggregate` based on its shape — useful for an API handler that hands `req.query` straight through:
 
 ```js
-app.get('/orders', async (req) => {
-  return db.order.query(req.query)
-})
-
-db.order.query({ where: { status: 'paid' }, limit: 20 })     // → findMany
-db.order.query({ _count: true, _sum: { amount: true } })      // → aggregate
-db.order.query({ by: ['status'], _count: true })              // → groupBy
+await db.order.query({ where: { status: 'paid' }, limit: 20 })     // → findMany
+await db.order.query({ _count: true, _sum: { amount: true } })      // → aggregate
+await db.order.query({ by: ['status'], _count: true })              // → groupBy
 ```
 
 Routing: `by` present → `groupBy`; `_count/_sum/_avg/_min/_max/_stringAgg` or named agg → `aggregate`; everything else → `findMany`.
@@ -179,7 +301,7 @@ The keys of the result object match the keys of the spec, in spec order.
 
 A spec key is either:
 
-- **A model accessor name** (e.g. `user`, `serviceAgreement`) — runs `db.<key>.query(args)`
+- **A model accessor name** (e.g. `user`, `serviceAgreement`) — runs `db.<key>.query(args)`. A plural (`users`) is not an accessor and is refused by name.
 - **Any name** plus an explicit `model: '<accessor>'` field on the value — runs `db.<args.model>.query(rest)`. Use this when you want to query the same model multiple times with different args:
 
 ```js
@@ -205,28 +327,28 @@ If you want per-entry tolerance, call `db.<model>.query()` per model and use `Pr
 `$setAuth()` and `asSystem()` both produce their own multi-model `query()`. Each batched query inherits the proxy's auth context — so policies, guarded fields, and gate levels all apply per-entry as you'd expect:
 
 ```js
+const req    = { user: { id: 1, accountId: 1 } }
 const userDb = db.$setAuth(req.user)
 const data = await userDb.query({
-  posts:    { where: { published: true } },   // policies enforced for req.user
-  comments: { orderBy: { createdAt: 'desc' } },
+  post:    { where: { status: 'published' } },   // policies enforced for req.user
+  comment: { orderBy: { id: 'desc' } },
 })
 
 // Bypass policies for trusted server work
 const sysData = await db.asSystem().query({
-  jobs:     { where: { status: 'pending' } },
-  alerts:   { _count: true },
+  order:   { where: { status: 'pending' } },
+  comment: { _count: true },
 })
 ```
 
 ### As an HTTP endpoint
 
-The spec is JSON-shaped (no method calls, no promises, just args), so the simplest possible read API is a single endpoint:
+The spec is JSON-shaped (no method calls, no promises, just args), so the simplest possible read API is a single endpoint — a handler that takes the signed-in user and the posted body:
 
 ```js
-app.post('/query', async (req, res) => {
-  const data = await db.$setAuth(req.user).query(req.body)
-  res.json(data)
-})
+const handleQuery = (user, body) => db.$setAuth(user).query(body)
+
+const data = await handleQuery({ id: 1 }, { post: { where: { status: 'published' }, limit: 20 } })
 ```
 
 The frontend posts a query spec, the backend executes it under the user's auth context, returns named results. Policies, validators, and guarded fields are all enforced per-model. No tRPC, no GraphQL, no per-page endpoint.
@@ -235,42 +357,38 @@ For untrusted input you'll likely want to validate the spec shape and bound `lim
 
 ## Scopes
 
-Scopes are named, reusable query fragments registered per model. They're plain data — an object shaped like findMany args, optionally with a function as the `where` for dynamic filters that depend on auth context.
+Scopes are named, reusable query fragments registered per model. They're plain data — an object shaped like findMany args, optionally with a function as the `where` for dynamic filters that depend on auth context. They are registered at `createClient`, keyed by MODEL name:
 
 ```js
-// api/src/models/customer.model.js
-export const active = {
-  where: { status: 'active' },
+const CustomerScopes = {
+  active:  { where: { status: 'active' } },
+  premium: { where: { tier: 'premium' } },
+  recent:  { where: { createdAt: { gte: '2020-01-01' } } },
+
+  // Dynamic where — receives ctx at call time
+  mine:    { where: (ctx) => ({ ownerId: ctx.auth?.id }) },
 }
-
-export const premium = {
-  where: { tier: 'premium' },
-}
-
-// Dynamic where — receives ctx at call time
-export const mine = {
-  where: (ctx) => ({ ownerId: ctx.auth?.id }),
-}
-```
-
-Register at `createClient`:
-
-```js
-import * as CustomerScopes from './models/customer.model.js'
 
 const db = await createClient({
-  schema: './schema.lite',
-  scopes: {
-    Customer: CustomerScopes,
-  },
+  path:   './schema.lite',
+  db:     ':memory:',
+  scopes: { Customer: CustomerScopes },
 })
 ```
+
+A module that exports each scope works the same way — `import * as CustomerScopes from './models/customer.model.js'`.
 
 ### Calling scopes
 
 Each scope appears as a callable function-with-properties on the table accessor.
 
 ```js
+const db = await createClient({ path: './schema.lite', db: ':memory:', scopes: { Customer: {
+  active:  { where: { status: 'active' } },
+  premium: { where: { tier: 'premium' } },
+  recent:  { where: { createdAt: { gte: '2020-01-01' } } },
+} } })
+
 // Default call → findMany
 await db.customer.active()
 
@@ -282,17 +400,12 @@ await db.customer.active.count()
 await db.customer.active.findFirst()
 await db.customer.active.aggregate({ _count: true, _sum: { revenue: true } })
 await db.customer.active.groupBy({ by: ['tier'], _count: true })
-await db.customer.active.query({ ...args })           // routes by shape
+await db.customer.active.query({ limit: 5 })                  // routes by shape
 
 // Search composes — scope where AND'd with FTS query
 await db.customer.active.search('alice')
-```
 
-### Chaining
-
-Scopes chain. Each step appends to the scope stack and returns a new scoped accessor.
-
-```js
+// Scopes chain: each step appends to the scope stack and returns a new scoped accessor
 await db.customer.active.premium()                       // both filters apply
 await db.customer.active.premium.recent.findMany()       // three scopes deep
 ```
@@ -322,6 +435,7 @@ const ContactScopes = {
   leads:   { where: { type: 'lead' } },
   clients: { where: { type: 'client' } },
 }
+const db = await createClient({ path: './schema.lite', db: ':memory:', scopes: { Contact: ContactScopes } })
 
 await db.contact.leads.create({ data: { name: 'Acme' } })               // → type: 'lead'
 await db.contact.leads.create({ data: { name: 'X', type: 'vendor' } })  // caller wins → 'vendor'
@@ -331,6 +445,7 @@ await db.contact.clients.createMany({ data: [{ name: 'A' }, { name: 'B' }] })  /
 Only flat equalities are inferred — operators (`gte`, `in`, …), `AND`/`OR`/`NOT`, and complex wheres stamp nothing. To filter *without* stamping, give the scope an explicit empty `data: {}`; to stamp more (or differently) than the filter, give it an explicit `data`.
 
 ```js
+const cutoff    = new Date(Date.now() - 30 * 86400000)
 const recent    = { where: { createdAt: { gte: cutoff } } }              // filters, stamps nothing (operator)
 const draftOnly = { where: { status: 'draft' }, data: {} }               // filters, stamps nothing (explicit)
 const owned     = { where: { ownerId: 5 }, data: { ownerId: 5, shared: false } }  // stamp more than the filter
@@ -340,13 +455,19 @@ Dynamic wheres stamp too, which pairs naturally with auth — "create a record o
 
 ```js
 const mine = { where: (ctx) => ({ ownerId: ctx.auth?.id }) }
-await db.$setAuth(user).contact.mine.create({ data: { name: 'Acme' } })  // ownerId = user.id
+const db   = await createClient({ path: './schema.lite', db: ':memory:', scopes: { Contact: { mine } } })
+const user = { id: 9 }
+
+await db.$setAuth(user).contact.mine.create({ data: { name: 'Acme' } })  // ownerId = 9
 ```
 
 **update / updateMany / delete / deleteMany / remove / restore** AND-merge the scope `where`, so a write can only touch rows *inside* the subset — updating a client through the leads scope is a no-op:
 
 ```js
-await db.contact.leads.update({ where: { id: aClientId }, data: { … } })  // matches nothing → null
+const db = await createClient({ path: './schema.lite', db: ':memory:', scopes: { Contact: { leads: { where: { type: 'lead' } } } } })
+const aClient = await db.contact.create({ data: { name: 'Globex', type: 'client' } })
+
+await db.contact.leads.update({ where: { id: aClient.id }, data: { name: 'Nope' } })  // matches nothing → null
 ```
 
 **upsert / upsertMany** stamp the create branch's data default (the conflict-target `where` is left untouched so conflict detection still works). The base accessor `db.contact.*` is always unscoped — scoped writes only happen through a scope name.
@@ -356,6 +477,12 @@ await db.contact.leads.update({ where: { id: aClientId }, data: { … } })  // m
 If `where` is a function, it's called with the current `ctx` at query time. Combined with `$setAuth()`, this gives you per-request scoping for free:
 
 ```js
+const db = await createClient({ path: './schema.lite', db: ':memory:', scopes: { Customer: {
+  mine:    { where: (ctx) => ({ ownerId: ctx.auth?.id }) },
+  premium: { where: { tier: 'premium' } },
+} } })
+const req = { user: { id: 7 } }
+
 const userDb = db.$setAuth(req.user)
 await userDb.customer.mine()              // where evaluated with req.user as ctx.auth
 await userDb.customer.mine.premium()      // chains correctly
@@ -379,8 +506,9 @@ const archived = { where: { deletedAt: { not: null } }, withDeleted: true }
 - A relation field on the same model
 - A name starting with `$` or `_`
 
-```
-ScopeError: "Customer.create" conflicts with a built-in table method.
+```js throws
+await createClient({ path: './schema.lite', db: ':memory:', scopes: { Customer: { create: { where: {} } } } })
+// Error: scopes: "Customer.create" conflicts with a built-in table method. Pick another name.
 ```
 
 ### Scopes are not policies
@@ -392,6 +520,8 @@ Scopes are *opt-in* convenience — you have to call them. Policies (`@@allow` /
 Not supported. Write a function that returns a `where` clause and pass it as a caller override:
 
 ```js
+const db = await createClient({ path: './schema.lite', db: ':memory:', scopes: { Customer: { active: { where: { status: 'active' } } } } })
+
 const olderThan = (days) => ({
   createdAt: { lt: new Date(Date.now() - days * 86400000) },
 })
@@ -435,12 +565,14 @@ Transactions use `BEGIN IMMEDIATE` — no mid-transaction write-lock deadlocks. 
 ## Write operations
 
 ```js
+await db.account.create({ data: { id: 1, name: 'Acme' } })
+
 // Create — returns the inserted row
 const user = await db.user.create({ data: { email: 'a@b.com', accountId: 1 } })
 // → { id: 1, email: 'a@b.com', accountId: 1, role: 'member', createdAt: '...', ... }
 
 // Create many — returns { count }
-await db.user.createMany({ data: [{ email: 'a@b.com' }, { email: 'b@b.com' }] })
+await db.user.createMany({ data: [{ email: 'b@b.com' }, { email: 'c@b.com' }] })
 // → { count: 2 }
 
 // Update — returns updated row or null (null if no match or policy blocked)
@@ -468,20 +600,20 @@ await db.product.upsertMany({
 // → { count: 2 }
 
 // Remove (soft delete if @@softDelete, else hard delete)
-await db.user.remove({ where: { id: 1 } })
-// → { id: 1, deletedAt: '2024-01-15T...', ... }
+await db.user.remove({ where: { id: 2 } })
+// → { id: 2, deletedAt: '2024-01-15T...', ... }
 
 // Remove many
 await db.user.removeMany({ where: { accountId: 5 } })
 // → { count: 7 }
 
 // Restore soft-deleted rows
-await db.user.restore({ where: { id: 1 } })
-// → [{ id: 1, deletedAt: null, ... }]
+await db.user.restore({ where: { id: 2 } })
+// → [{ id: 2, deletedAt: null, ... }]
 
 // Hard delete (always, even on @@softDelete models)
-await db.user.delete({ where: { id: 1 } })
-// → { id: 1, ... }
+await db.user.delete({ where: { id: 2 } })
+// → { id: 2, ... }
 
 // Hard delete many
 await db.user.deleteMany({ where: { accountId: 5 } })
@@ -495,11 +627,15 @@ and `@version` only turns that into a thrown conflict the caller has to retry.
 These compile to one statement that needs no read and cannot race:
 
 ```js
+await db.user.create({ data: { id: 1, email: 'a@b.com' } })
+await db.post.create({ data: { id: 1, slug: 'p', title: 'P', authorId: 1 } })
+
 await db.post.update({ where: { id: 1 }, data: {
   views:  { increment: 1 },     // "views" = "views" + ?
   rating: { multiply: 1.1 },    // decrement and divide too
-  tags:   { push: 'featured' }, // json_insert at the end; push: ['a','b'] for several
+  labels: { push: 'featured' }, // json_insert at the end; push: ['a','b'] for several
 } })
+// → { ..., views: 1, rating: 1.1, labels: ['featured'] }
 ```
 
 | Operator | Column it needs |
@@ -527,9 +663,12 @@ rather than guessed at, including:
 #### `$merge` — changing one key of a document
 
 ```js
+const { id } = await db.account.create({ data: { name: 'Acme', settings: { theme: 'dark' } } })
+
 await db.account.update({ where: { id }, data: {
   settings: { $merge: { commute: { source: 'bus' } } },   // json_patch(settings, ?)
 } })
+// → settings: { theme: 'dark', commute: { source: 'bus' } }
 ```
 
 **It wears a `$` and the others do not.** The rule above — *the declared type
@@ -571,14 +710,17 @@ on a key the type requires is refused by name.
 The third row of that table is the one that decides how a described patch is
 graded, and it is not obvious. Because `json_patch` REPLACES an absent or null
 target, a patch aimed at something optional is a **create** however partial it
-looks — so the required keys of that type are not optional after all:
+looks — so the required keys of that type are not optional after all. In the
+schema above, `Prefs.commute` is `Json? @type(Commute)`, and `Commute` requires
+`source` AND `minutes`:
 
-```js
-// commute is `Json? @type(Commute)`, and Commute requires source AND minutes
-{ typ: { $merge: { commute: { source: 'car' } } } }
-// → commute.minutes: is required — the value being merged into may not be
-//   there, and json_patch replaces rather than merges when it is absent, so
-//   this write creates a whole Commute and needs every required key
+```js throws
+const { id } = await db.trip.create({ data: { prefs: { theme: 'dark' } } })
+
+await db.trip.update({ where: { id }, data: { prefs: { $merge: { commute: { source: 'car' } } } } })
+// Refused — prefs.commute.minutes: is required — the value being merged
+//   into may not be there, and json_patch replaces rather than merges when it is
+//   absent, so this write creates a whole Commute and needs every required key
 ```
 
 A **required** field is present in every valid parent, so a patch into it really

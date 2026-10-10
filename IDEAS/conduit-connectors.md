@@ -2,6 +2,7 @@
 id: conduit-connectors
 status: proposed
 dated: 2026-08-29
+reranked: 2026-10-10
 ---
 
 # Idea — which Conduit connectors FrontierJS should maintain, and in which order
@@ -15,6 +16,10 @@ contains. This file answers the first and frames the second.
 One thing shipped: `example/api/src/providers/stripe/index.ts`, 306 lines, driven by
 `verify:stripe`. It is the only instance, which is exactly why the ruling parked
 promotion.
+
+**That sentence is six weeks stale.** § *Re-ranked 2026-10-10* below counts what the
+ports and basecamp have since written in app code, and orders the list from what is
+actually being called rather than from what a shop would want.
 
 ---
 
@@ -89,7 +94,10 @@ a connector and the answer is a different shape.
 
 ---
 
-## The order
+## The order — superseded 2026-10-10
+
+**The live order is § *Re-ranked 2026-10-10*.** This one is kept as the record of
+why the stop after S3 was placed, which the re-ranking moves rather than removes.
 
 ```
 1. stripe      promote from example/ unchanged
@@ -131,6 +139,88 @@ points instead of one:
 
 Answer those, extract `@frontierjs/conduit-stripe`, and 3 through 10 become
 mechanical rather than architectural.
+
+---
+
+## Re-ranked 2026-10-10 — against what the ports actually call
+
+The ten above were ranked from `example/` and general demand. Since then six apps
+have written vendor dialects in their own `providers/`, and three live Kobami apps
+(maid.tech, ELA, SSTime) have been read for what they really call. This section is
+the list ordered by that evidence, in three tiers: **written and waiting for
+extraction**, **a port needs it and nobody has written it**, and **every app will
+want it and no port needs it yet**. The three tests above still decide what
+FrontierJS maintains; a thing that fails test one is named here so it is not
+re-argued, with the scope it lands under.
+
+### Tier A — written in an app, promotion overdue
+
+`FJS-D153` parked promotion until a second connector existed to argue with Stripe.
+There are now eight, and they already disagree on every axis the stop was waiting
+for: bearer over form (Stripe), bearer over JSON with Ed25519 webhooks (Telnyx),
+SigV4 over bytes (S3), an envelope where a 200 can be a failure (Cloudflare), a
+float of dollars (DigitalOcean), and a credential resolved per agency at send time
+(DataForSEO). The connector contract can be written from these; nothing further
+needs building first.
+
+| #   | Package                 | Written where                                                                      | Who calls it                                                               |
+| --- | ----------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1   | `conduit-stripe`        | `example/api/src/providers/stripe/`                                                | example; Transit; serpgrid and quo plan on it; stressors #7, #11, #29      |
+| 2   | `conduit-telnyx`        | `fjs-prototypes/quo/api/src/providers/telnyx/` — target, sink, Ed25519 verify, STOP | quo (#23); ELA and SSTime consume it rather than build a second (`conversion-ela.md` § 5); maid.tech wants texting |
+| 3   | `conduit-s3`            | `packages/litestone/src/storage/providers/s3.js` + `storage/sigv4.js`               | litestone `File` columns; ELA's 2 GB of raw payloads; Immich (#17); every upload |
+| 4   | `conduit-resend`        | `packages/junction/src/mail/index.ts` — the adapter sits INSIDE junction           | `app.mail`, notifications' email driver, SSTime, Transit, JazzHR. This is the `FJS-D153` inversion in the tree today, and moving it out is the cheapest extraction on the list |
+| 5   | `conduit-cloudflare`    | `packages/basecamp/api/src/providers/edge/cloudflare.ts`, 264 lines, no longer a stub | basecamp `/dns/`; ELA and maid.tech both sit behind Cloudflare; `cloudflare-edge.md` holds promotion until a second caller, and `deploy-plane.md` is that caller |
+| 6   | `conduit-digitalocean`  | `packages/basecamp/api/src/providers/compute/digitalocean.ts`                      | basecamp provisioning; `fli deploy` for anyone whose fleet is Droplets    |
+| 7   | `conduit-hetzner`       | `packages/basecamp/api/src/providers/compute/hetzner.ts`                           | basecamp provisioning; the second compute dialect, which is what makes `ComputeConnector` an interface rather than one vendor's shape |
+| —   | `conduit-dataforseo`    | `fjs-prototypes/serpgrid/api/src/providers/dataforseo/`                            | serpgrid only. **Fails test one** (an SEO vendor is a vertical). Stays in the app; named so it is not promoted by momentum. It is the reference for *a send that costs money and a credential resolved per tenant*, which `third-party-credentials.md` wants |
+
+### Tier B — a port needs it, nobody has written it
+
+| #   | Package                         | Need                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8   | `conduit-google-maps`           | **Four apps.** maid.tech and ELA embeds load `@googlemaps/js-api-loader`; ELA geocodes crews and clients and asks a routing lookup for drive time; SSTime maps punches; serpgrid adds a location through Places API (New) with a `X-Goog-FieldMask`. One API key, three Google surfaces (Geocoding, Places, Routes), a per-call price and a daily quota, and a result that must be CACHED by address because the second lookup of the same street costs money — `external-field-cache.md`. ksite geocodes with Nominatim today, which is the free fallback the same connector should name |
+| 9   | `conduit-oidc`                  | Unchanged from row 6 above, now with callers: serpgrid needs Google OAuth with a delegated GBP grant (one agency grant serving many clients), ELA signs into Microsoft for Outlook, and `third-party-credentials.md` leg one is the credential it mints. It is the protocol connector; the GBP, Graph and Sheets calls that follow are the apps' own |
+| 10  | `conduit-push` (APNs + FCM)     | Unchanged from row 4. SSTime is a time clock on a phone and ELA's crews are in the field; `notifications/drivers/` still holds `email.ts` and `inapp.ts` and nothing else. Toggl/Kimai (#36) and Connecteam (#2) need it on day one |
+| —   | Service Autopilot               | **The biggest real call volume in the three live apps** — 282,075 of ELA's 305,760 recorded actions are polls of it, and maid.tech polls it too. Fails test one (field-service CRM) and is a sync engine with a cursor, which § *What is deliberately not on it* rules out of conduit. The right shape is a THIRD-PARTY connector, `@kobami/conduit-serviceautopilot`, carried by both ports, over a caravan cursor — the shape `FJS-D153`'s `@scope/` naming rule exists for. Jobber is the same case at a tenth the volume |
+| —   | Microsoft Graph (Outlook mail)  | ELA reads a mailbox. Mail-as-data is a sync engine, out of conduit by the rule above; `inbound-email.md` is the framework answer, its noun still an open question there, over a provider's inbound webhook rather than a mailbox poll. The port should take that door, and the Graph read stays ELA's own if it survives |
+| —   | QuickBooks                      | maid.tech. Accounting is the named sync-engine exclusion. Its own noun when wanted; not a connector |
+| —   | n8n / Zapier                    | maid.tech (203 references) and ELA (222) push events out to automation. That is not a connector in either direction: outbound is junction's webhooks battery, inbound is `inbound-integrations.md` half B. The `third-party/zapier/` app maid.tech ships is a developer-API product (#29), and `prompt-to-app.md` already rules payments out of that shape |
+| —   | 3CX, Attentive.ai, Radar, Cloudinary, ATTOM, DataForSEO | One app each. App-owned `providers/` files, following the Stripe shape. Named so the next audit does not count them as gaps |
+
+### Tier C — every app will want it, no port is waiting
+
+| #   | Package                              | Why it is general                                                                                                                                                                                                                                   |
+| --- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11  | `conduit-anthropic` / `conduit-openai` | `junction/src/ai/index.ts` already tells an app to declare the vendor as a conduit target and shows the Anthropic descriptor in a comment. Two connectors, not one: Anthropic is a vendor; the OpenAI chat shape is a de facto PROTOCOL served by Ollama, Groq, Mistral and others, so `conduit-openai` is the protocol connector under the rule § *The open question* proposes. Base44 (#22), Portal (#6) and the chatbot all sit on it |
+| 12  | `conduit-twilio`                     | The general SMS demand after Telnyx proves the shape. Same rules (E.164, `STOP`, 10DLC, delivery receipts on a later webhook); the second carrier is what shows which of those belong to a shared `sms` contract and which to a vendor |
+| 13  | `conduit-postmark` (or SES)          | The second mail vendor, chosen for INBOUND: `inbound-email.md` needs a provider that delivers a parsed message to a webhook, and Resend's inbound is newer and thinner. Also the second mailer the `SendResult.id` ruling (`FJS-D684`) wants to argue with |
+| 14  | `conduit-turnstile` (and hCaptcha)   | Every signup form, every contact form on every ksite client site. One POST, so it nearly fails test two — but the token is single-use, must be verified server-side with the caller's IP, and a form that skips it is spam within a day. S, and the smallest connector on the list |
+| 15  | `conduit-slack`                      | Still ops-shaped, still under the line for maintenance — but Transit (58 references) and `data-layer-v1.md` X6 want report delivery to a channel, and the signing-secret and Block Kit rules are real. Promote when a second app asks |
+| 16  | `conduit-plausible`                  | A read of a site's stats. Kobami's analytics check already does it from a script over every client site, and Transit holds 536 references. One bearer key, one GET, paged — fails test two on its own, passes it as the reference *read-only, rate-limited report source* that `data-layer-v1.md` names |
+| 17  | `conduit-tax`, `conduit-shipping`    | Unchanged from rows 7–8. Still the only two that stop `example/` from teaching invented rates, and still no port needs either |
+| —   | Basecamp (37signals)                 | Argued in full below; vertical. Kobami's own need (the daily check, the support flow) is real and is `@kobami/conduit-basecamp`, a third-party connector by the same rule as Service Autopilot |
+
+### The order
+
+```
+A.  extract, in this order, each with its sink and its drive moving with it:
+    1 stripe · 4 resend (the inversion) · 3 s3 (reconcile the two SigV4 owners first)
+    2 telnyx · 5 cloudflare · 6 digitalocean · 7 hetzner
+    ── stop. write the connector contract from what the eight disagree about ──
+B.  8 google-maps · 9 oidc · 10 push         the three the ports are blocked on
+C.  11 anthropic + openai · 12 twilio · 13 postmark · 14 turnstile
+    15 slack · 16 plausible · 17 tax + shipping
+```
+
+Two rulings this ordering needs before step A:
+
+- **The protocol rule** § *The open question* asks for — `conduit-s3`, `conduit-oidc`
+  and `conduit-openai` each serve many vendors, and the first of them is in step A.
+- **What a connector package contains** — the sample is now eight rather than one,
+  and the answer should be read off them: a target builder, payload types, a webhook
+  verifier where the vendor has one, an error mapping onto `ConduitErrorKind`, a
+  sink, and a drive. Telnyx and Stripe both carry all six; DigitalOcean and Hetzner
+  carry four, because a compute vendor sends no webhook.
 
 ---
 

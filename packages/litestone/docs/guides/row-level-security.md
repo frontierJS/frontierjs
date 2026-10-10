@@ -22,7 +22,7 @@ Use both together for defense in depth.
 
 ## A complete example: blog with roles
 
-```prisma
+```lite
 // schema.lite
 enum Role { admin  editor  viewer }
 
@@ -129,7 +129,7 @@ const allPosts = await db.asSystem().post.findMany({ withDeleted: true })
 
 Restrict visibility of specific fields:
 
-```prisma
+```lite
 model User {
   email  String
   salary Float?   @allow('read',  auth().role == 'admin')  // hidden unless admin
@@ -162,7 +162,7 @@ Useful during development to verify the SQL being generated.
 
 ### Public read, authenticated write
 
-```prisma
+```lite
 @@allow('read', true)              // anyone can read
 @@allow('create', auth() != null)  // must be logged in to write
 @@allow('update', ownerId == auth().id)
@@ -171,7 +171,7 @@ Useful during development to verify the SQL being generated.
 
 ### Team-scoped data
 
-```prisma
+```lite
 model Task {
   teamId Int
 
@@ -184,7 +184,7 @@ model Task {
 
 ### Admin-only model
 
-```prisma
+```lite
 model SystemConfig {
   @@gate("5.5.5.5")    // ADMINISTRATOR required for everything
 }
@@ -192,7 +192,7 @@ model SystemConfig {
 
 ### Completely locked model
 
-```prisma
+```lite
 model InternalEvent {
   @@gate("9")          // LOCKED — not even asSystem() can access
 }

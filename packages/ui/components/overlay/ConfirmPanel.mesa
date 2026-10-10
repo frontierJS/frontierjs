@@ -37,23 +37,26 @@
   // document inert, so a panel in <body> is drawn beneath it and a click at
   // its confirm button lands on the drawer (`FJS-1983`). Still `fixed`: an
   // open `.dialog`/`.drawer` is `transform: none`, so the viewport stays the
-  // containing block and `placeAgainst` coordinates stay right.
-  const host = anchor?.closest?.('dialog[open]') ?? document.body
+  // containing block and `placeAgainst` coordinates stay right. Read by the
+  // portal, never at load: a terminal has no document and never asks.
+  const host = () => anchor?.closest?.('dialog[open]') ?? document.body
 
   const panelAnim = $.entrance({
-    in:  el => el.animate(
+    in:  el => el.animate?.(
       [{ opacity: 0, transform: 'scale(0.95) translateY(-4px)' },
        { opacity: 1, transform: 'scale(1) translateY(0)' }],
       { duration: 140, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
     ),
-    out: el => el.animate(
+    out: el => el.animate?.(
       [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.95)' }],
       { duration: 100, fill: 'forwards' }
-    ).finished,
+    )?.finished,
   })
 
+  // A terminal node has no pixel box: the panel paints where it is written,
+  // beside its anchor, and needs no placing.
   function position() {
-    if (!anchor || !panelEl) return
+    if (!anchor?.getBoundingClientRect || !panelEl?.getBoundingClientRect) return
     const at = placeAgainst(anchor.getBoundingClientRect(), panelEl.getBoundingClientRect(), { offset: 8 })
     x = at.x
     y = at.y
@@ -83,18 +86,20 @@
     // `visibility: hidden` element, and `placed` only reaches the DOM on
     // mesa's microtask.
     queueMicrotask(() => confirmEl?.focus())
-
-    document.addEventListener('click', onClickAway, { capture: true })
   })
 
-  $.onDestroy(() => {
-    document.removeEventListener('click', onClickAway, { capture: true })
-  })
+  // Escape is taken, so nothing after this listener — a terminal shell going
+  // back a screen — answers it too.
+  function onKeydown(e) {
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    oncancel?.()
+  }
 </script>
 
-<mesa:window on:keydown={(e) => { if (e.key === 'Escape') oncancel?.() }} />
+<mesa:window on:keydown={onKeydown} on:click|capture={onClickAway} />
 
-<mesa:portal to={host}>
+<mesa:portal to={host()}>
   <div
     bind:this={panelEl}
     class="popover stack"

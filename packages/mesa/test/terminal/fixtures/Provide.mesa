@@ -1,0 +1,9 @@
+<script>
+  import Hear from './Hear.mesa'
+  export let on = false
+  export let items = []
+  $context.word = 'heard'
+</script>
+{#if on}<Hear where="branch" /><slot />{/if}
+{#each items as it}<Hear where={'row ' + it} />{:else}<Hear where="else" />{/each}
+<mesa:element this={on ? 'section' : 'div'}><Hear where={on ? 'keyed' : 'unkeyed'} /></mesa:element>

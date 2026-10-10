@@ -325,7 +325,7 @@ back as a `// FIXME` naming the predicate.
 predicate there only widens the index — the same rows are answered by a larger
 structure:
 
-```prisma
+```lite
 @@index([kind], where: archivedAt == null)
 @@index([kind, email], where: live == true)
 ```

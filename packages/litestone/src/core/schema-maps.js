@@ -886,14 +886,15 @@ export function buildBoolMap(schema) {
 
 
 // ─── Filter kind map ──────────────────────────────────────────────────────────
-// { modelName: Map<fieldName, 'array' | 'json' | 'file' | 'boolean'> }
+// { modelName: Map<fieldName, 'array' | 'json' | 'file' | 'boolean' | 'any'> }
 //
 // What a column HOLDS — the fact `buildWhere` cannot read off the operand, and
-// which two of its questions need. Whether a bare array means `IN` or `hasSome`
+// which three of its questions need. Whether a bare array means `IN` or `hasSome`
 // (`{ id: [1,2] }` and `{ tags: ['x','y'] }` are the same shape and different
 // SQL), and whether a string operator can ask this column anything at all: a
 // serialization answers about its own punctuation and a Boolean is 0/1, so both
-// answer plausibly and wrongly rather than failing (`FJS-210`).
+// answer plausibly and wrongly rather than failing (`FJS-210`). And whether a
+// long IN list may cast its values, which a column with no affinity may not.
 //
 // Anything absent is a plain scalar. Int and DateTime are deliberately absent —
 // SQLite's coercion answers what was asked there.
@@ -907,6 +908,8 @@ export function buildFilterKindMap(schema) {
       else if (f.type.name === 'Json')    kinds.set(f.name, 'json')
       else if (f.type.name === 'File')    kinds.set(f.name, 'file')
       else if (f.type.name === 'Boolean') kinds.set(f.name, 'boolean')
+      // Only the synthesized trail model declares one.
+      else if (f.type.name === 'Any')     kinds.set(f.name, 'any')
     }
     map[model.name] = kinds
   }

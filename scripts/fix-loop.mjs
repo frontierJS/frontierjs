@@ -228,7 +228,7 @@ async function preBrief(row) {
     '- Search a tree with `rg`; a recursive `grep` is refused by a hook and costs the turn.',
     '- Single-quote a pattern holding a backtick: inside double quotes bash reads it as a command substitution and the whole call fails to parse.',
     '- Change a file with Edit or Write, never a `python3` or `sed -i` replace: a replace whose old text does not match changes nothing and exits 0, so the fix you prove may not be in the file. Edit fails on a mismatch. `cat >>` onto the end of a file is fine.',
-    '- A drive that fails outside your diff is checked with `fli prove` and its `open: FJS-###` tag before anything is rebuilt to test it.')
+    '- A drive that fails outside your diff is checked with `fli prove` and its `open: FJS-###` tag before anything is rebuilt to test it. A prove whose every ✗ carries `open:`, or is `skipped` on one, is finished; a second run prints the same tags.')
   return out.join('\n')
 }
 

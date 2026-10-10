@@ -47,12 +47,33 @@ source, live data, and a PR as the gate. The combination is the ask.
 | A client's review of a preview: pins and threads | proposed, unbuilt | [`anchored-feedback.md`](anchored-feedback.md) |
 | What a preview IS in the Release realm | an **Environment** — a named place a Release serves from, configuration only | `VOCABULARY.md`, [`release-transitions.md`](release-transitions.md) |
 
+## Probed, 2026-10-10 — stage 1 on Basecamp
+
+- **A dev-server preview needs no CORS.** Basecamp's `web/config/vite.config.js`
+  PROXIES the API by path (`API_PORT`, else `FLI_PORT_BE`, else 8120), so the
+  branch's dev server on 18020 with `API_PORT=8120` talks to the parent's live
+  API same-origin; a GET with `Accept: application/json` reached junction (401
+  with no token) and the shell came from the branch. `VITE_API_URL` and the CORS
+  rule enter only at Freeze, where a static build has no proxy. § The design step
+  1 and slice 3 are amended to say so.
+- **Fork by the Workbench's own helpers works from a dirty tree.** `snapshot()`
+  carried 29 files beyond HEAD into a dangling commit, `addWorktree` cut
+  `wb/preview-trial` under `~/.config/basecamp/workbench/trees/hand/`, `bun
+  install` there took 0.4 s, and the worktree reports clean on its branch.
+- **The ask route is mounted on the branch's dev server** (`/__fjs/ask/*`), and
+  its same-origin check wants `Origin`, `Host`, and a JSON content type — a curl
+  without the last one is refused with *only a page this dev server served may
+  ask*, which is the check doing its job.
+- Open for the editor's hand run: does the panel paint, does an edit land in the
+  worktree and hot-reload, what a session costs, and whether the diff is wanted.
+
 ## The design
 
 **1. A preview is an Environment whose Release is a branch of `web/` and whose
 API pointer is production's.** `preview.<app>` on a fleet machine runs the
-branch worktree's Vite dev server with `VITE_API_URL` set to the production
-API, and production's CORS allows that one origin. Live data costs nothing
+branch worktree's Vite dev server with its API proxy pointed at the production
+API (`API_PORT` in Basecamp's config) — same-origin, so no CORS while editing;
+`VITE_API_URL` and a CORS rule are the frozen static build's concern. Live data costs nothing
 because the preview is a client of the API everyone else uses. No new noun: an
 Environment is already the mutable pointer at a Release, and the dev server is
 the Release while someone is editing.
@@ -272,7 +293,8 @@ are in this file's § Probed.
   `web/` port from `FJS-D841`), a `Variable` `VITE_API_URL` on it, a `Domain`
   `<slug>.preview.<app>`, and `/route` to the pin's port. The marker file is
   written into the worktree here.
-- The app's production API allows the preview origin by RULE, not by list:
+- The proxy serves while editing; the rule below is for the FROZEN build only.
+  The app's production API allows the preview origin by RULE, not by list:
   `cors.origins: o => o === own || o.endsWith('.preview.<app>')`, one line in the
   app's config, documented in sierra's README beside `VITE_API_URL`. No rows, no
   restart, nothing for Open to write; the hostname convention is the allow-list,

@@ -32,7 +32,8 @@ flags:
     defaultValue: false
   template:
     type: string
-    description: full-stack (default) | api-only | widgets-only | site-only | extension-only
+    choices: [full-stack, api-only, widgets-only, site-only, extension-only]
+    description: Which shape of project to scaffold
     defaultValue: full-stack
   with:
     type: string
@@ -111,7 +112,8 @@ flags:
     defaultValue: ''
   source:
     type: string
-    description: "Where @frontierjs packages install from: npm (published) | local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FJS_SOURCE, else local from a framework checkout and npm from an install"
+    choices: [local, npm]
+    description: "Where @frontierjs packages install from: npm (published) or local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FJS_SOURCE, else local from a framework checkout and npm from an install"
     defaultValue: ''
 ---
 

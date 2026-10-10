@@ -5,9 +5,8 @@
 // `fix-loop.mjs` works down the open issues and `frame-loop.mjs`
 // down the open questions. Everything that measured well in the
 // first is here so the second inherits it rather than copying it:
-// the session flags, the stream, the Stop-hook baseline, the
-// per-attempt log, the effort ladder, and the lookups a pre-brief
-// is built from. What each loop does with an item — how it is
+// the session flags, the stream, the per-attempt log, the effort
+// ladder, and the lookups a pre-brief is built from. What each loop does with an item — how it is
 // picked, briefed, and read back as done — stays in the loop.
 // ============================================================
 
@@ -27,7 +26,6 @@ export const LOG_DIR = join(homedir(), '.fli')
 // session, never inside one, since a mid-session change drops the prompt cache.
 export const LADDER = [{ model: 'opus', effort: 'low' }, { model: 'opus', effort: 'high' }]
 
-const STOP_HOOK = join(ROOT, '.claude', 'hooks', 'fli-done-stop.mjs')
 const FLI       = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
 
 // ─── the session ────────────────────────────────────────────
@@ -48,13 +46,9 @@ const FLI       = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
  * and verifying a framing differ.
  */
 export function runSession(prompt, { model, effort, cap, permission, tag, phases, phaseOf, where = '' }) {
-  // Not awaited: it takes ~25s, and a session spends longer than that reading
-  // before its first edit. Lost the race, the session's own item goes unshown —
-  // which is the backstop only, since each skill runs `fli done` itself.
-  const baseline = spawn('node', [STOP_HOOK, '--baseline'], { cwd: ROOT, stdio: ['pipe', 'ignore', 'ignore'] })
-  baseline.stdin.end('{}')
-  const baselined = new Promise(r => baseline.on('close', r))
-
+  // The Stop hook is off: each skill runs `fli done` as its own step, and the
+  // hook was that report a second time, after a `--baseline` run of it before
+  // the session, at forty seconds each.
   const child = spawn('claude', [
     '-p', prompt,
     '--model',           model,
@@ -65,7 +59,7 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
     '--permission-mode', permission,
     '--setting-sources', 'project,local',
     '--strict-mcp-config',
-  ], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] })
+  ], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, FLI_DONE_STOP: 'off' } })
 
   let result   = {}
   let session  = null
@@ -119,9 +113,8 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
     }
   })
 
-  return new Promise(done => child.on('close', async code => {
+  return new Promise(done => child.on('close', code => {
     clearInterval(beat)
-    await baselined
     if (!result.type) console.log(`[${tag}]   claude ended with no result (exit ${code})`)
     done({
       cost:    result.total_cost_usd ?? 0,

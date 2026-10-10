@@ -59,6 +59,56 @@ export function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`
 }
 
+// ─── IN lists ─────────────────────────────────────────────────────────────────
+//
+// A list of N values as `IN (?, …, ?)` is a different statement for every N:
+// each length churns the 500-entry statement cache, and past 65,535 values Bun
+// answers *expected 34464 values* (the count wraps at 16 bits) while the wasm
+// engine stops at 32,766. Past `IN_INLINE` values the list is ONE bound JSON
+// array and the statement text is the same at every length (`FJS-620` M5).
+//
+// The two forms disagree unless the subquery casts. A bound list takes the
+// column's affinity, so `"name" IN (1)` matches the text `'1'`; a json_each
+// value does not, so the same row was missed. `CAST(value AS TEXT)` hands the
+// column the text form and its own affinity converts it back: exact for TEXT,
+// INTEGER and REAL columns, float precision included. An expression has no
+// affinity and a cast would turn `1` into `'1'` there, so `affinity: false`
+// keeps the value as it is. `test/in-list.test.ts` holds both forms to one
+// answer, column by column.
+//
+// A value JSON cannot carry exactly — bytes, a non-finite number, an object, a
+// string with a lone surrogate — keeps the bound list.
+const IN_INLINE = 4
+
+/** @param {unknown} v */
+function jsonCarries(v) {
+  if (v === null || typeof v === 'boolean' || typeof v === 'bigint') return true
+  if (typeof v === 'number') return Number.isFinite(v)
+  return typeof v === 'string' && v.isWellFormed()
+}
+
+/**
+ * `lhs IN (…)` over `values`, its binds pushed onto `params`.
+ * @param {string} lhs
+ * @param {readonly unknown[]} values  non-empty
+ * @param {unknown[]} params
+ * @param {{ not?: boolean, affinity?: boolean }} [opts]
+ */
+export function inList(lhs, values, params, { not = false, affinity = true } = {}) {
+  const op = not ? 'NOT IN' : 'IN'
+  if (values.length <= IN_INLINE || !values.every(jsonCarries)) {
+    for (const v of values) params.push(v)
+    return `${lhs} ${op} (${values.map(() => '?').join(', ')})`
+  }
+  let json = '['
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i]
+    json += (i ? ',' : '') + (typeof v === 'bigint' ? v.toString() : JSON.stringify(v))
+  }
+  params.push(json + ']')
+  return `${lhs} ${op} (SELECT ${affinity ? 'CAST(value AS TEXT)' : 'value'} FROM json_each(?))`
+}
+
 // ─── sql tagged template ──────────────────────────────────────────────────────
 //
 // Safe parameterized raw SQL for use inside where: { $raw: sql`...` }.
@@ -638,8 +688,7 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
       if (Array.isArray(val)) {
         // Implicit IN
         if (!val.length) { clauses.push('0 = 1'); continue }
-        val.forEach(v => params.push(coerce(v)))
-        clauses.push(`${rawCol} IN (${val.map(() => '?').join(', ')})`)
+        clauses.push(inList(rawCol, val.map(coerce), params, { affinity: false }))
       } else {
         params.push(coerce(val))
         clauses.push(`${rawCol} = ?`)
@@ -659,13 +708,11 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
         case 'endsWith':   params.push(likePattern(op, operand)); clauses.push(`${textCol} ${LIKE_SQL}`); break
         case 'in':
           if (!operand?.length) { clauses.push('0 = 1'); break }
-          operand.forEach(v => params.push(coerce(v)))
-          clauses.push(`${rawCol} IN (${operand.map(() => '?').join(', ')})`)
+          clauses.push(inList(rawCol, operand.map(coerce), params, { affinity: false }))
           break
         case 'notIn':
           if (!operand?.length) break
-          operand.forEach(v => params.push(coerce(v)))
-          clauses.push(`(${rawCol} NOT IN (${operand.map(() => '?').join(', ')}) OR ${rawCol} IS NULL)`)
+          clauses.push(`(${inList(rawCol, operand.map(coerce), params, { not: true, affinity: false })} OR ${rawCol} IS NULL)`)
           break
         case 'not':
           if (operand === null) { clauses.push(`${rawCol} IS NOT NULL`); break }
@@ -902,6 +949,19 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
     const isArrayCol = fieldKinds?.get(key) === 'array'
 
+    // A long list binds as one JSON array (`inList`). Only where the column is
+    // known: the cast it needs is wrong for an `Any` column and for a @from
+    // expression, and a caller with no `fieldKinds` cannot say which it has.
+    // An array column's elements are json_each values, which have no affinity.
+    /** @param {any[]} operand @param {boolean} [not] */
+    const longList = (operand, not = false) => {
+      if (operand.length <= IN_INLINE || isFromExpr || !fieldKinds) return null
+      const values = operand.map(v => checkBindable(coerce(v, key), key))
+      return isArrayCol
+        ? inList('value', values, params, { affinity: false })
+        : inList(col, values, params, { not, affinity: fieldKinds.get(key) !== 'any' })
+    }
+
     if (typeof val !== 'object' || Array.isArray(val) || val instanceof Date) {
       if (Array.isArray(val)) {
         if (!val.length) { clauses.push('0 = 1'); continue }
@@ -909,10 +969,11 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         // in this list. A scalar has one value; an array column supplies its
         // elements, so the IN moves inside json_each. For an exact, ordered
         // match, say `equals`.
-        const list = val.map(v => operandSql(v, push)).join(', ')
+        const long = longList(val)
+        const list = long ? null : val.map(v => operandSql(v, push)).join(', ')
         clauses.push(isArrayCol
-          ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${list}))`
-          : `${col} IN (${list})`)
+          ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`
+          : long ?? `${col} IN (${list})`)
       } else if (typeof val === 'boolean' && isFromExpr && col.includes('EXISTS')) {
         // EXISTS subquery — already returns 0/1; emit directly or negate
         clauses.push(val ? col : `NOT ${col}`)
@@ -959,19 +1020,22 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         // this the shorthand answered and its own explicit spelling did not.
         case 'in': {
           if (!operand?.length) { clauses.push('0 = 1'); break }
-          const inList = operand.map(v => operandSql(v, push)).join(', ')
+          const long = longList(operand)
+          const list = long ? null : operand.map(v => operandSql(v, push)).join(', ')
           clauses.push(isArrayCol
-            ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${inList}))`
-            : `${col} IN (${inList})`)
+            ? `EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`
+            : long ?? `${col} IN (${list})`)
           break
         }
         case 'notIn': {
           if (!operand?.length) break
-          const notInList = operand.map(v => operandSql(v, push)).join(', ')
+          // The array form negates an EXISTS, so its inner list stays an IN.
+          const long = longList(operand, !isArrayCol)
+          const list = long ? null : operand.map(v => operandSql(v, push)).join(', ')
           // Include NULL rows — NOT IN silently excludes them in SQLite
           clauses.push(isArrayCol
-            ? `NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${notInList}))`
-            : `(${col} NOT IN (${notInList}) OR ${col} IS NULL)`)
+            ? `NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${long ?? `value IN (${list})`})`
+            : `(${long ?? `${col} NOT IN (${list})`} OR ${col} IS NULL)`)
           break
         }
         case 'has':
@@ -998,8 +1062,8 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         case 'hasNone':
           // none of these elements present
           if (!operand?.length) break
-          operand.forEach(v => push(v))
-          clauses.push(`NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE value IN (${operand.map(() => '?').join(', ')}))`)
+          clauses.push(`NOT EXISTS (SELECT 1 FROM json_each(${col}) WHERE ${
+            inList('value', operand.map(v => checkBindable(coerce(v, key), key)), params, { affinity: false })})`)
           break
         case 'isEmpty':
           clauses.push(operand ? `json_array_length(${col}) = 0` : `json_array_length(${col}) > 0`)
@@ -1025,8 +1089,9 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
               clauses.push(`json(${col}) != json(?)`)
             } else {
               if (!operand.length) break
-              operand.forEach(v => push(v))
-              clauses.push(`(${col} NOT IN (${operand.map(() => '?').join(', ')}) OR ${col} IS NULL)`)
+              const long = longList(operand, true)
+              if (!long) operand.forEach(v => push(v))
+              clauses.push(`(${long ?? `${col} NOT IN (${operand.map(() => '?').join(', ')})`} OR ${col} IS NULL)`)
             }
             break
           }

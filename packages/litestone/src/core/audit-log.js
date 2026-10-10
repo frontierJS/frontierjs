@@ -287,16 +287,62 @@ const _loggedLogFailure = new Set()
 // recording reads exactly like an app doing nothing, and the one warning
 // scrolled past hours ago. So the counts are kept as well, and junction puts
 // them on /metrics. `stats` is the client's own object, shared by reference.
+//
+// Entries queued for one log table in the same tick go down as ONE createMany.
+// The cost of a trail write is its commit — five B-tree pages into the index's
+// WAL, plus the checkpoints they bring — not the entry or the pipeline, so a
+// request that writes ten rows paid ten commits for ten lines (`FJS-2317`).
 /**
- * @param {{ create: (args: { data: unknown }) => unknown } | null | undefined} logTable
+ * @typedef {{ create: (args: { data: unknown }) => unknown, createMany: (args: { data: unknown[] }) => unknown }} LogTable
+ * @typedef {{ dropped: number, written: number, lastError?: string, lastDroppedAt?: string, lastWrittenAt?: string }} LogStats
+ */
+/**
+ * @param {LogTable | null | undefined} logTable
  * @param {{ model?: string } & Record<string, unknown>} entry
- * @param {{ dropped: number, written: number, lastError?: string, lastDroppedAt?: string, lastWrittenAt?: string } | null | undefined} stats
+ * @param {LogStats | null | undefined} stats
  */
 export function fireLog(logTable, entry, stats) {
   if (!logTable) return
+  const queued = _pendingLog.get(logTable)
+  if (queued) { queued.entries.push(entry); return }
+  // Registered until it runs, so a process that ends before the next tick can
+  // still append it: a seed script ending in `process.exit`, or a crash right
+  // after a committed write, left the row in main and no line in the trail.
+  _pendingLog.set(logTable, { entries: [entry], stats })
+  armExitFlush()
+  const run = () => flushLog(logTable)
+  if (typeof setImmediate === 'function') setImmediate(run)
+  else setTimeout(run, 0)
+}
+
+/** @type {Map<LogTable, { entries: Array<{ model?: string } & Record<string, unknown>>, stats: LogStats | null | undefined }>} */
+const _pendingLog = new Map()
+let _exitFlushArmed = false
+
+/** @param {LogTable} logTable */
+function flushLog(logTable) {
+  const queued = _pendingLog.get(logTable)
+  if (!queued) return
+  _pendingLog.delete(logTable)
+  const { entries, stats } = queued
+  if (entries.length === 1) return writeLog(() => logTable.create({ data: entries[0] }), entries, stats)
+  // A batch that fails is retried one entry at a time, so one entry a SQL
+  // trail's own model refuses costs that entry and not the request's others.
+  writeLog(() => logTable.createMany({ data: entries }), entries, stats,
+    () => { for (const entry of entries) writeLog(() => logTable.create({ data: entry }), [entry], stats) })
+}
+
+/**
+ * @param {() => unknown} write
+ * @param {Array<{ model?: string }>} entries
+ * @param {LogStats | null | undefined} stats
+ * @param {() => void} [fallback]
+ */
+function writeLog(write, entries, stats, fallback) {
   const swallow = (/** @type {any} */ err) => {
-    if (stats) { stats.dropped++; stats.lastError = String(err?.message ?? err); stats.lastDroppedAt = new Date().toISOString() }
-    const key = entry?.model ?? 'log'
+    if (fallback) return fallback()
+    if (stats) { stats.dropped += entries.length; stats.lastError = String(err?.message ?? err); stats.lastDroppedAt = new Date().toISOString() }
+    const key = entries[0]?.model ?? 'log'
     if (_loggedLogFailure.has(key)) return
     _loggedLogFailure.add(key)
     console.warn(
@@ -304,31 +350,19 @@ export function fireLog(logTable, entry, stats) {
       `            The trail is incomplete from here. Further losses for this model are not reported.`
     )
   }
-  const write = () => {
-    try {
-      Promise.resolve(logTable.create({ data: entry }))
-        .then(() => { if (stats) { stats.written++; stats.lastWrittenAt = new Date().toISOString() } })
-        .catch(swallow)
-    }
-    catch (err) { swallow(err) }   // a driver that throws before its first await
+  try {
+    Promise.resolve(write())
+      .then(() => { if (stats) { stats.written += entries.length; stats.lastWrittenAt = new Date().toISOString() } })
+      .catch(swallow)
   }
-  // Registered until it runs, so a process that ends before the next tick can
-  // still append it: a seed script ending in `process.exit`, or a crash right
-  // after a committed write, left the row in main and no line in the trail.
-  const run = () => { if (_pendingLog.delete(run)) write() }
-  _pendingLog.add(run)
-  if (_pendingLog.size === 1) armExitFlush()
-  if (typeof setImmediate === 'function') setImmediate(run)
-  else setTimeout(run, 0)
+  catch (err) { swallow(err) }   // a driver that throws before its first await
 }
 
-const _pendingLog = new Set()
-let _exitFlushArmed = false
-
-// The drivers' `create` does its file I/O before its first await, so running a
-// queued write here appends synchronously and the process can end on it.
+// The drivers' `create` and `createMany` do their file I/O before their first
+// await, so running a queued write here appends synchronously and the process
+// can end on it.
 export function flushPendingLogs() {
-  for (const run of [..._pendingLog]) run()
+  for (const logTable of [..._pendingLog.keys()]) flushLog(logTable)
 }
 
 function armExitFlush() {

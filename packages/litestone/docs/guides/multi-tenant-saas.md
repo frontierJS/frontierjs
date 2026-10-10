@@ -17,7 +17,7 @@ A SaaS app with:
 
 ## Schema
 
-```prisma
+```lite
 // schema.lite
 database audit {
   path      "./audit/"

@@ -25,7 +25,8 @@ flags:
     defaultValue: false
   layer:
     type: string
-    description: "Collect one layer only: schema | api | ui | migrations"
+    choices: [schema, api, ui, migrations]
+    description: Collect one layer only
     defaultValue: ''
   atlas:
     type: boolean

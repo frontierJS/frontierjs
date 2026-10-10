@@ -70,7 +70,7 @@ if (repo) {
   // absorbed into a commit about versions.
   const alreadyEdited = new Set(snapshotFiles(repo))
 
-  const snaps = checkSnapshots({ root: repo, write: true })
+  const snaps = await checkSnapshots({ root: repo, write: true })
   if (snaps.failed) {
     const broken = snaps.results.filter(r => !r.ok).map(r => r.file).join(', ')
     throw new Error(`Could not regenerate ${snaps.failed} snapshot(s): ${broken} — nothing published`)

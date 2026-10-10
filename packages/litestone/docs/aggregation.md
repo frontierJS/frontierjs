@@ -1,5 +1,34 @@
 # Aggregation
 
+The examples on this page use this schema:
+
+```lite
+model Order {
+  id        Int      @id
+  accountId Int
+  status    String   @default("pending")
+  amount    Float
+  total     Float    @default(0)
+  ref       String?
+  placedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+}
+
+model Post {
+  id        Int      @id
+  status    String   @default("draft")
+  createdAt DateTime @default(now())
+}
+
+model Person {
+  id     Int   @id
+  name   String
+  salary Float @guarded
+
+  @@gate("1.5.5.5")
+}
+```
+
 ## aggregate()
 
 Returns a single object of computed values across all matching rows.
@@ -26,6 +55,8 @@ const r2 = await db.order.aggregate({
 })
 // → { _stringAgg: { status: 'paid, pending, refund' } }
 ```
+
+Over no rows `_count` is `0` and every other value is `null`.
 
 ## Named aggregates + FILTER
 
@@ -98,23 +129,30 @@ await db.order.groupBy({
 Group by a DateTime field at a calendar interval with automatic gap filling:
 
 ```js
+await db.order.createMany({ data: [
+  { accountId: 1, amount: 4200, createdAt: '2024-01-05T00:00:00.000Z' },
+  { accountId: 1, amount: 900,  createdAt: '2024-03-20T00:00:00.000Z' },
+] })
+
 const monthly = await db.order.groupBy({
   by:       ['createdAt'],
   interval: { createdAt: 'month' },  // year | quarter | month | week | day | hour
-  where:    { createdAt: { gte: '2024-01-01', lte: '2024-12-31' } },
+  where:    { createdAt: { gte: '2024-01-01', lte: '2024-03-31' } },
   fillGaps: true,     // default when interval present — no missing months
+  orderBy:  { createdAt: 'asc' },
   _count:   true,
   _sum:     { amount: true },
 })
-// → [{ createdAt: '2024-01', _count: 18, _sum: { amount: 4200 } },
-//    { createdAt: '2024-02', _count: 0,  _sum: { amount: 0 } },  // gap filled
-//    ...]
+// → [{ createdAt: '2024-01', _count: 1, _sum: { amount: 4200 } },
+//    { createdAt: '2024-02', _count: 0, _sum: { amount: 0 } },  // gap filled
+//    { createdAt: '2024-03', _count: 1, _sum: { amount: 900 } }]
 
 // Explicit gap range
 await db.order.groupBy({
-  by:       ['date'],
-  interval: { date: 'day' },
+  by:       ['createdAt'],
+  interval: { createdAt: 'day' },
   fillGaps: { start: '2024-01-01', end: '2024-01-31' },
+  orderBy:  { createdAt: 'asc' },
   _count:   true,
 })
 
@@ -130,7 +168,8 @@ await db.order.groupBy({
 Gap fill uses a recursive CTE to generate the full sequence of intervals — no calendar table needed.
 Each bound must be a date or an instant (a string `Date.parse` reads, epoch milliseconds or a
 `Date`); anything else is a `ValidationError`, and the bound is passed to SQLite as a parameter,
-never written into the statement (`FJS-1650`).
+never written into the statement (`FJS-1650`). **Bucket order is not implied**: without an
+`orderBy` on the bucket field the filled rows come back before the real ones.
 
 ### In a time zone
 
@@ -186,19 +225,14 @@ const { rows, total } = await db.post.findManyAndCount({
 
 ## query() dispatcher
 
-Routes a single args object based on shape — useful for generic API handlers:
+Routes a single args object based on shape — useful for an API handler that hands `req.query` straight through:
 
 ```js
-// API handler that handles all query types
-app.get('/orders', async (req) => {
-  return db.order.query(req.query)
-})
-
-db.order.query({ where: { status: 'paid' }, limit: 20 })          // → findMany
-db.order.query({ _count: true, _sum: { amount: true } })           // → aggregate
-db.order.query({ by: ['status'], _count: true })                   // → groupBy
-db.order.query({ _countPaid: { count: true, filter: sql`...` } })  // → aggregate (named agg)
-db.order.query({ window: { rn: { rowNumber: true, ... } } })       // → findMany + window
+await db.order.query({ where: { status: 'paid' }, limit: 20 })          // → findMany
+await db.order.query({ _count: true, _sum: { amount: true } })           // → aggregate
+await db.order.query({ by: ['status'], _count: true })                   // → groupBy
+await db.order.query({ _countPaid: { count: true, filter: sql`status = 'paid'` } })  // → aggregate (named agg)
+await db.order.query({ window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } } })  // → findMany + window
 ```
 
 **Routing rules (checked in order):**
@@ -219,17 +253,17 @@ had to be done by hand. Every name is now checked, at every argument that can
 carry one:
 
 ```js
-db.order.aggregate({ _max: { total: true } })          // _min _max _sum _avg
-db.order.aggregate({ _stringAgg: { field: 'ref', orderBy: 'ref' } })
-db.order.aggregate({ _paid: { max: 'total' } })        // a named aggregate's field
-db.order.aggregate({ _count: { distinct: 'status' } })
-db.order.groupBy({ by: ['status'], interval: { placedAt: 'month' } })
+await db.order.aggregate({ _max: { total: true } })          // _min _max _sum _avg
+await db.order.aggregate({ _stringAgg: { field: 'ref', orderBy: 'ref' } })
+await db.order.aggregate({ _paid: { max: 'total' } })        // a named aggregate's field
+await db.order.aggregate({ _count: { distinct: 'status' } })
+await db.order.groupBy({ by: ['placedAt'], interval: { placedAt: 'month' } })
 ```
 
 **Why it matters more here than in a `where`.** SQLite reads a double-quoted
 identifier it cannot resolve as a **string constant**, so nothing fails:
 
-```js
+```js throws
 await db.order.aggregate({ _max: { totl: true } })
 // once:  { _max: { totl: 'totl' } }   ← MAX of the one-element set {'totl'}
 // now:   ValidationError — Unknown aggregate field 'totl' on Order. Did you mean: total?
@@ -259,13 +293,15 @@ the maximum salary on a table whose rows never show one — and `_stringAgg` and
 `by:` are not aggregates at all in this respect, since one answers every value
 joined with commas and the other answers every distinct value with a count.
 
-```js
-const user = db.$setAuth(req.user)
+```js throws
+const user = db.$setAuth({ id: 1, role: 'admin' })
 await user.person.aggregate({ _max: { salary: true } })
-// ValidationError — Cannot aggregate 'salary' on Person: it is @guarded, a
+// ValidationError — Cannot aggregate 'salary' on Person — it is @guarded — a
 // system-context column. Use asSystem() for a read that is not a caller's.
+```
 
-await db.asSystem().person.aggregate({ _max: { salary: true } })   // 900
+```js
+await db.asSystem().person.aggregate({ _max: { salary: true } })   // { _max: { salary: 900 } }
 ```
 
 A field-level `@allow('read', …)` is **refused rather than evaluated**: it is a

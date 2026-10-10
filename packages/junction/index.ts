@@ -153,7 +153,7 @@ export type { Reading }                                            from './src/c
 export type { HealthPluginOptions, HealthResponse, MetricsResponse, CheckResult } from './src/transport/health.ts'
 
 // ─── Logger ───────────────────────────────────────────────────────────────
-export { createLogger, consoleWriter, fileWriter, multiWriter, noopLogger } from './src/core/logger.ts'
+export { createLogger, consoleWriter, multiWriter, noopLogger } from './src/core/logger.ts'
 export type { ILogger, LogLevel, LogEntry, LogWriter, LoggerOptions }       from './src/core/logger.ts'
 
 export { defineEnv, generateEnvExample, printEnvExample }   from './src/core/env.ts'

@@ -132,7 +132,7 @@ This means indexes only cover live rows — smaller, faster, and `WHERE deletedA
 
 ### Declaring one
 
-```prisma
+```lite
 model Note {
   kind       String
   archivedAt DateTime?
@@ -167,7 +167,7 @@ have in an index predicate; and anything compiling to a subquery.
 What is left is what litestone writes as literal SQL on both sides of that
 comparison — the null tests and the booleans:
 
-```prisma
+```lite
 @@index([kind], where: archivedAt == null)
 @@index([kind], where: live == true)
 @@index([kind], where: live == true && archivedAt == null)
@@ -194,7 +194,7 @@ On wide tables (20+ columns), partial select can meaningfully reduce I/O.
 
 ## Indexes
 
-```prisma
+```lite
 model Order {
   @@index([accountId])               // single column
   @@index([accountId, status])       // composite

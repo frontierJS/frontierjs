@@ -445,6 +445,18 @@ async function main() {
      return (performance.now() - t0) / 30`,
     v => typeof v === 'number' && v < 2.5)
 
+  // ── a long IN list is one JSON bind ──
+  // Past four values a list binds as a JSON array (`inList`), because this
+  // engine stops at 32,766 binds. The numbers asked of a String column are the
+  // case the cast exists for: uncast, json_each misses the text '1'.
+  await t(b, 'a long IN list answers in the wasm engine, past its bind limit',
+    `for (let i = 1; i <= 6; i++) await db.shelf.create({ data: { label: String(i) } })
+     return {
+       numbers: await db.shelf.count({ where: { label: { in: [1, 2, 3, 4, 5, 6] } } }),
+       many:    await db.shelf.count({ where: { label: { in: Array.from({ length: 40000 }, (_, i) => String(i)) } } }),
+     }`,
+    v => v?.numbers === 6 && v.many === 6)
+
   // ── the app's own schema, in a browser ──
   //
   // `example`'s 53 models filtered to the ones that declare `@@sync`, opened

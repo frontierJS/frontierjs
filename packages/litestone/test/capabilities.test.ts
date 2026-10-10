@@ -633,6 +633,97 @@ describe('you may only grant what you hold', () => {
   })
 })
 
+describe('a key to a row holding a grant is the grant', () => {
+  // `FJS-2324`: the column guard alone is walked around by pointing at a role
+  // somebody else wrote — the resolver flattens the role's list onto whoever
+  // holds the key, so assigning it hands out all of it.
+  const ASSIGN = `
+    model Payroll { id Int @id @default(autoincrement())  amt Int  @@capabilities }
+    model Role {
+      id           Int          @id @default(autoincrement())
+      name         String
+      capabilities Capability[]
+      @@capabilities
+    }
+    model Person {
+      id     Int   @id @default(autoincrement())
+      roleId Int?
+      role   Role? @relation(fields: [roleId], references: [id])
+      @@capabilities
+    }
+    model Member {
+      id     Int  @id @default(autoincrement())
+      roleId Int
+      role   Role @relation(fields: [roleId], references: [id])
+      @@capabilities
+    }
+  `
+  const admin = ['Person.create', 'Person.update', 'Member.create', 'Member.update', 'Role.create']
+  const env   = async () => {
+    const db  = await createClient({ schema: ASSIGN, db: ':memory:' })
+    const sys = db.asSystem()
+    const owner = await sys.role.create({ data: { name: 'owner', capabilities: ['Payroll.create', ...admin] } })
+    const clerk = await sys.role.create({ data: { name: 'clerk', capabilities: ['Person.create'] } })
+    const me    = await sys.person.create({ data: {} })
+    return { db, owner, clerk, me, as: (caps: string[]) => db.$setAuth({ id: me.id, capabilities: caps }) }
+  }
+
+  it('refuses setting a key to a role holding more than the caller', async () => {
+    const { db, owner, me, as } = await env()
+    await expect(as(admin).person.update({ where: { id: me.id }, data: { roleId: owner.id } }))
+      .rejects.toThrow(/cannot grant "Payroll.create"/)
+    await db.$close()
+  })
+
+  it('refuses it on a create too, which is how a join row assigns', async () => {
+    const { db, owner, as } = await env()
+    await expect(as(admin).member.create({ data: { roleId: owner.id } }))
+      .rejects.toThrow(/cannot grant "Payroll.create"/)
+    await db.$close()
+  })
+
+  it('refuses it through every other door that sets the key', async () => {
+    const { db, owner, me, as } = await env()
+    // A nested connect is graded as an update of the target, so it needs that too.
+    await expect(as([...admin, 'Role.update']).person.update({ where: { id: me.id }, data: { role: { connect: { id: owner.id } } } }))
+      .rejects.toThrow(/cannot grant "Payroll.create"/)
+    await expect(as(admin).person.updateMany({ where: { id: me.id }, data: { roleId: owner.id } }))
+      .rejects.toThrow(/cannot grant "Payroll.create"/)
+    await expect(as(admin).member.createMany({ data: [{ roleId: owner.id }] }))
+      .rejects.toThrow(/cannot grant "Payroll.create"/)
+    expect((await db.asSystem().person.findFirst({ where: { id: me.id } }))!.roleId).toBeNull()
+    await db.$close()
+  })
+
+  it('refuses joining a role through a many-to-many, from either side', async () => {
+    const db = await createClient({ db: ':memory:', schema: `
+      model Payroll { id Int @id @default(autoincrement())  amt Int  @@capabilities }
+      model Role { id Int @id @default(autoincrement())  name String  capabilities Capability[]  people Person[]  @@capabilities }
+      model Person { id Int @id @default(autoincrement())  name String?  roles Role[]  @@capabilities }
+    ` })
+    const sys   = db.asSystem()
+    const owner = await sys.role.create({ data: { name: 'owner', capabilities: ['Payroll.create'] } })
+    const me    = await sys.person.create({ data: {} })
+    const as    = db.$setAuth({ id: me.id, capabilities: ['Role.update', 'Person.update'] })
+    await expect(as.person.update({ where: { id: me.id }, data: { roles: { connect: [{ id: owner.id }] } } }))
+      .rejects.toThrow(/Person\.roles: cannot grant "Payroll.create"/)
+    await expect(as.person.update({ where: { id: me.id }, data: { roles: { set: [{ id: owner.id }] } } }))
+      .rejects.toThrow(/cannot grant "Payroll.create"/)
+    await expect(as.role.update({ where: { id: owner.id }, data: { people: { connect: [{ id: me.id }] } } }))
+      .rejects.toThrow(/Role\.people: cannot grant "Payroll.create"/)
+    expect((await sys.person.findFirst({ where: { id: me.id }, include: { roles: true } }))!.roles).toEqual([])
+    await db.$close()
+  })
+
+  it('permits a role the caller holds all of, and clearing the key', async () => {
+    const { db, clerk, me, as } = await env()
+    expect((await as(admin).person.update({ where: { id: me.id }, data: { roleId: clerk.id } }))!.roleId).toBe(clerk.id)
+    expect((await as(admin).member.create({ data: { roleId: clerk.id } })).roleId).toBe(clerk.id)
+    expect((await as(admin).person.update({ where: { id: me.id }, data: { roleId: null } }))!.roleId).toBeNull()
+    await db.$close()
+  })
+})
+
 describe('a capability literal inside a predicate', () => {
   // The read tier has no attribute of its own — a column read must STRIP rather
   // than refuse — so it is spelled as the predicate FJS-D129 already compiles.

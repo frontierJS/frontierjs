@@ -73,7 +73,7 @@ if (flag.list) {
 // generator that exits 0 having written nothing is the failure this catches,
 // and it is the shape a stale snapshot already has.
 if (flag.fix) {
-  const wrote = checkSnapshots({ root, only, write: true })
+  const wrote = await checkSnapshots({ root, only, write: true })
 
   echo('')
   echo('  fli test:snapshots --fix\n')
@@ -88,7 +88,7 @@ if (flag.fix) {
     return
   }
 
-  const after = checkSnapshots({ root, only })
+  const after = await checkSnapshots({ root, only })
   if (after.failed) {
     for (const line of formatSnapshotResults(after.results)) echo(line)
     echo('')
@@ -107,7 +107,7 @@ if (flag.fix) {
   return
 }
 
-const { results, checked, failed } = checkSnapshots({ root, only })
+const { results, checked, failed } = await checkSnapshots({ root, only })
 
 // Printed and never failed on: an app is allowed to not commit a register, and
 // a fresh one has none. What must not happen is `0 checked` reading as clean.
