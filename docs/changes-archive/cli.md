@@ -2,7 +2,7 @@
 
 ## 2026-10-09 — `fli desktop:install --release`: the launcher opens the release shell
 
-Without the flag the entry ran `desktop:run --no-build` and so always opened the debug binary, even after `desktop:run --release` had built a release one beside it. `--release` writes `desktop:run --no-build --release` into Exec and refuses when no release binary exists, naming `fli desktop:run --release`. The default is unchanged. `desktopLauncher` in `core/desktop-surface.js` takes `release`. Proof: `test/desktop-surface.test.js` § what desktop:install writes, 22/22. On basecamp, `--release --dry` refused with no release build present, and the plain `--dry` still writes `desktop:run --no-build`. Not proved: a click on an installed release entry, because no release shell has been built here yet.
+Without the flag the entry ran `desktop:run --no-build` and so always opened the debug binary, even after `desktop:run --release` had built a release one beside it. `--release` writes `desktop:run --no-build --release` into Exec and refuses when no release binary exists, naming `fli desktop:run --release`. The default is unchanged. `desktopLauncher` in `core/desktop-surface.js` takes `release`. Proof: `test/desktop-surface.test.js` § what desktop:install writes, 22/22. On basecamp, `--release --dry` refused with no release build present, and the plain `--dry` still writes `desktop:run --no-build`. After `bun run build:desktop -- --release` (3m44s, a 9.5 MB binary against the debug one's 172 MB), the real install replaced basecamp's entry with the `--release` Exec, and `desktop-file-validate` accepted it. Not proved: a click on that entry opening the window.
 
 ## 2026-10-08 — `fli advise --strict` (`FJS-1825`)
 

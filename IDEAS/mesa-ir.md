@@ -949,18 +949,21 @@ with the terminal backend as its second consumer, not ahead of it.
    or a press (not Space) when its `click` is not prevented, handed to what
    `followLinks(renderer, fn)` registered; the shell registers
    `followLink`. The shell mounts a route where the router lands, remounts
-   on the route's own params by `ChainRenderer`'s key, refuses a route
+   on `remountKey`, now the one rule `ChainRenderer` reads too (the suite's
+   copy of it in `internals.test.js` graded nothing real), refuses a route
    that does not lower in a `beforeNavigate` guard with the reason as a
    note, and opens a route that takes a param from a typed path. Esc walks
    the History back, then to the list. `FJS-2271` closed on the way: the
    loader rewrites `@frontierjs/sierra/router` to `router/index.js`, since
    Bun gives a plugin-loaded module's package imports to no `onResolve`.
-   Found: OpenTUI plants `globalThis.window = { requestAnimationFrame }`,
+   `initRouter` answers its boot navigation, settled whether or not it
+   landed, so a route whose import throws is reported rather than waited on
+   forever. Found: OpenTUI plants `globalThis.window = { requestAnimationFrame }`,
    so `typeof window` passes in a terminal process and the prefetch threw on
    `document`; and a `$:` watch on a PROP is component-local, so Shell takes
-   a signal's read. Proved by `test/memory-history.test.js` 10/10 (four
+   a signal's read. Proved by `test/memory-history.test.js` 11/11 (five
    breaks red), `specs/links.spec.mjs` 13/13 (seven breaks red), and
-   `example` `verify:tui` 26/26, which now reads a modeled screen rather
+   `example` `verify:tui` 26/26 (five breaks red), which now reads a modeled screen rather
    than the pty stream, since the renderer writes only changed cells.
    `--list` 12 → 15 of 34: `/people/:id/`, `/plans/:id/`, `/products/:id/`.
    The other six param routes stop at `on:focusin` (Json), `<mesa:window>`,
@@ -974,19 +977,22 @@ with the terminal backend as its second consumer, not ahead of it.
    complexity: the problem's; a terminal has no address bar. (4)
    predictability: `page`, guards, `load()` and `goto` behave as in the
    browser, because they are the browser's. (5) derived: the route list is
-   the scanner's, params `matchRoute`'s, the remount key `ChainRenderer`'s
-   rule. (6) owner: the router owns navigation, mesa owns activation, the
-   shell only wires them. (7) boundary: `history` is documented on
+   the scanner's, params `matchRoute`'s, the remount key `remountKey`,
+   which `ChainRenderer` reads. (6) owner: the router owns navigation, mesa
+   owns activation, the shell only wires them; the remount rule moved out
+   of `ChainRenderer` into `internals.js` so the shell does not copy it.
+   (7) boundary: `history` is documented on
    `initRouter` and `followLinks` on the runtime; both tested. (8) failure:
    a link to an uncovered path or a route that does not lower says so in
    the shell's note rather than doing nothing. *Familiarity vs.
    precision*: the ecosystem's word, and it fits. (9) must stay true: the
-   browser router is unchanged (sierra's 2006 tests, now 2016) and a route
+   browser router is unchanged (sierra's 2006 tests, now 2017) and a route
    opened in the terminal reads the params its path names. What fails:
-   the memory-history test, the links spec, `verify:tui`. A `ChainRenderer`
-   remount rule reached through `meta.remount` is copied, not shared
-   (`screenKey`), and nothing asserts the two agree (`none`). Layouts are
-   still not mounted. Tier: Assessment.
+   the memory-history test, the links spec, `verify:tui`, and for the
+   browser half `outlet-boundary` and `screen-leave-router`, which compile
+   the real `ChainRenderer`. A link's focus cue over a `<mark>` inside it is
+   restored from what it held at focus, and nothing asserts that (`none`).
+   Layouts are still not mounted. Tier: Assessment.
    *The nine for slices 14 and 15, answered late, after both were green:*
    (1) origin: one fewer. `constDeclaration` is the one reading of a `{@const}`, and
    `pointer()` the one reading of a mouse event. (2) concept: none. (3)

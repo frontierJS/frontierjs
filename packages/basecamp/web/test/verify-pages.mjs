@@ -177,6 +177,7 @@ try {
   ok('the row shows the run, and then that it ended')
   check('and the row says it was not a failure', !/failed/i.test(after), after)
   check('and shows what the run printed', /linked from the rings/.test(after), after.slice(0, 200))
+  check('as text, with no terminal color codes in it', !/\x1b|\[3\dm/.test(after), after.slice(0, 200))
 
   console.log('\n  Open — the file, in a tab of its own')
   await evaluate(`(() => {
@@ -189,6 +190,28 @@ try {
   const html = await evaluate(`fetch(${JSON.stringify(url)}).then(r => r.text())`)
   check('holding the page itself', /<html|<!doctype html/i.test(html) && /ring/i.test(html), html.slice(0, 120))
   check('with the link relay appended', /fjsPage/.test(html))
+
+  // WebKit — the desktop shell's webview, a blocked popup — answers `null`
+  // from window.open, and the page has to show in Basecamp instead.
+  console.log('\n  Open where no window comes back — the viewer')
+  await evaluate(`window.open = () => null`)
+  await press('page:repo-rings.html', 'Open')
+  const ringsTitle = await until(`document.getElementById('pages-viewer')?.contentDocument?.title ?? null`,
+    t => /rings/.test(t ?? ''), 'the viewer never showed the page')
+  check('a null window opens the page in a viewer here, not an error', /rings/.test(ringsTitle), ringsTitle)
+  check('and no error banner', !(await evaluate(`!!document.getElementById('screen-error')`)))
+  // A real click inside the framed page, so the relay's parent branch runs.
+  await evaluate(`(() => {
+    const doc = document.getElementById('pages-viewer').contentDocument
+    const a = doc.createElement('a'); a.href = 'repo-work.html'; a.textContent = 'work'
+    doc.body.appendChild(a); a.click()
+  })()`)
+  const workInViewer = await until(`document.getElementById('pages-viewer')?.contentDocument?.title ?? null`,
+    t => /how work moves/.test(t ?? ''), 'a link inside the viewer never swapped the page')
+  check('a link to another page swaps the viewer to it', /how work moves/.test(workInViewer), workInViewer)
+  await evaluate(`[...document.querySelectorAll('dialog button')].find(b => b.textContent.trim() === 'Close').click()`)
+  await until(`!document.getElementById('pages-viewer')`, v => v, 'Close never closed the viewer')
+  ok('Close closes it')
 
   // The work map names the rings and the rings name the work map; inside a
   // blob neither resolves, so the opened tab posts the click back and this tab

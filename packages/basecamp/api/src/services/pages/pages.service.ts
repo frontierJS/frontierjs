@@ -129,7 +129,9 @@ export function createPagesService(app: BasecampApp) {
 
     async output() {
       const { f, row: r } = await row()
-      return { id: r.id, lines: f.outputOf(r.id) }
+      // `children.js` runs with FORCE_COLOR for `fli gui`, which renders it;
+      // this screen prints text, where an escape is a box and `[33m`.
+      return { id: r.id, lines: f.outputOf(r.id).map(l => l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')) }
     },
 
     async start() {

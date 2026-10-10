@@ -22,6 +22,7 @@ title: Pages
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Modal      from '@frontierjs/ui/components/overlay/Modal.mesa'
 
   const POLL_MS = 3000
 
@@ -89,35 +90,50 @@ title: Pages
   }
 
   // The tab is opened BEFORE the request, inside the click: a window opened
-  // after an await is a popup the browser blocks.
+  // after an await is a popup the browser blocks. Where none comes back — the
+  // desktop shell's webview, a blocked popup — the page is shown in a viewer
+  // here instead, because a null window is otherwise the whole failure.
+  let shown = null
+
   async function view(r, into = window.open('', '_blank')) {
     try {
       const { html } = await pages.service.invoke('view', r.id)
       const files = rows.filter(x => x.page).map(x => x.page)
-      const blob  = new Blob([html + relay(files)], { type: 'text/html' })
-      into.location.href = URL.createObjectURL(blob)
+      const url   = URL.createObjectURL(new Blob([html + relay(files)], { type: 'text/html' }))
+      if (into) into.location.href = url
+      else { if (shown) URL.revokeObjectURL(shown.url); shown = { name: r.name, url } }
     } catch (err) {
       into?.close()
       error = err.message
     }
   }
 
+  function closeViewer() {
+    if (shown) URL.revokeObjectURL(shown.url)
+    shown = null
+  }
+
   // Appended to the page: a click on a link naming another page is posted to
-  // this tab instead of followed. Every other link is left alone.
+  // the Basecamp tab — the opener, or the parent when it is in the viewer —
+  // instead of followed. Every other link is left alone.
   const relay = (files) => `<script>(() => {
   const PAGES = ${JSON.stringify(files)}
+  const home  = window.opener || (window.parent !== window ? window.parent : null)
   addEventListener('click', (e) => {
     const a = e.target.closest && e.target.closest('a[href]')
-    if (!a || !PAGES.includes(a.getAttribute('href')) || !opener) return
+    if (!a || !PAGES.includes(a.getAttribute('href')) || !home) return
     e.preventDefault()
-    opener.postMessage({ fjsPage: a.getAttribute('href') }, '*')
+    home.postMessage({ fjsPage: a.getAttribute('href') }, '*')
   }, true)
 })()<` + `/script>`
 
   function onPageLink(e) {
     if (e.origin !== location.origin || typeof e.data?.fjsPage !== 'string') return
     const r = rows.find(x => x.page === e.data.fjsPage)
-    if (r && e.source) view(r, e.source)
+    if (!r) return
+    // From the viewer, the viewer swaps; from a tab, that tab is pointed on.
+    if (shown) view(r, null)
+    else if (e.source) view(r, e.source)
   }
   addEventListener('message', onPageLink)
 
@@ -245,4 +261,15 @@ title: Pages
       </Card>
     </div>
   {/if}
+{/if}
+
+{#if shown}
+  <Modal open title={shown.name} size="full" onclose={closeViewer}>
+    <iframe id="pages-viewer" title={shown.name} src={shown.url}
+            style:width="100%" style:height="65vh" style:border="0"></iframe>
+    {#snippet footer()}
+      <Button variant="ghost" href={shown.url} target="_blank" rel="noreferrer">Open in a new tab</Button>
+      <Button onclick={closeViewer}>Close</Button>
+    {/snippet}
+  </Modal>
 {/if}

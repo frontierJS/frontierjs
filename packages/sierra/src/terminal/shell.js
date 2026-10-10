@@ -155,13 +155,16 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     return false
   })
 
-  /** Hand the router a fresh History at `path`, and answer it once the
-   *  router has landed there. */
-  const start = (path) => new Promise((landed) => {
+  /** Hand the router a fresh History at `path`, and answer it once the boot
+   *  navigation has settled — or null when it did not land, since a route
+   *  whose import throws is reported by the router and lands nowhere. */
+  const start = async (path) => {
     const history = createMemoryHistory(path)
-    const off = afterNavigate(() => { off(); landed(history) })
-    initRouter(tree, components, loaders, { trailingSlash, history })
-  })
+    let landed = false
+    const off = afterNavigate(() => { landed = true })
+    try { await initRouter(tree, components, loaders, { trailingSlash, history }) } finally { off() }
+    return landed ? history : null
+  }
 
   // What a typed path or `--frame` names, before the router is asked: a path
   // no route matches is refused there with no word said, so it is said here.
@@ -176,7 +179,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     const refused = why(frame)
     if (refused) { print(refused); return 1 }
     const { renderer, renderOnce, captureCharFrame } = await tui.createHeadlessRenderer({ width: 100, height: 30 })
-    await start(frame)
+    if (!await start(frame)) { print(`${frame} did not open`); renderer.destroy(); return 1 }
     const handle = tui.mount((await import(byId.get(page.route.id).file)).default, { renderer, props: { data: page.data } })
     await new Promise((res) => setTimeout(res, settle))
     await renderOnce()
@@ -243,7 +246,8 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     // The first landing is the one `start` waits for, so it is shown here;
     // every later one through the hook above.
     history = await start(path)
-    showRoute()
+    if (history) showRoute()
+    else set({ note: `${path} did not open` })
   }
 
   tui.mount(Shell, { renderer, props: { state, onopen: openPath } })

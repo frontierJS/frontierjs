@@ -6,7 +6,7 @@
  * the router makes must go through the History it was handed, and one that
  * reaches for `window` throws a ReferenceError here.
  */
-import { describe, test, expect, beforeEach } from 'vitest'
+import { describe, test, expect, beforeEach, vi } from 'vitest'
 import {
   initRouter, goto, back, followLink, setParams, isActive, page, createMemoryHistory,
   _resetPage, _resetInternals,
@@ -138,5 +138,19 @@ describe('the router handed a memory History', () => {
     expect(history.location.hash).toBe('#lines')
     expect(history.length).toBe(2)
     expect(page.route).toBe(route)
+  })
+
+  test('the boot navigation is answered, and settles when the route never lands', async () => {
+    _resetInternals()
+    _resetPage()
+    let tried = 0
+    const broken = { ...components, 'orders.[id]': async () => { tried++; throw new Error('import failed') } }
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await initRouter(makeTree(), broken, {}, { trailingSlash: 'always', history: createMemoryHistory('/orders/9/') })
+    } finally { quiet.mockRestore() }
+    expect(tried).toBe(1)
+    expect(page.route).toBe(null)
+    expect(page.pending).toBe(null)
   })
 })

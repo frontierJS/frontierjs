@@ -324,6 +324,8 @@ export const router = {
  *        the terminal shell's. The document's scroll, title and link clicks are
  *        left alone
  * @param {object} [layouts]  — lazy layout map { filePath → () => import(...) }
+ * @returns {Promise<void> | undefined}  the boot navigation, settled whether
+ *        or not it landed; undefined where there is no address to boot from
  */
 export function initRouter(tree, components, loaders = {}, options = {}, layouts = {}) {
   _tree = tree
@@ -403,7 +405,7 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
     // Static imports and the mount call that follows them run in the same
     // synchronous turn, so a microtask scheduled here lands after the app has
     // mounted and registered its guards.
-    queueMicrotask(() => {
+    return new Promise((booted) => queueMicrotask(() => {
       // The FRAGMENT is part of the URL and was dropped here. `_navigate`
       // rebuilds the address bar as `normalized + search + hash`, so an absent
       // hash was written back as an absent hash: every direct load or refresh
@@ -421,12 +423,12 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
       // would concatenate the string "undefined" onto every boot URL — which
       // is a 404 on a route that plainly exists.
       const hash = _loc().hash || ''
-      _navigate(_loc().pathname + _loc().search + hash, {
+      booted(_navigate(_loc().pathname + _loc().search + hash, {
         replace: true,
         scroll: !!hash,
         isPopstate: false,
-      })
-    })
+      }))
+    }))
   }
 }
 

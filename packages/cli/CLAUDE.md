@@ -507,6 +507,10 @@ core/
                 agree; a range starts at its attached comment. A `.lite` is
                 read by brace depth over toolbelt's `tokenize`, a `.mesa` by
                 its column-0 blocks with each script parsed at its own lines
+  cat.js        markdown rendered for a terminal — `fli cat`. The renderer is
+                `Bun.markdown.ansi`; this owns what is handed to it (frontmatter
+                and a column-0 `<script>` as fences, a relative link as a
+                `file://` URL) and reads a section through `outline.js`
   guarded-write.js the policy of `.claude/hooks/guarded-write.mjs` — decision-rules
                 hinted in front of a WRITE to `DECISIONS.md`, `IDEAS/` or
                 litestone's parser/catalog. A Bash command counts only where
