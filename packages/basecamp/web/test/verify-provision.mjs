@@ -59,6 +59,7 @@ const API_PORT  = Number(process.env.API_PORT ?? await portFor(import.meta.url, 
 const WEB_PORT  = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev' }))
 const SINK_PORT = await portFor(import.meta.url, 'be', { service: 2 })   // the DO stand-in
 const HZ_PORT   = await portFor(import.meta.url, 'be', { service: 4 })   // …and the Hetzner one
+const MACHINE_PORT = await portFor(import.meta.url, 'be', { service: 6 }) // the machine's command port
 const BASE      = `http://localhost:${WEB_PORT}`
 const API       = `http://localhost:${API_PORT}`
 const SINK      = `http://localhost:${SINK_PORT}`
@@ -114,6 +115,12 @@ for (const name of ['alpha', 'beta']) {
 const ALPHA = join(SSH_HOME, 'code', 'alpha')
 writeFileSync(join(ALPHA, 'README'), 'x')
 writeFileSync(join(ALPHA, 'frontier.config.js'), 'export default {}')
+// …with the two halves a preview needs: a web/ to edit, and the schema that
+// makes it an app root (`findProjectRoot`), so its branch claims a port block.
+mkdirSync(join(ALPHA, 'web'), { recursive: true })
+writeFileSync(join(ALPHA, 'web', 'index.html'), '<h1>alpha</h1>\n')
+mkdirSync(join(ALPHA, 'db'), { recursive: true })
+writeFileSync(join(ALPHA, 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
 // A stand-in for the checkout's own `fli done`, which the workbench runs after
 // a run ends: one unfinished item and one drive, whatever the tree holds.
 mkdirSync(join(ALPHA, 'packages', 'cli', 'core'), { recursive: true })
@@ -176,7 +183,7 @@ if (seedCode !== 0) fail(`db/seed.js exited ${seedCode}\n${seedErr}`)
 
 // ─── Refuse a port that already answers ──────────────────────────────────
 for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT],
-                            ['DO sink', SINK_PORT], ['Hetzner sink', HZ_PORT]]) {
+                            ['DO sink', SINK_PORT], ['Hetzner sink', HZ_PORT], ['machine', MACHINE_PORT]]) {
   const answered = await fetch(`http://localhost:${port}/`).then(() => true).catch(() => false)
   if (answered) fail(`Something already answers on :${port} (${name}). Stop it — this drive would test it instead.`)
 }
@@ -701,9 +708,9 @@ try {
   check('the exchange hands back a credential of its own', enrolled.status === 200 && !!credential)
 
   /** A heartbeat, signed the way the outpost on that machine signs one. */
-  async function heartbeat(secret) {
+  async function heartbeat(secret, extra = {}) {
     const { signRequest } = await import('@frontierjs/toolbelt/signature')
-    const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 4, memory: 12 } })
+    const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 4, memory: 12 }, ...extra })
     const path = `/servers/${serverId}`
     const headers = await signRequest({
       secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
@@ -1141,6 +1148,73 @@ try {
   check('Archive removes the branch\'s card and its tree, and keeps wb/try',
     !spawnSync('ls', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim())], { encoding: 'utf8' }).stdout.includes('try')
       && /wb\/try/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout))
+
+  // ─── A preview: Open ───────────────────────────────────────────────────
+  // A branch forked FOR A CLIENT is an Environment of its own, its hostname
+  // routed to the branch's web port on the machine holding the worktree. The
+  // machine is a stand-in on the command port's real TLS, with the certificate
+  // enrollment pinned, so the route is read off the wire rather than off
+  // Open's own answer.
+  console.log('\n  a preview — the Workbench branch a client edits')
+  const tls = (await import('@frontierjs/outpost/cert')).ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`))
+  const machineSaw = []
+  const machine = Bun.serve({
+    port: MACHINE_PORT, tls: { cert: Bun.file(tls.certPath), key: Bun.file(tls.keyPath) },
+    async fetch(req) {
+      const url = new URL(req.url), sent = await req.json().catch(() => ({}))
+      machineSaw.push({ path: url.pathname, body: sent })
+      return Response.json(url.pathname === '/route' ? { hosts: sent.hosts, port: sent.port, rebind: null } : {})
+    },
+  })
+  const registered = await heartbeat(credential, { outpost_url: `https://localhost:${MACHINE_PORT}` })
+  check('the machine reports its command port', registered.status === 200, `${registered.status}`)
+
+  const call = (method, path, serviceMethod, payload) => evaluate(`fetch(${JSON.stringify(path)}, {
+      method: ${JSON.stringify(method)},
+      headers: { accept: 'application/json', 'content-type': 'application/json',
+        authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+        'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+        ${serviceMethod ? `'x-service-method': ${JSON.stringify(serviceMethod)},` : ''} },
+      ${payload ? `body: ${JSON.stringify(JSON.stringify(payload))},` : ''}
+    }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
+  const alphaPin = (await call('GET', '/workbench', 'pins')).body?.pins?.find(p => !p.from)
+  const projectId = (await call('GET', '/projects')).body?.data?.[0]?.id
+  const settings = { projectId, app: '.', domain: 'preview.example.test', apiUrl: 'https://api.example.test', serverId }
+
+  const notMine = await call('POST', `/workbench/${alphaPin?.id}`, 'configure', { preview: { ...settings, projectId: 'no-such-project' } })
+  check('preview settings naming a project outside this workspace are refused',
+    notMine.status === 404 && /not found in this workspace/.test(notMine.body?.message ?? ''), JSON.stringify(notMine))
+  const noSettings = await call('POST', `/workbench/${alphaPin?.id}`, 'fork', { slug: 'client', preview: true })
+  check('…and a preview fork before any settings is refused, with no branch cut',
+    noSettings.status === 409 && /no preview settings/.test(noSettings.body?.message ?? '')
+      && !/wb\/client/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout), JSON.stringify(noSettings))
+  const set = await call('POST', `/workbench/${alphaPin?.id}`, 'configure', { preview: settings })
+  check('the checkout takes preview settings', set.status === 200 && set.body?.preview?.domain === 'preview.example.test', JSON.stringify(set))
+
+  const opened = await call('POST', `/workbench/${alphaPin?.id}`, 'fork', { slug: 'client', preview: true })
+  const o = opened.body?.opened ?? {}
+  check('Open answers the branch with what it made',
+    opened.status === 200 && opened.body?.branch === 'wb/client' && o.hostname === 'client.preview.example.test'
+      && Number.isInteger(o.port) && o.route?.ok === true, JSON.stringify(opened).slice(0, 400))
+  const envRow = (await call('GET', `/environments/${o.environmentId}`)).body
+  check('…an Environment at the preview tier, its slug the branch\'s', envRow?.tier === 'preview' && envRow?.slug === 'wb-client', JSON.stringify(envRow))
+  const appRow = (await call('GET', `/apps/${o.appId}`)).body
+  check('…one static inline App on the branch\'s web port, placed on the machine',
+    appRow?.type === 'static' && appRow?.source?.kind === 'inline' && appRow?.port === o.port
+      && JSON.stringify(appRow).includes(serverId), JSON.stringify(appRow).slice(0, 300))
+  const vars = (await call('GET', `/variables?environmentId=${o.environmentId}`)).body?.data ?? []
+  check('…the frozen build\'s VITE_API_URL on that App', vars.some(v => v.key === 'VITE_API_URL' && v.value === 'https://api.example.test' && v.appId === o.appId), JSON.stringify(vars))
+  const doms = (await call('GET', `/domains?appId=${o.appId}`)).body?.data ?? []
+  check('…and its hostname as a Domain', doms.length === 1 && doms[0].hostname === 'client.preview.example.test', JSON.stringify(doms))
+  const routed = machineSaw.find(c => c.path === '/route')
+  check('the machine was sent /route with the hostname and the branch\'s port',
+    routed?.body?.app_id === o.appId && JSON.stringify(routed?.body?.hosts) === '["client.preview.example.test"]' && routed?.body?.port === o.port,
+    JSON.stringify(machineSaw))
+  const clientTree = join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'client')
+  const markerAt = spawnSync('git', ['-C', clientTree, 'rev-parse', '--path-format=absolute', '--git-path', 'fjs-preview'], { encoding: 'utf8' }).stdout.trim()
+  check('the branch\'s worktree is marked a preview, outside its tree',
+    spawnSync('test', ['-f', markerAt]).status === 0 && !markerAt.startsWith(clientTree + '/'), markerAt)
+  machine.stop(true)
 
   // Focus mode, on the screen it was asked for. A sidebar left in the DOM
   // would keep its grid column, so the screen's left edge is the proof.

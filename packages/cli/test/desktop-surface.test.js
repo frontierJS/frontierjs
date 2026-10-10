@@ -213,17 +213,31 @@ describe('what dev:desktop reads', () => {
     expect(surfaceRow(root, 'site')).toBeNull()
   })
 
+  // The listener is this test process, so its cwd decides whose server it is.
   test('a server that answers is reused and named; none and no script is refused', async () => {
     const lines = []
     const log = { info: (l) => lines.push(l), dry: (l) => lines.push(l) }
     const server = Bun.serve({ port: 0, fetch: () => new Response('ok') })
     try {
-      expect(await ensureServer({ root: ROOT, runner: 'bun', script: 'web', port: server.port, label: 'web dev server', log })).toBeNull()
+      expect(await ensureServer({ root: process.cwd(), runner: 'bun', script: 'web', port: server.port, label: 'web dev server', log })).toBeNull()
       expect(lines.join('\n')).toContain(`http://localhost:${server.port} already answers`)
     } finally { server.stop(true) }
 
     await expect(ensureServer({ root: ROOT, runner: 'bun', script: null, port: server.port, label: 'API', log }))
       .rejects.toThrow(/declares no script that starts the API/)
+  })
+
+  test('a server another app holds is refused with its pid, never reused', async () => {
+    const lines = []
+    const log = { info: (l) => lines.push(l), dry: (l) => lines.push(l) }
+    const server = Bun.serve({ port: 0, fetch: () => new Response('ok') })
+    try {
+      const err = await ensureServer({ root: ROOT, runner: 'bun', script: 'web', port: server.port, label: 'web dev server', log })
+        .then(() => null, (e) => e)
+      expect(err?.message).toContain(`not from this app — pid ${process.pid} in ${process.cwd()}`)
+      expect(err.holder.pid).toBe(String(process.pid))
+      expect(lines).toEqual([])
+    } finally { server.stop(true) }
   })
 })
 

@@ -1,0 +1,25 @@
+<script>
+  export let kind = 'text'
+  let agree = false
+  let picks = ['a']
+  let size = 'm'
+  let theme = 'light'
+  let log = '-'
+  let pw = ''
+  let show = false
+  let clicks = 0
+  let changes = 0
+</script>
+
+<p>agree {agree} picks {picks.join('+')} size {size} theme {theme}</p>
+<p>log {log} clicks {clicks} changes {changes} pw {pw.length}</p>
+<label><input type="checkbox" bind:checked={agree} on:change={(e) => log = 'c' + e.target.checked} /> Agree</label>
+<p>picks <input type="checkbox" value="a" bind:group={picks} /> <input type="checkbox" value="b" bind:group={picks} /></p>
+<p>size <input type="radio" name="size" value="s" bind:group={size} /> <input type="radio" name="size" value="m" bind:group={size} /></p>
+<p>theme <input type="radio" name="theme" value="light" checked={theme === 'light'} on:change={(e) => theme = e.target.value} /> <input type="radio" name="theme" value="dark" checked={theme === 'dark'} on:change={(e) => theme = e.target.value} /></p>
+<p>plain <input type="radio" name="plain" on:change={() => changes++} /> <input type="radio" name="plain" checked on:change={() => changes++} /></p>
+<p>held <input type="checkbox" on:click={(e) => { clicks++; e.preventDefault() }} /> off <input type="checkbox" disabled /></p>
+<input type={show ? 'text' : 'password'} bind:value={pw} placeholder="password" />
+<button type="button" on:click={() => show = !show}>Show</button>
+<input type="hidden" name="token" value="secret-token" />
+<input type={kind} />

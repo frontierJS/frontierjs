@@ -21,7 +21,7 @@
   <button type="button" on:mousedown={hold} on:click={() => held++}>Hold</button>
   <button type="button" on:click={() => moved++}>Move</button>
 </div>
-<p on:mousedown={() => row++}>Row</p>
+<p on:mousedown={() => row++} on:touchstart={() => row += 10}>Row</p>
 <div on:drop={() => drops++}>
   <p on:dragenter={() => drops++} on:dragover|preventDefault={() => drops++} on:dragleave={() => drops++}>Drop drops {drops}</p>
 </div>

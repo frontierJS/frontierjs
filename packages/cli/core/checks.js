@@ -65,6 +65,7 @@ import { parseCommands, resolveCommands }      from './command-parse.js'
 import { typeScriptIn }                        from './scope.js'
 import { kindOf }                              from './file-kind.js'
 import { readConfig }                          from './config.js'
+import { previewScope }                        from './preview.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -161,6 +162,8 @@ export const RULES = [
     title: 'a styled value names a token the stylesheets define' },
   { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'a .mesa <style> holds no raw color, size or spacing value' },
+  { id: 'preview-ui-only',      scope: 'app',  severity: 'error', invariant: null,
+    title: 'a preview branch changes web/ and nothing else' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'three markdown files are the standard at a package root' },
   { id: 'test-files-run',       scope: 'repo', severity: 'error', invariant: null,
@@ -743,6 +746,21 @@ const CHECKS = {
   // Not an invariant — a live hazard, which is worse. Vite hops to the next free
   // port in silence, so the second app to start binds the first app's neighbor
   // and a test drive exercises the wrong app with everything green.
+  // A preview serves this branch's web/ against production's API, so anything
+  // else the branch changed is previewed against a schema production does not
+  // have — and Submit would put it in the pull request. `core/preview.js` says
+  // which worktrees are previews and what the diff is graded from.
+  'preview-ui-only': ({ root }) => {
+    const p = previewScope(root, join(root, 'web'))
+    if (!p.preview) return { skipped: p.why }
+    if (p.why) return { findings: [{ file: root, message: p.why }] }
+    return { findings: p.outside.map(f => ({
+      file: resolve(p.top, f),
+      message: `changed against ${p.into}, outside web/. A preview runs against production's API, so this ` +
+               `branch can be neither previewed nor submitted until the change is taken off it.`,
+    })) }
+  },
+
   'vite-strict-port': ({ root }) => {
     const configs = []
     walk(root, 4, dir => {

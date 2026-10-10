@@ -2321,7 +2321,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * an id falls through to the id, because `17 (unavailable)` is worse than the
    * bug being fixed.
    */
-  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, isArray }) {
+  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, isArray, strength = 'required' }) {
     const held = record?.[fieldName]
     if (held == null) return answer
     const wanted = (isArray ? (Array.isArray(held) ? held : [held]) : [held]).filter(v => v != null)
@@ -2331,13 +2331,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const missing = [...new Set(wanted.filter(v => !have.has(v)))]
     if (!missing.length) return answer
 
-    const mark = (value, label) => ({
-      value,
-      label:       `${label} (unavailable)`,
-      disabled:    true,
-      unavailable: true,
-    })
-    const blind = () => missing.map(v => mark(v, humanize(v) || String(v)))
+    // Whether a held value outside the list is REFUSED is the binding's
+    // strength, not the list's (`FJS-2501`). `required` refuses it. `open`
+    // refuses one the source holds and the set narrows out — the Data
+    // boundary's *a value the set has stopped offering* — and takes one the
+    // source never held, by adding it. `suggested` takes anything. Only a
+    // refused value is disabled and marked `unavailable`, which `<Form>` reads
+    // as invalid: marking an accepted one so makes a record that is legal to
+    // save unsavable until somebody discards what it says.
+    const refused = (inSource) => strength === 'required' || (strength === 'open' && inSource)
+    const mark = (value, label, inSource) => refused(inSource)
+      ? { value, label: `${label} (unavailable)`, disabled: true, unavailable: true }
+      : { value, label: `${label} (not listed)` }
+    // The read failed, so whether the source holds it is unknown: `open` is
+    // graded as if it does, the reading that cannot pass a refused value.
+    const blind = () => missing.map(v => mark(v, humanize(v) || String(v), true))
 
     return service
       .getOptions({ [valueField]: { in: missing } }, { limit: missing.length })
@@ -2347,7 +2355,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // Pinned at the FRONT: it is the value in the box, and a person should
         // not have to scroll a capped list to find out why it reads oddly.
         return { ...answer, options: [
-          ...missing.map(v => mark(v, byValue.get(v) ?? humanize(v) ?? String(v))),
+          ...missing.map(v => mark(v, byValue.get(v) ?? humanize(v) ?? String(v), byValue.has(v))),
           ...(answer.options ?? []),
         ] }
       })
@@ -2481,7 +2489,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
             // the page beneath drops it rather than the total growing.
             { options: opts, total, truncated: total == null ? null : total > rows.length },
             { fieldName, record, service: setService.service, valueField: vs.value, labelField: shown,
-              isArray: rule?.type === 'array' },
+              isArray: rule?.type === 'array', strength: vs.strength },
           )
         })
         .catch(err => {

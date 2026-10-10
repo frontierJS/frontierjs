@@ -32,6 +32,12 @@
 // ports are `fli dev`'s (`claimSession` gives a linked worktree its own block),
 // and Archive gives the block back.
 //
+// A checkout whose pin carries `preview` settings can fork a PREVIEW: the
+// branch's worktree is marked (`markPreview`, the cli's) so `fli check` and the
+// ask panel's Submit hold it to `web/`, and its web port is claimed at the cut
+// so the route Open sends names the port `fli dev` will bind there. The rows
+// are `core/preview.ts`'s, written by the service as the caller.
+//
 // When a run ends with nothing queued behind it, two follow-ups may start:
 // the CHECKS — the checkout's own `fli done` (`core/workbench-check.ts`), only
 // where the checkout carries one — and, where the pin asks for it, a REVIEW: a
@@ -62,6 +68,7 @@ import { fileURLToPath }               from 'node:url'
 import { resolveRoot }                 from './local-git.ts'
 import { readDiff }                    from './workbench-diff.ts'
 import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
+import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './preview.ts'
 
 export type Pin = {
   id:       string
@@ -95,6 +102,10 @@ export type Pin = {
   /** What a branch was given before its first message: the paths copied, and
    *  whether `bun install` ran, failed, or had no bun lockfile to run on. */
   setup:    { copied: string[], install: 'ran' | 'failed' | 'none' } | null
+  /** On a checkout: where a preview forked from it is opened. Null forks none. */
+  preview:  PreviewSettings | null
+  /** On a preview branch: its web port from the cut, and what Open made. */
+  opened:   ({ port: number } & Partial<Omit<Opened, 'port'>>) | null
 }
 
 export type Item =
@@ -209,9 +220,15 @@ function alive(pid: number | null): boolean {
 
 // The cli is a devDependency and the image installs none, so it is reached
 // only on a machine where the workbench is offered at all.
-type Ports = { releaseSession: (root: string, o?: { lockFile?: string }) => void }
+type Ports = {
+  releaseSession: (root: string, o?: { lockFile?: string }) => void
+  portFor:        (from: string, category: string, o?: { env?: string, lockFile?: string }) => Promise<number>
+}
 let ports: Promise<Ports> | null = null
 const loadPorts = () => ports ??= import('@frontierjs/cli/core/ports.js') as Promise<Ports>
+type Preview = { markPreview: (dir: string) => string }
+let previewMod: Promise<Preview> | null = null
+const loadPreview = () => previewMod ??= import('@frontierjs/cli/core/preview.js') as Promise<Preview>
 
 type AskClaude = {
   askArgv:       (o?: { session?: string | null, fork?: boolean, work?: { budget?: number, hooks?: boolean } }) => string[]
@@ -247,7 +264,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   function readPins(): Pin[] {
     let pins: Array<Partial<Pin>>
     try { pins = JSON.parse(readFileSync(pinsFile, 'utf8')).pins ?? [] } catch { return [] }
-    return pins.map(p => ({ review: false, reviewPid: null, from: null, base: null, branch: null, forkOf: null, carried: null, copy: DEFAULT_COPY, setup: null, ...p }) as Pin)
+    return pins.map(p => ({ review: false, reviewPid: null, from: null, base: null, branch: null, forkOf: null, carried: null, copy: DEFAULT_COPY, setup: null, preview: null, opened: null, ...p }) as Pin)
   }
 
   // Through a rename, so a crash mid-write cannot leave half a file that reads
@@ -286,7 +303,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       budget: DEFAULT_BUDGET, hooks: false, review: false,
       pinnedAt: new Date().toISOString(), seenAt: null, pid: null, reviewPid: null,
       from: null, base: null, branch: null, forkOf: null, carried: null,
-      copy: DEFAULT_COPY, setup: null,
+      copy: DEFAULT_COPY, setup: null, preview: null, opened: null,
     }
     writePins([...pins, next])
     return { pin: next }
@@ -326,13 +343,17 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
    * and untracked files included, in a worktree of its own, pinned beside it.
    * Where the parent has a chat the branch's first message forks it.
    */
-  async function fork(id: string, input: { slug?: unknown } = {}): Promise<{ pin: Pin } | { refused: string }> {
+  async function fork(id: string, input: { slug?: unknown, preview?: unknown } = {}): Promise<{ pin: Pin } | { refused: string }> {
     const parent = getPin(id)
     if (!parent) return { refused: `no pinned checkout '${id}'` }
     if (parent.from) return { refused: `${parent.name} is itself a branch — fork its parent` }
+    const preview = input.preview === true
+    if (preview && !parent.preview) return { refused: `${parent.name} has no preview settings — configure them before forking a preview` }
     const slug  = input.slug == null || input.slug === '' ? freeSlug(parent) : String(input.slug).trim()
     const named = branchName(parent.path, slug)
     if ('refused' in named) return named
+    const label = preview ? previewLabelRefusal(slug) : null
+    if (label) return { refused: label }
     const path = join(root, 'trees', parent.id, slug)
     if (existsSync(path)) return { refused: `'${path}' already exists` }
 
@@ -350,7 +371,22 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       forkOf: parent.session, carried: cut.carried,
       budget: parent.budget, hooks: parent.hooks, review: parent.review,
     })
-    return { pin: updatePin(b.id, { setup: await setUp(parent, b) }) }
+    const setup = await setUp(parent, b)
+    if (!preview) return { pin: updatePin(b.id, { setup }) }
+    try {
+      const cli = await loadPreview()
+      cli.markPreview(b.path)
+      const port = await (await loadPorts()).portFor(join(b.path, parent.preview!.app), 'fe', { env: 'dev', lockFile: portsLock })
+      return { pin: updatePin(b.id, { setup, opened: { port } }) }
+    } catch (e) {
+      await archive(b.id, { discard: true })
+      return { refused: `the preview could not be set up, so the branch was archived (${named.branch} is kept): ${(e as Error).message}` }
+    }
+  }
+
+  /** What Open made, onto the preview branch it made it for. */
+  function recordOpened(id: string, opened: Opened): Pin {
+    return updatePin(id, { opened })
   }
 
   /** The parent's copy list carried across, then the install. Never refuses:
@@ -423,8 +459,18 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return { archived: p.branch }
   }
 
-  function configure(id: string, patch: { name?: unknown, budget?: unknown, hooks?: unknown, review?: unknown, copy?: unknown }): Pin | { refused: string } {
+  function configure(id: string, patch: { name?: unknown, budget?: unknown, hooks?: unknown, review?: unknown, copy?: unknown, preview?: unknown }): Pin | { refused: string } {
     const out: Partial<Pin> = {}
+    if (patch.preview !== undefined) {
+      const p = getPin(id)
+      if (p?.from) return { refused: `${p.name} is a branch — a preview is forked from its checkout` }
+      if (patch.preview === null) out.preview = null
+      else {
+        const settings = previewSettings(patch.preview, p?.path ?? '')
+        if ('refused' in settings) return settings
+        out.preview = settings
+      }
+    }
     if (patch.name !== undefined) {
       const name = String(patch.name).trim()
       if (!name) return { refused: 'name cannot be empty' }
@@ -777,6 +823,6 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
-    send, stop, fresh, seen, check, review, fork, land, archive,
+    send, stop, fresh, seen, check, review, fork, land, archive, recordOpened,
   }
 }

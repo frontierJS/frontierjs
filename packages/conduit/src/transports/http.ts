@@ -215,9 +215,8 @@ export class HttpTransport extends BaseTransport {
       const result = await this.attempt<T>(sent, remaining, spent)
 
       if (refusedCredential(result) && !reminted && spent.value !== undefined
-        && this.credentials.invalidate && this.descriptor.auth.type !== 'none') {
+        && this.invalidateSpent(spent.value, sent.who)) {
         reminted = true
-        this.credentials.invalidate(this.descriptor.auth.ref, spent.value)
         continue
       }
 
@@ -383,6 +382,7 @@ export class HttpTransport extends BaseTransport {
             query: new URL(target).search,
             body:  rawBody,
             spent,
+            who:   req.who,
           }),
         ),
         // `Uint8Array<ArrayBufferLike>` does not structurally satisfy this

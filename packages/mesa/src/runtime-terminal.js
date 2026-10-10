@@ -65,7 +65,7 @@
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline } from './terminal/tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind } from './terminal/tags.js'
 import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
@@ -134,6 +134,63 @@ class SelectBox extends BoxRenderable {
 }
 
 const NONE = Symbol('none')
+
+/**
+ * `<input>` as a text field: the engine's, with `password` drawn as a browser
+ * draws it. The engine has no mask, so the field holds the real text, edits
+ * it with every key binding it has, and each cell its text was drawn into is
+ * overwritten with `•` before the frame is flushed; the cursor and the
+ * placeholder are drawn apart from those cells. A wide character is two
+ * cells and masks as two.
+ */
+class Field extends InputRenderable {
+  __mask = false
+  renderSelf(buffer) {
+    super.renderSelf(buffer)
+    if (!this.__mask) return
+    const text = this.plainText
+    if (!text) return
+    const cells = Math.min(this.width, stringWidth(text) - this.editorView.getViewport().offsetX)
+    const { char } = buffer.buffers
+    const at = this.screenY * buffer.width + this.screenX
+    for (let i = 0; i < cells; i++) char[at + i] = 0x2022
+  }
+}
+
+/**
+ * `<input type="checkbox">` and `type="radio"`: one row showing the state, as
+ * the box a browser draws. `checked` is the property, and a radio checked
+ * unchecks the rest of its group (`radioGroup`), as the DOM's setter does.
+ * `value` is the attribute, or `on` without one.
+ */
+class CheckBox extends BoxRenderable {
+  __checked = false
+  get checked() { return this.__checked }
+  set checked(v) {
+    this.__checked = !!v
+    if (this.__checked && radio(this)) for (const r of radioGroup(this)) if (r !== this) r.checked = false
+    this.paint()
+  }
+  get value() { const v = this.__attrs.value; return v == null ? 'on' : v === true ? '' : String(v) }
+  paint() {
+    if (this.isDestroyed) return
+    const [open, close, on] = radio(this) ? ['(', ')', '•'] : ['[', ']', 'x']
+    set_text(this.__label, open + (this.__checked ? on : ' ') + close)
+  }
+}
+
+const radio = (node) => String(node.__attrs.type).toLowerCase() === 'radio'
+
+/** The radios that share `node`'s `name` and form, as HTML groups them; a
+ *  radio with no name is a group of its own. */
+function radioGroup(node) {
+  const name = node.__attrs.name
+  if (name == null || name === '') return [node]
+  const form = formOf(node)
+  let root = node
+  while (up(root)) root = up(root)
+  return descendants(root, (n) => n instanceof CheckBox && radio(n) && n.__attrs.name === name && formOf(n) === form)
+}
 
 /**
  * `<progress>`: one row the width of its parent, `value` over `max` of it
@@ -227,6 +284,19 @@ class FlowBox extends BoxRenderable {
   onLifecyclePass = () => flow(this)
 }
 
+/**
+ * `<details>`: its `<summary>` always shows and the rest only while `open`.
+ * The rest goes into a body box of its own (`attach`), which is shown and
+ * hidden whole, so a run's own hiding of its members never shows content a
+ * closed one holds. Every change of `open` sends `toggle` a task later, one
+ * for any number of changes before it, and none when they cancel out, as a
+ * browser coalesces it.
+ */
+class DetailsBox extends BoxRenderable {
+  get open() { return 'open' in this.__attrs }
+  set open(v) { set_attribute(this, 'open', v ? '' : null) }
+}
+
 const CLEAR = RGBA.fromValues(0, 0, 0, 0)
 
 // ─── the current renderer ─────────────────────────────────────────────
@@ -265,6 +335,19 @@ export function fragment() { return [] }
  *  keeps its closing bracket as `__tail`, so its content lands inside it. */
 function attach(parent, node, before = null) {
   node = node.__home ?? node
+  // A `<details>` takes its first `<summary>` as its own child, above the
+  // body, and everything else into the body.
+  if (parent instanceof DetailsBox) {
+    const summary = parent.__summary
+    if (node.__tag === 'summary' && (!summary || summary === node || summary.isDestroyed)) {
+      parent.__summary = node
+      set_text(node.__triangle, triangle(parent.open))
+      before = parent.__body
+    } else {
+      parent = parent.__body
+      if (before?.parent !== parent) before = null
+    }
+  }
   node.__fragment = null
   inherit(node, parent.__bits)
   const anchor = before ?? parent.__tail ?? null
@@ -365,18 +448,43 @@ export function element(tag, attrs = {}) {
       node.__label = text('')
       node.add(node.__label)
       break
+    case 'details':
+      node = new DetailsBox(r, { flexDirection: 'column' })
+      node.__body = new FlowBox(r, { flexDirection: 'column', visible: false })
+      node.add(node.__body)
+      break
+    case 'summary': {
+      node = new FlowBox(r, { flexDirection: 'row', focusable: true })
+      node.__triangle = text(triangle(false))
+      node.add(node.__triangle)
+      invertWhileFocused(node)
+      break
+    }
     case 'dialog':
       node = new DialogBox(r, {
         flexDirection: 'column', border: true, paddingLeft: 1, paddingRight: 1,
         maxWidth: '100%', maxHeight: '100%', overflow: 'hidden', visible: false,
       })
       break
-    case 'input':
-      // A browser's text field is 20 characters wide unless `size` says
-      // otherwise; with no width of its own, a field beside its label in a
-      // row shrinks to one cell.
-      node = new InputRenderable(r, { minWidth: 20 })
+    case 'input': {
+      const kind = inputKind(attrs.type)
+      if (!kind) throw new Error(`[Mesa] <input type="${attrs.type}"> has no terminal lowering`)
+      if (kind === 'field') {
+        // A browser's text field is 20 characters wide unless `size` says
+        // otherwise; with no width of its own, a field beside its label in a
+        // row shrinks to one cell.
+        node = new Field(r, { minWidth: 20 })
+      } else if (kind === 'check') {
+        node = new CheckBox(r, { flexDirection: 'row' })
+        node.__label = text('')
+        node.add(node.__label)
+        focusCue(node, [node.__label])
+      } else {
+        node = new BoxRenderable(r, { visible: false })
+      }
+      node.__kind = kind
       break
+    }
     case 'textarea':
       node = new FieldArea(r, {})
       break
@@ -386,8 +494,8 @@ export function element(tag, attrs = {}) {
   node.__tag = tag
   node.__bits = bits
   node.__attrs = {}
-  const field = spec.role === 'input' || spec.role === 'textarea'
-  node.__canFocus = spec.role === 'button' || spec.role === 'select' || field
+  const field = node instanceof TextareaRenderable
+  node.__canFocus = spec.role === 'button' || spec.role === 'select' || field || node instanceof CheckBox
   // A handler written for the DOM reads `e.target.name`, and the engine has
   // no `name` of its own; `value` it already has on a field.
   Object.defineProperty(node, 'name', { get: () => node.__attrs.name, configurable: true })
@@ -396,9 +504,10 @@ export function element(tag, attrs = {}) {
   // component that wrote it.
   node.contains = (other) => { for (let n = other; n; n = up(n)) if (n === node) return true; return false }
   if (field) inputSource(node)
-  if (spec.role === 'button') activatable(node)
+  if (spec.role === 'button' || spec.role === 'summary' || node instanceof CheckBox) activatable(node)
   else if (node.__canFocus) focusSource(node)
   for (const name in attrs) set_attribute(node, name, attrs[name])
+  if (node instanceof CheckBox) node.paint()
   return node
 }
 
@@ -425,26 +534,41 @@ export function set_attribute(node, name, value) {
     }
     if (name === 'placeholder') { node.placeholder = present ? String(value) : ''; return }
   }
+  if (node.__kind) {
+    // The renderable was chosen by the `type` the node was built with, so a
+    // live one may move only within that kind: text to `password` and back.
+    if (name === 'type') {
+      const kind = inputKind(present ? value : null)
+      if (!kind) throw new Error(`[Mesa] <input type="${value}"> has no terminal lowering`)
+      if (kind !== node.__kind) throw new Error(`[Mesa] <input type="${value}"> cannot replace a type="${node.__type ?? 'text'}" on a terminal, which builds one control per <input>`)
+      node.__type = present ? String(value) : undefined
+      if (node instanceof Field) { node.__mask = String(value).toLowerCase() === 'password'; node.requestRender() }
+      if (node instanceof CheckBox) node.paint()
+      return
+    }
+    if (name === 'checked' && node instanceof CheckBox) { node.checked = present; return }
+  }
   if (node instanceof SelectBox) {
     if (name === 'multiple' && present) throw new Error('[Mesa] <select multiple> has no terminal lowering')
     // The DOM path writes an absent value as `el.value = ''`, which chooses
     // the option whose value is empty.
     if (name === 'value') { node.__wanted = present ? value : ''; return }
   }
-  if (name === 'alt' && node.__tag === 'img') {
+  if (name === TERMINAL_TAGS[node.__tag]?.text) {
     const str = present ? String(value) : ''
     set_text(node.__label, str)
     node.visible = str !== ''
     return
   }
   if (node instanceof ProgressBar && (name === 'value' || name === 'max')) { node.draw(); return }
+  if (node instanceof DetailsBox && name === 'open') { opened(node, present); return }
   if (node instanceof DialogBox && name === 'open') {
     node.visible = present
     if (!present && node.__home) leaveTopLayer(node)
     return
   }
   if (name === 'href' && node.__tag === 'a') { link(node, present); return }
-  if (name === 'size' && node.__tag === 'input') { node.minWidth = parseInt(value, 10) > 0 ? parseInt(value, 10) : 20; return }
+  if (name === 'size' && node instanceof Field) { node.minWidth = parseInt(value, 10) > 0 ? parseInt(value, 10) : 20; return }
   if (name === 'disabled') {
     // A disabled control takes no focus and no activation, and gives up the
     // focus it holds, as a browser's does.
@@ -465,6 +589,29 @@ export function set_attribute(node, name, value) {
  * A handler is wired once per event, through a slot the spread rewrites, so
  * a replaced spread object does not stack a second handler on the first.
  */
+// The disclosure triangle a browser draws before a summary, pointing at the
+// content while it shows.
+const triangle = (open) => open ? '\u25be ' : '\u25b8 '
+
+/** Show or hide a `<details>`'s body and point its summary's triangle. */
+function opened(node, open) {
+  if (open === node.__body.visible) return
+  // The engine blurs a control it hides, as a browser does one in a closed
+  // `<details>`.
+  node.__body.visible = open
+  const summary = node.__summary
+  if (summary && !summary.isDestroyed) set_text(summary.__triangle, triangle(open))
+  if (node.__toggleFrom !== undefined) return
+  node.__toggleFrom = !open
+  setTimeout(() => {
+    const from = node.__toggleFrom
+    node.__toggleFrom = undefined
+    if (node.isDestroyed || from === node.open) return
+    const state = (o) => o ? 'open' : 'closed'
+    dispatch(node, 'toggle', { oldState: state(from), newState: state(node.open) })
+  })
+}
+
 export function spread(node, fn) {
   const live = {}
   let prev = {}
@@ -745,6 +892,8 @@ const keyFields = (k) => ({
 })
 
 const ACTIVATE_KEYS = new Set(['return', 'enter', 'space'])
+// Enter on a checkbox or a radio does nothing in a browser.
+const CHECK_KEYS = new Set(['space'])
 
 const disabled = (node) => 'disabled' in node.__attrs
 
@@ -856,7 +1005,8 @@ function onKey(r, k) {
   if (k.name in PAGE_KEYS && !(target instanceof TextareaRenderable) && turnPage(r, PAGE_KEYS[k.name])) { k.preventDefault(); return }
   if (target.__window) return
   if (target.__keyAction?.(k.name)) { k.preventDefault(); return }
-  if (!target.__activatable || target instanceof TextareaRenderable || !ACTIVATE_KEYS.has(k.name)) return
+  if (!target.__activatable || target instanceof TextareaRenderable) return
+  if (!(target instanceof CheckBox ? CHECK_KEYS : ACTIVATE_KEYS).has(k.name)) return
   // Space scrolls past a link in a browser and follows nothing.
   if (target.__link && k.name === 'space') return
   k.preventDefault()
@@ -1160,11 +1310,37 @@ const mouseFields = (e) => ({
  *  form. */
 function activate(node, extra) {
   if (disabled(node)) return
+  if (node instanceof CheckBox) { toggle(node, extra); return }
   if (dispatch(node, 'click', extra).defaultPrevented) return
   if (node.__link) { follow(node); return }
+  if (node.__tag === 'summary') {
+    const details = node.parent
+    if (details instanceof DetailsBox && details.__summary === node) details.open = !details.open
+    return
+  }
   if (node.__tag !== 'button' || !submits(node)) return
   const form = formOf(node)
   if (form) dispatch(form, 'submit', { submitter: node })
+}
+
+/**
+ * A check's activation, in HTML's order: the state moves BEFORE `click`, so a
+ * handler reads the new `checked`; a prevented click puts it back, a radio's
+ * group included, and sends nothing more; otherwise `input` then `change`,
+ * unless a radio was checked already.
+ */
+function toggle(node, extra) {
+  const was = radio(node) ? radioGroup(node).find((r) => r.checked) ?? null : node.checked
+  node.checked = radio(node) || !node.checked
+  if (dispatch(node, 'click', extra).defaultPrevented) {
+    if (!radio(node)) node.checked = was
+    else if (was) was.checked = true
+    else node.checked = false
+    return
+  }
+  if (was === node) return
+  dispatch(node, 'input')
+  dispatch(node, 'change')
 }
 
 // ─── links ────────────────────────────────────────────────────────────
@@ -1193,18 +1369,7 @@ function link(node, on) {
   node.__link = on
   if (on) {
     activatable(node)
-    if (!node.__linkCue) {
-      node.__linkCue = true
-      let held = null
-      node.on('focused', () => {
-        held = descendants(node, (n) => n instanceof TextRenderable).map((t) => [t, t.attributes])
-        for (const [t, bits] of held) t.attributes = bits | TextAttributes.INVERSE
-      })
-      node.on('blurred', () => {
-        for (const [t, bits] of held ?? []) if (!t.isDestroyed) t.attributes = bits
-        held = null
-      })
-    }
+    invertWhileFocused(node)
     return
   }
   if (node.__listeners?.click?.length) return
@@ -1212,6 +1377,22 @@ function link(node, on) {
   node.__canFocus = false
   node.focusable = false
   if (node.focused) node.blur()
+}
+
+/** Invert every text under `node` while it holds focus, the frame's only
+ *  focus cue for a node with no brackets: a link, a summary. */
+function invertWhileFocused(node) {
+  if (node.__textCue) return
+  node.__textCue = true
+  let held = null
+  node.on('focused', () => {
+    held = descendants(node, (n) => n instanceof TextRenderable && !n.__proxy).map((t) => [t, t.attributes])
+    for (const [t, bits] of held) t.attributes = bits | TextAttributes.INVERSE
+  })
+  node.on('blurred', () => {
+    for (const [t, bits] of held ?? []) if (!t.isDestroyed) t.attributes = bits
+    held = null
+  })
 }
 
 /** A link with a `target` or a `download` is not followed in the page, in
@@ -1255,7 +1436,7 @@ function implicitSubmit(field) {
   if (!form) return
   const [button] = descendants(form, (n) => n.__tag === 'button' && submits(n))
   if (button) { activate(button, {}); return }
-  if (descendants(form, (n) => n.__tag === 'input').length === 1) dispatch(form, 'submit', { submitter: null })
+  if (descendants(form, (n) => n instanceof Field).length === 1) dispatch(form, 'submit', { submitter: null })
 }
 
 /**
@@ -1266,10 +1447,12 @@ function implicitSubmit(field) {
  * chooses none. A number or range input reads back a number, and `undefined`
  * for an empty or half-typed box (`FJS-857`).
  */
-export function bind(node, name, get, set) {
-  if (name !== 'value' || !(node instanceof SelectBox || node instanceof TextareaRenderable)) {
-    throw new Error(`[Mesa] bind:${name} on <${node.__tag}> has no terminal lowering`)
+export function bind(node, name, get, set, value) {
+  if (node instanceof CheckBox ? name === 'value' : name !== 'value' || !(node instanceof SelectBox || node instanceof TextareaRenderable)) {
+    const type = node.__kind ? ` type="${node.__type ?? 'text'}"` : ''
+    throw new Error(`[Mesa] bind:${name} on <${node.__tag}${type}> has no terminal lowering`)
   }
+  if (node instanceof CheckBox) { bindCheck(node, name, get, set, value); return }
   const read = () => {
     if (node instanceof SelectBox) { const o = chosen(node); return o ? optionValue(o) : null }
     const type = node.__attrs.type
@@ -1284,6 +1467,31 @@ export function bind(node, name, get, set) {
     const v = get()
     if (node instanceof SelectBox) node.__wanted = v
     else set_attribute(node, 'value', v ?? '')
+  })
+}
+
+/**
+ * `bind:checked` and `bind:group` on a check, as the DOM path's `bind` and
+ * `bindGroup` do: `checked` is the state, and a group is the array of the
+ * checked boxes' values, or the one checked radio's value.
+ */
+function bindCheck(node, name, get, set, value) {
+  if (name === 'checked') {
+    on(node, 'change', () => set(node.checked))
+    createEffect(() => { node.checked = !!get() })
+    return
+  }
+  on(node, 'change', () => {
+    const v = value()
+    if (radio(node)) { if (node.checked) set(v); return }
+    const all = get() ?? []
+    if (node.checked) { if (!all.includes(v)) set([...all, v]) }
+    else set(all.filter((x) => x !== v))
+  })
+  createEffect(() => {
+    const v = value()
+    const now = get()
+    node.checked = radio(node) ? now === v : Array.isArray(now) && now.includes(v)
   })
 }
 
@@ -1321,7 +1529,8 @@ export function ifBlock(marker, selectFn, blocks) {
 }
 
 /** Build `factory(key)` before `marker`, and rebuild it whenever `keyFn`
- *  answers a different key — `<mesa:element this>`, whose tag is the key. */
+ *  answers a different key — `{#key}`, and `<mesa:element this>`, whose
+ *  tag is the key. */
 export function keyBlock(marker, keyFn, factory) {
   const withContext = captureContext()
   let current, dispose = null

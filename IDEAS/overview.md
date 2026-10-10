@@ -720,6 +720,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `bun-natives.md` — what Bun 1.4's natives can replace here
 - `changes-retirement.md` — Retire CHANGES.md: history is git, lessons go where they are read
 - `claim-checking.md` — Claim checking: a compiler for the prose in a repo
+- `command-views.md` — a command's output written as a Mesa view, rendered once as terminal text
 - `content-collections.md` — Content collections: words that are not rows
 - `controlled-language.md` — a controlled language: the vocabulary, given verbs and sentence shapes, as the thing an app is described in
 - `current-tenant.md` — Sierra keeps the current tenant beside the session

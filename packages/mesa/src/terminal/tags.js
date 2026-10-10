@@ -14,17 +14,23 @@
  * `role` is what the runtime constructs: a `box` holds children, `text` is a
  * run of characters, `button` is a focusable box that fires `click` on
  * activation and submits its `<form>` unless its `type` says otherwise,
- * `input` is a one-line text field where Enter submits, `textarea` is a field
+ * `input` is the control its `type` names (`INPUT_TYPES`), `textarea` is a field
  * of many lines where Enter types a new line, `select` is one row showing its
  * chosen option where Up and Down choose another, `rule` is a line across the
- * parent's width, `image` is its `alt` text, as a browser shows an image it
- * cannot load, and takes no room while that text is empty, and `progress` is
+ * parent's width, `image` is the text its `text` attribute names, as a
+ * browser shows an `<img>` it cannot load by its `alt` and a screen reader
+ * reads an `<svg>` by its `aria-label`, takes no room while that text is
+ * empty, and never builds its children, which are drawing, and `progress` is
  * a bar across its parent's width filled by `value` over `max`, as a browser
  * draws one, or the words `in progress` with no `value`, where a browser
  * animates, and `dialog` is a bordered box laid out only while it is open:
  * where it sits when opened by `show()` or the `open` attribute, and centered
  * over the screen by `showModal()`, the rest of the screen dimmed and
- * unreachable until it closes, as a browser's backdrop makes it. A progress's children are the fallback a browser shows only when
+ * unreachable until it closes, as a browser's backdrop makes it. `details`
+ * shows its first `summary` and lays out the rest only while it is `open`;
+ * that `summary` is focusable, toggles `open` on Enter, Space or a press
+ * unless its `click` is prevented, and paints the disclosure triangle a
+ * browser draws, `▸` closed and `▾` open. A progress's children are the fallback a browser shows only when
  * it cannot draw the bar, so the terminal never builds them. The optional
  * style hints are terminal cell attributes, never colors (Invariant 13), each
  * the one a browser's default stylesheet gives the tag: `<del>` struck
@@ -48,10 +54,11 @@
  * fills the row already (`terminalOffenses`). `hidden` builds a box that is
  * never laid out, as a browser never paints it: a `<datalist>`, whose
  * suggestions a terminal does not offer, and an `<option>`, which its
- * `<select>` reads rather than shows. `requires` names attributes the
- * compiler refuses the tag WITHOUT: an `<img>` with no `alt` has nothing a
- * terminal can show, and nothing a screen reader can say either. One inside
- * a static `aria-hidden="true"` is left out instead (`terminalDropped`).
+ * `<select>` reads rather than shows. The compiler refuses an `image` tag
+ * WITHOUT its `text` attribute: an `<img>` with no `alt` or an `<svg>` with
+ * no `aria-label` has nothing a terminal can show, and nothing a screen
+ * reader can say either. One inside a static `aria-hidden="true"` is left
+ * out instead (`terminalDropped`).
  */
 
 export const TERMINAL_TAGS = {
@@ -65,6 +72,7 @@ export const TERMINAL_TAGS = {
   aside:    { role: 'box' },
   form:     { role: 'box' },
   fieldset: { role: 'box' },
+  legend:   { role: 'box' },
   ul:       { role: 'box' },
   ol:       { role: 'box' },
   li:       { role: 'box' },
@@ -103,9 +111,12 @@ export const TERMINAL_TAGS = {
   del:      { role: 'box', inline: true, strike: true },
   ins:      { role: 'box', inline: true, underline: true },
   dfn:      { role: 'box', inline: true, italic: true },
-  img:      { role: 'image', requires: ['alt'] },
+  img:      { role: 'image', text: 'alt' },
+  svg:      { role: 'image', text: 'aria-label' },
   progress: { role: 'progress' },
   dialog:   { role: 'dialog' },
+  details:  { role: 'details' },
+  summary:  { role: 'summary' },
   button:   { role: 'button' },
   input:    { role: 'input' },
   textarea: { role: 'textarea' },
@@ -114,6 +125,35 @@ export const TERMINAL_TAGS = {
   optgroup: { role: 'box', hidden: true },
   datalist: { role: 'box', hidden: true }
 }
+
+/**
+ * What an `<input>` is on a terminal, by its `type`: the one attribute that
+ * makes it a different control. `field` is the one-line text field, and a
+ * `password` one draws `•` for every character it holds, as a browser masks
+ * it. `check` is a box showing `[x]`/`[ ]`, or `(•)`/`( )` for a radio,
+ * that Space or a press toggles, firing `input` then `change`; a radio
+ * checked unchecks the others of its `name` in its form. `hidden` is never
+ * laid out, as a browser never paints one. No `type` is `text`. Any type
+ * missing here, a typo included, is refused: at compile when written
+ * statically, and when written while live, as `multiple` on `<select>` is,
+ * since a date or a range painted as a text field takes typing the control
+ * would never accept.
+ */
+export const INPUT_TYPES = {
+  text:     'field',
+  search:   'field',
+  email:    'field',
+  tel:      'field',
+  url:      'field',
+  number:   'field',
+  password: 'field',
+  checkbox: 'check',
+  radio:    'check',
+  hidden:   'hidden'
+}
+
+/** What an `<input>` of `type` is, or undefined for one a terminal refuses. */
+export const inputKind = (type) => INPUT_TYPES[type && type !== true ? String(type).toLowerCase() : 'text']
 
 /**
  * The roles a browser lays out inside a line, beside text, rather than as a
@@ -143,7 +183,10 @@ export const isInline = (tag) => {
  * are heard and never sent: nothing outside a terminal can be dropped into
  * it, and the kit's drop zone wraps a field the keyboard reaches. A drag
  * inside the screen would be the engine's `onMouseDrop`, a drag source's
- * lowering, so a drag source stays refused until that is built. `cancel`
+ * lowering, so a drag source stays refused until that is built.
+ * `touchstart` is heard and never sent: a terminal has no touch, and every
+ * kit listener sits beside a `mousedown` that does the same. `toggle` is a
+ * `<details>`'s, sent a task after its `open` changes. `cancel`
  * and `close` are a `<dialog>`'s, and neither bubbles.
  *
  * `mouseenter` and `mouseleave` follow the pointer from element to element,
@@ -174,10 +217,12 @@ export const TERMINAL_EVENTS = {
   dragover:  { bubbles: true },
   dragleave: { bubbles: true },
   drop:      { bubbles: true },
+  touchstart: { bubbles: true },
   focus:   { bubbles: false },
   blur:    { bubbles: false },
   focusin:  { bubbles: true },
   focusout: { bubbles: true },
+  toggle:  { bubbles: false },
   cancel:  { bubbles: false },
   close:   { bubbles: false }
 }

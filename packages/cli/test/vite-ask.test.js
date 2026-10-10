@@ -5,7 +5,10 @@
 // settings source an allow rule could ride in on, and denies instead of asking.
 // The scope itself was measured against the real CLI when it was written.
 
-import { describe, test, expect, afterAll } from 'bun:test'
+import { describe, test, expect, afterAll, beforeAll } from 'bun:test'
+import { execFileSync } from 'node:child_process'
+import { chmodSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,7 +16,8 @@ import { join } from 'node:path'
 import { EDIT_MAX_HTML, EDIT_RULES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
-import { createLedger, lineDiff, locateText, sameOrigin, undoEdits } from '../core/vite-ask.js'
+import { markerPath } from '../core/preview.js'
+import { admitCaller, askPlugin, createLedger, dirtyPaths, lineDiff, locateText, readAdmit, sameOrigin, submission, undoEdits } from '../core/vite-ask.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'fli-vite-ask-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -402,6 +406,221 @@ describe('sameOrigin', () => {
     expect(sameOrigin(req({}))).toBe(false)
     expect(sameOrigin(req({ origin: 'http://localhost:8690', 'sec-fetch-site': 'cross-site' }))).toBe(false)
     expect(sameOrigin(req({ origin: 'http://localhost:8690', 'content-type': 'text/plain' }))).toBe(false)
+  })
+
+})
+
+// ─── who may ask, and Submit ─────────────────────────────────────────────────
+
+// A stand-in for the app's API: `account/me` answers a level per token, the
+// way auth's account service does when the app passes `services: { level }`.
+const API_ANSWERS = { admin: { userId: 'u1', level: 5 }, member: { userId: 'u2', level: 4 }, unlevelled: { userId: 'u3' } }
+const api = Bun.serve({
+  port: 0,
+  fetch(req) {
+    const token = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1]
+    if (token === 'broken') return new Response('no', { status: 500 })
+    const me = API_ANSWERS[token]
+    return me ? Response.json(me) : Response.json({ error: 'no session' }, { status: 401 })
+  },
+})
+afterAll(() => api.stop(true))
+const ME = `http://localhost:${api.port}/account/me`
+const bearer = token => ({ headers: token ? { authorization: `Bearer ${token}` } : {} })
+
+describe('readAdmit', () => {
+
+  test('unset is a localhost dev server: no second rule', () => {
+    expect(readAdmit({})).toBe(null)
+    expect(readAdmit({ ASK_ADMIT_URL: '  ' })).toBe(null)
+  })
+
+  test('the level is a name from the gate, in any case; anything else is no level', () => {
+    expect(readAdmit({ ASK_ADMIT_URL: ME, ASK_ADMIT_LEVEL: 'administrator' })).toEqual({ url: ME, name: 'ADMINISTRATOR', level: 5 })
+    expect(readAdmit({ ASK_ADMIT_URL: ME, ASK_ADMIT_LEVEL: '5' }).level).toBe(null)
+    expect(readAdmit({ ASK_ADMIT_URL: ME }).level).toBe(null)
+  })
+
+})
+
+describe('admitCaller', () => {
+
+  const admit = readAdmit({ ASK_ADMIT_URL: ME, ASK_ADMIT_LEVEL: 'ADMINISTRATOR' })
+
+  test('no rule admits everyone the same-origin check did', async () => {
+    expect(await admitCaller(bearer(null), null)).toBe(null)
+  })
+
+  test('a caller at the level is admitted', async () => {
+    expect(await admitCaller(bearer('admin'), admit)).toBe(null)
+  })
+
+  test('no token, a token the API does not know, and one below the level are refused', async () => {
+    expect(await admitCaller(bearer(null), admit)).toMatchObject({ status: 401, error: expect.stringContaining('sign in') })
+    expect(await admitCaller(bearer('stranger'), admit)).toMatchObject({ status: 401 })
+    expect(await admitCaller(bearer('member'), admit)).toEqual({ status: 403, error: 'asking here takes ADMINISTRATOR' })
+  })
+
+  test('an answer with no level is refused, not guessed at', async () => {
+    expect(await admitCaller(bearer('unlevelled'), admit)).toMatchObject({ status: 502, error: expect.stringContaining('services: { level }') })
+    expect(await admitCaller(bearer('broken'), admit)).toMatchObject({ status: 502 })
+  })
+
+  test('a rule naming no level refuses every caller, admin included', async () => {
+    const r = await admitCaller(bearer('admin'), readAdmit({ ASK_ADMIT_URL: ME, ASK_ADMIT_LEVEL: 'boss' }))
+    expect(r).toMatchObject({ status: 500, error: expect.stringContaining("'BOSS', not a level") })
+  })
+
+})
+
+describe('dirtyPaths', () => {
+
+  test('each entry, with a rename naming its source too', () => {
+    expect(dirtyPaths(' M web/a.mesa\0?? web/new/b.mesa\0R  web/c.mesa\0web/old.mesa\0')).toEqual(['web/a.mesa', 'web/new/b.mesa', 'web/c.mesa', 'web/old.mesa'])
+    expect(dirtyPaths('')).toEqual([])
+  })
+
+})
+
+describe('submission', () => {
+
+  test('the first ask titles it, and every ask is a line with its session', () => {
+    const s = submission({ preview: 'https://p.example', asks: [
+      { instruction: 'make the heading bigger', session: SESSION },
+      { instruction: 'Text: “Hi” → “Hello”', session: null },
+    ] })
+    expect(s.title).toBe('make the heading bigger (+1 more)')
+    expect(s.body).toBe(`Asked for on the preview at https://p.example, through the ask panel.\n\n- make the heading bigger (session \`${SESSION}\`)\n- Text: “Hi” → “Hello”`)
+  })
+
+})
+
+describe('the served client', () => {
+
+  test('runs as served, with the token key the plugin was handed', () => {
+    const src = askPlugin({ tokenKey: 'basecamp_token' }).load('\0@frontierjs/cli/ask-client')
+    expect(src.split('\n')[0]).toBe('const ASK = {"tokenKey":"basecamp_token"}')
+    // No window here, so the module returns at its first line — after the
+    // prepended one has run against whatever follows it.
+    expect(() => new Function(src)()).not.toThrow()
+  })
+
+})
+
+describe('the routes — admission and Submit, over HTTP against a real repo', () => {
+
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+  const work = join(dir, 'submit')
+  const origin = join(dir, 'origin.git')
+  const app = join(work, 'web')
+  const ghLog = join(dir, 'gh.log')
+  const gh = join(dir, 'gh')
+  let base, servers = []
+
+  // A stand-in gh: records its argv, has no PR open until one is created.
+  writeFileSync(gh, `#!/bin/sh\necho "$@" >> ${ghLog}\nif [ "$2" = view ]; then [ -f ${ghLog}.made ] && echo https://github.test/o/r/pull/7 && exit 0; exit 1; fi\ntouch ${ghLog}.made\necho Creating pull request\necho https://github.test/o/r/pull/7\n`)
+  chmodSync(gh, 0o755)
+
+  async function serve(opts) {
+    const p = askPlugin({ bin: '/nonexistent/claude', gh, ...opts })
+    p.configResolved({ root: app })
+    let handler
+    p.configureServer({ middlewares: { use(fn) { handler = fn } } })
+    const server = createServer((req, res) => handler(req, res, () => { res.statusCode = 404; res.end() }))
+    await new Promise(ok => server.listen(0, ok))
+    servers.push(server)
+    const at = `http://localhost:${server.address().port}`
+    return (path, body = {}, token) => fetch(at + path, {
+      method: 'POST',
+      headers: { origin: at, 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    }).then(async r => ({ status: r.status, ...(await r.json()) }))
+  }
+
+  beforeAll(() => {
+    mkdirSync(app, { recursive: true })
+    git(dir, 'init', '-q', '--bare', origin)
+    git(dir, 'init', '-q', '-b', 'main', work)
+    git(work, 'config', 'user.email', 'test@example.test')
+    git(work, 'config', 'user.name', 'Test')
+    writeFileSync(join(app, 'Page.mesa'), '<h1>Welcome back</h1>\n<p>Other</p>\n')
+    git(work, 'add', '.')
+    git(work, 'commit', '-q', '-m', 'base')
+    git(work, 'remote', 'add', 'origin', origin)
+    base = git(work, 'rev-parse', 'HEAD')
+  })
+  afterAll(() => { for (const s of servers) s.close() })
+
+  test('with a rule, every route wants a token at the level', async () => {
+    const post = await serve({ admit: readAdmit({ ASK_ADMIT_URL: ME, ASK_ADMIT_LEVEL: 'ADMINISTRATOR' }) })
+    expect(await post('/__fjs/ask/status')).toMatchObject({ status: 401 })
+    expect(await post('/__fjs/ask/submit', {}, 'member')).toMatchObject({ status: 403 })
+    expect(await post('/__fjs/ask/text', {}, 'member')).toMatchObject({ status: 403 })
+    expect(await post('/__fjs/ask/status', {}, 'admin')).toMatchObject({ status: 200, branch: 'main' })
+  })
+
+  test('off a Workbench branch Submit is not offered, and refused if asked', async () => {
+    const post = await serve({ admit: null })
+    expect(await post('/__fjs/ask/status')).toEqual({ status: 200, branch: 'main', submit: false })
+    expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 409, error: expect.stringContaining('not a Workbench branch') })
+  })
+
+  test('on wb/*, Submit commits the panel\'s change, pushes, and opens the PR — and refuses another writer\'s file', async () => {
+    git(work, 'checkout', '-q', '-b', 'wb/trial')
+    const post = await serve({ admit: null })
+    expect(await post('/__fjs/ask/status')).toEqual({ status: 200, branch: 'wb/trial', submit: true })
+    expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 400, error: expect.stringContaining('nothing to submit') })
+
+    const edit = await post('/__fjs/ask/text', { loc: 'Page.mesa:1:1', tag: 'h1', old: 'Welcome back', new: 'Hello again' })
+    expect(edit.status).toBe(200)
+
+    writeFileSync(join(work, 'README.md'), 'someone else\n')
+    expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 409, files: ['README.md'] })
+    rmSync(join(work, 'README.md'))
+
+    const done = await post('/__fjs/ask/submit')
+    expect(done).toEqual({ status: 200, pr: 'https://github.test/o/r/pull/7', created: true, files: ['web/Page.mesa'] })
+    expect(git(work, 'rev-parse', 'HEAD~1')).toBe(base)
+    expect(git(work, 'log', '-1', '--format=%s')).toBe('Text: “Welcome back” → “Hello again”')
+    expect(git(work, 'status', '--porcelain')).toBe('')
+    expect(git(origin, 'rev-parse', 'wb/trial')).toBe(git(work, 'rev-parse', 'HEAD'))
+    const calls = readFileSync(ghLog, 'utf8').trim().split('\n')
+    expect(calls[0]).toBe('pr view wb/trial --json url --jq .url')
+    expect(calls[1]).toStartWith('pr create --head wb/trial --title Text: “Welcome back” → “Hello again” --body Asked for on the preview at http://localhost:')
+
+    // A second change goes onto the open PR rather than opening another.
+    await post('/__fjs/ask/text', { loc: 'Page.mesa:2:1', tag: 'p', old: 'Other', new: 'Another' })
+    expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 200, created: false, files: ['web/Page.mesa'] })
+    expect(git(origin, 'rev-parse', 'wb/trial')).toBe(git(work, 'rev-parse', 'HEAD'))
+  })
+
+  test('an undone change is nobody\'s to submit', async () => {
+    const post = await serve({ admit: null })
+    const edit = await post('/__fjs/ask/text', { loc: 'Page.mesa:1:1', tag: 'h1', old: 'Hello again', new: 'Hi' })
+    await post('/__fjs/ask/undo', { run: edit.run })
+    expect(git(work, 'status', '--porcelain')).toBe('')
+    expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 400 })
+  })
+
+  test('in a preview worktree, Submit refuses a branch that changes more than the Vite root, and names its base', async () => {
+    git(work, 'push', '-q', 'origin', 'main')
+    git(work, 'fetch', '-q', 'origin')
+    git(work, 'remote', 'set-head', 'origin', 'main')
+    writeFileSync(markerPath(work), '')
+    const post = await serve({ admit: null })
+
+    mkdirSync(join(work, 'db'))
+    writeFileSync(join(work, 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
+    git(work, 'add', 'db')
+    git(work, 'commit', '-q', '-m', 'not the panel\'s')
+    await post('/__fjs/ask/text', { loc: 'Page.mesa:1:1', tag: 'h1', old: 'Hello again', new: 'Hi' })
+    expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 409, error: expect.stringContaining('origin/main'), files: ['db/schema.lite'] })
+
+    git(work, 'rm', '-q', '-r', 'db')
+    git(work, 'commit', '-q', '-m', 'take it off')
+    rmSync(`${ghLog}.made`)
+    expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 200, created: true, files: ['web/Page.mesa'] })
+    expect(readFileSync(ghLog, 'utf8')).toContain('pr create --head wb/trial --base main --title Text: “Hello again” → “Hi”')
   })
 
 })

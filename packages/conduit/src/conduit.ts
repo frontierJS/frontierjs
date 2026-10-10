@@ -67,11 +67,27 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
   }
 
   assertRefusal(descriptor)
+  assertPerCaller(descriptor)
   assertIdempotency(descriptor)
   assertResilience(descriptor)
   assertPinnedCert(descriptor)
   assertRequestAddressed(descriptor)
   assertBroker(descriptor)
+}
+
+// A per-caller credential is resolved per SEND (`FJS-D848`). A websocket or
+// a broker authenticates one connection, shared by every caller after it, so
+// the first caller's credential would carry everyone else's frames.
+function assertPerCaller(descriptor: TargetDescriptor): void {
+  const auth = descriptor.auth as { per_caller?: unknown }
+  if (auth.per_caller === undefined) return
+  if (auth.per_caller !== true)
+    throw new TypeError(`Target '${descriptor.id}': auth.per_caller must be true or absent, got ${JSON.stringify(auth.per_caller)}`)
+  if (descriptor.kind === 'broker' || descriptor.protocol === 'websocket')
+    throw new TypeError(
+      `Target '${descriptor.id}': auth.per_caller needs a credential per send, and a `
+      + `${descriptor.kind === 'broker' ? 'broker' : 'websocket'} target authenticates one connection for every caller.`,
+    )
 }
 
 // A refusal shape the transport never reads would leave the session it was
@@ -303,6 +319,15 @@ export function createConduit(
   // changes a target's kind or protocol.
   async function put(descriptor: TargetDescriptor): Promise<void> {
     assertDescriptor(descriptor)
+    // Here and not in assertDescriptor: it is a fact about the installed
+    // resolver, not the descriptor. Without getFor a per-caller target would
+    // fail every send as auth_failed — refused once, at boot, by name.
+    if ((descriptor.auth as { per_caller?: true }).per_caller && !credentials.getFor)
+      throw new TypeError(
+        `Target '${descriptor.id}' declares auth.per_caller, and the installed CredentialResolver has no getFor(ref, who). `
+        + `A per-caller credential is resolved for whoever the send is for (FJS-D848): give the resolver getFor, `
+        + `or wrap one that has it — withCache() keeps it.`,
+      )
     learn(descriptor)
     const previous = await store.get(descriptor.id)
     await store.set(descriptor)

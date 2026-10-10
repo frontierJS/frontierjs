@@ -96,6 +96,7 @@ the package has no root entry.
 | a person · a stack of people · an account's state | `@frontierjs/ui/components/display/Avatar.mesa` · `@frontierjs/ui/components/display/AvatarGroup.mesa` · `@frontierjs/ui/components/display/AccountStatus.mesa` |
 | a JSON document, read, diffed or `editable` | `@frontierjs/ui/components/display/Json.mesa` |
 | a command or snippet somebody pastes — a block with a copy button in its corner | `@frontierjs/ui/components/display/Code.mesa` |
+| Markdown somebody else wrote — a model's reply, a `@syntax(md)` column — read | `@frontierjs/ui/components/display/Markdown.mesa` — `text`, `headingBase` (the level a `#` draws at; 3 inside a card), `breaks`. Raw HTML in the text draws as text and a link goes only to http, https, mailto or this site, so it is safe on a public page with no sanitizer |
 | copy to clipboard · a shortcut · a token or id · a rule | `@frontierjs/ui/components/display/CopyButton.mesa` · `@frontierjs/ui/components/display/Kbd.mesa` · `@frontierjs/ui/components/display/Mono.mesa` · `@frontierjs/ui/components/display/Divider.mesa` |
 
 **Layout, overlay, feedback**

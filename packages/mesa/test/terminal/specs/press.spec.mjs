@@ -39,7 +39,7 @@ export async function run(t) {
 
   await t.click('Row')
   frame = await t.frame()
-  t.expectFrame(frame, ['around 2 target button row 1'], 'a node with no click hears a press of its own, outside the div')
+  t.expectFrame(frame, ['around 2 target button row 1 scrolls'], 'a node with no click hears a press of its own, outside the div, and no touch')
 
   await t.wheel('one')
   frame = await t.frame()

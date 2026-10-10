@@ -1,0 +1,44 @@
+<script>
+  // markdown.mesa — the fixture for Markdown.
+  //
+  // `#hostile` is every way a text has tried to become markup; if any of them
+  // works, `window.__pwned` is set. `#narrow` is a reply with a table wider
+  // than its column, in a box as narrow as a phone's chat pane.
+  import Markdown from '../../../components/display/Markdown.mesa'
+
+  const hostile = [
+    '<img src=x onerror="window.__pwned = 1">',
+    '<script>window.__pwned = 2</' + 'script>',
+    '[click](javascript:window.__pwned=3)',
+    '![x](javascript:window.__pwned=4)',
+    '**<svg onload="window.__pwned = 5">**',
+    '| a |\n| - |\n| <iframe src="javascript:parent.__pwned=6"></iframe> |',
+  ].join('\n\n')
+
+  const reply = [
+    '# Added a **Lead** model',
+    '',
+    'It stores what a sales team tracks:',
+    '',
+    '- `name` and `email`',
+    '- a `status` with moves',
+    '  - [x] `qualify`',
+    '  - [ ] `lose`',
+    '',
+    '| Field | Type | Rule | Who may change it | Since |',
+    '| --- | --- | --- | --- | --- |',
+    '| `pipelineStageIdentifier` | `String` | `@@transitions(status)` | the owner and an administrator | turn 3 |',
+    '',
+    '> Nothing of yours was deleted.',
+    '',
+    '```js',
+    'const lead = await $.db.lead.create({ data })',
+    '```',
+  ].join('\n')
+</script>
+
+<Markdown id="hostile" text={hostile} />
+
+<div id="narrow" style="inline-size: 320px">
+  <Markdown text={reply} headingBase={3} />
+</div>

@@ -34,7 +34,7 @@
  */
 
 import net from 'net'
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, unlinkSync, readdirSync, readlinkSync } from 'fs'
 import { execSync, execFileSync } from 'child_process'
 import { homedir } from 'os'
 import { basename, dirname, join, relative } from 'path'
@@ -343,6 +343,27 @@ export function devPorts(appRoot, opts = {}) {
 }
 
 /**
+ * The rows a `dev` script only COMPOSES — `bun run api & bun run web & wait`,
+ * `bun run --parallel dev:api dev:web` — so `fli dev` can start each one itself
+ * and label its lines. Null for anything else: a `&&` chain, a command that is
+ * not a surface script, or a single surface, all of which run as written.
+ */
+export function composedSurfaces(scripts, rows, entry = 'dev') {
+  const body = scripts?.[entry]
+  if (typeof body !== 'string') return null
+
+  const byScript = new Map(rows.filter(r => r.script).map(r => [r.script, r]))
+  const picked   = []
+  for (const token of body.split(/\s+/).filter(Boolean)) {
+    if (/^(?:bun|npm|pnpm|yarn)$/.test(token) || token === 'run' || token === '&' || token === 'wait' || token.startsWith('-')) continue
+    const row = byScript.get(token)
+    if (!row || picked.includes(row)) return null
+    picked.push(row)
+  }
+  return picked.length > 1 ? picked : null
+}
+
+/**
  * Which of them are already answering.
  *
  * Bound to 0.0.0.0 rather than 127.0.0.1: an app binds the wildcard address and
@@ -392,6 +413,19 @@ export function describeProcess(pid, max = 90) {
     return execSync(`ps -p ${pid} -o args=`, { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString().trim().slice(0, max)
   } catch { return '' }
+}
+
+/**
+ * The working directory behind a pid, or null when it cannot be asked — /proc
+ * on Linux, lsof elsewhere. It is what says WHOSE server holds a port: a vite
+ * or an API started from an app runs in that app's tree.
+ */
+export function processCwd(pid) {
+  try { return readlinkSync(`/proc/${pid}/cwd`) } catch { /* not Linux, or not ours */ }
+  try {
+    const out = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    return out.split('\n').find(l => l.startsWith('n'))?.slice(1) || null
+  } catch { return null }
 }
 
 /**

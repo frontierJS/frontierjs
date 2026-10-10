@@ -343,7 +343,8 @@ flag            // flags                  → flag.dry, flag.force
 log             // the styled logger      → log.info/success/warn/error/dry/detail
 tty             // the terminal, held     → tty.keys/line/live/aside/onExit/title/wrap
 echo            // one output line (stdout, or the GUI's event stream)
-chalk           // core/color.js — follows NO_COLOR, as fli's own output does
+                //   echo.lines(rows, { indent, style }) — a block; false/null rows are dropped
+chalk           // core/color.js — follows NO_COLOR, as fli's own output does; nests, never chains
 
 // On $:
 $.config   // shared mutable state across _steps/

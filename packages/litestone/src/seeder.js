@@ -119,9 +119,27 @@ export function insistedKeys(def) {
     const branches = []
     const flat = n => n.t === 'or' ? (flat(n.a), flat(n.b)) : branches.push(n)
     flat(ast)
-    if (branches.length > 1 &&
-        branches.every(n => n.t === 'isnull' && n.not && n.a.t === 'col' && keys.has(n.a.name)))
-      out.add(branches[0].a.name)
+    if (branches.length < 2) continue
+    // A branch that is nothing but `<key> IS NOT NULL` clauses ANDed together
+    // is enough on its own to satisfy the check, so filling its keys builds a
+    // row the check accepts. The first such branch is taken: for an
+    // at-least-one-of arc that is one key, as before; for an implication —
+    // `kind != 'push' OR (contactId IS NOT NULL AND integrationId IS NOT NULL)`
+    // — it is both keys, which the all-IS-NOT-NULL rule above never read, so
+    // the generated row failed the check and no gate on the model was asked.
+    // A branch with any other clause in it (`b IS NULL`, a comparison) is not
+    // one a key can satisfy alone and is passed over, so an exactly-one arc
+    // keeps its old answer. And a branch the generator satisfies by itself —
+    // a scalar `email IS NOT NULL`, which it fills — means no parent is owed.
+    const conj = n => n.t === 'and'
+      ? [...(conj(n.a) ?? [null]), ...(conj(n.b) ?? [null])]
+      : (n.t === 'isnull' && n.not && n.a.t === 'col' && keys.has(n.a.name) ? [n.a.name] : null)
+    const scalar = n => n.t === 'isnull' && n.not && n.a.t === 'col' && !keys.has(n.a.name)
+    if (branches.some(scalar)) continue
+    for (const b of branches) {
+      const cols = conj(b)
+      if (cols && !cols.includes(null)) { for (const c of cols) out.add(c); break }
+    }
   }
   for (const f of def.fields)
     if (keys.has(f.name) && f.attributes.some(a => a.kind === 'required')) out.add(f.name)

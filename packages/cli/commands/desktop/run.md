@@ -38,9 +38,11 @@ inlined — and it is started with the app's own `api` script on that port. One
 this command started is stopped when the window closes; one already running is
 left alone. A non-local `api` is never started here.
 
-**A port that answers is not proof it is this app's API** (`FJS-740`). The line
-naming the reused origin is the one place that is said; a window showing the
-wrong data with that line above it is a stale server, and `fli ps` names it.
+**A port that answers is not proof it is this app's API** (`FJS-740`). One
+whose listener runs outside this app's directory is refused with its pid named.
+One inside it is reused, and the line naming the reused origin is the one place
+that is said; a window showing the wrong data with that line above it is a
+stale server of this app, and `fli ps` names it.
 
 ```js
 const { desktopBinary, desktopApiTarget, ensureServer, stopServer, surfaceRow } =
@@ -91,7 +93,7 @@ if (!api) {
     })
   } catch (err) {
     log.error(err.message)
-    log.error('Start the API yourself, or run with --no-api to open the window without one.')
+    if (!err.holder) log.error('Start the API yourself, or run with --no-api to open the window without one.')
     process.exit(1)
   }
 }

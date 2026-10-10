@@ -593,6 +593,46 @@ ${SCHEMA.replace('database main { path "./app.db" }', '').replace('  @@db(main)\
   })
 })
 
+describe('under tenancy { strategy row }, a hook\'s enqueue', () => {
+
+  // The fire runs in the row's tenant, but the outbox row a hook writes went
+  // out naming none: the kick happened to be handed the tenant, and the relay's
+  // SWEEP — the delivery for a kick that never ran — dispatched into no tenant
+  // at all, where the app's own work reads nothing (FJS-2508).
+  it('records the row\'s tenant on the outbox row, and the job runs in it', async () => {
+    const schema = `
+tenancy { strategy row  column workspaceId  claim workspaceId }
+${SCHEMA.replace('database main { path "./app.db" }', '').replace('  @@db(main)\n', '')
+  .replace('createdAt + 14d', 'createdAt - 1d')
+  .replace('  id        Int ', '  workspaceId String\n  id        Int ')}
+${OUTBOX.replace('  @@db(main)\n', '')}
+extend model OutboxMessage { @@tenant(none) }
+`
+    const db: any = await createClient({ db: ':memory:', schema })
+    closers.push(() => db.$close())
+    const app = createApp({ db, system: { userId: 'system', role: 'system' } as any }) as any
+    const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
+    app.configure(queue)
+    app.configure(outbox())
+    app.configure(commitments({ cron: '0 0 1 1 *', hooks: {
+      'Order.abandon': async ({ record, enqueue }) => { await enqueue('order-notice', { orderId: record.id }) },
+    } }))
+    const ran: Array<string | null> = []
+    queue.handle('order-notice', async (ctx: { tenantId: string | null }) => { ran.push(ctx.tenantId) })
+    closers.push(() => queue.stop())
+    await app._startForTest()
+
+    await db.asSystem().order.create({ data: { workspaceId: 'acme' } })
+    await app.commitments.sweep()
+    await until('the notice', () => ran.length === 1)
+
+    const [row] = await db.asSystem().outboxMessage.findMany({})
+    expect(row.tenantId).toBe('acme')
+    expect(row.actorId).toBeNull()
+    expect(ran).toEqual(['acme'])
+  })
+})
+
 // ─── refusals ─────────────────────────────────────────────────────────────────
 
 describe('a schema that owes a move with nothing to make it', () => {

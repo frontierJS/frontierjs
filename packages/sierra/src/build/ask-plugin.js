@@ -11,6 +11,9 @@
  *
  * Dev only, and off with the inspector (`mesa: { inspect: false }`): a pick is
  * the only way to ask, so a panel without the inspector could never open.
+ *
+ * `tokenKey` is `junction.tokenKey`: the panel sends the app's token, and an app
+ * that keeps it under its own key would otherwise send none.
  */
 
 import { createRequire } from 'module'
@@ -24,7 +27,7 @@ export function findAskModule(root) {
   try { return createRequire(resolve(root, 'package.json')).resolve(SPECIFIER) } catch { return null }
 }
 
-export function askPlugin() {
+export function askPlugin({ tokenKey } = {}) {
   let inner = null
 
   return {
@@ -35,7 +38,7 @@ export function askPlugin() {
       const mod = findAskModule(config.root)
       if (!mod) return
       try {
-        inner = (await import(pathToFileURL(mod).href)).askPlugin()
+        inner = (await import(pathToFileURL(mod).href)).askPlugin(tokenKey ? { tokenKey } : {})
       } catch (err) {
         config.logger.warn(`[sierra] the ask panel is off — ${SPECIFIER} failed to load: ${err.message}`)
         return

@@ -1,6 +1,6 @@
 ---
 title: dev:web
-description: Start the web app dev server
+description: Start the web app dev server alone
 alias: web-dev
 examples:
   - fli dev:web
@@ -13,7 +13,46 @@ flags:
     defaultValue: false
 ---
 
+Starts the one surface. A `web/` with its own `package.json` runs its own
+`dev`; otherwise the app's script for the surface runs at the root — `web` or
+`dev:web`, whichever the app declares. Running `dev` from inside `web/` there
+would reach the app's `dev`, which starts every surface.
+
+<script>
+import { existsSync, readFileSync } from 'fs'
+import { resolve } from 'path'
+</script>
+
 ```js
-const env = flag.test ? 'NODE_ENV=test ' : ''
-$.exec({ command: `${env}npm run dev --prefix=${$.paths.web}`, dry: flag.dry })
+const { appPorts }     = await import(resolve(global.fliRoot, 'core/ports.js'))
+const { detectRunner } = await import(resolve(global.fliRoot, 'core/db-preflight.js'))
+
+const root   = $.paths.root
+const dir    = $.paths.web
+const runner = detectRunner(root)
+const env    = { ...process.env, ...(flag.test ? { NODE_ENV: 'test' } : {}) }
+
+if (existsSync(resolve(dir, 'package.json'))) {
+  $.exec({ command: `cd ${dir} && ${runner} run dev`, dry: flag.dry, env })
+  return
+}
+
+let manifest = {}
+try {
+  manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+} catch { /* no manifest, so no script either -- refused below */ }
+
+// The port `fli dev` last gave this root, so the surface lands where its
+// siblings expect it.
+const row = appPorts(root, { name: manifest.name, scripts: manifest.scripts })
+  .find(r => r.surface === 'web')
+
+if (!row?.script) {
+  log.error(`No script starts web/ here — declare \`web\` or \`dev:web\` in ${resolve(root, 'package.json')}`)
+  process.exit(1)
+}
+
+if (row.env) env[row.env] = String(row.port)
+log.info(`${runner} run ${row.script} — ${row.label} ${row.port}`)
+$.exec({ command: `cd ${root} && ${runner} run ${row.script}`, dry: flag.dry, env })
 ```

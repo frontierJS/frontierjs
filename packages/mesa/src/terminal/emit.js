@@ -27,7 +27,7 @@
 import { xNode, Q, PRESERVE_WHITESPACE } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline } from './tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind } from './tags.js'
 
 const IDENT = /^[A-Za-z_$][\w$]*$/
 
@@ -48,7 +48,6 @@ function spelling(u) {
     case 'mesa-element': return `<mesa:${n.elArg}>`
     case 'slot':         return n.type === 'node' ? '<slot>' : '{#slot}'
     case 'await':        return '{#await}'
-    case 'key':          return '{#key}'
     case 'snippet':      return '{#snippet}'
     case 'fragment':     return '{#fragment}'
     case 'virtual-each': return '{#virtual each}'
@@ -90,15 +89,15 @@ function directiveShape(name) {
 const blank = (n) => n.kind === 'comment' ||
   (n.kind === 'text' && n.parts.every((p) => p.kind === 'static' && !p.value.trim()))
 
-/** The attributes `tags.js` says a tag cannot be painted without, that `n` lacks. */
-const missing = (n) => (TERMINAL_TAGS[n.tag]?.requires ?? []).filter((a) => !n.attrs.some((x) => x.name === a))
+/** The attribute `tags.js` says an image cannot be painted without, if `n` lacks it. */
+const missing = (n) => [TERMINAL_TAGS[n.tag]?.text].filter((a) => a && !n.attrs.some((x) => x.name === a))
 const paints = (n) => !!TERMINAL_TAGS[n.tag] && !missing(n).length
 
 const ariaHidden = (n) => n.attrs.some((a) => a.name === 'aria-hidden' && a.value === 'true')
 
 /**
  * The elements the terminal leaves out rather than refuses: a tag missing
- * from `tags.js`, or lacking an attribute it `requires`, on an element that
+ * from `tags.js`, or an image lacking its `text` attribute, on an element that
  * is, or sits inside, a static
  * `aria-hidden="true"`. The author has said a reader needs nothing there —
  * the icon in an alert, a sort arrow beside a header — so the terminal paints
@@ -129,8 +128,9 @@ export function terminalDropped(ir) {
  */
 const isField = (n) => ['input', 'textarea'].includes(TERMINAL_TAGS[n.tag]?.role)
 // A `<progress>`'s children are the fallback a browser shows only when it
-// cannot draw the bar, so nothing in them is built or refused.
-const fallbackOnly = (n) => TERMINAL_TAGS[n.tag]?.role === 'progress'
+// cannot draw the bar, and an `<svg>`'s are drawing, which a terminal shows
+// as the image's text; nothing in either is built or refused.
+const childless = (n) => ['progress', 'image'].includes(TERMINAL_TAGS[n.tag]?.role)
 // The roles a person changes the value of, so the only ones a `bind:value`
 // hears back from.
 const CONTROLS = ['input', 'textarea', 'select']
@@ -174,6 +174,27 @@ function spacesIn(children) {
 const LEADING_NEWLINE = /^\r?\n/
 const TRAILING_NEWLINE = /\r?\n$/
 
+/**
+ * An `<input>` is the control its `type` names (`INPUT_TYPES`). A static type
+ * the table lacks is refused here, and a live one when it is written. A bind
+ * that does not fit the type is refused too: `checked` and `group` are a
+ * check's, `value` a field's. A live `type` cannot be judged here, so the
+ * runtime refuses that pairing when it binds.
+ */
+function inputOffenses(n, add) {
+  const type = n.attrs.find((a) => a.name === 'type')
+  if (typeof type?.value === 'object') return
+  const kind = inputKind(type?.value)
+  if (!kind) {
+    add(`type="${type.value}" on <input>`, `type="${type.value}" on <input>`, n.loc)
+    return
+  }
+  for (const b of n.binds) {
+    if ((b.name === 'value') === (kind === 'field')) continue
+    add(`bind:${b.name} on <input type="${type?.value ?? 'text'}">`, `bind:${b.name} on <input type="${type?.value ?? 'text'}">`, b.loc)
+  }
+}
+
 const elementOffenses = (n, add) => {
   for (const d of n.directives) add(d.name, directiveShape(d.name), d.loc)
   for (const h of n.handlers) if (!TERMINAL_EVENTS[h.event]) add(`on:${h.event}`, `on:${h.event}`, h.loc)
@@ -213,13 +234,13 @@ export function terminalOffenses(ir) {
         }
         if (!CONTROLS.includes(TERMINAL_TAGS[n.tag]?.role)) {
           for (const b of n.binds) add(`bind:${b.name} on <${n.tag}>`, 'bind: on a non-control', b.loc)
-        }
+        } else if (n.tag === 'input') inputOffenses(n, add)
         if (isField(n) && !hasValue(n) && liveText(n)) {
           add(`live text in <${n.tag}> without value=`, `live text in <${n.tag}>`, n.loc)
           return false
         }
         elementOffenses(n, add)
-        return fallbackOnly(n) ? false : undefined
+        return childless(n) ? false : undefined
       // A tag that is a read is checked against the same table when it is
       // built, naming the tag; only a literal one can be refused here.
       case 'dynamic-element': {
@@ -252,6 +273,7 @@ export function terminalOffenses(ir) {
       case 'component':
       case 'if':
       case 'each':
+      case 'key':
       case 'snippet':
       case 'render':
       case 'const':
@@ -364,13 +386,19 @@ export function buildTerminal(ctx) {
     // `n.styles` and `n.classes` are CSS, and a terminal paints no CSS: they
     // are inert here as a static `style` or `class` and the scoped rules are.
     if (preserves(n)) { preEdges(n, startsPre, endsPre); inPre++ }
-    if (!field && !fallbackOnly(n)) emitChildren(n.children, el, ind)
+    if (!field && !childless(n)) emitChildren(n.children, el, ind)
     if (preserves(n)) inPre--
     for (const h of n.handlers) {
       dep(h.expr)
       line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)
     }
-    for (const b of n.binds) line(ind, `$$tui.bind(${el}, ${q1(b.name)}, ${b.getter}, ${b.setter});`)
+    for (const b of n.binds) {
+      if (b.name !== 'group') { line(ind, `$$tui.bind(${el}, ${q1(b.name)}, ${b.getter}, ${b.setter});`); continue }
+      const v = b.value
+      if (typeof v === 'object' && v) dep(v.expr)
+      const value = typeof v === 'string' ? q1(htmlEntitiesToText(v)) : v && typeof v === 'object' ? `(${v.expr.code})` : `${el}.value`
+      line(ind, `$$tui.bind(${el}, 'group', ${b.getter}, ${b.setter}, () => ${value});`)
+    }
     if (n.ref) line(ind, `${n.ref}(${el});`)
     // The DOM path's owner, handed the renderable: it waits for mount the
     // way `$.onMount` does, so an attachment written for the DOM throws when
@@ -455,6 +483,14 @@ export function buildTerminal(ctx) {
       line(ind + 1, i < blocks.length - 1 ? '},' : '}')
     })
     line(ind, ']);')
+  }
+
+  const emitKey = (n, parent, ind) => {
+    const m = marker(parent, ind)
+    dep(n.key)
+    line(ind, `$$tui.keyBlock(${m}, () => (${n.key.code}), () => {`)
+    emitFragment(n.children, ind + 1)
+    line(ind, '});')
   }
 
   const emitEach = (n, parent, ind) => {
@@ -555,6 +591,7 @@ export function buildTerminal(ctx) {
       case 'comment':   return
       case 'if':        return emitIf(n, parent, ind)
       case 'each':      return emitEach(n, parent, ind)
+      case 'key':       return emitKey(n, parent, ind)
       case 'component': return emitComponent(n, parent, ind)
       case 'slot':      return emitSlot(n, parent, ind)
       case 'render':    return emitRender(n, parent, ind)

@@ -128,8 +128,30 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
       // claiming the same name used to win silently and leave this one dead.
       // send() warns from an afterCommit effect (FJS-D659); the core stays
       // junction-free, so the plugin is where it learns where it runs.
+      //
+      // It also writes `who` (`FJS-D848`): whose credential a per-caller target
+      // spends is the call in progress — the tenant junction scoped it to, or
+      // the one Caravan re-bound for a job, and the principal — read here and
+      // never taken from the caller. A request stating its own `who` is
+      // refused: a tenant passed as an argument is a tenant a bug can choose.
+      // Only `grant` is the caller's, since nothing ambient says which of an
+      // account's logins to a vendor one send means.
       const send = instance.send
-      instance.send = ((req) => { warnEffectInDrain('app.conduit.send()'); return send(req) }) as IConduit['send']
+      instance.send = ((req) => {
+        warnEffectInDrain('app.conduit.send()')
+        if (req.who !== undefined)
+          throw new TypeError(
+            `[conduit] app.conduit.send({ target: '${req.target}' }) states \`who\`. Under junction whose credential a ` +
+            `send spends is read from the call in progress (app.runAs, or the tenant a job was dispatched for); ` +
+            `name one of several logins with \`grant\`.`,
+          )
+        const who = {
+          tenant:    app.tenant(),
+          principal: requestMeta()?.user?.userId ?? null,
+          grant:     req.grant ?? null,
+        }
+        return send({ ...req, who })
+      }) as IConduit['send']
       app.claim('conduit', instance)
 
       // Wire into Junction's /metrics endpoint. Called straight rather than

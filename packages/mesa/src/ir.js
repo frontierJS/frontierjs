@@ -77,9 +77,11 @@ function styleValue(ctx, p, prop) {
  *  and `attachments` the `{@attach}` expressions, both handed the target's own
  *  node — a DOM element or a terminal renderable. An attachment may write
  *  state through a callback in its options, so it is lowered as a write.
- *  `binds` holds a plain `bind:value`, `{ name, getter, setter }` from
- *  `elementBindTarget`; any other element `bind:`, and one with a modifier,
- *  stays a directive for a target to refuse by name. */
+ *  `binds` holds a plain `bind:value` or `bind:checked`, `{ name, getter,
+ *  setter }` from `elementBindTarget`, and a `bind:group` on a top-level `let`
+ *  with `value`, its element's `value` attribute as written; any other element
+ *  `bind:`, and one with a modifier, stays a directive for a target to refuse
+ *  by name. */
 function lowerAttributes(ctx, n) {
   const attrs = [], handlers = [], directives = [], styles = [], classes = [], attachments = [], binds = []
   let ref = null
@@ -120,10 +122,20 @@ function lowerAttributes(ctx, n) {
       classes.push({ name: cls, expr: read(ctx, classSource(p, cls)), loc })
       continue
     }
-    if (name === 'bind:value' || name === ':value') {
-      const target = elementBindTarget(ctx, 'value', p.value ? unwrapExp(p.value) : 'value')
-      if (target) binds.push({ name: 'value', ...target, loc })
+    if (name === 'bind:value' || name === ':value' || name === 'bind:checked') {
+      const prop = name === 'bind:checked' ? 'checked' : 'value'
+      const target = elementBindTarget(ctx, prop, p.value ? unwrapExp(p.value) : prop)
+      if (target) binds.push({ name: prop, ...target, loc })
       continue
+    }
+    // The DOM path takes only a top-level `let` here; anything else stays a
+    // directive, refused by name rather than bound on one target alone.
+    if (name === 'bind:group') {
+      const v = p.value ? unwrapExp(p.value) : null
+      if (v && ctx.setters?.[v] && ctx.accessors?.[v]) {
+        binds.push({ name: 'group', getter: `() => (${ctx.accessors[v]})`, setter: ctx.setters[v], loc })
+        continue
+      }
     }
     if (name === 'this' || name[0] === ':' || DIRECTIVE_PREFIXES.some((pre) => name.startsWith(pre))) {
       directives.push({ name, raw, loc })
@@ -139,6 +151,8 @@ function lowerAttributes(ctx, n) {
     }
     attrs.push({ name, value: p.type === 'attribute' ? true : p.value })
   }
+  // A group bind reads its element's value each time, the DOM path's `getVal`.
+  for (const b of binds) if (b.name === 'group') b.value = attrs.find((a) => a.name === 'value')?.value ?? null
   return { attrs, handlers, directives, styles, classes, ref, attachments, binds }
 }
 
@@ -337,6 +351,13 @@ function lowerIf(ctx, n) {
   }
 }
 
+/** `{#key}`: its children are rebuilt whenever `key` reads a different
+ *  value (`===`), the DOM path's rule. */
+function lowerKey(ctx, n) {
+  const rx = n.value.match(/^#key\s+(.+)$/s)
+  return { kind: 'key', loc: ctx.posOf(n.start), key: read(ctx, rx?.[1]?.trim() ?? ''), children: lowerChildren(ctx, n.body) }
+}
+
 function lowerEach(ctx, n) {
   const header = parseEachHeader(n.value)
   const { arrayName, itemName, indexName, keyName, isDestructure, destructurePattern, patNames } = header
@@ -460,8 +481,9 @@ function lowerNode(ctx, n) {
     }
     case 'snippet':
       return lowerSnippet(ctx, n, `$$snippet_${n.name}`)
-    case 'await':
     case 'key':
+      return lowerKey(ctx, n)
+    case 'await':
     case 'slot':
     case 'fragment':
     case 'virtual-each':
@@ -537,6 +559,7 @@ export function eachNode(children, visit) {
       case 'dynamic-element':
       case 'snippet':
       case 'portal':
+      case 'key':
         eachNode(n.children, visit)
         break
       case 'component':

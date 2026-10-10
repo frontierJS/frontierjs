@@ -38,7 +38,11 @@ const USAGE = `
     const row: { id: number; name: string } | null = sys
     // @ts-expect-error -- a column the model lacks
     await db.employee.findFirst({ where: { nope: 1 } })
-    return { ...one, ...row }
+    // Members the generated interface does not list still reach it from the
+    // package's own (FJS-2502). The scaffold's retention job calls the first.
+    const swept: number = (await db.asSystem().$retain()).reduce((n, r) => n + r.removed, 0)
+    const held: number = await db.$lock('k', async () => 1)
+    return { ...one, ...row, swept, held }
   }
 `
 

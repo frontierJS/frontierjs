@@ -357,6 +357,17 @@ describe('the clean app', () => {
     // And typescript, the parser `command-resolves` reads with — a scaffolded
     // app installs it as a devDependency.
     symlinkSync(join(import.meta.dir, '..', '..', '..', 'node_modules', 'typescript'), join(root, 'node_modules', 'typescript'))
+    // And a preview worktree whose branch is its base, so `preview-ui-only`
+    // grades an empty diff rather than skipping a tree that is not one.
+    const git = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+    git('init', '-q', '-b', 'main')
+    writeFileSync(join(root, '.git', 'info', 'exclude'), 'node_modules\n')
+    git('add', '.')
+    git('-c', 'user.email=t@example.test', '-c', 'user.name=T', 'commit', '-q', '-m', 'clean')
+    git('remote', 'add', 'origin', root)
+    git('fetch', '-q', 'origin')
+    git('remote', 'set-head', 'origin', 'main')
+    writeFileSync(join(root, '.git', 'fjs-preview'), '')
     const { findings, ran, skipped } = runChecks({ root })
 
     expect(findings).toEqual([])

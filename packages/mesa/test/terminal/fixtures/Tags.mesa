@@ -13,5 +13,6 @@
   </table>
   <hr />
   <dl><dt>Term</dt><dd>meaning</dd></dl>
+  <fieldset><legend>Group</legend>Grouped</fieldset>
   <p>Press <kbd>Enter</kbd> on <button on:click={add}>Add</button></p>
 </div>

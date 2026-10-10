@@ -170,7 +170,7 @@ export function createSierraViteConfig(config = {}) {
 
   sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static' }))
   // Dev only, when the app has @frontierjs/cli: shift+alt-click asks Claude.
-  if (inspectOn(mesaOptions)) sierraPlugins.push(askPlugin())
+  if (inspectOn(mesaOptions)) sierraPlugins.push(askPlugin({ tokenKey: config.junction?.tokenKey }))
 
   // Build the base Vite config per target
   const baseConfig = buildBaseConfig(config, sierraPlugins, userPlugins)

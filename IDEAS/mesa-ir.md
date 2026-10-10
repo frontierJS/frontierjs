@@ -1337,6 +1337,128 @@ with the terminal backend as its second consumer, not ahead of it.
    moves, and that PageDown does nothing under one, is asserted by nothing
    (`none`). Adjudication: none in tension. Tier: Assessment, with the
    scroll-versus-clip call itself open to the owner's word.
+   *Slice 27 2026-10-10, the month is a table (`FJS-2488`; a kit change,
+   no mesa change):* the DatePicker's days were one CSS grid with the
+   weekday labels as its first seven items, and a terminal reads no CSS,
+   so the month was a column of days. The row's candidate, a week `<div>`
+   with `display: contents`, was priced and cut: a box of buttons is a
+   wrapping flow, `[ 1 ]` and `[ 28 ]` differ in width so the columns
+   drift, and the label spans still join into one run. The month is now a
+   `<table>` (weekday `<th scope="col">`, a `<tr>` per week, a `<td>` per
+   day), which the terminal already lays out as rows of equal cells, so
+   every day starts at its weekday's column. In a browser it is still the
+   one grid (`thead`, `tbody`, `tr` are `display: contents`), and the
+   band's rules find a row's edge by `td:first-child`/`:last-child` and
+   the preview's first day by `:has()` siblings instead of `nth-child(7n)`
+   over a flat list. Proved by `verify:tui`: the week holding the 14th
+   reads seven days on one row at the labels' columns, and it goes red on
+   the old markup. The ui datepicker specs pass 86, with new pitch and
+   row-edge assertions: 2 of 3 breaks went red, and the one that stayed
+   green showed a `td { display: grid }` rule doing nothing, so it was
+   cut. The ui suite passes 1320 and `example verify:ui` 35. Routes stay
+   28 of 34.
+   *The nine for slice 27, answered before the first edit:* (1) origin:
+   none new. (2) concept: none; a table is HTML's word for a month, and
+   the week-div road would have needed a terminal layout rule. (3)
+   complexity: the problem's; the weeks lived only in CSS. (4)
+   predictability: the calendar lays out like every other table on the
+   terminal, and a screen reader hears a day under its weekday. (5)
+   derived: alignment comes from the existing `tr`/`td` rule. (6) owner:
+   the terminal tag table, unchanged. (7) boundary: the tag table, which
+   refuses at compile. (8) failure: no new path. (9) must stay true: a
+   week on one terminal row under its labels (`verify:tui`), and the
+   browser grid unchanged (the ui datepicker specs). The hover preview's
+   first day across a row boundary is asserted by nothing (`none`).
+   Adjudication: none in tension. Tier: Assessment.
+   *Slice 28 2026-10-10, `<svg>` is an image:* three routes stopped at
+   Avatar's person icon and `/` at Sparkline. The icon was the kit's one
+   decorative svg without a static `aria-hidden="true"` (its span carries
+   the name), so the kit fix was that attribute and the terminal leaves it
+   out as it leaves out every other icon. Sparkline is content: a live
+   `aria-label`, and `aria-hidden` only when it has none. So `<svg>` joins
+   `<img>` under role `image`, and the table's `requires: ['alt']` became
+   one `text` attribute per image tag (`alt`, `aria-label`) that both the
+   compiler's refusal and the runtime's write read. An svg paints its
+   label as a browser's screen reader reads it, takes no room while the
+   label is empty, never builds its drawing (`childless`, which already
+   held `<progress>`'s fallback), and without an `aria-label` is refused
+   by name, or left out inside a static `aria-hidden`. A name from a
+   `<title>` child or `aria-labelledby` is refused for now; no corpus file
+   needs one. `image.spec` 12/12 and 3 breaks red; the stock unlowered tag
+   in `terminal-emit.test.js` and `verify:tui`'s fixture moved from `<svg>`
+   to `<iframe>`. Corpus moved only the edited fixture. Report 417/559
+   (75%), ui 103/137. Routes 28 → 31 of 34; `/` paints `Orders per day
+   over the last 7 days` where the chart is.
+   *The nine for slice 28, answered late, after the drive was green:* (1)
+   origin: one fewer, since the image's text attribute is one table field
+   read by compiler and runtime, where the runtime named `alt` and `img`
+   itself. (2) concept: none; an image's text equivalent is slice 16's
+   rule. (3) complexity: the problem's. (4) predictability: an svg reads
+   on the terminal as it reads to a screen reader. (5) derived: yes,
+   `missing` and `set_attribute` both read `text`. (6) owner: the tag
+   table. (7) boundary: the table, refusing at compile. (8) failure: a
+   chart shows its label, never its shape; that loss is the label's
+   author's to fill. (9) must stay true: an svg paints its label or
+   nothing, and an unlabeled one is refused or dropped; `image.spec` and
+   the `aria-hidden` drop test fail when either stops. That the kit's
+   decorative svgs keep a STATIC `aria-hidden` is asserted only by the
+   routes' `--list` blocker going back to `<svg>` (`none` per component).
+   Adjudication: *ergonomics vs. strictness*, decided as slice 16 did: an
+   unlabeled svg is refused rather than inert, since dropping it in
+   silence loses content a reader needed. Tier: Assessment.
+   *Slice 29 2026-10-10, `{#key}`, `touchstart`, `<details>` and
+   `<legend>` (the owner said "go" to slice 28's three):* `{#key}` lowers
+   to an IR `key` node, which the terminal emits through the `keyBlock`
+   `<mesa:element this>` already used: a different key (`===`) rebuilds,
+   an equal one that re-reads keeps the instance. That moved
+   `/automations/flows/:flowId/` to FlowCanvas's `on:pointerdown`, a
+   graph editor's pointer and wheel handlers, left for its own call.
+   `touchstart` is heard and never sent, beside `scroll`, `error` and the
+   drop events: a terminal has no touch, and every kit listener sits
+   beside a `mousedown`. `/products/` opened, and its price Slider paints
+   only its numbers, since a `<div role="slider" tabindex="0">` is an
+   empty box the terminal never focuses; filed `FJS-2505` (A: `tabindex`
+   focuses and a widget role paints what a screen reader says; B: the kit
+   moves to `<input type="range">`). `<details>` shows its first
+   `<summary>` and lays the rest out in a body box of its own, shown only
+   while `open`, so a run's own hiding never shows a closed body's
+   content; the summary is focusable, toggles on Enter, Space or a press
+   unless its `click` is prevented, inverts while focused (the link's cue,
+   now one `invertWhileFocused`) and paints a browser's triangle, `▸`/`▾`.
+   `toggle` arrives a task later with `oldState`/`newState`, coalesced
+   and dropped when the changes cancel out. `<legend>` is a plain line,
+   as a browser's default sheet gives it no weight and a terminal
+   fieldset has no border to set it in. Specs: `key` 5/5 (2 breaks red),
+   `details` 13/13 (8 breaks red, two of them only after the frame was
+   widened, since a wrapped log line hid the third entry), `press` gains
+   a no-touch row (1 break red, after `row 1` stopped matching `row 11`),
+   `tags` a legend row. Drive 327, vitest 2283, corpus moved only
+   fixtures (baseline `s29base`), `verify:tui` green. Report 430/562
+   (77%), ui 107/137. Routes 31 -> 33 of 34. Found on the way and filed
+   `FJS-2506`: `type` is inert on `<input>`, so a checkbox or radio paints
+   as a typable text field showing its `value` (`/settings/`'s Theme
+   radios) and a password shows what is typed (`/sign-in/`). Gaps: a
+   `<details>` with no `<summary>` shows nothing to open it, where a
+   browser writes *Details*; no corpus file has one. The `toggle` a
+   static `open` sends on build is the platform's and asserted by nothing.
+   *The nine for slice 29, answered after the drive was green:* (1)
+   origin: one fewer, since the link's focus cue and the summary's are one
+   function and `{#key}` reuses `keyBlock`. (2) concept: none;
+   `<details>`, `toggle`, `touchstart` and `{#key}` are the platform's and
+   Mesa's words. (3) complexity: the problem's. (4) predictability: a
+   disclosure opens and closes as a browser's, and a key resets as on the
+   DOM. (5) derived: the triangle is read from `open` when the summary
+   lands and on each change. (6) owner: the tag table, `set_attribute`
+   for `open` and `activate` for the summary's default, the owners every
+   other control already uses. (7) boundary: the table, refusing at
+   compile. (8) failure: a touch listener waits for nothing, *ergonomics
+   vs. strictness* decided as `scroll` was, since its `mousedown` twin
+   does the work; FJS-2505 and FJS-2506 are where a lowered route still
+   paints a control wrong, filed rather than refused here because the
+   slices that close them are the fix. (9) must stay true: a closed body
+   is never laid out or reached by Tab, a summary toggles unless its click
+   is prevented, and a key rebuilds only on a different value; `details`,
+   `key` and `press` fail when any stops. Tier: Assessment.
    *The nine for slice 21, answered before the `<pre>`/`{@html}` code
    (the focus half and the inline tags had landed first):* (1) origin:
    one fewer copy. Entity decoding has one home that both readers import,

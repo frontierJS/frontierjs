@@ -392,8 +392,11 @@ export async function fireCommitment(
         afterCommit: (fn) => { later.push(fn) },
         // enqueueOutbox reads four things off a call context; a fire is not a
         // call, so it is handed exactly those, and its refusals name the key.
+        // The fire's tenant rides on `locals` as a call's does, so the row
+        // records it (`FJS-2508`): under `strategy row` the relay's sweep has
+        // nothing else to dispatch a missed kick into.
         enqueue: (name, payload, o) => enqueueOutbox({
-          locals: { db: tx }, service: 'commitments', method: `${model}.${job.transition}`,
+          locals: { db: tx, tenantId: tenant }, service: 'commitments', method: `${model}.${job.transition}`,
           app: { outbox }, auth: undefined, _outbox: rows,
         } as unknown as ServiceContext, name, payload, { actor: null, ...o }),
       })

@@ -16,6 +16,13 @@ flags:
 Runs the project's own `dev` script with the right runner, on this app's own
 ports, after two preflights.
 
+**A `dev` that only runs surface scripts side by side is run by fli, one child
+per surface, each line behind its surface's name** (`api │`, `web │`) —
+`core/dev-run.js`. Two servers sharing a terminal unlabeled made a vite error
+read as the API's. Any other `dev` (a `&&` chain, a command that is not a
+surface script, a single surface) runs as written. `composedSurfaces` in
+`core/ports.js` decides.
+
 **An app the ports table does not name gets a slot of its own.** Every app
 `fli new` writes is project 0, so two of them derive the same 8000/8100. `fli
 dev` gives each app directory a slot in `~/.fli/sessions.lock` and hands its
@@ -71,8 +78,10 @@ const root = $.paths.root
 
 const { warnIfDatabaseEmpty, detectRunner } =
   await import(resolve(global.fliRoot, 'core/db-preflight.js'))
-const { claimSession, busyPorts } =
+const { claimSession, busyPorts, composedSurfaces } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
+const { runSurfaces } =
+  await import(resolve(global.fliRoot, 'core/dev-run.js'))
 
 let manifest = {}
 try {
@@ -101,15 +110,16 @@ if (flag.check) {
   const busy = await busyPorts(session.rows)
 
   if (busy.length && !flag.dry) {
-    log.error('')
-    log.error('  Port already in use:')
-    log.error('')
-    for (const b of busy) log.error(`    ${b.port}  ${b.label}${b.script ? `  (bun run ${b.script})` : ''}`)
-    log.error('')
-    log.error('  Most likely a dev server from an earlier run. A stale API also holds')
-    log.error('  the old database open, so `db:reset` will appear to do nothing while')
-    log.error('  it is still running. `fli ps` names the process.')
-    log.error('')
+    log.error(`Port${busy.length === 1 ? '' : 's'} already in use`)
+    echo.lines([
+      '',
+      ...busy.map(b => `${chalk.bold(String(b.port))}  ${b.label}${b.script ? chalk.dim(`  (bun run ${b.script})`) : ''}`),
+      '',
+      chalk.dim('Most likely a dev server from an earlier run. A stale API also holds'),
+      chalk.dim('the old database open, so `db:reset` will appear to do nothing while'),
+      chalk.dim('it is still running.') + ' fli ps ' + chalk.dim('names the process.'),
+      '',
+    ], { indent: 2 })
     process.exit(1)
   }
 
@@ -122,8 +132,17 @@ if (flag.check) {
 }
 
 const runner = detectRunner(root)
-
-log.info(`${runner} — running: ${runner} run dev`)
 // `env:` and never an assignment to process.env, which a child under bun does not see.
-$.exec({ command: `cd ${root} && ${runner} run dev`, dry: flag.dry, env: { ...process.env, ...session.vars } })
+const env = { ...process.env, ...session.vars }
+
+const composed = composedSurfaces(manifest.scripts, session.rows)
+if (!composed) {
+  log.info(`${runner} run dev`)
+  $.exec({ command: `cd ${root} && ${runner} run dev`, dry: flag.dry, env })
+  return
+}
+
+log.info(composed.map(r => `${runner} run ${r.script}`).join(chalk.dim('  ·  ')))
+if (flag.dry) return
+process.exitCode = await runSurfaces({ root, runner, rows: composed, env, echo, onExit: tty.onExit })
 ```

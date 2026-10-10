@@ -415,6 +415,56 @@ describe('branches', () => {
     expect(await wb.fork(b.id)).toEqual({ refused: expect.stringContaining('itself a branch') })
   })
 
+  test('a preview fork: settings on the checkout, the marker in the branch\'s git dir, its web port claimed', async () => {
+    const lock = join(tmp, 'preview-sessions.lock')
+    const wb = createWorkbench({ dir: join(tmp, 'wb-preview'), portsLock: lock })
+    const { dir, git } = gitRepo('preview')
+    mkdirSync(join(dir, 'app', 'web'), { recursive: true })
+    mkdirSync(join(dir, 'app', 'db'), { recursive: true })
+    writeFileSync(join(dir, 'app', 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
+    writeFileSync(join(dir, 'app', 'package.json'), '{ "name": "preview-app" }\n')
+    writeFileSync(join(dir, 'app', 'web', 'index.html'), '<p>hi</p>\n')
+    git('add', 'app')
+    git('commit', '-qm', 'app')
+    const parent = wb.pin(dir)
+    if (!('pin' in parent)) throw new Error(parent.refused)
+    const id = parent.pin.id
+
+    expect(await wb.fork(id, { preview: true })).toEqual({ refused: expect.stringContaining('no preview settings') })
+    const settings = { projectId: 'p1', app: 'app', domain: '*.Preview.Example.test', apiUrl: 'https://api.example.test/v1', serverId: 's1' }
+    expect(wb.configure(id, { preview: { ...settings, app: '.' } })).toEqual({ refused: expect.stringContaining('has no web/') })
+    expect(wb.configure(id, { preview: { ...settings, app: '../x' } })).toEqual({ refused: expect.stringContaining('not a directory inside') })
+    expect(wb.configure(id, { preview: { ...settings, domain: 'nodot' } })).toEqual({ refused: expect.stringContaining('not a domain') })
+    expect(wb.configure(id, { preview: { ...settings, apiUrl: 'ftp://x' } })).toEqual({ refused: expect.stringContaining('API origin') })
+    expect(wb.configure(id, { preview: settings })).toMatchObject({
+      preview: { projectId: 'p1', app: 'app', domain: 'preview.example.test', apiUrl: 'https://api.example.test', serverId: 's1' },
+    })
+
+    expect(await wb.fork(id, { slug: 'not_a_label', preview: true })).toEqual({ refused: expect.stringContaining('hostname label') })
+    const r = await wb.fork(id, { slug: 'try', preview: true })
+    if (!('pin' in r)) throw new Error(r.refused)
+    const b = r.pin
+    const marker = execFileSync('git', ['-C', b.path, 'rev-parse', '--path-format=absolute', '--git-path', 'fjs-preview'], { encoding: 'utf8' }).trim()
+    expect(existsSync(marker)).toBe(true)
+    expect(marker.startsWith(b.path)).toBe(false)
+    // The carried files are the snapshot's; the marker added nothing to the tree.
+    expect(execFileSync('git', ['-C', b.path, 'status', '--porcelain'], { encoding: 'utf8' })).toBe('')
+
+    const { portFor, readLock } = await import('@frontierjs/cli/core/ports.js')
+    expect(b.opened).toEqual({ port: await portFor(join(b.path, 'app'), 'fe', { env: 'dev', lockFile: lock }) })
+    expect(Object.keys(readLock(lock))).toContain(join(b.path, 'app'))
+    expect(b.preview).toBeNull()
+    expect(wb.configure(b.id, { preview: settings })).toEqual({ refused: expect.stringContaining('is a branch') })
+
+    // An ordinary fork of the same checkout is no preview.
+    const plain = await forked(wb, id, 'plain')
+    expect(plain.opened).toBeNull()
+    expect(existsSync(execFileSync('git', ['-C', plain.path, 'rev-parse', '--path-format=absolute', '--git-path', 'fjs-preview'], { encoding: 'utf8' }).trim())).toBe(false)
+
+    await wb.archive(b.id, { discard: true })
+    expect(Object.keys(readLock(lock))).not.toContain(join(b.path, 'app'))
+  })
+
   test('a clean parent is cut at HEAD, and the diff reads against the base', async () => {
     const wb = createWorkbench({ dir: join(tmp, 'wb-clean') })
     const { dir, git } = gitRepo('clean')

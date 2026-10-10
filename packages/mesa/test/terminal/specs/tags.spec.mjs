@@ -1,5 +1,6 @@
 /*
- * tags — `fixtures/Tags.mesa`: a table, a rule, a definition list and a key.
+ * tags — `fixtures/Tags.mesa`: a table, a rule, a definition list, a
+ * legend and a key.
  *
  * A terminal has no auto table layout, so a cell takes an equal share of its
  * row and the columns line up because every row divides the same width the
@@ -22,6 +23,7 @@ export async function run(t) {
   t.expectFrame(before, ['Name', 'Qty', 'Widget', '3', '────', 'Term', 'meaning', 'Press', 'Enter', '[ Add ]'])
   t.is(col(before, '3'), col(before, 'Qty'), 'a body cell sits under its header')
   t.is(col(before, 'meaning'), col(before, 'Term') + 2, '<dd> is indented under its <dt>')
+  t.ok(/^Group *\nGrouped/m.test(before), 'a <legend> is a line of its own above its group')
 
   await t.tab()
   await t.enter()

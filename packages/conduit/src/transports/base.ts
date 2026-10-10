@@ -10,6 +10,7 @@ import type {
   ConduitResult,
   ConduitChunk,
   ConduitError,
+  CredentialCaller,
   CredentialResolver,
   Protocol,
   TargetDescriptor
@@ -185,11 +186,15 @@ export abstract class BaseTransport {
     // Filled with the secret these headers carry, so a 401 can name the one
     // the target refused to `CredentialResolver.invalidate`.
     spent?:  { value?: string }
+    // Whose credential a `per_caller` target spends (`FJS-D848`).
+    who?:    CredentialCaller
   } = {}): Promise<Record<string, string>> {
     const auth = this.descriptor.auth
     if (auth.type === 'none') return {}
 
-    const secret = await this.secret(auth.ref)
+    const secret = auth.per_caller
+      ? await this.secretFor(auth.ref, ctx.who)
+      : await this.secret(auth.ref)
     if (ctx.spent) ctx.spent.value = secret
 
     switch (auth.type) {
@@ -235,6 +240,33 @@ export abstract class BaseTransport {
       throw new CredentialError(this.descriptor.id, ref)
     }
     return value
+  }
+
+  // A per-caller ref is never asked of get(): that would answer the
+  // process's credential, or the ambient caller's cached under the ref alone
+  // (`FJS-2232`). No caller named is no credential — put() already refused a
+  // resolver without getFor, so the missing method here is a resolver swapped
+  // after registration, and it fails closed the same way.
+  private async secretFor(ref: string, who: CredentialCaller | undefined): Promise<string> {
+    const value = who && this.credentials.getFor ? await this.credentials.getFor(ref, who) : null
+    if (value === null || value === undefined || value === '') {
+      throw new CredentialError(this.descriptor.id, ref, who ? undefined : 'the send names no caller')
+    }
+    return value
+  }
+
+  // Forget a refused credential, for the caller it was resolved for.
+  protected invalidateSpent(value: string, who: CredentialCaller | undefined): boolean {
+    const auth = this.descriptor.auth
+    if (auth.type === 'none') return false
+    if (auth.per_caller) {
+      if (!who || !this.credentials.invalidateFor) return false
+      this.credentials.invalidateFor(auth.ref, value, who)
+      return true
+    }
+    if (!this.credentials.invalidate) return false
+    this.credentials.invalidate(auth.ref, value)
+    return true
   }
 }
 

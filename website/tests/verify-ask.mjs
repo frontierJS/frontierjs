@@ -10,7 +10,9 @@
  * The site is a scratch one under tests/tmp/, served by the same `siteKit()`
  * config `bun run dev` uses, so nothing in site/ is touched. Sierra turns the
  * panel on (`src/build/ask-plugin.js`) and this config is not changed at all:
- * the fake is reached the way the real one is, as `claude` on PATH.
+ * the fake is reached the way the real one is, as `claude` on PATH. So is a
+ * stand-in `gh`, which Submit calls; the scratch site is its own git repo with
+ * a bare repo as its origin, so a push goes nowhere real.
  *
  *   bun tests/verify-ask.mjs           a fake `claude` that makes the edit itself
  *   bun tests/verify-ask.mjs --real    the real CLI — spends up to $2 a run
@@ -57,6 +59,17 @@ const SOURCE = `---\ntitle: Ask drive\n---\n<script>\n  import Lede from '../par
 const LEDE_SOURCE = `<h2 id="lede">${LEDE_BEFORE}</h2>\n`
 writeFileSync(ROUTE, SOURCE)
 writeFileSync(LEDE, LEDE_SOURCE)
+
+// Its own repo, so which branch the panel sees is this drive's and not the
+// checkout's it happens to run in. `bin/` is the drive's, and Submit would
+// refuse its files as another writer's.
+const git = (...args) => spawnSync('git', ['-C', ROOT, ...args], { encoding: 'utf8' })
+writeFileSync(join(ROOT, '.gitignore'), 'bin/\n')
+git('init', '-q', '-b', 'main')
+git('config', 'user.email', 'drive@example.test')
+git('config', 'user.name', 'Drive')
+git('add', '-A')
+git('commit', '-q', '-m', 'the scratch site')
 
 // The fake does what the real CLI does in the order the CLI is held to — a
 // Read, a turn, then the change — and says so in stream-json. Which change
@@ -134,10 +147,14 @@ process.stdin.on('end', async () => {
 })
 `)
 chmodSync(FAKE, 0o755)
+// Records its argv; no pull request is open until one is created.
+const GH_LOG = join(ROOT, 'bin', 'gh.log')
+writeFileSync(join(ROOT, 'bin', 'gh'), `#!/bin/sh\necho "$@" >> ${GH_LOG}\nif [ "$2" = view ]; then exit 1; fi\necho https://github.test/o/r/pull/7\n`)
+chmodSync(join(ROOT, 'bin', 'gh'), 0o755)
 // The dev server runs in this process, so the session it spawns inherits this.
 if (!REAL) process.env.PATH = `${dirname(FAKE)}:${process.env.PATH}`
 
-const config = await siteKit({ root: ROOT, port: PORT })
+let config = await siteKit({ root: ROOT, port: PORT })
 config.logLevel = 'warn'
 const failures = []
 const check = (name, ok, value) => {
@@ -146,7 +163,7 @@ const check = (name, ok, value) => {
 }
 check('the dev config carries the ask plugin', config.plugins.some(p => p?.name === 'sierra:ask'))
 
-const server = await createServer(config)
+let server = await createServer(config)
 await server.listen()
 const browser = await openChrome()
 const { cmd, evaluate, navigate, type, press, errors } = browser
@@ -214,6 +231,7 @@ try {
   const panel = await evaluate(`return ${panelText}`)
   check('the panel names the picked source', panel.includes('content/routes/index.mesa:'))
   check('the panel tells the two clicks apart', panel.includes('alt-click opens the source in your editor') && panel.includes('shift+alt-click asks here'))
+  check('off a Workbench branch, Submit is not offered', !await evaluate(`return !!${button('Submit for review')}`))
   // Caught before it leaves the page: the drive must not launch an editor.
   const opened = await evaluate(`
     const asked = [], real = window.fetch
@@ -397,6 +415,71 @@ try {
       await until('window.__fjsAsk && document.querySelector("#title")', 10_000, 'the page loaded again')
       check('a panel closed before the reload stays closed', !await evaluate(`return !!document.querySelector('[data-run]')?.offsetParent`))
     }
+
+    // ── a dev server other people reach: who may ask, and Submit ──────────
+    // A stand-in for the app's API: auth's account/me, with a level per token.
+    // The rule is read when the plugin is made, so the dev server is started
+    // again under it.
+    const api = Bun.serve({ port: 0, fetch(req) {
+      const token = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1]
+      const level = { admin: 5, member: 4 }[token]
+      return level ? Response.json({ userId: token, level }) : Response.json({ error: 'no session' }, { status: 401 })
+    } })
+    await server.close()
+    process.env.ASK_ADMIT_URL   = `http://localhost:${api.port}/account/me`
+    process.env.ASK_ADMIT_LEVEL = 'ADMINISTRATOR'
+    config = await siteKit({ root: ROOT, port: PORT })
+    config.logLevel = 'warn'
+    server = await createServer(config)
+    await server.listen()
+    const BARE = join(ROOT, 'bin', 'origin.git')
+    spawnSync('git', ['init', '-q', '--bare', BARE])
+    git('remote', 'add', 'origin', BARE)
+    git('add', '-A')
+    git('commit', '-q', '-m', 'what the runs above left')
+    git('checkout', '-q', '-b', 'wb/drive')
+    const signIn = async (token) => {
+      await evaluate(`${token ? `localStorage.setItem('junction_token', '${token}')` : `localStorage.removeItem('junction_token')`}; return true`)
+      await navigate(ORIGIN + '/')
+      await until('window.__fjsAsk && document.querySelector("#title")', 10_000, 'the page loaded under the rule')
+      await pickAt('#title')
+    }
+
+    await signIn(null)
+    if (await until(`${panelText}.includes('sign in to the app first')`, 5000, 'with no token, the panel says to sign in')) {
+      const spawned = spawns()
+      await evaluate(`document.querySelector('textarea[placeholder^="What should change"]').focus(); return true`)
+      await type('Make it bigger')
+      await evaluate(`${button('Send')}.click(); return true`)
+      await until(`(${panelText}.match(/sign in to the app first/g) || []).length >= 2`, 5000, 'an ask with no token was refused')
+      check('with no token an ask is refused and no model runs', spawns() === spawned)
+      check('and Submit is not offered', !await evaluate(`return !!${button('Submit for review')}`))
+    }
+
+    await signIn('member')
+    check('a principal below the level is refused by name',
+      await until(`${panelText}.includes('asking here takes ADMINISTRATOR')`, 5000, 'a principal below the level is refused by name'))
+
+    await signIn('admin')
+    if (await until(button('Submit for review'), 5000, 'at the level, on wb/*, Submit is offered')) {
+      const head = git('rev-parse', 'HEAD').stdout.trim()
+      if (await editText('#title', 'Submitted heading')) {
+        await evaluate(`${button('Submit for review')}.click(); return true`)
+        if (await until(`${panelText}.includes('Opened the pull request: https://github.test/o/r/pull/7')`, 10_000, 'Submit named the pull request')) {
+          check('Submit named the pull request', true)
+          check('the commit carries the change, on top of the branch', git('rev-parse', 'HEAD~1').stdout.trim() === head
+            && git('show', '--format=%s', '--stat', 'HEAD').stdout.startsWith('Text: “Hello from the drive” → “Submitted heading”')
+            && git('status', '--porcelain').stdout === '', git('log', '-1', '--format=%s').stdout.trim())
+          check('the branch was pushed', spawnSync('git', ['-C', BARE, 'rev-parse', 'wb/drive'], { encoding: 'utf8' }).stdout.trim() === git('rev-parse', 'HEAD').stdout.trim())
+          const calls = readFileSync(GH_LOG, 'utf8')
+          check('gh was asked for an open PR, then made one with the preview in its body',
+            calls.startsWith('pr view wb/drive') && calls.includes(`pr create --head wb/drive --title Text: “Hello from the drive” → “Submitted heading” --body Asked for on the preview at ${ORIGIN}`), calls)
+        }
+      }
+    }
+    delete process.env.ASK_ADMIT_URL
+    delete process.env.ASK_ADMIT_LEVEL
+    api.stop(true)
   }
 
   check('the page threw nothing', errors.length === 0, errors.slice(0, 3))

@@ -333,7 +333,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     jobFilesLoaded = true
     const loaded = await autoloadJobs(jobsDir, caravan)
     if (loaded.length > 0) {
-      console.log(`[Caravan] Loaded ${loaded.length} job handler${loaded.length > 1 ? 's' : ''}: ${loaded.join(', ')}`)
+      console.log(`[Caravan] Loaded ${loaded.length} job handler${loaded.length > 1 ? 's' : ''}`)
     }
   }
 

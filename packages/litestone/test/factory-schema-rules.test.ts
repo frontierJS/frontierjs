@@ -311,6 +311,37 @@ test('the gate ladder builds the parents a create needs — @@arc, a keys-only @
   finally { env.close() }
 })
 
+// An implication: one kind needs BOTH keys. The branch that is nothing but
+// IS NOT NULL clauses satisfies the check alone, so both are filled; before,
+// only an OR made entirely of IS NOT NULLs was read, the row failed the check,
+// and the ladder reported "no fixture could be built" at every level (maidtech
+// Phase 4, Action's lead push).
+test('the gate ladder fills every key of a conjunction branch — kind != x OR (a IS NOT NULL AND b IS NOT NULL)', async () => {
+  const env = await createTestEnv({ schema: `
+    enum Kind { push }
+    model User { id Int @id @default(autoincrement()); name String; d D[] }
+    model Run  { id Int @id @default(autoincrement()); label String; d D[] }
+    model D { id Int @id @default(autoincrement()); kind Kind
+      ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
+      runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
+      @@check("kind != 'push' OR (ownerId IS NOT NULL AND runId IS NOT NULL)"); @@gate("4.4.4.8") }` })
+  try { expect(await env.verifyGateLadder()).toEqual([]) }
+  finally { env.close() }
+})
+
+test('an exactly-one arc spelled as a check keeps one key — a branch with an IS NULL in it is not taken', async () => {
+  const { factories } = await makeTestClient(`
+    model User { id Int @id @default(autoincrement()); name String; e E[] }
+    model Run  { id Int @id @default(autoincrement()); label String; e E[] }
+    model E { id Int @id @default(autoincrement()); label String
+      ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
+      runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
+      @@check("(ownerId IS NOT NULL AND runId IS NULL) OR (ownerId IS NULL AND runId IS NOT NULL)") }`, { autoFactories: true })
+  // Neither branch is keys-only, so nothing is insisted on: the optional keys
+  // stay unwired and the table's check refuses the row, as before this rule.
+  await expect(factories.e.withParents().createOne()).rejects.toThrow()
+})
+
 describe('generateFactory reads a check against what the database stamps', () => {
   test('an ordering against a @default(now()) column is read with the clock', () => {
     const r = row(`enum St { active submitted }

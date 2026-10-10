@@ -23,6 +23,12 @@ in that order. One piece of the refresh is behavior since 2026-10-07 (`FJS-1905`
 401 hands the refused value to `CredentialResolver.invalidate`, and `withCache`
 re-mints it once for every send racing it, in-process. That covers a login-minted
 session. A rotating refresh token still needs the expiry and the principal.
+**The principal half of leg one is behavior since 2026-10-10 (`FJS-D848` B,
+`FJS-2232` closed):** `auth.per_caller`, `getFor(ref, who)` / `invalidateFor`,
+`withCache` keyed on who, the junction plugin writing `who` from the call in
+progress — `packages/conduit/per-caller.test.ts`. The expiry in the return and
+the refresh lock are still unbuilt; maidtech's Jobber resolver refreshes on the
+401 and holds the rotation with a compare-and-set on its own row.
 
 **First consumer with rows (2026-10-09): stressor #27, `fjs-prototypes/maidtech`
 Q11** — 63 MaidCentral logins, 8 Jobber, a Cloudflare token per client, each a
@@ -282,7 +288,7 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
 
 **The credential seam**
 
-- **FJS-D848 — How does a resolver learn whose credential a send spends, so `withCache` cannot key two callers onto one ref?** Does `get(ref)` gain a principal argument, or is a per-caller resolver a second
+- ~~**FJS-D848 — How does a resolver learn whose credential a send spends, so `withCache` cannot key two callers onto one ref?**~~ **Answered 2026-10-10 (`FJS-D848`): B — a second interface beside it, `getFor(ref, principal)`, and a target that declares per-caller auth refuses at boot unless the installed resolver has it; `get(ref)` and `FJS-D219`'s structural `{ get(ref) }` shape stay exactly as they are.** Does `get(ref)` gain a principal argument, or is a per-caller resolver a second
   interface? A second interface keeps the process-scoped case exactly as it is.
   Forced by [`FJS-2232`](../ISSUES.md#fjs-2232): a resolver reading the tenant from an AsyncLocalStorage, wrapped in `withCache`, answers `get('DATAFORSEO')` in agency B with agency A's login (`inB === 'Basic A'`, probed 2026-10-09). Phase 2 widens it: an agency connects several Google accounts, so the identity is a per-call **grant**, neither the tenant nor the principal, and serpgrid names it with its own `withGrant(connectionId, fn)` around each send. Whatever the per-caller interface receives must carry that grant too, and `withCache` keys on all of it.
   - **A** — `get(ref, principal?)`: one interface, an optional second argument a process-scoped resolver ignores.

@@ -1,0 +1,6 @@
+<script>
+  export let label = ''
+  let count = 0
+</script>
+<button on:click={() => count++}>bump {label}</button>
+<p>{label}: {count}</p>

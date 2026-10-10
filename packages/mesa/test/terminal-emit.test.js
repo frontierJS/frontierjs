@@ -109,9 +109,9 @@ describe('terminal target', () => {
     }
     const shape = /^\S.* at [A-Z]\.mesa:\d+:\d+ has no terminal lowering$/
 
-    it('<svg>', async () => {
-      const source = `<div>\n<svg><path d="M0 0" /></svg>\n</div>\n`
-      await refusal(source, 'A.mesa', '<svg> at A.mesa:2:1 has no terminal lowering')
+    it('<iframe>', async () => {
+      const source = `<div>\n<iframe></iframe>\n</div>\n`
+      await refusal(source, 'A.mesa', '<iframe> at A.mesa:2:1 has no terminal lowering')
       await expect(terminal(source, 'A.mesa')).rejects.toThrow(shape)
     })
 
@@ -133,12 +133,30 @@ describe('terminal target', () => {
     // `bind:value` is heard back only from a control, and only plain: a mask
     // reformats as the person types, which no terminal field does.
     it('an element bind: other than a plain bind:value on a control', async () => {
-      await refusal(`<script>let v = false</script>\n<input type="checkbox" bind:checked={v} />\n`, 'B.mesa',
-        'bind:checked at B.mesa:2:24 has no terminal lowering')
+      await refusal(`<script>let v = false</script>\n<input type="checkbox" bind:checked|x={v} />\n`, 'B.mesa',
+        'bind:checked|x at B.mesa:2:24 has no terminal lowering')
       await refusal(`<script>let v = ''</script>\n<input bind:value|mask({"99"})={v} />\n`, 'K.mesa',
         'bind:value|mask({"99"}) at K.mesa:2:8 has no terminal lowering')
       await refusal(`<script>let v = ''</script>\n<div bind:value={v}></div>\n`, 'V.mesa',
         'bind:value on <div> at V.mesa:2:6 has no terminal lowering')
+    })
+
+    // `type` is what makes an `<input>` a control; a live one is checked
+    // where it is written, in the runtime.
+    it('a static input type with no terminal control, and a bind that does not fit the type', async () => {
+      await refusal(`<input type="date" />\n`, 'T.mesa', 'type="date" on <input> at T.mesa:1:1 has no terminal lowering')
+      await refusal(`<input type="txt" />\n`, 'X.mesa', 'type="txt" on <input> at X.mesa:1:1 has no terminal lowering')
+      await refusal(`<script>let v = false</script>\n<input bind:checked={v} />\n`, 'C.mesa',
+        'bind:checked on <input type="text"> at C.mesa:2:8 has no terminal lowering')
+      await refusal(`<script>let v = ''</script>\n<input type="radio" bind:value={v} />\n`, 'R.mesa',
+        'bind:value on <input type="radio"> at R.mesa:2:21 has no terminal lowering')
+      await refusal(`<script>let o = { v: [] }</script>\n<input type="checkbox" bind:group={o.v} />\n`, 'G.mesa',
+        'bind:group at G.mesa:2:24 has no terminal lowering')
+      for (const ok of [
+        `<script>let t = 'date'</script>\n<input type={t} />\n`,
+        `<script>let v = []</script>\n<input type="checkbox" value="a" bind:group={v} /><input type="hidden" value="x" />\n`,
+        `<script>let v = false</script>\n<input type="CheckBox" bind:checked={v} /><input type="password" />\n`,
+      ]) await expect(terminal(ok, 'O.mesa')).resolves.toBeTruthy()
     })
 
     // A live `multiple` is checked where it is written, in the runtime.
@@ -189,22 +207,22 @@ describe('terminal target', () => {
     })
 
     it('a literal <mesa:element> tag the table does not hold', async () => {
-      await refusal(`<mesa:element this="svg">x</mesa:element>\n`, 'M.mesa', '<svg> at M.mesa:1:1 has no terminal lowering')
+      await refusal(`<mesa:element this="iframe">x</mesa:element>\n`, 'M.mesa', '<iframe> at M.mesa:1:1 has no terminal lowering')
     })
 
     it('names the first offender only', async () => {
-      await refusal(`<svg></svg>\n<Foo />\n`, 'G.mesa', '<svg> at G.mesa:1:1 has no terminal lowering')
+      await refusal(`<iframe></iframe>\n<Foo />\n`, 'G.mesa', '<iframe> at G.mesa:1:1 has no terminal lowering')
     })
   })
 
   // A resource file carries its model's default form (Invariant 18), and a
   // route importing only the data half must not inherit the form's refusal.
   describe('a refused file with a <script module> keeps its data half (FJS-2182)', () => {
-    const RESOURCE = `<script module>\n  export const things = { name: 'things' }\n</script>\n<script>\n  import Form from './Form.mesa'\n  let record\n</script>\n<Form bind:record={record} />\n<svg></svg>\n`
+    const RESOURCE = `<script module>\n  export const things = { name: 'things' }\n</script>\n<script>\n  import Form from './Form.mesa'\n  let record\n</script>\n<Form bind:record={record} />\n<iframe></iframe>\n`
 
     it('exports the module half, and a default that throws the refusal when mounted', async () => {
       const ctx = await terminal(RESOURCE, 'Thing.mesa')
-      const message = '<svg> at Thing.mesa:9:1 has no terminal lowering'
+      const message = '<iframe> at Thing.mesa:9:1 has no terminal lowering'
       expect(ctx.terminalRefusal).toBe(message)
       acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })
       // The instance script's imports go with it: Form.mesa is never loaded.
@@ -222,7 +240,7 @@ describe('terminal target', () => {
 
     it('without a <script module> there is nothing to keep, and the compile throws', async () => {
       await expect(terminal(RESOURCE.replace(/<script module>[\s\S]*?<\/script>\n/, ''), 'Thing.mesa'))
-        .rejects.toThrow('<svg> at Thing.mesa:6:1 has no terminal lowering')
+        .rejects.toThrow('<iframe> at Thing.mesa:6:1 has no terminal lowering')
     })
   })
 
@@ -417,7 +435,7 @@ describe('terminal target', () => {
     expect(result).not.toMatch(/svg|path/)
     expect(result).toContain("$$tui.element('b')")
     expect(result).toContain("$$tui.element('p')")
-    await expect(terminal(`<div aria-hidden="false"><svg></svg></div>\n`, 'N.mesa')).rejects.toThrow('<svg> at N.mesa:1:26')
+    await expect(terminal(`<div aria-hidden="false"><iframe></iframe></div>\n`, 'N.mesa')).rejects.toThrow('<iframe> at N.mesa:1:26')
   })
 
   it('declares a body snippet before its renders, and hands each argument over as a getter', async () => {
@@ -453,14 +471,14 @@ describe('terminal target', () => {
 <table><tr><td class={x} colspan={x}>{v}</td><td>z</td></tr></table>
 <input bind:value={v} bind:checked={v} />
 {#if v}<button on:click|once={() => {}} on:pointerenter={() => {}}>b</button>{/if}
-{#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><svg>{#snippet s()}x{/snippet}</svg></Foo>{/each}
+{#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><iframe>{#snippet s()}x{/snippet}</iframe></Foo>{/each}
 <slot name="a" title="t" />
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
     expect(terminalOffenses(ir).map((o) => [o.what, o.shape, o.loc])).toEqual([
       ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
-      ['bind:checked', 'bind:',             'H.mesa:6:23'],
+      ['bind:checked on <input type="text">', 'bind:checked on <input type="text">', 'H.mesa:6:23'],
       ['on:pointerenter', 'on:pointerenter', 'H.mesa:7:41'],
-      ['<svg>',        '<svg>',             'H.mesa:8:59'],
+      ['<iframe>',     '<iframe>',          'H.mesa:8:59'],
       ['title on <slot>', 'attribute on <slot>', 'H.mesa:9:16'],
     ])
   })

@@ -12,7 +12,7 @@
 //   })
 // ============================================================
 
-import type { CredentialResolver } from './types.ts'
+import type { CredentialCaller, CredentialResolver } from './types.ts'
 
 // Reads refs from process.env. This is the default when
 // ConduitOptions.credentials is omitted.
@@ -80,27 +80,34 @@ export function withCache(
   const cache    = new Map<string, { value: string; expires_at: number }>()
   const inflight = new Map<string, Promise<string | null>>()
 
-  async function fetchOnce(ref: string): Promise<string | null> {
-    const value = await inner.get(ref)
-    if (value !== null && value !== '') {
-      cache.set(ref, { value, expires_at: Date.now() + ttl })
+  // One cache for both methods, keyed so they cannot meet: a process-scoped
+  // ref is its own key, and a per-caller one is the ref plus every part of
+  // who, joined on a byte no id contains. Keying a per-caller credential on
+  // the ref alone is FJS-2232 — the first tenant's login answered for the next.
+  const keyFor = (ref: string, who?: CredentialCaller) =>
+    who ? ['\u0000who', ref, who.tenant ?? '', who.principal ?? '', who.grant ?? ''].join('\u0000') : ref
+
+  function cached(key: string, fetch: () => Promise<string | null>): Promise<string | null> {
+    const hit = cache.get(key)
+    if (hit && hit.expires_at > Date.now()) return Promise.resolve(hit.value)
+
+    let pending = inflight.get(key)
+    if (!pending) {
+      // Cleared after the set: a resolver that throws synchronously would
+      // otherwise settle before the entry exists and leave it behind.
+      pending = (async () => {
+        const value = await fetch()
+        if (value !== null && value !== '') cache.set(key, { value, expires_at: Date.now() + ttl })
+        return value
+      })().finally(() => inflight.delete(key))
+      inflight.set(key, pending)
     }
-    return value
+    return pending
   }
 
-  return {
+  const wrapped: CredentialResolver = {
     get(ref) {
-      const hit = cache.get(ref)
-      if (hit && hit.expires_at > Date.now()) return Promise.resolve(hit.value)
-
-      let pending = inflight.get(ref)
-      if (!pending) {
-        // Cleared after the set: a resolver that throws synchronously would
-        // otherwise settle before the entry exists and leave it behind.
-        pending = fetchOnce(ref).finally(() => inflight.delete(ref))
-        inflight.set(ref, pending)
-      }
-      return pending
+      return cached(keyFor(ref), () => inner.get(ref))
     },
 
     invalidate(ref, value) {
@@ -108,4 +115,18 @@ export function withCache(
       inner.invalidate?.(ref, value)
     },
   }
+
+  // Offered only when the inner resolver has it, so wrapping keeps put()'s
+  // refusal of a per-caller target honest: a cache cannot mint per caller.
+  if (inner.getFor) {
+    const getFor = inner.getFor.bind(inner)
+    wrapped.getFor = (ref, who) => cached(keyFor(ref, who), () => getFor(ref, who))
+    wrapped.invalidateFor = (ref, value, who) => {
+      const key = keyFor(ref, who)
+      if (cache.get(key)?.value === value) cache.delete(key)
+      inner.invalidateFor?.(ref, value, who)
+    }
+  }
+
+  return wrapped
 }

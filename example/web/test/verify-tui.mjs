@@ -61,7 +61,7 @@ const IMPORTS = join(HERE, 'fixtures/tui-imports')
 const imports = spawnSync('bun', [TUI, '--list'], { cwd: IMPORTS, encoding: 'utf8' })
 const irows = imports.stdout.split('\n')
 check(irows.some((l) => /^✓ \/\s*$/.test(l)), 'a route taking only a refused file\'s data lowers', imports.stdout + imports.stderr)
-check(irows.some((l) => /^✗ \/make\/\s+<svg> at src\/resources\/Thing\.mesa:4:1$/.test(l)),
+check(irows.some((l) => /^✗ \/make\/\s+<iframe> at src\/resources\/Thing\.mesa:4:1$/.test(l)),
   'a route mounting it is refused for it', imports.stdout)
 check(irows.some((l) => /^✓ \/deep\/\s*$/.test(l)), 'and a file taken for its data mounts nothing it imports', imports.stdout)
 const deep = spawnSync('bun', [TUI, '--frame', '/deep/'], { cwd: IMPORTS, encoding: 'utf8' })
@@ -146,6 +146,17 @@ for (let i = 0; i < 60 && !seen('[ 28 ]'); i++) {
   await new Promise((r) => setTimeout(r, 60))
 }
 check(await until(() => seen('[ 28 ]'), 2000), 'Tab past the bottom edge brings the control it reaches on screen', screen(out))
+// The DatePicker's month is a table, so a week is a row and a day sits under
+// its weekday (FJS-2488). The 14th is in a full week in every month.
+{
+  const lines = screen(out).split('\n')
+  const week = lines.find((l) => l.includes('[ 14 ]')) ?? ''
+  const head = lines.find((l) => /^Su\s+Mo\s+Tu\s+We\s+Th\s+Fr\s+Sa\b/.test(l.trim())) ?? ''
+  const at = (l, re) => [...l.matchAll(re)].map((m) => m.index)
+  const days = at(week, /\[ \d+ \]/g)
+  check(days.length === 7 && String(days) === String(at(head, /\b(Su|Mo|Tu|We|Th|Fr|Sa)\b/g)),
+    'the date picker lays a week on one row, each day under its weekday', screen(out))
+}
 mark = out.length
 shell.stdin.write('\x1b')
 check(await until(() => seen('/reports/ · Esc goes back')), 'Esc goes back to the route the link was on', screen(out))

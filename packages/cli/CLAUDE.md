@@ -50,6 +50,15 @@ core/
                 holds the terminal, and the runtime's SIGINT/SIGTERM handlers
                 await `settleTtys()` before exiting. The terminal is put back
                 on every path; onExit runs on every one but a bare `process.exit`
+  color.js      `chalk` — fli's own, no dependency. Styles nest and never chain
+                as properties; a line mixing styles is the tag, chalk-template's
+                `{bold.cyan x}`, which reads markup only from the literal parts.
+                An inner close reopens the outer style, since dim and bold share
+                one close code
+  text.js       `echo.lines` — a block of output rows; false and null rows
+                dropped. `plural(n, word)`
+  dev-run.js    `fli dev`'s surfaces as one labeled stream — each its own process
+                group, stopped as one on exit, so a launcher's child never keeps a port
   command-parse.js  does every command in a routes tree parse — each compiled
                 with the module the runtime pairs it with, checked by `node
                 --check`, reported at the `.md` line. The `command-parses` rule
@@ -139,10 +148,22 @@ core/
                 and `/text`, a text edit with no model (`locateText`) that
                 falls back to an ask when the text is not there exactly once.
                 Sierra turns it on (`src/build/ask-plugin.js`); nothing here
-                does. A request must carry this server's Origin. An undo
+                does. A request must carry this server's Origin, and under
+                `ASK_ADMIT_URL` the page's Bearer token too, graded by the
+                app's own `account/me` level (`admitCaller`). An undo
                 restores a file whole only while it is exactly what the run
                 left (`createLedger`); a file another writer touched since
-                gets the run's own hunks reversed instead
+                gets the run's own hunks reversed instead. `/submit` commits
+                the runs' files on a `wb/*` branch, pushes and opens the PR
+                with `gh` — refused while any other file is dirty, and in a
+                preview worktree while the branch holds anything outside the
+                Vite root
+  preview.js    what a PREVIEW branch may hold — `previewScope`, the one answer
+                behind `fli check`'s `preview-ui-only` and the panel's Submit.
+                A preview is a worktree whose private git dir holds
+                `fjs-preview` (never the tree: Submit would commit it), graded
+                from `merge-base HEAD origin/HEAD` — the diff the pull request
+                carries, so nothing stores a base. Plain node, for `checks.js`
   done.js       is the change in the working tree FINISHED — a CHANGES entry per
                 package touched, a new module or command named where its
                 siblings are, then test-files-run, register:check and the

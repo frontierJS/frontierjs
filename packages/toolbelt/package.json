@@ -47,6 +47,7 @@
     "./inflect": "./src/inflect/inflect.js",
     "./json": "./src/json/json.js",
     "./jsonschema": "./src/jsonschema/jsonschema.js",
+    "./markdown": "./src/markdown/markdown.js",
     "./match": "./src/match/match.js",
     "./mime": {
       "types": "./src/mime/mime.d.ts",

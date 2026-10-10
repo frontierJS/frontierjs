@@ -316,3 +316,39 @@ describe('the relay under tenancy { strategy database }', () => {
     } as unknown as App)).rejects.toThrow(/BOTH createApp\({ db }\)/)
   })
 })
+
+// ─── the relay under row tenancy ─────────────────────────────────────────────
+//
+// Under `strategy row` every tenant's rows share app.db, so the database names
+// no tenant and the relay's sweep dispatched with none. A row enqueued by a
+// person is rescued by the actor — the job re-resolves them and their claim
+// names their account — but the app's own work (`actor: null`: a commitment's
+// hook, a job run as `system`) carries no claim, so a SWEPT delivery ran in no
+// tenant at all and every scoped read in the handler found nothing. Only the
+// post-commit kick, which happens to be handed the tenant, was right.
+
+describe('the relay under tenancy { strategy row }', () => {
+
+  test('a row the app\'s own work enqueued in a tenant is delivered into that tenant by the sweep', async () => {
+    const db   = await mkDb()
+    const jobs = fakeQueue()
+    const svc  = shippingService()
+
+    await callService(svc, ctx(db, { app: appWithRelay(), locals: { db, tenantId: 'acme' } }))
+    const [row] = await rows(db)
+    expect(row.actorId).toBeNull()
+    expect(row.tenantId).toBe('acme')
+
+    await deliverOutbox({ db, jobs } as unknown as App)
+    expect(jobs.sent[0].opts.tenant).toBe('acme')
+    expect(jobs.sent[0].opts.actor).toBeNull()
+  })
+
+  test('a row enqueued in no tenant is dispatched naming none, as before', async () => {
+    const db   = await mkDb()
+    const jobs = fakeQueue()
+    await callService(shippingService(), ctx(db, { app: appWithRelay() }))
+    await deliverOutbox({ db, jobs } as unknown as App)
+    expect('tenant' in jobs.sent[0].opts).toBe(false)
+  })
+})

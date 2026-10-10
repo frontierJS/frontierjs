@@ -15,11 +15,17 @@
 //   POST /workbench/:id           send        { prompt } — queued behind a run in progress
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
-//   POST /workbench/:id           fork        { slug? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run
+//   POST /workbench/:id           fork        { slug?, preview? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run;
+//                                             with preview, Open: a preview Environment and its rows (`core/preview.ts`), routed to the branch's web port
 //   POST /workbench/:id           land        a branch's work into its parent's tree, uncommitted
 //   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept
 //   POST /workbench/:id           stop · fresh · seen · unpin
-//   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy? }
+//   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
+//
+// A pin is no workspace's, but a preview's settings name a project and a
+// machine that are: both are read in the CALLER's workspace when set and again
+// before a preview is cut, so a branch is never cut for rows the caller could
+// not write.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
@@ -28,6 +34,8 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
 import { describeRepo }            from '../../core/local-git.ts'
 import { doneScript }              from '../../core/workbench.ts'
+import { openPreview, type PreviewSettings } from '../../core/preview.ts'
+import { db, ws }                  from '../../core/resource.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff']
@@ -50,6 +58,13 @@ export function createWorkbenchService(app: BasecampApp) {
   }
 
   const body = () => ($.data ?? {}) as Record<string, unknown>
+
+  async function previewTargetsHere(s: Pick<PreviewSettings, 'projectId' | 'serverId'>) {
+    if (!await db().project.findFirst({ where: { id: s.projectId, workspaceId: ws() } }))
+      throw new NotFound(`Project '${s.projectId}' not found in this workspace`)
+    if (s.serverId && !await db().server.findFirst({ where: { id: s.serverId, workspaceId: ws() } }))
+      throw new NotFound(`Server '${s.serverId}' not found in this workspace`)
+  }
 
   return createService({
     name: 'workbench',
@@ -105,9 +120,19 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async fork() {
       const p = pinned()
-      const r = await wb().fork(p.id, { slug: body().slug })
+      const preview = body().preview === true
+      if (preview && p.preview) await previewTargetsHere(p.preview)
+      const r = await wb().fork(p.id, { slug: body().slug, preview })
       if ('refused' in r) throw new Conflict(r.refused)
-      return r.pin
+      if (!preview) return r.pin
+      const b = r.pin
+      try {
+        const opened = await openPreview(app, p.preview!, { slug: b.branch!.slice('wb/'.length), branch: b.branch!, port: b.opened!.port })
+        return wb().recordOpened(b.id, opened)
+      } catch (e) {
+        await wb().archive(b.id, { discard: true })
+        throw new Conflict(`Open failed, so the branch was archived (${b.branch} is kept): ${(e as Error).message}`)
+      }
     },
 
     async land() {
@@ -126,6 +151,12 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async configure() {
       const p = pinned()
+      const asked = body().preview
+      if (asked && typeof asked === 'object' && !Array.isArray(asked) && (asked as Record<string, unknown>).projectId)
+        await previewTargetsHere({
+          projectId: String((asked as Record<string, unknown>).projectId),
+          serverId:  ((asked as Record<string, unknown>).serverId as string | null | undefined) || null,
+        })
       const r = wb().configure(p.id, body())
       if ('refused' in r) throw new BadRequest(r.refused)
       return r

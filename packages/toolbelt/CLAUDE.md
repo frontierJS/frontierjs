@@ -8,7 +8,7 @@ license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
-`/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/mime`,
+`/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/query`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
@@ -211,6 +211,12 @@ src/transforms/      what `@trim`/`@lower`/`@upper`/`@slug` do to a value, in
 src/jsonschema/      the CONSUMER half of what litestone emits — follow a
                      `$ref`, and what a blank record of this model looks like.
                      Same two callers
+src/markdown/        Markdown somebody else wrote → HTML with no tag the text
+                     wrote (`IDEAS/markdown-kit.md` option C). Raw HTML is
+                     escaped, never passed through, so there is no sanitizer;
+                     a link is http, https, mailto or relative; an image is a
+                     link to it. The same function at prerender and in the
+                     browser (`FJS-D821`). Caller: ui's Markdown component
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
 src/datetime/        an instant read as a place's wall clock, and written back —

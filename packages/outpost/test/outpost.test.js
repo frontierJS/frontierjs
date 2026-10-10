@@ -746,6 +746,26 @@ describe('the ingress — Caddy, through its admin API', () => {
       expect((await route(serverWith(caddy, gone).server, [])).status).toBe(200)
     })
 
+    test('a stated port routes an app with no container to it — a preview\'s dev server', async () => {
+      const caddy = fakeCaddy()
+      const gone  = fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object: fjs-app-1' } })
+      const res   = await send(serverWith(caddy, gone).server, 'POST', '/route', { app_id: 'app-1', hosts: ['try.preview.example.com'], port: 18020 })
+      expect(await res.json()).toEqual({ hosts: ['try.preview.example.com'], port: 18020, rebind: null })
+      expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:18020')
+
+      // A machine with no docker at all is the same answer.
+      const nodocker = fakeRunner({ 'docker inspect --format': { exitCode: 127, stderr: 'docker: command not found' } })
+      expect((await send(serverWith(fakeCaddy(), nodocker).server, 'POST', '/route', { app_id: 'app-1', hosts: ['a.example.com'], port: 18020 })).status).toBe(200)
+    })
+
+    test('a stated port beside a container is refused, and nothing is routed', async () => {
+      const caddy = fakeCaddy()
+      const res   = await send(serverWith(caddy, bound('127.0.0.1', '7302')).server, 'POST', '/route', { app_id: 'app-1', hosts: ['shop.example.com'], port: 18020 })
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('send no port')
+      expect(caddy.asked).toEqual([])
+    })
+
     test('a hostname another app holds is refused, as on /deploy', async () => {
       const caddy = fakeCaddy()
       await deploy(serverWith(caddy, bound('127.0.0.1')).server, { hosts: ['shop.example.com'] })

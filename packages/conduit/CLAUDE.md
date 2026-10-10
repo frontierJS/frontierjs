@@ -237,6 +237,17 @@ src/
   into twenty logins.
   A minted session is `withCache({ get: login }, { ttl_ms: Infinity })`;
   `meta.headers['set-cookie']` is newline-joined, since `Expires` holds a comma.
+- **A credential that belongs to the caller is `per_caller`, and it never goes
+  through `get(ref)`** (`FJS-D848`). One target and one ref, a login per
+  tenant: the transport asks `getFor(ref, who)` with
+  `who = { tenant, principal, grant }`, a 401 calls `invalidateFor` for that
+  caller alone, and `withCache` keys on the ref plus all three. The junction
+  plugin writes `who` from the call in progress and refuses a send that states
+  one; the caller names only `grant`. Reading a tenant off ambient state inside
+  `get(ref)` instead is `FJS-2232`: cached by ref, the first tenant's login
+  went out on the next tenant's calls. `put()` refuses a per-caller target
+  when the resolver has no `getFor`, and on a websocket or broker, whose one
+  connection serves every caller. `per-caller.test.ts`.
 - **The credential must really resolve.** `example`'s drive posts to a dev mail
   sink on :8111 precisely so the request leaves the process carrying a resolved
   credential and can really answer 500 — an outbound path that is only ever

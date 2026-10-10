@@ -1719,9 +1719,8 @@ function reportAnnounceReach(app: App): void {
   if (inProcess.length === 0) return
 
   console.warn(
-    `[Junction] channels() is mounted over database(s) that announce inProcess: ${inProcess.join(', ')}. ` +
-    `A write in another process on the same file reaches none of this process's sockets. ` +
-    `Running more than one process (a replica, a worker)? Declare \`announce crossProcess\` on the database.`
+    `[Junction] channels: ${inProcess.join(', ')} announce inProcess, so another process's writes ` +
+    `reach no socket here — a replica or worker needs \`announce crossProcess\``
   )
 }
 

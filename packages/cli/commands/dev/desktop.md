@@ -37,7 +37,8 @@ bundled build. Check those with `fli desktop:run`.
 this surface's own, on the port `fli dev` gives it. It and the API are reused
 when something answers and started when nothing does; one this command started
 is stopped when the window closes. A port that answers is not proof it is this
-app's server (`FJS-740`) — the line naming the reuse is where that is said.
+app's server (`FJS-740`), so one whose listener runs outside this app's
+directory is refused with its pid named rather than reused.
 
 **The build compiles the shell only.** The screens are served, so only the Rust
 half is built — a no-op after the first time — unless `desktop/dist` is missing,
@@ -93,7 +94,7 @@ async function ensure(opts, hint) {
     if (child) started.push(child)
   } catch (err) {
     log.error(err.message)
-    if (hint) log.error(hint)
+    if (hint && !err.holder) log.error(hint)
     process.exit(1)
   }
 }

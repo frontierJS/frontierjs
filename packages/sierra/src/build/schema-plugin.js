@@ -432,10 +432,9 @@ export function schemaPlugin(config, sierraContext) {
         // a ruling (`FJS-D204`), and a ruling that hides its own cost is the
         // shape that gets quietly reversed.
         console.log(
-          `  [Sierra] schema: ${generated.models.length} model(s) from ` +
-          `${schemaPath.replace(root + '/', '')} — ${generated.models.join(', ')}`
+          `  [Sierra] schema: ${generated.models.length} models from ` +
+          `${schemaPath.replace(root + '/', '')} · ${emittedSize(generated)} to the client`
         )
-        console.log(`  [Sierra] schema: ${emittedSize(generated)} to the client`)
       }
     },
 

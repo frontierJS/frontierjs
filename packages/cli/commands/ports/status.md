@@ -7,7 +7,12 @@ examples:
   - fli ports:status
   - fli ports:status --clean
   - fli ports:status --sessions
+  - fli ps --include-idle
 flags:
+  include-idle:
+    type: boolean
+    description: List the idle dev slots too — by default only the running ones are shown
+    defaultValue: false
   clean:
     type: boolean
     description: Forget the slots of apps that are not running
@@ -39,14 +44,17 @@ looking in the wrong place.
 
 **Which slot `fli dev` gave each app.** `~/.fli/sessions.lock` — one entry per
 app directory, its ports, and whether its `fli dev` is running. An idle entry is
-not stale: it is how the app gets the same ports next time. `--clean` forgets
-the idle ones, and `--sessions` shows only this half.
+not stale: it is how the app gets the same ports next time. Idle entries are
+counted but not listed — a dozen of them buried the running one — so
+`--include-idle` lists them, `--clean` forgets them, and `--sessions` shows only
+this half.
 
 `fli kill <port>` is what to do about a port you want back; it names the process
 before it signals it, and reads the same `pidsOnPort` this does.
 
 ```js
 const { getSessionStatus, releaseSession, busyKnownPorts } = await import(resolve(global.fliRoot, 'core/ports.js'))
+const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 
 const sessions = getSessionStatus()
 const busy     = flag.sessions ? [] : await busyKnownPorts()
@@ -57,21 +65,25 @@ if (flag.json) {
 }
 
 // ── What is holding a port right now ────────────────────────────────────────
+const ENV_TONE = { dev: chalk.yellow, test: chalk.magenta, prod: chalk.red }
+const envTag   = env => (ENV_TONE[env] ?? chalk.white)(env)
+
 if (!flag.sessions) {
   echo('')
   if (!busy.length) {
-    echo('  No port this workspace can name is in use.\n')
+    echo(chalk.dim('  No port this workspace can name is in use.\n'))
   } else {
-    echo(`  ${busy.length} port${busy.length === 1 ? '' : 's'} in use\n`)
+    echo(chalk`  {bold ${plural(busy.length, 'port')} in use}\n`)
     for (const b of busy) {
       const what = b.reserved
-        ? (b.project ?? 'reserved tooling slot')
-        : `${b.project} · ${b.category} · ${b.env}`
-      echo(`  ●  ${String(b.port).padEnd(6)} ${what}`)
+        ? chalk`{magenta ${b.project ?? 'reserved tooling slot'}}`
+        : chalk`{bold ${b.project}} {dim ·} {cyan ${b.category}} {dim ·} ${envTag(b.env)}`
+      echo(chalk`  {green ●}  {bold.cyan ${String(b.port).padEnd(6)}} ${what}`)
       // The pid is what makes the line actionable — without it the answer is
       // "something has it", which is what the caller already knew.
-      if (b.command) echo(`     ${'pid ' + b.pids.join(', ')}  ${b.command}`)
-      else           echo(`     (no lsof here — the port answers, the process cannot be named)`)
+      echo(b.command
+        ? chalk`     {dim pid ${b.pids.join(', ')}}  {gray ${b.command}}`
+        : chalk`     {dim (no lsof here — the port answers, the process cannot be named)}`)
     }
     echo('')
   }
@@ -84,28 +96,37 @@ if (!sessions.length) {
 
 const alive  = sessions.filter(s => s.alive)
 const idle   = sessions.filter(s => !s.alive)
+const shown  = flag['include-idle'] ? sessions : alive
 
 echo('')
-echo(`  dev slots — ${alive.length} running  ·  ${idle.length} idle\n`)
+echo(chalk`  {bold dev slots} {dim —} {green ${alive.length} running}  {dim ·  ${idle.length} idle}\n`)
 
-for (const s of sessions) {
-  const status  = s.alive ? '↑' : '·'
-  const state   = s.alive ? `pid ${s.pid}` : 'idle'
-  echo(`  ${status}  ${s.name}  ·  ${state}  ·  ${s.env}  ·  project ${s.projectId} slot ${s.slot ?? 0}${s.branch ? ` branch ${s.branch}` : ''}`)
-  echo(`       ${s.root}`)
+for (const s of shown) {
+  const where = `project ${s.projectId} slot ${s.slot ?? 0}${s.branch ? ` branch ${s.branch}` : ''}`
+  const ports = Object.entries(s.ports || {})
+    .flatMap(([cat, ps]) => (Array.isArray(ps) ? ps : [ps]).map(p => [String(p).padEnd(6), cat]))
+  const started = s.startedAt && `last started ${new Date(s.startedAt).toLocaleString()}`
 
-  for (const [cat, ps] of Object.entries(s.ports || {})) {
-    const portList = Array.isArray(ps) ? ps : [ps]
-    for (const p of portList) {
-      echo(`       ${String(p).padEnd(6)}  ${cat}`)
-    }
-  }
+  const head = [
+    chalk`{bold ${s.name}}`,
+    s.alive ? chalk`{green pid ${s.pid}}` : 'idle',
+    envTag(s.env),
+    chalk.dim(where),
+  ].join(chalk.dim('  ·  '))
 
-  const uptime = s.startedAt
-    ? `last started ${new Date(s.startedAt).toLocaleString()}`
-    : ''
-  if (uptime) echo(`       ${uptime}`)
+  // An idle slot is the same block dimmed, so the running ones read first.
+  const block = [
+    `${s.alive ? chalk.green('↑') : '·'}  ${head}`,
+    chalk.dim(`     ${s.root}`),
+    ...ports.map(([port, cat]) => chalk`     {cyan ${port}}  ${cat}`),
+    started && chalk.dim(`     ${started}`),
+  ]
+  echo.lines(block, { indent: 2, style: s.alive ? null : chalk.dim })
   echo('')
+}
+
+if (!flag['include-idle'] && idle.length && !flag.clean) {
+  echo(chalk`  {dim ${plural(idle.length, 'idle slot')} not listed —} --include-idle {dim to show,} --clean {dim to forget}\n`)
 }
 
 if (flag.clean && idle.length) {

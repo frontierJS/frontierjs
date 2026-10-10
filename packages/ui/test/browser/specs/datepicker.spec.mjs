@@ -260,6 +260,32 @@ export async function run(t) {
   t.match(bleed.base, /-20px/, "the band's bleed is half a 2.5rem cell")
   t.match(bleed.wide, /-32px/, 'and half a 4rem one when the cell is overridden')
 
+  // A week is a table row the browser flattens into the grid, so the two
+  // things a row could take back are the cell's size (a button on a text
+  // baseline grows the row) and the band's ends at the row's edge, which are
+  // found by the cell's place in its row. 5 to 14 January 2026 crosses one:
+  // the 10th ends a Sunday-start week and the 11th begins the next.
+  await t.mount('datepicker', { todayISO: JAN_2026, isRange: true })
+  const edges = await t.evaluate(`
+    const at = (n) => [...document.querySelectorAll('#stage button.fjs-dp-day')]
+      .find(x => x.querySelector('.fjs-dp-square').textContent.trim() === n);
+    at('5').click(); at('14').click();
+    await new Promise(r => setTimeout(r, 60));
+    const sq = (n) => getComputedStyle(at(n).querySelector('.fjs-dp-square'));
+    const box = at('12').getBoundingClientRect();
+    const pitch = box.top - at('5').getBoundingClientRect().top;
+    return {
+      w: Math.round(box.width), h: Math.round(box.height), pitch: Math.round(pitch),
+      satEnd: sq('10').borderStartEndRadius, sunStart: sq('11').borderStartStartRadius,
+      midStart: sq('12').borderStartStartRadius, midEnd: sq('12').borderStartEndRadius,
+    };
+  `)
+  t.is(`${edges.w}x${edges.h}`, '40x40', 'a day fills its 2.5rem cell')
+  t.is(edges.pitch, 40, 'and a week is one cell tall, so the next starts 2.5rem down')
+  t.ok(edges.satEnd !== '0px', 'a band reaching the end of a week rounds off there')
+  t.ok(edges.sunStart !== '0px', 'and rounds on again at the start of the next')
+  t.is(`${edges.midStart} ${edges.midEnd}`, '0px 0px', 'while a day inside the band is square')
+
   // The arrows are inline SVG over currentColor. As base64 PNGs they were
   // black pixels: invisible on a dark theme, and unable to follow a tone.
   t.ok(await t.evaluate(`

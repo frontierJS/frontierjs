@@ -17,7 +17,7 @@ import { pathToFileURL } from 'url'
 import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
-         readLock, readsPortVar, decode, worktreeOf, portFor } from '../core/ports.js'
+         readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -479,6 +479,8 @@ describe('portFor — the port a test asks for', () => {
   test("a scaffolded app on a dev slot gets the slot's port, and a test port stays the formula", async () => {
     const root = join(main, 'my-app')
     mkdirSync(join(root, 'api', 'test'), { recursive: true })
+    mkdirSync(join(root, 'db'))
+    writeFileSync(join(root, 'db', 'schema.lite'), '')
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'my-app' }))
     writeFileSync(lockFile, JSON.stringify({ [root]: { slot: 3, env: 'dev' } }))
     expect(await portFor(join(root, 'api', 'test'), 'be', { env: 'dev', lockFile })).toBe(8103)
@@ -590,5 +592,29 @@ describe('the api container name', () => {
 
   test('the two tiers cannot collide, which is the whole point', () => {
     expect(apiContainerName('my-app', 7103)).not.toBe(apiContainerName('my-app', 8100))
+  })
+})
+
+describe('composedSurfaces', () => {
+  const rows = [
+    { surface: 'web', script: 'web' },
+    { surface: 'api', script: 'api' },
+    { surface: 'site', script: 'dev:site' },
+  ]
+
+  test('a dev that only runs surface scripts side by side is split into them', () => {
+    const picked = composedSurfaces({ dev: 'bun run api & bun run web & wait' }, rows)
+    expect(picked.map(r => r.surface)).toEqual(['api', 'web'])
+    expect(composedSurfaces({ dev: 'bun run --parallel web dev:site' }, rows).map(r => r.surface)).toEqual(['web', 'site'])
+  })
+
+  // Anything else runs as written: a chain is ordered, a foreign command is
+  // work fli cannot see, and one surface needs no labels.
+  test('a chain, a foreign command, or one surface runs as written', () => {
+    expect(composedSurfaces({ dev: 'bun run api && bun run web' }, rows)).toBeNull()
+    expect(composedSurfaces({ dev: 'bun run api & vite & wait' }, rows)).toBeNull()
+    expect(composedSurfaces({ dev: 'bun run web' }, rows)).toBeNull()
+    expect(composedSurfaces({ dev: 'bun run api & bun run api' }, rows)).toBeNull()
+    expect(composedSurfaces({}, rows)).toBeNull()
   })
 })

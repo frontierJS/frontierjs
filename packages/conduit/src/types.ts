@@ -43,13 +43,22 @@ export type { BodyEncoding }
 export const CREDENTIAL_REFUSALS = ['markup', 'redirect'] as const
 export type CredentialRefusal = typeof CREDENTIAL_REFUSALS[number]
 
+//
+// `per_caller: true` says the material belongs to WHOEVER the send is for — a
+// tenant's own login to a vendor, one of a person's connected accounts — and
+// not to the process. One declared target, one ref, a credential per caller:
+// the resolver is asked `getFor(ref, who)` and never `get(ref)`, and a target
+// declaring it is refused at `put()` unless the installed resolver has
+// `getFor` (`FJS-D848`). Without the flag a per-tenant login read off ambient
+// state inside `get(ref)` is cached by ref alone, and the first tenant's is
+// sent for the next (`FJS-2232`).
 export type TargetAuth =
-  | { type: 'bearer';  ref: string; refusal?: CredentialRefusal[] }
-  | { type: 'api_key'; ref: string; header: string; refusal?: CredentialRefusal[] }   // header name is not secret
+  | { type: 'bearer';  ref: string; refusal?: CredentialRefusal[]; per_caller?: true }
+  | { type: 'api_key'; ref: string; header: string; refusal?: CredentialRefusal[]; per_caller?: true }   // header name is not secret
   // Signs a canonical string over method, path, timestamp, nonce and a
   // hash of the body. `header_prefix` names the three headers this emits
   // (default 'X-Fjs' → X-Fjs-Signature, X-Fjs-Timestamp, X-Fjs-Nonce).
-  | { type: 'hmac';    ref: string; header_prefix?: string; refusal?: CredentialRefusal[] }
+  | { type: 'hmac';    ref: string; header_prefix?: string; refusal?: CredentialRefusal[]; per_caller?: true }
   | { type: 'none' }
 
 export type FollowRedirects = 'never' | 'same-origin'
@@ -224,6 +233,29 @@ export interface CredentialResolver {
   //
   // Optional. A resolver without it answers a 401 as auth_failed, unreplayed.
   invalidate?(ref: string, value: string): void
+
+  // The material for `ref` as `who` holds it, for a target whose auth is
+  // `per_caller` (`FJS-D848`). A second method rather than a second argument
+  // to get(): a process-scoped resolver that ignored an optional argument
+  // would hand every caller the machine's credential with nothing saying so,
+  // and a target that needs this is refused at put() when it is missing.
+  // Null fails the send closed, as get() does.
+  getFor?(ref: string, who: CredentialCaller): Promise<string | null>
+
+  // invalidate(), for the value getFor(ref, who) answered. Forgets that
+  // caller's and nobody else's: one tenant's revoked login is not another's.
+  invalidateFor?(ref: string, value: string, who: CredentialCaller): void
+}
+
+// Whose credential a per-caller send spends. All three are ids, never
+// material. Under junction the plugin reads `tenant` and `principal` off the
+// call in progress and the caller states only `grant` — the one fact no
+// ambient state carries, since an account can connect several logins to one
+// vendor and only the send knows which it means.
+export interface CredentialCaller {
+  tenant:    string | null
+  principal: string | null
+  grant:     string | null
 }
 
 // Thrown internally when a target's credential cannot be resolved.
@@ -233,8 +265,8 @@ export class CredentialError extends Error {
   readonly target: string
   readonly ref:    string
 
-  constructor(target: string, ref: string) {
-    super(`Credential '${ref}' for target '${target}' could not be resolved`)
+  constructor(target: string, ref: string, why?: string) {
+    super(`Credential '${ref}' for target '${target}' could not be resolved${why ? ` — ${why}` : ''}`)
     this.name   = 'CredentialError'
     this.target = target
     this.ref    = ref
@@ -285,6 +317,17 @@ export interface ConduitRequest {
   // Merged with the auth headers built from the target's `auth`.
   // Auth headers take precedence: a caller cannot override or strip them.
   headers?:    Record<string, string>
+
+  // Whose credential a `per_caller` target spends. Standalone, the caller
+  // states it; under junction the plugin writes it from the call in progress
+  // and a stated one is refused, so a tenant is never an argument. A
+  // per-caller send with none fails closed as `auth_failed`. Ignored by a
+  // target that is not per-caller.
+  who?:        CredentialCaller
+
+  // Which of the caller's logins to this vendor a per-caller send spends,
+  // where it holds more than one. Copied onto `who.grant` by the plugin.
+  grant?:      string
 
   // Opts a non-idempotent request (POST, PATCH) into retries, and
   // is forwarded as an `Idempotency-Key` header so the target can collapse

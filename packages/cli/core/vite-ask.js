@@ -6,11 +6,19 @@
 // scoped to the Vite root. Nothing here reloads anything: the edit is a file
 // write, and the dev server's own watcher is what the page sees.
 //
-// The middleware is on the DEV SERVER, so it is same-origin with the page and
-// needs no token — and it is also a localhost port any other tab can POST at.
-// A cross-site form or a no-cors fetch carries a foreign Origin (or none) and
-// cannot set a JSON content type without a preflight Vite never answers yes
-// to, so both are refused before anything is spawned.
+// The middleware is on the DEV SERVER, so it is same-origin with the page —
+// and it is also a localhost port any other tab can POST at. A cross-site form
+// or a no-cors fetch carries a foreign Origin (or none) and cannot set a JSON
+// content type without a preflight Vite never answers yes to, so both are
+// refused before anything is spawned. On a dev server other people can reach,
+// same-origin says nothing about WHO, so `ASK_ADMIT_URL` turns on a second
+// rule: the page's Bearer token, graded by the app's own API (`admitCaller`).
+//
+// Submit commits what the panel's runs changed, pushes, and opens a pull
+// request — on a Workbench branch only, and never over a file the panel did not
+// write, because a commit of the whole tree would carry another writer's work
+// into a review nobody asked them for. In a preview worktree it is also refused
+// while the branch holds anything outside the Vite root (`core/preview.js`).
 //
 // A text edit is a run with no model: the picked element's old text, found
 // exactly once where the element was written, swapped for the new. Anything
@@ -23,13 +31,16 @@
 // whole-file restore would take their work with ours. Then it reverses the
 // run's own hunks, newest first, only where the new text occurs exactly once.
 
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
+import { LEVELS } from '@frontierjs/toolbelt/gate'
 
 import { editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { previewScope } from './preview.js'
 
 const CLIENT_ID   = '/@frontierjs/cli/ask-client'
 const RESOLVED_ID = '\0@frontierjs/cli/ask-client'
@@ -49,6 +60,49 @@ export function sameOrigin(req) {
   const site = req.headers['sec-fetch-site']
   if (site && site !== 'same-origin') return false
   return /^application\/json\b/i.test(req.headers['content-type'] ?? '')
+}
+
+/**
+ * Who may ask, read from the environment the dev server started with. Unset is
+ * a localhost dev server, and same-origin is the whole rule. `ASK_ADMIT_URL` is
+ * the address that answers who a token is — auth's `account/me` on the app's
+ * API — and `ASK_ADMIT_LEVEL` names the level from the gate's LEVELS that the
+ * answer's `level` must reach.
+ */
+export function readAdmit(env = process.env) {
+  const url = String(env.ASK_ADMIT_URL ?? '').trim()
+  if (!url) return null
+  const name = String(env.ASK_ADMIT_LEVEL ?? '').trim().toUpperCase()
+  return { url, name, level: Object.hasOwn(LEVELS, name) ? LEVELS[name] : null }
+}
+
+/**
+ * Null when the caller may ask, else `{ status, error }`. The level is the
+ * API's own grading — `account/me` carries it when the app passes `services: {
+ * level }` to its auth plugin — so the dev server holds no second role→level
+ * mapping, and an answer without one is refused rather than guessed at.
+ */
+export async function admitCaller(req, admit) {
+  if (!admit) return null
+  if (admit.level == null) {
+    return { status: 500, error: `ASK_ADMIT_LEVEL is ${admit.name ? `'${admit.name}', not a level` : 'unset'} — one of ${Object.keys(LEVELS).join(', ')}` }
+  }
+  const token = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '')?.[1]
+  if (!token) return { status: 401, error: 'sign in to the app first — this dev server asks the API who you are' }
+  let r
+  try {
+    r = await fetch(admit.url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' }, signal: AbortSignal.timeout(5000) })
+  } catch (e) {
+    return { status: 502, error: `the API at ${admit.url} did not answer (${e.message})` }
+  }
+  if (r.status === 401 || r.status === 403) return { status: 401, error: 'the API does not know this session — sign in again' }
+  if (!r.ok) return { status: 502, error: `the API at ${admit.url} answered ${r.status}` }
+  const me = await r.json().catch(() => null)
+  if (!Number.isFinite(me?.level)) {
+    return { status: 502, error: 'the API answered with no level — its auth plugin needs services: { level }' }
+  }
+  if (me.level < admit.level) return { status: 403, error: `asking here takes ${admit.name}` }
+  return null
 }
 
 const outside = (root, file) => { const rel = relative(root, file); return rel.startsWith('..') || isAbsolute(rel) }
@@ -137,6 +191,9 @@ export function createLedger(root) {
     },
 
     get count() { let n = 0; for (const f of files.values()) n += f.changes.length; return n },
+
+    /** The absolute path of each file a change landed in. */
+    touched() { return [...files].filter(([, f]) => f.changes.length).map(([file]) => file) },
 
     /** Each changed file, with its lines removed and added. */
     diff() {
@@ -413,14 +470,54 @@ function reply(res, status, body) {
   res.end(JSON.stringify(body))
 }
 
+// ─── submit ──────────────────────────────────────────────────────────────────
+
+const sh = (cmd, args, cwd) => new Promise(ok => execFile(cmd, args, { cwd, maxBuffer: 8 << 20 }, (err, stdout, stderr) =>
+  ok({ ok: !err, out: String(stdout ?? ''), err: String(stderr || err?.message || '').trim() })))
+
+const tail = text => text.split('\n').slice(-5).join('\n')
+
+/** Each path `git status --porcelain=v1 -z` names, relative to the checkout's top. */
+export function dirtyPaths(status) {
+  const parts = status.split('\0').filter(Boolean)
+  const out = []
+  for (let i = 0; i < parts.length; i++) {
+    out.push(parts[i].slice(3))
+    // A rename or copy names its source next, and a rename's source is a deletion.
+    if (parts[i][0] === 'R' || parts[i][0] === 'C') out.push(parts[++i])
+  }
+  return out
+}
+
+/** The pull request's title and body, from the asks that made its changes. */
+export function submission({ preview, asks }) {
+  const first = String(asks[0]?.instruction ?? 'Changes').replace(/\s+/g, ' ').trim()
+  const title = (first.length > 64 ? first.slice(0, 63) + '…' : first) + (asks.length > 1 ? ` (+${asks.length - 1} more)` : '')
+  const body = [
+    `Asked for on the preview at ${preview}, through the ask panel.`,
+    '',
+    ...asks.map(a => `- ${a.instruction}${a.session ? ` (session \`${a.session}\`)` : ''}`),
+  ].join('\n')
+  return { title, body }
+}
+
 /**
  * @param {object} [opts]
- * @param {string} [opts.bin]  the claude executable — a test hands a fake one
+ * @param {string} [opts.bin]       the claude executable — a test hands a fake one
+ * @param {string} [opts.gh]        the gh executable, likewise
+ * @param {string} [opts.tokenKey]  the localStorage key the app's client keeps its token under
+ * @param {object|null} [opts.admit]  who may ask; `readAdmit()` of the environment by default
  */
-export function askPlugin({ bin = 'claude' } = {}) {
+export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_token', admit = readAdmit() } = {}) {
   let root = process.cwd()
   let current = null           // { child, run } — one question at a time
   const runs = new Map()       // run id → the edits that landed, for an undo
+  // What Submit commits and describes, kept past the undo window: a file is the
+  // panel's while a run not undone changed it, and each such run is a PR line.
+  const touched = new Map()    // abs path → how many of those runs changed it
+  const asks = new Map()       // run id → { instruction, session }
+  let waiting = []             // asks committed, and not yet in a pull request
+  let submitting = false
   let seq = 0
   // A run id outlives this process in the page's saved log; after a restart the
   // count starts again, and a bare number would undo some other run.
@@ -438,6 +535,7 @@ export function askPlugin({ bin = 'claude' } = {}) {
 
     const run = `${boot}.${++seq}`
     const ledger = createLedger(root)
+    let session = null
     res.statusCode = 200
     res.setHeader('content-type', 'application/x-ndjson')
     res.setHeader('cache-control', 'no-store')
@@ -451,6 +549,7 @@ export function askPlugin({ bin = 'claude' } = {}) {
       prompt:  editPrompt({ instruction, picks, page: body.page, followUp: !!body.session }),
       onEvent: e => {
         if (e.type === 'read' || e.type === 'edit' || e.type === 'write') return ledger.see(e)
+        if (e.type === 'session') session = e.id
         if (e.type === 'landed' || e.type === 'refused') return ledger.result(e)
         if (e.type === 'result') {
           e.edits = ledger.count
@@ -465,9 +564,25 @@ export function askPlugin({ bin = 'claude' } = {}) {
     res.on('close', () => { if (current?.run === run) stop() })
     await out.done
     if (current?.run === run) current = null
+    hold(run, ledger, { instruction, session })
+    res.end()
+  }
+
+  function hold(run, ledger, ask) {
     runs.set(run, ledger)
     if (runs.size > 20) runs.delete(runs.keys().next().value)
-    res.end()
+    if (!ledger.count) return
+    for (const f of ledger.touched()) touched.set(f, (touched.get(f) ?? 0) + 1)
+    asks.set(run, ask)
+  }
+
+  function release(run, ledger) {
+    for (const f of ledger.touched()) {
+      const n = (touched.get(f) ?? 1) - 1
+      if (n > 0) touched.set(f, n)
+      else touched.delete(f)
+    }
+    asks.delete(run)
   }
 
   // The edit a person typed, made without a model when it can be made without
@@ -501,8 +616,7 @@ export function askPlugin({ bin = 'claude' } = {}) {
     ledger.see({ type: 'edit', id: 'text', file, ...hunk, all: false })
     writeFileSync(file, after)
     ledger.result({ type: 'landed', id: 'text' })
-    runs.set(run, ledger)
-    if (runs.size > 20) runs.delete(runs.keys().next().value)
+    hold(run, ledger, { instruction: `Text: “${old.replace(/\s+/g, ' ').trim()}” → “${next}”`, session: null })
     return reply(res, 200, { run, files: ledger.diff() })
   }
 
@@ -524,6 +638,62 @@ export function askPlugin({ bin = 'claude' } = {}) {
     return reply(res, 200, { text: editPrompt({ instruction, picks, page: body.page, followUp: true }) })
   }
 
+  async function branch() {
+    const r = await sh('git', ['rev-parse', '--abbrev-ref', 'HEAD'], root)
+    if (!r.ok) return { name: null, why: 'the app is not in a git checkout' }
+    const name = r.out.trim()
+    return name.startsWith('wb/') ? { name } : { name, why: `${name} is not a Workbench branch (wb/…)` }
+  }
+
+  // Commit what the panel changed, push, and open the pull request — or answer
+  // the one already open for the branch, which the push has just updated.
+  async function submit(req, res) {
+    const b = await branch()
+    if (b.why) return reply(res, 409, { error: `nothing to submit to — ${b.why}` })
+    const scope = previewScope(root, root)
+    if (scope.preview && scope.why) return reply(res, 409, { error: `cannot grade this preview — ${scope.why}` })
+    if (scope.preview && scope.outside.length) {
+      return reply(res, 409, { error: `a preview changes ${relative(scope.top, root) || '.'}/ and nothing else — this branch changes more against ${scope.into}`, files: scope.outside.slice(0, 20) })
+    }
+    const top = (await sh('git', ['rev-parse', '--show-toplevel'], root)).out.trim()
+    const st = await sh('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], top)
+    if (!st.ok) return reply(res, 500, { error: tail(st.err) })
+    const dirty = dirtyPaths(st.out)
+    const others = dirty.filter(p => !touched.has(resolve(top, p)))
+    if (others.length) {
+      return reply(res, 409, { error: 'files this panel did not change are changed too — commit them or put them back first', files: others.slice(0, 20) })
+    }
+    if (!dirty.length && !waiting.length) return reply(res, 400, { error: 'nothing to submit — no change from this panel is waiting' })
+
+    const preview = req.headers.origin
+    if (dirty.length) {
+      const list = [...asks.values()]
+      const { title, body } = submission({ preview, asks: list })
+      const add = await sh('git', ['add', '--', ...dirty], top)
+      if (!add.ok) return reply(res, 500, { error: tail(add.err) })
+      const commit = await sh('git', ['commit', '-m', title, '-m', body], top)
+      if (!commit.ok) return reply(res, 500, { error: tail(commit.err) })
+      touched.clear()
+      asks.clear()
+      waiting.push(...list)
+    }
+    const push = await sh('git', ['push', '-u', 'origin', 'HEAD'], top)
+    if (!push.ok) return reply(res, 502, { error: `committed, and the push failed — Submit again to retry:\n${tail(push.err)}` })
+
+    const open = await sh(gh, ['pr', 'view', b.name, '--json', 'url', '--jq', '.url'], top)
+    if (open.ok && open.out.trim()) {
+      waiting = []
+      return reply(res, 200, { pr: open.out.trim(), created: false, files: dirty })
+    }
+    const { title, body } = submission({ preview, asks: waiting })
+    // The branch it was graded against, so the review is of the diff that passed.
+    const into = scope.preview ? ['--base', scope.into.replace(/^origin\//, '')] : []
+    const made = await sh(gh, ['pr', 'create', '--head', b.name, ...into, '--title', title, '--body', body], top)
+    if (!made.ok) return reply(res, 502, { error: `pushed, and gh pr create failed — Submit again to retry:\n${tail(made.err)}` })
+    waiting = []
+    return reply(res, 200, { pr: made.out.trim().split('\n').pop(), created: true, files: dirty })
+  }
+
   function stop() {
     if (!current) return false
     try { process.kill(-current.child.pid, 'SIGTERM') } catch {}
@@ -543,16 +713,29 @@ export function askPlugin({ bin = 'claude' } = {}) {
         if (!path.startsWith('/__fjs/ask')) return next()
         if (req.method !== 'POST') return reply(res, 405, { error: 'POST only' })
         if (!sameOrigin(req)) return reply(res, 403, { error: 'only a page this dev server served may ask' })
+        const refused = await admitCaller(req, admit)
+        if (refused) return reply(res, refused.status, { error: refused.error })
         if (path === '/__fjs/ask') return ask(req, res)
         if (path === '/__fjs/ask/text') return text(req, res)
         if (path === '/__fjs/ask/handoff') return handoff(req, res)
         if (path === '/__fjs/ask/stop') return reply(res, 200, { stopped: stop() })
+        if (path === '/__fjs/ask/status') {
+          const b = await branch()
+          return reply(res, 200, { branch: b.name, submit: !b.why })
+        }
+        if (path === '/__fjs/ask/submit') {
+          if (current) return reply(res, 409, { error: 'Claude is still working on a change — let it finish or stop it first' })
+          if (submitting) return reply(res, 409, { error: 'a submit is already running' })
+          submitting = true
+          try { return await submit(req, res) } finally { submitting = false }
+        }
         if (path === '/__fjs/ask/undo') {
           let body
           try { body = await readJson(req) } catch (e) { return reply(res, 400, { error: e.message }) }
           const ledger = runs.get(String(body.run))
           if (!ledger) return reply(res, 404, { error: 'no such run — the dev server restarted, or it was too long ago' })
           runs.delete(String(body.run))
+          release(String(body.run), ledger)
           return reply(res, 200, ledger.undo())
         }
         return next()
@@ -560,7 +743,10 @@ export function askPlugin({ bin = 'claude' } = {}) {
     },
 
     resolveId(id) { return id === CLIENT_ID ? RESOLVED_ID : null },
-    load(id) { return id === RESOLVED_ID ? readFileSync(CLIENT_FILE, 'utf8') : null },
+    load(id) {
+      if (id !== RESOLVED_ID) return null
+      return `const ASK = ${JSON.stringify({ tokenKey })}\n` + readFileSync(CLIENT_FILE, 'utf8')
+    },
 
     transformIndexHtml() {
       return [{ tag: 'script', attrs: { type: 'module', src: CLIENT_ID }, injectTo: 'body' }]

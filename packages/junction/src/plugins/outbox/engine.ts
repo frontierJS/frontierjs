@@ -48,6 +48,7 @@ export interface OutboxRow {
   job:           string
   payload:       unknown
   actorId:       string | null
+  tenantId:      string | null
   claimedAt:     string | null
   deliveredAt:   string | null
   nextAttemptAt: string | null
@@ -134,8 +135,14 @@ export async function enqueueOutbox(
     ? opts.actor ?? null
     : ctx.auth?.user?.userId ?? null
 
+  // The call's own tenant under `strategy row` (a claim resolved per call), or
+  // the one runAs / a job stated. Recorded for a person too: it is a pointer to
+  // rows, never authority, and the relay hands it back as Caravan records it.
+  const tenantId = (ctx.locals as { tenantId?: string | null } | undefined)?.tenantId
+    ?? ctx.app?.tenant?.() ?? null
+
   const row = await outboxTable(db).create({
-    data: { job: name, payload: data ?? {}, actorId },
+    data: { job: name, payload: data ?? {}, actorId, tenantId },
   })
 
   // What callService kicks the relay for. A row already committed is the
@@ -417,10 +424,14 @@ async function deliverFrom(
       // back to the database this row came out of. Under `strategy database`
       // that is a different FILE, so a dispatch that named no tenant would run
       // the effect against the app's own — which is nobody's.
+      // Under `strategy row` the database is every tenant's, so the row says
+      // which: without it a swept delivery of the app's own work ran in no
+      // tenant and its handler read nothing (`FJS-2508`).
+      const forTenant = row.tenantId ?? tenant
       await jobs.dispatch(row.job, row.payload, {
         id:    occurrenceKey('outbox', row.id),
         actor: row.actorId,
-        ...(tenant !== null ? { tenant } : {}),
+        ...(forTenant !== null ? { tenant: forTenant } : {}),
       })
       await table.update({ where: { id: row.id }, data: { deliveredAt: new Date() } })
       delivered++

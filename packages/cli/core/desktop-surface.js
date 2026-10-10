@@ -41,12 +41,12 @@
  */
 
 import { spawn }                                from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { resolve, dirname, basename }           from 'node:path'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { resolve, dirname, basename, isAbsolute, relative } from 'node:path'
 import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
-import { appPorts }                             from './ports.js'
+import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
 
@@ -552,9 +552,15 @@ export function desktopApiTarget(api) {
 
 /**
  * Use what answers on `port`, or start the app's `script` there and wait for
- * it. Returns the process it started, or `null` when it reused one — a port
- * that answers is not proof it is this app's server (`FJS-740`), so the line
- * naming the reuse is printed every time.
+ * it. Returns the process it started, or `null` when it reused one.
+ *
+ * A port that answers is not proof it is this app's server (`FJS-740`): a
+ * prototype whose config wrote another project's port held basecamp's 8020,
+ * and the window opened onto the prototype. So the listener's working
+ * directory is asked, and one outside `root` is refused with its owner named
+ * (`err.holder`). Where the owner cannot be asked — no lsof, a root-owned
+ * docker-proxy — the server is reused and the line naming the reuse is all
+ * there is.
  *
  * Its own process group, stopped as one by `stopServer`: `bun run api` is a
  * launcher, and signaling its pid alone leaves the server holding the port.
@@ -562,6 +568,13 @@ export function desktopApiTarget(api) {
 export async function ensureServer({ root, runner, script, port, env = {}, label, log, dry = false }) {
   const origin = `http://localhost:${port}`
   if ((await portAnswering({ port })).ok) {
+    const holder = foreignHolder(port, root)
+    if (holder) {
+      throw Object.assign(new Error(
+        `${origin} answers, but not from this app — pid ${holder.pid} in ${holder.cwd}` +
+        (holder.args ? ` (${holder.args})` : '') + `. Stop it and run again; the ${label} is started here when nothing answers.`,
+      ), { holder })
+    }
     log.info(`${label}: ${origin} already answers — using it`)
     return null
   }
@@ -581,6 +594,22 @@ export async function ensureServer({ root, runner, script, port, env = {}, label
     throw new Error(`${label} did not answer at ${origin} within 30s.`)
   }
   return child
+}
+
+/**
+ * The process listening on `port` when every one whose directory can be read
+ * runs outside `root`, or null — none listening, none readable, or one inside.
+ */
+export function foreignHolder(port, root) {
+  const inside = (dir) => { const rel = relative(realRoot(root), dir); return !rel.startsWith('..') && !isAbsolute(rel) }
+  const known  = pidsOnPort(port).map(pid => ({ pid, cwd: processCwd(pid) })).filter(h => h.cwd)
+  if (!known.length || known.some(h => inside(h.cwd))) return null
+  return { ...known[0], args: describeProcess(known[0].pid) }
+}
+
+// /proc reports a resolved path, so a root reached through a symlink would read as foreign.
+function realRoot(root) {
+  try { return realpathSync(root) } catch { return resolve(root) }
 }
 
 /**

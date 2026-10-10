@@ -850,11 +850,19 @@
         </div>
       {/if}
 
-      <!-- Day-of-week headers -->
-      <div class="fjs-dp-grid">
-        {#each dowLabels as _, labelIndex (labelIndex)}
-          <span class="fjs-dp-dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
-        {/each}
+      <!--
+        A month is a table: a week is a row a target that reads no CSS can lay
+        out, and a day is announced under its weekday. The browser still lays
+        it out as one grid (the style's display: contents).
+      -->
+      <table class="fjs-dp-grid">
+        <thead>
+          <tr>
+            {#each dowLabels as _, labelIndex (labelIndex)}
+              <th class="fjs-dp-dow" scope="col">{dowLabels[(labelIndex + startOfWeek) % 7]}</th>
+            {/each}
+          </tr>
+        </thead>
 
         <!--
           Iterate the weeks the month actually has. A fixed `{#each {length: 6}}`
@@ -864,38 +872,44 @@
           threw `Cannot read properties of undefined`, in a handler, where it
           surfaces as a calendar that stops responding.
         -->
-        {#each startDateCalendar as week, weekIndex (weekIndex)}
-          {#if week}
-            {#each week as cell, dayIndex (dayIndex)}
-              {#if cell !== 0}
-                {@const day = cell}
-                <button
-                  type="button"
-                  class="fjs-dp-day"
-                  class:today={isToday(day, startDateMonth, startDateYear)}
-                  class:start={isFirstInRange(day, startDateMonth, startDateYear)}
-                  class:end={isLastInRange(day, startDateMonth, startDateYear)}
-                  class:range={inRange(day, startDateMonth, startDateYear)}
-                  class:rangehover={inRangeHover(day, startDateMonth, startDateYear)}
-                  class:past={isPastDate(day, startDateMonth, startDateYear)}
-                  class:future={isFutureDate(day, startDateMonth, startDateYear)}
-                  class:first={isFirstDayOfMonth(day)}
-                  class:last={isLastDayOfMonth(day, startDateCalendar)}
-                  class:disabled={isDisabledDay(day, startDateMonth, startDateYear)}
-                  class:norange={isRange && tempEndDate === _startDate}
-                  on:mouseenter={() => onMouseEnter(day, startDateMonth, startDateYear)}
-                  on:mouseleave={onMouseLeave}
-                  on:click|preventDefault={(e) => onClick(e, day, startDateMonth, startDateYear)}
-                >
-                  <span class="chip fjs-dp-square">{day}</span>
-                </button>
-              {:else}
-                <div class="fjs-dp-day other">&nbsp;</div>
-              {/if}
-            {/each}
-          {/if}
-        {/each}
-      </div>
+        <tbody>
+          {#each startDateCalendar as week, weekIndex (weekIndex)}
+            {#if week}
+              <tr>
+                {#each week as cell, dayIndex (dayIndex)}
+                  <td>
+                    {#if cell !== 0}
+                      {@const day = cell}
+                      <button
+                        type="button"
+                        class="fjs-dp-day"
+                        class:today={isToday(day, startDateMonth, startDateYear)}
+                        class:start={isFirstInRange(day, startDateMonth, startDateYear)}
+                        class:end={isLastInRange(day, startDateMonth, startDateYear)}
+                        class:range={inRange(day, startDateMonth, startDateYear)}
+                        class:rangehover={inRangeHover(day, startDateMonth, startDateYear)}
+                        class:past={isPastDate(day, startDateMonth, startDateYear)}
+                        class:future={isFutureDate(day, startDateMonth, startDateYear)}
+                        class:first={isFirstDayOfMonth(day)}
+                        class:last={isLastDayOfMonth(day, startDateCalendar)}
+                        class:disabled={isDisabledDay(day, startDateMonth, startDateYear)}
+                        class:norange={isRange && tempEndDate === _startDate}
+                        on:mouseenter={() => onMouseEnter(day, startDateMonth, startDateYear)}
+                        on:mouseleave={onMouseLeave}
+                        on:click|preventDefault={(e) => onClick(e, day, startDateMonth, startDateYear)}
+                      >
+                        <span class="chip fjs-dp-square">{day}</span>
+                      </button>
+                    {:else}
+                      <div class="fjs-dp-day other">&nbsp;</div>
+                    {/if}
+                  </td>
+                {/each}
+              </tr>
+            {/if}
+          {/each}
+        </tbody>
+      </table>
     </div>
 
     <!-- ── Second pane (multipane range) ── -->
@@ -936,44 +950,54 @@
           </div>
         {/if}
 
-        <div class="fjs-dp-grid">
-          {#each dowLabels as _, labelIndex (labelIndex)}
-            <span class="fjs-dp-dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
-          {/each}
+        <table class="fjs-dp-grid">
+          <thead>
+            <tr>
+              {#each dowLabels as _, labelIndex (labelIndex)}
+                <th class="fjs-dp-dow" scope="col">{dowLabels[(labelIndex + startOfWeek) % 7]}</th>
+              {/each}
+            </tr>
+          </thead>
 
           <!-- Same rule as the primary pane: iterate the real weeks. -->
-          {#each endDateCalendar as week, weekIndex (weekIndex)}
-            {#if week}
-              {#each week as cell, dayIndex (dayIndex)}
-                {#if cell !== 0}
-                  {@const day = cell}
-                  <button
-                    type="button"
-                    class="fjs-dp-day"
-                    class:today={isToday(day, endDateMonth, endDateYear)}
-                    class:range={inRange(day, endDateMonth, endDateYear)}
-                    class:rangehover={inRangeHover(day, endDateMonth, endDateYear)}
-                    class:start={isFirstInRange(day, endDateMonth, endDateYear)}
-                    class:end={isLastInRange(day, endDateMonth, endDateYear)}
-                    class:past={isPastDate(day, endDateMonth, endDateYear)}
-                    class:future={isFutureDate(day, endDateMonth, endDateYear)}
-                    class:first={isFirstDayOfMonth(day)}
-                    class:last={isLastDayOfMonth(day, endDateCalendar)}
-                    class:disabled={isDisabledDay(day, endDateMonth, endDateYear)}
-                    class:norange={isRange && tempEndDate === _startDate}
-                    on:mouseenter={() => onMouseEnter(day, endDateMonth, endDateYear)}
-                    on:mouseleave={onMouseLeave}
-                    on:click|preventDefault={(e) => onClick(e, day, endDateMonth, endDateYear)}
-                  >
-                    <span class="chip fjs-dp-square">{day}</span>
-                  </button>
-                {:else}
-                  <div class="fjs-dp-day other">&nbsp;</div>
-                {/if}
-              {/each}
-            {/if}
-          {/each}
-        </div>
+          <tbody>
+            {#each endDateCalendar as week, weekIndex (weekIndex)}
+              {#if week}
+                <tr>
+                  {#each week as cell, dayIndex (dayIndex)}
+                    <td>
+                      {#if cell !== 0}
+                        {@const day = cell}
+                        <button
+                          type="button"
+                          class="fjs-dp-day"
+                          class:today={isToday(day, endDateMonth, endDateYear)}
+                          class:range={inRange(day, endDateMonth, endDateYear)}
+                          class:rangehover={inRangeHover(day, endDateMonth, endDateYear)}
+                          class:start={isFirstInRange(day, endDateMonth, endDateYear)}
+                          class:end={isLastInRange(day, endDateMonth, endDateYear)}
+                          class:past={isPastDate(day, endDateMonth, endDateYear)}
+                          class:future={isFutureDate(day, endDateMonth, endDateYear)}
+                          class:first={isFirstDayOfMonth(day)}
+                          class:last={isLastDayOfMonth(day, endDateCalendar)}
+                          class:disabled={isDisabledDay(day, endDateMonth, endDateYear)}
+                          class:norange={isRange && tempEndDate === _startDate}
+                          on:mouseenter={() => onMouseEnter(day, endDateMonth, endDateYear)}
+                          on:mouseleave={onMouseLeave}
+                          on:click|preventDefault={(e) => onClick(e, day, endDateMonth, endDateYear)}
+                        >
+                          <span class="chip fjs-dp-square">{day}</span>
+                        </button>
+                      {:else}
+                        <div class="fjs-dp-day other">&nbsp;</div>
+                      {/if}
+                    </td>
+                  {/each}
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
       </div>
     {/if}
   </div>
@@ -1217,6 +1241,10 @@
     width:                 fit-content;
   }
 
+  /* The table's rows are the terminal's; here every cell is a grid item. */
+  .fjs-dp-grid :is(thead, tbody, tr) { display: contents; }
+  .fjs-dp-grid :is(th, td)           { padding: 0; }
+
   .fjs-dp-dow {
     color:            var(--ink-soft);
     font-size:        var(--text-sm);
@@ -1228,7 +1256,7 @@
   /* ── Day cells ───────────────────────────────────────────────────────── */
 
   /*
-   * The button is the grid cell and carries the range band; the `.chip` inside
+   * The button fills its cell and carries the range band; the `.chip` inside
    * it is the disc. Splitting them is what lets the band run edge to edge
    * between two round cells — a single element cannot be both a circle and a
    * full-width strip.
@@ -1328,36 +1356,44 @@
   /* A band that stops at the row's edge is rounded off rather than cut. */
   .fjs-dp-day.rangehover.first .fjs-dp-square,
   .fjs-dp-day.range.first      .fjs-dp-square,
-  .fjs-dp-day.rangehover:nth-last-child(7n):not(.start):not(.end) .fjs-dp-square,
-  .fjs-dp-day.range:nth-last-child(7n):not(.start):not(.end)      .fjs-dp-square {
+  td:first-child > .fjs-dp-day.rangehover:not(.start):not(.end) .fjs-dp-square,
+  td:first-child > .fjs-dp-day.range:not(.start):not(.end)      .fjs-dp-square {
     border-start-start-radius: var(--pill-radius);
     border-end-start-radius:   var(--pill-radius);
   }
   .fjs-dp-day.rangehover.last .fjs-dp-square,
   .fjs-dp-day.range.last      .fjs-dp-square,
-  .fjs-dp-day.rangehover:nth-child(7n):not(.start):not(.end) .fjs-dp-square,
-  .fjs-dp-day.range:nth-child(7n):not(.start):not(.end)      .fjs-dp-square {
+  td:last-child > .fjs-dp-day.rangehover:not(.start):not(.end) .fjs-dp-square,
+  td:last-child > .fjs-dp-day.range:not(.start):not(.end)      .fjs-dp-square {
     border-start-end-radius: var(--pill-radius);
     border-end-end-radius:   var(--pill-radius);
   }
   .fjs-dp-day.rangehover.start.end,
   .fjs-dp-day.range.start.end { box-shadow: none; }
 
-  /* The hover preview: the same band, drawn while the second end is chosen. */
-  .fjs-dp-day:not(.rangehover) + .rangehover:not(.end),
-  .fjs-dp-day:not(.rangehover) + .rangehover.start {
+  /*
+   * The hover preview: the same band, drawn while the second end is chosen.
+   * Its first day follows a day outside it, earlier in the row or at the end
+   * of the row above.
+   */
+  td:has(> :not(.rangehover)) + td > .rangehover:not(.end),
+  td:has(> :not(.rangehover)) + td > .rangehover.start,
+  tr:has(> td:last-child > :not(.rangehover)) + tr > td:first-child > .rangehover:not(.end),
+  tr:has(> td:last-child > :not(.rangehover)) + tr > td:first-child > .rangehover.start {
     box-shadow: inset calc(var(--dp-cell) / -2) 0 0 var(--dp-band) !important;
   }
-  .fjs-dp-day:not(.rangehover) + .rangehover      .fjs-dp-square,
-  .fjs-dp-day:not(.rangehover) + .rangehover.start .fjs-dp-square { border-radius: var(--pill-radius); }
+  td:has(> :not(.rangehover)) + td > .rangehover .fjs-dp-square,
+  tr:has(> td:last-child > :not(.rangehover)) + tr > td:first-child > .rangehover .fjs-dp-square { border-radius: var(--pill-radius); }
 
   .fjs-dp-day.rangehover:hover { box-shadow: inset calc(var(--dp-cell) / 2) 0 0 var(--dp-band); }
   .fjs-dp-day.rangehover:hover .fjs-dp-square { border-radius: var(--pill-radius); font-weight: 500; }
   .fjs-dp-day.rangehover.first:hover,
   .fjs-dp-day.rangehover.start { box-shadow: inset calc(var(--dp-cell) / -2) 0 0 var(--dp-band); }
-  .fjs-dp-day.rangehover:not(.start) + .start,
+  td:has(> .rangehover:not(.start)) + td > .start,
+  tr:has(> td:last-child > .rangehover:not(.start)) + tr > td:first-child > .start,
   .fjs-dp-day.rangehover.end   { box-shadow: inset calc(var(--dp-cell) / 2) 0 0 var(--dp-band); }
-  .fjs-dp-day.rangehover:not(.start) + .start .fjs-dp-square { border-radius: var(--pill-radius); }
+  td:has(> .rangehover:not(.start)) + td > .start .fjs-dp-square,
+  tr:has(> td:last-child > .rangehover:not(.start)) + tr > td:first-child > .start .fjs-dp-square { border-radius: var(--pill-radius); }
   .fjs-dp-day.rangehover.start.norange { box-shadow: none !important; }
 
   /* ── Narrow ──────────────────────────────────────────────────────────── */

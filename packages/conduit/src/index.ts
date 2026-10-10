@@ -56,6 +56,7 @@ export type {
 
   // Credentials
   CredentialResolver,
+  CredentialCaller,
 
   // Resilience + validation
   ResilienceOptions,

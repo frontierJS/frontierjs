@@ -155,14 +155,12 @@ export async function run(t) {
   // calendar still looks like a calendar. 1 January 2026 is a Thursday, so on
   // a Monday-start grid it is the fourth cell of its row.
   t.is(await t.evaluate(`
-    const cells = [...document.querySelectorAll('#stage .fjs-dp-grid > *')].filter(el => !el.classList.contains('fjs-dp-dow'));
-    return cells.findIndex(el => el.textContent.trim() === '1');
+    return [...document.querySelectorAll('#stage .fjs-dp-grid td')].find(td => td.textContent.trim() === '1').cellIndex;
   `), 3, 'and rotates the grid with them — 1 Jan 2026 is a Thursday')
 
   await t.mount('datepicker-modes', { todayISO: JAN, startOfWeek: 0 })
   t.is(await t.evaluate(`
-    const cells = [...document.querySelectorAll('#stage .fjs-dp-grid > *')].filter(el => !el.classList.contains('fjs-dp-dow'));
-    return cells.findIndex(el => el.textContent.trim() === '1');
+    return [...document.querySelectorAll('#stage .fjs-dp-grid td')].find(td => td.textContent.trim() === '1').cellIndex;
   `), 4, 'while a Sunday-start week puts it one cell further along')
 
   /* ── an allow-list of dates ───────────────────────────────────────────── */

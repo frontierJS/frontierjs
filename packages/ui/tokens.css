@@ -47,7 +47,6 @@
   --color-plan-enterprise:#0f172a;   /* slate-900 */
 
   /* ── Typography ─────────────────────────────────────────── */
-  --font-sans:   ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono:   ui-monospace, 'Cascadia Code', 'Fira Mono', monospace;
 
   --text-xs:   0.75rem;    /* 12px */

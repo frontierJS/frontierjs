@@ -487,11 +487,9 @@ export interface CursorResult<T> {`,
   )
 
   // ── LitestoneClient interface ────────────────────────────────────────────────
-  lines.push(
-    `// ── LitestoneClient ──────────────────────────────────────────────────────────`,
-    ``,
-    `export interface LitestoneClient {`,
-  )
+  // Built apart and pushed whole: the system audience's header has to name
+  // every member the body declares (below).
+  const clientStart = lines.length
 
   // One entry per model
   for (const model of schema.models) {
@@ -565,6 +563,35 @@ export interface CursorResult<T> {`,
     `  $now(): Date`,
     `}`,
     ``,
+  )
+
+  // The system audience's interface is REGISTERED as the client `createClient()`
+  // returns (below), so it has to carry everything the package's own client
+  // does — a member listed here by hand and missing is a method the server
+  // still has and its own code can no longer call (`FJS-2502`: `$retain()`, the
+  // scaffold's retention job, and ten more). So it extends the package's
+  // interface for every NAMED member it does not redeclare. Named, because the
+  // package's carries `[model: string]: unknown` and a plain `Omit` over an
+  // index signature keeps the signature and drops every name. The client
+  // audience is never registered and stays the list above.
+  const body = lines.splice(clientStart)
+  const declared = [...new Set(body
+    .map(l => /^ {2}(?:readonly\s+)?([$\w]+)\s*[(<:?]/.exec(l)?.[1])
+    .filter(Boolean))]
+  const header = audience === 'system'
+    ? [
+        `type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient`,
+        `type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }`,
+        ``,
+        `export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,`,
+        `  ${declared.map(n => `'${n}'`).join(' | ')}>> {`,
+      ]
+    : [`export interface LitestoneClient {`]
+  lines.push(
+    `// ── LitestoneClient ──────────────────────────────────────────────────────────`,
+    ``,
+    ...header,
+    ...body,
   )
 
   // The server's client is the system audience's: the client audience strips

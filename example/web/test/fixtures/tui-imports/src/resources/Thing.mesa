@@ -1,4 +1,4 @@
 <script module>
   export const things = ['a', 'b']
 </script>
-<svg></svg>
+<iframe></iframe>

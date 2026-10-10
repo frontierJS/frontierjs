@@ -36,6 +36,14 @@ model OutboxMessage {
   /// Null is the app's own work.
   actorId       String?
 
+  /// WHICH TENANT the work was for, under `tenancy { strategy row }` —
+  /// Caravan's second fact beside the actor. Every tenant's rows share one
+  /// database there, so the database names none, and the app's own work
+  /// (a null actor: a commitment's hook, a job run as the system) has no claim
+  /// to recover one from. Null is work in no tenant; under `strategy database`
+  /// the file is the tenant and this stays null.
+  tenantId      String?
+
   /// Taken by a relay that intends to deliver this row. Stale claims are
   /// retaken: a process that dies mid-handoff must not hold a row forever.
   claimedAt     DateTime?

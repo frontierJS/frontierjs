@@ -143,10 +143,22 @@ export function createOutpostServer(config, {
     // one that loses its last hostname stays on loopback where nothing reaches
     // it. `rebind` says which, and the next release puts it right — routing
     // anyway is the smaller harm than a hostname that answers nothing.
+    //
+    // A stated `port` is for an app with no container — a dev server a
+    // preview's worktree runs on this machine. Refused beside a container,
+    // which answers on the port IT published and nowhere else.
     'POST /route': async (body) => {
       const appId = body.app_id
       if (!appId) throw new Error('a route needs the app_id it is for')
       const hosts = hostsOf(body.hosts)
+      if (body.port != null) {
+        // A machine with no docker holds no container to collide with.
+        if (await docker.published({ appId }).catch(() => null)) throw new Error(`fjs-${appId} is a container on this machine and is routed to the port it published — send no port`)
+        const port = Number(body.port)
+        if (hosts.length) await ingress.route({ appId, hosts, port })
+        else await ingress.unroute({ appId })
+        return { hosts, port, rebind: null }
+      }
       const live  = await docker.published({ appId })
       if (hosts.length && !live) throw new Error(`no container fjs-${appId} on this machine to route to — deploy it first`)
       if (hosts.length && !live.port) throw new Error(`fjs-${appId} publishes no port to route to — set the app's port and redeploy`)

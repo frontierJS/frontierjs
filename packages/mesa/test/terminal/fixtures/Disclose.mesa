@@ -1,0 +1,23 @@
+<script>
+  let toggles = []
+  let held = false
+  let opened = false
+  let box
+  const log = (e) => toggles = [...toggles, `${e.oldState}>${e.newState} ${e.target.open}`]
+</script>
+<p>toggles {toggles.join(' ') || 'none'}</p>
+<details bind:this={box} on:toggle={log}>
+  <summary>More <b>here</b></summary>
+  <p>Inside one</p>
+  <button type="button">Deep</button>
+</details>
+<details open>
+  <summary>Already</summary>
+  Shown text
+</details>
+<details open={opened}>
+  <summary on:click={(e) => { e.preventDefault(); held = true }}>Held {held}</summary>
+  <p>Inside held</p>
+</details>
+<button type="button" on:click={() => opened = !opened}>Flip</button>
+<button type="button" on:click={() => { box.open = !box.open; box.open = !box.open }}>Twice</button>

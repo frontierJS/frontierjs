@@ -286,6 +286,28 @@ describe('a stored value the list no longer offers', () => {
     expect(out.options.filter(o => o.unavailable).map(o => o.value)).toEqual(['ochre'])
   })
 
+  // FJS-2501: whether the held value is REFUSED is the binding's strength. A
+  // value marked `unavailable` is one `<Form>` will not save, so marking a
+  // value the Data boundary accepts makes a legal record unsavable.
+  test('under `suggested` it is pinned and labelled, never disabled or unavailable (FJS-2501)', async () => {
+    const listed = await createResource('tasks').options('free', { record: { free: 'ochre' } })
+    expect(listed.options[0]).toEqual({ value: 'ochre', label: 'ochre (not listed)' })
+    const never = await createResource('tasks').options('free', { record: { free: 'dark_blue' } })
+    expect(never.options[0]).toEqual({ value: 'dark_blue', label: 'Dark Blue (not listed)' })
+    // The same value on a required binding beside it is still refused.
+    const required = await createResource('tasks').options('tag', { record: { tag: 'dark_blue' } })
+    expect(required.options[0].unavailable).toBe(true)
+  })
+
+  test('under `open` a value the source holds is refused, and one it never held is not (FJS-2501)', async () => {
+    // `ochre` is a row the set no longer offers: litestone refuses it by name.
+    const stopped = await createResource('tasks').options('grow', { record: { grow: 'ochre' } })
+    expect(stopped.options[0]).toMatchObject({ value: 'ochre', disabled: true, unavailable: true })
+    // `dark_blue` has never been a row: the write adds it to the set.
+    const fresh = await createResource('tasks').options('grow', { record: { grow: 'dark_blue' } })
+    expect(fresh.options[0]).toEqual({ value: 'dark_blue', label: 'Dark Blue (not listed)' })
+  })
+
   test('two records asking about one field are two questions', async () => {
     // The held value is part of the cache key, or the second record reads the
     // first one's pinned entry.

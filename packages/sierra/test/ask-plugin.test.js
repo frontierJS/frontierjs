@@ -6,6 +6,7 @@ import { test, expect, afterAll } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { resolveConfig } from 'vite'
 import { createSierraViteConfig } from '../src/build/index.js'
 import { askPlugin, findAskModule } from '../src/build/ask-plugin.js'
@@ -20,7 +21,9 @@ mkdirSync(join(stub, 'core'), { recursive: true })
 mkdirSync(bare)
 writeFileSync(join(stub, 'package.json'), JSON.stringify({ name: '@frontierjs/cli', type: 'module' }))
 writeFileSync(join(stub, 'core', 'vite-ask.js'), `
-export function askPlugin() {
+export let given = null
+export function askPlugin(opts) {
+  given = opts
   let root = null
   return {
     name: 'fli:ask',
@@ -54,6 +57,13 @@ test('with the cli, its hooks answer, and it is told the resolved root', async (
   expect(p.transformIndexHtml()).toEqual([{ tag: 'script', attrs: { src: '/ask' } }])
   expect(p.resolveId('/ask')).toBe('\0ask')
   expect(p.load('\0ask')).toBe(`export default ${JSON.stringify(c.root)}`)
+})
+
+test('the app\'s token key reaches the panel, which sends the token under it', async () => {
+  const p = createSierraViteConfig({ junction: { tokenKey: 'basecamp_token' } }).plugins.flat().find(x => x?.name === 'sierra:ask')
+  await resolveConfig({ root: withCli, configFile: false, logLevel: 'silent', plugins: [p] }, 'serve')
+  const { given } = await import(pathToFileURL(join(stub, 'core', 'vite-ask.js')).href)
+  expect(given).toEqual({ tokenKey: 'basecamp_token' })
 })
 
 test('without the cli, nothing is injected and nothing is resolved', async () => {

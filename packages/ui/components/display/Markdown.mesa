@@ -1,0 +1,66 @@
+<script>
+  // Markdown.mesa
+  // Markdown somebody else wrote, read: a model's reply in a chat, a
+  // `@syntax(md)` column a stranger filled, a job description on a public page.
+  //
+  // The text is never trusted, and nothing here has to trust it. The renderer is
+  // @frontierjs/toolbelt/markdown, which escapes every slice of the source and
+  // writes only its own tags — raw HTML in the text draws as text, a link goes
+  // only to http, https, mailto or this site, and an image is a link to it
+  // rather than a request made on sight. So `{@html}` below is not a hole, for
+  // the same reason Code's is not: the string has been through a function that
+  // cannot emit markup it did not write.
+  //
+  // Usage:
+  //   <Markdown text={job.description} />
+  //   <Markdown text={turn.reply} headingBase={3} />
+  //   <Markdown text={note} breaks />
+  //
+  // `headingBase` is the level a `#` draws at. A page already has its <h1>, so
+  // a reply in a card wants 3 or 4; deeper headings shift with it and stop at
+  // <h6>. `breaks` draws every newline as a line break, the way a chat box
+  // is typed into; Markdown proper folds a single newline into a space.
+
+  import { markdown } from '@frontierjs/toolbelt/markdown'
+
+  export let text        = ''
+  export let headingBase = 1
+  export let breaks      = false
+
+  $: html = markdown(text ?? '', { headingBase, breaks, classes: { table: 'table compact' } })
+</script>
+
+<!-- `prose` owns measure, ink and list indentation; `stack` the gap between
+     blocks. Neither knows a block quote, a rule or a task box, so those are
+     below. -->
+<div class="fjs-markdown prose stack" {class} {...$attributes}>{@html html}</div>
+
+<style>
+  .fjs-markdown { overflow-wrap: break-word; }
+
+  .fjs-markdown :global(blockquote) {
+    padding-inline-start: var(--space-md);
+    border-inline-start:  var(--border-width) solid var(--rule-strong);
+    color:                var(--ink-mute);
+  }
+
+  /* A table wider than the column scrolls in its own box rather than pushing
+     the page sideways; `.table` draws it. */
+  .fjs-markdown :global(table) {
+    display:    block;
+    max-inline-size: 100%;
+    overflow-x: auto;
+  }
+
+  .fjs-markdown :global(hr) { inline-size: 100%; }
+
+  .fjs-markdown :global(li > input[type="checkbox"]) {
+    margin-inline-end: var(--space-2xs);
+    vertical-align:    middle;
+  }
+
+  .fjs-markdown :global(li > ul),
+  .fjs-markdown :global(li > ol) {
+    margin-block-start: var(--space-xs);
+  }
+</style>

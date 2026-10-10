@@ -92,6 +92,17 @@ customization in the product. It is also the one with the cleanest owner —
 `valueset` sourced from a tenant-scoped model, with `@values(open)` covering the
 `append` mode. Getting this wrong is visible to 62% of the customer base.
 
+*Measured by the port, 2026-10-10 (maidtech PLAN § Q3).* The owner holds; the
+strength named here does not. `append` is where a list's rows come FROM — the
+shipped list plus the account's — and `open` is whether a typed value JOINS it;
+they are two axes. The port copies the merged list into `LeadSource` rows each
+account owns (FJS-D120: a shipped list plus a tenant's is a table), 2,961 rows,
+148 of 148 equal over HTTP. The binding is `suggested`: 11,439 of 108,954
+contacts (10.5%) hold a code their account's list lacks, written by the lead
+widget, and `open` would grow 55 accounts' lists with codes their owners
+removed. The generated form then refused to save every one of those contacts
+(FJS-2501, fixed), and the picker's order is bytes, not human (FJS-2500).
+
 **The sites/pages CMS is load-bearing**: 100 sites, 9,355 pages. The audit's
 first pass suggested checking whether it was still alive. It is, and it is the
 second consumer of the compiler service.

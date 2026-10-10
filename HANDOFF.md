@@ -48,7 +48,7 @@ a finding re-filed under an id another session's write had displaced
 (`FJS-2422` once named the `@scoped` message, now `FJS-2424`). Twenty-two
 rows: `FJS-2330`, `2364`–`2367`, `2379`–`2380`, `2386`–`2390`, `2418`–`2424`,
 `2426`–`2427`; one question, `FJS-D862` (are `arrange()`'s factories
-system-bound). The Fable-audit session running alongside landed
+system-bound), since ruled **A**, scoped to `setup`/`arrange`. The Fable-audit session running alongside landed
 `doc-examples-run` in `checks.js` the same day; `FJS-2331` now says which half
 that rule grades and which half it leaves.
 

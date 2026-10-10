@@ -21,7 +21,7 @@ components/
               FileUpload · FileField · GeoField · MoneyInput · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
-              Json · …
+              Json · Markdown · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item)
   overlay/    Modal · Drawer · Popover · Tooltip · DropdownMenu(+Item/Label/
               Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·

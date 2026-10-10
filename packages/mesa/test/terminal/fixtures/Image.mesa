@@ -10,5 +10,10 @@
 <img src="me.png" alt={name} on:error={() => name = 'failed'} />
 <p>next</p>
 <span aria-hidden="true"><img src="icon.svg" /></span>
+<svg viewBox="0 0 10 10" role="img" aria-label="a chart"><defs><linearGradient id="g" /></defs><path d="M0 0L10 10" /></svg>
+<p>mid</p>
+<svg viewBox="0 0 10 10" aria-label={name ? 'trend ' + name : null}>{#if name}<polyline points={name} />{/if}</svg>
+<p>low</p>
+<span aria-hidden="true"><svg viewBox="0 0 1 1"><circle r="1" /></svg></span>
 <span>a <mark>hit</mark> here</span>
 <button on:click={() => name = name ? '' : 'bo'}>swap</button>

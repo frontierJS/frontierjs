@@ -6,8 +6,8 @@ dated: 2026-10-09
 
 # Idea — a preview branch: a client edits the UI on live data and submits it for review
 
-**Status: PROPOSED. Nothing is built.** Do not cite this file as describing
-behavior — see `VERIFYING.md`. Prior art is from memory on 2026-10-09, not
+**Status: PROPOSED. Slices 1 and 2 are built (2026-10-10, § Game plan);
+nothing else is.** Do not cite this file as describing behavior — see `VERIFYING.md`. Prior art is from memory on 2026-10-09, not
 fetched; each FJS claim was checked against the tree that day.
 
 A superadmin or a client opens the app on a subdomain of its own, works in it
@@ -64,8 +64,17 @@ source, live data, and a PR as the gate. The combination is the ask.
   its same-origin check wants `Origin`, `Host`, and a JSON content type — a curl
   without the last one is refused with *only a page this dev server served may
   ask*, which is the check doing its job.
-- Open for the editor's hand run: does the panel paint, does an edit land in the
-  worktree and hot-reload, what a session costs, and whether the diff is wanted.
+- **The owner's hand run, 2026-10-10.** The panel painted, one edit (a login
+  heading, `src/routes/login/index.mesa:82`) landed in the worktree and nowhere
+  in the parent tree, the page hot-reloaded, both servers held through it, and
+  the owner committed it on `wb/preview-trial` by hand; the push and the PR were
+  skipped on purpose — a real PR on the real repo for a trial heading. **One
+  edit cost $0.04.** The panel's own diff was read and the Undo was there; the
+  non-developer half of that question waits for stage 2.
+- **The owner's one ask from the run:** the panel should feel like the
+  Workbench's chat in Basecamp — a conversation, collapsible sides — rather than
+  a box over the page. That is a `on-page-editing.md` move, and this file's
+  slice 5 names it so the client's seat gets it.
 
 ## The design
 
@@ -256,7 +265,31 @@ the fallback client. `example/` is for the drives in slices 1–4, never for thi
 *Done when:* one real UI change reached a PR by this road, and the three numbers
 are in this file's § Probed.
 
-### Slice 1 — the panel admits a principal, and Submit (cli)
+### Slice 1 — the panel admits a principal, and Submit (cli) — built 2026-10-10
+
+**As built, where it departs from the bullets below:**
+
+- **The rule is told, not detected.** `ASK_ADMIT_URL` (the app's `account/me`)
+  and `ASK_ADMIT_LEVEL` (a name from the gate's `LEVELS`) in the dev server's
+  environment; unset is localhost and same-origin alone. `VITE_API_URL` cannot
+  be the trigger: a dev-server preview proxies the API (§ Probed), so there is
+  no other origin to notice. A URL with no valid level refuses everyone.
+- **The level is the API's.** `account/me` carries `level` only when the app
+  passes `services: { level }` to `createAuthPlugin`; without it every caller is
+  refused by name. **Basecamp passes `standingLevel` alone**, so a hosted
+  Basecamp preview needs that one line first; ELA is unchecked.
+- **Submit is offered on a `wb/*` branch, token or not.** Under the rule every
+  route already wants the token, so *branch + token* was one condition twice.
+- The panel sends the token under Sierra's `junction.tokenKey`.
+- The UI-only refusal is slice 2's; Submit refuses a non-`wb/*` branch and any
+  dirty file no un-undone run changed.
+- § 6's `forward_auth` stays open as the edge's half; it would read the same
+  `account/me`.
+- *Proved:* `verify:ask` gained six checks (no token, below level, Submit to a
+  bare origin through a stand-in `gh`); cli's `vite-ask.test.js` fourteen.
+
+The plan as written:
+
 
 - `packages/cli/core/vite-ask.js` — the `/__fjs/ask/*` routes take the page's
   Bearer token and, where `VITE_API_URL` names another origin, ask that API for
@@ -273,7 +306,48 @@ are in this file's § Probed.
   principal below level refused, Submit against a stand-in `gh` writes the commit
   and names the PR. `DRIVES.md` row for the ask panel extends.
 
-### Slice 2 — the UI-only rule (cli)
+### Slice 2 — the UI-only rule (cli) — built 2026-10-10
+
+**As built, where it departs from the bullets below:**
+
+- **The marker is `fjs-preview` in the worktree's PRIVATE git directory**
+  (`git rev-parse --git-path fjs-preview`, so `.git/worktrees/<name>/` in a
+  linked one), and it is empty. Not in the tree: there it is an untracked file
+  Submit's another-writer rule refuses, or one it commits into the PR. Removing
+  the worktree removes it. Slice 3's Open writes it; by hand it is a `touch`.
+- **The base is derived, not carried**: `merge-base HEAD origin/HEAD`. The
+  Workbench's fork base was the alternative, and it is the wrong diff — a fork
+  of a dirty parent carries its files in the snapshot commit, and that commit
+  is in the PR. Grading from what the PR merges into grades what the reviewer
+  reads, unpushed parent commits included. No `origin/HEAD` is a red naming
+  `git remote set-head origin --auto`, never a guess at `main`.
+- **Submit passes `--base` to `gh pr create`** — the branch the grade used — so
+  the PR is opened against exactly the diff that passed.
+- The scope is a directory the caller names: `fli check` passes `<app>/web`,
+  Submit its Vite root, which is also the `edit` scope. One function,
+  `core/preview.js` `previewScope`.
+- No marker is a skip, not a pass, and the rule does not ask the branch's name:
+  Open writes the marker only on a `wb/*` branch, and Submit already refuses
+  any other.
+- *Proved:* `test/preview.test.js` (six, real git — clone, linked worktree,
+  marker: no marker skips, `.mesa` passes, `.lite` fails uncommitted, committed
+  or untracked, an unpushed parent commit fails, no `origin/HEAD` fails);
+  `vite-ask.test.js` one (Submit refuses a committed `db/` file with the file
+  named, then opens the PR with `--base main`); `checks.test.js`'s clean app is
+  a preview worktree now, so the rule RUNS there rather than skipping.
+  `verify:ask` unchanged and green — its scratch repo has no marker.
+- **The nine, answered before the code:** origin — none; the base is git's
+  and the PR's target is the same ref. Concept — none; a marker file. Complexity
+  — one function, two callers. Predictability — a rule that skips where it has
+  nothing to grade, like every other. Derived — the base. Owner —
+  `core/preview.js`; Open (slice 3) owns writing the marker. Boundary —
+  `previewScope(dir, scope)` answers one of three named shapes. Failure — a
+  refusal, because merging a schema change behind a UI review is the cost.
+  Silence — *stays true:* a preview's PR carries only `web/`; *what fails:*
+  `preview-ui-only` and Submit's 409, pinned in the two test files. Adjudication
+  — ergonomics vs. strictness, resolved strict by what a mistake destroys.
+
+The plan as written:
 
 - A `fli check` rule, `preview-ui-only`: in a linked worktree on a `wb/*` branch
   that carries a preview marker, the diff against the branch's base must stay
@@ -326,6 +400,9 @@ are in this file's § Probed.
 - Anchored feedback (`anchored-feedback.md`) on the frozen preview: a pin's
   thread becomes the next ask-panel message. Needs the preview mode that stamps
   `data-fjs-loc` in a build.
+- The panel as a chat: the Workbench's conversation layout in Basecamp —
+  collapsible side panes, a thread rather than a box — brought to the ask panel,
+  which is what a client sits in all day.
 - Cost: the Workbench's running-cost card per preview pin, and a per-pin budget
   the client cannot raise.
 - The fleet-machine host (§ Open's option B) if slice 0's measurement says a
@@ -335,7 +412,8 @@ are in this file's § Probed.
 
 - `/route` taking a port for an inline App with no active release — a widening
   of outpost's protocol, small, but it is a second way a route gets its port.
-- The marker file's name and place in a worktree (what `fli check` reads).
+- ~~The marker file's name and place in a worktree~~ — answered in slice 2's
+  *as built*; a ruling only if the owner disagrees.
 - Relaxing the Workbench's `LOCAL_MACHINE` refusal for a worktree a fleet
   machine owns — only if slice 5's host question lands on B.
 

@@ -27,8 +27,13 @@
 // "Continue in terminal" copies `claude --resume` for the conversation, so the
 // person goes on with every tool their own session has. Before there is a
 // conversation it copies what a first ask would send instead, for any agent.
+//
+// Every request carries the app's own token when the page holds one: on a dev
+// server other people reach, the server asks the app's API who that is. Submit
+// is drawn only when the server says the checkout is a Workbench branch.
 
-(function () {
+// Led by a semicolon: the plugin prepends a line, and a bare `(` would call it.
+;(function () {
   if (typeof window === 'undefined' || window.__fjsAsk) return
   window.__fjsAsk = true
 
@@ -36,11 +41,15 @@
     get()  { try { return sessionStorage.getItem(key) } catch { return null } },
     set(v) { try { v ? sessionStorage.setItem(key, v) : sessionStorage.removeItem(key) } catch {} },
   })
+  // `ASK` is prepended by the plugin that serves this file.
+  const TOKEN_KEY = (typeof ASK !== 'undefined' && ASK.tokenKey) || 'junction_token'
+  const token = () => { try { return localStorage.getItem(TOKEN_KEY) } catch { return null } }
+
   const store = keep('fli:ask:session')
   const shown = keep('fli:ask:open')
   const saved = keep('fli:ask:log')
 
-  let panel, title, list, hint, input, send, stop, fresh, log
+  let panel, title, list, hint, input, send, stop, submit, fresh, log
   let picks = [], sent = false, busy = false
   // What the log holds, as data, so a reload can draw it again.
   let entries = []
@@ -122,6 +131,7 @@
   function setBusy(on) {
     busy = on
     send.disabled = on
+    submit.disabled = on
     stop.style.display = on ? '' : 'none'
   }
 
@@ -151,12 +161,16 @@
     input.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask() } }
 
     const row = make('div', 'display:flex;gap:6px;justify-content:flex-end')
+    submit = make('button', BTN + ';margin-right:auto', 'Submit for review')
+    submit.title = 'Commit what the panel changed and open a pull request for the owner to review'
+    submit.style.display = 'none'
+    submit.onclick = submitAll
     stop = make('button', BTN, 'Stop')
     stop.style.display = 'none'
     stop.onclick = () => post('/__fjs/ask/stop', {}).catch(() => {})
     send = make('button', BTN + ';background:#0369a1;border-color:#0369a1', 'Send')
     send.onclick = ask
-    row.append(stop, send)
+    row.append(submit, stop, send)
 
     panel.append(head, list, hint, log, input, row)
     document.body.appendChild(panel)
@@ -165,6 +179,34 @@
       else if (e.k === 'diff') drawDiff(e.files)
       else if (e.k === 'run') drawEnded(e)
     }
+    refresh()
+  }
+
+  async function refresh() {
+    let r
+    try { r = await post('/__fjs/ask/status', {}).then(res => res.json()) } catch { return }
+    if (r.error) return line(r.error, 'error')
+    submit.style.display = r.submit ? '' : 'none'
+  }
+
+  async function submitAll() {
+    if (busy) return
+    line('Submitting for review…', 'meta')
+    let r
+    setBusy(true)
+    try {
+      r = await post('/__fjs/ask/submit', {}).then(res => res.json())
+    } catch (err) {
+      return line(String(err && err.message || err), 'error')
+    } finally {
+      setBusy(false)
+    }
+    if (r.error) {
+      line(r.error, 'error')
+      for (const f of r.files || []) line(`  ${f}`, 'error')
+      return
+    }
+    line(`${r.created ? 'Opened' : 'Updated'} the pull request: ${r.pr}`, 'meta')
   }
 
   function show() {
@@ -173,7 +215,10 @@
   }
 
   function post(path, body) {
-    return fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const headers = { 'content-type': 'application/json' }
+    const t = token()
+    if (t) headers.authorization = `Bearer ${t}`
+    return fetch(path, { method: 'POST', headers, body: JSON.stringify(body) })
   }
 
   // One row per pick: where its source is, a glimpse of what it is (two items

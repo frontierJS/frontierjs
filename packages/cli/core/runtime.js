@@ -11,6 +11,7 @@ import { declarationProblem, valueProblem, withModuleFlags, DEFAULT_FLAGS } from
 import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
 import { chalk as colorChalk } from './color.js'
+import { lines } from './text.js'
 import { commandContext } from './shell.js'
 import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
 
@@ -308,6 +309,9 @@ export async function Command({ file, arg, flag, emit }) {
         emit({ type: 'output', text })
       }
     : (...args) => console.log(...args)
+  // A method rather than a name on `$`: thirteen bodies declare their own
+  // `const lines`, which a destructured `lines` would make a redeclaration.
+  config.echo.lines = (rows, opts) => config.echo(lines(rows, opts))
   config.chalk = colorChalk
   // The web runner's event sink, or null on a terminal — what `$`…`` reads to
   // know its output has nowhere to inherit.
