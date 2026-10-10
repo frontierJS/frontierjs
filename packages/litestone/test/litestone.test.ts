@@ -15032,6 +15032,22 @@ describe('createTestEnv', () => {
     env.close()
   })
 
+  test('arrange and setup hand out system-bound factories; env.factories stays unscoped', async () => {
+    // A fixture a gate grades is graded at level 0, which grades nobody
+    // (FJS-D862). env.factories keeps the unscoped client so a test can still
+    // watch a gate refuse one.
+    const env = await createTestEnv({ schema: ENV_SCHEMA, autoFactories: true })
+
+    const fx = await env.setup(({ factories }: any) => factories.doc.createOne())
+    const t  = env.phases({ as: { id: 1 } })
+    const doc = await t.arrange(({ factories }: any) => factories.doc.createOne())
+
+    expect(await env.system.doc.count()).toBe(2)
+    expect(doc.id).not.toBe(fx.id)
+    await expect(env.factories.doc.createOne()).rejects.toThrow(/"Doc.create" requires level 4/)
+    env.close()
+  })
+
   test('verifyGateLadder executes all four operations, not just read', async () => {
     // Read needs no fixture; create needs a valid row, update and delete need
     // one already there. Until they had one, lowering a create or delete gate

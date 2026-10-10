@@ -1,0 +1,16 @@
+<script>
+  let log = []
+  let late = false
+  const note = (s) => { log = [...log, s].slice(-4) }
+</script>
+
+<mesa:window on:keydown={(e) => { if (e.key === 'l') late = !late }} />
+<p>log {log.join(' ')}</p>
+<div on:mouseenter={() => note('+box')} on:mouseleave={() => note('-box')}>
+  <p on:mouseenter={() => note('+a')} on:mouseleave={() => note('-a')}>alpha</p>
+  <p on:mouseenter={() => note('+b')} on:mouseleave={(e) => note('-b>' + (e.relatedTarget?.__tag ?? 'none'))}>bravo</p>
+  <p>charlie</p>
+</div>
+<p>see <a href="/x" on:mouseenter={() => note('+link')} on:mouseleave={() => note('-link')}>docs</a> here</p>
+{#if late}<p on:mouseenter={() => note('+late')}>arrival</p>{/if}
+<p>floor</p>

@@ -47,6 +47,7 @@ import { startHzSink }             from '../src/providers/compute/hetzner-sink.t
 import { connectorFor, targetFor, markFor, fleetMark, priceIn } from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia } from '../src/providers/compute/accounts.ts'
 import type { ProviderKind }       from '../../db/schema.d.ts'
+import { portFor }                 from '@frontierjs/cli/core/ports.js'
 
 // The certificate a machine's command port answers with, which enrollment pins
 // on its Conduit target (FJS-1603). Every enrollment below presents it.
@@ -55,9 +56,9 @@ const CERT = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-outpost-cert-'))).c
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
 const ENC_KEY    = '0'.repeat(64)
-const SINK_PORT  = 7123
+const SINK_PORT  = await portFor(import.meta.url, 'be', { service: 3 })
 const SINK       = `http://localhost:${SINK_PORT}`
-const HZ_PORT    = 7125
+const HZ_PORT    = await portFor(import.meta.url, 'be', { service: 5 })
 const HZ_SINK    = `http://localhost:${HZ_PORT}`
 /** The stand-in's token, which is 64 characters and carries no prefix — DO's
  *  starts `dop_v1_` and Hetzner's does not, which is itself a difference a

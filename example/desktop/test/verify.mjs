@@ -41,11 +41,12 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir }                                            from 'node:os'
 import { dirname, join, resolve }                            from 'node:path'
 import { fileURLToPath }                                     from 'node:url'
+import { portFor }                                           from '@frontierjs/cli/core/ports.js'
 import { results, report }                                   from '../../web/test/lib/report.mjs'
 
 const DESKTOP  = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const APP      = resolve(DESKTOP, '..')
-const API_PORT = 7115
+const API_PORT = await portFor(import.meta.url, 'be', { env: 'test', service: 5 })
 const API      = `http://localhost:${API_PORT}`
 const LINUX    = process.platform === 'linux'
 

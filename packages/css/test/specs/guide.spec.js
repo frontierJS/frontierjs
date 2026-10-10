@@ -274,7 +274,7 @@ test('guide: guide.css declares no custom property tokens.css declares', functio
    *
    * THEMEABLE is the other half of that distinction, and it is a short list
    * on purpose. A token whose shipped value is a stated default — the font
-   * stack is `system-ui, sans-serif`, which exists to be replaced — is one
+   * stack names no face the package ships, and exists to be replaced — is one
    * a consumer is supposed to set, and the guide is a consumer. Restating
    * `--surface: #ffffff` is a copy; setting `--font-primary: Geist` is the
    * token doing its job. Anything not on this list is a copy until someone

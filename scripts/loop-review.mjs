@@ -35,7 +35,9 @@ const name  = args.log ?? 'fix-loop'
 const last  = Number(args.last ?? 20)
 const LOG   = join(LOG_DIR, `${name}.jsonl`)
 const OUT   = join(LOG_DIR, `${name}-review.md`)
-const TRANS = join(homedir(), '.claude', 'projects', ROOT.replace(/[^A-Za-z0-9]/g, '-'))
+// A lane's session ran in its worktree, so its transcript is under that project.
+const transcripts = root => join(homedir(), '.claude', 'projects', root.replace(/[^A-Za-z0-9]/g, '-'))
+const TRANS       = transcripts(ROOT)
 
 // ─── the attempts ───────────────────────────────────────────
 
@@ -51,7 +53,7 @@ if (!recent.length) { console.log(`[loop-review] no finished attempts in ${LOG}`
 
 const heads = transcriptHeads(Date.parse(recent[0].startedAt ?? recent[0].at) - 60_000)
 for (const a of recent) {
-  a.file  = a.sessionId ? join(TRANS, `${a.sessionId}.jsonl`) : matchByStart(a, heads)
+  a.file  = a.sessionId ? join(transcripts(a.cwd ?? ROOT), `${a.sessionId}.jsonl`) : matchByStart(a, heads)
   a.trace = a.file ? readTranscript(a.file) : null
 }
 

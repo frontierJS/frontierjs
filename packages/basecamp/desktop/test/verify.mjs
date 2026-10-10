@@ -33,10 +33,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir }                                            from 'node:os'
 import { dirname, join, resolve }                            from 'node:path'
 import { fileURLToPath }                                     from 'node:url'
+import { portFor }                                           from '@frontierjs/cli/core/ports.js'
 
 const DESKTOP  = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PKG      = resolve(DESKTOP, '..')
-const API_PORT = 7120
+const API_PORT = await portFor(import.meta.url, 'be')
 const API      = `http://localhost:${API_PORT}`
 const EMAIL    = 'sam@example.com'
 const PASSWORD = 'hunter2hunter2'

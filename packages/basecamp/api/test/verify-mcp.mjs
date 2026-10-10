@@ -36,9 +36,10 @@ import { dirname, join }             from 'node:path'
 import { fileURLToPath }             from 'node:url'
 import { Database }                  from 'bun:sqlite'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { portFor }                   from '@frontierjs/cli/core/ports.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const API_PORT = 7120
+const API_PORT = await portFor(import.meta.url, 'be')
 const API      = `http://localhost:${API_PORT}`
 const SCRATCH  = mkdtempSync(join(tmpdir(), 'basecamp-mcp-'))
 const DB_PATH  = join(SCRATCH, 'basecamp.db')

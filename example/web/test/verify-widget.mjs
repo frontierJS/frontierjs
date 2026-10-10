@@ -32,6 +32,8 @@ import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { portFor } from '@frontierjs/cli/core/ports.js'
+import { PORTS } from './lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -40,8 +42,8 @@ const ROOT = join(HERE, '../..')
 // vite on 8010. The API does not move: its origin is written into rows that
 // outlive the process — a `File` ref stores the `publicBase` it was uploaded
 // against (`FJS-1271`). Both are env-overridable.
-const API_PORT = process.env.API_PORT ?? '8110'
-const UI_PORT  = process.env.UI_PORT  ?? '7010'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 
@@ -49,8 +51,8 @@ const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 // widget origin and 1 is the host page — both are static origins in the embed
 // story, so they share a category. The DEV pair is 8310/—; using it here would
 // collide with a `bun run serve:widgets` somebody has open.
-const WIDGETS = 7310
-const HOST    = 7311
+const WIDGETS = await portFor(import.meta.url, 'widgetServe', { env: 'test' })
+const HOST    = await portFor(import.meta.url, 'widgetServe', { env: 'test', service: 1 })
 
 
 // ─── Servers ───────────────────────────────────────────────────────────────
@@ -137,7 +139,8 @@ const hostPage = createServer(async (req, res) => {
     // browser on a dev server that is not this run's.
     res.end(file
       .replaceAll('http://localhost:8310', `http://localhost:${WIDGETS}`)
-      .replaceAll('http://localhost:8010', UI))
+      .replaceAll('http://localhost:8010', UI)
+      .replaceAll('http://localhost:8110', API))
   } catch (e) {
     res.writeHead(500); res.end(String(e))
   }

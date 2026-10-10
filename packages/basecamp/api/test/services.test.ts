@@ -3320,3 +3320,29 @@ describe('pages', () => {
     expect(keyAllows(key, 'pages', 'list')).toBe(false)
   })
 })
+
+describe('registers', () => {
+  test('a developer is refused a ruling by the declared gate', async () => {
+    await expect(env.as(developer).service('registers').call('decide', 'FJS-D1', { pick: 'A' }))
+      .rejects.toThrow(/requires level 5/)
+  })
+
+  test('an owner is told it is not offered here, before anything is read or sent', async () => {
+    await expect(env.as(owner).service('registers').call('overview', undefined))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+    await expect(env.as(owner).service('registers').call('discuss', undefined, { text: 'FJS-1' }))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+  })
+
+  // A discuss is a workbench send. Asserted before the LOCAL_MACHINE refusal is
+  // reached, as the workbench's is.
+  test('an agent is refused it at any standing, and no key reaches it', async () => {
+    for (const method of ['overview', 'record', 'discuss', 'decide'])
+      await expect(env.as(owner).service('registers').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
+        .rejects.toThrow(/not offered to an agent/)
+    const key = { authMethod: 'apiKey', scopes: ['admin', 'registers:write', 'registers:read'] }
+    expect(narrowForAgent({ service: 'registers', method: 'discuss' }, { authMethod: 'session' })).toBe(false)
+    expect(keyAllows(key, 'registers', 'discuss')).toBe(false)
+    expect(keyAllows(key, 'registers', 'overview')).toBe(false)
+  })
+})

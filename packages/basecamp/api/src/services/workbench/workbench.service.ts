@@ -25,16 +25,17 @@ import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/ju
 import { LEVELS }                  from '@frontierjs/litestone'
 import { dirname }                 from 'node:path'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { env, localMachineRefusal } from '../../core/env.ts'
+import { localMachineRefusal }     from '../../core/env.ts'
 import { describeRepo }            from '../../core/local-git.ts'
-import { createWorkbench, doneScript } from '../../core/workbench.ts'
+import { doneScript }              from '../../core/workbench.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff']
 const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen', 'check', 'review', 'fork', 'land', 'archive']
 
 export function createWorkbenchService(app: BasecampApp) {
-  const wb = createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env })
+  // Read per call: services are built inside createApp, before app.ts claims it.
+  const wb = () => app.workbench
 
   function offered() {
     const refused = localMachineRefusal()
@@ -43,7 +44,7 @@ export function createWorkbenchService(app: BasecampApp) {
 
   function pinned() {
     offered()
-    const p = wb.getPin(String($.id ?? ''))
+    const p = wb().getPin(String($.id ?? ''))
     if (!p) throw new NotFound(`No pinned checkout '${$.id}'`)
     return p
   }
@@ -61,111 +62,111 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async pins() {
       offered()
-      const pins = wb.readPins()
+      const pins = wb().readPins()
       return {
-        dir:  wb.dir,
+        dir:  wb().dir,
         pins: await Promise.all(pins.map(async p => ({
           ...p,
           git:    await describeRepo(dirname(p.path), p.path),
           checkable: !!doneScript(p.path),
-          status: await wb.status(p),
+          status: await wb().status(p),
         }))),
       }
     },
 
     async status() {
       offered()
-      return { status: await wb.statuses() }
+      return { status: await wb().statuses() }
     },
 
     async transcript() {
       const p = pinned()
-      return wb.transcript(p.id)
+      return wb().transcript(p.id)
     },
 
     async diff() {
       const p = pinned()
-      return wb.diff(p.id)
+      return wb().diff(p.id)
     },
 
     async pin() {
       offered()
-      const r = wb.pin(body().path)
+      const r = wb().pin(body().path)
       if ('refused' in r) throw new BadRequest(r.refused)
       return r.pin
     },
 
     async unpin() {
       const p = pinned()
-      const r = wb.unpin(p.id)
+      const r = wb().unpin(p.id)
       if (r) throw new Conflict(r.refused)
       return { id: p.id }
     },
 
     async fork() {
       const p = pinned()
-      const r = await wb.fork(p.id, { slug: body().slug })
+      const r = await wb().fork(p.id, { slug: body().slug })
       if ('refused' in r) throw new Conflict(r.refused)
       return r.pin
     },
 
     async land() {
       const p = pinned()
-      const r = wb.land(p.id)
+      const r = wb().land(p.id)
       if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
       return r
     },
 
     async archive() {
       const p = pinned()
-      const r = await wb.archive(p.id, { discard: body().discard })
+      const r = await wb().archive(p.id, { discard: body().discard })
       if ('refused' in r) throw new Conflict(r.refused, { pending: r.pending ?? 0 })
       return r
     },
 
     async configure() {
       const p = pinned()
-      const r = wb.configure(p.id, body())
+      const r = wb().configure(p.id, body())
       if ('refused' in r) throw new BadRequest(r.refused)
       return r
     },
 
     async send() {
       const p = pinned()
-      const r = await wb.send(p.id, String(body().prompt ?? ''))
+      const r = await wb().send(p.id, String(body().prompt ?? ''))
       if ('refused' in r) throw new BadRequest(r.refused)
       return r
     },
 
     async check() {
       const p = pinned()
-      const r = wb.check(p.id)
+      const r = wb().check(p.id)
       if ('refused' in r) throw new Conflict(r.refused)
       return r
     },
 
     async review() {
       const p = pinned()
-      const r = await wb.review(p.id)
+      const r = await wb().review(p.id)
       if ('refused' in r) throw new Conflict(r.refused)
       return r
     },
 
     async stop() {
       const p = pinned()
-      return { stopped: wb.stop(p.id) }
+      return { stopped: wb().stop(p.id) }
     },
 
     async fresh() {
       const p = pinned()
-      const r = wb.fresh(p.id)
+      const r = wb().fresh(p.id)
       if (r && 'refused' in r) throw new Conflict(r.refused as string)
       return r
     },
 
     async seen() {
       const p = pinned()
-      return wb.seen(p.id)
+      return wb().seen(p.id)
     },
 
     hooks: {

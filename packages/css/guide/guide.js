@@ -8442,6 +8442,22 @@ function iconsPage() {
       )}
 
       ${section(
+        "A button that holds a sentence wraps",
+        `
+        <p>
+          A button, pill or badge keeps its label on one line, so a long one
+          widens whatever holds it — on a phone, the whole page.
+          <code>.wrap</code> lets the label break, the same modifier a long
+          Tooltip takes.
+        </p>
+        ${preview(`
+          <div class="stack" style="max-inline-size: 16rem">
+            <button class="btn outlined wrap">Should invoices go out on the first of the month or on each order?</button>
+          </div>`)}
+        ${code(`<button class="btn outlined wrap">Should invoices go out on the first of the month…</button>`)}`,
+      )}
+
+      ${section(
         "Decorative icons are hidden",
         `
         <p>

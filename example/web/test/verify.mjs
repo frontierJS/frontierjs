@@ -23,12 +23,12 @@
  * wrap: `return { hint: … }`.
  */
 
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
-const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
+const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 
 // A product minted per run, and the reason is a live hazard rather than
 // tidiness: `Product.name` and `Product.slug` are both `@unique` and the model

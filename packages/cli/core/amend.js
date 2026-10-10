@@ -26,7 +26,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join }                        from 'node:path'
 
-import { readRegisters }                 from './registers.js'
+import { readRegisters, withRegisterGuard }                 from './registers.js'
 import { errorKeys, newErrors }          from './register-check.js'
 import { oneCell, isoDate, splitRow }    from './close.js'
 
@@ -35,7 +35,11 @@ import { oneCell, isoDate, splitRow }    from './close.js'
  *
  * Answers `{ ok: true, id, file, line }` or `{ ok: false, reason }`.
  */
-export function amendIssue({ root, id, detail, today = new Date() }) {
+export function amendIssue(opts) {
+  return withRegisterGuard(opts.root, () => amendUnguarded(opts))
+}
+
+function amendUnguarded({ root, id, detail, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
 

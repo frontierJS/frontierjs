@@ -137,7 +137,14 @@ title: Workbench
     } catch {}
   }
 
-  loadPins().then(schedule)
+  // `#workbench-<id>` names a card — the Registers screen links to the chat it
+  // sent to — and the card is drawn only after the first read.
+  function reveal() {
+    const card = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)))
+    if (card) afterDraw(() => card.scrollIntoView({ block: 'start' }))
+  }
+
+  loadPins().then(() => { reveal(); schedule() })
   $.onDestroy(() => { destroyed = true; clearTimeout(timer); document.title = baseTitle })
 
   // The tab says how many are working and how many finished unread, so it

@@ -138,7 +138,7 @@ await env.verifyTenantIsolation()   // tenancy { }, actually crossed — one ten
 // the arrange every scenario shares — run once, restored by each phases() call.
 const fx = await env.setup(({ factories }) => factories.account.createOne())
 const t  = env.phases({ as: developer })
-const lead = await t.arrange(({ factories }) => factories.lead.asSystem().createOne({ accountId: fx.id }))
+const lead = await t.arrange(({ factories }) => factories.lead.createOne({ accountId: fx.id }))
 await t.act(as => as.lead.remove({ where: { id: lead.id } }))
 await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
 
@@ -212,9 +212,10 @@ what dominates a test suite; in SQLite, a database per test is a file copy.
 
 **`env.factories` are bound to the unscoped client**, so on a gated model they
 grade as STRANGER like any other unauthenticated call. `.asSystem()` on a factory
-is what seeds past the gate — see [Seeding past gates](#seeding-past-gates).
-Without `autoFactories: true` the map is empty; `env.system` is the client to
-arrange with by hand.
+is what seeds past the gate — see [Seeding past gates](#seeding-past-gates) —
+and the factories `setup` and `phases().arrange` hand out are already bound to
+`env.system`. Without `autoFactories: true` the map is empty; `env.system` is the
+client to arrange with by hand.
 
 ### migrations — test the database a deploy produces
 
@@ -307,7 +308,7 @@ const developer = { id: 1, level: 5 }
 
 const t = env.phases({ as: developer })
 
-const lead = await t.arrange(({ factories }) => factories.lead.asSystem().withParents().createOne())
+const lead = await t.arrange(({ factories }) => factories.lead.withParents().createOne())
 await t.act(as => as.lead.remove({ where: { id: lead.id } }))
 await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
 ```
@@ -317,7 +318,7 @@ still be commented out to bisect. What the phases buy is not tidiness:
 
 | Phase | Reaches | Why |
 | --- | --- | --- |
-| `arrange` | `system`, `factories` and `db` | fixtures are set up below the boundary through `system`, so a gate that refuses the principal does not refuse the setup. The factories are the unscoped client's — `.asSystem()` on one puts a gated model's fixture below the boundary too |
+| `arrange` | `system`, `factories` and `db` | fixtures are set up below the boundary through `system`, so a gate that refuses the principal does not refuse the setup. The factories are bound to `system` too: a fixture a gate grades is graded at level 0, which grades nobody |
 | `act` | the **principal's** client | graded by the app's own `getLevel`. **One per scenario** |
 | `assert` | the principal's **read-only** client | graded, so *the row exists* cannot stand in for *this user can see it*; read-only, so retrying the scenario is sound |
 
@@ -424,7 +425,7 @@ const fx = await env.setup(({ factories }) => factories.account.createOne())
 
 // inside each test():
 const t = env.phases({ as: developer })     // rows are back at fx
-const lead = await t.arrange(({ factories }) => factories.lead.asSystem().createOne({ accountId: fx.id }))
+const lead = await t.arrange(({ factories }) => factories.lead.createOne({ accountId: fx.id }))
 ```
 
 `setup` takes the **same tools** `arrange` takes — `{ system, factories, db }` —

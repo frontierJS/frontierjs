@@ -8,6 +8,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join }   from 'path'
+import { spawn }  from 'child_process'
 import { tmpdir } from 'os'
 
 import { fileIssue }        from '../core/file.js'
@@ -86,5 +87,21 @@ describe('filing a row', () => {
     expect(fileIssue({ root, ...input, title: '  ' }).reason).toBe('--title is required')
     expect(fileIssue({ root, ...input, severity: 'S1' }).reason).toContain('no `## S1` table')
     expect(file(root)).toBe(ISSUES.join('\n'))
+  })
+})
+
+describe('filing from several processes at once', () => {
+  // Fix-loop lanes are one process each, all writing one ISSUES.md: unguarded,
+  // two read the same table and the second write drops the first row.
+  test('every row lands, each under its own id', async () => {
+    const root   = project()
+    const module = join(import.meta.dir, '..', 'core', 'file.js')
+    const script = `const { fileIssue } = await import(${JSON.stringify(module)}); fileIssue({ root: ${JSON.stringify(root)}, severity: 'S3', area: 'api', title: 'Row ' + process.argv[1], detail: 'x' })`
+    await Promise.all([1, 2, 3, 4].map(n => new Promise(done =>
+      spawn(process.execPath, ['-e', script, String(n)], { stdio: 'ignore' }).on('close', done))))
+
+    const rows = readRegisters(root).issues.filter(r => /^Row \d$/.test(r.title))
+    expect(rows.map(r => r.title).sort()).toEqual(['Row 1', 'Row 2', 'Row 3', 'Row 4'])
+    expect(new Set(rows.map(r => r.id)).size).toBe(4)
   })
 })

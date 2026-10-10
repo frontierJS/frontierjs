@@ -31,11 +31,11 @@
 //  · Never start an evaluated expression with `return` on its own line: ASI
 //    makes it `return;` and the assertion reads back `undefined`.
 
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
-const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
+const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 
 await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]])
 

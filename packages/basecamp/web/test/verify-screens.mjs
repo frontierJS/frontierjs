@@ -34,6 +34,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
+import { portFor } from '@frontierjs/cli/core/ports.js'
 // The count is the enum's; `db/test/schema.test.ts` holds this list equal to it.
 import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
 import { totp } from '../../../auth/totp.ts'
@@ -44,8 +45,8 @@ const HERE     = dirname(fileURLToPath(import.meta.url))
 const PKG      = join(HERE, '..', '..')
 // The dev slot by default; `API_PORT`/`UI_PORT` move the whole drive (the test
 // slot is 7120/7020) so it can run beside a dev server holding 8120/8020.
-const API_PORT = Number(process.env.API_PORT ?? 8120)
-const WEB_PORT = Number(process.env.UI_PORT ?? 8020)
+const API_PORT = Number(process.env.API_PORT ?? await portFor(import.meta.url, 'be', { env: 'dev' }))
+const WEB_PORT = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev' }))
 const BASE     = `http://localhost:${WEB_PORT}`
 // Cloudflare's stand-in, on the basecamp slot's `7`: 8127 beside the dev API,
 // 7127 beside the test one (`docs/PORTS.md`).

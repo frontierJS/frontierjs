@@ -25,7 +25,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join }                        from 'node:path'
 
-import { readRegisters }          from './registers.js'
+import { readRegisters, withRegisterGuard }          from './registers.js'
 import { errorKeys, newErrors }   from './register-check.js'
 
 /**
@@ -34,7 +34,11 @@ import { errorKeys, newErrors }   from './register-check.js'
  * Answers `{ ok: true, id, file, line }` or `{ ok: false, reason }` — a refusal
  * is an answer rather than a throw, because the caller shows it to a person.
  */
-export function closeIssue({ root, id, how, today = new Date() }) {
+export function closeIssue(opts) {
+  return withRegisterGuard(opts.root, () => closeUnguarded(opts))
+}
+
+function closeUnguarded({ root, id, how, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no row can be read')
 

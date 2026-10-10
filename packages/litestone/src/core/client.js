@@ -9,8 +9,7 @@ import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, mkdirSync, AsyncLocalStorage } from '#host'
 import { resolveAnchor } from './db-path.js'
-import { parse, parseFile, pointColumns } from './parser.js'
-import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField } from './ddl.js'
+import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns } from './ddl.js'
 import { buildSealMap } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
 import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols } from './ddl.js'
@@ -3056,10 +3055,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return [data, stamped]
   }
 
-  function mirrorExtSlots(data, stamped, where) {
+  function mirrorExtSlots(data, stamped, where, blob = data[_extensible.column]) {
     const declared = _extDeclarations(_extTenantCol ? extTenant(data) : undefined,
                                       _extensible.scope ? extScope(data, where) : undefined)
-    const blob     = data[_extensible.column]
     const slots    = {}
     // An unpromoted or absent key is omitted rather than written null: a
     // missing JSON path and a null one both read NULL through json_extract,
@@ -3085,6 +3083,30 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // past — the same hatch `@updatedBy` and the tenancy stamp ride on.
     stamped = stamped ? new Set([...stamped, _extensible.mirror]) : new Set([_extensible.mirror])
     return [data, stamped]
+  }
+
+  // A move without the blob re-mirrors the STORED blob against the new
+  // scope's declarations; left alone, the old scope's slots stay in a mirror
+  // the new scope reads, and its filters match values the row never had
+  // there. The blob itself is not written, so the audit trail does not record
+  // a change to it. One row only: rows reached together hold different blobs,
+  // and one SET carries one mirror.
+  function remirrorMovedRow(data, stamped, where) {
+    const scope  = _extensible.scope
+    const refuse = (why) => { throw new ValidationError([{ path: [scope], message:
+      `${modelName}: moving ${why} to another '${scope}' re-projects '${_extensible.column}' against the new one's declarations — send '${_extensible.column}' in the same write` }]) }
+    if (!where) refuse('a row with no where')
+    const params = []
+    const sql    = buildWhereWithEncryption(where, params)
+    const rows   = readDb.query(`SELECT ${quoteIdent(col(_extensible.column))} AS b FROM ${quoteIdent(tableName)}${sql ? ` WHERE ${sql}` : ''} LIMIT 2`).all(...params)
+    if (rows.length > 1) refuse('several rows')
+    // Nothing reached means nothing to mirror, and the UPDATE matches nothing.
+    if (!rows.length) return [data, stamped]
+    let blob = rows[0].b
+    if (typeof blob === 'string') {
+      try { blob = JSON.parse(blob) } catch { refuse('a row whose stored blob does not parse') }
+    }
+    return mirrorExtSlots(data, stamped, where, blob)
   }
 
   // `system: ['col']` lifts the write half of @guarded as it lifts @system: a
@@ -3461,13 +3483,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // not a statement about these — and Invariant 9's explicit null clears.
     //
     // Under `scope:` the mirror is built from the PARENT ROW's declarations, so
-    // a write moving a row to another parent without restating the blob would
-    // leave the old parent's slots in a mirror the new parent reads.
+    // a write moving a row to another parent rebuilds it even when the blob
+    // is not in the payload.
     if (_extensible && data && typeof data === 'object' && !Array.isArray(data)) {
       if (_extensible.column in data) [data, stamped] = mirrorExtSlots(data, stamped, where)
-      else if (_extensible.scope && !creating && _extensible.scope in data)
-        throw new ValidationError([{ path: [_extensible.scope], message:
-          `${modelName}: moving a row to another '${_extensible.scope}' re-projects '${_extensible.column}' against the new one's declarations, so send '${_extensible.column}' in the same write` }])
+      else if (_extensible.scope && !creating && _extensible.scope in data) [data, stamped] = remirrorMovedRow(data, stamped, where)
     }
 
     // ── @guarded, the write half ──────────────────────────────────────────
@@ -6285,6 +6305,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // payload, which is exactly the fail-open `FJS-433` describes. The slow
       // path reads then updates, where the CASE in the SET applies.
       if (_hasFieldWrite) return null
+      // A move without the blob re-mirrors the stored one, and so has the
+      // same need for a row in hand.
+      if (_extensible?.scope && _extensible.scope in updateData && !(_extensible.column in updateData)) return null
 
       // writeData runs transforms + validation on both branches' data
       const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system, stamped: _fpStamped, creating: true })
@@ -8987,6 +9010,10 @@ export async function createClient({
       !schemaInline.includes('\n') && schemaInline.endsWith('.lite'))
     schemaFilePath = resolve(schemaInline)
 
+  // Loaded only when there is something to parse: the browser worker is always
+  // handed a parse, and the parser is the largest module it would otherwise
+  // download on every page load (`FJS-2318`, graded in test/engine-seam.test.ts).
+  const { parse, parseFile } = schemaPreParsed ? {} : await import('./parser.js')
   const parseResult = (() => {
     if (schemaPreParsed) return schemaPreParsed
     // Text, always: a one-line string ending in .lite is otherwise READ FROM

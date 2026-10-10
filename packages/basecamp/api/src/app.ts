@@ -27,6 +27,7 @@ import { mcpPlugin }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
+import { createWorkbench }           from './core/workbench.ts'
 import { apply, LEVELS }                         from '@frontierjs/litestone'
 import type { WriteEvent }                       from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
@@ -271,6 +272,10 @@ export async function buildBasecampApp(
   app.claim('providers', await buildProviders(
     ((config as Record<string, unknown>).providers ?? {}) as Record<string, Record<string, unknown>>
   ))
+  // One instance for every service that sends to it: a message sent while a
+  // run is working waits in this instance's memory, and only the instance that
+  // started the run drains it when the run ends.
+  app.claim('workbench', createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env }))
 
   // ── Conduit — outbound transport ──────────────────────────────────────
   // Plugin augments app with app.conduit, wires /metrics, and registers

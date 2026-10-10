@@ -64,14 +64,16 @@ import { serveSite } from '@frontierjs/sierra/site/serve'
 // carries is a whole number of CENTS, and what the page prints is dollars.
 import { formatMoney, fromMinor, toMinor } from '@frontierjs/toolbelt/units'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { portFor } from '@frontierjs/cli/core/ports.js'
+import { PORTS } from '../../web/test/lib/preflight.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const SITE   = join(HERE, '..')
 const DIST   = join(SITE, 'dist')
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 // test / siteServe / project 1 — the drive's own slot, so it cannot collide
 // with a dev server somebody has open on 8710.
-const PORT   = Number(process.env.SITE_SERVE_PORT ?? 7710)
+const PORT   = Number(process.env.SITE_SERVE_PORT ?? await portFor(import.meta.url, 'siteServe', { env: 'test' }))
 
 // ─── preflight ────────────────────────────────────────────────────────────
 if (!existsSync(join(DIST, 'index.html'))) {

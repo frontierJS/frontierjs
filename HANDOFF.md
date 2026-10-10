@@ -14,6 +14,87 @@ finished.
 
 ---
 
+# Handoff — 2026-10-10 (litestone docs: the runner, then the per-file pass)
+
+> **Started from the 2026-10-09 audit memory with its ~100 per-file rows LOST
+> (the scratchpad table was gone), and ended with every fence in litestone's
+> hand-written docs running green — 574 of them — under a runner that did not
+> exist in the morning.** The through-line: the lost table was not worth
+> re-deriving by reading, because the durable fix re-derives the broken-example
+> half by running, and the prose half was re-probed per file by six agents
+> after the runner had shown them what failed.
+
+**Order it happened in.** The runner came first, as data rather than design:
+`test/doc-examples.test.ts` ran the corpus as-is and 374 of 492 blocks failed,
+and the failure BUCKETS decided the contract — `db is not defined` (84, pages
+with no schema) became *the nearest preceding ```lite is the schema in scope,
+a page with none gets one near its top*; syntax errors and `ReferenceError`s
+on prose names became `fragment`; the five `near ")": syntax error` schemas
+became `FJS-2330` (a field-less model builds `CREATE TABLE x ()`). The nine
+were answered after that draft and named as late in `FJS-D860`. Two more
+words came from the agents' first reports: `failing` (an example pinned to a
+filed defect, `test.failing`'s way), and a fix to `throws`, whose `try` had
+swallowed the block's own `import` lines. The `prisma` fence went in the same
+hour — the runner keying on `lite` is the loud failure that row of § IV asks
+for. A fragment ceiling closed § V 9: a block marked `fragment` runs nothing
+and nothing says so, so the count ratchets down.
+
+**Two waves, six agents, one file list each**, no src edits allowed and every
+code bug reported with a probe rather than filed. Every probe was re-run here
+before its row went in, and that caught two things worth knowing: an agent's
+probe is STATEFUL (db files and trail dirs in its scratchpad), so a second run
+reads `UniqueConflictError` where the finding was — delete `*.db*` first — and
+a finding re-filed under an id another session's write had displaced
+(`FJS-2422` once named the `@scoped` message, now `FJS-2424`). Twenty-two
+rows: `FJS-2330`, `2364`–`2367`, `2379`–`2380`, `2386`–`2390`, `2418`–`2424`,
+`2426`–`2427`; one question, `FJS-D862` (are `arrange()`'s factories
+system-bound). The Fable-audit session running alongside landed
+`doc-examples-run` in `checks.js` the same day; `FJS-2331` now says which half
+that rule grades and which half it leaves.
+
+**What is NOT proved here.** Two red litestone tests and two `fli check`
+errors belong to the other session's uncommitted `src/` and test edits; my
+agents touched no `src/`. The tree is uncommitted.
+
+---
+
+# Handoff — 2026-10-10 (the eleven audit runs, filed)
+
+> **Started from `IDEAS/fable-audit-plan.md` with 11 of 17 runs unrun, and ended
+> with the plan `shipped`: 104 rows, nine questions and one close, every red case a
+> `test.failing` with its id above it.** The through-line: the plan's own rule that
+> filing is a separate step held, because @V's six reports had already been lost,
+> so every run wrote to the scratchpad and the rows went in through `fli file`
+> the same hour.
+
+**What is recorded where.** Every row says *Fable audit 2026-10-05, run N.N
+(2026-10-10)*; the questions are `FJS-D861`, `FJS-D863`–`D871`, options in
+`IDEAS/owed-rulings.md`. Run 2.4 landed `doc-examples-run` in `checks.js` and
+closed `invariants.snapshot.md` § The gap. Run 4.2's draft is
+`IDEAS/spec-directives.md`, pointed at from `specifications.md` § 14. Run 5.1's
+list of workarounds the ports can drop is in `IDEAS/conversion-maid-tech.md`.
+The eleven reports (rows, leads, refuted claims, verdicts) are kept outside the
+repo under the owner's Claude project folder, `audit-reports-2026-10-10/`.
+
+**The order.** Risk first: 1.5, 1.4 and 5.2 together, then the seam and ruling
+runs, then the judgment runs, 2–4 agents at a time and never nested. Two things
+the sequence showed. First, the runs confirm one another: 5.2 found basecamp's
+hand `find`s drop directives, 2.1 found the second `$`-parser in `parseQuery`
+that makes that silent, and 4.2's vectors then measured the same parser at
+fourteen spellings — so `FJS-2345`, `FJS-2442` and `FJS-2458`–`2468` are one
+fix in three registers. Second, another session filed into `ISSUES.md` the whole
+time: two `fli file` writes were clobbered and refiled, and that session's
+`updates` commit swept in run 2.3's `dist-audit/` build output (a wasm binary),
+which is now `git rm --cached` and ignored. `fli file` has no lock; that is a
+lead, not a row.
+
+**What is left.** Nothing in the plan. The re-severity list (`FJS-D863`) and the
+vocabulary questions are the owner's, one at a time. `FJS-1831`–`1876` from the
+first six runs are untouched, nineteen of them `stale?`. Everything here is
+uncommitted on the date above.
+
+---
+
 # Handoff — 2026-10-09 (the fixture that reads the schema's rules)
 
 > **Started from FJS-1779 — a quarter of a generated schema's models could not be

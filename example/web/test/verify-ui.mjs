@@ -28,14 +28,14 @@
  * `undefined` — wrap it in an object), and never start an evaluated expression
  * with `return` on its own line (ASI turns it into `return;`).
  */
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
-const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
+const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 // The dev payment provider, started by `bun run api` beside the mail sink.
-const PSP    = process.env.PSP_URL ?? 'http://localhost:8112'
+const PSP    = process.env.PSP_URL ?? `http://localhost:${PORTS.psp}`
 // A fixed reference makes this drive pass exactly ONCE per database. `Order`
 // soft-deletes and a soft-deleted row keeps its `@unique` values, so the cleanup
 // before the create — a DELETE over HTTP, which soft-deletes — cannot free the

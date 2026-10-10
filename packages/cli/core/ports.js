@@ -34,13 +34,14 @@
  */
 
 import net from 'net'
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, openSync, writeSync, closeSync, unlinkSync, readdirSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, unlinkSync, readdirSync } from 'fs'
 import { execSync, execFileSync } from 'child_process'
 import { homedir } from 'os'
 import { basename, dirname, join, relative } from 'path'
 import { fileURLToPath } from 'url'
 import { stripComments } from './codegraph.js'
 import { findProjectRoot } from './utils.js'
+import { acquireGuard } from './guard.js'
 
 // ─── Schema maps ──────────────────────────────────────────────────────────────
 
@@ -196,6 +197,9 @@ const SURFACE_PORTS = [
   { dir: 'extension', category: 'ext',        env: null,               scripts: ['dev:extension', 'extension'], label: 'extension' },
   { dir: 'desktop',   category: 'desktopDev', env: 'FLI_PORT_DESKTOP', scripts: ['dev:desktop', 'desktop'],    label: 'desktop' },
 ]
+
+/** The categories a dev slot moves — those whose surface reads a variable. */
+const SLOTTED = new Set(SURFACE_PORTS.filter(s => s.env).map(s => s.category))
 
 /**
  * Resolve an app's project id.
@@ -524,27 +528,7 @@ function isProcessAlive(pid) {
 }
 
 // Two `fli dev` starting together would both read slot 1 as free.
-function acquireLock(lockFile, timeoutMs = 5000) {
-  const guard = lockFile + '.guard'
-  const start = Date.now()
-  mkdirSync(dirname(lockFile), { recursive: true })
-  while (true) {
-    try {
-      const fd = openSync(guard, 'wx')
-      writeSync(fd, String(process.pid))
-      closeSync(fd)
-      return guard
-    } catch {
-      // A holder that died mid-claim leaves the guard behind.
-      try {
-        const heldBy = parseInt(readFileSync(guard, 'utf8'), 10)
-        if (heldBy && !isProcessAlive(heldBy)) { unlinkSync(guard); continue }
-      } catch {}
-      if (Date.now() - start > timeoutMs) throw new Error(`Could not acquire ${guard} within ${timeoutMs}ms`)
-      try { execSync('sleep 0.05', { stdio: 'pipe' }) } catch {}
-    }
-  }
-}
+const acquireLock = (lockFile) => acquireGuard(lockFile + '.guard')
 
 /** The slot this root was last given, or null. Static apps have none. */
 export function slotFor(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
@@ -743,7 +727,9 @@ function freeBranch(sessions, appRoot, tree) {
  * drive passes against a server running code it was not given.
  *
  * `from` is the caller's `import.meta.url` or any path inside the app; the app
- * root is the one `fli dev` runs at. `project` names a `PROJECTS` row for a
+ * root is the one `fli dev` runs at. An app `PROJECTS` does not name gets the
+ * dev slot `fli dev` gave this root as the service digit of every category a
+ * surface reads from its variable, as `appPorts` does. `project` names a `PROJECTS` row for a
  * server the app's tests start but do not own — basecamp's drive starts an
  * outpost. A linked worktree the lock holds no number for claims one through
  * `claimSession`, so a test and a dev server in one branch cannot disagree
@@ -765,12 +751,20 @@ export async function portFor(from, category, { env = 'test', project, service =
   }
   const projectId = project !== undefined ? PROJECTS[project] : projectIdFor(manifest.name, basename(appRoot))
   let branch = branchFor(appRoot, { lockFile })
-  if (branch === null) {
-    branch = worktreeOf(appRoot)
-      ? (await claimSession(appRoot, { name: manifest.name, scripts: manifest.scripts, lockFile })).branch
-      : 0
+  let slot   = slotFor(appRoot, { env, lockFile })
+  if (branch === null && worktreeOf(appRoot)) {
+    const claimed = await claimSession(appRoot, { name: manifest.name, scripts: manifest.scripts, lockFile })
+    branch = claimed.branch
+    slot   = slotFor(appRoot, { env, lockFile })
   }
-  return port(category, { env, projectId, serviceId: service }) + branch * BRANCH_STEP
+  // A scaffolded app's surface spends its service digit on the slot `fli dev`
+  // gave it, which is what `appPorts` hands the server — a drive asking for the
+  // bare formula reaches slot 0, another app's server.
+  const slotted = project === undefined && projectId === PROJECTS.scaffold && slot !== null && SLOTTED.has(category)
+  if (slotted && service !== 0) {
+    throw new Error(`portFor: "${category}" of a scaffolded app takes its service digit from its dev slot (${slot}); service ${service} has no port of its own`)
+  }
+  return port(category, { env, projectId, serviceId: slotted ? slot : service }) + (branch ?? 0) * BRANCH_STEP
 }
 
 /** Forget a root's slot — and every app root inside it, so a removed worktree

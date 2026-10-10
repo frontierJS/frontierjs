@@ -10,14 +10,31 @@ import { pluralize as pluralizeWord } from '@frontierjs/toolbelt/inflect'
 // the boundary and the table have to refuse the same value.
 import { EXACT_INT_MAX } from './validate.js'
 
-// The two columns a @point derives. Named by the parser so that this emitter,
-// the query compiler and the migration differ cannot disagree about a spelling.
-import { pointColumns } from './parser.js'
-
 // Four bytes a dimension, owned once — the query compiler and the boundary read
 // the same constant, so a stored blob and the length this CHECK enforces cannot
 // come to mean different numbers of floats.
 import { BYTES_PER_DIM } from './vector.js'
+
+// ─── Point columns ────────────────────────────────────────────────────────────
+
+/**
+ * The two columns a `@point` field derives, keyed by the JSON key each reads.
+ *
+ * ONE owner, because three readers have to agree on the spelling: the DDL that
+ * emits them, the query compiler that names them in a WHERE, and the migration
+ * differ that must not see a column it cannot account for. camelCase, like
+ * every other identifier this schema language produces.
+ */
+export function pointColumnNames(fieldName, point) {
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+  return { [point.lat]: `${fieldName}${cap(point.lat)}`, [point.lng]: `${fieldName}${cap(point.lng)}` }
+}
+
+/** `[latColumn, lngColumn]` in that order — what an index and a box need. */
+export function pointColumns(fieldName, point) {
+  const names = pointColumnNames(fieldName, point)
+  return [names[point.lat], names[point.lng]]
+}
 
 // ─── Type mapping ─────────────────────────────────────────────────────────────
 // Prisma-style names → SQLite storage classes

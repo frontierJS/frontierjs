@@ -34,10 +34,11 @@ import { tmpdir }                 from 'node:os'
 import { dirname, join }          from 'node:path'
 import { fileURLToPath }          from 'node:url'
 import { createConnection }       from 'node:net'
+import { portFor }                from '@frontierjs/cli/core/ports.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const API_PORT = 7120
-const CF_PORT  = 7128           // test tier, basecamp — the unit file holds 7127
+const API_PORT = await portFor(import.meta.url, 'be')
+const CF_PORT  = await portFor(import.meta.url, 'be', { service: 8 })   // the unit file holds service 7
 const API      = `http://localhost:${API_PORT}`
 const CF       = `http://localhost:${CF_PORT}/client/v4`
 const CF_TOKEN = 'cfat_devtoken'

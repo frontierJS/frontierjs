@@ -117,7 +117,10 @@ export async function run(t) {
 
   t.is(await t.evaluate(`
     return document.querySelector('#labels label').textContent.replace(/\\s+/g, ' ').trim();
-  `), 'Customer (Optional)', 'an unspecified field is badged Optional, not starred required')
+  `), 'Customer', 'an unspecified field is badged neither way: outside a Form nobody has said')
+  t.is(await t.evaluate(`
+    return document.querySelectorAll('#labels label')[6].textContent.replace(/\\s+/g, ' ').trim();
+  `), 'Notes (Optional)', 'required={false} is the one statement that badges Optional')
   t.is(await t.evaluate(`
     return document.querySelectorAll('#labels label')[2].textContent.replace(/\\s+/g, ' ').trim();
   `), 'Agreed', 'a checkbox suppresses it — an unticked box is not an empty field')

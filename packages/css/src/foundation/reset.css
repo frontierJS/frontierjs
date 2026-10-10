@@ -117,3 +117,17 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
 html:has(.band, .bleed) {
   overflow-x: clip;
 }
+
+/*
+ * ── The page does not shift when its scrollbar comes and goes ────────
+ *
+ * On a desktop that draws a classic scrollbar, the UA takes its width out
+ * of the page only while the page overflows. A route or tab change between
+ * a long panel and a short one then moves the Topbar's controls and every
+ * centered Screen about 15px sideways, and no term can hold still against
+ * a viewport that changes width under it. `stable` reserves the gutter
+ * either way; where scrollbars overlay the page it does nothing.
+ */
+html {
+  scrollbar-gutter: stable;
+}

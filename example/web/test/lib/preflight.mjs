@@ -25,8 +25,31 @@ import { readdirSync, statSync } from 'node:fs'
 import { spawnSync }             from 'node:child_process'
 import { join, dirname, relative } from 'node:path'
 import { fileURLToPath }         from 'node:url'
+import { portFor }               from '@frontierjs/cli/core/ports.js'
 
 const APP_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+
+// ─── Ports ────────────────────────────────────────────────────────────────
+//
+// The same question asked of a checkout rather than of a boot. In a linked
+// worktree every port moves by the branch block, so a drive holding the main
+// checkout's number reaches the PARENT's server and passes against code this
+// tree does not have (`FJS-2277`). These are the servers more than one drive
+// reaches; a port only one drive starts is asked for in that drive.
+//
+// The sinks are bound by the API process from variables of their own, which
+// `fli dev` does not set, so under it they keep the main checkout's numbers in
+// a branch. A drive that starts the API hands them over as `env:`.
+const at = (category, opts) => portFor(import.meta.url, category, opts)
+
+export const PORTS = {
+  api:    await at('be', { env: 'dev' }),               // 8110
+  ui:     await at('fe', { env: 'dev' }),               // 8010
+  uiTest: await at('fe', { env: 'test' }),              // 7010 — a drive's own vite
+  mail:   await at('be', { env: 'dev', service: 1 }),   // 8111
+  psp:    await at('be', { env: 'dev', service: 2 }),   // 8112
+  idp:    await at('be', { env: 'dev', service: 3 }),   // 8113
+}
 
 // What the API process is built from. `web/` is absent on purpose: the SPA is
 // served by vite, which reloads its own graph, and a browser drive's page is

@@ -9,13 +9,13 @@
   // Props:
   //   label    — display text (required to render anything)
   //   id       — for="" attribute linking to the input
-  //   required — undefined = unspecified, false = show "(Optional)"
+  //   required — true = no badge, false = "(Optional)", undefined = no badge
   //   badge    — explicit override badge text e.g. "Required", "Beta", "New"
   //   help     — string or { text } — help affordance at the end of the label
   //   type     — forwarded from the input; suppresses Optional for checkbox etc.
   export let label    = ''
   export let id       = undefined
-  export let required = undefined  // undefined = not specified, false = show optional
+  export let required = undefined
   export let badge    = undefined  // explicit badge text
   export let help     = undefined  // string or { text }
   // type is snapshot at mount — a label for a checkbox does not become a
@@ -24,9 +24,11 @@
 
   const suppressOptional = ['checkbox', 'radio', 'search', 'hidden', 'file'].includes(type)
 
-  // Explicit badge always wins; otherwise "(Optional)" when not required and
-  // the type does not suppress it. Required fields show nothing extra.
-  const badgeText = badge ?? (!required && !suppressOptional ? 'Optional' : null)
+  // Explicit badge always wins; otherwise "(Optional)" only when the caller
+  // SAID false. A control outside a Form has no rule, and badging undefined
+  // marked every filter row and editor slider optional (FJS-1974). A Form
+  // always resolves rule.required to a boolean, so its fields still badge.
+  const badgeText = badge ?? (required === false && !suppressOptional ? 'Optional' : null)
 
   const helpText = typeof help === 'string' ? help : help?.text
 </script>

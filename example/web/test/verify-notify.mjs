@@ -23,8 +23,8 @@
  * the other drives.
  */
 
-const API  = process.env.API_URL       ?? 'http://localhost:8110'
-const SINK = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
+const API  = process.env.API_URL       ?? `http://localhost:${PORTS.api}`
+const SINK = process.env.MAIL_SINK_URL ?? `http://localhost:${PORTS.mail}`
 // A reference of this run's own, not a fixed one, and the reason is a live
 // hazard rather than tidiness: `Order` is `@@softDelete` and a soft-deleted row
 // KEEPS its `@unique` values, so the cleanup below — which deletes over HTTP and
@@ -46,7 +46,7 @@ const SINK = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
 const RUN  = Date.now().toString(36).slice(-6).toUpperCase()
 const REF  = `ORD-N${RUN}`
 
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 
 await requireServers([['api (bun run api)', `${API}/api/health`], ['the mail sink', `${SINK}/outbox`]])

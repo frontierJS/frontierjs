@@ -32,6 +32,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PORTS } from './lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -40,8 +41,8 @@ const ROOT = join(HERE, '../..')
 // vite on 8010. The API does not move: its origin is written into rows that
 // outlive the process — a `File` ref stores the `publicBase` it was uploaded
 // against (`FJS-1271`). Both are env-overridable.
-const API_PORT = process.env.API_PORT ?? '8110'
-const UI_PORT  = process.env.UI_PORT  ?? '7010'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 

@@ -8,8 +8,8 @@
  * blocker, run again over `fixtures/tui-imports/` for which import mounts a
  * file; `--frame` of `/reports/` and of `/plans/7/`, a route taking a param,
  * painted; and the interactive shell under a pty: `/reports/` opened, its
- * Orders link followed into the router and refused with the reason that
- * route does not lower, a typed `/plans/7/` opened, each left with Esc;
+ * Orders link followed into `/orders/` and Esc walked back through both, a
+ * typed `/plans/7/` opened and left with Esc;
  * `/people/`'s Drawer, the kit's modal `<dialog>`, opened over the page and
  * closed by Esc, which the dialog takes and the shell does not; and Ctrl+C,
  * which must exit 0 with the terminal given back.
@@ -47,7 +47,7 @@ const rows = list.stdout.split('\n')
 check(list.status === 0, '--list exits 0', list.stderr)
 check(rows.some((l) => /^✓ \/reports\/\s*$/.test(l)), '/reports/ lowers', list.stdout)
 check(rows.some((l) => /^✓ \/plans\/:id\/\s*$/.test(l)), 'a route taking a param lowers', list.stdout)
-check(rows.some((l) => /^✗ \/orders\/\s+\S.* at \S+\.mesa:\d+:\d+$/.test(l)),
+check(rows.some((l) => /^✗ \/\S*\s+\S.* at \S+\.mesa:\d+:\d+$/.test(l)),
   'a route that does not lower names its blocker by file and line', list.stdout)
 check(/\d+ of \d+ routes lower for the terminal/.test(list.stdout), 'and a count closes it', list.stdout)
 
@@ -132,13 +132,26 @@ const buttons = rows.filter((l) => l.startsWith('✓ ') && !l.includes(':')).map
 shell.stdin.write('\t'.repeat(Math.max(0, buttons.indexOf('/reports/'))) + '\r')
 check(await until(() => seen('administrator-only')), 'Enter opens it', screen(out))
 mark = out.length
-// The heading's Orders link is the route's first focus; /orders/ does not lower.
+// The heading's Orders link is the route's first focus. /orders/ holds the
+// kit's DatePicker, whose days listen to mouseenter.
 shell.stdin.write('\r')
-check(await until(() => seen('/orders/ does not lower:')),
-  'a link is followed into the router, which refuses a route that does not lower and says why', screen(out))
+check(await until(() => seen('/orders/ · Esc goes back') && seen('Last 7 days')),
+  'a link is followed into the router and the route it names opens', screen(out))
+// /orders/ is taller than the screen: its lines keep a row each rather than
+// being pressed into 30 and painted over one another (FJS-2487), and Tab past
+// the bottom edge scrolls the control it reaches into view.
+check(seen('Unable to connect.') && seen('Placed between'), 'a route taller than the screen paints each line whole', screen(out))
+for (let i = 0; i < 60 && !seen('[ 28 ]'); i++) {
+  shell.stdin.write('\t')
+  await new Promise((r) => setTimeout(r, 60))
+}
+check(await until(() => seen('[ 28 ]'), 2000), 'Tab past the bottom edge brings the control it reaches on screen', screen(out))
 mark = out.length
 shell.stdin.write('\x1b')
-check(await until(() => seen('Tab moves, Enter opens')), 'Esc comes back to the list', screen(out))
+check(await until(() => seen('/reports/ · Esc goes back')), 'Esc goes back to the route the link was on', screen(out))
+mark = out.length
+shell.stdin.write('\x1b')
+check(await until(() => seen('Tab moves, Enter opens')), 'and a second Esc comes back to the list', screen(out))
 mark = out.length
 shell.stdin.write('\t'.repeat(buttons.length))
 await new Promise((r) => setTimeout(r, 300))
@@ -197,6 +210,13 @@ check(await until(() => seen('/deep/ · Esc goes back') && seen('Wraps: 3')), 'i
 mark = out.length
 walk.stdin.write('\x1b')
 check(await until(() => seen('Things: 2')), 'Esc goes back through the History', screen(out))
+mark = out.length
+// Its second link names /make/, which mounts Thing and does not lower.
+walk.stdin.write('\t')
+await new Promise((r) => setTimeout(r, 300))
+walk.stdin.write('\r')
+check(await until(() => seen('/make/ does not lower:')),
+  'a link to a route that does not lower is refused by the router, which says why', screen(out))
 mark = out.length
 walk.stdin.write('\x1b')
 check(await until(() => seen('Tab moves, Enter opens')), 'and from its first entry to the list', screen(out))

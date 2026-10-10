@@ -25,10 +25,12 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PORTS } from './lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const BASE = `${API}/api`
 
 const PASSWORD = 'correct-horse-battery'
@@ -42,7 +44,10 @@ const STAFF = 'sam@shop.test', ADMIN = 'alex@shop.test', SHOPPER = 'robin@buyer.
 
 const procs = []
 function start(cmd, args, name) {
-  const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  const p = spawn(cmd, args, {
+    cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    env: { ...process.env, API_PORT },
+  })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
   procs.push(p)
@@ -69,7 +74,7 @@ async function waitFor(url, label, tries = 120) {
   let busy = false
   try { await fetch(`${BASE}/products`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {
-    console.error(`port 8110 already answers — the API is still running from an earlier run.\n` +
+    console.error(`port ${API_PORT} already answers — the API is still running from an earlier run.\n` +
                   `stop it first (\`bun run stop\`); this drive starts its own.`)
     process.exit(1)
   }

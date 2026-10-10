@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-47 services · 41 routes · 17 plugins · prefix (none)
+48 services · 41 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -925,6 +925,27 @@ name when it declares none.
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `update` | `autoValidate` |
+
+### `registers` · model `registers`
+
+- **methods** — `overview`, `record`, `discuss`, `decide`
+- **custom methods** — `overview`, `record`, `discuss`, `decide`
+- **who may call** —
+  - `overview` — standing 5 or above — declared `gate: 5`
+  - `record` — standing 5 or above — declared `gate: 5`
+  - `discuss` — standing 5 or above — declared `gate: 5`
+  - `decide` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `registry` · model `RegistryImage`

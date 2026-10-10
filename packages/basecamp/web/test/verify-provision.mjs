@@ -49,15 +49,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
+import { portFor } from '@frontierjs/cli/core/ports.js'
 
 const HERE      = dirname(fileURLToPath(import.meta.url))
 const PKG       = join(HERE, '..', '..')
 // The dev slot by default; `API_PORT`/`UI_PORT` move the drive (the test slot
 // is 7120/7020) so it can run beside a dev server holding 8120/8020.
-const API_PORT  = Number(process.env.API_PORT ?? 8120)
-const WEB_PORT  = Number(process.env.UI_PORT ?? 8020)
-const SINK_PORT = 7122          // test tier, basecamp, the DO stand-in
-const HZ_PORT   = 7124          // …and the Hetzner one, the next slot along
+const API_PORT  = Number(process.env.API_PORT ?? await portFor(import.meta.url, 'be', { env: 'dev' }))
+const WEB_PORT  = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev' }))
+const SINK_PORT = await portFor(import.meta.url, 'be', { service: 2 })   // the DO stand-in
+const HZ_PORT   = await portFor(import.meta.url, 'be', { service: 4 })   // …and the Hetzner one
 const BASE      = `http://localhost:${WEB_PORT}`
 const API       = `http://localhost:${API_PORT}`
 const SINK      = `http://localhost:${SINK_PORT}`

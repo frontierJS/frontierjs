@@ -11,7 +11,7 @@ import { ValidationError } from './validate.js'
 import { boundingBox, isPoint } from '@frontierjs/toolbelt/geo'
 import { parseLength } from '@frontierjs/toolbelt/units'
 import { parseCell } from '@frontierjs/toolbelt/cells'
-import { pointColumns } from './parser.js'
+import { pointColumns } from './ddl.js'
 
 // What a vector IS, and the refusals a query vector shares with a stored one.
 // Same argument as `boundingBox` above: the browser scores an arriving row with

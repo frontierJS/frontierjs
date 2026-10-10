@@ -11,6 +11,7 @@ Re-verify any number before citing — see `../../VERIFYING.md`.
 - Public API: 70+ symbols exported from `src/index.js`
 - Runtime: Bun ≥ 1.0 · bin `litestone` → `src/tools/cli.js`
 - Subpath exports: `/migrate`, `/migrations`, `/parser`, `/ddl`, `/testing`, `/types`, `/storage`, `/external-ref`
+- Docs: every fence under `docs/`, `README.md` and `AGENTS.md` is run by `test/doc-examples.test.ts` (`FJS-D860`); a block pinned `failing` names its defect
 
 ## Publishing
 

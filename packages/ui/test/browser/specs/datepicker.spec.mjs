@@ -185,9 +185,15 @@ export async function run(t) {
   // Compared against the token's own value, not against the body: the body may
   // never state a face at all, and `sans-serif` is what the UA falls back to —
   // so "same as the body" would have passed against the literal being replaced.
+  // The token is read through a probe's font-family, because the raw token is
+  // its source text: a quoted face or a line break in the stack never equals
+  // the computed serialization.
   t.is(await t.evaluate(`
     const dp    = document.querySelector('#stage .fjs-dp');
-    const token = getComputedStyle(document.body).getPropertyValue('--font-primary').trim();
+    const probe = document.body.appendChild(document.createElement('span'));
+    probe.style.fontFamily = 'var(--font-primary)';
+    const token = getComputedStyle(probe).fontFamily;
+    probe.remove();
     return { same: getComputedStyle(dp).fontFamily === token, face: getComputedStyle(dp).fontFamily };
   `).then(r => r.same), true, 'the type face is the theme\'s --font-primary, not a hardcoded sans-serif')
 

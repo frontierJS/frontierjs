@@ -12401,6 +12401,18 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d878"></a>2026-10-10 · `FJS-D878` — When does `Label` badge "(Optional)" — Only when `required === false`. `undefined` is unspecified and badges nothing.
+
+Asked in [`FJS-1974`](ISSUES.md#fjs-1974). The prop's own doc already said `undefined` meant unspecified; the code read `!required`, so every kit control used outside a `<Form>` — a filter row, an editor's sliders, a chat box — was badged optional by a caller who had said nothing. Three stressors hit it (ela, base44, darkroom), and `Slider` takes no `required`, so its caller could not quiet the badge at all. Generated forms do not change: a `<Form>` resolves `rule.required` to a boolean, which `form-tail.spec.mjs` holds both ways round.
+
+*Lives in:* `packages/ui/components/forms/Label.mesa` · `actions.spec.mjs` (`#labels`).
+
+### <a id="fjs-d879"></a>2026-10-10 · `FJS-D879` — What face does `@frontierjs/css` default to — A platform stack with `system-ui` last; the package ships and fetches no font file.
+
+Picked over shipping Inter (or Geist) as a bundled `@font-face`, and over leaving the face to each app. `system-ui` alone resolves through fontconfig on Linux, which is DejaVu Sans on a stock install, so an app there read as unstyled; on macOS and Windows it was already the platform face. The stack names Apple's and Windows' UI faces first because both systems also carry Arial and Helvetica, then the Linux faces (Noto Sans, Ubuntu, Cantarell), and `system-ui` only as the floor. `Inter` leads and is used where installed. A face the package does not ship is a theme's or an app's to load — `elite` names Montserrat and loads nothing, which is `FJS-2495`.
+
+*Lives in:* `packages/css/src/foundation/tokens.css` § Fonts.
+
 ### <a id="fjs-d805"></a>2026-10-09 · `FJS-D805` — Is Toggle Group a `RadioGroup` treatment rather than a component — No component: a lone toggle is `Button` with `pressed` (`aria-pressed`), single-select is a segmented treatment of `RadioGroup`, and multi-select is the same treatment over a row of checkboxes.
 
 Asked in [`IDEAS/ui-kit-gaps.md`](IDEAS/ui-kit-gaps.md) § Open questions. **A** was picked over **B** (a `ToggleGroup` component of `aria-pressed` buttons with a `multiple` prop).

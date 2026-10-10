@@ -41,16 +41,20 @@ import { tmpdir }                                             from 'node:os'
 import { dirname, join }                                      from 'node:path'
 import { fileURLToPath }                                      from 'node:url'
 import { createConnection }                                   from 'node:net'
+import { portFor }                                            from '@frontierjs/cli/core/ports.js'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const API_PORT = 7120
+const API_PORT = await portFor(import.meta.url, 'be')
 const API      = `http://localhost:${API_PORT}`
 const SCRATCH  = mkdtempSync(join(tmpdir(), 'basecamp-outpost-'))
 const OWN      = join(ROOT, '.outpost')
 const ASIDE    = join(ROOT, `.outpost.aside-${process.pid}`)
 const MACHINE  = join(OWN, 'machine.json')
-const APP_PORT = 7126
-const CADDY    = 7129
+const APP_PORT = await portFor(import.meta.url, 'be', { service: 6 })
+const CADDY    = await portFor(import.meta.url, 'be', { service: 9 })
+// The launcher's two, which it binds and this run only reaches.
+const OUTPOST  = await portFor(import.meta.url, 'be', { env: 'dev', project: 'outpost' })
+const STATIC   = await portFor(import.meta.url, 'be', { env: 'dev', project: 'outpost', service: 1 })
 const IMAGE    = 'traefik/whoami:v1.10.3'
 const sh       = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
@@ -120,7 +124,7 @@ const until  = async (ask, ms) => {
   for (let t = 0; t < ms; t += 500) { if (await ask()) return true; await sleep(500) }
   return false
 }
-// A connect, not a fetch: 8180 speaks TLS, and a plain-http fetch at it fails
+// A connect, not a fetch: the command port speaks TLS, and a plain-http fetch at it fails
 // whether or not anything is listening.
 const answers = port => new Promise(done => {
   const s = createConnection({ port, host: '127.0.0.1' })
@@ -179,7 +183,7 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'])
 console.log('\nBasecamp — dev:outpost\n')
 
 try {
-  for (const port of [API_PORT, 8180, 8181, APP_PORT, CADDY])
+  for (const port of [API_PORT, OUTPOST, STATIC, APP_PORT, CADDY])
     if (await answers(port))
       throw new Error(`port ${port} is already held — this would test a process it did not start`)
   if (sh('docker', 'info').status !== 0)
@@ -207,9 +211,9 @@ try {
   const second = start(['api/src/providers/outpost-dev.ts'])
   await exited(second)
   check('a second launcher refuses the held port, by number',
-    second.out.includes('port 8180 is already answering'))
+    second.out.includes(`port ${OUTPOST} is already answering`))
   // Pinned the way Basecamp pins it: the certificate the launcher enrolled with.
-  const health = await fetch('https://localhost:8180/health', {
+  const health = await fetch(`https://localhost:${OUTPOST}/health`, {
     tls: { ca: first.cert, checkServerIdentity: () => undefined },
   }).then(r => r.json(), () => ({}))
   check('…and the first is still the machine answering', health.server_id === first.serverId)
@@ -247,12 +251,12 @@ try {
   const shipped = await released(app.id, auth)
   check('a release goes to the replica that can be reached', shipped?.status === 'success')
   check('…and the page is served off this laptop',
-    (await fetch(`http://localhost:8181/${slug}/`).then(r => r.text(), () => '')).includes('served off this laptop'))
+    (await fetch(`http://localhost:${STATIC}/${slug}/`).then(r => r.text(), () => '')).includes('served off this laptop'))
 
   // ── Stopped the way `bun run stop` stops it: a SIGTERM to the launcher ──
   process.kill(dev.pid, 'SIGTERM')
   check('stopping the launcher takes its Outpost with it — both ports free',
-    await until(async () => !(await answers(8180)) && !(await answers(8181)), 10_000))
+    await until(async () => !(await answers(OUTPOST)) && !(await answers(STATIC)), 10_000))
 
   // ── A restart is the same machine ──
   dev = start(['api/src/providers/outpost-dev.ts'])
@@ -263,7 +267,7 @@ try {
 
   // ── A lost identity file finds the row it left, and rotates its key ──
   process.kill(dev.pid, 'SIGTERM')
-  await until(async () => !(await answers(8180)), 10_000)
+  await until(async () => !(await answers(OUTPOST)), 10_000)
   rmSync(MACHINE)
   dev = start(['api/src/providers/outpost-dev.ts'])
   const back = await until(() => dev.out.includes('is online'), 40_000)

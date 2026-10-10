@@ -32,8 +32,8 @@
  *
  * A `<pre>` is a plain box: the compiler keeps the whitespace in its text,
  * and the emitter drops the two newlines a browser drops. A line too long
- * for the screen wraps, where a browser scrolls the block, because no
- * terminal node scrolls and clipping would hide the end of the line.
+ * for the screen wraps, where a browser scrolls the block, because only the
+ * page scrolls on a terminal and clipping would hide the end of the line.
  *
  * Layout hints: `inline` marks a tag a browser lays out inside a line, so
  * its text joins its neighbors' as one run of words (the runtime's `flow`);
@@ -136,15 +136,21 @@ export const isInline = (tag) => {
  * reach an ancestor only through a `|capture` listener, where `focusin` and
  * `focusout` are their bubbling twins, sent after each.
  *
- * `scroll` is heard and never sent. No terminal node scrolls, so a handler
- * waits as it does on a page whose element never overflows; a role that
- * scrolls must send it. `error` is heard and never sent for the same reason:
+ * `scroll` is heard and never sent. No element scrolls on a terminal, only
+ * the page, so a handler waits as it does on a page whose element never
+ * overflows; a role that scrolls must send it. `error` is heard and never sent for the same reason:
  * a terminal loads no image, so none fails to load. The drop-target events
  * are heard and never sent: nothing outside a terminal can be dropped into
  * it, and the kit's drop zone wraps a field the keyboard reaches. A drag
  * inside the screen would be the engine's `onMouseDrop`, a drag source's
  * lowering, so a drag source stays refused until that is built. `cancel`
  * and `close` are a `<dialog>`'s, and neither bubbles.
+ *
+ * `mouseenter` and `mouseleave` follow the pointer from element to element,
+ * a drag included: one at each element the pointer came onto or went off,
+ * neither bubbling, so a listener hears its own element's and never a
+ * descendant's. An element built under a still pointer is entered when the
+ * screen is next drawn.
  *
  * The window is the end of every event's path, past the screen's root, so a
  * `<mesa:window>` listener hears what bubbles there, and a key pressed with
@@ -160,6 +166,8 @@ export const TERMINAL_EVENTS = {
   keypress: { bubbles: true },
   mousedown: { bubbles: true },
   mousemove: { bubbles: true },
+  mouseenter: { bubbles: false },
+  mouseleave: { bubbles: false },
   scroll:  { bubbles: false },
   error:   { bubbles: false },
   dragenter: { bubbles: true },

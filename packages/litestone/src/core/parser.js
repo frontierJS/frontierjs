@@ -13,6 +13,8 @@ import { expandCapabilityType } from './capabilities.js'
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
+import { pointColumnNames } from './ddl.js'
+import { inferFromFk } from './schema-maps.js'
 import { sealedStates, sealFaults } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
 
@@ -3636,24 +3638,6 @@ export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'values',
 ])
 
-/**
- * The two columns a `@point` field derives, keyed by the JSON key each reads.
- *
- * ONE owner, because three readers have to agree on the spelling: the DDL that
- * emits them, the query compiler that names them in a WHERE, and the migration
- * differ that must not see a column it cannot account for. camelCase, like
- * every other identifier this schema language produces.
- */
-export function pointColumnNames(fieldName, point) {
-  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
-  return { [point.lat]: `${fieldName}${cap(point.lat)}`, [point.lng]: `${fieldName}${cap(point.lng)}` }
-}
-
-/** `[latColumn, lngColumn]` in that order — what an index and a box need. */
-export function pointColumns(fieldName, point) {
-  const names = pointColumnNames(fieldName, point)
-  return [names[point.lat], names[point.lng]]
-}
 
 export const TYPE_FORBIDDEN_FIELD_TYPES = new Set(['File', 'Bytes'])
 export const TYPE_DEFAULT_FORBIDDEN_KINDS = new Set(['now', 'cuid', 'ulid', 'uuid', 'nanoid', 'auth'])
@@ -4841,64 +4825,6 @@ function resolveTransitions(schema) {
 
 const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
 
-/**
- * How a `@from(Target, …)` on `model` correlates its subquery to the outer row.
- *
- * The ONE owner of that rule: `validate()` rejects an `@from` this cannot
- * resolve, and `buildFromMap()` in client.js builds the subquery from what it
- * returns. They used to be one inline block in the SQL builder guarded by
- * `if (!fkCol) continue  // validation catches this` — validation did not, so a
- * derived field with no relation behind it was silently absent from every row.
- *
- * Returns `{ fkCols, refCols }` — the FK columns on the target table and the
- * columns they reference on `model`, index-aligned — or `null` when no relation
- * joins them. ARRAYS, because a composite key correlated on its first column
- * alone answers a count of every row sharing that column: plausible, real, and
- * an answer to a question nobody asked (`FJS-377`).
- */
-export function inferFromFk(model, targetModel, via = null) {
-  const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-
-  // Every field on the target whose type is this model and which owns the FK.
-  // More than one is not exotic — sender/recipient both point at User, and a
-  // self-relational model offers parent and children before an app writes
-  // anything unusual. Picking the first silently is the failure this collects
-  // for: the count that comes back is plausible and answers the other question.
-  const candidates = []
-  for (const f of targetModel.fields) {
-    if (f.type.name !== model.name) continue
-    const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
-    if (!rel) continue
-    const fkCols  = Array.isArray(rel.fields) ? rel.fields : [rel.fields]
-    // Relations may reference a non-PK @unique column, so read it rather than
-    // assuming the primary key.
-    const refCols = rel.references
-      ? (Array.isArray(rel.references) ? rel.references : [rel.references])
-      : [idField]
-    candidates.push({ field: f.name, name: rel.name ?? null, fkCols, refCols })
-  }
-
-  if (via) {
-    // `via` may name the field on the target (`sender`), its FK column
-    // (`senderId`), the @relation name, or the field on THIS model (`sent`) —
-    // which reaches the target through the relation name they share.
-    const own     = model.fields.find(f => f.name === via && f.type.name === targetModel.name)
-    const ownName = own?.attributes.find(a => a.kind === 'relation')?.name ?? null
-    const hit = candidates.find(c =>
-      c.field === via || c.fkCols.includes(via) || (c.name && c.name === via) ||
-      (ownName && c.name === ownName))
-    return hit
-      ? { fkCols: hit.fkCols, refCols: hit.refCols }
-      : { unresolvedVia: via, candidates }
-  }
-
-  if (candidates.length > 1) return { ambiguous: candidates }
-  if (candidates.length === 1) return { fkCols: candidates[0].fkCols, refCols: candidates[0].refCols }
-
-  // Fallback: a column named after the model, e.g. Account → AccountId.
-  const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
-  return fallback ? { fkCols: [fallback.name], refCols: [idField] } : null
-}
 
 // Why this field cannot be a model's display column, or null if it can.
 //

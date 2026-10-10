@@ -39,10 +39,17 @@ import { fileURLToPath } from 'node:url'
 import { signRequest }   from '@frontierjs/toolbelt/signature'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
+import { PORTS } from './lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
+const API_PORT      = process.env.API_PORT      ?? String(PORTS.api)
+const PSP_SINK_PORT = process.env.PSP_SINK_PORT ?? String(PORTS.psp)
+// The app and the sink are imported below rather than spawned, so they read
+// their ports from THIS process's environment.
+process.env.API_PORT      = API_PORT
+process.env.PSP_SINK_PORT = PSP_SINK_PORT
+const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const HOOK = '/api/webhooks/payments'
 const HOOK_SECRET = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-secret'
 
@@ -58,11 +65,11 @@ const HOOK_SECRET = process.env.SHOP_PSP_WEBHOOK_SECRET ?? 'dev-psp-webhook-secr
 // Starting it here is not a convenience. The seam under test is *what the shop
 // does with what the provider says*, and both halves of that need the same
 // process: the outbound call needs the booted conduit, and the inbound webhook
-// needs the route bound on 8110. A spawned server gives the second and not the
+// needs the route bound on the API port. A spawned server gives the second and not the
 // first.
 const _stopAll = () => {}
 
-for (const [port, what] of [[8110, 'the API']]) {
+for (const [port, what] of [[API_PORT, 'the API']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {
@@ -82,7 +89,7 @@ if (!process.env.PSP_URL) startPspSink()
 
 /** Where the provider is. The shopper's half of a setup intent is confirmed
  *  here directly, because that page is the provider's and not the shop's. */
-const PSP_URL = process.env.PSP_URL ?? `http://localhost:${process.env.PSP_SINK_PORT ?? 8112}`
+const PSP_URL = process.env.PSP_URL ?? `http://localhost:${PSP_SINK_PORT}`
 
 const app = (await import(join(ROOT, 'api/src/app.ts'))).default
 await app.start()

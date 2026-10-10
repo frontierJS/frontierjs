@@ -123,11 +123,32 @@ describe('declarations per parent row', () => {
     expect(await sys.page.count({ where: { databaseId: 2, props: { status: 9 } } })).toBe(1)
   })
 
-  test('a move without the blob is refused, and a bulk write across scopes is too', async () => {
+  // FJS-2480: the stored blob is re-projected, so a move that names only the
+  // parent lands in the new scope's slots and leaves the old scope's.
+  test('a move WITHOUT the blob re-mirrors the stored one against the new scope', async () => {
     const { sys } = await seeded()
-    const page = await sys.page.create({ data: { databaseId: 1, props: { status: 'a' } } })
+    const page = await sys.page.create({ data: { databaseId: 1, props: { status: 7, estimate: 3 } } })
+    await sys.page.update({ where: { id: page.id }, data: { databaseId: 2 } })
+    expect(await sys.page.count({ where: { databaseId: 2, props: { status: 7 } } })).toBe(1)
+    // Database 2 declares status in n1 and no estimate; database 1's n1 is gone with it.
+    const [raw] = await sys.sql`SELECT props, propsSlots FROM page WHERE id = ${page.id}`
+    expect(JSON.parse(raw.propsSlots)).toEqual({ n1: 7 })
+    expect(JSON.parse(raw.props)).toEqual({ status: 7, estimate: 3 })
+  })
+
+  test('an upsert that moves the row takes the same path', async () => {
+    const { sys } = await seeded()
+    const page = await sys.page.create({ data: { databaseId: 1, props: { status: 5 } } })
+    await sys.page.upsert({ where: { id: page.id }, create: { databaseId: 2 }, update: { databaseId: 2 } })
+    expect(await sys.page.count({ where: { databaseId: 2, props: { status: 5 } } })).toBe(1)
+  })
+
+  test('a move without the blob over several rows is refused, and a bulk write across scopes is too', async () => {
+    const { sys } = await seeded()
+    await sys.page.create({ data: { databaseId: 1, props: { status: 'a' } } })
+    await sys.page.create({ data: { databaseId: 1, props: { status: 'b' } } })
     await sys.page.create({ data: { databaseId: 2, props: { status: 1 } } })
-    await expect(sys.page.update({ where: { id: page.id }, data: { databaseId: 2 } })).rejects.toThrow(/send 'props'/)
+    await expect(sys.page.updateMany({ where: { databaseId: 1 }, data: { databaseId: 2 } })).rejects.toThrow(/moving several rows.*send 'props'/)
     await expect(sys.page.updateMany({ where: {}, data: { props: { status: 3 } } })).rejects.toThrow(/more than one 'databaseId'/)
   })
 

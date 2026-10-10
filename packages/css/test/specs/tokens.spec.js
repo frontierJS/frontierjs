@@ -267,3 +267,22 @@ test('tokens: no published variable has been marked private', function () {
     'a published variable was marked private:\n        ' + offenders.join('\n        ')
   );
 });
+
+/* ── The default face ─────────────────────────────────────────────── */
+
+test('tokens: system-ui is the floor of the default stack, behind every named face', function () {
+  /*
+   * On Linux system-ui is fontconfig's default, DejaVu Sans on a stock
+   * install. Ahead of a named face it wins wherever it resolves, and an app
+   * there reads as unstyled while every other platform looks right (FJS-D879).
+   */
+  var root = allRules().filter(function (r) {
+    return (r.selectorText || '').indexOf(':root') !== -1 && r.style && r.style.getPropertyValue('--font-primary');
+  });
+  assert.equal(root.length, 1, 'one :root rule states the default face');
+  var faces = root[0].style.getPropertyValue('--font-primary').split(',').map(function (f) {
+    return f.trim().replace(/^['"]|['"]$/g, '');
+  });
+  assert.equal(faces.indexOf('system-ui'), faces.length - 2, 'system-ui first appears at ' + faces.indexOf('system-ui') + ' of ' + faces.length);
+  assert.equal(faces[faces.length - 1], 'sans-serif');
+});

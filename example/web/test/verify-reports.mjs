@@ -31,11 +31,14 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
+import { PORTS } from './lib/preflight.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
-const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.ui)
+const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
+const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
 
 // ─── servers ──────────────────────────────────────────────────────────────
 //
@@ -49,7 +52,10 @@ const procs = []
 function start(cmd, args, name) {
   // `detached`, so stopAll can signal the GROUP — `npx vite` is a launcher and
   // SIGTERM to the handle here leaves vite itself holding the port.
-  const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  const p = spawn(cmd, args, {
+    cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    env: { ...process.env, API_PORT, UI_PORT },
+  })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
   procs.push(p)
@@ -63,7 +69,7 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-for (const [port, what] of [[8110, 'the API'], [8010, 'the dev server']]) {
+for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {

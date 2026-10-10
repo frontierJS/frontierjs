@@ -346,6 +346,18 @@ export async function createTestEnv(opts = {}) {
   let baseline  = null
   let scenarios = 0
 
+  // A fixture graded by a gate is graded at level 0, which grades nobody, so
+  // the factories arrange and setup hand out are bound to the system client
+  // (FJS-D862). env.factories stays unscoped: a test can still watch a gate
+  // refuse one.
+  let arrangeFactories = null
+  const arrangeTools = () => {
+    arrangeFactories ??= Object.fromEntries(
+      Object.entries(built.factories).map(([name, f]) => [name, f.usingDb(env.system)])
+    )
+    return { system: env.system, factories: arrangeFactories, db: built.db }
+  }
+
   // Clients are cached per level, because the level is fixed when a client is
   // constructed and cannot be a property of a call.
   const clientAt = async (cache, n, parsed) => {
@@ -1397,8 +1409,8 @@ export async function createTestEnv(opts = {}) {
      * The body stays linear — no callbacks threading state, and a line can still
      * be commented out to bisect. What the phases buy is not tidiness:
      *
-     *   arrange  the SYSTEM client and the factories. Writes freely, below the
-     *            boundary, announcing nothing.
+     *   arrange  the SYSTEM client and the factories bound to it. Writes freely,
+     *            below the boundary, announcing nothing.
      *   act      the principal's client, graded by the app's own getLevel.
      *            Exactly one per scenario, and arrange may not follow it.
      *   assert   the principal's READ-ONLY client. Graded, so "the row exists"
@@ -1752,7 +1764,7 @@ export async function createTestEnv(opts = {}) {
         'first phases() call never applied to them, so the suite would pass or fail ' +
         'depending on file order. Declare it before any test runs.'
       )
-      const value = await fn({ system: env.system, factories: built.factories, db: built.db })
+      const value = await fn(arrangeTools())
       baseline = snapshot(built.db)
       return value
     },
@@ -1772,7 +1784,7 @@ export async function createTestEnv(opts = {}) {
             'phases: arrange cannot follow act — setup after the act is part of the act, ' +
             'and the two being separable is what lets arrange be hoisted and cached.'
           )
-          return fn({ system: env.system, factories: built.factories, db: built.db })
+          return fn(arrangeTools())
         },
 
         act: async (fn) => {

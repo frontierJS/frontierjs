@@ -141,7 +141,7 @@ export async function run(t) {
   t.is(branchRuns, 2, 'a selector that settles on the same index does not rebuild')
 
   // ── eachBlock: add, remove, reorder keyed rows ──────────────────────
-  const ul = handle.renderer.root.getChildren()[0].getChildren().find((n) => n.__attrs?.id === 'list')
+  const ul = handle.parent.getChildren()[0].getChildren().find((n) => n.__attrs?.id === 'list')
   const liFor = (key) => ul.getChildren().find((n) => n.getChildren()[0]?.__t?.endsWith(`: ${key}`))
   const liA = liFor('a'), liB = liFor('b')
   t.ok(liA && liB && liA !== liB, 'rows are distinct renderables')
@@ -224,7 +224,7 @@ export async function run(t) {
   const root = await t.mount(RootBlocks)
   frame = await t.frame()
   t.expectFrame(frame, ['Flag on', '0-p', '1-q', 'Tail'], 'root-level blocks paint in marker order')
-  t.is(root.renderer.root.getChildrenCount(), 6, 'two markers, a heading, two rows, a tail — no duplicates from the fragment path')
+  t.is(root.parent.getChildren().length, 6, 'two markers, a heading, two rows, a tail — no duplicates from the fragment path')
   t.ok(headingText.attributes & TextAttributes.BOLD, 'the h1 built in a fragment branch still bolds its text')
   setFlag(false)
   setList(['q', 'p', 'r'])

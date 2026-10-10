@@ -222,6 +222,38 @@ describe('the browser graph', () => {
     expect(seen.size).toBeGreaterThan(20)
     expect(offenders).toEqual([])
   })
+
+  // The worker is always handed a parse (sierra sends the device schema
+  // parsed), so the parser is reached only by the text branch's lazy import.
+  // One static import of parser.js from anything the worker loads on `open`
+  // puts a third of the worker back on every page load (`FJS-2318`), and every
+  // test still passes. Static imports only: a dynamic one is a separate chunk.
+  it('keeps the .lite parser out of what the worker loads to open a parse', () => {
+    const seen = new Set<string>()
+    const via  = new Map<string, string>()
+    const walk = (file: string) => {
+      if (seen.has(file)) return
+      seen.add(file)
+      let source: string
+      try { source = readFileSync(file, 'utf8') } catch { return }
+      const statics = [...source.matchAll(/^(?:import|export)\s[^;]*?from\s*['"](\.[^'"]+)['"]/gm)].map(m => m[1]!)
+      for (const m of source.matchAll(/^import\s+['"](\.[^'"]+)['"]/gm)) statics.push(m[1]!)
+      for (const spec of statics) {
+        const target = join(file, '..', spec)
+        if (!via.has(target)) via.set(target, relative(SRC, file))
+        walk(target)
+      }
+    }
+
+    // worker.js, and the two modules its open() imports whatever it is sent.
+    walk(join(SRC, 'browser/worker.js'))
+    walk(join(SRC, 'core/client.js'))
+    walk(join(SRC, 'core/ddl.js'))
+
+    expect(seen.size).toBeGreaterThan(20)
+    const parser = join(SRC, 'core/parser.js')
+    expect(seen.has(parser) ? `core/parser.js, statically from ${via.get(parser)}` : null).toBeNull()
+  })
 })
 
 // ─── the pool has one holder ───────────────────────────────────────────────

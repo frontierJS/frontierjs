@@ -29,6 +29,8 @@ import { spawn, execFileSync } from 'node:child_process'
 import { writeFileSync, rmSync } from 'node:fs'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
+import { portFor }             from '@frontierjs/cli/core/ports.js'
+import { PORTS }               from './lib/preflight.mjs'
 import { openChrome, createNetwork } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -37,9 +39,9 @@ const ROOT = join(HERE, '../..')
 // move, because its origin is written into rows that outlive the process — a
 // `File` ref stores the `publicBase` it was uploaded against (`FJS-1271`).
 // Both are env-overridable.
-const API_PORT = process.env.API_PORT ?? '8110'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
 const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
-const PORT = process.env.PREVIEW_PORT ?? '7011'
+const PORT = process.env.PREVIEW_PORT ?? String(await portFor(import.meta.url, 'fe', { env: 'test', service: 1 }))
 const UI   = `http://localhost:${PORT}`
 
 

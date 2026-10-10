@@ -45,6 +45,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PORTS } from './lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
 
@@ -53,8 +54,8 @@ const ROOT   = join(HERE, '../..')
 // The dev server is on the test tier, so this runs beside another project's
 // vite on 8010; the API stays, because a stored `File` ref names its origin
 // (`FJS-1271`).
-const API_PORT = process.env.API_PORT ?? '8110'
-const UI_PORT  = process.env.UI_PORT  ?? '7010'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
 

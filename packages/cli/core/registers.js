@@ -39,10 +39,13 @@
 // prefix reads every issue row and ruling as unparsed, which `register:check`
 // refuses by name, rather than guessing one.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve }      from 'node:path'
 
 import { splitFrontmatter } from './compiler.js'
+import { withGuard } from './guard.js'
 
 export const REGISTERS_VERSION = 1
 
@@ -170,6 +173,20 @@ export function idPatterns(prefix) {
  * at this root produce the same three empty lists, so a reader that only counts
  * records reports a clean sheet for a wrong directory.
  */
+/**
+ * Run a register write holding the one guard every writer of these registers
+ * shares. A writer reads the file, edits it and writes it back, so two at once
+ * keep only the second write and both mint the same next id. Keyed on where
+ * `ISSUES.md` really is, since a fix-loop lane writes the main tree's through a
+ * link from its own worktree.
+ */
+export function withRegisterGuard(root, fn) {
+  let issues = join(registerLayout(root).dir, 'ISSUES.md')
+  try { issues = realpathSync(issues) } catch {}
+  const key = createHash('sha1').update(issues).digest('hex').slice(0, 16)
+  return withGuard(join(homedir(), '.fli', `register-${key}.guard`), fn, 60_000)
+}
+
 export function readRegisters(root) {
   const layout    = registerLayout(root)
   const issues    = readIssues(layout)

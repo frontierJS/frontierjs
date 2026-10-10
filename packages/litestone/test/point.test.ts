@@ -21,8 +21,8 @@
 
 import { describe, it, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { parse, pointColumns, pointColumnNames } from '../src/core/parser.js'
-import { generateDDL } from '../src/core/ddl.js'
+import { parse } from '../src/core/parser.js'
+import { generateDDL, pointColumns, pointColumnNames } from '../src/core/ddl.js'
 
 const refuses = (schema: string, pattern: RegExp) => {
   const p = parse(schema)

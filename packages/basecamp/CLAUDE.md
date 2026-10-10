@@ -184,6 +184,15 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           pages commands declare, and fli's tools — behind the workbench's
           refusal and off-limits to agents and keys. /pages/ opens a page as a
           blob, and a link between two pages is posted back to that tab
+          services/registers/ is the workspace's ISSUES.md, DECISIONS.md and
+          IDEAS/ through fli's `collectRegisterAtlas` (core/registers.ts caches
+          it on the files' mtimes), behind the same refusal. It writes one
+          thing itself — a ruling, through fli's `decide` under the register
+          guard; everything else is `discuss`, a send to `app.workbench`
+          (claimed in app.ts, ONE instance, because a queued message lives in
+          the instance that started the run) with the prompt
+          core/registers.ts composes per intent — `fix` and `frame` are the
+          repo's `/fix-next` and `/frame-next`, never a restatement of them
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
           storing either would be a second answer that goes stale

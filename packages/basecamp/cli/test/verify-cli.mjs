@@ -32,10 +32,11 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { loadRoutes, checkRoutes }   from '@frontierjs/mcp/client'
 import { buildCli }                  from '@frontierjs/mcp/client/build'
 import cliConfig                     from '../config/cli.config.js'
+import { portFor }                   from '@frontierjs/cli/core/ports.js'
 
 const ROOT        = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const MAIN        = join(ROOT, 'cli', 'src', 'main.js')
-const API_PORT    = 7120
+const API_PORT    = await portFor(import.meta.url, 'be')
 const API         = `http://localhost:${API_PORT}`
 const SCRATCH     = mkdtempSync(join(tmpdir(), 'basecamp-cli-'))
 const DB_PATH     = join(SCRATCH, 'basecamp.db')

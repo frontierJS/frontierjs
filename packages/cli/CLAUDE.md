@@ -384,6 +384,11 @@ core/
                 all. `run`/`capture` are the verbs; `tty` and `pipe` exist
                 because stdin can carry one thing and `docker exec -it` and the
                 journal runner each want it
+  guard.js      one writer at a time across processes, on this machine — a
+                `wx`-created file holding the winner's pid. `ports.js` takes it
+                over `sessions.lock`, and `withRegisterGuard` (registers.js) over
+                every `close`/`file`/`amend`, keyed on where `ISSUES.md` really
+                is, because fix-loop lanes write the main tree's through a link.
   lock.js       is another run working in this directory — the format, the
                 parser, the four scripts and the reading of one. A DIFFERENT
                 question from the journal's *what state did the last run leave*,

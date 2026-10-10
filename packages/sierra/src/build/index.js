@@ -19,7 +19,7 @@ import { mesaPlugin, prepareForCompile, inspectOn } from './mesa-plugin.js'
 import { devtoolsPlugin } from '../devtools/plugin.js'
 import { scannerPlugin } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
-import { localDbPlugin } from './local-db-plugin.js'
+import { localDbPlugin, localDbWorkerPlugins } from './local-db-plugin.js'
 import { virtualSierraPlugin } from '../virtual/virtual-sierra.js'
 import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
@@ -249,6 +249,8 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       // route table with it. `FJS-473`'s shape one file over: the ambient
       // signal is not the question (`FJS-799`).
     },
+    // A build applies `plugins` to the page and only this list to a worker.
+    worker: { plugins: () => localDbWorkerPlugins(config) },
   }
 
   switch (target) {

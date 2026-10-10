@@ -81,4 +81,4 @@ The How column is the closed row's whole explanation, in the register's own pros
 
 The id, the cause in one sentence, what proves it, and anything found along the way filed as its own `FJS-###` (`fli file`) rather than folded in. **The last line of the report is exactly `fix-next: <id> <status>`**, status one of `closed`, `blocked` (step 4 filed the question the row now waits on), `ruling` (step 4 under `--ask`), `corrected` (step 3 found the row wrong and rewrote it), `busy` (step 1 found another session on it) or `failed`. `scripts/fix-loop.mjs` reads it: `failed` is retried at higher effort, `busy` and `blocked` go on to the next row, `ruling` ends the loop.
 
-Then end the session. **One row per session**: a second row in the same context carries every file the first one read. A batch is `bun run fix:loop`, which gives each row a fresh session.
+Then end the session. **One row per session**: a second row in the same context carries every file the first one read. A batch is `bun run fix:loop`, which gives each row a fresh session; with `--lanes N` it runs N rows at once, each in its own worktree, and the prompt's `## Lane` section says what that changes.

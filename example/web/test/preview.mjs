@@ -25,11 +25,13 @@ import { connect } from 'node:net'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { portFor } from '@frontierjs/cli/core/ports.js'
+import { PORTS } from './lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', 'dist', 'client')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
-const PORT = Number(process.env.PREVIEW_PORT ?? 8011)
+const API  = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const PORT = Number(process.env.PREVIEW_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev', service: 1 }))
 
 // `.wasm` is here because a browser REFUSES to stream-compile a response that
 // is not `application/wasm` — it falls back to buffering the whole module and

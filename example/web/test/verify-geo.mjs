@@ -46,9 +46,9 @@ import { distance } from '@frontierjs/toolbelt/geo'
 import { parseLength } from '@frontierjs/toolbelt/units'
 import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { results, report } from './lib/report.mjs'
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 
-const API = process.env.API_URL ?? 'http://localhost:8110'
+const API = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 
 await requireServers([['api (bun run api)', `${API}/api/health`]])
 

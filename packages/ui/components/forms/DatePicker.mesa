@@ -344,9 +344,6 @@
   // Time picker initialization flag
   var initialize = false
 
-  // Click-outside handler reference
-  var _clickOutsideHandler = null
-
   // Wrapper element reference
   let wrapperEl
 
@@ -416,18 +413,9 @@
     isOpen = false
   }
 
-  $.onMount(() => {
-    _clickOutsideHandler = ({ target }) => {
-      if (wrapperEl && !wrapperEl.contains(target)) onClickOutside()
-    }
-    document.addEventListener('click', _clickOutsideHandler, { passive: true, capture: true })
-  })
-
-  $.onDestroy(() => {
-    if (_clickOutsideHandler) {
-      document.removeEventListener('click', _clickOutsideHandler, { capture: true })
-    }
-  })
+  function onWindowClick({ target }) {
+    if (wrapperEl && !wrapperEl.contains(target)) onClickOutside()
+  }
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
@@ -537,6 +525,12 @@
     return normalizeTimestamp(new Date()) > createTimestamp(year, month, day)
   }
 
+  // Asked of the day, not read off its classes: a terminal node has no
+  // className, so a class test there lets a disabled day be picked.
+  function unpickable(day, month, year) {
+    return isPastDate(day, month, year) || isFutureDate(day, month, year) || isDisabledDay(day, month, year)
+  }
+
   function isFirstDayOfMonth(day) { return day === 1 }
 
   function isLastDayOfMonth(day, calendar) {
@@ -586,9 +580,7 @@
   }
 
   function onClick(e, day, month, year) {
-    const btn     = e.target?.closest('.fjs-dp-day')
-    const classes = btn?.className ?? ''
-    if (classes.includes('future') || classes.includes('past') || classes.includes('disabled')) {
+    if (unpickable(day, month, year)) {
       e.preventDefault()
       return
     }
@@ -611,10 +603,9 @@
     }
   }
 
-  function onMouseEnter(e, day, month, year) {
+  function onMouseEnter(day, month, year) {
     if (_startDate && _endDate) { tempEndDate = null; return }
-    const classes = e.target?.className ?? ''
-    if (classes.includes('future') || classes.includes('past') || classes.includes('disabled')) return
+    if (unpickable(day, month, year)) return
     tempEndDate = createTimestamp(year, month, day)
   }
 
@@ -707,6 +698,8 @@
   // Normalize startOfWeek if passed as string
   if (typeof startOfWeek === 'string') startOfWeek = parseInt(startOfWeek, 10)
 </script>
+
+<mesa:window on:click|capture={onWindowClick} />
 
 <!--
   The four nav arrows. They were base64 PNGs — black pixels, so they were
@@ -890,7 +883,7 @@
                   class:last={isLastDayOfMonth(day, startDateCalendar)}
                   class:disabled={isDisabledDay(day, startDateMonth, startDateYear)}
                   class:norange={isRange && tempEndDate === _startDate}
-                  on:mouseenter={(e) => onMouseEnter(e, day, startDateMonth, startDateYear)}
+                  on:mouseenter={() => onMouseEnter(day, startDateMonth, startDateYear)}
                   on:mouseleave={onMouseLeave}
                   on:click|preventDefault={(e) => onClick(e, day, startDateMonth, startDateYear)}
                 >
@@ -968,7 +961,7 @@
                     class:last={isLastDayOfMonth(day, endDateCalendar)}
                     class:disabled={isDisabledDay(day, endDateMonth, endDateYear)}
                     class:norange={isRange && tempEndDate === _startDate}
-                    on:mouseenter={(e) => onMouseEnter(e, day, endDateMonth, endDateYear)}
+                    on:mouseenter={() => onMouseEnter(day, endDateMonth, endDateYear)}
                     on:mouseleave={onMouseLeave}
                     on:click|preventDefault={(e) => onClick(e, day, endDateMonth, endDateYear)}
                   >

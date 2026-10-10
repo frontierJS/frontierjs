@@ -143,3 +143,28 @@ test('align: an Overlay does not inherit the region it is declared in', function
     'align-end on a Popover still places it against the end edge');
   cleanup();
 });
+
+/* ── The page holds still ─────────────────────────────────────────── */
+
+test('layout: the root reserves its scrollbar gutter, so a short page does not shift', function () {
+  assert.equal(style(document.documentElement, 'scrollbar-gutter'), 'stable');
+});
+
+test('layout: a chip holding a sentence wraps with .wrap and widens its box without', function () {
+  var sentence = 'Should invoices go out on the first of the month or on each order?';
+  var box = el(
+    '<div style="inline-size: 200px">' +
+      '<button class="btn">' + sentence + '</button>' +
+      '<button class="btn wrap">' + sentence + '</button>' +
+      '<span class="badge wrap">' + sentence + '</span>' +
+    '</div>'
+  );
+  var b = box.querySelectorAll('button, .badge');
+  assert.ok(b[0].getBoundingClientRect().width > 200,
+    'a plain .btn keeps one line, ' + Math.round(b[0].getBoundingClientRect().width) + 'px');
+  assert.ok(b[1].getBoundingClientRect().width <= 200,
+    '.btn.wrap fits its box, ' + Math.round(b[1].getBoundingClientRect().width) + 'px');
+  assert.ok(b[2].getBoundingClientRect().width <= 200,
+    '.badge.wrap fits its box, ' + Math.round(b[2].getBoundingClientRect().width) + 'px');
+  cleanup();
+});

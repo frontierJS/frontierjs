@@ -44,8 +44,11 @@ const FLI       = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
  * `phaseOf(toolUse, edited)` names the phase a call belongs to and `phases` is
  * the starting tally; both are the loop's, since what counts as proving a fix
  * and verifying a framing differ.
+ *
+ * `cwd`, `addDirs` and `env` are a lane's (`lanes.mjs`): its worktree, the
+ * main tree its linked register lives in, and its own `fli` first on PATH.
  */
-export function runSession(prompt, { model, effort, cap, permission, tag, phases, phaseOf, where = '' }) {
+export function runSession(prompt, { model, effort, cap, permission, tag, phases, phaseOf, where = '', cwd = ROOT, addDirs = [], env = {} }) {
   // The Stop hook is off: each skill runs `fli done` as its own step, and the
   // hook was that report a second time, after a `--baseline` run of it before
   // the session, at forty seconds each.
@@ -59,7 +62,8 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
     '--permission-mode', permission,
     '--setting-sources', 'project,local',
     '--strict-mcp-config',
-  ], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, FLI_DONE_STOP: 'off' } })
+    ...addDirs.flatMap(d => ['--add-dir', d]),
+  ], { cwd, stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, FLI_DONE_STOP: 'off', ...env } })
 
   let result   = {}
   let session  = null
@@ -109,7 +113,7 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
       edited ||= writes(part)
       const phase = phaseOf(part, edited)
       tally[phase] = (tally[phase] ?? 0) + 1
-      console.log(`[${tag}]     ${part.name}: ${describe(part.input)}`)
+      console.log(`[${tag}]     ${part.name}: ${describe(part.input, cwd)}`)
     }
   })
 
@@ -157,16 +161,16 @@ function clock(s) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-// Sessions run at ROOT yet prefix most commands with a cd to it; the path is
-// the same on every line and pushes the command itself past the cut.
-const ROOT_CD = new RegExp(`^cd ['"]?${ROOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]?\\s*(&&|;)\\s*`)
-export function atRoot(text) {
-  return text.replace(ROOT_CD, '').replaceAll(`${ROOT}/`, '')
+// Sessions run at their root yet prefix most commands with a cd to it; the
+// path is the same on every line and pushes the command itself past the cut.
+export function atRoot(text, root = ROOT) {
+  const cd = new RegExp(`^cd ['"]?${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]?\\s*(&&|;)\\s*`)
+  return text.replace(cd, '').replaceAll(`${root}/`, '')
 }
 
-function describe(input = {}) {
+function describe(input = {}, root) {
   const text = input.description ?? input.file_path ?? input.pattern ?? input.skill ?? input.command ?? input.prompt ?? ''
-  return atRoot(String(text).split('\n')[0]).slice(0, 110)
+  return atRoot(String(text).split('\n')[0], root).slice(0, 110)
 }
 
 // One line per attempt: cost per SOLVED item is the number to tune the budget

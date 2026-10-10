@@ -19,10 +19,10 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 
-const API = process.env.API_URL ?? 'http://localhost:8110'
+const API = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 const REF = 'ORD-JOBS-1'
 // The audit database is `driver trail` with `retention 90d`, so its rows are
 // lines in a file rather than a table. Relative to the app root, which is where
@@ -492,7 +492,7 @@ try {
   // mail, and a second sweep sends nothing. A paid invoice past the same date
   // and an issued one not yet inside the three days are the two controls.
   {
-    const SINK  = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
+    const SINK  = process.env.MAIL_SINK_URL ?? `http://localhost:${PORTS.mail}`
     const shop4 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
     const plant = (suffix, status, dueOn) => Number(shop4.prepare(
       `INSERT INTO invoice (number, status, customerId, subtotal, tax, total,

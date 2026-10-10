@@ -475,6 +475,17 @@ describe('portFor — the port a test asks for', () => {
     expect(await portFor(root, 'be', { env: 'dev', project: 'outpost', lockFile })).toBe(28180)
     await expect(portFor(root, 'be', { project: 'outposts', lockFile })).rejects.toThrow(/Unknown project "outposts"/)
   })
+
+  test("a scaffolded app on a dev slot gets the slot's port, and a test port stays the formula", async () => {
+    const root = join(main, 'my-app')
+    mkdirSync(join(root, 'api', 'test'), { recursive: true })
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'my-app' }))
+    writeFileSync(lockFile, JSON.stringify({ [root]: { slot: 3, env: 'dev' } }))
+    expect(await portFor(join(root, 'api', 'test'), 'be', { env: 'dev', lockFile })).toBe(8103)
+    expect(await portFor(join(root, 'api', 'test'), 'fe', { env: 'dev', lockFile })).toBe(8003)
+    expect(await portFor(join(root, 'api', 'test'), 'be', { service: 4, lockFile })).toBe(7104)
+    await expect(portFor(join(root, 'api', 'test'), 'be', { env: 'dev', service: 4, lockFile })).rejects.toThrow(/dev slot \(3\)/)
+  })
 })
 
 describe('readsPortVar — would this surface follow a slot', () => {

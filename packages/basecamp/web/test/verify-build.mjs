@@ -37,12 +37,13 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
+import { portFor } from '@frontierjs/cli/core/ports.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG  = join(HERE, '../..')
 const DIST = join(PKG, 'web/dist/client')
 
-const API_PORT = 8120
+const API_PORT = await portFor(import.meta.url, 'be', { env: 'dev' })
 const PORT     = Number(process.env.PREVIEW_PORT ?? 5311)
 const UI       = `http://localhost:${PORT}`
 
@@ -98,7 +99,7 @@ check('the theme script is in the page, ahead of the stylesheet',
   live.indexOf('sierra-theme'), i => i > 0 && i < live.search(/<link[^>]+rel=["']?stylesheet/i))
 
 // ─── 2. The page ──────────────────────────────────────────────────────────
-children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore' }))
+children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore', env: { ...process.env, PORT: String(API_PORT) } }))
 children.push(spawn(process.execPath, [join(HERE, 'preview.mjs')], {
   stdio: 'ignore',
   env: { ...process.env, PREVIEW_PORT: String(PORT), API_URL: `http://localhost:${API_PORT}` },

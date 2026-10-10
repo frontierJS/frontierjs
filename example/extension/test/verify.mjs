@@ -35,6 +35,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
+import { PORTS } from '../../web/test/lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -43,7 +44,8 @@ const ROOT = join(EXT, '..')
 const DIST = join(EXT, 'dist/chrome')
 const SITE = join(ROOT, 'site/dist')
 
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
 // 7 test · 7 siteServe · 1 example · 0 — the same slot `verify:site` uses. The
 // two drives do not run at once, and the extension's manifest declares this
 // origin: a host permission is in a file the build emits, so a drive cannot
@@ -55,7 +57,10 @@ const SITE_PORT = 7710
 const procs   = []
 const servers = []
 function start(cmd, args, name, cwd = ROOT) {
-  const p = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  const p = spawn(cmd, args, {
+    cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    env: { ...process.env, API_PORT },
+  })
   p.stdout.on('data', d => { if (process.env.DEBUG) process.stdout.write(`[${name}] ${d}`) })
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
   procs.push(p)
@@ -93,7 +98,7 @@ if (!existsSync(join(SITE, 'index.html'))) {
   console.error(`No storefront build at ${SITE}.\nRun: bun run build:site`)
   process.exit(1)
 }
-for (const [port, what] of [[8110, 'the API'], [SITE_PORT, 'the storefront origin']]) {
+for (const [port, what] of [[API_PORT, 'the API'], [SITE_PORT, 'the storefront origin']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {
@@ -105,8 +110,10 @@ for (const [port, what] of [[8110, 'the API'], [SITE_PORT, 'the storefront origi
 // The extension is BUILT here rather than required, because a stale
 // dist/chrome is a drive that passes against the previous edit — the same trap
 // as a dev server serving the code it started with. It is a second's work.
+// The API origin is a host permission the build writes into the manifest.
 execFileSync('bunx', ['jetty-build-ext', '--root=extension', '--browser=chrome'],
-             { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore' })
+             { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore',
+               env: { ...process.env, VITE_API_URL: API } })
 
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 start('bun', ['run', 'api/index.ts'], 'api')

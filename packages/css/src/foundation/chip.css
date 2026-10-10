@@ -102,3 +102,12 @@
    */
   text-decoration: none;
 }
+
+/*
+ * A chip holding a sentence — an answer offered as a button — cannot
+ * shrink below its text on one line, so on a phone it widened the whole
+ * page to 2153px. `.wrap` is the same word `.tooltip.wrap` already is.
+ */
+:where(.chip, .btn, .pill, .badge):where(.wrap) {
+  white-space: normal;
+}

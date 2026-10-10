@@ -32,9 +32,9 @@
 
 import { createLitestoneAuth } from '@frontierjs/auth'
 import { shops, DEFAULT_SHOP } from '../../api/src/core/db.ts'
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 
-const API   = process.env.API_URL ?? 'http://localhost:8110'
+const API   = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 /**
  * A shop this run made, named for this run.
  *

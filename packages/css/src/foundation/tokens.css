@@ -386,8 +386,17 @@
    * badges and pills each had one and headings did not, so a theme wanting a
    * tracked display face had to ship a selector — which is the one thing a
    * theme may not do.
+   *
+   * `system-ui` comes LAST, behind each platform's own UI face by name. On
+   * Linux it resolves through fontconfig's default, which is DejaVu Sans on
+   * a stock install, and an app there read as unstyled beside the same app
+   * on a Mac. Apple's and Windows' faces lead because both ship Arial and
+   * Helvetica, which would otherwise win over their system font. No face is
+   * shipped: Inter is used where it is installed and never fetched.
    */
-  --font-primary: system-ui, sans-serif;
+  --font-primary: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text',
+                  'Segoe UI', Roboto, 'Noto Sans', Ubuntu, Cantarell,
+                  'Helvetica Neue', Arial, system-ui, sans-serif;
   --font-mono:    ui-monospace, monospace;
 
   /*

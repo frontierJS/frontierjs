@@ -1,0 +1,14 @@
+<script>
+  // A page taller than the drive's screen: a control at each end, prose
+  // between, and a link inside a line below the fold.
+  let pressed = 'none'
+  const rows = Array.from({ length: 20 }, (_, i) => i + 1)
+</script>
+<h1>Top</h1>
+<button on:click={() => pressed = 'first'}>first</button>
+{#each rows as n}
+  <p>row {n} of the page</p>
+{/each}
+<p>A sentence too long for one line ends in <a href="/docs/">the docs</a> here</p>
+<button on:click={() => pressed = 'last'}>last</button>
+<p>pressed {pressed}</p>

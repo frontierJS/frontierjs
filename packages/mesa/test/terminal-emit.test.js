@@ -452,14 +452,14 @@ describe('terminal target', () => {
 </script>
 <table><tr><td class={x} colspan={x}>{v}</td><td>z</td></tr></table>
 <input bind:value={v} bind:checked={v} />
-{#if v}<button on:click|once={() => {}} on:mouseenter={() => {}}>b</button>{/if}
+{#if v}<button on:click|once={() => {}} on:pointerenter={() => {}}>b</button>{/if}
 {#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><svg>{#snippet s()}x{/snippet}</svg></Foo>{/each}
 <slot name="a" title="t" />
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
     expect(terminalOffenses(ir).map((o) => [o.what, o.shape, o.loc])).toEqual([
       ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
       ['bind:checked', 'bind:',             'H.mesa:6:23'],
-      ['on:mouseenter', 'on:mouseenter',    'H.mesa:7:41'],
+      ['on:pointerenter', 'on:pointerenter', 'H.mesa:7:41'],
       ['<svg>',        '<svg>',             'H.mesa:8:59'],
       ['title on <slot>', 'attribute on <slot>', 'H.mesa:9:16'],
     ])

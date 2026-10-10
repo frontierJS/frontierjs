@@ -5,6 +5,7 @@
 //   bun run fix:loop                       # up to 5 rows
 //   bun run fix:loop -- --rows 10 --pkg sierra
 //   bun run fix:loop -- --budget 3 --dry-run
+//   bun run fix:loop -- --rows 8 --lanes 3   # three rows at a time
 //
 // Each row runs `/fix-next <id>` in a FRESH `claude -p` session on the first
 // rung of FIX_LADDER, and a row that does not close is retried once on the next —
@@ -53,16 +54,25 @@
 // a busy row is skipped, never retried at high effort, and a later run skips
 // it too while the files that made it busy are unchanged. What counts as an
 // earlier attempt is the log — an entry for the id whose outcome is not closed
-// and which edited something. Rows run serially; a second loop in the same
-// tree picks the same top row.
+// and which edited something. Without --lanes, rows run serially; a second loop
+// in the same tree picks the same top row.
+//
+// --lanes N runs N rows at once, each in its own worktree (`lanes.mjs`), and
+// never two rows sharing a package: two lanes in one package would both edit
+// it blind to each other and conflict when merged back, and the package suite
+// is the long wait a lane exists to overlap. A lane merges its row's edits into
+// the main tree when the row ends; a failed attempt's edits are kept as a patch
+// under ~/.fli/lanes/patches instead, and the next attempt at that row starts
+// from it.
 // ============================================================
 
 import { spawnSync }                from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join }                     from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
 import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
+import { LANES_DIR, LINKED, openLane, syncLane, applyPatch, lanePatch, harvest } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
 const FIX_LADDER = [{ model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'high' }]
@@ -83,12 +93,19 @@ const rows = Number(args.rows ?? 4)
 const budget     = Number(args.budget ?? 5)
 const permission = args['permission-mode'] ?? 'auto'
 const dryRun     = Boolean(args['dry-run'])
+const lanes      = Number(args.lanes ?? 0)
 
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
+// A lane is a linked worktree and ports.js has five port blocks for those.
+if (!Number.isInteger(lanes) || lanes < 0 || lanes > 5) { console.error('[fix-loop] --lanes takes 1–5: a lane is a worktree, and there are five branch port blocks'); process.exit(1) }
 
 // ─── the loop ───────────────────────────────────────────────
 
-const skipped = new Set()
+const skipped  = new Set()
+const inFlight = new Map()                // id → { pkg, done }
+const WAIT     = Symbol('wait')
+let started   = 0
+let stopped   = false
 let spent     = 0
 let closed    = 0
 let blocked   = 0
@@ -96,72 +113,128 @@ let blocked   = 0
 const usageAtStart = dryRun ? null : await planUsage()
 printPlanUsage('fix-loop', 'start', usageAtStart)
 
-for (let n = 0; n < rows; n++) {
-  const row = nextRow()
-  if (!row) { console.log('[fix-loop] nothing ready'); break }
+if (lanes && !dryRun) await Promise.all(Array.from({ length: lanes }, (_, i) => worker(openLane(i + 1))))
+else await worker(null)
 
-  console.log(`\n[fix-loop] ${n + 1}/${rows} ${row.id} (${row.severity}, ${row.pkg.join(' · ')}) — ${row.title.slice(0, 100)}`)
-  if (dryRun) { console.log(await preBrief(row)); skipped.add(row.id); continue }
+console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)
+if (usageAtStart) printPlanUsage('fix-loop', 'end', await planUsage(), usageAtStart)
 
-  const brief = await preBrief(row)
+async function worker(lane) {
+  const tag = lane ? `fix-loop:${lane.n}` : 'fix-loop'
+  while (!stopped && started < rows) {
+    const row = nextRow()
+    if (row === WAIT) { await Promise.race([...inFlight.values()].map(f => f.done)); continue }
+    if (!row) { console.log(`[${tag}] nothing ready`); return }
+
+    let finish
+    inFlight.set(row.id, { pkg: row.pkg, done: new Promise(r => { finish = r }) })
+    // A lane that cannot be synced or merged is out of the run; the others go on.
+    try { await work(row, ++started, lane, tag) }
+    catch (err) { console.log(`[${tag}] ${row.id} — ${err.message}`); if (lane) return }
+    finally { inFlight.delete(row.id); skipped.add(row.id); finish() }
+  }
+}
+
+async function work(row, n, lane, tag) {
+  console.log(`\n[${tag}] ${n}/${rows} ${row.id} (${row.severity}, ${row.pkg.join(' · ')}) — ${row.title.slice(0, 100)}`)
+  if (dryRun) { console.log(await preBrief(row)); return }
+
+  const brief   = await preBrief(row)
+  const patch   = join(LANES_DIR, 'patches', `${row.id}.patch`)
+  const base    = lane && syncLane(lane)
+  const carried = lane ? applyPatch(lane, patch) : false
   let outcome
   // An S1 or S2 that fails on Sonnet is retried on Opus anyway, so the Sonnet attempt is spend with no row at the end of it.
   const ladder = /^S[12]$/.test(row.severity) ? FIX_LADDER.slice(1) : FIX_LADDER
   let retried = false
   for (let rung = 0; rung < ladder.length; rung++) {
     const { model, effort } = ladder[rung]
-    const prompt = attemptedBefore(row.id)
+    // A lane starts clean from the main tree, so its earlier attempt is whatever patch it was handed.
+    const earlier = lane && rung === 0 ? carried : attemptedBefore(row.id)
+    const prompt  = earlier
       ? `/fix-next ${row.id} — an earlier fix-loop attempt at this row did not close it; the edits under its packages in the working tree are that attempt's, so read git diff and build on them`
       : `/fix-next ${row.id}`
 
     appendLog(LOG, { id: row.id, severity: row.severity, model, effort, outcome: 'started' })
-    const run = await runSession(`${prompt}\n\n${brief}`, {
+    const run = await runSession(`${prompt}\n\n${brief}${lane ? laneNote() : ''}`, {
       model, effort, permission, cap: ladder[rung] === FIX_LADDER[0] ? budget : budget * 2,
-      tag: 'fix-loop', where: `${row.id} [${n + 1}/${rows}]`, phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
+      tag, where: `${row.id} [${n}/${rows}]`, phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
+      ...(lane && { cwd: lane.dir, addDirs: [ROOT], env: { PATH: `${lane.bin}:${process.env.PATH}` } }),
     })
     const status = /fix-next: \S+ (closed|blocked|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
     outcome   = isClosed(row.id) ? 'closed' : isBlocked(row.id) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'
     spent    += run.cost
 
     const dirty = outcome === 'busy' ? dirtyUnder(row) : undefined
-    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied, edited: run.edited, transient: run.transient, dirty, ...trace(run) })
-    printAttempt('fix-loop', { model, effort }, outcome, run)
+    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied, edited: run.edited, transient: run.transient, dirty, ...(lane && { cwd: lane.dir }), ...trace(run) })
+    printAttempt(tag, { model, effort }, outcome, run)
 
     // A safety check that gave no verdict failed the attempt, not the row, and the next rung costs five times as much.
     if (outcome === 'failed' && run.transient && !run.edited && !retried) {
       retried = true
       rung--
-      console.log(`[fix-loop] ${row.id} failed on ${run.transient} unanswered safety check(s) with nothing edited — same rung once more`)
+      console.log(`[${tag}] ${row.id} failed on ${run.transient} unanswered safety check(s) with nothing edited — same rung once more`)
       continue
     }
     if (outcome !== 'failed') break
   }
 
-  if (outcome === 'busy') console.log(`[fix-loop] ${row.id} is another session's work in progress — skipped`)
+  if (lane) settle(lane, base, row, outcome, patch, tag)
+  if (outcome === 'busy') console.log(`[${tag}] ${row.id} is another session's work in progress — skipped`)
 
   if (outcome === 'closed') closed++
-  if (outcome === 'blocked') { blocked++; console.log(`[fix-loop] ${row.id} waits on a question it filed — fli decide answers it`) }
+  if (outcome === 'blocked') { blocked++; console.log(`[${tag}] ${row.id} waits on a question it filed — fli decide answers it`) }
   if (outcome === 'ruling') {
-    console.log(`[fix-loop] ${row.id} needs a ruling — stopping; answer it with fli decisions, then rerun`)
-    break
+    console.log(`[${tag}] ${row.id} needs a ruling — stopping; answer it with fli decisions, then rerun`)
+    stopped = true
   }
-  skipped.add(row.id)
 }
 
-console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)
-if (usageAtStart) printPlanUsage('fix-loop', 'end', await planUsage(), usageAtStart)
+// A row that ended carries its edits into the main tree; one that did not keeps
+// them as a patch, so a half-built fix never reaches the tree other lanes copy.
+function settle(lane, base, row, outcome, patch, tag) {
+  if (['failed', 'ruling'].includes(outcome)) {
+    const diff = lanePatch(lane, base)
+    if (diff.length) { mkdirSync(join(LANES_DIR, 'patches'), { recursive: true }); writeFileSync(patch, diff) }
+    if (diff.length) console.log(`[${tag}] ${row.id} edits kept for its next attempt: ${patch}`)
+    return
+  }
+  const got = harvest(lane, base)
+  appendLog(LOG, { lane: lane.n, row: row.id, harvest: got })
+  if (got.dropped.length) console.log(`[${tag}] ${row.id} generated files not merged, regenerate them: ${got.dropped.join(', ')}`)
+  if (got.conflicts.length) {
+    writeFileSync(patch, lanePatch(lane, base))
+    console.log(`[${tag}] ✗ ${row.id} is ${outcome} in the register but its edits CONFLICT with the main tree in ${got.conflicts.join(', ')} — nothing merged; apply ${patch} by hand`)
+    return
+  }
+  rmSync(patch, { force: true })
+  if (got.written.length) console.log(`[${tag}] ${row.id} merged into the main tree: ${got.written.join(', ')}`)
+}
+
+function laneNote() {
+  return ['', '', '## Lane',
+    '',
+    `This session runs in a lane: a worktree of the main tree at ${ROOT}, holding everything that tree holds, uncommitted work included. Your edits are merged into the main tree when the session ends.`,
+    `${LINKED.join(', ')} are links to the main tree's files: \`fli close\`, \`fli file\` and \`fli amend\` write through them as usual, and Edit names the target path to write instead, which is allowed. \`fli\` on PATH is this worktree's own.`,
+  ].join('\n')
+}
 
 // ─── steps ──────────────────────────────────────────────────
 
+// WAIT when every row left shares a package with one a lane is running.
 function nextRow() {
-  const argv = ['next', '--json', '--limit', String(rows + skipped.size + 5)]
+  const argv = ['next', '--json', '--limit', String(rows + skipped.size + inFlight.size + 5)]
   if (args.pkg) argv.push('--pkg', args.pkg)
   const log = readLog(LOG)
+  const running = [...inFlight.values()].flatMap(f => f.pkg)
+  let wait = false
   for (const r of JSON.parse(fli(argv)).ready) {
-    if (skipped.has(r.id) || r.byHand) continue
+    if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand) continue
+    if (r.pkg.some(p => running.includes(p))) { wait = true; continue }
     if (stillBusy(r, log)) { console.log(`[fix-loop] ${r.id} skipped — busy last time, and the files that made it so are still dirty`); skipped.add(r.id); continue }
     return r
   }
+  return wait ? WAIT : undefined
 }
 
 // `skipped` forgets between runs, so a row whose package another session holds

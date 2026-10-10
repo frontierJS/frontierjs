@@ -53,6 +53,7 @@
   <Label id="ctl-c" label="Plan" required />
   <Label id="ctl-d" label="Key" badge="Beta" />
   <Label id="ctl-e" label="Rate" help="Charged per seat, per month." />
+  <Label id="ctl-f" label="Notes" required={false} />
 </div>
 
 <Card id="card-plain">Plain body</Card>

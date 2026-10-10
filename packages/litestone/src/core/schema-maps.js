@@ -13,12 +13,72 @@
 // Three doc blocks in here had drifted away from the function they describe —
 // something was inserted between them — so each is reunited with its own pass.
 
-import { inferFromFk }                                             from './parser.js'
 import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor, mapExprCols } from './ddl.js'
 import { assertNoBareClock, expandNowTokens }                      from './query.js'
 import { compileDerived, checkDerivedType, dependsOnClock }        from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
 
+
+// ─── Relation keys ────────────────────────────────────────────────────────────
+
+/**
+ * How a `@from(Target, …)` on `model` correlates its subquery to the outer row.
+ *
+ * The ONE owner of that rule: `validate()` rejects an `@from` this cannot
+ * resolve, and `buildFromMap()` in client.js builds the subquery from what it
+ * returns. They used to be one inline block in the SQL builder guarded by
+ * `if (!fkCol) continue  // validation catches this` — validation did not, so a
+ * derived field with no relation behind it was silently absent from every row.
+ *
+ * Returns `{ fkCols, refCols }` — the FK columns on the target table and the
+ * columns they reference on `model`, index-aligned — or `null` when no relation
+ * joins them. ARRAYS, because a composite key correlated on its first column
+ * alone answers a count of every row sharing that column: plausible, real, and
+ * an answer to a question nobody asked (`FJS-377`).
+ */
+export function inferFromFk(model, targetModel, via = null) {
+  const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+
+  // Every field on the target whose type is this model and which owns the FK.
+  // More than one is not exotic — sender/recipient both point at User, and a
+  // self-relational model offers parent and children before an app writes
+  // anything unusual. Picking the first silently is the failure this collects
+  // for: the count that comes back is plausible and answers the other question.
+  const candidates = []
+  for (const f of targetModel.fields) {
+    if (f.type.name !== model.name) continue
+    const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
+    if (!rel) continue
+    const fkCols  = Array.isArray(rel.fields) ? rel.fields : [rel.fields]
+    // Relations may reference a non-PK @unique column, so read it rather than
+    // assuming the primary key.
+    const refCols = rel.references
+      ? (Array.isArray(rel.references) ? rel.references : [rel.references])
+      : [idField]
+    candidates.push({ field: f.name, name: rel.name ?? null, fkCols, refCols })
+  }
+
+  if (via) {
+    // `via` may name the field on the target (`sender`), its FK column
+    // (`senderId`), the @relation name, or the field on THIS model (`sent`) —
+    // which reaches the target through the relation name they share.
+    const own     = model.fields.find(f => f.name === via && f.type.name === targetModel.name)
+    const ownName = own?.attributes.find(a => a.kind === 'relation')?.name ?? null
+    const hit = candidates.find(c =>
+      c.field === via || c.fkCols.includes(via) || (c.name && c.name === via) ||
+      (ownName && c.name === ownName))
+    return hit
+      ? { fkCols: hit.fkCols, refCols: hit.refCols }
+      : { unresolvedVia: via, candidates }
+  }
+
+  if (candidates.length > 1) return { ambiguous: candidates }
+  if (candidates.length === 1) return { fkCols: candidates[0].fkCols, refCols: candidates[0].refCols }
+
+  // Fallback: a column named after the model, e.g. Account → AccountId.
+  const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
+  return fallback ? { fkCols: [fallback.name], refCols: [idField] } : null
+}
 
 // ─── Schema analysis ──────────────────────────────────────────────────────────
 

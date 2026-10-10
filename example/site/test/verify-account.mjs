@@ -36,15 +36,18 @@ import { serveSite } from '@frontierjs/sierra/site/serve'
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { portFor } from '@frontierjs/cli/core/ports.js'
+import { PORTS } from '../../web/test/lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
 const DIST = join(SITE, 'dist')
 const ROOT = join(SITE, '..')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 // test / siteServe / project 1 / service 2 — its own slot, so it collides with
 // neither `verify:site` (7710) nor a dev server on 8710.
-const PORT   = 7712
+const PORT   = await portFor(import.meta.url, 'siteServe', { env: 'test', service: 2 })
 
 const BUYER = { email: 'robin@buyer.test', password: 'correct-horse-battery' }
 
@@ -52,7 +55,10 @@ const BUYER = { email: 'robin@buyer.test', password: 'correct-horse-battery' }
 
 const procs = [], servers = []
 function start(cmd, args, name, cwd = ROOT) {
-  const p = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  const p = spawn(cmd, args, {
+    cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    env: { ...process.env, API_PORT },
+  })
   p.stdout.on('data', d => { if (process.env.DEBUG) process.stdout.write(`[${name}] ${d}`) })
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
   procs.push(p); return p
@@ -78,7 +84,7 @@ if (!existsSync(join(DIST, 'account', 'index.html'))) {
   console.error(`No account page at ${DIST}/account/.\nRun: bun run build:site`)
   process.exit(1)
 }
-for (const [port, what] of [[8110, 'the API'], [PORT, 'the storefront origin']]) {
+for (const [port, what] of [[API_PORT, 'the API'], [PORT, 'the storefront origin']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) { console.error(`port ${port} already answers — ${what} is up from an earlier run.`); process.exit(1) }

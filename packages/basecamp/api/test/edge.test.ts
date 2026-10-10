@@ -20,6 +20,7 @@ import { startCfSink, EMPTY_TOKEN, BROKEN_ZONE } from '../src/providers/edge/clo
 import { edgeConnectorFor, domainMark } from '../src/providers/edge/index.ts'
 import { connectorFor }            from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia, accountConnectorFor } from '../src/providers/compute/accounts.ts'
+import { portFor }                 from '@frontierjs/cli/core/ports.js'
 
 // Every Domain write also pushes its App's routes to the machines running it
 // (`FJS-1610`), and none of these machines has an outpost. The stub answers
@@ -29,7 +30,7 @@ process.env.BASECAMP_STUB_OUTPOST = '1'
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
 const ENC_KEY    = '0'.repeat(64)
-const CF_PORT    = 7127
+const CF_PORT    = await portFor(import.meta.url, 'be', { service: 7 })
 const CF_SINK    = `http://localhost:${CF_PORT}/client/v4`
 const CF_TOKEN   = 'cfat_devtoken'
 

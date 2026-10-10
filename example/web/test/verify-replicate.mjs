@@ -57,12 +57,13 @@ import { join, dirname }    from 'node:path'
 import { fileURLToPath }    from 'node:url'
 import { connect }          from 'node:net'
 import { createTenantRegistry } from '@frontierjs/litestone'
+import { portFor }          from '@frontierjs/cli/core/ports.js'
 import { results, report }  from './lib/report.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const DB_DIR = join(HERE, '..', '..', 'db')
 
-const S3_PORT   = 7116
+const S3_PORT   = await portFor(import.meta.url, 'be', { env: 'test', service: 6 })
 const S3_IMAGE  = 'chrislusf/seaweedfs:4.47'
 const CONTAINER = 'fjs-verify-replicate-s3'
 const BUCKET    = 'fjs-drive'

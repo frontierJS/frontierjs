@@ -18,10 +18,11 @@ import { connect } from 'node:net'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { portFor } from '@frontierjs/cli/core/ports.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '..', 'dist', 'client')
-const API  = process.env.API_URL ?? 'http://localhost:8120'
+const API  = process.env.API_URL ?? `http://localhost:${await portFor(import.meta.url, 'be', { env: 'dev' })}`
 const PORT = Number(process.env.PREVIEW_PORT ?? 5311)
 
 const TYPES = {

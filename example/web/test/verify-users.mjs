@@ -65,6 +65,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
+import { PORTS } from './lib/preflight.mjs'
 import { authenticator, wrongCode, enrolledAccount } from './lib/authenticator.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
@@ -74,12 +75,13 @@ const ROOT = join(HERE, '../..')
 // vite on 8010. The API does not move: its origin is written into rows that
 // outlive the process — a `File` ref stores the `publicBase` it was uploaded
 // against (`FJS-1271`). Both are env-overridable.
-const API_PORT = process.env.API_PORT ?? '8110'
-const UI_PORT  = process.env.UI_PORT  ?? '7010'
+const API_PORT = process.env.API_PORT ?? String(PORTS.api)
+const UI_PORT  = process.env.UI_PORT  ?? String(PORTS.uiTest)
 const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const BASE   = `${API}/api`
-const MAIL   = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
+const MAIL_SINK_PORT = process.env.MAIL_SINK_PORT ?? String(PORTS.mail)
+const MAIL   = process.env.MAIL_SINK_URL ?? `http://localhost:${MAIL_SINK_PORT}`
 
 const PASSWORD = 'correct-horse-battery'
 const ADMIN = 'alex@shop.test', STAFF = 'sam@shop.test', SHOPPER = 'robin@buyer.test', OPS = 'kit@shop.test'
@@ -128,7 +130,7 @@ execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
 // SHOP_CONSOLE_URL because a password-reset link is minted by the API and points
 // at the CONSOLE, which the app otherwise assumes is on 8010.
-const PORT_ENV = { API_PORT, UI_PORT, SHOP_CONSOLE_URL: UI }
+const PORT_ENV = { API_PORT, UI_PORT, MAIL_SINK_PORT, SHOP_CONSOLE_URL: UI }
 start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
 start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 

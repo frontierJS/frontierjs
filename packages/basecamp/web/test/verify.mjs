@@ -43,14 +43,15 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
+import { portFor } from '@frontierjs/cli/core/ports.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG  = join(HERE, '../..')            // packages/basecamp
 
 // The dev slot by default; `API_PORT`/`UI_PORT` move the drive (the test slot
 // is 7120/7020) so it can run beside a dev server holding 8120/8020.
-const API_PORT = Number(process.env.API_PORT ?? 8120)
-const WEB_PORT = Number(process.env.UI_PORT ?? 8020)
+const API_PORT = Number(process.env.API_PORT ?? await portFor(import.meta.url, 'be', { env: 'dev' }))
+const WEB_PORT = Number(process.env.UI_PORT ?? await portFor(import.meta.url, 'fe', { env: 'dev' }))
 // The fake Basecamp outpost. `volumes.remove` refuses to forget a row until the
 // machine says the disk is gone, so proving the happy path needs something
 // that answers as an outpost — the same reason the channels checks send a real
@@ -59,7 +60,7 @@ const OUTPOST_PORT = 3011
 // The mail provider, standing in for a real one. Basecamp's own slot on the
 // port formula — env 8, category 1 (backend), project 2, service 1 — beside the
 // API on 8120, the same shape `example` uses for its sink on 8111.
-const MAIL_PORT = 8121
+const MAIL_PORT = await portFor(import.meta.url, 'be', { env: 'dev', service: 1 })
 // One credential PER MACHINE, learned by enrolling. There is no fleet-wide
 // outpost secret any more: a machine that has not enrolled is refused whatever
 // it signs with, and a machine that has is refused anything but its own key.

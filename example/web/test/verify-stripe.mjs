@@ -30,10 +30,11 @@
  */
 
 import { createHmac } from 'node:crypto'
+import { portFor } from '@frontierjs/cli/core/ports.js'
 import { results, report } from './lib/report.mjs'
 
-const API_PORT    = 7110
-const SINK_PORT   = 7114
+const API_PORT    = await portFor(import.meta.url, 'be', { env: 'test' })
+const SINK_PORT   = await portFor(import.meta.url, 'be', { env: 'test', service: 4 })
 const API         = `http://localhost:${API_PORT}`
 const SINK        = `http://localhost:${SINK_PORT}`
 const WEBHOOK     = `${API}/api/webhooks/stripe`

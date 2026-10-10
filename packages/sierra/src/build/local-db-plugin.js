@@ -37,6 +37,7 @@
 
 import { existsSync, readFileSync, mkdirSync, copyFileSync } from 'fs'
 import { resolve, dirname, join, extname } from 'path'
+import { fileURLToPath } from 'url'
 
 /** Where the two artefacts live, relative to the app's own origin. */
 export const WASM_DIR   = 'fjs-sqlite'
@@ -203,4 +204,49 @@ export function localDbPlugin(config, sierraContext) {
       })
     },
   }
+}
+
+// ─── the worker's parser ──────────────────────────────────────────────────
+
+/** Where litestone's worker is imported from, so its parser resolves as the worker's does. */
+const WORKER_ENTRY = fileURLToPath(new URL('../resource/local-db-worker.js', import.meta.url))
+const PARSER_OFF   = '\0sierra:local-db-parser'
+const PARSER_STUB  =
+  `const refuse = () => { throw new Error("[Sierra] this build's device database is opened ` +
+  `with the parsed schema in fjs-device-schema.json, and the .lite parser is left out of its ` +
+  `worker (FJS-2318).") }\n` +
+  `export const parse = refuse, parseFile = refuse\n`
+
+/**
+ * The plugins the device database's worker is BUILT with — the page's
+ * `plugins` never reach a worker bundle.
+ *
+ * litestone's worker parses only when it is sent `.lite` text, and this build
+ * sends a parse, so the parser is a third of the worker that never runs
+ * (`FJS-2318`). A lazy import does not keep it out: Vite builds a worker as an
+ * IIFE, which inlines it, and the shell precaches every chunk the build emits
+ * whether or not anything loads it. Matched by RESOLVING litestone's public
+ * `./parser` export, so a move inside litestone cannot slip the stub; a static
+ * import of any other name from the parser fails the build as not exported.
+ * Not a package condition on litestone: Vite 8 offers no condition scoped to a
+ * worker, and a top-level one would hand the page the stub as well.
+ */
+export function localDbWorkerPlugins(config) {
+  if (!wantsLocalDb(config)) return []
+  let parser = null
+  return [{
+    name: 'sierra:local-db-parser',
+    enforce: 'pre',
+    async buildStart() {
+      parser = (await this.resolve('@frontierjs/litestone/parser', WORKER_ENTRY, { skipSelf: true }))?.id ?? null
+    },
+    async resolveId(id, importer) {
+      if (!parser || !importer || id === PARSER_OFF) return null
+      const hit = await this.resolve(id, importer, { skipSelf: true })
+      return hit?.id === parser ? PARSER_OFF : null
+    },
+    load(id) {
+      return id === PARSER_OFF ? PARSER_STUB : null
+    },
+  }]
 }

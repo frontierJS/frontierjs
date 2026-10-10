@@ -310,6 +310,11 @@ export interface TestEnv<TClient = RegisteredClient> {
   db:        TClient
   /** `db.asSystem()` — for arranging fixtures below the boundary. */
   system:    TClient
+  /**
+   * Bound to the UNSCOPED client, so a gated model grades them at level 0 —
+   * `.asSystem()` on one, or `setup`/`arrange`, whose factories are system-bound.
+   * Empty unless `autoFactories: true` or `factories` was passed.
+   */
   factories: Record<string, Factory>
   schema:    ParseResult['schema']
   /** The throwaway directory holding this env's databases. */
@@ -413,6 +418,7 @@ export interface TestEnv<TClient = RegisteredClient> {
 export interface ArrangeTools<TClient = RegisteredClient> {
   /** `asSystem()` — writes below the boundary, announcing nothing. */
   system:    TClient
+  /** `env.factories`, each bound to `system` — a gate is not asked of a fixture. */
   factories: Record<string, Factory>
   db:        TClient
 }
@@ -457,6 +463,12 @@ export interface TestEnvOptions extends Record<string, unknown> {
    * state those on the write when a row has to be old.
    */
   now?: Date | string | (() => Date | string)
+  /** Generate a factory for every SQLite-backed model. Without it `env.factories` is empty. */
+  autoFactories?: boolean
+  /** Hand-written Factory subclasses keyed by accessor; they win over generated ones. */
+  factories?:     Record<string, new (db: LitestoneClient) => Factory>
+  /** Deterministic RNG seed forwarded to every factory. */
+  seed?:          number
 }
 
 /** A clock a suite can move. See `TestEnvOptions.now`. */

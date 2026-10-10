@@ -58,6 +58,10 @@
  * - A box with no background leaves the cells beneath it showing, and a
  *   background is a color. A modal dialog blanks its own cells instead, and
  *   the backdrop sets the dim bit on everything drawn before it.
+ * - The engine fits a column of boxes into its parent's height by shrinking
+ *   them, so a page taller than the screen painted its rows over each other.
+ *   A mount goes into the renderer's document (`documentOf`), a box the size
+ *   of the screen that scrolls what is in it, as a browser's page does.
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
@@ -71,7 +75,7 @@ import { htmlEntitiesToText } from './entities.js'
 setRenderEnvironment(false, true)
 
 const core = await import('@opentui/core').catch(missingPeer('@opentui/core', 'the terminal target'))
-const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, TextAttributes, RGBA, StyledText } = core
+const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, ScrollBoxRenderable, TextAttributes, RGBA, StyledText } = core
 
 /**
  * `<textarea>`: the engine's multi-line field, given the half of its one-line
@@ -454,7 +458,7 @@ export function set_attribute(node, name, value) {
  * source would — a value to `set_attribute`, a function under `on<event>` to
  * that event's handler — and a key the object stops carrying is removed, as
  * `spreadAttributes` does on the DOM path. A spread's keys come from data, so
- * none of them is refused: one with no terminal meaning (`onmouseenter`,
+ * none of them is refused: one with no terminal meaning (`onpointerdown`,
  * `style`, a function under any other name) is inert, as an inert attribute
  * is.
  *
@@ -607,7 +611,7 @@ function flow(box) {
       t = new TextRenderable(box.ctx, { content: '' })
       t.__proxy = true
       t.onMouseDown = (e) => relay(t, box, e, '__pressSource')
-      t.onMouseMove = (e) => relay(t, box, e, '__moveSource')
+      t.onMouseMove = (e) => { hoverTo(t.ctx, t, e); relay(t, box, e, '__moveSource') }
     }
     t.__chunks = chunks
     next.set(only, t)
@@ -761,6 +765,7 @@ export function on(node, event, handler, { capture = false, once = false } = {})
   if (event === 'click' && !(node instanceof DialogBox)) activatable(node)
   if (event === 'mousedown') pressSource(node)
   if (event === 'mousemove') moveSource(node)
+  if (event === 'mouseenter' || event === 'mouseleave') hoverSource(node.ctx)
 }
 
 function fire(node, e, phase) {
@@ -848,6 +853,7 @@ function onKey(r, k) {
   if (types(fields) && dispatch(target, 'keypress', fields).defaultPrevented) { k.preventDefault(); return }
   if (k.name === 'tab') { k.preventDefault(); k.shift ? focusPrev() : focusNext(); return }
   if (fields.key === 'Escape' && closeRequest(r)) { k.preventDefault(); k.stopPropagation(); return }
+  if (k.name in PAGE_KEYS && !(target instanceof TextareaRenderable) && turnPage(r, PAGE_KEYS[k.name])) { k.preventDefault(); return }
   if (target.__window) return
   if (target.__keyAction?.(k.name)) { k.preventDefault(); return }
   if (!target.__activatable || target instanceof TextareaRenderable || !ACTIVATE_KEYS.has(k.name)) return
@@ -893,10 +899,85 @@ function windowOf(r) {
 export function onWindow(event, handler, { capture = false, once = false } = {}) {
   if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
   if (!handler) return
-  const list = (windowOf(needRenderer('onWindow')).__listeners[event] ??= [])
+  const r = needRenderer('onWindow')
+  if (event === 'mouseenter' || event === 'mouseleave') hoverSource(r)
+  const list = (windowOf(r).__listeners[event] ??= [])
   const entry = { fn: handler, capture, once }
   list.push(entry)
   onCleanup(() => { const at = list.indexOf(entry); if (at >= 0) list.splice(at, 1) })
+}
+
+// ─── the document ─────────────────────────────────────────────────────
+
+const documents = new WeakMap()
+
+/**
+ * The page of `r`, where `mount` puts a component: it scrolls, the wheel
+ * through the engine and PageUp and PageDown through `onKey`, and a node
+ * that takes focus is scrolled into view once a frame has laid it out —
+ * before that it has no place, and a route focuses its first control as it
+ * mounts. The top layer is beside it on the root, so a modal dialog stays
+ * where it is while the page under it moves.
+ */
+function documentOf(r) {
+  let doc = documents.get(r)
+  if (doc && !doc.isDestroyed) return doc
+  // The engine skips laying out what is outside the view, and a node it
+  // skipped reports the place and height it had when last seen, or none.
+  doc = new ScrollBoxRenderable(r, { width: '100%', height: '100%', viewportCulling: false })
+  // Focused, the engine's box takes the arrow keys a field or a select is owed.
+  doc.focusable = false
+  r.root.add(doc)
+  documents.set(r, doc)
+  let focused = null
+  r.on('focused_renderable', (node) => { focused = node })
+  r.addPostProcessFn(() => {
+    const node = focused
+    focused = null
+    if (node && reveal(doc, node)) r.requestRender()
+  })
+  return doc
+}
+
+/** `node` is in the page's flow: a modal dialog in the top layer is not,
+ *  though `up` walks it home. */
+const onPage = (node, doc) => {
+  for (let n = node; n; n = n.parent) if (n === doc.content) return true
+  return false
+}
+
+/** What paints `node`: itself, or the run a box hid it in. */
+function drawn(node) {
+  for (let n = node; n; n = n.parent) {
+    if (!n.__merged) continue
+    for (const run of n.parent.__runs.values()) if (run.__chunks.some((c) => within(c.from, n))) return run
+    return n.parent
+  }
+  return node
+}
+
+/** Scroll `doc` the least that shows `node` whole, or to its top when it is
+ *  taller than the page. Answers whether it moved. */
+function reveal(doc, node) {
+  if (node.isDestroyed || doc.isDestroyed || !onPage(node, doc)) return false
+  const shown = drawn(node)
+  const top = shown.y - doc.viewport.y
+  const room = doc.viewport.height
+  const by = top < 0 || shown.height > room ? top : Math.max(0, top + shown.height - room)
+  const was = doc.scrollTop
+  doc.scrollBy(by)
+  return doc.scrollTop !== was
+}
+
+const PAGE_KEYS = { pageup: -1, pagedown: 1 }
+
+/** PageUp or PageDown: the page moves by a screen less one row, so the row
+ *  read last stays in sight. Not under a modal dialog, which holds the keys. */
+function turnPage(r, step) {
+  const doc = documents.get(r)
+  if (!doc || doc.isDestroyed || topModal(r)) return false
+  doc.scrollBy(step * Math.max(1, doc.viewport.height - 1))
+  return true
 }
 
 // ─── the top layer ────────────────────────────────────────────────────
@@ -1027,6 +1108,38 @@ function moveSource(node) {
   }
 }
 
+const hovered = new WeakMap()
+
+/** `mouseenter` and `mouseleave`, from the renderer `r`. The engine sends
+ *  `over` at whatever the pointer comes onto, a move, a drag, or a redraw that
+ *  put something new under a still pointer, and it reaches the root
+ *  whatever stopped the move itself; a run's cells are told apart on its own
+ *  moves (`hoverTo` at the run). */
+function hoverSource(r) {
+  if (hovered.has(r)) return
+  hovered.set(r, [])
+  r.root.onMouseOver = (e) => hoverTo(r, e.target, e)
+}
+
+/** The pointer is over `renderable`: `mouseleave` at each element it went
+ *  off, innermost first, then `mouseenter` at each it came onto, outermost
+ *  first, as a browser orders them. An element removed while under the
+ *  pointer hears nothing, as in a browser. */
+function hoverTo(r, renderable, e) {
+  const was = hovered.get(r)
+  if (!was) return
+  let at = renderable?.__proxy ? cellAt(renderable, e) ?? renderable : renderable
+  const now = []
+  for (; at && !at.__window; at = up(at)) if (at.__tag) now.push(at)
+  if (now[0] === was[0]) return
+  hovered.set(r, now)
+  const fields = mouseFields(e)
+  const stays = new Set(now)
+  for (const n of was) if (!stays.has(n) && !n.isDestroyed) dispatch(n, 'mouseleave', { ...fields, relatedTarget: now[0] ?? null })
+  const had = new Set(was)
+  for (let i = now.length - 1; i >= 0; i--) if (!had.has(now[i])) dispatch(now[i], 'mouseenter', { ...fields, relatedTarget: was[0] ?? null })
+}
+
 /** The element a mouse event happened to, and its DOM fields. The engine
  *  sends one event through every ancestor's slot, and the first slot delivers
  *  for the whole path, so an ancestor that listens hears it once. On a run,
@@ -1035,14 +1148,13 @@ function pointer(node, e) {
   e.stopPropagation()
   let target = e.__at ?? e.target
   while (target && !target.__tag) target = target.parent
-  return {
-    target: target ?? node,
-    fields: {
-      button: e.button ?? 0, shiftKey: !!e.modifiers?.shift, ctrlKey: !!e.modifiers?.ctrl,
-      altKey: !!e.modifiers?.alt, metaKey: false, raw: e,
-    },
-  }
+  return { target: target ?? node, fields: mouseFields(e) }
 }
+
+const mouseFields = (e) => ({
+  button: e.button ?? 0, shiftKey: !!e.modifiers?.shift, ctrlKey: !!e.modifiers?.ctrl,
+  altKey: !!e.modifiers?.alt, metaKey: false, raw: e,
+})
 
 /** `click`, and then its default: a link is followed, a button submits its
  *  form. */
@@ -1320,8 +1432,9 @@ export async function createHeadlessRenderer({ width = 80, height = 24 } = {}) {
 
 // ─── mount ────────────────────────────────────────────────────────────
 
-export function mount(Component, { renderer, props = {}, parent = renderer.root } = {}) {
+export function mount(Component, { renderer, props = {}, parent = null } = {}) {
   if (!renderer) throw new Error('[Mesa] $$tui.mount() needs a renderer')
+  parent ??= documentOf(renderer)
   _renderer = renderer
   const before = new Set(parent.getChildren())
   const release = keys(renderer)
@@ -1338,6 +1451,7 @@ export function mount(Component, { renderer, props = {}, parent = renderer.root 
   }
   return {
     renderer,
+    parent,
     dispose() {
       disposeRoot()
       release()

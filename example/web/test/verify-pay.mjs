@@ -36,11 +36,11 @@
  */
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 
-const API  = process.env.API_URL ?? 'http://localhost:8110'
-const PSP  = process.env.PSP_URL ?? 'http://localhost:8112'
+const API  = process.env.API_URL ?? `http://localhost:${PORTS.api}`
+const PSP  = process.env.PSP_URL ?? `http://localhost:${PORTS.psp}`
 const HOOK = '/api/webhooks/payments'
 
 /** What the PROVIDER signs with. The shop's own key is a different secret —

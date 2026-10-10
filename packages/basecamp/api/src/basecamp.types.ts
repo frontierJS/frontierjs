@@ -6,6 +6,7 @@
 import type { App, ILogger } from '@frontierjs/junction'
 import type { BasecampDb } from './core/db.ts'
 import type { CaravanInstance } from '@frontierjs/caravan'
+import type { Workbench } from './core/workbench.ts'
 
 // ─── Provider interfaces ──────────────────────────────────────────────────────
 // Junction covers: cache, events, scheduler, workers, mail, ai
@@ -186,4 +187,5 @@ export interface BasecampApp extends App {
   providers: BasecampProviders
   logger:    ILogger
   jobs:      CaravanInstance   // durable job queue — replaces IQueue stub
+  workbench: Workbench
 }

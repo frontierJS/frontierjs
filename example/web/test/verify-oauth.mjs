@@ -32,11 +32,14 @@
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PORTS } from './lib/preflight.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
-const IDP  = process.env.IDP_URL ?? 'http://localhost:8113'
+const API_PORT      = process.env.API_PORT      ?? String(PORTS.api)
+const IDP_SINK_PORT = process.env.IDP_SINK_PORT ?? String(PORTS.idp)
+const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const IDP  = process.env.IDP_URL ?? `http://localhost:${IDP_SINK_PORT}`
 
 // ─── Servers ───────────────────────────────────────────────────────────────
 
@@ -143,7 +146,7 @@ const me = (j) => hop(`${API}/api/account/me`, j).then(r => r.ok ? r.json() : nu
 
 console.log('\nverify:oauth — signing in with a provider\n')
 
-start('bun', ['run', 'api/index.ts'], 'api', { SHOP_COOKIE_AUTH: '1' })
+start('bun', ['run', 'api/index.ts'], 'api', { SHOP_COOKIE_AUTH: '1', API_PORT, IDP_SINK_PORT })
 if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
 // Every real endpoint on the IdP answers 401 or 404 without a credential, so
 // the readiness probe is the control endpoint — the one thing that is 200 by

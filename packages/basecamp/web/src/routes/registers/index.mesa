@@ -1,0 +1,684 @@
+---
+title: Registers
+---
+<script>
+  // The workspace's registers on one screen — what is wrong (ISSUES.md), what
+  // is waiting on the owner (§ Needs a decision and every paper's open
+  // questions), and what is settled (DECISIONS.md) — with a box that hands any
+  // of it to Claude Code in the workbench.
+  //
+  // The records are fli's own readers (api services/registers), so a count
+  // here is `fli next`'s and `fli decisions`'s count. A ruling is fli's
+  // `decide`; filing, amending, framing and fixing are Claude running fli's
+  // own commands and the repo's skills in the workbench, so this screen writes
+  // DECISIONS.md and nothing else.
+  //
+  // The overview is polled slowly: a row Claude files in the workbench lands
+  // here on the next read without a reload.
+  import { registers } from '../../resources/Register.mesa'
+  import { workbench } from '../../resources/Workbench.mesa'
+
+  import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card     from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Pill     from '@frontierjs/ui/components/display/Pill.mesa'
+  import StatCard from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Tabs     from '@frontierjs/ui/components/layout/Tabs.mesa'
+  import TabList  from '@frontierjs/ui/components/layout/TabList.mesa'
+  import Tab      from '@frontierjs/ui/components/layout/Tab.mesa'
+  import TabPanel from '@frontierjs/ui/components/layout/TabPanel.mesa'
+
+  const POLL_MS    = 15_000
+  const RUN_POLL   = 3000
+  const SHOWN      = 150
+  const SECTION_KEY = 'basecamp.registers.section'
+
+  const SEVERITY = [
+    { key: 'S1',       label: 'Critical',         tone: 'danger'  },
+    { key: 'S2',       label: 'High',             tone: 'danger'  },
+    { key: 'S3',       label: 'Medium',           tone: 'warning' },
+    { key: 'S4',       label: 'Low',              tone: 'muted'   },
+    { key: 'decision', label: 'Needs a decision', tone: 'info'    },
+  ]
+  const toneOf = (sev) => SEVERITY.find(s => s.key === sev)?.tone ?? 'muted'
+
+  const INTENTS = [
+    { key: 'discuss', label: 'Discuss', hint: 'talk it through — Claude places it, re-probes it, and ends on lettered options; no file changes' },
+    { key: 'file',    label: 'File',    hint: 'place it, then write it down — a new row, an amendment, or nothing if a ruling settles it' },
+    { key: 'fix',     label: 'Fix',     hint: '/fix-next on one open row, asking you at each choice' },
+    { key: 'frame',   label: 'Frame',   hint: '/frame-next on one open question — options and a recommendation, never the ruling' },
+  ]
+
+  let data    = null
+  let error   = null
+  let offered = true
+
+  let tab      = 'issues'
+  let search   = ''
+  let severity = ''
+  let pkg      = ''
+
+  // ─── the read ───────────────────────────────────────────────────────
+
+  let timer = null
+  let destroyed = false
+
+  async function load() {
+    try {
+      data  = await registers.service.invoke('overview', null)
+      error = null
+    } catch (err) {
+      if (err.code === 404) offered = false
+      error = err.message
+    }
+  }
+
+  function schedule() {
+    if (destroyed || !offered) return
+    timer = setTimeout(() => load().then(schedule), POLL_MS)
+  }
+
+  load().then(() => { schedule(); openFromHash() })
+  addEventListener('hashchange', openFromHash)
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer); clearTimeout(runTimer); removeEventListener('hashchange', openFromHash) })
+
+  // ─── the numbers ────────────────────────────────────────────────────
+
+  const issues    = () => data?.issues ?? []
+  const countOf   = (sev) => issues().filter(i => i.severity === sev).length
+  const defects   = () => issues().filter(i => i.severity !== 'decision').length
+  const decidable = () => (data?.questions ?? []).filter(q => q.state === 'decidable').length
+
+  // A row naming two packages counts for both, as the atlas's plates do.
+  function byPackage() {
+    const n = new Map()
+    for (const i of issues()) for (const p of i.pkg.length ? i.pkg : ['—']) n.set(p, (n.get(p) ?? 0) + 1)
+    return [...n].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 20)
+  }
+  const widest = () => byPackage()[0]?.count ?? 1
+
+  // ─── the lists ──────────────────────────────────────────────────────
+
+  const matches = (...texts) => {
+    const q = search.trim().toLowerCase()
+    return !q || texts.some(t => String(t ?? '').toLowerCase().includes(q))
+  }
+
+  // `fli next`'s order: the ready queue first, blocked rows by score after.
+  const order = (a, b) => (a.rank?.n ?? Infinity) - (b.rank?.n ?? Infinity) || (b.rank?.score ?? 0) - (a.rank?.score ?? 0)
+
+  const filteredIssues = () => issues()
+    .filter(i => (!severity || i.severity === severity) && (!pkg || i.pkg.includes(pkg)) && matches(i.id, i.title, i.pkg.join(' ')))
+    .sort(order)
+  const filteredQuestions = () => (data?.questions ?? []).filter(q => matches(q.id, q.question, q.paper))
+  const filteredRulings   = () => (data?.rulings ?? []).filter(r => matches(r.id, r.title, r.section)).slice().reverse()
+  const filteredIdeas     = () => (data?.ideas ?? []).filter(i => matches(i.id, i.title, i.status))
+
+  function narrow(sev) {
+    tab = sev === 'decision' && !countOf('decision') ? 'questions' : 'issues'
+    severity = severity === sev ? '' : sev
+  }
+
+  // ─── one record ─────────────────────────────────────────────────────
+
+  let open    = null   // { id, issues, rulings, questions, ideas }
+  let opening = false
+
+  async function show(id) {
+    opening = true
+    error = null
+    pick = ''; why = ''; ruled = null
+    try {
+      open = await registers.service.invoke('record', id)
+      history.replaceState(null, '', `#${encodeURIComponent(id)}`)
+    } catch (err) {
+      error = err.message
+    } finally {
+      opening = false
+    }
+  }
+
+  function close() {
+    open = null
+    history.replaceState(null, '', location.pathname)
+  }
+
+  function openFromHash() {
+    const id = decodeURIComponent(location.hash.slice(1))
+    if (id) show(id)
+  }
+
+  const openQuestion = () => open?.questions.find(q => q.state === 'decidable') ?? null
+  const openIssue    = () => open?.issues.find(i => !i.closed) ?? null
+
+  // ─── a ruling ───────────────────────────────────────────────────────
+  //
+  // Nothing is preselected, the recommendation included: a pick somebody did
+  // not make is not a ruling.
+
+  let pick    = ''
+  let why     = ''
+  let section = ''
+  let ruling  = false
+  let ruled   = null
+  try { section = localStorage.getItem(SECTION_KEY) ?? '' } catch {}
+
+  const needsWhy = () => !!pick && openQuestion()?.recommend?.letter !== pick
+
+  async function decide() {
+    const q = openQuestion()
+    if (!q || !pick || !section) return
+    ruling = true
+    error  = null
+    try {
+      ruled = await registers.service.invoke('decide', q.id, { pick, why, section })
+      try { localStorage.setItem(SECTION_KEY, section) } catch {}
+      await load()
+      await show(ruled.ruling)
+    } catch (err) {
+      error = err.message
+    } finally {
+      ruling = false
+    }
+  }
+
+  // ─── Claude ─────────────────────────────────────────────────────────
+
+  let text   = ''
+  let intent = 'discuss'
+  let branch = false
+  let sending = false
+  let sent    = null   // { pin, queued, ids }
+  let run     = null   // the pin's workbench status
+
+  const known = () => {
+    if (!data || !text.trim()) return []
+    const ids = new Set()
+    const word = data.prefix ? new RegExp(`\\b${data.prefix}-D?\\d+\\b`, 'gi') : null
+    for (const m of word ? text.matchAll(word) : []) ids.add(m[0].toUpperCase())
+    for (const q of data.questions) if (text.includes(q.id)) ids.add(q.id)
+    return [...ids].map(id => ({
+      id,
+      issue:    issues().find(i => i.id === id),
+      question: data.questions.find(q => q.id === id),
+      ruling:   data.rulings.find(r => r.id === id),
+    }))
+  }
+
+  function bring(id, as, title = '') {
+    text   = title ? `${id} — ${title}` : id
+    intent = as
+    close()
+    queueMicrotask(() => document.getElementById('registers-text')?.focus())
+  }
+
+  async function send(e) {
+    e?.preventDefault()
+    if (!text.trim() || sending) return
+    sending = true
+    error   = null
+    try {
+      sent = await registers.service.invoke('discuss', null, { text, intent, branch })
+      run  = { state: 'working' }
+      text = ''
+      watch()
+    } catch (err) {
+      error = err.message
+    } finally {
+      sending = false
+    }
+  }
+
+  let runTimer = null
+  async function watch() {
+    clearTimeout(runTimer)
+    if (destroyed || !sent) return
+    try {
+      const answer = await workbench.service.invoke('status', null)
+      run = answer.status.find(s => s.id === sent.pin.id) ?? run
+    } catch {}
+    if (run?.state === 'working') runTimer = setTimeout(watch, RUN_POLL)
+    else load()
+  }
+
+  function keydown(e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(e)
+  }
+
+  const runTone = (s) => s === 'working' ? 'info' : s === 'done' ? 'success' : s === 'error' ? 'danger' : 'muted'
+</script>
+
+{#snippet refs(r)}
+  {#if r.refs?.length}
+    <div class="cluster gap-2xs text-xs">
+      <span class="text-muted">Cites</span>
+      {#each r.refs as id}<button type="button" class="pill registers-chip" on:click={() => show(id)}>{id}</button>{/each}
+    </div>
+  {/if}
+  {#if r.links?.length}
+    <div class="cluster gap-2xs text-xs">
+      <span class="text-muted">Files</span>
+      {#each r.links as l}<a href={l.edit}><code>{l.label}</code></a>{/each}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet sevPill(sev)}
+  <Pill tone={toneOf(sev)}>{sev === 'decision' ? 'decision' : sev}</Pill>
+{/snippet}
+
+<div class="section-header">
+  <h1>Registers</h1>
+  <span class="cluster">
+    <Button variant="ghost" href="/workbench/">Workbench</Button>
+    <Button variant="ghost" href="/pages/">Pages</Button>
+  </span>
+</div>
+
+{#if !offered}
+  <Callout tone="muted" title="Not offered on this Basecamp">
+    <p class="text-body">
+      These are the registers of the workspace Basecamp runs in, read off its files, and a send runs
+      Claude Code in that checkout — so they are only offered by a Basecamp on your own machine,
+      started with <code>LOCAL_MACHINE=1</code> (<code>bun run api</code> sets it) and never under
+      <code>NODE_ENV=production</code>.
+    </p>
+    <p class="text-sm text-muted">{error}</p>
+  </Callout>
+{:else}
+  {#if error}
+    <article class="alert danger" id="screen-error">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if !data}
+    <p class="text-muted" aria-busy="true">Reading the registers…</p>
+  {:else}
+    <div class="stack gap-lg" id="registers">
+      <header class="stack gap-2xs registers-hero">
+        <span class="kicker">{data.name} · open issues</span>
+        <h2 class="registers-headline">
+          {defects()} things are wrong.<br />
+          <span class="text-muted">{countOf('S4') + countOf('S3') > defects() / 2 ? 'Most of them are small.' : 'Most of them are not small.'}</span>
+        </h2>
+        <p class="text-sm text-muted">
+          From <code>{data.root}</code> — the counts are <code>fli next</code>'s, and a row Claude files lands here on the next read.
+        </p>
+      </header>
+
+      <div class="tiles" id="registers-tiles">
+        {#each SEVERITY.filter(s => s.key !== 'S1' || countOf('S1')) as s (s.key)}
+          <StatCard label={s.label} value={countOf(s.key)} sub={s.key === 'decision' ? 'rows waiting on a ruling' : s.key}
+                    tone={s.tone} onclick={() => narrow(s.key)}
+                    data-severity={s.key} aria-pressed={severity === s.key} />
+        {/each}
+        <StatCard label="Open questions" value={data.questions.length} sub={`${decidable()} ready to rule`}
+                  tone="info" onclick={() => { tab = 'questions'; severity = '' }} />
+      </div>
+
+      <div class="registers-layout">
+        <div class="stack gap-lg">
+          <Card>
+            <form class="stack gap-sm" id="registers-compose" on:submit={send}>
+              <div class="stack gap-3xs">
+                <h2 class="h5">Bring it to Claude</h2>
+                <p class="text-sm text-muted">
+                  Paste a row, an id, or something new. It goes to the workbench chat for this checkout, where you carry on the conversation.
+                </p>
+              </div>
+
+              <label class="visually-hidden" for="registers-text">Issue or question for Claude</label>
+              <textarea class="field registers-text" rows="5" id="registers-text"
+                        placeholder="FJS-1234 still bites on retry…   or describe something new (Ctrl+Enter sends)"
+                        value={text}
+                        on:input={(e) => text = e.target.value}
+                        on:keydown={keydown}></textarea>
+
+              {#if known().length}
+                <div class="cluster gap-2xs" id="registers-known">
+                  {#each known() as k (k.id)}
+                    <button type="button" class="pill registers-chip {k.issue ? toneOf(k.issue.severity) : k.question ? 'info' : k.ruling ? 'success' : 'muted'}"
+                            on:click={() => show(k.id)}
+                            title={k.issue?.title ?? k.question?.question ?? k.ruling?.title ?? 'not in the registers'}>
+                      {k.id}{k.issue ? '' : k.question ? ' · question' : k.ruling ? ' · ruling' : ' · unknown'}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+
+              <div class="cluster gap-sm" role="radiogroup" aria-label="What Claude should do">
+                {#each INTENTS as it (it.key)}
+                  <label class="cluster gap-3xs registers-intent">
+                    <input type="radio" name="intent" value={it.key} checked={intent === it.key}
+                           on:change={() => intent = it.key} />
+                    <span>{it.label}</span>
+                  </label>
+                {/each}
+              </div>
+              <p class="text-xs text-muted" id="registers-intent-hint">{INTENTS.find(i => i.key === intent)?.hint}</p>
+
+              <div class="bar">
+                <label class="text-sm registers-check">
+                  <input type="checkbox" id="registers-branch" checked={branch} on:change={(e) => branch = e.target.checked} />
+                  <span>On its own branch <span class="text-muted">— a worktree named for the first id; Land it from the workbench</span></span>
+                </label>
+                <Button type="submit" id="registers-send" disabled={!text.trim() || sending}>
+                  {sending ? (branch ? 'Cutting the branch…' : 'Sending…') : 'Send to Claude'}
+                </Button>
+              </div>
+
+              {#if sent}
+                <div class="registers-run cluster gap-sm" id="registers-run" data-state={run?.state}>
+                  <Badge tone={runTone(run?.state)}>{run?.state ?? 'sent'}</Badge>
+                  <span class="text-sm">
+                    {sent.queued ? `Queued behind the run in ${sent.pin.name}` : `Claude is on it in ${sent.pin.name}`}
+                    {#if run?.cost != null}<span class="text-muted"> · ${run.cost.toFixed(2)} · {run.turns} turns</span>{/if}
+                  </span>
+                  <Button size="sm" variant="outlined" href={`/workbench/#workbench-${sent.pin.id}`}>Open the chat</Button>
+                </div>
+              {/if}
+            </form>
+          </Card>
+
+          <Card>
+            <div class="stack gap-sm">
+              <div class="bar">
+                <input class="field registers-search" type="search" id="registers-search" placeholder="Search ids, titles, packages…"
+                       value={search} on:input={(e) => search = e.target.value} />
+                <div class="cluster gap-2xs">
+                  {#if severity}<button type="button" class="pill {toneOf(severity)}" on:click={() => severity = ''}>{severity} ×</button>{/if}
+                  {#if pkg}<button type="button" class="pill" on:click={() => pkg = ''}>{pkg} ×</button>{/if}
+                </div>
+              </div>
+
+              <Tabs activeId={tab} onchange={(id) => tab = id}>
+                <TabList>
+                  <Tab id="issues">Issues · {filteredIssues().length}</Tab>
+                  <Tab id="questions">Questions · {filteredQuestions().length}</Tab>
+                  <Tab id="rulings">Rulings · {filteredRulings().length}</Tab>
+                  <Tab id="ideas">Ideas · {filteredIdeas().length}</Tab>
+                </TabList>
+
+                <TabPanel id="issues">
+                  <ul class="rows divided registers-list" id="registers-issues">
+                    {#each filteredIssues().slice(0, SHOWN) as i (i.id)}
+                      <li class="list-row registers-row" data-id={i.id}>
+                        <button type="button" class="registers-open" on:click={() => show(i.id)}>
+                          <span class="cluster gap-xs">
+                            {@render sevPill(i.severity)}
+                            <code>{i.id}</code>
+                            {#each i.pkg as p}<span class="text-xs text-muted">{p}</span>{/each}
+                            {#if i.blockedBy.length}<Badge tone="warning">blocked by {i.blockedBy.join(', ')}</Badge>{/if}
+                            {#if i.status === 'stale?'}<Badge tone="muted">stale?</Badge>{/if}
+                          </span>
+                          <span class="clamp-2">{i.title}</span>
+                        </button>
+                        <span class="text-xs text-muted registers-rank">{i.rank?.n ? `#${i.rank.n}` : ''}</span>
+                      </li>
+                    {/each}
+                  </ul>
+                  {#if filteredIssues().length > SHOWN}
+                    <p class="text-sm text-muted">{filteredIssues().length - SHOWN} more — narrow it with search, a tile or a package.</p>
+                  {/if}
+                </TabPanel>
+
+                <TabPanel id="questions">
+                  <ul class="rows divided registers-list" id="registers-questions">
+                    {#each filteredQuestions() as q (q.id)}
+                      <li class="list-row registers-row" data-id={q.id}>
+                        <button type="button" class="registers-open" on:click={() => show(q.id)}>
+                          <span class="cluster gap-xs">
+                            <Pill tone={q.state === 'decidable' ? 'info' : 'muted'}>{q.state === 'decidable' ? `${q.options} options` : 'open'}</Pill>
+                            <code>{q.id}</code>
+                            {#if q.recommend}<span class="text-xs text-muted">recommends {q.recommend}</span>{/if}
+                          </span>
+                          <span class="clamp-2">{q.question}</span>
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                </TabPanel>
+
+                <TabPanel id="rulings">
+                  <ul class="rows divided registers-list" id="registers-rulings">
+                    {#each filteredRulings().slice(0, SHOWN) as r (`${r.id}|${r.date}|${r.title}`)}
+                      <li class="list-row registers-row" data-id={r.id}>
+                        <button type="button" class="registers-open" disabled={!r.id} on:click={() => show(r.id)}>
+                          <span class="cluster gap-xs">
+                            <code>{r.id ?? 'no id'}</code>
+                            <span class="text-xs text-muted">{r.date} · {r.section}</span>
+                            {#if r.status}<Badge tone="muted">{r.status}</Badge>{/if}
+                          </span>
+                          <span class="clamp-2">{r.title}</span>
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                </TabPanel>
+
+                <TabPanel id="ideas">
+                  <ul class="rows divided registers-list" id="registers-ideas">
+                    {#each filteredIdeas() as i (i.id)}
+                      <li class="list-row registers-row" data-id={i.id}>
+                        <button type="button" class="registers-open" on:click={() => show(i.id)}>
+                          <span class="cluster gap-xs">
+                            <Pill tone={i.status === 'shipped' ? 'success' : i.status === 'withdrawn' ? 'muted' : 'info'}>{i.status}</Pill>
+                            <code>{i.id}</code>
+                            {#if i.questions}<span class="text-xs text-muted">{i.questions} open question{i.questions === 1 ? '' : 's'}</span>{/if}
+                          </span>
+                          <span class="clamp-2">{i.title}</span>
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                </TabPanel>
+              </Tabs>
+            </div>
+          </Card>
+        </div>
+
+        <Card>
+          <div class="stack gap-sm" id="registers-packages">
+            <h2 class="h5">By package</h2>
+            {#each byPackage() as b (b.name)}
+              <button type="button" class="registers-pkg" aria-pressed={pkg === b.name}
+                      on:click={() => { pkg = pkg === b.name ? '' : b.name; tab = 'issues' }}>
+                <span class="text-sm">{b.name}</span>
+                <span class="registers-track"><span class="registers-fill" style:inline-size={`${(b.count / widest()) * 100}%`}></span></span>
+                <span class="text-xs text-muted">{b.count}</span>
+              </button>
+            {/each}
+          </div>
+        </Card>
+      </div>
+    </div>
+  {/if}
+{/if}
+
+<Drawer open={!!open || opening} title={open?.id ?? 'Reading…'} onclose={close}>
+  {#if open}
+    <div class="stack gap-md" id="registers-record">
+      {#if error}<article class="alert danger" id="registers-record-error"><div class="alert-content">{error}</div></article>{/if}
+      {#each open.issues as i (i.at.file + i.at.line)}
+        <section class="stack gap-xs">
+          <div class="cluster gap-xs">
+            {@render sevPill(i.severity)}
+            <Badge tone={i.closed ? 'success' : 'muted'}>{i.status}</Badge>
+            {#each i.pkg as p}<span class="text-xs text-muted">{p}</span>{/each}
+            {#if i.rank?.n}<span class="text-xs text-muted">#{i.rank.n} in fli next</span>{/if}
+          </div>
+          <h3 class="h5">{i.title}</h3>
+          <p class="text-sm registers-body">{i.body}</p>
+          {#if i.rank?.terms?.length}<p class="text-xs text-muted">Ranked on {i.rank.terms.join(' · ')}</p>{/if}
+          {@render refs(i)}
+          <div class="cluster gap-2xs">
+            <Button size="sm" onclick={() => bring(i.id, 'discuss', i.title)}>Discuss with Claude</Button>
+            {#if !i.closed}<Button size="sm" variant="outlined" onclick={() => bring(i.id, 'fix')}>Fix it</Button>{/if}
+            <Button size="sm" variant="ghost" href={i.at.edit}>Open {i.at.file}:{i.at.line}</Button>
+          </div>
+        </section>
+      {/each}
+
+      {#each open.questions as q (q.at.file + q.at.line)}
+        <section class="stack gap-xs">
+          <div class="cluster gap-xs">
+            <Pill tone={q.state === 'ruled' ? 'success' : 'info'}>{q.state}</Pill>
+            <span class="text-xs text-muted">{q.source === 'idea' ? `IDEAS/${q.paper}` : 'ISSUES.md § Needs a decision'}</span>
+          </div>
+          <h3 class="h5">{q.question}</h3>
+
+          {#if q.state === 'decidable'}
+            <form class="stack gap-xs" id="registers-decide" on:submit={(e) => { e.preventDefault(); decide() }}>
+              <fieldset class="stack gap-2xs registers-options">
+                <legend class="text-sm">Your ruling</legend>
+                {#each q.options as o (o.letter)}
+                  <label class="registers-option" data-letter={o.letter}>
+                    <input type="radio" name="pick" value={o.letter} checked={pick === o.letter} on:change={() => pick = o.letter} />
+                    <span class="stack gap-3xs">
+                      <span><strong>{o.letter}</strong> — {o.text}</span>
+                      {#if q.recommend?.letter === o.letter}
+                        <span class="text-xs text-info">Recommended: {q.recommend.why}</span>
+                      {/if}
+                    </span>
+                  </label>
+                {/each}
+              </fieldset>
+
+              <label class="stack gap-3xs text-sm">
+                <span>Why {needsWhy() ? '(required — this is not the recommendation)' : '(optional)'}</span>
+                <textarea class="field" rows="2" value={why} on:input={(e) => why = e.target.value}></textarea>
+              </label>
+              <label class="stack gap-3xs text-sm">
+                <span>Under which DECISIONS.md section</span>
+                <select class="field" id="registers-section" value={section} on:change={(e) => section = e.target.value}>
+                  <option value="">Choose a section…</option>
+                  {#each data?.sections ?? [] as s}<option value={s} selected={s === section}>{s}</option>{/each}
+                </select>
+              </label>
+              <div class="cluster gap-2xs">
+                <Button type="submit" disabled={!pick || !section || ruling || (needsWhy() && !why.trim())}>
+                  {ruling ? 'Ruling…' : pick ? `Rule ${pick}` : 'Pick an option'}
+                </Button>
+                <Button size="sm" variant="ghost" onclick={() => bring(q.id, 'discuss', q.question)}>Discuss first</Button>
+              </div>
+            </form>
+          {:else if q.state === 'open'}
+            <p class="text-sm text-muted">No lettered options yet, so there is nothing to rule on.</p>
+            <div class="cluster gap-2xs">
+              <Button size="sm" onclick={() => bring(q.id, 'frame')}>Frame it with Claude</Button>
+              <Button size="sm" variant="ghost" onclick={() => bring(q.id, 'discuss', q.question)}>Discuss</Button>
+            </div>
+          {/if}
+          <Button size="sm" variant="ghost" href={q.at.edit}>Open {q.at.file}:{q.at.line}</Button>
+        </section>
+      {/each}
+
+      {#if ruled}
+        <Callout tone="success" title={`Ruled ${ruled.ruling}: ${ruled.pick}`}>
+          <p class="text-sm">Written to {ruled.files.join(', ')}{ruled.closed ? ` — and ${ruled.closed} closed` : ''}. Uncommitted.</p>
+        </Callout>
+      {/if}
+
+      {#each open.rulings as r (r.at.file + r.at.line)}
+        <section class="stack gap-xs">
+          <div class="cluster gap-xs">
+            <Pill tone="success">ruling</Pill>
+            <span class="text-xs text-muted">{r.date} · {r.section}</span>
+            {#if r.status}<Badge tone="warning">{r.status}{r.supersededBy ? ` ${r.supersededBy}` : ''}</Badge>{/if}
+          </div>
+          <h3 class="h5">{r.title}</h3>
+          <p class="text-sm registers-body">{r.body}</p>
+          {@render refs(r)}
+          <Button size="sm" variant="ghost" href={r.at.edit}>Open {r.at.file}:{r.at.line}</Button>
+        </section>
+      {/each}
+
+      {#each open.ideas as i (i.at.file)}
+        <section class="stack gap-xs">
+          <div class="cluster gap-xs">
+            <Pill tone="info">{i.status}</Pill>
+            {#if i.dated}<span class="text-xs text-muted">{i.dated}</span>{/if}
+          </div>
+          <h3 class="h5">{i.title}</h3>
+          <p class="text-sm registers-body clamp-3">{i.body}</p>
+          <div class="cluster gap-2xs">
+            <Button size="sm" onclick={() => bring(i.id, 'discuss', i.title)}>Discuss with Claude</Button>
+            <Button size="sm" variant="ghost" href={i.at.edit}>Open {i.at.file}</Button>
+          </div>
+        </section>
+      {/each}
+    </div>
+  {/if}
+</Drawer>
+
+
+<style>
+  .registers-headline { font-size: var(--text-3xl, 2.25rem); line-height: 1.15; margin: 0; }
+  .registers-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+    gap: var(--space-lg);
+    align-items: start;
+  }
+  @media (max-width: 64rem) { .registers-layout { grid-template-columns: minmax(0, 1fr); } }
+
+  .registers-text { resize: vertical; inline-size: 100%; font-family: var(--font-mono); }
+  .registers-search { flex: 1; min-inline-size: 12rem; }
+  .registers-chip { cursor: pointer; border: 0; font: inherit; }
+  .registers-intent { cursor: pointer; }
+  .registers-check { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2xs); align-items: baseline; flex: 1; cursor: pointer; }
+  .registers-run { padding: var(--space-xs) var(--space-sm); border-radius: var(--card-radius); background: var(--tint-surface); }
+
+  .registers-list { max-block-size: 70vh; overflow: auto; }
+  .registers-row { align-items: start; }
+  .registers-open {
+    display: grid;
+    gap: var(--space-3xs);
+    flex: 1;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .registers-open:hover .clamp-2 { text-decoration: underline; text-decoration-color: var(--tint-rule); }
+  .registers-rank { min-inline-size: 3em; text-align: end; }
+
+  .registers-pkg {
+    display: grid;
+    grid-template-columns: 8rem 1fr 2.5rem;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 2px 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .registers-pkg > .text-sm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .registers-pkg > .text-xs { text-align: end; }
+  .registers-track { block-size: 6px; border-radius: var(--pill-radius); background: var(--tint-surface); overflow: hidden; }
+  .registers-fill { display: block; block-size: 100%; background: var(--tone-ink, currentColor); opacity: 0.7; }
+  .registers-pkg[aria-pressed='true'] .registers-fill { opacity: 1; }
+  .registers-pkg[aria-pressed='true'] > .text-sm { font-weight: 600; }
+
+  .registers-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .registers-options { border: 0; padding: 0; margin: 0; }
+  .registers-option {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--space-xs);
+    padding: var(--space-xs);
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    cursor: pointer;
+  }
+  .registers-option:has(input:checked) { border-color: var(--rule-strong); background: var(--tint-surface); }
+</style>

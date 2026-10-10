@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Register.mesa — the Resource layer for the workspace's
+  // registers: ISSUES.md, DECISIONS.md and IDEAS/ (api services/registers).
+  //
+  // No model, like Page: the records are fli's own readers over the tree on the
+  // machine the API runs on, not anything in this app's database.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const registers = createResource('registers', { model: null })
+</script>

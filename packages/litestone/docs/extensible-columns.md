@@ -163,7 +163,7 @@ A Notion database, an Airtable table or a form's questions each own their column
 
 `databaseId` is a field of the extended model and the declaring model carries its twin; the declarer's key is `@@unique([databaseId, key])` (`model` is still a column, and still names which extended model a declaration is for). The pool is then per scope row, the way it is per tenant: the allocation, the mirror, a filter by key and `$declaredFields({ where: { databaseId } })` each read one parent's declarations.
 
-The scope is read off the payload, else the where, else the one row an update reaches by id. A filter on a declared key whose where pins no scope is refused, and so is a bulk write reaching rows of more than one scope, since one SET carries one mirror. A write that changes the scope column must send the blob in the same write, so the row is re-projected against the new parent's declarations; one that does not is refused.
+The scope is read off the payload, else the where, else the one row an update reaches by id. A filter on a declared key whose where pins no scope is refused, and so is a bulk write reaching rows of more than one scope, since one SET carries one mirror. A write that changes the scope column re-projects the row against the new parent's declarations: from the blob it sends, else from the blob the row already stores. Moving without the blob reads one row, so a move without it that reaches several rows is refused — send the blob, or move them one at a time.
 
 ## What it must not become
 

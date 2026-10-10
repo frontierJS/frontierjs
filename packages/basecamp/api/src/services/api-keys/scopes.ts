@@ -34,6 +34,8 @@ const OFF_LIMITS = new Set([
   // A start runs a command from the workspace's own tree on the operator's
   // machine, and a view reads a file there.
   'pages',
+  // A discuss is a workbench send, and a decide writes two tracked files.
+  'registers',
 ])
 
 /**
@@ -42,10 +44,10 @@ const OFF_LIMITS = new Set([
  * The workbench: a send is `claude -p` with permissions bypassed in a checkout
  * on this machine, so an agent holding the tool reaches the operator's shell,
  * which no level in a workspace describes. Pages: a start runs a command on
- * that machine. `agentGuard` refuses the call and `narrowForAgent` withholds
+ * that machine. Registers: a discuss is a workbench send. `agentGuard` refuses the call and `narrowForAgent` withholds
  * the tool, off this one set.
  */
-const NOT_FOR_AGENTS = new Set(['workbench', 'pages'])
+const NOT_FOR_AGENTS = new Set(['workbench', 'pages', 'registers'])
 
 const READ_METHODS = new Set(['find', 'get'])
 

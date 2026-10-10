@@ -1250,6 +1250,93 @@ with the terminal backend as its second consumer, not ahead of it.
    road: the reach-ins that cost behavior are `FJS-2391`, whose candidate
    (bind the control, register the rows through `$context`) removes the
    query on both targets. Tier: Assessment.
+   *Slice 25 2026-10-10, `on:mouseenter`/`on:mouseleave` (the owner said
+   "go" to the pick named at the end of slice 24):* both are in the event
+   table, neither bubbling. One tracker per renderer, installed by the first
+   listener: the engine sends `over` at whatever the pointer comes onto (a
+   move, a drag, or a redraw that put something new under a still pointer),
+   it reaches the root whatever stopped the move, and a run's own moves tell
+   its cells apart (`cellAt`, slice 23), so a link inside prose is entered on
+   its own cells. The tracker keeps the chain of tagged elements under the
+   pointer and on a change sends `mouseleave` innermost first, then
+   `mouseenter` outermost first, with `relatedTarget`; an element removed
+   while hovered hears nothing, as in a browser. `pointer()`'s fields moved
+   into `mouseFields` because `pointer` stops propagation and the tracker
+   must not. Past the event, DatePicker was DOM-bound: a `document` click
+   listener in `onMount` (thrown on the terminal) is now `<mesa:window
+   on:click|capture>`, and its past/future/disabled test read the class
+   string off `e.target.closest()`/`className`, which on a terminal node
+   answers nothing and let a disabled day be picked; it now asks the same
+   three functions the `class:` directives do (`unpickable`). Filed:
+   `FJS-2487`, a route taller than the screen is squeezed into it and its
+   rows paint over each other (a call: scroll or clip), and `FJS-2488`,
+   DatePicker's month is a CSS grid, so a day per row. Proved by
+   `specs/enter.spec.mjs` 8/8 (`Enter.mesa`), 7 deliberate breaks all red
+   (bubbling, the run's moves, enter order, leave order, `relatedTarget`,
+   the chain compare, the root's `over`); the drive 293; mesa vitest
+   2283; ui suite 1301; `verify:tui` green, its Orders link now followed
+   into `/orders/` and walked back with Esc, and the link refusal moved to
+   the fixture root's `/make/`; `verify:ui` 35/35, `verify:site` 45/45,
+   `verify` stops at `FJS-1642`; typecheck mesa and ui clean; corpus moves
+   the new fixture and a peer's `table-depth.mesa` edit only, baseline
+   `s25base`. Report 402 of 554, ui 96 of 135. Routes 26 → 28 of 34:
+   `/orders/`, `/orders/:id/`. The six left stop at `<svg>` (Avatar, 3),
+   `{#key}` (orion), `on:touchstart` (Slider), `<details>` (AccordionItem).
+   *The nine for slice 25, answered after it was green:* (1) origin: one
+   fewer. The mouse fields have one reading. (2) concept: none; the
+   events are the platform's. (3) complexity: the problem's. (4)
+   predictability: a hover that previews a range or shows a tooltip does
+   so on both targets, and a disabled day refuses on both. (5) derived:
+   the hovered chain is recomputed from the engine's hit, never kept
+   beside it. (6) owner: `hoverSource`/`hoverTo` beside `moveSource`. (7)
+   boundary: the engine's `over` is the one input, plus a run's moves.
+   (8) failure: a redraw that moves cells within one run under a still
+   pointer enters nothing until the pointer moves, since the engine's hit
+   did not change; no kit row depends on it, and it is asserted by
+   nothing (`none`). (9) must stay
+   true: one event per element crossed, none bubbling, leaves before
+   enters; `enter.spec` fails when any of the three stops. Adjudication:
+   *paved road vs. the workaround* again. DatePicker's class test was a
+   reach-in that broke behavior rather than throwing, which a `?.` would
+   have hidden; asking the data is the paved road on both targets. Tier:
+   Assessment.
+   *Slice 26 2026-10-10, the page scrolls (`FJS-2487`; asked as scroll or
+   clip, and the owner's "okay next!" left the call here):* scroll, because
+   a browser's page scrolls and clipping is scrolling with no way to move.
+   The engine fitted a column of boxes into the screen by shrinking them,
+   so every route longer than 30 rows painted lines over each other. A
+   mount now goes into the renderer's document (`documentOf`, beside
+   `windowOf`): the engine's `ScrollBoxRenderable` at screen size, made
+   unfocusable so it takes no arrow keys, with viewport culling off because
+   a node the engine skipped reports a stale place. Focus moving reveals its
+   node once a frame has laid it out (a post-process step: the least scroll
+   that shows it whole; a link a run hid, by the run), PageUp and PageDown
+   move a screen less one row through `onKey` unless a modal dialog is
+   open, and the wheel is the engine's own. The top layer stays on the root
+   beside the page, so a modal dialog does not move. The mount handle names
+   its `parent`, which the runtime spec read through the root. Proved by
+   `specs/scroll.spec.mjs` 12/12 (`Long.mesa`), 9 deliberate breaks all red
+   (the mount on the root, culling on, the run lookup, least scroll, the
+   page step, the page keys, focusable, the reveal itself, the in-flow
+   test); the drive 305; `verify:tui` reads `/orders/`'s two overwritten
+   lines whole at 30 rows (red with the mount on the root) and Tabs a day
+   below the fold into view; mesa vitest 2283; typecheck clean. The
+   compiler is untouched, so the corpus does not move. Routes stay 28 of 34.
+   *The nine for slice 26, answered after it was green:* (1) origin: one;
+   the page is the one scroller. (2) concept: none; document, scroll into
+   view and PageDown are the platform's. (3) complexity: the problem's.
+   (4) predictability: a long route reads top to bottom and Tab never
+   leaves focus off screen. (5) derived: the scroll is recomputed from
+   layout on each focus change, never kept beside it. (6) owner:
+   `documentOf` in the runtime, beside `windowOf`. (7) boundary: no
+   element scrolls on its own; `on:scroll` is still heard and never sent,
+   at the page too. (8) failure: the focus scroll lands one frame after
+   the focus, since it waits for layout. (9) must stay true: each line
+   keeps a row and focus is always on screen; `scroll.spec` fails when
+   either stops. That a modal dialog stays put while the page under it
+   moves, and that PageDown does nothing under one, is asserted by nothing
+   (`none`). Adjudication: none in tension. Tier: Assessment, with the
+   scroll-versus-clip call itself open to the owner's word.
    *The nine for slice 21, answered before the `<pre>`/`{@html}` code
    (the focus half and the inline tags had landed first):* (1) origin:
    one fewer copy. Entity decoding has one home that both readers import,

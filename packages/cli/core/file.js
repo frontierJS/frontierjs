@@ -32,7 +32,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join }                        from 'node:path'
 
-import { readRegisters }        from './registers.js'
+import { readRegisters, withRegisterGuard }        from './registers.js'
 import { errorKeys, newErrors } from './register-check.js'
 import { oneCell, isoDate }     from './close.js'
 import { nextDecisionNumber }   from './decide.js'
@@ -46,7 +46,11 @@ const QUESTION_WIDTH = 4
  *
  * Answers `{ ok: true, id, file, line }` or `{ ok: false, reason }`.
  */
-export function fileIssue({ root, severity, area, title, detail, blocks, today = new Date() }) {
+export function fileIssue(opts) {
+  return withRegisterGuard(opts.root, () => fileUnguarded(opts))
+}
+
+function fileUnguarded({ root, severity, area, title, detail, blocks, today = new Date() }) {
   const doc = readRegisters(root)
   if (!doc.prefix) return refuse('package.json declares no usable registers.prefix, so no id can be minted')
 

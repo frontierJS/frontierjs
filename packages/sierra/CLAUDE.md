@@ -105,7 +105,9 @@ src/
                          the device schema emitted beside it. The entry is
                          copied as `.js` — a dynamic `import()` of a `.mjs` a
                          host serves as anything but JavaScript is refused
-                         outright, with nothing said
+                         outright, with nothing said. `localDbWorkerPlugins`
+                         is what the WORKER is built with, and it stubs
+                         litestone's parser out of it (`FJS-2318`)
     slot-rewrite.js      compile-time slot rewriting
     prerender.js         routes declaring `render: static` → HTML
     island-bundle.js     one chunk per island the static build needs

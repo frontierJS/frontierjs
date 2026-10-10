@@ -36,12 +36,12 @@
  * with the other two drives.
  */
 
-import { requireServers } from './lib/preflight.mjs'
+import { requireServers, PORTS } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
-const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+const UI     = process.env.UI_URL  ?? `http://localhost:${PORTS.ui}`
+const API    = process.env.API_URL ?? `http://localhost:${PORTS.api}`
 
 // Its own reference, so a failed run cannot poison the next one and the seeded
 // orders keep the states verify.mjs expects.
