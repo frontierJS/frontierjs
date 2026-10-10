@@ -8,6 +8,11 @@ description: Shell tab completion for fli — bash, zsh, and fish
 // Default flags present on every fli command
 const DEFAULT_FLAGS = ['--dry', '-d', '--test', '-t']
 
+// What the query answers where a positional argument goes. Each generated
+// script turns it into that shell's own path completion — a list of names
+// printed from here would lose tilde expansion, escaping and the trailing slash.
+const FILES = '__fli_files__'
+
 // ─── Load completions ────────────────────────────────────────────────────────
 // Asks the registry rather than scanning for .md files a second time. This used
 // to be its own scanner, its own mtime fingerprint and its own cache file, none
@@ -31,6 +36,7 @@ const loadCompletions = async () => {
       name:        meta.title,
       alias:       meta.alias || null,
       description: meta.description || '',
+      args:        (meta.args || []).length,
       flags,
     }
   })
@@ -51,7 +57,7 @@ After running `fli completion:install`, restart your shell (or `source ~/.zshrc`
 
 ## How it works
 
-`fli completion:install` adds one line to your shell config that sources the completion script. The script defines a completion function. Every time you press Tab, the shell calls `fli completion:query` with the current command line, which asks the registry what commands and flags exist.
+`fli completion:install` adds one line to your shell config that sources the completion script. The script defines a completion function. Every time you press Tab, the shell calls `fli completion:query` with the current command line, which asks the registry what commands and flags exist. Where the command takes an argument and the word does not start with `-`, the answer is a path, completed by the shell itself.
 
 ## Cache
 

@@ -104,7 +104,9 @@ if (explicitProject) {
 // was about to write does not exist yet.
 const NO_PROJECT_NEEDED = new Set(['list', 'help', '?', 'init', 'new', 'project:new'])
 const firstArg = process.argv[2]
-const projectLessNs = firstArg?.startsWith('fli:') || firstArg === '--help' || firstArg === '-h' || !firstArg
+// `completion:*` runs from ~/.bashrc on every new shell and on every tab press —
+// a warning there prints on terminal open and corrupts the prompt mid-line.
+const projectLessNs = firstArg?.startsWith('fli:') || firstArg?.startsWith('completion:') || firstArg === '--help' || firstArg === '-h' || !firstArg
 const cwdHasPkg = existsSync(resolve(process.cwd(), 'package.json'))
 if (!explicitProject && global.projectRoot === process.cwd() && !cwdHasPkg
     && !NO_PROJECT_NEEDED.has(firstArg) && !projectLessNs) {

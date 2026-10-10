@@ -1,4 +1,5 @@
-// completion.test.js — the bash completion script completes past a colon.
+// completion.test.js — the bash completion script completes past a colon, and
+// hands a path back to readline where a command takes an argument.
 //
 // ':' is in COMP_WORDBREAKS, so readline hands the function "env:g" as three
 // words and replaces only the text after the last colon. The script is driven
@@ -22,10 +23,10 @@ const script = spawnSync(process.execPath, [resolve(ROOT, 'bin/fli.js'), 'comple
 const NAMES = ['env:get', 'env:set', 'eget', 'deploy', 'deploy:logs', 'deploy:local']
 
 // words: COMP_WORDS as readline splits them, the last one being completed
-const complete = (line, words) => {
+const complete = (line, words, answer = NAMES) => {
   const program = `
 ${script}
-fli() { printf '%s\\n' ${NAMES.join(' ')}; }
+fli() { printf '%s\\n' ${answer.join(' ')}; }
 COMP_LINE=${JSON.stringify(line)}
 COMP_POINT=\${#COMP_LINE}
 COMP_WORDS=(${words.map((w) => JSON.stringify(w)).join(' ')})
@@ -53,4 +54,28 @@ describe('bash completion', () => {
     expect(complete('fli env:g', ['fli', 'env', ':', 'g'])).toEqual(['get'])
   })
 
+  test('the files answer leaves the reply empty, for readline to complete a path', () => {
+    expect(complete('fli cat RE', ['fli', 'cat', 'RE'], ['__fli_files__'])).toEqual([])
+  })
+
+})
+
+describe('completion:query', () => {
+  const query = (line) => spawnSync(process.execPath, [resolve(ROOT, 'bin/fli.js'), 'completion:query', line], {
+    encoding: 'utf8',
+    cwd: ROOT,
+  }).stdout.split('\n').filter(Boolean)
+
+  test('where a command takes an argument, it answers files', () => {
+    expect(query('fli cat ')).toEqual(['__fli_files__'])
+    expect(query('fli outline core/ca')).toEqual(['__fli_files__'])
+  })
+
+  test('a word starting with a dash still answers flags', () => {
+    expect(query('fli cat --')).toContain('--raw')
+  })
+
+  test('a command with no arguments answers flags', () => {
+    expect(query('fli ws:atlas ')).toContain('--dry')
+  })
 })

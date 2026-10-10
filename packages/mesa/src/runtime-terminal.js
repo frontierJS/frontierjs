@@ -36,8 +36,20 @@
  *   validates runs on every render.
  * - Key dispatch runs the renderer's global listeners before the focused
  *   renderable's, and `preventDefault` on the global stops the focused one
- *   seeing it — which is how Tab cycles focus without typing a tab into an
- *   input.
+ *   seeing it. Every key is therefore taken by ONE global listener per
+ *   renderer (`keys`), which sends the DOM events and runs their defaults —
+ *   Tab moves focus without typing a tab into an input — before a field
+ *   types anything. One per renderer, not per mount: the shell mounts its
+ *   list and a route on one renderer, and a listener each moved focus twice
+ *   per Tab.
+ * - The engine draws a child over its own parent's earlier siblings only, so
+ *   a modal `<dialog>` is moved under a backdrop on the screen's root while it
+ *   is open, and a hidden box holds its place (`__home`). Every walk up the
+ *   tree goes through `up`, which steps from the dialog to that place, so its
+ *   events still bubble through the component that wrote it.
+ * - A box with no background leaves the cells beneath it showing, and a
+ *   background is a color. A modal dialog blanks its own cells instead, and
+ *   the backdrop sets the dim bit on everything drawn before it.
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
@@ -50,7 +62,7 @@ import { TERMINAL_TAGS, TERMINAL_EVENTS } from './terminal/tags.js'
 setRenderEnvironment(false, true)
 
 const core = await import('@opentui/core').catch(missingPeer('@opentui/core', 'the terminal target'))
-const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, TextAttributes } = core
+const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, TextAttributes, RGBA } = core
 
 /**
  * `<textarea>`: the engine's multi-line field, given the half of its one-line
@@ -133,6 +145,58 @@ class ProgressBar extends BoxRenderable {
   }
 }
 
+/**
+ * `<dialog>`: laid out only while `open`. `show()` opens it where it sits;
+ * `showModal()` opens it in the top layer (`enterTopLayer`), moves focus to
+ * its `autofocus` control or its first, and keeps Tab inside it; `close()`
+ * hides it, hands focus back to what held it before, and sends `close` a task
+ * later, as a browser queues it. Escape sends the top modal `cancel`, and
+ * closes it unless that is prevented (`keys`).
+ */
+class DialogBox extends BoxRenderable {
+  returnValue = ''
+  get open() { return 'open' in this.__attrs }
+  set open(v) { set_attribute(this, 'open', v ? '' : null) }
+  show() {
+    if (this.open) return
+    set_attribute(this, 'open', '')
+  }
+  showModal() {
+    if (this.__home) return
+    if (this.open) throw new Error('[Mesa] showModal() on a <dialog> that show() already opened')
+    if (!connected(this)) throw new Error('[Mesa] showModal() on a <dialog> that is not on the screen')
+    const r = needRenderer('showModal')
+    this.__returnFocus = r.currentFocusedRenderable
+    set_attribute(this, 'open', '')
+    enterTopLayer(r, this)
+    const inside = focusables(this)
+    const first = inside.find((n) => 'autofocus' in (n.__attrs ?? {})) ?? inside[0]
+    if (first) first.focus()
+    else r.currentFocusedRenderable?.blur()
+  }
+  close(value) {
+    if (!this.open) return
+    if (value !== undefined) this.returnValue = String(value)
+    const back = this.__returnFocus
+    this.__returnFocus = null
+    const focused = _renderer?.currentFocusedRenderable
+    set_attribute(this, 'open', null)
+    if (focused && within(focused, this)) focused.blur()
+    if (back && !back.isDestroyed && back.focusable) back.focus()
+    setTimeout(() => { if (!this.isDestroyed) dispatch(this, 'close') })
+  }
+  // Blank under a modal dialog: the page behind it is drawn first and would
+  // show through every cell the dialog leaves empty.
+  renderBefore = function (buffer) {
+    if (!this.__home) return
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) buffer.setCell(this.screenX + x, this.screenY + y, ' ', CLEAR, CLEAR, 0)
+    }
+  }
+}
+
+const CLEAR = RGBA.fromValues(0, 0, 0, 0)
+
 // ─── the current renderer ─────────────────────────────────────────────
 
 let _renderer = null
@@ -168,6 +232,7 @@ export function fragment() { return [] }
 /** Put `node` under a real renderable, before `before` when given. A button
  *  keeps its closing bracket as `__tail`, so its content lands inside it. */
 function attach(parent, node, before = null) {
+  node = node.__home ?? node
   node.__fragment = null
   inherit(node, parent.__bits)
   const anchor = before ?? parent.__tail ?? null
@@ -189,6 +254,7 @@ function toNodes(out) { return Array.isArray(out) ? out : out == null ? [] : [ou
 /** Place `node` immediately before `marker`, wherever the marker currently
  *  lives: a real parent, or the fragment a component is still assembling. */
 function placeBefore(marker, node) {
+  node = node.__home ?? node
   if (marker.parent) { attach(marker.parent, node, marker); return }
   const fr = marker.__fragment
   if (!fr) throw new Error('[Mesa] a block marker is in no parent and no fragment — append the marker before running the block')
@@ -264,6 +330,12 @@ export function element(tag, attrs = {}) {
       node.__label = text('')
       node.add(node.__label)
       break
+    case 'dialog':
+      node = new DialogBox(r, {
+        flexDirection: 'column', border: true, paddingLeft: 1, paddingRight: 1,
+        maxWidth: '100%', maxHeight: '100%', overflow: 'hidden', visible: false,
+      })
+      break
     case 'input':
       node = new InputRenderable(r, {})
       break
@@ -324,6 +396,11 @@ export function set_attribute(node, name, value) {
     return
   }
   if (node instanceof ProgressBar && (name === 'value' || name === 'max')) { node.draw(); return }
+  if (node instanceof DialogBox && name === 'open') {
+    node.visible = present
+    if (!present && node.__home) leaveTopLayer(node)
+    return
+  }
   if (name === 'href' && node.__tag === 'a') { link(node, present); return }
   if (name === 'disabled') {
     // A disabled control takes no focus and no activation, and gives up the
@@ -471,7 +548,9 @@ export function on(node, event, handler, { capture = false, once = false } = {})
   // skips those on the DOM path, and a stored `undefined` throws on the event.
   if (!handler) return
   ;((node.__listeners ??= {})[event] ??= []).push({ fn: handler, capture, once })
-  if (event === 'click') activatable(node)
+  // A dialog hears its backdrop's press (`enterTopLayer`) and is never a
+  // control Tab stops at, which is what a click listener makes a box.
+  if (event === 'click' && !(node instanceof DialogBox)) activatable(node)
   if (event === 'mousedown') pressSource(node)
   if (event === 'mousemove') moveSource(node)
 }
@@ -498,7 +577,8 @@ function fire(node, e, phase) {
  */
 function dispatch(target, type, extra = {}) {
   const path = []
-  for (let n = target.parent; n; n = n.parent) path.push(n)
+  for (let n = up(target); n; n = up(n)) path.push(n)
+  if (_renderer && (path.at(-1) ?? target) === _renderer.root) path.push(windowOf(_renderer))
   let stopped = false
   const e = {
     type, target, currentTarget: null, isTrusted: true, defaultPrevented: false,
@@ -521,11 +601,8 @@ function dispatch(target, type, extra = {}) {
 // to. Every focusable node is a source whether or not a listener is on it,
 // because the listener may be on an ancestor.
 
-/** Focus, blur and keys, from a node that can hold focus. A key whose
- *  `keydown` was prevented is withheld from the engine, as a prevented key is
- *  never typed in a browser, and so is one whose `keypress` was: that event
- *  follows an unprevented `keydown` for a key that types a character, or
- *  Enter, with no Ctrl, Alt or Meta held. */
+/** Focus and blur, from a node that can hold focus; its keys arrive
+ *  through `keys`. */
 function focusSource(node) {
   if (node.__focusSource) return
   node.__focusSource = true
@@ -533,17 +610,157 @@ function focusSource(node) {
   // `destroy` blurs a node it has already marked destroyed; a browser fires
   // nothing at an element removed while focused.
   node.on('blurred', () => { if (!node.isDestroyed) dispatch(node, 'blur') })
-  node.onKeyDown = (k) => {
-    const fields = keyFields(k)
-    if (dispatch(node, 'keydown', fields).defaultPrevented) { k.preventDefault(); return }
-    if (types(fields) && dispatch(node, 'keypress', fields).defaultPrevented) { k.preventDefault(); return }
-    if (node.__keyAction?.(k.name)) { k.preventDefault(); return }
-    if (!node.__activatable || node instanceof TextareaRenderable || !ACTIVATE_KEYS.has(k.name)) return
-    // Space scrolls past a link in a browser and follows nothing.
-    if (node.__link && k.name === 'space') return
-    k.preventDefault()
-    activate(node, fields)
+}
+
+/**
+ * A key, as a browser delivers one: `keydown` at the focused node, or at the
+ * window when nothing holds focus, then `keypress` for a key that types a
+ * character, or Enter, with no Ctrl, Alt or Meta held. A prevented one is
+ * withheld from the engine, so a field never types it. Then the key's
+ * default: Tab moves focus, Escape asks the top modal dialog to close, a
+ * control's own keys (`__keyAction`) act, and Enter or Space activates.
+ * Escape taken by a dialog is stopped there, so no listener after this one —
+ * the shell going back a screen — hears it.
+ */
+function onKey(r, k) {
+  const focused = r.currentFocusedRenderable
+  const target = focused?.__focusSource && !focused.isDestroyed ? focused : windowOf(r)
+  const fields = keyFields(k)
+  if (dispatch(target, 'keydown', fields).defaultPrevented) { k.preventDefault(); return }
+  if (types(fields) && dispatch(target, 'keypress', fields).defaultPrevented) { k.preventDefault(); return }
+  if (k.name === 'tab') { k.preventDefault(); k.shift ? focusPrev() : focusNext(); return }
+  if (fields.key === 'Escape' && closeRequest(r)) { k.preventDefault(); k.stopPropagation(); return }
+  if (target.__window) return
+  if (target.__keyAction?.(k.name)) { k.preventDefault(); return }
+  if (!target.__activatable || target instanceof TextareaRenderable || !ACTIVATE_KEYS.has(k.name)) return
+  // Space scrolls past a link in a browser and follows nothing.
+  if (target.__link && k.name === 'space') return
+  k.preventDefault()
+  activate(target, fields)
+}
+
+const keyed = new WeakMap()
+
+/** Take `r`'s keys through `onKey`, once however many mounts share it; the
+ *  answer lets one mount go. */
+function keys(r) {
+  let held = keyed.get(r)
+  if (!held) {
+    const listener = (k) => onKey(r, k)
+    r.keyInput.on('keypress', listener)
+    keyed.set(r, held = { count: 0, listener })
   }
+  held.count++
+  return () => {
+    if (--held.count) return
+    r.keyInput.off('keypress', held.listener)
+    keyed.delete(r)
+  }
+}
+
+// ─── the window ───────────────────────────────────────────────────────
+
+const windows = new WeakMap()
+
+/** The window of `r`: the last stop on every event's path, and where a key
+ *  goes when nothing holds focus. */
+function windowOf(r) {
+  let w = windows.get(r)
+  if (!w) windows.set(r, w = { __window: true, __tag: '#window', __listeners: {}, parent: null })
+  return w
+}
+
+/** `<mesa:window on:event>`: a listener on the window, taken off when the
+ *  component that wrote it is destroyed. */
+export function onWindow(event, handler, { capture = false, once = false } = {}) {
+  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
+  if (!handler) return
+  const list = (windowOf(needRenderer('onWindow')).__listeners[event] ??= [])
+  const entry = { fn: handler, capture, once }
+  list.push(entry)
+  onCleanup(() => { const at = list.indexOf(entry); if (at >= 0) list.splice(at, 1) })
+}
+
+// ─── the top layer ────────────────────────────────────────────────────
+
+const layers = new WeakMap()
+const topModal = (r) => layers.get(r)?.at(-1) ?? null
+
+/** One step toward the root: from a dialog in the top layer, the place its
+ *  component wrote it. */
+const up = (n) => n.__home ? n.__home.parent : n.parent
+
+const within = (node, ancestor) => {
+  for (let n = node; n; n = up(n)) if (n === ancestor) return true
+  return false
+}
+
+const connected = (node) => !!_renderer && within(node, _renderer.root)
+
+/**
+ * Lift `dialog` over the screen: a hidden box takes its place, and it goes
+ * under a backdrop on the root that fills the screen, centers it, and dims
+ * what is drawn before it. A press on the backdrop is a `click` at the dialog
+ * itself, as a press on a browser's `::backdrop` is; nothing beneath hears
+ * one. Destroying either the dialog or its place takes the other with it.
+ */
+function enterTopLayer(r, dialog) {
+  const stack = layers.get(r) ?? []
+  layers.set(r, stack)
+  const home = new BoxRenderable(r, { visible: false })
+  dialog.parent.insertBefore(home, dialog)
+  dialog.parent.remove(dialog)
+  const backdrop = new BoxRenderable(r, {
+    position: 'absolute', left: 0, top: 0, width: '100%', height: '100%',
+    zIndex: 1000 + stack.length, justifyContent: 'center', alignItems: 'center',
+  })
+  backdrop.renderBefore = function (buffer) {
+    const bits = buffer.buffers.attributes
+    for (let i = 0; i < bits.length; i++) bits[i] |= TextAttributes.DIM
+  }
+  backdrop.onMouseDown = (e) => {
+    if (e.target !== backdrop) return
+    e.preventDefault()
+    const { fields } = pointer(dialog, e)
+    dispatch(dialog, 'mousedown', fields)
+    dispatch(dialog, 'click', fields)
+  }
+  backdrop.add(dialog)
+  r.root.add(backdrop)
+  dialog.__home = home
+  dialog.__backdrop = backdrop
+  dialog.__layer = stack
+  stack.push(dialog)
+  dialog.__onGone = () => leaveTopLayer(dialog)
+  home.__onGone = () => { if (!dialog.isDestroyed) dialog.destroyRecursively() }
+  dialog.on('destroyed', dialog.__onGone)
+  home.on('destroyed', home.__onGone)
+}
+
+/** Put `dialog` back in its place, or, when the place is gone, nowhere. */
+function leaveTopLayer(dialog) {
+  const { __home: home, __backdrop: backdrop } = dialog
+  if (!home) return
+  dialog.__home = dialog.__backdrop = null
+  dialog.off('destroyed', dialog.__onGone)
+  home.off('destroyed', home.__onGone)
+  const stack = dialog.__layer
+  stack.splice(stack.indexOf(dialog), 1)
+  if (!dialog.isDestroyed && !home.isDestroyed && home.parent) {
+    backdrop.remove(dialog)
+    home.parent.insertBefore(dialog, home)
+  }
+  if (!home.isDestroyed) home.destroy()
+  if (!backdrop.isDestroyed) backdrop.destroy()
+}
+
+/** Escape with a modal dialog open: `cancel` at it, then `close()` unless
+ *  that was prevented. Answers whether a dialog took the key. */
+function closeRequest(r) {
+  const dialog = topModal(r)
+  if (!dialog) return false
+  if (!dispatch(dialog, 'cancel').defaultPrevented) dialog.close()
+  return true
 }
 
 const types = (f) => (f.key.length === 1 || f.key === 'Enter') && !f.ctrlKey && !f.altKey && !f.metaKey
@@ -674,7 +891,7 @@ function follow(node) {
 const submits = (node) => String(node.__attrs.type ?? 'submit').toLowerCase() === 'submit'
 
 function formOf(node) {
-  for (let n = node.parent; n; n = n.parent) if (n.__tag === 'form') return n
+  for (let n = up(node); n; n = up(n)) if (n.__tag === 'form') return n
   return null
 }
 
@@ -841,7 +1058,7 @@ function focusables(node, out = []) {
 
 function cycle(step) {
   const r = needRenderer('focusNext')
-  const list = focusables(r.root)
+  const list = focusables(topModal(r) ?? r.root)
   if (!list.length) return null
   const at = list.indexOf(r.currentFocusedRenderable)
   const next = list[(at + step + list.length) % list.length]
@@ -876,12 +1093,7 @@ export function mount(Component, { renderer, props = {}, parent = renderer.root 
   if (!renderer) throw new Error('[Mesa] $$tui.mount() needs a renderer')
   _renderer = renderer
   const before = new Set(parent.getChildren())
-  const onKey = (k) => {
-    if (k.name !== 'tab') return
-    k.preventDefault()
-    k.shift ? focusPrev() : focusNext()
-  }
-  renderer.keyInput.on('keypress', onKey)
+  const release = keys(renderer)
   let disposeRoot = () => {}
   try {
     createRoot((dispose) => {
@@ -889,7 +1101,7 @@ export function mount(Component, { renderer, props = {}, parent = renderer.root 
       Component(parent, props, null)
     })
   } catch (e) {
-    renderer.keyInput.off('keypress', onKey)
+    release()
     disposeRoot()
     throw e
   }
@@ -897,7 +1109,7 @@ export function mount(Component, { renderer, props = {}, parent = renderer.root 
     renderer,
     dispose() {
       disposeRoot()
-      renderer.keyInput.off('keypress', onKey)
+      release()
       for (const c of parent.getChildren()) if (!before.has(c)) c.destroyRecursively()
     },
   }

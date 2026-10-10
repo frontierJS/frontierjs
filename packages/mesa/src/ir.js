@@ -393,6 +393,17 @@ function lowerDynamicElement(ctx, n) {
   }
 }
 
+/**
+ * `<mesa:window|document|body>`: listeners on a target outside the
+ * component, as an element's attributes. It has no children — the DOM path
+ * reports any it is given — so none are lowered.
+ */
+function lowerGlobal(ctx, n) {
+  return { kind: 'global', target: n.elArg, loc: ctx.posOf(n.start), ...lowerAttributes(ctx, n) }
+}
+
+const GLOBALS = ['window', 'document', 'body']
+
 function lowerNode(ctx, n) {
   switch (n.type) {
     case 'script':
@@ -410,6 +421,7 @@ function lowerNode(ctx, n) {
       return lowerEach(ctx, n)
     case 'node': {
       if (n.name === 'mesa' && n.elArg === 'element') return lowerDynamicElement(ctx, n)
+      if (n.name === 'mesa' && GLOBALS.includes(n.elArg)) return lowerGlobal(ctx, n)
       if (n.name === 'mesa') return unlowered(ctx, 'mesa-element', n)
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)

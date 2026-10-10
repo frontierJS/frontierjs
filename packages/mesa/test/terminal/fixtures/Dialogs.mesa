@@ -1,0 +1,47 @@
+<script>
+  let dlg
+  let side
+  let doomed
+  let closes = 0
+  let cancels = 0
+  let rv = ''
+  let keys = ''
+  let extra = 0
+  let locked = false
+  let alive = true
+  let listening = true
+</script>
+
+<p>closes {closes} cancels {cancels} rv {rv} extra {extra}</p>
+<p>keys {keys}</p>
+<div>
+  <button type="button" on:click={() => dlg.showModal()}>Open</button>
+  <button type="button" on:click={() => side.show()}>Side</button>
+  <button type="button" on:click={() => doomed.showModal()}>Doom</button>
+  <button type="button" on:click={() => listening = false}>Mute</button>
+</div>
+<dialog
+  bind:this={dlg}
+  on:close={() => { closes++; rv = dlg.returnValue }}
+  on:cancel={(e) => { cancels++; if (locked) e.preventDefault() }}
+  on:click={(e) => { if (e.target === dlg) dlg.close('backdrop') }}
+>
+  <p>Modal body</p>
+  <button type="button" on:click={() => locked = !locked}>Lock</button>
+  <button type="button" on:click={() => dlg.close('done')}>Done</button>
+</dialog>
+<dialog bind:this={side}>
+  <p>Side body</p>
+  <button type="button" on:click={() => side.close()}>Hide</button>
+</dialog>
+{#if alive}
+  <dialog bind:this={doomed}>
+    <p>Doomed body</p>
+    <button type="button" on:click={() => alive = false}>Kill</button>
+  </dialog>
+{/if}
+<p>Behind the dialogs</p>
+<mesa:window on:keydown={(e) => keys += e.key === 'Escape' ? 'E' : e.key === 'Tab' ? '' : e.key} />
+{#if listening}
+  <mesa:window on:keydown={() => extra++} />
+{/if}

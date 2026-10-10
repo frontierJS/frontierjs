@@ -195,6 +195,17 @@ export function terminalOffenses(ir) {
         elementOffenses(n, add)
         return
       }
+      // The window is the end of every event's path; a document and a body
+      // would be two more stops on it that no component here listens at.
+      case 'global': {
+        const tag = `<mesa:${n.target}>`
+        if (n.target !== 'window') add(tag, tag, n.loc)
+        elementOffenses(n, add)
+        if (n.ref) add(`bind:this on ${tag}`, `bind:this on ${tag}`, n.loc)
+        for (const b of n.binds) add(`bind:${b.name} on ${tag}`, `bind: on ${tag}`, b.loc)
+        for (const a of n.attachments) add(`{@attach} on ${tag}`, `{@attach} on ${tag}`, a.loc)
+        return
+      }
       case 'text':
         for (const p of n.parts) if (p.kind === 'unlowered') add(spelling(p), spelling(p), p.loc)
         return
@@ -458,6 +469,14 @@ export function buildTerminal(ctx) {
     line(ind, '});')
   }
 
+  // Wired where it is written, so it lives as long as the block around it.
+  const emitGlobal = (n, ind) => {
+    for (const h of n.handlers) {
+      dep(h.expr)
+      line(ind, `$$tui.onWindow('${h.event}', ${h.expr.code}${listenerOptions(h)});`)
+    }
+  }
+
   const emitNode = (n, parent, ind) => {
     switch (n.kind) {
       case 'element':   return emitElement(n, parent, ind)
@@ -470,6 +489,7 @@ export function buildTerminal(ctx) {
       case 'render':    return emitRender(n, parent, ind)
       case 'dynamic-element': return emitDynamicElement(n, parent, ind)
       case 'const':     dep(n.value); for (const l of n.lines) line(ind, l); return
+      case 'global':    return emitGlobal(n, ind)
       default:          throw new Error(`terminal emitter reached a ${n.kind} node that terminalOffenses passed`)
     }
   }

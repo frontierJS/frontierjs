@@ -39,8 +39,14 @@ _fli_completion() {
   local line cur prefix
   line="\${COMP_LINE:0:\$COMP_POINT}"
   cur="\${line##*[[:space:]]}"
-  local IFS=$'\\n'
-  COMPREPLY=(\$(compgen -W "\$(fli completion:query "\$line" 2>/dev/null)" -- "\$cur"))
+  local IFS=$'\\n' words
+  words="\$(fli completion:query "\$line" 2>/dev/null)"
+  if [[ "\$words" == ${FILES} ]]; then
+    COMPREPLY=()
+    compopt -o default 2>/dev/null
+    return
+  fi
+  COMPREPLY=(\$(compgen -W "\$words" -- "\$cur"))
   if [[ "\$cur" == *:* && "\$COMP_WORDBREAKS" == *:* ]]; then
     prefix="\${cur%"\${cur##*:}"}"
     COMPREPLY=("\${COMPREPLY[@]#"\$prefix"}")
@@ -61,6 +67,7 @@ _fli() {
   local -a completions
   completions=("\${(@f)\$(fli completion:query "\$line" 2>/dev/null)}")
   [[ \${#completions} -eq 0 ]] && return
+  [[ "\$completions" == ${FILES} ]] && { _files; return }
   compadd -a completions
 }
 compdef _fli fli
@@ -76,8 +83,16 @@ const fishScript = () => `# fli fish completion
 # Disable default file completions for fli
 complete -c fli -f
 
-# Complete commands and flags dynamically
-complete -c fli -a "(fli completion:query (commandline -cp) 2>/dev/null)"
+# Complete commands and flags dynamically, and paths where an argument goes
+function __fli_complete
+  set -l words (fli completion:query (commandline -cp) 2>/dev/null)
+  if test "$words" = ${FILES}
+    __fish_complete_path (commandline -ct)
+  else
+    printf '%s\\n' $words
+  end
+end
+complete -c fli -a "(__fli_complete)"
 `
 </script>
 

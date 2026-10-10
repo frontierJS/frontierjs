@@ -43,7 +43,10 @@ const typedCommand = doneWords.find(w => knownNames.has(w))
 
 if (typedCommand) {
   const cmd = commands.find(c => c.name === typedCommand || c.alias === typedCommand)
-  if (cmd?.flags?.length) {
+  const cur = trailing ? '' : words.at(-1)
+  if (cmd?.args && !cur.startsWith('-')) {
+    process.stdout.write(FILES + '\n')
+  } else if (cmd?.flags?.length) {
     process.stdout.write(cmd.flags.join('\n') + '\n')
   }
 } else {

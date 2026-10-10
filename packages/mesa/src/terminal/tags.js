@@ -21,7 +21,10 @@
  * cannot load, and takes no room while that text is empty, and `progress` is
  * a bar across its parent's width filled by `value` over `max`, as a browser
  * draws one, or the words `in progress` with no `value`, where a browser
- * animates. A progress's children are the fallback a browser shows only when
+ * animates, and `dialog` is a bordered box laid out only while it is open:
+ * where it sits when opened by `show()` or the `open` attribute, and centered
+ * over the screen by `showModal()`, the rest of the screen dimmed and
+ * unreachable until it closes, as a browser's backdrop makes it. A progress's children are the fallback a browser shows only when
  * it cannot draw the bar, so the terminal never builds them. The optional
  * style hints are terminal cell attributes, never colors (Invariant 13).
  *
@@ -88,6 +91,7 @@ export const TERMINAL_TAGS = {
   mark:     { role: 'box', inline: true, inverse: true },
   img:      { role: 'image', requires: ['alt'] },
   progress: { role: 'progress' },
+  dialog:   { role: 'dialog' },
   button:   { role: 'button' },
   input:    { role: 'input' },
   textarea: { role: 'textarea' },
@@ -110,7 +114,13 @@ export const TERMINAL_TAGS = {
  * are heard and never sent: nothing outside a terminal can be dropped into
  * it, and the kit's drop zone wraps a field the keyboard reaches. A drag
  * inside the screen would be the engine's `onMouseDrop`, a drag source's
- * lowering, so a drag source stays refused until that is built.
+ * lowering, so a drag source stays refused until that is built. `cancel`
+ * and `close` are a `<dialog>`'s, and neither bubbles.
+ *
+ * The window is the end of every event's path, past the screen's root, so a
+ * `<mesa:window>` listener hears what bubbles there, and a key pressed with
+ * nothing focused is sent to the window alone, as a browser sends it to the
+ * body.
  */
 export const TERMINAL_EVENTS = {
   click:   { bubbles: true },
@@ -128,5 +138,7 @@ export const TERMINAL_EVENTS = {
   dragleave: { bubbles: true },
   drop:      { bubbles: true },
   focus:   { bubbles: false },
-  blur:    { bubbles: false }
+  blur:    { bubbles: false },
+  cancel:  { bubbles: false },
+  close:   { bubbles: false }
 }
