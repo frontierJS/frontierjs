@@ -63,7 +63,7 @@ switcher's markup.
   - **B** — declared: the `tenancy` block gains `model Workspace`.
   - **C** — the app names the service to Sierra, `session.tenant({ list: 'workspaces' })`.
   - **Recommend A** — the relation already states which model the column points at, and basecamp's three relations on `workspaceId` show it is there to read; B restates it in a second place, and C leaves the three copies the paper counts as one option each. The refusal is what keeps A from guessing when a schema has no such relation.
-- **`FJS-D399`** settled how a CLI names its tenant (`cli/config/`). The browser
+- ~~**`FJS-D399`**~~ **Answered 2026-10-10 (`FJS-D881`): B — the header name is stated once on the server, which already reads it (`tenantFrom`, `http.callHeaders`), and the browser and the CLI both learn it from the app's manifest.** settled how a CLI names its tenant (`cli/config/`). The browser
   answer should read the same config key, or say why it cannot.
   - **A** — the browser build reads `cli/config/`'s `tenant.header`, the key `FJS-D399` names.
   - **B** — the header name is stated once on the server, which already reads it (`tenantFrom`, `http.callHeaders`), and the browser and the CLI both learn it from the app's manifest.

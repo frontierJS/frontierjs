@@ -130,14 +130,18 @@ export const TERMINAL_TAGS = {
  * What an `<input>` is on a terminal, by its `type`: the one attribute that
  * makes it a different control. `field` is the one-line text field, and a
  * `password` one draws `•` for every character it holds, as a browser masks
- * it. `check` is a box showing `[x]`/`[ ]`, or `(•)`/`( )` for a radio,
- * that Space or a press toggles, firing `input` then `change`; a radio
- * checked unchecks the others of its `name` in its form. `hidden` is never
- * laid out, as a browser never paints one. No `type` is `text`. Any type
+ * it. A `date`, `time`, `datetime-local`, `month` or `week` field is typed
+ * in its value's own format (`2026-10-10T09:30`), which is its placeholder,
+ * and reads `''` until the text is a whole valid value, as a browser's
+ * control does. `check` is a box showing `[x]`/`[ ]`, or `(•)`/`( )` for a
+ * radio, that Space or a press toggles, firing `input` then `change`; a
+ * radio checked unchecks the others of its `name` in its form. `hidden` is
+ * never laid out, as a browser never paints one. `file` is a picker a
+ * terminal cannot open (`pickerHidden`). No `type` is `text`. Any type
  * missing here, a typo included, is refused: at compile when written
  * statically, and when written while live, as `multiple` on `<select>` is,
- * since a date or a range painted as a text field takes typing the control
- * would never accept.
+ * since a range painted as a text field takes typing the control would
+ * never accept.
  */
 export const INPUT_TYPES = {
   text:     'field',
@@ -147,13 +151,30 @@ export const INPUT_TYPES = {
   url:      'field',
   number:   'field',
   password: 'field',
+  date:     'field',
+  time:     'field',
+  month:    'field',
+  week:     'field',
+  'datetime-local': 'field',
   checkbox: 'check',
   radio:    'check',
-  hidden:   'hidden'
+  hidden:   'hidden',
+  file:     'file'
 }
 
 /** What an `<input>` of `type` is, or undefined for one a terminal refuses. */
 export const inputKind = (type) => INPUT_TYPES[type && type !== true ? String(type).toLowerCase() : 'text']
+
+/**
+ * Whether a `type="file"` input is one a browser shows no control for, from
+ * its `hidden` attribute and its `class`: `hidden`, or `@frontierjs/css`'s
+ * `visually-hidden`, which the kit's `FileUpload` puts a button in front of.
+ * Such an input paints nothing, and its `click()` fires `click` and opens
+ * nothing, as a browser that refuses to open a picker does. One on screen is
+ * refused: a reader would choose a file there and nothing would answer.
+ */
+export const pickerHidden = (hidden, cls) =>
+  (hidden != null && hidden !== false) || (typeof cls === 'string' && cls.split(/\s+/).includes('visually-hidden'))
 
 /**
  * The roles a browser lays out inside a line, beside text, rather than as a

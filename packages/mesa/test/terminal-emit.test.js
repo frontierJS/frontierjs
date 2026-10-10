@@ -144,7 +144,7 @@ describe('terminal target', () => {
     // `type` is what makes an `<input>` a control; a live one is checked
     // where it is written, in the runtime.
     it('a static input type with no terminal control, and a bind that does not fit the type', async () => {
-      await refusal(`<input type="date" />\n`, 'T.mesa', 'type="date" on <input> at T.mesa:1:1 has no terminal lowering')
+      await refusal(`<input type="range" />\n`, 'T.mesa', 'type="range" on <input> at T.mesa:1:1 has no terminal lowering')
       await refusal(`<input type="txt" />\n`, 'X.mesa', 'type="txt" on <input> at X.mesa:1:1 has no terminal lowering')
       await refusal(`<script>let v = false</script>\n<input bind:checked={v} />\n`, 'C.mesa',
         'bind:checked on <input type="text"> at C.mesa:2:8 has no terminal lowering')
@@ -153,9 +153,24 @@ describe('terminal target', () => {
       await refusal(`<script>let o = { v: [] }</script>\n<input type="checkbox" bind:group={o.v} />\n`, 'G.mesa',
         'bind:group at G.mesa:2:24 has no terminal lowering')
       for (const ok of [
-        `<script>let t = 'date'</script>\n<input type={t} />\n`,
+        `<script>let t = 'range'</script>\n<input type={t} />\n`,
+        `<script>let v = ''</script>\n<input type="datetime-local" bind:value={v} /><input type="week" />\n`,
         `<script>let v = []</script>\n<input type="checkbox" value="a" bind:group={v} /><input type="hidden" value="x" />\n`,
         `<script>let v = false</script>\n<input type="CheckBox" bind:checked={v} /><input type="password" />\n`,
+      ]) await expect(terminal(ok, 'O.mesa')).resolves.toBeTruthy()
+    })
+
+    // A terminal opens no picker, so only a file input a browser shows no
+    // control for lowers, and only when that is static.
+    it('a file input on screen, hidden by a live attribute, or bound', async () => {
+      await refusal(`<input type="file" class="field" />\n`, 'F.mesa', 'type="file" on <input> at F.mesa:1:1 has no terminal lowering')
+      await refusal(`<script>let h = true</script>\n<input type="file" hidden={h} />\n`, 'H.mesa',
+        'type="file" on <input> at H.mesa:2:1 has no terminal lowering')
+      await refusal(`<script>let f</script>\n<input type="file" hidden bind:files={f} />\n`, 'B.mesa',
+        'bind:files on <input type="file"> at B.mesa:2:26 has no terminal lowering')
+      for (const ok of [
+        `<input type="file" hidden />\n`,
+        `<script>let a = '*/*'</script>\n<input type="file" accept={a} class="x visually-hidden" />\n`,
       ]) await expect(terminal(ok, 'O.mesa')).resolves.toBeTruthy()
     })
 

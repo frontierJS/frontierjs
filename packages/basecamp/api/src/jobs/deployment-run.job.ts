@@ -15,7 +15,8 @@
 //   POST /deploy      { deployment_id, image, digest, hosts, … } → { digest }, once healthy;
 //                      a release that fails puts the previous container back (FJS-1765)
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
-//   POST /route        { app_id, hosts }                   → Caddy re-routed, no restart (sent by domain:dns)
+//   POST /route        { app_id, hosts, port? }            → Caddy re-routed, no restart (sent by domain:dns;
+//                                                            `port` only by a preview's Open, core/preview.ts)
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //

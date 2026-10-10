@@ -143,7 +143,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           `bun install --no-save`; Land is `git apply --check` then apply, into the
           parent's working tree only. A branch's ports are `fli dev`'s
           (FJS-D841, +N×10000), which is why the API and SPA read FLI_PORT_BE/FE;
-          Archive releases them. verify:provision
+          Archive releases them. A checkout pinned with `preview` settings forks
+          a PREVIEW: the worktree marked (fli's `markPreview`), its web port
+          claimed at the cut, and core/preview.ts's Open — an Environment
+          (tier preview, slug wb-<slug>), a static inline App on that port, its
+          VITE_API_URL, the Domain <slug>.<domain>, the placement, and `/route`
+          with the port — written through each row's own service as the
+          caller; a failed Open removes the rows and archives the branch. verify:provision
           drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
           or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
           services/api-keys/scopes.ts, proved by verify:mcp

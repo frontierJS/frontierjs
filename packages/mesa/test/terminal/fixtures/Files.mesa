@@ -1,0 +1,11 @@
+<script>
+  let inputEl
+  let heard = 0
+</script>
+
+<p>before</p>
+<input bind:this={inputEl} type="file" class="visually-hidden" on:click={() => heard++} />
+<input type="file" accept="application/json" hidden />
+<p>after</p>
+<button type="button" on:click={() => inputEl?.click()}>Browse</button>
+<p>heard [{heard}]</p>

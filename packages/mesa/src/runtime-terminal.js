@@ -65,7 +65,7 @@
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind } from './terminal/tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind, pickerHidden } from './terminal/tags.js'
 import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
@@ -142,9 +142,29 @@ const NONE = Symbol('none')
  * overwritten with `•` before the frame is flushed; the cursor and the
  * placeholder are drawn apart from those cells. A wide character is two
  * cells and masks as two.
+ *
+ * A date, a time, a month or a week is typed in its value's own format,
+ * which is the placeholder whatever the author wrote, as a browser ignores
+ * a placeholder on one. `value` reads `''` until the text is a whole valid
+ * value and a malformed write stores `''`, as a browser sanitizes it.
  */
 class Field extends InputRenderable {
   __mask = false
+  __format = null
+  __placeholder = ''
+  get value() { return this.__format ? this.__format.read(super.value) : super.value }
+  set value(v) { super.value = this.__format ? this.__format.read(v) : v }
+  typed(type) {
+    const t = type == null ? 'text' : String(type).toLowerCase()
+    this.__mask = t === 'password'
+    this.__format = TYPED_FIELDS[t] ?? null
+    this.placeholder = this.__format?.placeholder ?? this.__placeholder
+    if (this.__format && this.plainText && !this.value) {
+      this.__muted = true
+      try { super.value = '' } finally { this.__muted = false }
+    }
+    this.requestRender()
+  }
   renderSelf(buffer) {
     super.renderSelf(buffer)
     if (!this.__mask) return
@@ -155,6 +175,54 @@ class Field extends InputRenderable {
     const at = this.screenY * buffer.width + this.screenX
     for (let i = 0; i < cells; i++) char[at + i] = 0x2022
   }
+}
+
+// ─── typed fields ─────────────────────────────────────────────────────
+
+// HTML's valid date, time, month and week strings (§ 2.3.5). `read` answers
+// the value a browser's `input.value` would, or `''`.
+const leap = (y) => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)
+const daysIn = (y, m) => m === 2 ? (leap(y) ? 29 : 28) : [31, 0, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]
+// A year has 53 ISO weeks when it starts on a Thursday, or on a Wednesday in
+// a leap year.
+const weeksIn = (y) => {
+  const jan1 = new Date(0)
+  jan1.setUTCFullYear(y, 0, 1)
+  const day = jan1.getUTCDay()
+  return day === 4 || (day === 3 && leap(y)) ? 53 : 52
+}
+const YEAR = '(\\d{4,})'
+const TIME = '(\\d\\d):(\\d\\d)(?::(\\d\\d)(?:\\.(\\d{1,3}))?)?'
+const DATE_RE = new RegExp(`^${YEAR}-(\\d\\d)-(\\d\\d)$`)
+const TIME_RE = new RegExp(`^${TIME}$`)
+const MONTH_RE = new RegExp(`^${YEAR}-(\\d\\d)$`)
+const WEEK_RE = new RegExp(`^${YEAR}-W(\\d\\d)$`)
+const LOCAL_RE = new RegExp(`^${YEAR}-(\\d\\d)-(\\d\\d)[T ]${TIME}$`)
+
+const validDate = (y, m, d) => +y > 0 && +m >= 1 && +m <= 12 && +d >= 1 && +d <= daysIn(+y, +m)
+const validTime = (h, m, s = '0') => +h <= 23 && +m <= 59 && +s <= 59
+const parse = (re, test) => (s) => { const m = re.exec(String(s ?? '')); return m && test(...m.slice(1)) ? m : null }
+const whole = (re, test) => { const p = parse(re, test); return (s) => p(s) ? String(s) : '' }
+const parseLocal = parse(LOCAL_RE, (y, mo, d, h, mi, s) => validDate(y, mo, d) && validTime(h, mi, s))
+
+const TYPED_FIELDS = {
+  date:  { placeholder: 'yyyy-mm-dd', read: whole(DATE_RE, validDate) },
+  time:  { placeholder: 'hh:mm',      read: whole(TIME_RE, validTime) },
+  month: { placeholder: 'yyyy-mm',    read: whole(MONTH_RE, (y, m) => +y > 0 && +m >= 1 && +m <= 12) },
+  week:  { placeholder: 'yyyy-Www',   read: whole(WEEK_RE, (y, w) => +y > 0 && +w >= 1 && +w <= weeksIn(+y)) },
+  // A date and a time read back normalized: a `T` between them, and the
+  // shortest time that says the same, as a browser hands it back.
+  'datetime-local': {
+    placeholder: 'yyyy-mm-ddThh:mm',
+    read: (s) => {
+      const m = parseLocal(s)
+      if (!m) return ''
+      const [, y, mo, d, h, mi, sec = '00', frac = ''] = m
+      const ms = frac.replace(/0+$/, '')
+      const tail = ms ? `:${sec}.${ms}` : sec !== '00' ? `:${sec}` : ''
+      return `${y}-${mo}-${d}T${h}:${mi}${tail}`
+    },
+  },
 }
 
 /**
@@ -468,7 +536,9 @@ export function element(tag, attrs = {}) {
       break
     case 'input': {
       const kind = inputKind(attrs.type)
-      if (!kind) throw new Error(`[Mesa] <input type="${attrs.type}"> has no terminal lowering`)
+      if (!kind || (kind === 'file' && !pickerHidden(attrs.hidden, attrs.class))) {
+        throw new Error(`[Mesa] <input type="${attrs.type}"> has no terminal lowering`)
+      }
       if (kind === 'field') {
         // A browser's text field is 20 characters wide unless `size` says
         // otherwise; with no width of its own, a field beside its label in a
@@ -482,6 +552,9 @@ export function element(tag, attrs = {}) {
       } else {
         node = new BoxRenderable(r, { visible: false })
       }
+      // The kit opens its hidden picker with `input.click()`; the event fires
+      // and no picker follows.
+      if (kind === 'file') node.click = () => void dispatch(node, 'click')
       node.__kind = kind
       break
     }
@@ -528,21 +601,30 @@ export function set_attribute(node, name, value) {
   else delete node.__attrs[name]
   if (node instanceof TextareaRenderable) {
     if (name === 'value') {
+      const str = present ? String(value) : ''
+      // Half a date reads `''`, and a handler or a bind writes that `''`
+      // straight back; replacing the text then would wipe it a key at a time.
+      if (node.__format && str === node.value) return
       node.__muted = true
-      try { node.value = present ? String(value) : '' } finally { node.__muted = false }
+      try { node.value = str } finally { node.__muted = false }
       return
     }
-    if (name === 'placeholder') { node.placeholder = present ? String(value) : ''; return }
+    if (name === 'placeholder') {
+      node.__placeholder = present ? String(value) : ''
+      node.placeholder = node.__format?.placeholder ?? node.__placeholder
+      return
+    }
   }
   if (node.__kind) {
     // The renderable was chosen by the `type` the node was built with, so a
-    // live one may move only within that kind: text to `password` and back.
+    // live one may move only within that kind: text to `password` or `date`
+    // and back.
     if (name === 'type') {
       const kind = inputKind(present ? value : null)
       if (!kind) throw new Error(`[Mesa] <input type="${value}"> has no terminal lowering`)
       if (kind !== node.__kind) throw new Error(`[Mesa] <input type="${value}"> cannot replace a type="${node.__type ?? 'text'}" on a terminal, which builds one control per <input>`)
       node.__type = present ? String(value) : undefined
-      if (node instanceof Field) { node.__mask = String(value).toLowerCase() === 'password'; node.requestRender() }
+      if (node instanceof Field) node.typed(node.__type)
       if (node instanceof CheckBox) node.paint()
       return
     }

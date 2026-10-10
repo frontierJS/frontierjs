@@ -6,7 +6,7 @@ dated: 2026-10-09
 
 # Idea — a preview branch: a client edits the UI on live data and submits it for review
 
-**Status: PROPOSED. Slices 1 and 2 are built (2026-10-10, § Game plan);
+**Status: PROPOSED. Slices 1, 2 and 3 are built (2026-10-10, § Game plan);
 nothing else is.** Do not cite this file as describing behavior — see `VERIFYING.md`. Prior art is from memory on 2026-10-09, not
 fetched; each FJS claim was checked against the tree that day.
 
@@ -359,7 +359,70 @@ The plan as written:
 - *Proof:* cli's check tests — a worktree with a `.lite` edit fails, with a
   `.mesa` edit passes.
 
-### Slice 3 — Open (basecamp)
+### Slice 3 — Open (basecamp) — built 2026-10-10
+
+**As built, where it departs from the bullets below:**
+
+- **The settings are the CHECKOUT's, the flag is the fork's.** `configure
+  { preview: { projectId, app, domain, apiUrl, serverId } }` on a pin that is
+  not a branch; `fork { slug, preview: true }` refuses without them. A
+  `preview` boolean on the branch's pin had nowhere to say which project,
+  which app in a monorepo, which machine, which wildcard or which API, and
+  they are the same for every client a checkout serves. The branch records
+  what Open made as `opened` (port, Environment, App, hostname, route).
+- **Open lives in the workbench's `fork`, not an `environments` method.** It
+  needs the worktree and its port, which only the workbench knows and only
+  behind `localMachineRefusal`. The rows are written through each row's own
+  service as the caller — `environments`, `apps`, `variables`, `domains`,
+  `apps.place` — so a preview meets every check a person's create meets.
+  `core/preview.ts` is the owner.
+- **The port is claimed at the cut**, through fli's `portFor` on the pin's
+  sessions lock, so the route names the port `fli dev` will bind in that
+  worktree; Archive gives it back. The marker is written there too, by fli's
+  new `markPreview`, so the name has one spelling.
+- **The App is `inline` with a placeholder `index.html`** — an inline source
+  must hold one. It answers only when no route and no release does.
+- **A preview's slug is one hostname label** (letters, digits, inner `-`), or
+  the one wildcard certificate does not cover it; refused before the cut.
+- **All or nothing, except the route.** The project and machine are read in
+  the caller's workspace when set and again before the cut; a failed row
+  removes the Environment (its children cascade) and archives the branch,
+  keeping `wb/<slug>`. A machine refusing `/route` is reported in
+  `opened.route` in its words and undoes nothing — the rows are right, and
+  Thaw is the same push.
+- **`/route { port }` — ruled here, not asked**: a stated port is for an app
+  with no container on the machine, and is refused beside one, whose own
+  published port is the only truth. A machine with no docker counts as no
+  container. § Rulings strikes it; a `DECISIONS.md` row only if the owner
+  disagrees.
+- **CORS moves to slice 4.** Nothing crosses origins until Freeze builds a
+  static `web/`; the proxy serves while editing (§ Probed).
+- **Not built:** a *Fork for a client* control and the hostname on the
+  branch's card (the API is the whole surface today); `apps.service`
+  refusing a non-static App under a preview Environment (§ Managing, the
+  Release-realm half); sierra's README line for the CORS rule.
+- *Proved:* `api/test/workbench.test.ts` one test (the settings refusals, the
+  marker outside the tree with the tree clean, the port equal to `portFor`'s
+  and held in the lock until Archive, no preview on a plain fork);
+  `verify:provision` eleven checks — a stand-in machine on the command port's
+  TLS with the certificate enrollment pinned, settings refused for another
+  workspace's project, a fork before settings cuts nothing, then Open's four
+  rows read back through the API and `/route` read off the wire with the
+  hostname and the branch's port. Sending `port + 1` turned exactly that
+  check red. Outpost's suite two (a stated port routes an app with no
+  container, and is refused beside one).
+- **The nine:** origin — the Environment's state is still the route and the
+  release; `opened` records what Open made, never what is serving. Concept —
+  none; `opened` is a field. Complexity — one function writing through five
+  existing services. Predictability — a preview's rows are the rows a person
+  would make. Derived — the port is `fli dev`'s, the hostname the slug's.
+  Owner — `core/preview.ts`; the marker's name stays fli's. Boundary — the
+  caller's workspace, read twice. Failure — refused before the cut, rolled
+  back after it; the route reported. Silence — *stays true:* a preview's
+  hostname is routed only to its branch's port; *what fails:* the `/route`
+  check in `verify:provision`.
+
+The plan as written:
 
 - `Pin` gains `preview: boolean`; `configure` sets it. `fork` with `preview`
   does what it does today, then Open: an `Environment` (`tier: preview`,
@@ -410,8 +473,8 @@ The plan as written:
 
 ### Rulings this will ask for
 
-- `/route` taking a port for an inline App with no active release — a widening
-  of outpost's protocol, small, but it is a second way a route gets its port.
+- ~~`/route` taking a port for an inline App with no active release~~ —
+  answered in slice 3's *as built*; a ruling only if the owner disagrees.
 - ~~The marker file's name and place in a worktree~~ — answered in slice 2's
   *as built*; a ruling only if the owner disagrees.
 - Relaxing the Workbench's `LOCAL_MACHINE` refusal for a worktree a fleet

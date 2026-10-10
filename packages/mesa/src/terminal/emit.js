@@ -27,7 +27,7 @@
 import { xNode, Q, PRESERVE_WHITESPACE } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind } from './tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind, pickerHidden } from './tags.js'
 
 const IDENT = /^[A-Za-z_$][\w$]*$/
 
@@ -178,19 +178,25 @@ const TRAILING_NEWLINE = /\r?\n$/
  * An `<input>` is the control its `type` names (`INPUT_TYPES`). A static type
  * the table lacks is refused here, and a live one when it is written. A bind
  * that does not fit the type is refused too: `checked` and `group` are a
- * check's, `value` a field's. A live `type` cannot be judged here, so the
- * runtime refuses that pairing when it binds.
+ * check's, `value` a field's, and a file input takes none. A live `type`
+ * cannot be judged here, so the runtime refuses that pairing when it binds.
+ * A file input is refused unless it is hidden by a static attribute, since a
+ * live `hidden` or `class` may show it.
  */
 function inputOffenses(n, add) {
   const type = n.attrs.find((a) => a.name === 'type')
   if (typeof type?.value === 'object') return
   const kind = inputKind(type?.value)
-  if (!kind) {
+  const fixed = (name) => {
+    const v = n.attrs.find((a) => a.name === name)?.value
+    return typeof v === 'object' ? undefined : v
+  }
+  if (!kind || (kind === 'file' && !pickerHidden(fixed('hidden'), fixed('class')))) {
     add(`type="${type.value}" on <input>`, `type="${type.value}" on <input>`, n.loc)
     return
   }
   for (const b of n.binds) {
-    if ((b.name === 'value') === (kind === 'field')) continue
+    if (kind !== 'file' && (b.name === 'value') === (kind === 'field')) continue
     add(`bind:${b.name} on <input type="${type?.value ?? 'text'}">`, `bind:${b.name} on <input type="${type?.value ?? 'text'}">`, b.loc)
   }
 }

@@ -177,7 +177,7 @@ work (`IDEAS/map-packages.md`).
 
 ## Open questions
 
-- **Anonymize vs delete.** `LOCKED` models cannot be deleted at all, by design. So
+- ~~**Anonymize vs delete.**~~ **Answered 2026-10-10 (`FJS-D880`): A — derive it from the gate: erasure deletes a row whose delete gate admits SYSTEM, anonymizes it (each `@pii` field nulled, or blanked where required) where only the update gate does, and refuses naming the model where neither does.** `LOCKED` models cannot be deleted at all, by design. So
   the schema needs to say what erasure *means* per model, and the honest default is
   probably "refuse, loudly" rather than a silent partial erasure.
   - **A** — derive it from the gate: erasure deletes a row whose delete gate admits

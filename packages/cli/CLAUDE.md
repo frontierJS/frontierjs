@@ -53,7 +53,8 @@ core/
   color.js      `chalk` — fli's own, no dependency. Styles nest and never chain
                 as properties; a line mixing styles is the tag, chalk-template's
                 `{bold.cyan x}`, which reads markup only from the literal parts.
-                An inner close reopens the outer style, since dim and bold share
+                A new command prints that way — README § Printing a line. An
+                inner close reopens the outer style, since dim and bold share
                 one close code
   text.js       `echo.lines` — a block of output rows; false and null rows
                 dropped. `plural(n, word)`
@@ -163,7 +164,8 @@ core/
                 A preview is a worktree whose private git dir holds
                 `fjs-preview` (never the tree: Submit would commit it), graded
                 from `merge-base HEAD origin/HEAD` — the diff the pull request
-                carries, so nothing stores a base. Plain node, for `checks.js`
+                carries, so nothing stores a base. `markPreview` writes the
+                marker, for basecamp's Open. Plain node, for `checks.js`
   done.js       is the change in the working tree FINISHED — a CHANGES entry per
                 package touched, a new module or command named where its
                 siblings are, then test-files-run, register:check and the

@@ -344,7 +344,7 @@ log             // the styled logger      → log.info/success/warn/error/dry/de
 tty             // the terminal, held     → tty.keys/line/live/aside/onExit/title/wrap
 echo            // one output line (stdout, or the GUI's event stream)
                 //   echo.lines(rows, { indent, style }) — a block; false/null rows are dropped
-chalk           // core/color.js — follows NO_COLOR, as fli's own output does; nests, never chains
+chalk           // core/color.js — follows NO_COLOR, as fli's own output does; a call or a tag (§ Printing a line)
 
 // On $:
 $.config   // shared mutable state across _steps/
@@ -382,6 +382,29 @@ the command.
 this workspace shares one `.git`, so a bare `git status --porcelain` run from
 `packages/mesa` describes the whole monorepo — which had all sixteen `ws:*` rows
 reporting one another's state.
+
+### Printing a line
+
+**A line that mixes styles is one `chalk` tag**, in chalk-template's syntax:
+`{style text}`, dotted to combine (`{bold.cyan …}`), nestable. A line in one
+style stays a call, `chalk.dim(s)`. A count with a noun is `plural(n, word)`
+from `core/text.js`. `commands/ports/status.md` is the reference:
+
+```js
+const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
+
+echo(chalk`  {bold ${plural(busy.length, 'port')} in use}\n`)
+echo(chalk`  {green ●}  {bold.cyan ${String(b.port).padEnd(6)}} {dim ·} ${what}`)
+echo(b.command
+  ? chalk`     {dim pid ${b.pids.join(', ')}}  {gray ${b.command}}`
+  : chalk`     {dim (no lsof here)}`)
+```
+
+Markup is read only from the template's own text, so a path or a command line
+interpolated into it prints as itself, braces included. A `{` opens a style
+only when a style name and a space follow it, and an unclosed one throws at the
+call. A row of parts with one separator is an array `.join(chalk.dim(' · '))`;
+a block of rows is `echo.lines`.
 
 ### `exec` and `stream`
 

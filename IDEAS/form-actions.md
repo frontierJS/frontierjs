@@ -121,7 +121,7 @@ Three reasons, in order of how much they matter to this framework:
 
 ## Open questions
 
-- **Does an action bypass the Service abstraction, or go through it?** Through
+- ~~**Does an action bypass the Service abstraction, or go through it?**~~ **Answered 2026-10-10 (`FJS-D883`): A — through it: an action calls a service method, and the request-shaped half (the 303, the re-render with `errors`) belongs to the runner that called the action, so `ServiceContext` never gains a redirect.** Through
   it, presumably — the gates, hooks and validation are all there. But then
   `ctx` is a `ServiceContext` and the action wants request-shaped things
   (redirect, status), which is the `TransportContext`/`ServiceContext` asymmetry

@@ -1,0 +1,18 @@
+<script>
+  let d = ''
+  let reads = '-'
+  let dt = '2026-10-10 09:30:00'
+  let kind = 'text'
+</script>
+
+<p>d [{d}] reads [{reads}] dt [{dt}]</p>
+<input type="date" bind:value={d} placeholder="ignored" on:input={(e) => reads = e.target.value || 'empty'} />
+<input type="datetime-local" bind:value={dt} />
+<input type="date" value="2026-02-30" />
+<input type="month" value="2026-13" />
+<input type="week" value="2025-W53" />
+<input type="week" value="2020-W53" />
+<input type="time" value="25:00" />
+<input type="time" value="09:30:15.5" />
+<input type={kind} value="soon" />
+<button type="button" on:click={() => kind = 'date'}>Date</button>

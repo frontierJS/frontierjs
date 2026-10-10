@@ -135,7 +135,7 @@ nouns (D194: transient is not retryable). *User-facing vs operator* is the
   dead immediately. **B** — park pending a reconcile hook (`onIndeterminate`).
   **Recommend A** now; B is a new option and earns its place only when a
   stressor (Quo/Telnyx) needs reconciliation.
-- **Q4 — `claimIdempotency` across the caravan hop:** should a job's
+- ~~**Q4 — `claimIdempotency` across the caravan hop:**~~ **Answered 2026-10-10 (`FJS-D882`): A — `auto` reaches the job: a send inside a running job, to a target declaring `auto`, derives its key from the job's `id` plus the request (method, path, body), so a retried job re-sends the same key for the same request and a different request never shares one. A fault on a keyed request is no longer indeterminate, and `FJS-D655`'s dead-at-once applies to the rest.** should a job's
   dispatch id become the conduit `Idempotency-Key` by default, turning the
   indeterminate POST into a retryable one? Conduit's `idempotency: { auto }`
   (`packages/conduit/src/types.ts:185`) mints one key per `send()`, so every

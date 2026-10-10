@@ -81,7 +81,7 @@ export async function run(t) {
   t.ok((await t.frame()).includes('off [ ]'), 'a press on a disabled box toggles nothing')
 
   for (const [kind, message] of [
-    ['date', '[Mesa] <input type="date"> has no terminal lowering'],
+    ['range', '[Mesa] <input type="range"> has no terminal lowering'],
     ['checkbox', '[Mesa] <input type="checkbox"> cannot replace a type="text" on a terminal, which builds one control per <input>'],
   ]) {
     let threw = null
