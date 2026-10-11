@@ -89,7 +89,8 @@ export const PER_CALLER = {
 
 const isOptional = f => f.type?.optional === true
 const has        = (f, kind) => (f.attributes ?? []).some(a => a.kind === kind)
-const hasDefault = f => has(f, 'default') || has(f, 'generated') || has(f, 'sequence') || has(f, 'rank')
+// A scalar array column is NOT NULL DEFAULT '[]' (columnDefaultExpr), so a create that never names it succeeds.
+const hasDefault = f => f.type?.array === true || has(f, 'default') || has(f, 'generated') || has(f, 'sequence') || has(f, 'rank')
 const modelAttr  = (m, kind) => (m.attributes ?? []).find(a => a.kind === kind)
 
 // A model whose rows may be WRITTEN on a device. `@@sync(read)` holds the table
@@ -1026,6 +1027,34 @@ export const RULES = [
                 `write as no restriction at all.`,
             })
           }
+        }
+      }
+      return out
+    },
+  },
+  {
+    id:       'anonymous-create-auth-default',
+    severity: 'warn',
+    title:    'a public create on a model whose required column defaults to auth()',
+    blurb:    'A required column with @default(auth().id) is filled from the signed-in principal. ' +
+              'With create at level 0 a visitor has none, so the runtime refuses the create (401, ' +
+              'naming the field) unless the visitor states the column — and a visitor naming a user ' +
+              'it cannot read is refused too. Raise the create level, or make the column optional.',
+    run(schema) {
+      const out = []
+      for (const model of schema.models ?? []) {
+        if (gateOf(model)?.create !== 0) continue
+        for (const f of model.fields ?? []) {
+          if (f.type.optional || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
+          const def = (f.attributes ?? []).find(a => a.kind === 'default')
+          // `generated` marks the tenancy stamp, which the claim fills for a visitor too.
+          if (def?.value?.kind !== 'call' || def.value.fn !== 'auth' || def.generated) continue
+          out.push({
+            model: model.name, field: f.name,
+            message: `${model.name}: @@gate gives create level 0 while ${f.name} is required and defaults to ` +
+              `auth().${def.value.field}, so a visitor's create is refused 401 naming ${f.name}. ` +
+              `Raise the create level to 1 or more, or make ${f.name} optional.`,
+          })
         }
       }
       return out

@@ -36,7 +36,7 @@ const db = await createClient({
 })
 ```
 
-`provider` is `r2`, `s3`, `b2`, `minio` (all S3-compatible) or `local`, which writes under `localPath` (default `./storage`) and answers URLs under `localUrl`. With neither `provider` nor `endpoint` given, the plugin picks `local` under `NODE_ENV=development` or `test` and refuses to build otherwise, naming the option. The client builds without credentials; a missing secret fails at the first upload, not at startup. `keyPattern` may not name `:id` — a create has no id when the object is written.
+`provider` is `r2`, `s3`, `b2`, `minio` (all S3-compatible) or `local`, which writes under `localPath` (default `./storage`) and answers URLs under `localUrl`. With neither `provider` nor `endpoint` given, the plugin picks `local` under `NODE_ENV=development` or `test` and refuses to build otherwise, naming the option. Every provider but `local` needs `accessKeyId` and `secretAccessKey`; the plugin refuses to build without them, naming the missing option. `keyPattern` may not name `:id` — a create has no id when the object is written.
 
 ## Usage
 

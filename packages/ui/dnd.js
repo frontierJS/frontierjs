@@ -47,9 +47,18 @@
  * one, or when its list changed under the drag (a live update). Scrolling of
  * the window, an ancestor or the zone itself is folded in as a delta.
  *
- * Not built: keyboard and screen-reader dragging, nested zones of one type,
- * grid and flex-wrap layouts (a flow list only, vertical or horizontal,
- * detected per zone from its first two children).
+ * Keyboard: an item is focusable (`tabindex="0"`, unless the host stated one,
+ * and not at all with a `dragHandleSelector`, where the handle is the host's to
+ * make focusable). Space lifts the focused item, the arrows along the zone's
+ * axis move it through the same `onconsider` calls, Space drops it into
+ * `onfinalize` and Escape or Tab cancels, each with `info.source` `'keyboard'`.
+ * The lifted item is NOT hidden: its placeholder is what is on screen and
+ * what holds focus, since a hidden element cannot. One shared live region says
+ * where it is, in English. A keyboard move stays inside its own zone.
+ *
+ * Not built: moving between zones by keyboard, nested zones of one type, grid
+ * and flex-wrap layouts (a flow list only, vertical or horizontal, detected per
+ * zone from its first two children).
  */
 
 import { createEffect } from '@frontierjs/mesa/runtime'
@@ -73,6 +82,8 @@ const ITEM_ID_KEY            = 'id'
 const SHADOW_ATTR            = 'data-dnd-shadow'
 const TARGET_ATTR            = 'data-dnd-target'
 const GHOST_ATTR             = 'data-dnd-ghost'
+const TAB_ATTR               = 'data-dnd-tab'
+const LIVE_ATTR              = 'data-dnd-live'
 const DEFAULT_TYPE           = '--any--'
 const START_THRESHOLD_PX     = 3
 const DEFAULT_TOUCH_DELAY_MS = 150
@@ -272,7 +283,7 @@ function notify(node, which, items, trigger) {
     meta.handed = items
   }
   const cfg = zoneRegistry.get(node)?.config ?? meta?.config
-  cfg?.[which]?.({ items, info: { trigger, id: session.itemId, source: 'pointer' } })
+  cfg?.[which]?.({ items, info: { trigger, id: session.itemId, source: session.keyboard ? 'keyboard' : 'pointer' } })
 }
 
 /** The zone's list as the host will hold it once it has written back the
@@ -421,7 +432,120 @@ function onDragMove(e) {
 }
 
 function onDragKey(e) {
-  if (e.key === 'Escape' && session && !session.finalizing) cancelToOrigin()
+  if (!session || session.finalizing) return
+  if (e.key === 'Escape') {
+    if (session.keyboard) e.preventDefault()
+    cancelToOrigin()
+  } else if (session.keyboard) {
+    keyboardKey(e)
+  }
+}
+
+// ─── the keyboard ─────────────────────────────────────────────────────────
+
+let liveRegion = null
+
+/** One region for the page, reused: a polite per-zone element would be torn
+ *  down with the zone, taking the drop announcement with it. */
+function announce(message) {
+  if (!liveRegion?.isConnected) {
+    liveRegion = document.createElement('div')
+    liveRegion.setAttribute(LIVE_ATTR, '')
+    liveRegion.setAttribute('role', 'status')
+    liveRegion.setAttribute('aria-live', 'assertive')
+    liveRegion.setAttribute('aria-atomic', 'true')
+    liveRegion.style.cssText = 'position:fixed;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'
+    document.body.appendChild(liveRegion)
+  }
+  liveRegion.textContent = message
+}
+
+function where(meta) {
+  return `position ${meta.placeholderIndex + 1} of ${itemsWithoutShadow(meta).length + 1}`
+}
+
+function labelOf(el) {
+  return el.getAttribute('aria-label') || el.textContent.replace(/\s+/g, ' ').trim() || 'Item'
+}
+
+function startKeyboardDrag(zoneNode, itemEl, liftEvent) {
+  const entry = zoneRegistry.get(zoneNode)
+  if (!entry || !itemEl.isConnected) return
+  const cfg      = entry.config
+  const itemIdx  = Array.prototype.indexOf.call(zoneNode.children, itemEl)
+  const itemData = cfg.items.filter((it) => !it[SHADOW_ITEM_MARKER])[itemIdx]
+  if (!itemData) return
+
+  const itemRect = docRect(itemEl)
+  session = {
+    keyboard:    true,
+    pointerId:   null,
+    originNode:  zoneNode,
+    originIndex: itemIdx,
+    itemData,
+    itemId:      itemData[ITEM_ID_KEY],
+    shadowItem:  { ...itemData, [ITEM_ID_KEY]: SHADOW_PLACEHOLDER_ITEM_ID, [SHADOW_ITEM_MARKER]: true },
+    grabbedEl:   itemEl,
+    label:       labelOf(itemEl),
+    dragW:       itemRect.width,
+    dragH:       itemRect.height,
+    zones:       [],
+    current:     null,
+    outside:     false,
+    frozen:      false,
+    ghost:       null,
+    keepFocus:   true,
+    liftEvent,   // still bubbling to the window listener added below, which would drop it at once
+    finalizing:  false,
+  }
+  const meta = { node: zoneNode, config: cfg, depth: getDepth(zoneNode), placeholderIndex: null, expectedSig: sig(cfg.items) }
+  measureZone(meta)
+  session.zones.push(meta)
+  session.grabbedEl = null
+  session.current   = meta
+  zoneNode.setAttribute(TARGET_ATTR, '')
+
+  considerWithShadowAt(meta, itemIdx, TRIGGERS.DRAG_STARTED)
+
+  window.addEventListener('keydown', onDragKey)
+  // A press elsewhere ends it: a lifted item that outlived the focus would
+  // refuse every pointer drag after, with nothing on screen saying why.
+  window.addEventListener('pointerdown', onKeyboardPointer, true)
+  announce(`${session.label}, lifted, ${where(meta)}. Arrow keys move it, Space drops it, Escape cancels.`)
+}
+
+function onKeyboardPointer() {
+  if (!session?.keyboard || session.finalizing) return
+  session.keepFocus = false
+  cancelToOrigin()
+}
+
+function keyboardKey(e) {
+  if (e === session.liftEvent) return
+  const meta = session.current
+  if (e.key === ' ') {
+    e.preventDefault()
+    if (e.repeat) return
+    announce(`${session.label}, dropped at ${where(meta)}.`)
+    finishDrag(true)
+    return
+  }
+  if (e.key === 'Tab') {
+    session.keepFocus = false   // the Tab is moving focus on; the refocus would undo it
+    cancelToOrigin()
+    return
+  }
+  const horizontal = meta.axis === 'x'
+  let step = 0
+  if (e.key === (horizontal ? 'ArrowRight' : 'ArrowDown')) step = 1
+  else if (e.key === (horizontal ? 'ArrowLeft' : 'ArrowUp')) step = -1
+  if (!step) return
+  e.preventDefault()
+  if (meta.neg) step = -step
+  const idx = Math.min(itemsWithoutShadow(meta).length, Math.max(0, meta.placeholderIndex + step))
+  if (idx === meta.placeholderIndex) return
+  considerWithShadowAt(meta, idx, TRIGGERS.DRAGGED_OVER_INDEX)
+  announce(`${session.label}, ${where(meta)}.`)
 }
 
 /** A full re-measure one frame after a cross-zone notify — by then the host
@@ -547,6 +671,7 @@ function cancelToOrigin() {
     session.current = origin
   }
   session.outside = true
+  if (session.keyboard) announce(`${session.label}, cancelled, back at ${where(origin)}.`)
   finishDrag(true)
 }
 
@@ -563,6 +688,7 @@ function finishDrag(skipAnimation) {
   window.removeEventListener('pointerup', onDragEnd)
   window.removeEventListener('pointercancel', onDragEnd)
   window.removeEventListener('keydown', onDragKey)
+  window.removeEventListener('pointerdown', onKeyboardPointer, true)
   window.removeEventListener('touchmove', blockTouchScroll)
   try { document.body.releasePointerCapture(session.pointerId) } catch { /* already released */ }
 
@@ -581,8 +707,15 @@ function finishDrag(skipAnimation) {
       if (origin) notify(session.originNode, 'onfinalize', itemsWithoutShadow(origin), TRIGGERS.DROPPED_INTO_ANOTHER)
     }
 
-    session.ghost.remove()
+    session.ghost?.remove()
     for (const z of session.zones) z.node.removeAttribute(TARGET_ATTR)
+    // The host swaps the placeholder's element for the item's own, and the
+    // swap takes focus with it.
+    if (session.keyboard && session.keepFocus) {
+      const at = finalItems.indexOf(session.itemData)
+      const zoneNode = target.node
+      requestAnimationFrame(() => zoneNode.children[at]?.focus())
+    }
     session = null
   }
 
@@ -731,6 +864,25 @@ export function dndzone(getOptions) {
 
     node.addEventListener('pointerdown', onPointerDown)
 
+    // ── lifting by keyboard ─────────────────────────────────────────────────
+
+    function onKeyDown(e) {
+      if (config.disabled || session || e.key !== ' ' || e.repeat || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      let itemEl = e.target
+      while (itemEl && itemEl.parentElement !== node) itemEl = itemEl.parentElement
+      if (!itemEl) return
+      if (config.dragHandleSelector) {
+        const handle = e.target.closest?.(config.dragHandleSelector)
+        if (!handle || !itemEl.contains(handle)) return
+      } else if (e.target !== itemEl) {
+        return   // Space inside a control in the item is the control's
+      }
+      e.preventDefault()
+      startKeyboardDrag(node, itemEl, e)
+    }
+
+    node.addEventListener('keydown', onKeyDown)
+
     // ── configure: on mount and after every change the getter reads ────────
 
     function configure(opts) {
@@ -755,13 +907,24 @@ export function dndzone(getOptions) {
       const cursor  = config.disabled ? '' : 'grab'
       const select  = config.disabled ? '' : 'none'
       const handles = config.dragHandleSelector
+      const focusable = !config.disabled && !handles
       for (const child of node.children) {
-        child.draggable = false   // the native HTML5 drag would start alongside this one
-        child.style.cursor = handles ? '' : cursor
-        child.style.userSelect = select
-        child.style.webkitUserSelect = select
+        if (focusable && !child.hasAttribute('tabindex')) {
+          child.setAttribute('tabindex', '0')
+          child.setAttribute(TAB_ATTR, '')
+        } else if (!focusable && child.hasAttribute(TAB_ATTR)) {
+          child.removeAttribute('tabindex')
+          child.removeAttribute(TAB_ATTR)
+        }
+        // Each write is guarded: this runs on every change to `items`, and a
+        // write of the value already there is still a mutation record per row.
+        if (child.draggable) child.draggable = false   // the native HTML5 drag would start alongside this one
+        const rowCursor = handles ? '' : cursor
+        if (child.style.cursor !== rowCursor) child.style.cursor = rowCursor
+        if (child.style.userSelect !== select) child.style.userSelect = select
+        if (child.style.webkitUserSelect !== select) child.style.webkitUserSelect = select
       }
-      if (handles) for (const h of node.querySelectorAll(handles)) h.style.cursor = cursor
+      if (handles) for (const h of node.querySelectorAll(handles)) if (h.style.cursor !== cursor) h.style.cursor = cursor
 
       if (!session) return
       // The host has rendered the list this module last handed it — find the
@@ -774,10 +937,15 @@ export function dndzone(getOptions) {
         if (i === shadowIdx) {
           if (!el.hasAttribute(SHADOW_ATTR)) {
             el.setAttribute(SHADOW_ATTR, '')
-            el.style.visibility = 'hidden'
             el.style.cursor = ''
-            config.transformDraggedElement?.(session.ghost, session.itemData, shadowIdx)
+            if (!session.keyboard) {
+              el.style.visibility = 'hidden'
+              config.transformDraggedElement?.(session.ghost, session.itemData, shadowIdx)
+            }
           }
+          // The keyed each moves the element on a reorder, and a moved element
+          // drops focus.
+          if (session.keyboard && !session.finalizing && document.activeElement !== el) el.focus()
         } else if (el.hasAttribute(SHADOW_ATTR)) {
           el.removeAttribute(SHADOW_ATTR)
           el.style.visibility = ''
@@ -805,6 +973,7 @@ export function dndzone(getOptions) {
     return () => {
       stop()
       node.removeEventListener('pointerdown', onPointerDown)
+      node.removeEventListener('keydown', onKeyDown)
       disarm()
       zoneRegistry.delete(node)
       typeIndex.get(config.type)?.delete(node)

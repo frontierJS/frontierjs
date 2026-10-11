@@ -119,3 +119,44 @@ describe('the dev server port', () => {
     }
   })
 })
+
+describe('what import.meta.env.DEV says in a build', () => {
+  // FJS-1232. Vite derives DEV/PROD from `process.env.NODE_ENV` ahead of the
+  // mode, and `fli new` scaffolds `NODE_ENV=development` into the `.env` the
+  // build scripts load -- so a `vite build`, whose mode is `production`,
+  // shipped every `if (import.meta.env.DEV)` branch the app wrote to keep out
+  // of production. The flag has to follow the mode it describes.
+  test('a production build under NODE_ENV=development still has DEV false and PROD true', async () => {
+    await writeFile(
+      join(TMP, 'src/flags.js'),
+      'export const flags = { dev: import.meta.env.DEV, prod: import.meta.env.PROD, mode: import.meta.env.MODE }\n',
+      'utf8'
+    )
+    const before = process.env.NODE_ENV
+    process.env.NODE_ENV = 'development'
+    try {
+      const config = createSierraViteConfig({
+        target: 'widget',
+        vite: {
+          root: TMP,
+          logLevel: 'silent',
+          build: {
+            outDir: join(TMP, 'dist-flags'),
+            emptyOutDir: true,
+            minify: false,
+            lib: { entry: join(TMP, 'src/flags.js'), formats: ['es'], fileName: 'flags' },
+          },
+        },
+      })
+      const result = await build(config)
+      const output = Array.isArray(result) ? result[0].output : result.output
+      const code = output.filter(c => c.type === 'chunk').map(c => c.code).join('\n')
+      expect(code).toMatch(/dev:\s*false/)
+      expect(code).toMatch(/prod:\s*true/)
+      expect(code).toMatch(/mode:\s*["']production["']/)
+    } finally {
+      if (before === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = before
+    }
+  }, 60_000)
+})

@@ -554,10 +554,13 @@ function runOne(srcPath, outPath, pipeline, { verbose, suppressWarnings = false 
   return { outPath, elapsed, sizeBytes }
 }
 
-export async function execute(configPath, { dryRun = false, verbose = true, outputPath, only = null, concurrency = 8, skipExisting = false, force = false, schemaPath = null } = {}, run) {
+// `config` is a path to a config module, or the module's shape ({ db, pipeline, … })
+// from a caller that built its pipeline in memory — a path there is imported as a
+// module, and the pipeline it built is never read.
+export async function execute(config, { dryRun = false, verbose = true, outputPath, only = null, concurrency = 8, skipExisting = false, force = false, schemaPath = null } = {}, run) {
   const totalT0 = performance.now()
-  const abs = resolve(configPath)
-  const mod = await import(`file://${abs}`)
+  const abs = typeof config === 'string' ? resolve(config) : null
+  const mod = abs ? await import(`file://${abs}`) : config
   const { db: dbPath, pipeline: rawPipeline, filename, redact: redactConfig } = resolveConfig(mod)
   const pipeline = flattenPipeline(rawPipeline ?? [])
   const { sharedPipeline, splitBy, postSplit } = parseShard(pipeline)

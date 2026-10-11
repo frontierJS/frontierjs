@@ -74,9 +74,8 @@ d('a server global named outside #host', () => {
     expect(v.threw).toBeNull()
   })
 
-  // FJS-2400: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  // core/client.js mints the cross-process writer id from process.pid.
-  test.failing('`announce crossProcess` opens, or is refused by name', () => {
+  // core/client.js mints the cross-process writer id through `#host`'s processId.
+  test('`announce crossProcess` opens, or is refused by name', () => {
     const v = answers['cross-process']
     expect(v.name).not.toBe('ReferenceError')
     expect(v.opened === true || v.code === 'HOST_UNAVAILABLE').toBe(true)
@@ -91,9 +90,8 @@ d('a server global named outside #host', () => {
     expect(v.landed).toBe(1)
   })
 
-  // FJS-2401: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  // core/backup.js is Bun.write and Bun.file behind no seam.
-  test.failing('$backup on a device is refused by name', () => {
+  // core/backup.js writes through #host, which refuses a file on a device.
+  test('$backup on a device is refused by name', () => {
     const v = answers['backup']
     expect(v.name).not.toBe('ReferenceError')
     expect(v.code).toBe('HOST_UNAVAILABLE')

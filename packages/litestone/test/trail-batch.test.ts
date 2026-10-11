@@ -50,7 +50,7 @@ describe('a real trail', () => {
       for (let i = 1; i <= 20; i++) await sys.thing.create({ data: { id: i, name: `t${i}` } })
       await tick(); await tick()
 
-      const lines = readFileSync(join(dir, 'audit', 'auditTrail.jsonl'), 'utf8').split('\n').filter(Boolean)
+      const lines = readFileSync(join(dir, 'audit', 'AuditTrail.jsonl'), 'utf8').split('\n').filter(Boolean)
       expect(lines.map(l => JSON.parse(l).records)).toEqual(Array.from({ length: 20 }, (_, i) => [i + 1]))
       // The index rows name the right lines — an indexed read answers each one.
       expect(await sys.auditTrail.count({ where: { model: 'Thing' } })).toBe(20)

@@ -18,7 +18,7 @@ export declare const $: Record<string, {
 
 export declare function params(values: Record<string, unknown>): void
 export declare function preview(configPath: string): Promise<void>
-export declare function execute(configPath: string, opts?: unknown, run?: unknown, pipeline?: unknown[]): Promise<unknown>
+export declare function execute(config: string | { db: string, pipeline?: unknown[], [key: string]: unknown }, opts?: unknown, run?: unknown): Promise<unknown>
 export declare function introspectSQL(db: unknown): Record<string, unknown>
 export declare function buildFKGraph(db: unknown): Record<string, string[]>
 export declare function parseLimit(n: unknown): number

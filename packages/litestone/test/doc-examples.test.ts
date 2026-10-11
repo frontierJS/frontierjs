@@ -149,7 +149,7 @@ async function runBlock(block: Block) {
     if (block.schema) writeFileSync(join(dir, 'schema.lite'), block.schema)
     const file = join(dir, block.lang === 'ts' ? 'example.ts' : 'example.mjs')
     writeFileSync(file, moduleFor(block))
-    const proc = Bun.spawn(['bun', file], { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: { ...process.env, NODE_ENV: 'test' } })
+    const proc = Bun.spawn(['bun', file], { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: { ...process.env, NODE_ENV: 'test', S3_KEY: 'key', S3_SECRET: 'secret' } })
     const timer = setTimeout(() => proc.kill(), TIMEOUT)
     const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
     clearTimeout(timer)

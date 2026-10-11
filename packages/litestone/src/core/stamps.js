@@ -155,7 +155,7 @@ function nextSequenceValue(db, model, field, scopeValue) {
 /**
  * @param {Row | null | undefined} data
  * @param {string} modelName
- * @param {{ field: string, scope: string }[]} seqs   the model's `@sequence` fields — `shape.sequences`
+ * @param {{ field: string, scope: string[] }[]} seqs   the model's `@sequence` fields — `shape.sequences`
  * @param {DbHandle} writeDb
  * @param {Set<string> | null} [stamped]
  */
@@ -163,8 +163,11 @@ export function applySequences(data, modelName, seqs, writeDb, stamped = null) {
   if (!seqs.length || !data) return data
   let out = data
   for (const { field, scope } of seqs) {
-    const scopeValue = out[scope]
-    if (scopeValue == null) continue  // can't sequence without a scope value
+    const values = scope.map(col => out[col])
+    if (values.some(v => v == null)) continue  // can't sequence without a scope value
+    // One column keeps its bare value as the counter key; a pair is a JSON list,
+    // so ('a,b', 'c') and ('a', 'b,c') cannot land on one counter.
+    const scopeValue = values.length === 1 ? values[0] : JSON.stringify(values.map(String))
     const explicitValue = out[field] != null ? Number(out[field]) : null
     if (explicitValue != null) {
       // Explicit value: sync the counter to max(current, explicit) so next auto continues from here

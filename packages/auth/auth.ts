@@ -1516,6 +1516,18 @@ export function createLitestoneAuth(
 
       const user = await sys.user.findFirst({ where: { email: pending.identifier } })
 
+      // The subject may have signed in on its own since the invitation was
+      // sent. Attaching it again would put one (provider, subject) on two
+      // accounts, and branch 1 would answer whichever row it reached first.
+      const type  = `oauth:${pending.provider}`
+      const taken = await sys.credential.findFirst({ where: { type, value: pending.subject } })
+      if (taken && taken.userId !== user?.id) {
+        await audit('oauth.link.refused', {
+          meta: { provider: providerName, reason: 'subject-taken' },
+        })
+        throw new OAuthError('That identity is already connected to another account')
+      }
+
       // Branch 3 on an unproven address: the account is made here, now that the
       // mailbox and the identity have both answered.
       if (!user) {
@@ -1542,13 +1554,10 @@ export function createLitestoneAuth(
         await sys.session.deleteMany({ where: { userId: user.id }, ...PURGE })
       }
 
-      await sys.credential.create({
-        data: {
-          userId: user.id,
-          type:   `oauth:${pending.provider}`,
-          value:  pending.subject,
-        }
-      })
+      // Already on this account and not evicted above: nothing to attach.
+      if (!taken || wasUnverified) {
+        await sys.credential.create({ data: { userId: user.id, type, value: pending.subject } })
+      }
 
       // The proof IS the verification — this is exactly what the address was
       // asked to demonstrate, and leaving the row unverified would send the

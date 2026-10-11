@@ -95,7 +95,7 @@ try {
   await ev(`setAuth(null)`)
   await new Promise(r => setTimeout(r, 600))
 
-  await ev(`selectTable('auditTrail')`)
+  await ev(`selectTable('AuditTrail')`)
   await new Promise(r => setTimeout(r, 700))
   const hidden = await ev(`document.getElementById('btnRandomRow').style.display`)
   ok('hidden on an append-only table', hidden === 'none', hidden)

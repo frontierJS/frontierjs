@@ -387,13 +387,9 @@ export async function buildBasecampApp(
   // is applied onto the config above rather than at a second install site.
 
   // ── Health + metrics ──────────────────────────────────────────────────
-  // GET /health  → liveness + readiness (503 if DB unreachable)
+  // GET /health  → liveness + readiness (503 if DB unreachable; createApp({ db }) registers that check)
   // GET /metrics → conduit + caravan stats merged in via registerMetricsSource
-  app.configure(healthPlugin({
-    checks: {
-      db: () => !!rawDb.query('SELECT 1').get(),
-    },
-  }))
+  app.configure(healthPlugin())
 
   // What /metrics says, KEPT. Every source above answers on request, and until
   // this the merged value lived for the duration of one response — so no

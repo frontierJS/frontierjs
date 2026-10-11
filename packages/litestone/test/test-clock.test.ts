@@ -7,10 +7,9 @@
  * here is a crossing — a window that opens, a retention that expires — and a
  * frozen instant asserts one side of one.
  *
- * The last describe is the one to read before trusting this. The clock does NOT
- * move `@default(now())` or `@updatedAt`, which SQLite stamps, and that is
- * asserted here rather than left to be discovered by somebody staging an old
- * row and watching it come back current (`FJS-531`).
+ * The last describe is the one to read before trusting this. The clock moves
+ * `@default(now())` and `@updatedAt` too, because the client stamps them in the
+ * statement rather than leaving them to SQLite (`FJS-531`).
  */
 
 import { describe, test, expect } from 'bun:test'

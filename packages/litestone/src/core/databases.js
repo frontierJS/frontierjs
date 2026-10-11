@@ -9,7 +9,7 @@
 // column names read back to field names.
 
 import { openDatabase, currentEngine } from './engine.js'
-import { applyWal, applyBusyTimeout, applyIncrementalVacuum, busyTimeoutFor } from './pragmas.js'
+import { applyWal, applyBusyTimeout, applyIncrementalVacuum, applyPageSize, busyTimeoutFor } from './pragmas.js'
 import { resolve, dirname, envVar, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname } from '#host'
 import { noteMintedDirectory } from './db-path.js'
 import { ClientClosedError } from './errors.js'
@@ -423,6 +423,7 @@ function openSqliteConnections(absPath, busyTimeout, shrinks) {
     applyBusyTimeout(rawWriteDb, busyTimeout)
     applyIncrementalVacuum(rawWriteDb)
   }
+  applyPageSize(rawWriteDb)
   const journal = currentEngine()?.journal
   if (journal) {
     applyBusyTimeout(rawWriteDb, busyTimeout)
@@ -433,18 +434,20 @@ function openSqliteConnections(absPath, busyTimeout, shrinks) {
   // enforced key refuses the whole batch holding it.
   const foreignKeys = currentEngine()?.foreignKeys === false ? 'OFF' : 'ON'
   rawWriteDb.run(`PRAGMA foreign_keys = ${foreignKeys}`)
-  rawWriteDb.run('PRAGMA page_size = 8192')
   rawWriteDb.run(`PRAGMA synchronous = ${journal?.synchronous ?? 'NORMAL'}`)
-  rawWriteDb.run('PRAGMA cache_size = -32768')
+  // A connection that serves reads as well has only the one cache to spend.
+  const single = currentEngine()?.singleConnection === true
+  rawWriteDb.run(`PRAGMA cache_size = ${single ? -4096 : -32768}`)
   rawWriteDb.run('PRAGMA temp_store = MEMORY')
   rawWriteDb.run('PRAGMA mmap_size = 268435456')
   rawWriteDb.run('PRAGMA wal_autocheckpoint = 1000')
 
   // :memory: databases cannot be opened as a separate read-only connection —
-  // reuse the write connection for reads instead.
-  const isMemory = absPath === ':memory:'
-  const rawReadDb = isMemory ? rawWriteDb : openDatabase(absPath, { readonly: true })
-  if (!isMemory) {
+  // reuse the write connection for reads instead. An engine declaring a single
+  // connection does the same for a file.
+  const shared = absPath === ':memory:' || single
+  const rawReadDb = shared ? rawWriteDb : openDatabase(absPath, { readonly: true })
+  if (!shared) {
     // Same order as the writer, and for the same reason: a reader does not
     // queue behind a writer in WAL, but it does during a checkpoint and on the
     // recovery a crashed writer leaves behind — which is exactly when the

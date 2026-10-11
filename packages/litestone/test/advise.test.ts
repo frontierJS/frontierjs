@@ -89,6 +89,13 @@ describe('required-system-unfilled', () => {
     expect(findings(`model Order { id Int @id  t String? @system }`, 'required-system-unfilled')).toEqual([])
     expect(findings(`model Order { id Int @id  t String @system @default("") }`, 'required-system-unfilled')).toEqual([])
   })
+
+  // FJS-2044: an array column is NOT NULL DEFAULT '[]', so a create that never names it succeeds.
+  test('silent on a scalar array, which already defaults to the empty list', () => {
+    expect(findings(`model Job { id Int @id  ids String[] @system }`, 'required-system-unfilled')).toEqual([])
+    expect(findings(`model Thing { id Int @id  ids String[] @guarded  @@gate("2.4.4.5") }`,
+      'required-guarded-uncreatable')).toEqual([])
+  })
 })
 
 describe('gate-over-own-standing', () => {
@@ -868,5 +875,59 @@ describe('retention-without-an-index', () => {
     const f = findings(src(`model Reading { id Int @id  v Int  createdAt DateTime @default(now())  deletedAt DateTime?  @@softDelete  @@index([createdAt]) }`), ID)
     expect(f).toHaveLength(1)
     expect(f[0].message).toContain('partial')
+  })
+})
+
+// FJS-2101
+describe('anonymous-create-auth-default', () => {
+  const rule = 'anonymous-create-auth-default'
+
+  test('fires on a public create with a required auth().id column', () => {
+    const f = findings(`
+      model Note {
+        id      Int    @id
+        ownerId Int    @default(auth().id)
+        @@gate("0.0.0.0")
+      }`, rule)
+    expect(f.length).toBe(1)
+    expect(f[0].severity).toBe('warn')
+    expect(f[0].model).toBe('Note')
+    expect(f[0].field).toBe('ownerId')
+    expect(f[0].message).toContain('auth().id')
+  })
+
+  test('fires where only the create position is 0', () => {
+    expect(findings(`
+      model Note {
+        id      Int @id
+        ownerId Int @default(auth().id)
+        @@gate("3.0.3")
+      }`, rule).length).toBe(1)
+  })
+
+  test('stays quiet when create needs a signed-in level', () => {
+    expect(findings(`
+      model Note {
+        id      Int @id
+        ownerId Int @default(auth().id)
+        @@gate("0.1.1")
+      }`, rule)).toEqual([])
+  })
+
+  test('stays quiet when the column is optional', () => {
+    expect(findings(`
+      model Note {
+        id      Int  @id
+        ownerId Int? @default(auth().id)
+        @@gate("0.0.0")
+      }`, rule)).toEqual([])
+  })
+
+  test('stays quiet with no gate declared', () => {
+    expect(findings(`
+      model Note {
+        id      Int @id
+        ownerId Int @default(auth().id)
+      }`, rule)).toEqual([])
   })
 })

@@ -32,7 +32,9 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient }           from '../../litestone/src/index.js'
 import { createApp }              from '../src/core/app.ts'
-import { createService, collectMethodInputs, methodEntryName } from '../src/core/service.ts'
+import { createService, collectMethodInputs, collectMethodOutputs, methodEntryName } from '../src/core/service.ts'
+import { describeSurface }    from '../src/core/app-model.ts'
+import { generateOpenAPI }    from '../src/plugins/openapi/index.ts'
 
 const SCHEMA = `
   type PayOrder {
@@ -77,7 +79,7 @@ describe('methods: entries', () => {
 
   test('an entry that is neither is refused by name', () => {
     expect(() => methodEntryName({ input: 'PayOrder' } as never, 'orders'))
-      .toThrow(/must be a method name or \{ method, input, gate \}/)
+      .toThrow(/must be a method name or \{ method, input, output, gate \}/)
     expect(() => methodEntryName(7 as never, 'orders')).toThrow(/orders/)
   })
 
@@ -286,5 +288,50 @@ describe('an object entry narrows, exactly as a name does', () => {
     const d = (app.services.get('orders') as { describe(): { methods: string[]; inputs: Record<string,string> } }).describe()
     expect(d.methods.sort()).toEqual(['find', 'pay'])
     expect(d.inputs).toEqual({ pay: 'PayOrder' })
+  })
+})
+
+// ─── the declared answer (FJS-1410) ───────────────────────────────────────
+
+describe('a declared output is reported', () => {
+  const SEARCH = `
+    type Hit { url String  title String  snippet String? }
+    type SearchResult { hits Hit[] }
+    model Order { id Int @id }
+  `
+
+  test('collectMethodOutputs keys the declared types by method, input untouched', () => {
+    const entries = ['find', { method: 'search', input: 'PayOrder', output: 'SearchResult' }]
+    expect(collectMethodOutputs(entries, 's')).toEqual({ search: 'SearchResult' })
+    expect(collectMethodInputs(entries, 's')).toEqual({ search: 'PayOrder' })
+    expect(collectMethodOutputs(['find', 'search'], 's')).toEqual({})
+    expect(collectMethodOutputs(undefined, 's')).toEqual({})
+  })
+
+  test('output must name a type, not a schema object', () => {
+    expect(() => collectMethodOutputs([{ method: 'search', output: {} as never }], 'orders'))
+      .toThrow(/\.output must name a `type`/)
+  })
+
+  test('describe() and the surface carry it, and so does the OpenAPI answer', async () => {
+    const db  = await createClient({ db: ':memory:', schema: SEARCH })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({
+      name: 'orders', model: 'Order', db: db as never,
+      methods: [{ method: 'search', output: 'SearchResult', read: true }] as never,
+      async search() { return { hits: [] } },
+    } as never))
+    await app._startForTest()
+
+    expect(app.services.get('orders')!.describe().outputs).toEqual({ search: 'SearchResult' })
+    const surface = describeSurface(app)
+    expect(surface.services.find(s => s.name === 'orders')!.outputs).toEqual({ search: 'SearchResult' })
+
+    const { generateJsonSchema } = await import('../../litestone/src/index.js')
+    const defs = (generateJsonSchema((db as any).$schema, { mode: 'create' }) as any).$defs
+    const spec = generateOpenAPI(app, { title: 't', version: '1' }, defs) as any
+    const ok   = spec.paths['/orders/{id}'].post.responses['200']
+    expect(ok.content['application/json'].schema).toEqual({ $ref: '#/components/schemas/SearchResult' })
+    expect(spec.components.schemas.SearchResult).toBeDefined()
   })
 })

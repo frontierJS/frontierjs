@@ -897,7 +897,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
     // ── @point ──────────────────────────────────────────────────────────────
     //
-    // The ONE operator a point answers. Everything else is refused by name,
+    // `near`, `null` and `{ not: null }` are what a point answers. Everything else is refused by name,
     // because the stored value is JSON and JSON compares as text: `equals` on a
     // coordinate would match the serialized bytes, key order and punctuation
     // included, and answer an empty list with a 200 — which is the same shape
@@ -905,13 +905,16 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     const pointInfo = pointMap?.[key]
     if (pointInfo && val !== null && typeof val === 'object' && !Array.isArray(val)) {
       const ops = Object.keys(val)
-      const other = ops.filter(o => o !== 'near')
+      const other = ops.filter(o => o !== 'near' && !(o === 'not' && val.not === null))
       if (other.length)
         throw new ValidationError([{ path: ['where', key], message:
-          `"${other[0]}" cannot be asked of "${key}" — it is a @point, and the only filter a point answers is ` +
-          `"near": { lat, lng, within: '5mi' }. Its coordinate columns are derived and not filterable directly.` }])
-      if (ops.includes('near')) {
-        clauses.push(nearSql({ prefix: aliasPrefix }, key, pointInfo, val.near, params))
+          `"${other[0]}" cannot be asked of "${key}" — it is a @point, and a point answers "near": { lat, lng, within: '5mi' }, ` +
+          `\`null\` for no location and \`{ not: null }\` for a location. Its coordinate columns are derived and not filterable directly.` }])
+      if (ops.length) {
+        const parts = []
+        if (ops.includes('near')) parts.push(nearSql({ prefix: aliasPrefix }, key, pointInfo, val.near, params))
+        if (ops.includes('not')) parts.push(`${aliasPrefix}${quoteIdent(columnMap?.[key] ?? key)} IS NOT NULL`)
+        clauses.push(parts.length > 1 ? `(${parts.join(' AND ')})` : parts[0])
         continue
       }
     }
@@ -1816,8 +1819,9 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, shapes, j
  * @param {Record<string, any>} shapes   `ctx.shapes`; the relations, computed and @from fields and column map are this model's
  * @param {any} include
  * @param {any} computedFns
+ * @param {Set<string> | null} [windowNames]  the call's `window` keys: requested, but no column to read
  */
-export function parseSelectArg(select, modelName, shapes, include, computedFns) {
+export function parseSelectArg(select, modelName, shapes, include, computedFns, windowNames = null) {
   if (!select) return null
 
   const shape          = shapes[modelName]
@@ -1854,6 +1858,10 @@ export function parseSelectArg(select, modelName, shapes, include, computedFns) 
     } else if ((key in tableFrom)) {
       // @from field — subquery is injected at buildSQL time, track for trimming
       requestedFrom.add(key)
+
+    } else if (windowNames?.has(key)) {
+      // Computed by the window, not stored: naming it as a column would bind
+      // an unknown identifier, which SQLite reads as a string constant.
 
     } else {
       // Normal DB column — value can be true or an options object e.g. { resolve: false }

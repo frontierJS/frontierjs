@@ -356,4 +356,70 @@ export async function run(t) {
     await t.eventually(focused, stop, `ArrowDown reaches ${stop}`)
   }
   await t.press('Escape')
+
+  /* ── a row with an end text and a trailing icon ───────────────────────── */
+
+  await t.mount('dropdown')
+  await openMenu('dd-rich')
+  const part = (text, sel) => t.evaluate(`
+    const r = ${row(text)}; const el = r && r.querySelector('${sel}');
+    return el ? { text: el.textContent.trim(), after: el.getBoundingClientRect().left >= r.querySelector('[data-part=label]').getBoundingClientRect().right - 1 } : null;
+  `)
+  const alpha = await part('Alpha', '[data-part=suffix]')
+  t.is(alpha?.text, '12', 'suffix draws end text on the row')
+  t.ok(alpha?.after, 'after the label')
+  t.ok(await t.evaluate(`return !!${row('Beta')}.querySelector('#dd-trail');`), 'a trailing snippet draws on the row')
+  t.ok((await part('Beta', '#dd-trail'))?.after, 'after the label')
+  t.is(await t.evaluate(`return ${row('Bravo')}.querySelector('[data-part=suffix]').textContent.trim() + ${row('Bravo')}.querySelector('kbd').textContent.trim();`),
+    '3⌘B', 'and suffix and kbd sit together')
+
+  /* ── Home, End, and type-to-jump ──────────────────────────────────────── */
+
+  await t.evaluate(`document.querySelector('[role=menu]').focus(); return true;`)
+  await t.press('End')
+  await t.eventually(focused, 'Bravo 3 ⌘B', 'End lands on the last item')
+  await t.press('Home')
+  await t.eventually(focused, 'Alpha 12', 'Home lands on the first item')
+  await t.press('b')
+  await t.eventually(focused, 'Beta', 'a letter jumps to the next row that starts with it, skipping a disabled one')
+  await new Promise((r) => setTimeout(r, 700))
+  await t.press('b')
+  await t.eventually(focused, 'Bravo 3 ⌘B', 'the same letter again walks on to the next match')
+  await new Promise((r) => setTimeout(r, 700))
+  await t.press('a')
+  await t.eventually(focused, 'Alpha 12', 'and wraps')
+  await new Promise((r) => setTimeout(r, 700))
+  await t.press('b')
+  await t.press('r')
+  await t.eventually(focused, 'Bravo 3 ⌘B', 'letters typed together narrow the match')
+  await t.press('Escape')
+
+  /* ── a side and an alignment ──────────────────────────────────────────── */
+
+  const placed = async (placement) => {
+    await t.mount('dropdown', { side: placement })
+    await t.evaluate(`document.querySelector('#dd-side').scrollIntoView({ block: 'center' }); return true;`)
+    await t.clickAt('#dd-side')
+    await t.evaluate(`return await waitVisible('[role=menu]');`)
+    await t.evaluate(`return await waitSettled('body');`)
+    const at = await t.evaluate(`
+      const tr = document.querySelector('#dd-side').getBoundingClientRect();
+      const p  = document.querySelector('.popover').getBoundingClientRect();
+      const n = (v) => Math.round(v);
+      return { cx: n(p.left + p.width / 2 - (tr.left + tr.width / 2)), gapX: n(p.left - tr.right), gapLeft: n(tr.left - p.right),
+               dy: n(p.top - tr.top), below: n(p.top - tr.bottom), cy: n(p.top + p.height / 2 - (tr.top + tr.height / 2)),
+               dyEnd: n(p.bottom - tr.bottom) };
+    `)
+    await t.press('Escape')
+    return at
+  }
+
+  const centered = await placed('bottom-center')
+  t.ok(Math.abs(centered.cx) <= 1 && centered.below > 0, `bottom-center lines the panel's middle up with the trigger's (${centered.cx}px off)`)
+  const right = await placed('right-start')
+  t.ok(right.gapX > 0 && right.gapX < 24 && right.dy === 0, `right-start opens beside the trigger, top edges level (${right.gapX}px, dy ${right.dy})`)
+  const rightEnd = await placed('right-end')
+  t.ok(rightEnd.gapX > 0 && rightEnd.dyEnd === 0, `right-end lines the bottom edges up (${rightEnd.dyEnd})`)
+  const left = await placed('left-center')
+  t.ok(left.gapLeft > 0 && left.gapLeft < 24 && Math.abs(left.cy) <= 1, `left-center opens on the left, centered on the trigger (${left.gapLeft}px, cy ${left.cy})`)
 }

@@ -1308,6 +1308,11 @@ function scalarOperand(node, ctx, modelName) {
 // schema. `modelName` follows the recursion into a related model's policy, so
 // the answer is that model's own map rather than the one we started from.
 const _policyColumnMaps = new WeakMap()
+function fieldColumnName(ctx, modelName, name) {
+  const rel = relationsOf(ctx, modelName)[name]
+  return rel?.kind === 'belongsTo' ? rel.foreignKey : name
+}
+
 function policyColumn(schema, modelName, field) {
   if (!schema || !modelName) return field
   let byModel = _policyColumnMaps.get(schema)
@@ -1416,7 +1421,11 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       // to a comparison against the text `'ownerId'`, matched nothing, and every
       // read on the model answered an empty list (`FJS-761`). The JS half needs
       // no counterpart — `evalJs` reads a row that is already field-keyed.
-      return `"${policyColumn(schema, modelName, node.name)}"`
+      //
+      // A `belongsTo` name is the RELATION and the value is on its foreign key,
+      // as every other operand position already reads it; left alone it is the
+      // same unknown identifier, and `owner == auth().id` admitted no row.
+      return `"${policyColumn(schema, modelName, fieldColumnName(ctx, modelName, node.name))}"`
 
     case 'path':
       return pathSql(node, ctx, modelName)

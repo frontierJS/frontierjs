@@ -127,6 +127,9 @@ const CLEAN = {
     JSON.stringify({ name: '@acme/skin', exports: { './index.css': './src/index.css' } }),
   'node_modules/@acme/skin/src/index.css':
     ':root { --gap: 1rem; --rule: #ddd; }\n',
+  // The vocabulary `css-raw-utility` counts semantic classes against.
+  'node_modules/@frontierjs/css/vocabulary.json':
+    JSON.stringify({ terms: [{ term: 'Button', class: 'btn' }], notATerm: { tone: ['danger'] } }),
   'node_modules/@acme/kit/package.json':
     JSON.stringify({ name: '@acme/kit', exports: { './schema.lite': './db/kit.lite' } }),
   'node_modules/@acme/kit/db/kit.lite':
@@ -1127,6 +1130,49 @@ describe('the silent config hazards', () => {
     const { findings } = only(root, 'vite-strict-port')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/hops to the next free port/)
+  })
+
+  // The flag is a property of the config a surface RETURNS, so a config that
+  // hands its server block to a factory is graded by what the factory returns.
+  test('a vite config whose factory sets strictPort is clean', () => {
+    const root = tree('v-port-factory', {
+      ...CLEAN,
+      'web/config/factory.js': 'export const make = () => ({ server: { port: 8010, strictPort: true } })\n',
+      'web/config/vite.config.js': `import { make } from './factory.js'\nexport default make()\n`,
+    })
+    expect(only(root, 'vite-strict-port').findings).toEqual([])
+  })
+
+  test('a vite config whose factory leaves strictPort off is an error', () => {
+    const root = tree('v-port-factory-off', {
+      ...CLEAN,
+      'web/config/factory.js': 'export const make = () => ({ server: { port: 8010 } })\n',
+      'web/config/vite.config.js': `import { make } from './factory.js'\nexport default make()\n`,
+    })
+    expect(only(root, 'vite-strict-port').findings).toHaveLength(1)
+  })
+
+  test('the word in a comment is not the flag, and a function export is called', () => {
+    const root = tree('v-port-comment', {
+      ...CLEAN,
+      'web/config/vite.config.js': `// strictPort\nexport default () => ({ server: { port: 8010 } })\n`,
+    })
+    expect(only(root, 'vite-strict-port').findings).toHaveLength(1)
+    const fn = tree('v-port-fn', {
+      ...CLEAN,
+      'web/config/vite.config.js': `export default ({ mode }) => ({ server: { strictPort: mode === 'development' } })\n`,
+    })
+    expect(only(fn, 'vite-strict-port').findings).toEqual([])
+  })
+
+  test('a config that cannot be loaded is graded by its text', () => {
+    const root = tree('v-port-unloadable', {
+      ...CLEAN,
+      'web/config/vite.config.js': `import 'not-a-package-anywhere'\nexport default { server: { strictPort: true } }\n`,
+      'widgets/config/vite.config.js': `import 'not-a-package-anywhere'\nexport default { server: { port: 8200 } }\n`,
+    })
+    const { findings } = only(root, 'vite-strict-port')
+    expect(findings.map(f => relative(root, f.file))).toEqual(['widgets/config/vite.config.js'])
   })
 
   // Port 0 as well as a fixed one: port 0 fixed the collision and left the
@@ -4300,5 +4346,107 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     })
     expect(f).toHaveLength(2)
     expect(f.map(x => x.message).join('\n')).toMatch(/service/)
+  })
+})
+
+// FJS-373: css-token-undefined and css-raw-literal read a stylesheet; the class
+// attribute is where an app out-competes the vocabulary under deadline.
+describe('an app\'s markup names things, not colors (FJS-373)', () => {
+  const VOCAB = JSON.stringify({
+    terms: [{ term: 'Button', class: 'btn' }, { term: 'Card', class: 'card' }, { term: 'Heading', class: null }],
+    notATerm: { tone: ['primary', 'danger'], treatment: ['outlined', 'ghost'], density: ['dense'] },
+  })
+  const withCss = (name, pages) => tree(name, {
+    ...CLEAN,
+    'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*', '@frontierjs/css': '*' } }),
+    'node_modules/@frontierjs/css/package.json':
+      JSON.stringify({ name: '@frontierjs/css', exports: { './vocabulary.json': './vocabulary.json' } }),
+    'node_modules/@frontierjs/css/vocabulary.json': VOCAB,
+    ...pages,
+  })
+
+  test('more raw color utilities than semantic classes is one finding naming the worst files', () => {
+    const root = withCss('rawutil-bad', {
+      'web/src/pages/a.mesa': '<p class="text-gray-500 bg-gray-100 hover:text-red-600">x</p>\n<button class="btn">y</button>\n',
+      'web/src/pages/b.mesa': '<p class="bg-white">x</p>\n',
+    })
+    const { findings } = only(root, 'css-raw-utility')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/4 raw color/)
+    expect(findings[0].message).toMatch(/1 semantic/)
+    expect(findings[0].message).toMatch(/a\.mesa \(3\)/)
+  })
+
+  test('semantic classes outnumbering the raw ones is quiet', () => {
+    const root = withCss('rawutil-ok', {
+      'web/src/pages/a.mesa': '<button class="btn outlined danger">x</button>\n<p class="card text-gray-500">y</p>\n',
+    })
+    expect(only(root, 'css-raw-utility').findings).toEqual([])
+  })
+
+  test('a layout utility and a word in prose are not colors', () => {
+    const root = withCss('rawutil-layout', {
+      'web/src/pages/a.mesa': '<p class="flex gap-2 p-4 text-sm font-bold">text-gray-500 in prose</p>\n',
+    })
+    expect(only(root, 'css-raw-utility').findings).toEqual([])
+  })
+
+  test('an app without @frontierjs/css is skipped', () => {
+    const root = tree('rawutil-none', { ...CLEAN, 'web/src/pages/a.mesa': '<p class="text-gray-500">x</p>\n' })
+    expect(only(root, 'css-raw-utility').skipped).toBeTruthy()
+  })
+})
+
+// ─── connector-contract ───────────────────────────────────────────────────────
+//
+// FJS-D890: an official connector ships a sink and a drive, always, and rides on
+// conduit as a peer. Nothing graded it, so a connector missing its sink was
+// silent until an app's drive found a request leaving the process (FJS-2544).
+
+describe('connector-contract', () => {
+  const PEER = JSON.stringify({ name: '@frontierjs/conduit-thing', peerDependencies: { '@frontierjs/conduit': '^0.1.0' } })
+  const conn = (label, files) => tree('cc-' + label, Object.fromEntries(
+    Object.entries(files).map(([f, body]) => [`packages/conduit-thing/${f}`, body])))
+  const check = (root) => runChecks({ root, scope: 'repo', only: ['connector-contract'] })
+
+  test('a connector holding a sink, a drive and the peer is silent', () => {
+    const root = conn('whole', { 'package.json': PEER, 'src/sink.ts': '//\n', 'test/drive.test.ts': '//\n' })
+    expect(check(root).findings).toEqual([])
+  })
+
+  test('a connector with no sink is an error naming the sink', () => {
+    const root = conn('no-sink', { 'package.json': PEER, 'test/drive.test.ts': '//\n' })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/sink/)
+    expect(findings[0].message).not.toMatch(/drive.*peer/)
+  })
+
+  test('a connector with no drive is an error naming the drive', () => {
+    const root = conn('no-drive', { 'package.json': PEER, 'src/stripe-sink.ts': '//\n' })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/drive/)
+  })
+
+  test('a connector that does not declare conduit as a peer is an error', () => {
+    const root = conn('no-peer', {
+      'package.json': JSON.stringify({ name: '@frontierjs/conduit-thing', dependencies: { '@frontierjs/conduit': '^0.1.0' } }),
+      'src/sink.ts': '//\n', 'test/drive.test.ts': '//\n' })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/peer/)
+  })
+
+  test('a sink or drive under node_modules does not count', () => {
+    const root = conn('vendored', { 'package.json': PEER, 'node_modules/x/sink.ts': '//\n', 'node_modules/x/drive.ts': '//\n' })
+    expect(check(root).findings).toHaveLength(1)
+  })
+
+  test('with no conduit-* package the rule skips, and names why', () => {
+    const root = tree('cc-none', { 'packages/conduit/package.json': '{"name":"@frontierjs/conduit"}' })
+    const { findings, skipped } = check(root)
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
   })
 })

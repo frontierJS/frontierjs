@@ -101,6 +101,14 @@
 // batch holding one child whose parent is outside it (`FJS-D485`, `FJS-1373`).
 // The server enforced them already; the replica is a cache.
 //
+//   engine.singleConnection  →  true, or absent
+//
+// A file normally gets a writer and a read-only reader, each with its own page
+// cache. An engine whose runtime executes one call at a time — the browser's
+// worker — declares `true`: the reader would never run beside the writer, every
+// write empties its cache, and its 32 MB is heap a phone does not have. The
+// writer then serves reads too, as it does for `:memory:`, with a 4 MB cache.
+//
 // It is absent-by-default rather than required: an engine that says nothing
 // about vectors is complete, which is what keeps `REQUIRED` at one entry and
 // keeps a third-party engine from having to answer a question it has no stake

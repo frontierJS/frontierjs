@@ -769,6 +769,8 @@ export interface LitestoneClient {
   $retain(): Promise<RetainResult[]>
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
+  /** True while every SQLite connection answers; throws when one does not, a closed client included. */
+  $ping(): true
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
   /**
    * Runs many per-table query() calls in one snapshot transaction and returns
@@ -1387,7 +1389,9 @@ export declare class Seeder {
   static dependsOn?: Array<new () => Seeder>
   /** Run other seeders, dependencies first. */
   call(db: AnyLitestoneClient, seederClasses: Array<new () => Seeder>): Promise<void>
-  static once(db: AnyLitestoneClient, key: string, fn: () => Promise<void>): Promise<void>
+  once(db: AnyLitestoneClient, key: string, fn: () => Promise<void>): Promise<void>
+  /** Un-record a `once()` key so its block runs again; a no-op on a database that never ran one. */
+  forget(db: AnyLitestoneClient, key: string): Promise<void>
 }
 
 export declare function runSeeder(db: AnyLitestoneClient, SeederClass: new () => Seeder): Promise<void>

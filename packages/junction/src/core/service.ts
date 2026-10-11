@@ -246,6 +246,8 @@ export interface ServiceDescription {
    * place it is written is a service file nobody calling the API can read.
    */
   inputs:     Record<string, string>
+  /** The `type` in the seed each method answers with, keyed by method. */
+  outputs:    Record<string, string>
   /**
    * The level each custom method declared in `methods:`, keyed by method.
    *
@@ -340,6 +342,9 @@ export interface Service {
    * form, for `describe()` and everything that reads it.
    */
   _inputs?: Record<string, string>
+
+  /** The declared `output:` type per method, as `_inputs` is for `input:`. */
+  _outputs?: Record<string, string>
 
   /**
    * The level each custom method DECLARED in `methods:`, keyed by name. The
@@ -1597,6 +1602,17 @@ export interface MethodDeclaration {
   method: string
   input?: string
   /**
+   * The `type` in the seed this method ANSWERS with.
+   *
+   * A custom method's answer is neither a model row nor derivable from one, so
+   * without a declaration the shape a Resource or `<Table>` binds to lived only
+   * in the method body and drifted from the seed's `type` with nothing noticing.
+   * Stated here, it is reported by `describe().outputs`, the surface snapshot
+   * and the OpenAPI response. It documents the answer; it does not reshape or
+   * validate it.
+   */
+  output?: string
+  /**
    * The standing this method requires, on the 0–9 ladder.
    *
    * A custom method's authority is the one thing about it that cannot be
@@ -1655,7 +1671,7 @@ export function methodEntryName(entry: MethodEntry, serviceName: string): string
     return entry.method
   throw new TypeError(
     `[Junction] service '${serviceName}': every methods entry must be a method name ` +
-    `or { method, input, gate }, got ${JSON.stringify(entry)}`
+    `or { method, input, output, gate }, got ${JSON.stringify(entry)}`
   )
 }
 
@@ -1776,6 +1792,22 @@ export function collectMethodInputs(
   declared:    MethodPolicy | undefined,
   serviceName: string,
 ): Record<string, string> {
+  return collectTypeNames(declared, serviceName, 'input')
+}
+
+/** The `output:` declarations in a `methods:` list, keyed by method name. */
+export function collectMethodOutputs(
+  declared:    MethodPolicy | undefined,
+  serviceName: string,
+): Record<string, string> {
+  return collectTypeNames(declared, serviceName, 'output')
+}
+
+function collectTypeNames(
+  declared:    MethodPolicy | undefined,
+  serviceName: string,
+  key:         'input' | 'output',
+): Record<string, string> {
   if (!Array.isArray(declared)) return {}
 
   const out:  Record<string, string> = {}
@@ -1789,12 +1821,13 @@ export function collectMethodInputs(
     )
     seen.add(name)
 
-    if (typeof entry === 'string' || entry.input === undefined) continue
-    if (typeof entry.input !== 'string' || !entry.input.trim()) throw new TypeError(
-      `[Junction] service '${serviceName}': methods['${name}'].input must name a ` +
-      `\`type\` declared in the schema, got ${JSON.stringify(entry.input)}`
+    if (typeof entry === 'string' || entry[key] === undefined) continue
+    const type = entry[key]
+    if (typeof type !== 'string' || !type.trim()) throw new TypeError(
+      `[Junction] service '${serviceName}': methods['${name}'].${key} must name a ` +
+      `\`type\` declared in the schema, got ${JSON.stringify(type)}`
     )
-    out[name] = entry.input
+    out[name] = type
   }
 
   return out
@@ -2786,6 +2819,7 @@ export function createService(def: ServiceDefinition): Service {
         idField:    (meta.idField as string) ?? 'id',
         transactional: [...(service._transactional ?? [])],
         inputs:        { ...(service._inputs ?? {}) },
+        outputs:       { ...(service._outputs ?? {}) },
         methodGates:   { ...(service._methodGates ?? {}) },
         methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
         readMethods:   [...(service._readMethods ?? [])],
@@ -2908,6 +2942,7 @@ export function createService(def: ServiceDefinition): Service {
   }
 
   ;(service as Service)._inputs = methodInputs
+  ;(service as Service)._outputs = collectMethodOutputs(def.methods, defName ?? '(unnamed)')
   ;(service as Service)._methodGates = declaredGates
   ;(service as Service)._methodClaims = declaredClaims
   ;(service as Service)._readMethods = declaredReads

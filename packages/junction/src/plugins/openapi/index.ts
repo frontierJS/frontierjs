@@ -606,6 +606,28 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions, defs?: Record<st
         }))
         .filter((b): b is { name: string; schema: OASchema } => !!b.schema)
 
+      // A declared `output:` names the type the method answers with. Like the
+      // body, the operation is one for every method, so the answers are a
+      // `oneOf` titled by method.
+      const outputs: Record<string, string> = service.describe().outputs ?? {}
+      const answered = customMethods.filter(m => outputs[m]).map(m => {
+        const typeName = outputs[m]!
+        const def      = defs?.[typeName] as OASchema | undefined
+        if (def) spec.components.schemas[typeName] = def
+        const schema = def
+          ? { $ref: `#/components/schemas/${typeName}` } as unknown as OASchema
+          : { type: 'object', description: `Declared output type \`${typeName}\` (not resolved — pass the seed's $defs to generateOpenAPI)` } as OASchema
+        return { name: m, schema }
+      })
+      const answers200 = answered.length
+        ? {
+            description: 'Success',
+            content: { 'application/json': { schema: (answered.length === 1
+              ? answered[0]!.schema
+              : { oneOf: answered.map(a => ({ title: a.name, ...a.schema })) }) as unknown as OASchema } },
+          }
+        : { description: 'Success' }
+
       resource.post = {
         operationId: `call${serviceName.charAt(0).toUpperCase()}${serviceName.slice(1)}Method`,
         summary:     `Custom methods on ${serviceName}`,
@@ -630,7 +652,7 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions, defs?: Record<st
           },
         } : {}),
         responses: {
-          '200': { description: 'Success' },
+          '200': answers200,
           ...errorResponses('400', '401', '403', '404', '422'),
         },
       }

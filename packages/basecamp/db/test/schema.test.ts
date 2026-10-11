@@ -131,7 +131,7 @@ function scratchDir(label: string): string {
  * genuine failure is still a failure. Every caller states a timeout above that.
  */
 async function auditEntries(dir: string, model: string, ops: string[]): Promise<any[]> {
-  const file = join(dir, 'auditTrail.jsonl')
+  const file = join(dir, 'AuditTrail.jsonl')
   const read = () => {
     try {
       return readFileSync(file, 'utf8').trim().split('\n')
@@ -463,10 +463,10 @@ describe('audit logging', () => {
     })
     await sys.secret.update({ where: { id: s.id }, data: { data: '{"priv":"ROTATED-CANARY"}' } })
 
-    const entries = await auditEntries(auditDir, 'secret', ['create', 'update'])
+    const entries = await auditEntries(auditDir, 'Secret',['create', 'update'])
     db.$close()
 
-    const file = join(auditDir, 'auditTrail.jsonl')
+    const file = join(auditDir, 'AuditTrail.jsonl')
     expect(existsSync(file)).toBe(true)
     const log = readFileSync(file, 'utf8')
 
@@ -1591,7 +1591,7 @@ describe('ApiKey — the token Basecamp issues', () => {
       data:  { revokedAt: new Date().toISOString(), credentialId: null },
     })
 
-    const entries = await auditEntries(auditDir, 'api_key', ['create', 'update'])
+    const entries = await auditEntries(auditDir, 'ApiKey',['create', 'update'])
 
     db.$close()
     expect(entries.map(e => e.operation)).toContain('create')

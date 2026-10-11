@@ -305,6 +305,23 @@ export interface PolicyMismatch {
   message: string
 }
 
+export type TenantIsolationOp = 'read' | 'create' | 'update' | 'delete' | 'post-update'
+
+/**
+ * `'leaked'` is the finding. `'unreachable'` (the owning tenant cannot reach its
+ * own row) and `'unscoped'` (nothing scopes the model) are findings too.
+ * `'graded'` and `'exempt'` say what was crossed or declared out; `'skipped'`,
+ * `'uncheckable'` and `'error'` say what was not.
+ */
+export interface TenantIsolationVerdict {
+  /** `null` for a verdict about the schema as a whole. */
+  model:   string | null
+  op:      TenantIsolationOp | null
+  actor:   'A' | 'B' | 'nobody' | null
+  got:     'graded' | 'exempt' | 'skipped' | 'leaked' | 'unscoped' | 'unreachable' | 'uncheckable' | 'error'
+  message: string
+}
+
 /**
  * `env.factories`, each answering its model's row: keyed by the client's own
  * table accessors, so `factories.user.createOne()` is a `User` and an accessor
@@ -334,6 +351,11 @@ export interface TestEnv<TClient = RegisteredClient> {
   schema:    ParseResult['schema']
   /** The throwaway directory holding this env's databases. */
   dir:       string
+  /**
+   * The main database file. A test that reads the bytes on disk, or opens the
+   * same file from a second process, needs the path rather than the client.
+   */
+  path:      string
   /**
    * The clock every client this env opened reads — including the ones `atLevel`
    * builds, so moving it moves those too.
@@ -396,6 +418,23 @@ export interface TestEnv<TClient = RegisteredClient> {
     principal?: unknown
     ops?:       Array<'read' | 'update' | 'delete' | 'create'>
   }): Promise<PolicyMismatch[]>
+
+  /**
+   * Every tenant-scoped model, actually crossed: a row seeded for tenant A,
+   * then tenant B and a caller holding no tenant claim try to read, create,
+   * update, delete and move it. A row they reach is `'leaked'`; a model nothing
+   * scopes is `'unscoped'`; a tenant A that cannot reach its own row is
+   * `'unreachable'`, so a model nothing can see never reads as isolated.
+   *
+   * Answers one `'skipped'` verdict, rather than an empty array, for a schema
+   * with no `tenancy { }` block or a `strategy` other than `row`. `actors`
+   * states the two principals where the declaration cannot derive them.
+   */
+  verifyTenantIsolation(opts?: {
+    against?: ParseResult['schema'] | null
+    actors?:  [Record<string, unknown>, Record<string, unknown>] | null
+    ops?:     TenantIsolationOp[]
+  }): Promise<TenantIsolationVerdict[]>
 
   /**
    * Executes `generateValidationCases` against the real write path and returns
@@ -473,9 +512,10 @@ export interface TestEnvOptions extends Record<string, unknown> {
    * is your own source and `env.clock` will refuse to move it. Absent is the
    * wall clock, and `set`/`advance` freeze it from that point.
    *
-   * It moves `now()` in a row policy and `@@softDelete`'s stamp. It does NOT
-   * move `@default(now())` or `@updatedAt`, which SQLite stamps (`FJS-531`) —
-   * state those on the write when a row has to be old.
+   * It moves everything the client writes or grades against: `now()` in a row
+   * policy, `@@softDelete`'s stamp, `@default(now())`, `@updatedAt` on create
+   * and update, and the retention cutoff (`FJS-531`). A raw `UPDATE` stamps
+   * nothing, so state the timestamp there.
    */
   now?: Date | string | (() => Date | string)
   /** Generate a factory for every SQLite-backed model. Without it `env.factories` is empty. */

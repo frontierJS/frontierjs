@@ -357,3 +357,11 @@ test('match: operators — case folding is ASCII only, as SQLite LIKE is', funct
   assert.equal(match(row({ name: 'CAFÉ' }), { name: { $like: 'caf' } }), true)
   assert.equal(match(row({ name: 'café' }), { name: { $start: 'CAF' } }), true)
 })
+
+
+test('match: operators — a scalar operand to hasEvery/hasSome/hasNone is undecidable', function () {
+  // FJS-2210: the contract is null (ask the server); an `operand.every` threw instead.
+  for (const op of ['hasEvery', 'hasSome', 'hasNone']) {
+    assert.equal(match(row(), { tags: { [op]: 'a' } }), null)
+  }
+})

@@ -15,6 +15,10 @@
 // invisible to them and plainly there under `asSystem()`.
 
 import { describe, it, expect } from 'bun:test'
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { createClient } from '../../litestone/src/index.js'
 import { toDataPrincipal, withLitestoneDb } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
@@ -97,5 +101,43 @@ describe('withLitestoneDb scopes with the translated principal', () => {
     // Cast: ctx.locals.db is typed as a LitestoneClient and this spy is the
     // minimal shape withLitestoneDb actually touches.
     expect(ctx.locals.db as unknown).toBe(client as unknown)
+  })
+})
+
+// FJS-2514 — the app's own principal is a service, and the trail says so.
+// `actorTypeOf` reads `auth.type`; a SessionContext states `userType`, and the
+// one translation between the two shapes is `toDataPrincipal`. Asserted against
+// a REAL client: a unit test on either side of the crossing passes unwired.
+describe('toDataPrincipal carries the kind of caller to the audit trail', () => {
+  const SYSTEM = { userId: 'system', userType: 'service', role: 'system', authMethod: 'created' }
+
+  const writeAs = async (principal: unknown) => {
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-dp-'))
+    try {
+      const db: any = await createClient({
+        schema: `
+          database main  { path ":memory:" }
+          database audit { path "${dir}/audit/" driver trail }
+          model Thing { id String @id @default(uuid())  name String  @@gate("0")  @@trail(audit) }
+        `,
+        resolveFrom: dir,
+      })
+      await db.$setAuth(principal).thing.create({ data: { name: 'x' } })
+      await new Promise((r) => setImmediate(r))
+      const [row] = await db.asSystem().auditTrail.findMany({})
+      db.$close()
+      return row
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  }
+
+  it('a service principal writes actorType service', async () => {
+    const row = await writeAs(toDataPrincipal(SYSTEM))
+    expect(row.actorId).toBe('system')
+    expect(row.actorType).toBe('service')
+  })
+
+  it('a user principal is still a user, whatever its role', async () => {
+    const row = await writeAs(toDataPrincipal({ userId: 'u-1', userType: 'admin', role: 'admin' }))
+    expect(row.actorType).toBe('user')
   })
 })

@@ -300,13 +300,11 @@ await db.$backup('./backups/compact.db', { vacuum: true })   // VACUUM INTO — 
 
 ## Page size
 
-Litestone issues `PRAGMA page_size = 8192` when it opens a database, but it runs
-after the journal is already in WAL mode, where SQLite ignores it — so a file
-database Litestone creates has SQLite's default of 4096 (`FJS-2303`). Page size
-is fixed at creation and cannot be changed after.
+A file database Litestone creates has 8192-byte pages. Page size is fixed at
+creation and cannot be changed after: a file that already exists keeps its size,
+and changing it is a `VACUUM`.
 
-```js failing
-// FJS-2303
+```js
 const file = await createClient({ path: './schema.lite', db: './sized.db' })
 const { page_size } = file.$rawDbs.main.query('PRAGMA page_size').get()
 if (page_size !== 8192) throw new Error(`page_size is ${page_size}`)

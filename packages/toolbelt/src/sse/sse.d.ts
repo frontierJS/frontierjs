@@ -18,8 +18,8 @@ export interface ReadEvent {
 }
 
 /** The bytes one event is on the wire, ending in its blank line. Throws on an
- *  event name or id holding a line break, and on a retry that is not a whole
- *  number. */
+ *  event name or id that is not a string or holds a line break, on a retry that
+ *  is not a whole number, and on data JSON cannot carry (a function, a symbol). */
 export function formatEvent(e?: SseEvent): string
 
 /** The complete events at the front of `text`, and the unread tail to prepend

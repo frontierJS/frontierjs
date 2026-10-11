@@ -79,4 +79,42 @@ export async function run(t) {
   await t.eventually(state, '2,3,1|5,4|9', 'a press on a button inside an item does not drag')
   await t.clickAt('#todo li[data-id="3"] .poke')
   await t.eventually(`document.getElementById('clicks').textContent`, '1', 'and the button still clicks')
+
+  /* ── the keyboard: Space lifts, arrows move, Space drops ───────────────── */
+
+  const focus = (sel) => t.evaluate(`document.querySelector(${JSON.stringify(sel)}).focus(); return true;`)
+  const live  = `(document.querySelector('[data-dnd-live]') || {}).textContent || ''`
+  const active = `document.activeElement.dataset.id || ''`
+  const ph = 'id:dnd-shadow-placeholder-0000'
+  await t.evaluate(`window.__l = ${log}.length; return true;`)
+  await focus('#todo li[data-id="2"]')
+  await t.press(' ')
+  await t.eventually(`${log}.slice(window.__l).includes('todo:c:dragStarted')`, true, 'Space on a focused item lifts it')
+  t.match(await t.evaluate(`return ${live};`), /position 1 of 3/, 'and a live region says where it is')
+  await t.press('ArrowDown')
+  await t.press('ArrowDown')
+  await t.eventually(state, `3,1,${ph}|5,4|9`, 'two ArrowDowns move the placeholder two places')
+  t.match(await t.evaluate(`return ${live};`), /position 3 of 3/, 'and the new position is announced')
+  t.is(await t.evaluate(`return ${active};`), ph, 'focus stays on the moving item, which is the placeholder mid-lift')
+  await t.press('ArrowDown')
+  t.is(await t.evaluate(`return ${state};`), `3,1,${ph}|5,4|9`, 'the end of the list is a wall')
+  await t.press(' ')
+  await t.eventually(`${log}.slice(window.__l).endsWith('todo:f:droppedIntoZone')`, true, 'Space drops it and finalizes once')
+  t.is(await t.evaluate(`return document.getElementById('state').textContent;`), '3,1,2|5,4|9', 'the list holds the new order')
+  t.is(await t.evaluate(`return document.getElementById('sources').textContent.split(' ').slice(-4).join(' ');`),
+    'keyboard keyboard keyboard keyboard', 'every callback reported the keyboard as its source')
+  await t.eventually(active, '2', 'focus returns to the dropped item')
+  t.is(await t.evaluate(`return document.querySelectorAll('[data-dnd-target], [data-dnd-shadow]').length;`), 0,
+    'and no zone or item is left marked')
+
+  await t.press('ArrowUp')   // idle: an arrow with nothing lifted is the page's
+  t.is(await t.evaluate(`return ${state};`), '3,1,2|5,4|9', 'arrows move nothing until an item is lifted')
+
+  await t.press(' ')
+  await t.press('ArrowUp')
+  await t.eventually(state, `3,${ph},1|5,4|9`, 'ArrowUp moves it back')
+  await t.press('Escape')
+  await t.eventually(state, '3,1,2|5,4|9', 'Escape puts it back where it was lifted')
+  t.match(await t.evaluate(`return ${live};`), /cancel/i, 'and says so')
+  await t.eventually(active, '2', 'with focus on the item again')
 }

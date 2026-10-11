@@ -55,10 +55,9 @@ describe('the optional serialize()', () => {
     } finally { raw.close() }
   })
 
-  // FJS-2402: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
   // The export has to come from the capi the wrap was handed, not from a global
   // the module build does not set.
-  test.failing('the wasm engine exports through the capi it was handed', () => {
+  test('the wasm engine exports through the capi it was handed', () => {
     const src = readFileSync(join(SRC, 'engines/sqlite-wasm.js'), 'utf8')
     expect(src).not.toMatch(/globalThis\.sqlite3/)
     expect(src).toMatch(/capi\.sqlite3_js_db_export/)
@@ -66,10 +65,9 @@ describe('the optional serialize()', () => {
 })
 
 describe('what a backup is made of', () => {
-  // Browser half: `$backup` answered `ReferenceError: Bun is not defined`.
-  // FJS-2401: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
+  // `$backup` answered `ReferenceError: Bun is not defined` on a device.
   // The file write belongs behind #host, where the browser half refuses it by name.
-  test.failing('core/backup.js reaches the filesystem through #host, never Bun', () => {
+  test('core/backup.js reaches the filesystem through #host, never Bun', () => {
     const src = readFileSync(join(SRC, 'core/backup.js'), 'utf8')
     expect(src).not.toMatch(/\bBun\./)
     expect(src).toMatch(/from '#host'/)

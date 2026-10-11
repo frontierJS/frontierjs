@@ -1075,15 +1075,10 @@ if (import.meta.main) {
     // system-level action wrote, and a --force that erased those would be
     // erasing the only record that they happened.
 
-    // Asked for first, because SQLite resolves the table at PREPARE time: a
-    // `DELETE … WHERE EXISTS (SELECT … FROM sqlite_master)` guard still throws.
-    // The seed-history table is created by the first seeder run, so `--force`
-    // on a database that has never been seeded — which is every database
-    // `bun run verify --reset` leaves behind — died with `no such table:
-    // _litestone_seeds` before it had reseeded anything.
-    const raw = db.$rawDbs?.main
-    const seeded = raw?.query(`SELECT 1 FROM sqlite_master WHERE name = '_litestone_seeds'`).get()
-    if (seeded) raw.run('DELETE FROM "_litestone_seeds" WHERE key = ?', 'basecamp:example-fleet')
+    // A database that has never been seeded has no history table — which is
+    // every database `bun run verify --reset` leaves behind — and forget()
+    // answers that as a no-op.
+    await new BasecampSeeder().forget(db, 'basecamp:example-fleet')
     console.log('cleared previous data')
   }
 

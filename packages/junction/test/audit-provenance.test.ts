@@ -101,7 +101,7 @@ describe('an audit row says where the write came from', () => {
       expect(row.tenant).toBeNull()
       // Still a real entry — the write is recorded, only its provenance is not.
       expect(row.operation).toBe('create')
-      expect(row.model).toBe('order')
+      expect(row.model).toBe('Order')
     } finally { h.cleanup() }
   })
 
@@ -261,7 +261,7 @@ describe('an audit row says where the write came from', () => {
       const before = (h.db as any).$logStats()
       expect(before.written).toBeGreaterThan(0)
 
-      const trail = join(h.dir, 'audit', 'auditTrail.jsonl')
+      const trail = join(h.dir, 'audit', 'AuditTrail.jsonl')
       // The appender holds an open fd, which a chmod does not touch. Swapping
       // the path for a directory fails its inode check and then its reopen.
       const parked = `${trail}.parked`

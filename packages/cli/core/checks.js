@@ -164,6 +164,8 @@ export const RULES = [
     title: 'a styled value names a token the stylesheets define' },
   { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'a .mesa <style> holds no raw color, size or spacing value' },
+  { id: 'css-raw-utility',      scope: 'app',  severity: 'warn',  invariant: 13,
+    title: 'an app\'s markup holds more raw color utilities than semantic classes' },
   { id: 'preview-ui-only',      scope: 'app',  severity: 'error', invariant: null,
     title: 'a preview branch changes web/ and nothing else' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
@@ -216,6 +218,8 @@ export const RULES = [
     title: 'every THREATS.md row names a test that is in the tree' },
   { id: 'doc-examples-run',     scope: 'repo', severity: 'warn',  invariant: 16,
     title: 'a package whose docs fence a runnable example has a suite that runs it' },
+  { id: 'connector-contract',   scope: 'repo', severity: 'error', invariant: null,
+    title: 'every @frontierjs/conduit-* package holds a sink, a drive and a conduit peer' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
@@ -771,7 +775,16 @@ const CHECKS = {
       }
     })
     if (!configs.length) return { skipped: 'no vite config' }
-    return { findings: configs.filter(p => !/strictPort/.test(readFileSync(p, 'utf8'))).map(p => ({
+    // The flag lives in what the config returns, which a config delegating to a
+    // factory never spells; the text is the grade only for one that will not load.
+    let loaded = {}
+    const run = spawnSync(process.versions.bun ? process.execPath : 'bun', ['-e', VITE_PORT_SCRIPT], {
+      cwd: root, input: JSON.stringify(configs), encoding: 'utf8', timeout: 120_000,
+      env: { ...process.env, BUN_BE_BUN: '1' },
+    })
+    try { if (run.status === 0) loaded = JSON.parse(run.stdout.trim().split('\n').pop()) } catch {}
+    const sets = p => loaded[p] ?? /strictPort/.test(readFileSync(p, 'utf8'))
+    return { findings: configs.filter(p => !sets(p)).map(p => ({
       file: p,
       message: `no strictPort. Vite hops to the next free port without a word, so this app can end up ` +
                `serving on the port another app's test drive is pointed at — and every assertion passes ` +
@@ -3417,6 +3430,60 @@ const CHECKS = {
     return { findings }
   },
 
+  'css-raw-utility': ({ root }) => {
+    let doc
+    try { doc = JSON.parse(readFileSync(join(root, 'node_modules/@frontierjs/css/vocabulary.json'), 'utf8')) }
+    catch { return { skipped: '@frontierjs/css is not installed' } }
+
+    // What the vocabulary names: a term's class, a tone, a treatment, a density.
+    const semantic = new Set([
+      ...(doc.terms ?? []).map(t => t.class ?? (t.class === undefined ? t.term?.toLowerCase() : null)),
+      ...['tone', 'treatment', 'density'].flatMap(axis => doc.notATerm?.[axis] ?? []),
+    ].filter(Boolean))
+
+    // A palette-scale or white/black utility on a color property. A layout or
+    // type utility (`gap-2`, `text-sm`) is none, and `text-primary` is a name.
+    const RAW = /^-?(?:text|bg|border(?:-[trblxy])?|ring|fill|stroke|divide|outline|from|via|to|decoration|accent|caret|shadow|placeholder)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black)(?:\/\d+)?$/
+
+    let raw = 0, sem = 0
+    const perFile = new Map()
+    for (const surface of CLIENT_SURFACES) {
+      walk(join(root, surface), 6, (dir) => {
+        for (const name of safeRead(dir)) {
+          if (!name.endsWith('.mesa')) continue
+          const file = join(dir, name)
+          let text
+          try { text = readFileSync(file, 'utf8') } catch { continue }
+          for (const attr of text.matchAll(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|\{([^}]*)\})/g)) {
+            for (const token of (attr[1] ?? attr[2] ?? attr[3]).split(/[\s'"`]+/)) {
+              // `hover:` and `md:` are variants of the utility, not part of its name.
+              const bare = token.slice(token.lastIndexOf(':') + 1)
+              if (RAW.test(bare)) {
+                raw++
+                perFile.set(file, (perFile.get(file) ?? 0) + 1)
+              } else if (semantic.has(bare)) sem++
+            }
+          }
+        }
+      })
+    }
+    if (raw <= sem) return { findings: [] }
+
+    // A count and a ratio, not a refusal: an app may run UnoCSS beside
+    // @frontierjs/css, and the rule cannot tell a stray from the next necessary one.
+    const worst = [...perFile].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5)
+    return {
+      findings: [{
+        file: worst[0][0],
+        line: 1,
+        message: `${raw} raw color utilities against ${sem} semantic classes — a theme switch cannot reach ` +
+                 `\`text-gray-500\` or \`bg-red-600\`. Name what the thing is and what is true of it — a tone ` +
+                 `(\`danger\`) and a treatment (\`outlined\`) — and let the theme choose the color. Most: ` +
+                 `${worst.map(([f, n]) => `${relative(root, f)} (${n})`).join(', ')}.`,
+      }],
+    }
+  },
+
   'package-root-md': ({ root }) => {
     const pkgs = []
     for (const name of safeRead(join(root, 'packages'))) {
@@ -3537,6 +3604,50 @@ const CHECKS = {
   'seam-listed': ({ root }) => seamListed({ root }),
   'threat-row':  ({ root }) => threatRow({ root }),
   'skill-pointer':      ({ root }) => skillPointer({ root }),
+
+  // FJS-D890: an official connector is a target builder, payload types, an
+  // error mapping, a sink and a drive, always. The sink and the drive are the
+  // two pieces a connector can ship without and still compile, so a missing one
+  // is silent until an app's own drive sends a request out of the process. The
+  // peer is what keeps two copies of conduit from being installed beside an app.
+  // A sink is `sink.*`, `*-sink.*` or `*.sink.*`; a drive is `drive.*`,
+  // `*-drive.*` or `*.drive.*`, or anything under a `drive/` directory.
+  'connector-contract': ({ root }) => {
+    const dirs = safeRead(join(root, 'packages'))
+      .filter(name => /^conduit-./.test(name))
+      .map(name => join(root, 'packages', name))
+      .filter(dir => existsSync(join(dir, 'package.json')))
+    if (!dirs.length) return { skipped: 'no packages/conduit-*' }
+
+    const SINK  = /(^|[.-])sink\.[cm]?[jt]sx?$/
+    const DRIVE = /(^|[.-])drive(\.(test|spec))?\.[cm]?[jt]sx?$/
+    const findings = []
+    for (const dir of dirs) {
+      let sink = false, drive = false
+      walk(dir, 6, d => {
+        const inDrive = /(^|[\\/])drive$/.test(d)
+        for (const name of safeRead(d)) {
+          if (SINK.test(name)) sink = true
+          if (DRIVE.test(name) || (inDrive && /\.[cm]?[jt]sx?$/.test(name))) drive = true
+        }
+      })
+      let pkg = {}
+      try { pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { /* unreadable: no peer */ }
+      const peer = Boolean(pkg.peerDependencies?.['@frontierjs/conduit'])
+
+      const missing = []
+      if (!sink)  missing.push('a sink (`sink.ts` or `<vendor>-sink.ts`), which owns the chaos: a duplicate delivery, a lost response, a moved clock')
+      if (!drive) missing.push('a drive (`drive.ts`, `<vendor>.drive.ts` or a `drive/` directory), which runs the sink and the fixture through one script')
+      if (!peer)  missing.push('`@frontierjs/conduit` under `peerDependencies`, so an app resolves one conduit')
+      if (!missing.length) continue
+      findings.push({
+        file: join(dir, 'package.json'),
+        message: `${pkg.name ?? dir} is missing ${missing.join('; ')} (FJS-D890). A connector without them ` +
+                 `compiles and ships, and the first request to leave the process is the app's own.`,
+      })
+    }
+    return { findings }
+  },
   'american-spelling':  ({ root }) => americanSpelling({ root }),
 }
 
@@ -4619,6 +4730,21 @@ try { ({ checkMesaFiles } = await import(Bun.resolveSync('@frontierjs/sierra/che
 catch { console.log(JSON.stringify({ unresolved: true })); process.exit(0) }
 const files = JSON.parse(await Bun.stdin.text())
 console.log(JSON.stringify({ failed: await checkMesaFiles(files, { root: process.cwd() }) }))
+`
+
+// Reads the flag off the config a surface RETURNS. `null` is a config that would
+// not load, left to the caller's text grade.
+const VITE_PORT_SCRIPT = `
+import { pathToFileURL } from 'node:url'
+const out = {}
+for (const file of JSON.parse(await Bun.stdin.text())) {
+  try {
+    let config = (await import(pathToFileURL(file).href)).default
+    if (typeof config === 'function') config = await config({ command: 'serve', mode: 'development' })
+    out[file] = config?.server?.strictPort === true
+  } catch { out[file] = null }
+}
+console.log(JSON.stringify(out))
 `
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length

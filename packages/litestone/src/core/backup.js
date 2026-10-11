@@ -6,14 +6,17 @@
 // implementation would be a second answer to "is this copy safe while the
 // database is being written", which is the whole question a backup asks.
 
+import { writeFileSync, statSync } from '#host'
+
 // Returns the size of the written file. `vacuum` compacts on the way out —
-// slower, and it refuses to overwrite an existing destination.
+// slower, and it refuses to overwrite an existing destination. On a device the
+// file write is refused by name (`HOST_UNAVAILABLE`) before any bytes move.
 export async function backupSqliteTo(rawDb, destPath, { vacuum = false } = {}) {
   if (!vacuum && typeof rawDb.serialize === 'function') {
-    await Bun.write(destPath, rawDb.serialize())
+    writeFileSync(destPath, rawDb.serialize())
   } else {
     rawDb.run(`PRAGMA wal_checkpoint(TRUNCATE)`)
     rawDb.prepare(`VACUUM INTO ?`).run(destPath)
   }
-  return (await Bun.file(destPath).stat()).size
+  return statSync(destPath).size
 }

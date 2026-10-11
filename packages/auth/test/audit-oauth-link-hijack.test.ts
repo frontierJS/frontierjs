@@ -107,8 +107,7 @@ describe('an oauthLink invitation the address holder did not start', () => {
     expect(holderIn).toBe(true)
   })
 
-  // FJS-1847: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a (provider, subject) is attached to at most one account', async () => {
+  test('a (provider, subject) is attached to at most one account', async () => {
     // `Credential` indexes (type, value) without uniqueness, and
     // `confirmOAuthLink` never asks whether the waiting subject is already
     // somebody's. Branch 1 then answers whichever row `findFirst` reaches.

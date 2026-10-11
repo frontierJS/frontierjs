@@ -274,7 +274,8 @@ export function renderAssistant({ schema = null, purpose = null, snapshot = fals
 
   push('---', '', '## The catalog', '')
   push('Every word a `.lite` file can hold, grouped by what it is for.', '')
-  const levels = [['schema', 'Declarations'], ['field', 'Field attributes'], ['model', 'Model attributes']]
+  const levels = [['schema', 'Declarations'], ['field', 'Field attributes'], ['model', 'Model attributes'],
+                  ['move', 'Move words']]
   for (const [level, title] of levels) {
     push(`### ${title}`, '')
     const rows = CATALOG.filter(r => r.level === level)

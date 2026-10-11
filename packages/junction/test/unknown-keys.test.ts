@@ -221,3 +221,57 @@ describe('a key that names nothing is refused', () => {
     expect(seen[0]).toEqual({ anything: 1 })
   })
 })
+
+// ─── who the refusal speaks to (FJS-2082) ────────────────────────────────
+
+// The way to accept a key is advice for the app's author. The caller of a
+// public gate is a stranger who cannot edit the schema, so the refusal names
+// the key and the shape and the way out goes to the server log.
+describe('the refusal does not hand the caller the author\'s advice', () => {
+  const refusal = async (fn: () => Promise<unknown>): Promise<string> => {
+    try { await fn() } catch (e) { return String((e as Error).message) + JSON.stringify((e as { fields?: unknown }).fields ?? (e as { details?: unknown }).details ?? '') }
+    throw new Error('expected a refusal')
+  }
+  const warns = async (fn: () => Promise<unknown>): Promise<string[]> => {
+    const seen: string[] = []
+    const was = console.warn
+    console.warn = (...a: unknown[]) => { seen.push(a.join(' ')) }
+    try { await fn() } finally { console.warn = was }
+    return seen
+  }
+
+  test('an input: type says which key, not how to accept it', async () => {
+    const { app } = await mkApp()
+    const text = await refusal(() => call(app, 'pay', null, { reference: 'r', amount: 1, amont: 2 }))
+    expect(text).toContain('amont')
+    expect(text).not.toMatch(/Add it to|in the seed|should accept/)
+  })
+
+  test('a nested type likewise', async () => {
+    const { app } = await mkApp()
+    const body = { key: 'k', contact: { email: 'a@b.co', first: 'a', stage: 'won' }, stops: [] }
+    const text = await refusal(() => call(app, 'start', null, body))
+    expect(text).toContain('contact.stage')
+    expect(text).not.toMatch(/Add it to|in the seed|should accept/)
+  })
+
+  test('a model write likewise', async () => {
+    const { app } = await mkApp()
+    const text = await refusal(() => call(app, 'create', null, { title: 'a', titel: 'x' }))
+    expect(text).not.toMatch(/Declare it|@transient/)
+  })
+
+  test('the author reads it in the log, naming the schema file', async () => {
+    const { app } = await mkApp()
+    const out = await warns(() => call(app, 'pay', null, { reference: 'r', amount: 1, amont: 2 }).catch(() => {}))
+    expect(out.join('\n')).toMatch(/type PayOrder.*db\/schema\.lite/)
+  })
+
+  test('…once per shape, so a stranger cannot flood the log', async () => {
+    const { app } = await mkApp()
+    const out = await warns(async () => {
+      for (let i = 0; i < 5; i++) await call(app, 'pay', null, { reference: 'r', amount: 1, ['k' + i]: 2 }).catch(() => {})
+    })
+    expect(out.length).toBe(1)
+  })
+})

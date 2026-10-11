@@ -9,7 +9,7 @@ defaults:
 
 <script>
 import { resolve } from 'path'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
 import { stripVTControlCharacters } from 'util'
 
 // ─── resolveDb ───────────────────────────────────────────────────────────────

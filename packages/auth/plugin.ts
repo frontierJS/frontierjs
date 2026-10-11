@@ -49,6 +49,7 @@ export function createAuthPlugin(
     registerRateLimit = { max: 5,  window: '15 minutes' },
     passwordResetRateLimit = { max: 3, window: '15 minutes' },
     magicLinkRateLimit     = { max: 3, window: '15 minutes' },
+    emailVerifyRateLimit   = { max: 3, window: '15 minutes' },
     services          = {},
     oauth,
     canStartSupport,
@@ -65,6 +66,9 @@ export function createAuthPlugin(
   const registerLimiter = rateLimitHook(registerRateLimit)
   const resetLimiter    = rateLimitHook(passwordResetRateLimit)
   const magicLimiter    = rateLimitHook(magicLinkRateLimit)
+  // A session is the only gate on this route and a session is free to mint,
+  // so each call is a mail the app pays for.
+  const verifyLimiter   = rateLimitHook(emailVerifyRateLimit)
   // Starting a flow writes a row, unauthenticated, once per click.
   const oauthLimiter    = rateLimitHook(oauth?.rateLimit ?? { max: 20, window: '15 minutes' })
 
@@ -84,6 +88,8 @@ export function createAuthPlugin(
       ;(loginLimiter    as unknown as { dispose?(): void }).dispose?.()
       ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
       ;(resetLimiter    as unknown as { dispose?(): void }).dispose?.()
+      ;(magicLimiter    as unknown as { dispose?(): void }).dispose?.()
+      ;(verifyLimiter   as unknown as { dispose?(): void }).dispose?.()
       ;(oauthLimiter    as unknown as { dispose?(): void }).dispose?.()
     },
 
@@ -348,6 +354,7 @@ export function createAuthPlugin(
 
       app.post(`${prefix}/email/verify/request`, async (ctx: TransportContext) => {
         if (!ctx.user) throw new Unauthorized('Authentication required')
+        verifyLimiter(ctx)
 
         const user = ctx.user as SessionContext
 

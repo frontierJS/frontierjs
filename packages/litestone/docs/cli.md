@@ -330,3 +330,5 @@ writing files nothing will read. See `docs/multi-tenancy.md`.
 | `--no-env` | Skip loading `.env` files |
 | `--debug` | Print stack traces on error |
 | `--version` | Print the version and exit |
+
+A flag no command reads is refused by name before anything runs, so `migrate create --dry` writes no file; the preview is `migrate dry-run`.

@@ -43,7 +43,7 @@ describe('the synthesized trail model is gated at SYSTEM', () => {
 
   test('the model declares @@gate("8")', async () => {
     await withClient(async (db) => {
-      const model = db.$schema.models.find((m: any) => m.name === 'auditTrail')
+      const model = db.$schema.models.find((m: any) => m.name === 'AuditTrail')
       const gate = model.attributes.find((a: any) => a.kind === 'gate')
       expect(gate?.value).toBe('8')
     })

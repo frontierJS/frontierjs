@@ -50,6 +50,7 @@ Detail: `references/routes-query-and-headers.md`
 - **A header the caller varies per call must be DECLARED, or it works until the socket connects.**
 - **A raw route's own `new Response(readable)` is held to its end for a gzip caller; build a stream with `ctx.stream()` or name `content-encoding`** (`FJS-D509`)
 - **The client's address is declared, never discovered.**
+- **An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins`** (`FJS-2576`)
 
 ## Sockets
 Detail: `references/sockets.md`

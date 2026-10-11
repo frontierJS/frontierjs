@@ -15,6 +15,7 @@ import { tmpdir } from 'os'
 import { execFileSync } from 'child_process'
 import { Database } from 'bun:sqlite'
 import { createTestEnv } from '../src/testing.js'
+import { KNOWN_FLAGS } from '../src/tools/cli-helpers.js'
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
@@ -1439,7 +1440,7 @@ model Widget {
 
   test('nothing written yet is not a failure, and the backup is complete', async () => {
     const dir = makeFixtureDir('backup-unwritten', { schema: SCHEMA('audit') })
-    await runCli(dir, ['migrate', 'apply', '--yes'])
+    await runCli(dir, ['migrate', 'apply'])
     expect(existsSync(join(dir, 'audit'))).toBe(false)
 
     const r = await runCli(dir, ['backup', 'out'])
@@ -1459,7 +1460,7 @@ model Widget {
     // nothing is mounted there and what would have been in it is not in this
     // copy. Ambiguity falls this way on purpose.
     const dir = makeFixtureDir('backup-unreachable', { schema: SCHEMA('nomount/audit') })
-    await runCli(dir, ['migrate', 'apply', '--yes'])
+    await runCli(dir, ['migrate', 'apply'])
 
     const r = await runCli(dir, ['backup', 'out'])
     expect(r.exit).toBe(1)
@@ -1472,7 +1473,7 @@ model Widget {
     // The control for the pair above. A build that reported every logger as
     // unwritten would pass both of them.
     const dir = makeFixtureDir('backup-written', { schema: SCHEMA('audit') })
-    await runCli(dir, ['migrate', 'apply', '--yes'])
+    await runCli(dir, ['migrate', 'apply'])
     mkdirSync(join(dir, 'audit'), { recursive: true })
     writeFileSync(join(dir, 'audit', '2026-09.jsonl'), '{"op":"create"}\n', 'utf8')
 
@@ -1494,7 +1495,7 @@ model Widget {
     // Asserted by RUNNING from somewhere else: this succeeds, which is what
     // makes the sentence impossible rather than merely unhelpful.
     const dir = makeFixtureDir('backup-cwd', { schema: SCHEMA('audit') })
-    await runCli(dir, ['migrate', 'apply', '--yes'])
+    await runCli(dir, ['migrate', 'apply'])
     mkdirSync(join(dir, 'audit'), { recursive: true })
     writeFileSync(join(dir, 'audit', 'a.jsonl'), '{}\n', 'utf8')
 
@@ -1723,5 +1724,68 @@ describe('backup / replicate — the rest of db/', () => {
     const r = await runCli(dir, ['backup', 'out'])
     expect(r.exit).toBe(0)
     expect(readdirSync(join(dir, 'out'))).toEqual(['main.db'])
+  })
+})
+
+// A flag the CLI does not know is refused by name, before the command runs.
+// FJS-2166: `migrate create --dry` wrote the migration file it was asked to
+// preview, because an unread flag was silently dropped.
+describe('an unknown flag is refused', () => {
+  test('migrate create --dry writes no file and says what the preview is', async () => {
+    const dir = makeFixtureDir('unknown-flag')
+    const r = await runCli(dir, ['migrate', 'create', 'init', '--dry'])
+    expect(r.exit).toBe(1)
+    expect(r.stdout + r.stderr).toContain('--dry')
+    expect(r.stdout + r.stderr).toContain('dry-run')
+    expect(readdirSync(join(dir, 'migrations'))).toEqual([])
+  })
+
+  test('a flag nothing reads is refused on any command', async () => {
+    const dir = makeFixtureDir('unknown-flag-any')
+    const r = await runCli(dir, ['migrate', 'status', '--bogus-flag'])
+    expect(r.exit).toBe(1)
+    expect(r.stdout + r.stderr).toContain('--bogus-flag')
+  })
+
+  test('a flag the command reads still passes, in both value forms', async () => {
+    const dir = makeFixtureDir('known-flag')
+    expect((await runCli(dir, ['migrate', 'dry-run', '--schema=schema.lite'])).exit).toBe(0)
+    expect((await runCli(dir, ['migrate', 'dry-run', '--schema', 'schema.lite'])).exit).toBe(0)
+  })
+
+  test('every flag the sources read is a known one', () => {
+    const read = new Set<string>()
+    for (const f of readdirSync(join(import.meta.dir, '..', 'src', 'tools')).filter((f) => f.endsWith('.js'))) {
+      const src = readFileSync(join(import.meta.dir, '..', 'src', 'tools', f), 'utf8')
+      for (const m of src.matchAll(/\b(?:flag|getFlag|getFlags)\('([a-z0-9-]+)'\)|args\.includes\('--([a-z0-9-]+)'\)/g)) {
+        read.add(m[1] ?? m[2])
+      }
+    }
+    expect(read.size).toBeGreaterThan(40)
+    expect([...read].filter((n) => !KNOWN_FLAGS.has(n))).toEqual([])
+  })
+})
+
+describe('migrate dev — the drift refusal names a way out that exists', () => {
+  // The advice said `litestone db reset`, which answers `Unknown db subcommand`
+  // (FJS-2057).
+  const V1 = `model Note {\n  id    Int    @id\n  title String\n}\n`
+  const V2 = `model Note {\n  id    Int    @id\n  title String\n}\n\nmodel Tag {\n  id   Int    @id\n  name String\n}\n`
+
+  test('"Start clean" is the database file to delete, and the advice runs', async () => {
+    const dir = makeFixtureDir('dev-drift-advice', { schema: V1 })
+    expect((await runCli(dir, ['migrate', 'dev', 'initial'])).exit).toBe(0)
+    writeFileSync(join(dir, 'schema.lite'), V2, 'utf8')
+    expect((await runCli(dir, ['db', 'push'])).exit).toBe(0)
+
+    const r = await runCli(dir, ['migrate', 'dev', 'tag'])
+    const out = r.stdout + r.stderr
+    expect(r.exit).toBe(1)
+    expect(out).not.toContain('db reset')
+    expect(out).toContain('Start clean')
+    expect(out).toContain('test.db')
+
+    rmSync(join(dir, 'test.db'), { force: true })
+    expect((await runCli(dir, ['migrate', 'dev', 'tag'])).exit).toBe(0)
   })
 })

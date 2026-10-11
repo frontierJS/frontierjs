@@ -31,6 +31,7 @@ import { expandGlobs } from './glob-expand.js'
 import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
 import { fsAllowPlugin } from './fs-allow-plugin.js'
+import { envFlagsPlugin } from './env-flags-plugin.js'
 import { askPlugin } from './ask-plugin.js'
 import { explainModuleInitFailure, shippedHints } from './warnings.js'
 import { beginBuildImports, importAppModule } from './app-import.js'
@@ -147,6 +148,7 @@ export function createSierraViteConfig(config = {}) {
       // The island build is handed `root` explicitly, so the alias plugin
       // resolves `@` there exactly as it does in the main build.
       appAliasPlugin(),
+      envFlagsPlugin(),
       mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static' }),
     ]))
   }
@@ -167,6 +169,8 @@ export function createSierraViteConfig(config = {}) {
   // because the base is the Vite root and that is not known until the app's own
   // vite.config.js sets it. See app-alias-plugin.js.
   sierraPlugins.push(appAliasPlugin())
+  // DEV/PROD follow the mode, not an ambient NODE_ENV (FJS-1232).
+  sierraPlugins.push(envFlagsPlugin())
 
   sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static' }))
   // Dev only, when the app has @frontierjs/cli: shift+alt-click asks Claude.

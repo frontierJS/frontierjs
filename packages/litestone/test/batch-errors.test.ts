@@ -103,6 +103,36 @@ describe('a failing batch names its row (FJS-207)', () => {
     expect(err.message).toContain('slug "q" is already taken')
   })
 
+  // `count` is the rows written so far, which stops tracking the index the moment
+  // a row is skipped; the error names the row the caller sent.
+  test('upsertMany: a row skipped by the update policy does not shift the index', async () => {
+    const pdb = await createClient({
+      schema: `
+        model Doc {
+          id      Int     @id
+          slug    String  @unique
+          ownerId String?
+          @@allow('read',   ownerId == auth().id)
+          @@allow('create', ownerId == auth().id)
+          @@allow('update', ownerId == auth().id)
+        }
+      `,
+      db: ':memory:', claims: [],
+    })
+    const sys = pdb.asSystem()
+    await sys.doc.create({ data: { id: 1, slug: 'a', ownerId: 'u2' } })
+    await sys.doc.create({ data: { id: 2, slug: 'b', ownerId: 'u1' } })
+    const err = await thrown(pdb.$setAuth({ id: 'u1' }).doc.upsertMany({
+      data: [
+        { id: 1, slug: 'a', ownerId: 'u1' },   // someone else's row: skipped
+        { id: 3, slug: 'b', ownerId: 'u1' },   // second @unique: refused
+      ],
+      conflictTarget: ['id'],
+    }))
+    expect(err.batchIndex).toBe(1)
+    expect(err.message).toContain('data[1] of 2')
+  })
+
   test('a single-row write is not annotated', async () => {
     await db.post.create({ data: { slug: 'solo', title: 'S' } })
     const err = await thrown(db.post.create({ data: { slug: 'solo', title: 'dup' } }))

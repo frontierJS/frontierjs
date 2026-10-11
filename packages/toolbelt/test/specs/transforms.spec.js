@@ -33,3 +33,11 @@ test('transforms: the names are the ones a schema can declare', function () {
   assert.equal(isTransform('toString'), false)
   assert.equal(isTransform('__proto__'), false)
 })
+
+test('transforms: null and undefined are not text and pass through (FJS-2227)', function () {
+  for (const name of TRANSFORM_NAMES) {
+    assert.equal(transform([name], null), null)
+    assert.equal(transform([name], undefined), undefined)
+  }
+  assert.equal(transform(['trim', 'upper'], null), null)
+})

@@ -78,8 +78,7 @@ describe('the two unimportable copies ask the owner', () => {
     expect(src).not.toMatch(/kind === 'list' && Array\.isArray/)
   })
 
-  // FJS-2453: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('example/file-upload.ts unwraps through envelope.ts, not "kind in r"', () => {
+  test('example/file-upload.ts unwraps through envelope.ts, not "kind in r"', () => {
     const src = readFileSync(`${here}../example/file-upload.ts`, 'utf8')
     expect(src).toMatch(/\b(isServiceResult|unwrapResult|resultData)\b/)
     expect(src).not.toMatch(/'kind' in r && 'data' in r/)

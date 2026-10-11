@@ -595,3 +595,33 @@ model Doc {
     })
   }
 })
+
+// FJS-2215 — a belongsTo field names the RELATION and the value is on the
+// foreign key. `owner == auth()` always read the key; `owner == auth().id` read
+// a column called `owner` in both halves and matched nothing.
+describe('a belongsTo field read through a claim', () => {
+  const SCHEMA = `
+model User { id Int @id
+  @@auth }
+model Doc {
+  id      Int  @id
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id])
+  @@allow('read',   owner == auth().id)
+  @@allow('create', owner == auth().id)
+}
+`
+  it('read and create admit the caller\'s own row and refuse another\'s', async () => {
+    const db = await createClient({ schema: SCHEMA, db: ':memory:' })
+    const sys = db.asSystem() as any
+    await sys.user.create({ data: { id: 1 } })
+    await sys.user.create({ data: { id: 2 } })
+    await sys.doc.create({ data: { id: 1, ownerId: 1 } })
+    await sys.doc.create({ data: { id: 2, ownerId: 2 } })
+    const u1 = db.$setAuth({ id: 1 }) as any
+    expect((await u1.doc.findMany()).map((r: any) => r.id)).toEqual([1])
+    await u1.doc.create({ data: { id: 3, ownerId: 1 } })
+    await expect(u1.doc.create({ data: { id: 4, ownerId: 2 } })).rejects.toThrow()
+    db.$close()
+  })
+})

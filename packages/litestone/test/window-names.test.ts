@@ -128,3 +128,46 @@ model Sale {
     expect(rows.map((r: any) => r.total)).toEqual([10, 30, 5])
   })
 })
+
+// FJS-2389: a window column rides on the row, so `select` is the only place a
+// caller can ask for it. Naming one was refused as an unknown field, and a
+// select that named only stored columns dropped it with no word.
+describe('a window name is a column a select may name', () => {
+  const rn = { rn: { rowNumber: true, orderBy: { id: 'asc' } } }
+
+  it('answers the window column beside the stored ones it names', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.employee.findMany({ window: rn, select: { id: true, rn: true }, orderBy: { id: 'asc' } })
+    expect(rows).toEqual([{ id: 1, rn: 1 }, { id: 2, rn: 2 }, { id: 3, rn: 3 }])
+  })
+
+  it('answers only the window column when it is the only one named', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.employee.findMany({ window: rn, select: { rn: true }, orderBy: { id: 'asc' } })
+    expect(rows).toEqual([{ rn: 1 }, { rn: 2 }, { rn: 3 }])
+  })
+
+  it('leaves a window column out of a select that does not name it', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.employee.findMany({ window: rn, select: { id: true }, orderBy: { id: 'asc' } })
+    expect(rows).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }])
+  })
+
+  it('still refuses a name that is neither a field nor a window', async () => {
+    const { sys } = await seeded()
+    const err = await refuses(() => sys.employee.findMany({ window: rn, select: { id: true, nope: true } }))
+    expect(err).toBeInstanceOf(ValidationError)
+    expect((err as Error).message).toContain('nope')
+  })
+
+  it('does not admit a window name when the call has no window', async () => {
+    const { sys } = await seeded()
+    expect(await refuses(() => sys.employee.findMany({ select: { id: true, rn: true } }))).toBeInstanceOf(ValidationError)
+  })
+
+  it('keeps a @guarded column out of a scoped select that names a window', async () => {
+    const { as } = await seeded()
+    const rows = await as.employee.findMany({ window: rn, select: { name: true, salary: true, rn: true }, orderBy: { id: 'asc' } })
+    expect(rows[0]).toEqual({ name: 'ada', rn: 1 })
+  })
+})

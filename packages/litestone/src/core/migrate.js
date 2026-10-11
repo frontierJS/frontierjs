@@ -1235,17 +1235,21 @@ function sequenceRecipe(model, tableName, blockedCols) {
   const order = pk.length ? pk.map(quoteIdent).join(', ') : 'rowid'
   const lines = []
   for (const { field, scope } of seqs) {
-    const [f, s] = [quoteIdent(field), quoteIdent(scope)]
-    lines.push(`-- @sequence column ${f} (scope: ${scope}) — number the existing rows and seed the counter:`)
+    const f    = quoteIdent(field)
+    const cols = scope.map(quoteIdent)
+    // The counter key is the bare value for one column and a JSON list for a pair
+    // (`applySequences`), so the seed has to build the same text.
+    const key  = cols.length === 1 ? `CAST(${cols[0]} AS TEXT)` : `json_array(${cols.map(c => `CAST(${c} AS TEXT)`).join(', ')})`
+    lines.push(`-- @sequence column ${f} (scope: ${scope.join(', ')}) — number the existing rows and seed the counter:`)
     lines.push(`--   1. in the rebuild's INSERT ... SELECT, replace the NULL selected for ${f} with`)
-    lines.push(`--        ROW_NUMBER() OVER (PARTITION BY ${s} ORDER BY ${order}) AS ${f}`)
+    lines.push(`--        ROW_NUMBER() OVER (PARTITION BY ${cols.join(', ')} ORDER BY ${order}) AS ${f}`)
     lines.push(`--      (ORDER BY decides which row is number 1 — replace it with the real arrival order)`)
     lines.push(`--   2. after the rebuild, seed the counter so the next create continues from the highest number:`)
     lines.push(`--        CREATE TABLE IF NOT EXISTS ${quoteIdent(SEQUENCE_TABLE)} (model TEXT NOT NULL, field TEXT NOT NULL, scope TEXT NOT NULL,`)
     lines.push(`--          lastNum INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (model, field, scope));`)
     lines.push(`--        INSERT INTO ${quoteIdent(SEQUENCE_TABLE)} (model, field, scope, lastNum)`)
-    lines.push(`--          SELECT '${model.name}', '${field}', CAST(${s} AS TEXT), MAX(${f}) FROM ${quoteIdent(tableName)}`)
-    lines.push(`--          WHERE ${s} IS NOT NULL GROUP BY ${s}`)
+    lines.push(`--          SELECT '${model.name}', '${field}', ${key}, MAX(${f}) FROM ${quoteIdent(tableName)}`)
+    lines.push(`--          WHERE ${cols.map(c => `${c} IS NOT NULL`).join(' AND ')} GROUP BY ${cols.join(', ')}`)
     lines.push(`--          ON CONFLICT (model, field, scope) DO UPDATE SET lastNum = MAX(lastNum, excluded.lastNum);`)
   }
   return lines

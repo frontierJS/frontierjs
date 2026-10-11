@@ -7,7 +7,7 @@
 
 import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
-import { resolve, join, dirname, mkdirSync, AsyncLocalStorage } from '#host'
+import { resolve, join, dirname, mkdirSync, AsyncLocalStorage, processId } from '#host'
 import { resolveAnchor } from './db-path.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns } from './ddl.js'
 import { buildSealMap, frozenAfterMove, machineWithMove } from './seal.js'
@@ -58,6 +58,7 @@ import { threeWay } from './three-way.js'
 import { buildCommitmentMap, dueSql, readBy } from './commitment.js'
 import { dueAt, offsetSpans, partsIn, plainDateIn } from '@frontierjs/toolbelt/datetime'
 import { after as rankAfter, isRankKey, spread as rankSpread } from '@frontierjs/toolbelt/rank'
+import { REDACTED } from '@frontierjs/toolbelt/redact'
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildLiteralDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
@@ -90,7 +91,7 @@ import { refuseUntrustedSchema } from './untrusted.js'
 import {
   checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter, defer,
 } from './hooks.js'
-import { makeLoggerAutoModel, buildLogMap, buildLogEntry, jsonlTrailEntry, fireLog, flushPendingLogs } from './audit-log.js'
+import { makeLoggerAutoModel, trailModelName, buildLogMap, buildLogEntry, jsonlTrailEntry, fireLog, flushPendingLogs } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
 // tools import it from here.
 export { buildRelationMap } from './schema-maps.js'
@@ -384,7 +385,7 @@ function authStamped(row, modelName, ctx) {
  * @property {string | null} version           the `@version` column
  * @property {string | null} sync              `@@sync`'s policy
  * @property {{ relationField: string, fkField: string, referencedField: string }[]} selfRelations
- * @property {{ field: string, scope: string }[]} sequences
+ * @property {{ field: string, scope: string[] }[]} sequences
  * @property {{ field: string, scope: string[] }[]} ranks   `@rank` columns and the fields each orders within
  * @property {Record<string, any> | null} transitions   by field, where the model declares `@@transitions`
  * @property {{ self: any | null, parents: any[] }} seal
@@ -1234,7 +1235,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const dimId = resolveEdgeDim(desc, scopedBy)
       if (dimId == null) {
         if (desc.onMissing === 'skip') continue
-        throw new Error(`@edge '${modelName}.${desc.field}': cannot resolve dimension '${desc.key}' — bind it with scopedBy({ ${desc.key} }) or $setAuth`)
+        const bind = desc.auth ? '$setAuth' : `scopedBy({ ${desc.key} })`   // scopedBy never binds a @scoped dimension
+        throw new Error(`@edge '${modelName}.${desc.field}': cannot resolve dimension '${desc.key}' — bind it with ${bind}`)
       }
       const gkey = `${desc.table}|${dimId}`
       let g = groups.get(gkey)
@@ -2113,7 +2115,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const table   = !dbEntry ? null
       : dbEntry.kind === 'sql'
         ? (ctx.sqlLogTableFor?.(dbEntry.trailModel) ?? null)
-        : (ctx.jsonlTableCache?.[dbEntry.trailModel ?? (dbName + 'Trail')] ?? null)
+        : (ctx.jsonlTableCache?.[dbEntry.trailModel ?? trailModelName(dbName)] ?? null)
     // Only cache hits — a null result may mean jsonlTableCache wasn't ready yet
     // (timing: initial makeAllTables runs before ctx.jsonlTableCache is assigned).
     if (table) _logTableCache.set(dbName, table)
@@ -2131,9 +2133,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // a hole a reviewer cannot see (FJS-1422). So the STATEMENT selects the id,
   // and `finalize` with the caller's own parse strips it again. `distinct`
   // keeps the caller's select, since an id would make every row distinct.
-  function logReadParse(select, include, ps, distinct) {
+  function logReadParse(select, include, ps, distinct, windowNames = null) {
     if (!tableHasLogWork || tableAnonymous || !select || select[idField] || distinct === true) return ps
-    return parseArgs({ ...select, [idField]: true }, include)
+    return parseArgs({ ...select, [idField]: true }, include, windowNames)
   }
 
   // Emit a log entry fire-and-forget to a trail database.
@@ -2170,7 +2172,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // column that is both protected and personal logs as `[redacted]`.
   const logMarks = new Map()
   for (const [f, p] of Object.entries(fieldPolicy)) {
-    if (isProtected(p))   logMarks.set(f, '[redacted]')
+    if (isProtected(p))   logMarks.set(f, REDACTED)
     else if (p.personal)  logMarks.set(f, '[personal]')
   }
   const hasProtectedLogFields = logMarks.size > 0
@@ -4744,8 +4746,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return { sql: stmt.sql, params: stmt.params }
   }
 
-  function parseArgs(select, include) {
-    return parseSelectArg(select, modelName, ctx.shapes, include, computedFns)
+  function parseArgs(select, include, windowNames = null) {
+    return parseSelectArg(select, modelName, ctx.shapes, include, computedFns, windowNames)
   }
 
   function withIncludes(rows, ps, rawInclude) {
@@ -6737,8 +6739,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         refuseAggregateKeys('window', values)
         refuseAggregateKeys('window', names, false)
       }
-      const ps              = parseArgs(select, include)
-      const psLog           = logReadParse(select, include, ps, distinct)
+      const windowNames     = windowSpec ? new Set(Object.keys(windowSpec)) : null
+      const ps              = parseArgs(select, include, windowNames)
+      const psLog           = logReadParse(select, include, ps, distinct, windowNames)
 
       // ── the similarity ordering's two halves (`FJS-D331`) ────────────────
       //
@@ -6770,7 +6773,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         // the default payload (`FJS-D328`) — so the SCAN's select is widened
         // and `read()` is still handed the caller's own, which strips the
         // column again unless they asked for it.
-        const psScan = select ? parseArgs({ ...select, ...(psLog !== ps && { [idField]: true }), [_jsVec.field]: true }, include) : ps
+        const psScan = select ? parseArgs({ ...select, ...(psLog !== ps && { [idField]: true }), [_jsVec.field]: true }, include, windowNames) : ps
 
         // The same guard the compiled path ANDs on, stated here because the
         // ordering it is derived from has been taken out of this query.
@@ -7663,6 +7666,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           }
         }
         if (orderParts.length) sql += ` ORDER BY ${orderParts.join(', ')}`
+      } else if (gapStart && gapEnd && intervalField) {
+        // The gap rows and the data rows are two halves of a UNION ALL, so
+        // unordered the series answers every filled bucket before any real one.
+        sql += ` ORDER BY ${quoteIdent(intervalField)} ASC`
       }
 
       sql += pageSql(limit, offset)
@@ -8141,7 +8148,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         }
 
         for (const [_i, row] of rows.entries()) {
-          if (_usHidden[_i]) throw asBatchRowError(_usHidden[_i], count, rows.length, row)
+          if (_usHidden[_i]) throw asBatchRowError(_usHidden[_i], _i, rows.length, row)
           const { cols, updateCols, stmt } = stmtFor(Object.keys(row), _usMinted[_i])
           const _usSeal = sealInsertGuard(row)
           // The guard's params bind LAST, because `ON CONFLICT … WHERE` is the
@@ -8169,7 +8176,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
               stmt.run(...args)
               if (_usSeal || _usGuardSql) _usWrote = rowsChanged(writeDb) > 0
             }
-          } catch (e) { throw asBatchRowError(asConstraintError(e, row), count, rows.length, row) }
+          } catch (e) { throw asBatchRowError(asConstraintError(e, row), _i, rows.length, row) }
           // Named like a constraint failure rather than counted: a batch that
           // reports writing a row it did not write is worse than one that stops,
           // and `ON CONFLICT DO NOTHING` is the only other way to get here.
@@ -8180,7 +8187,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // read from SQLite rather than assumed — the reason this branch exists.
           if (!_usWrote) {
             const refusal = sealRefusal(_usSeal?.parents, 'create')
-            if (refusal) throw asBatchRowError(refusal, count, rows.length, row)
+            if (refusal) throw asBatchRowError(refusal, _i, rows.length, row)
           }
           if (_usWrote) { noteExclusion(row); count++ }
         }
@@ -9356,11 +9363,12 @@ export async function createClient({
     : rawSchema
 
   // ── Validate ───────────────────────────────────────────────────────────────
-  if (!schema.databases.length && !dbPath) {
+  if (!schema.databases.length && !dbPath && dbOverrides !== ':memory:') {
     throw new Error(
       `createClient() requires either:\n` +
       `  • database blocks in your schema.lite file, OR\n` +
-      `  • a db path: createClient({ path: './schema.lite', db: './app.db' })`
+      `  • a db path: createClient({ path: './schema.lite', db: './app.db' }), OR\n` +
+      `  • databases: ':memory:'`
     )
   }
 
@@ -9462,7 +9470,7 @@ function makeLockPrimitive(rawWriteDb) {
   }
 
   function defaultOwner() {
-    return `pid-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
+    return `pid-${processId()}-${Math.random().toString(36).slice(2, 8)}`
   }
 
   // ── Low-level acquire ────────────────────────────────────────────────────
@@ -10038,7 +10046,7 @@ function makeLockPrimitive(rawWriteDb) {
     // Which client instance wrote a row, so a process skips its own — it has
     // already announced them in-process, and re-announcing would double every
     // event and re-enter any subscriber that writes.
-    writer:    `${process.pid}:${Math.random().toString(36).slice(2, 10)}`,
+    writer:    `${processId()}:${Math.random().toString(36).slice(2, 10)}`,
     recorders: {},
     watchers:  {},
     dbs:       crossProcessDbs,
@@ -11748,7 +11756,7 @@ function makeLockPrimitive(rawWriteDb) {
     if (!loggers.includes(dbName))
       throw new Error(`$audit: '${dbName}' is not a trail database. Declared: ${loggers.join(', ') || 'none'}.`)
 
-    const table = jsonlTableCache[ctx.trailDbMap[dbName].trailModel ?? `${dbName}Trail`]
+    const table = jsonlTableCache[ctx.trailDbMap[dbName].trailModel ?? trailModelName(dbName)]
     if (!table) throw new Error(`$audit: the log table for '${dbName}' is not available.`)
 
     // The column holds the MODEL name for a @@trail write, so an event naming
@@ -12131,6 +12139,17 @@ function makeLockPrimitive(rawWriteDb) {
   //   await db.$backup('./backups/prod-2024-01-15.db')
   //   await db.$backup('./backup.db', { vacuum: true })  // VACUUM INTO — compact first
 
+  // Is every SQLite connection this client holds answering? True or a throw --
+  // a probe reads the throw as unwell, and a closed client says so in its own
+  // words rather than as a false with no cause. The write handle is asked, since
+  // a read handle can outlive a file the writer lost.
+  function $ping() {
+    for (const conn of Object.values(dbRegistry)) {
+      if (conn.rawWriteDb) conn.rawWriteDb.query('SELECT 1').get()
+    }
+    return true
+  }
+
   function $walStatus() {
     // PRAGMA wal_checkpoint=NOOP (SQLite 3.51.0+) reports WAL frame counts
     // without triggering a checkpoint. Safe to call at any time, even under load.
@@ -12291,7 +12310,7 @@ function makeLockPrimitive(rawWriteDb) {
     }
 
     const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
-    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12426,7 +12445,7 @@ function makeLockPrimitive(rawWriteDb) {
     }
 
     const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12506,7 +12525,7 @@ function makeLockPrimitive(rawWriteDb) {
       // Hands the callback THIS proxy — the dimension bindings and the auth on
       // it are what the body was asking for. See $transaction.
       $transaction: (fn) => $transaction(fn, scopedProxy),
-      asSystem, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb,
+      asSystem, $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb,
       $lock: lockPrimitive, $locks: lockPrimitive.$locks,
     }
     const scopedProxy = new Proxy(target, {
@@ -12720,7 +12739,7 @@ function makeLockPrimitive(rawWriteDb) {
   }
 
   const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
-  clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
+  clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
       if (prop === 'then')            return undefined

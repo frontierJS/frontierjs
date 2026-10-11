@@ -24,6 +24,10 @@ const sierra = createSierraViteConfig(sierraConfig)
 export default defineConfig({
   ...sierra,
 
+  // The app has one .env, at its root; vite reads the Vite root by default, so
+  // a VITE_ variable written there would reach nothing.
+  envDir: resolve(ROOT, '..'),
+
   // @frontierjs/ui is aliased to the WORKSPACE SOURCE, not to the copy under
   // node_modules. `bun install` resolves a workspace dep by copying it, so
   // without this every fix to a component would need a reinstall before this

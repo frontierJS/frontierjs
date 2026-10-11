@@ -355,7 +355,14 @@ function makeEnvExample(useAuth) {
     '# PORT=8100',
     '# APP_URL=http://localhost:8100',
     '# WEB_URL=http://localhost:8000   # the page a password-reset link opens',
-    'NODE_ENV=development',
+    '',
+    '# Read by web/ and site/ at BUILD time (their envDir is this folder). The API',
+    '# origin when it is not the page\'s own; empty means same origin behind one proxy.',
+    '# A site/ island never reaches /api by a relative path -- it is its own origin.',
+    '# VITE_API_URL=https://api.example.com',
+    '',
+    '# No NODE_ENV here: build scripts load this file, and a vite build that sees',
+    '# development ships every import.meta.env.DEV branch. The API defaults to it.',
     '',
   ]
   return lines.join('\n')
@@ -1288,6 +1295,10 @@ const base = createSierraViteConfig(sierraConfig)
 
 export default defineConfig({
   ...base,
+  // The app's one .env sits at its root, one level above this surface. Vite
+  // reads the Vite root by default, so a VITE_ variable written there reaches
+  // nothing and the client falls back to its default without a word.
+  envDir: '..',
   server: {
     // Spread, never replace: Sierra's own server block carries the HMR overlay
     // and the port. Its port default is 3000, which is nobody's slot in the

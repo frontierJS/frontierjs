@@ -252,35 +252,53 @@ export function cx(...parts) {
 /**
  * Where a portaled `position: fixed` panel sits against its trigger.
  *
- * `placement` is `'bottom-start' | 'bottom-end' | 'top-start' | 'top-end'`:
- * the side is a PREFERENCE that flips only when the panel does not fit there
- * and does fit on the other side, and the end is the edge the panel lines up
- * with, kept 8px inside the viewport. Three overlays each carried a copy
- * that read only the end, so `top-*` opened below like `bottom-*` did.
+ * `placement` is `'<side>-<align>'`: side `top | bottom | left | right`, align
+ * `start | center | end` (a bare side is `-start`). The side is a PREFERENCE
+ * that flips only when the panel does not fit there and does fit on the other
+ * side. The align is the edge, or the middle, the panel lines up with along
+ * the trigger, kept 8px inside the viewport. Three overlays each carried a
+ * copy that read only the end, so `top-*` opened below like `bottom-*` did.
  *
  *   const { x, y } = placeAgainst(triggerEl.getBoundingClientRect(),
  *                                 panelEl.getBoundingClientRect(),
  *                                 { placement, offset })
  */
 export function placeAgainst(tr, pr, { placement = 'bottom-start', offset = 4 } = {}) {
-  const winW  = window.innerWidth
-  const winH  = window.innerHeight
+  const winW = window.innerWidth
+  const winH = window.innerHeight
+  const [side, align = 'start'] = placement.split('-')
+
+  // The 8px margin never pushes the panel past its own trigger's edge: a
+  // trigger flush with the viewport keeps a panel flush with it.
+  const along = (size, trStart, trSize, winSize) => {
+    const start = align === 'end' ? trStart + trSize - size
+      : align === 'center' ? trStart + (trSize - size) / 2
+      : trStart
+    const floor = Math.max(0, Math.min(8, trStart))
+    return Math.max(floor, Math.min(start, winSize - size - 8))
+  }
+
+  if (side === 'left' || side === 'right') {
+    const after  = tr.right + offset
+    const before = tr.left - pr.width - offset
+    const fitsAfter  = after + pr.width <= winW
+    const fitsBefore = before >= 0
+    const x = side === 'left'
+      ? (fitsBefore || !fitsAfter ? before : after)
+      : (fitsAfter || !fitsBefore ? after : before)
+    return { x, y: along(pr.height, tr.top, tr.height, winH) }
+  }
+
   const below = tr.bottom + offset
   const above = tr.top - pr.height - offset
   const fitsBelow = below + pr.height <= winH
   const fitsAbove = above >= 0
 
-  const y = placement.startsWith('top')
+  const y = side === 'top'
     ? (fitsAbove || !fitsBelow ? above : below)
     : (fitsBelow || !fitsAbove ? below : above)
 
-  // The 8px margin never pushes the panel past its own trigger's edge: a
-  // trigger flush with the viewport keeps a panel flush with it.
-  const start = placement.endsWith('end') ? tr.right - pr.width : tr.left
-  const floor = Math.max(0, Math.min(8, tr.left))
-  const x = Math.max(floor, Math.min(start, winW - pr.width - 8))
-
-  return { x, y }
+  return { x: along(pr.width, tr.left, tr.width, winW), y }
 }
 
 /*

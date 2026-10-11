@@ -1,6 +1,6 @@
 ---
 title: db:reset
-description: Wipe and reset the database (remove file, migrate reset, push schema)
+description: Wipe the database file and rebuild it from its migration history (schema push when there is none)
 alias: db-reset
 examples:
   - fli db:reset

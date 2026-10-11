@@ -47,7 +47,7 @@ model Order {
 ```
 
 A `driver trail` database synthesizes its own model, named after the database:
-`audit` is read as `db.auditTrail`.
+`audit` becomes the model `AuditTrail`, read as `db.auditTrail`.
 
 ---
 

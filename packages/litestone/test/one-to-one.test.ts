@@ -87,6 +87,26 @@ describe('a one-to-one back-reference', () => {
     expect(err).toContain('@unique')        // the one-to-one way out
   })
 
+  // FJS-2055: under row tenancy the field-level @unique is scoped to
+  // (tenant, column), so the refusal is right, but "add @unique" names what the
+  // field already carries.
+  test('under row tenancy, names the scoping and does not ask for the @unique already there', () => {
+    const err = first(`tenancy { strategy row  column accountId }
+      model Account { id String @id  @@tenant(none) }
+      model User { id String @id
+        employee Employee?
+        @@tenant(none) }
+      model Employee { id String @id
+        accountId String
+        userId String? @unique
+        user User? @relation(fields: [userId], references: [id]) }`)
+    expect(err).toContain('is not unique')
+    expect(err).toContain('accountId')                 // the tenancy that scoped it
+    expect(err).toContain('employee Employee[]')       // the to-many way out
+    expect(err).toContain('@@tenant(none)')            // the owner-side way out
+    expect(err).not.toContain('add @unique')
+  })
+
   test('no back reference at all is named, and points at the labeled case when there is one', () => {
     expect(first(`model A { id String @id
       b B? }

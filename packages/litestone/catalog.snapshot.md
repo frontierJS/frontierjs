@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**116 words** — 13 declarations · 68 field attributes · 35 model attributes.
+**119 words** — 13 declarations · 68 field attributes · 35 model attributes · 3 move words.
 
 ## Declarations
 
@@ -38,7 +38,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@unique` | Identify a row |  | on a model's field · on a trait's field |  |  |
 | `@map` | Identify a row | ("column_name") | on a model's field · on a trait's field |  |  |
 | `@default` | Identify a row | (value \| [value, …] \| now() \| uuid() \| ulid() \| cuid() \| nanoid() \| auth().<claim> \| autoincrement()) |  |  |  |
-| `@sequence` | Identify a row | (scope: <field>) |  |  |  |
+| `@sequence` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
 | `@rank` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
 | `@relation` | Reach another row | (["name",] fields: [...], references: [...][, onDelete][, onUpdate]) | on a model's field · on a trait's field | onDelete: Cascade · SetNull · Restrict · NoAction |  |
 | `@from` | Reach another row | (<Model>, last\|first\|count\|sum\|max\|min\|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates]) | on a model's field · on a trait's field | operation: last · first · count · exists |  |
@@ -143,6 +143,14 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@createdBy` | Wire it to the app | [(<base>)] |  |  |  |
 | `@@updatedBy` | Wire it to the app | [(<base>)] |  |  |  |
 
+## Move words
+
+| word | group | arity | legal | accepts | notes |
+| --- | --- | --- | --- | --- | --- |
+| `@gate` | Decide who may | (<0-9>) |  |  |  |
+| `@system` | Decide who may |  |  |  |  |
+| `@seals` | Hide or lock a value |  |  |  |  |
+
 ## Positions
 
 Which switch parses a word is not the same question as where it is legal.
@@ -200,3 +208,4 @@ Shapes the parser accepts and something later refuses.
 | `index-over-a-json-document` | warn | an index over a Json column indexes the document, not anything inside it |
 | `unit-in-the-column-name` | info | the unit is in the identifier, where nothing can read it |
 | `check-without-an-operation-in-a-write-rule` | warn | a bare check() in a write rule asks the parent the same write |
+| `anonymous-create-auth-default` | warn | a public create on a model whose required column defaults to auth() |

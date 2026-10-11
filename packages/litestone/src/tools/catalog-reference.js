@@ -26,7 +26,7 @@
 // Rendered by `litestone catalog --reference`, byte-compared by `--check`.
 // Never imported by production code.
 
-import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, POSITIONS,
+import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, POSITIONS,
          POSITION_RULES, positionsOf, typed, grouped, probeFor, docFor,synonymsFor } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
@@ -73,7 +73,7 @@ function acceptsLines(row) {
  * reads, which hides the four that differ — and those four are the whole reason
  * the question is asked separately from which switch parses the word.
  */
-const ORDINARY = { field: 3, model: 2, schema: 1 }
+const ORDINARY = { field: 3, model: 2, schema: 1, move: 1 }
 
 function legalLine(row) {
   const all = positionsOf(row)
@@ -147,12 +147,13 @@ export function renderCatalogReference() {
        'Litestone Studio\'s Explore panel, which also places a word into your schema',
        'and shows you the diff first.', '')
   push(`**${CATALOG.length} words** — ${TOP_LEVEL.length} declarations · ` +
-       `${FIELD_ATTRS.length} field attributes · ${MODEL_ATTRS.length} model attributes.`, '')
+       `${FIELD_ATTRS.length} field attributes · ${MODEL_ATTRS.length} model attributes · ` +
+       `${MOVE_WORDS.length} move words.`, '')
 
   // ── index ───────────────────────────────────────────────────────────────────
   push('## Index', '')
   for (const [level, title] of [['schema', 'Declarations'], ['field', 'Field attributes'],
-                                ['model', 'Model attributes']]) {
+                                ['model', 'Model attributes'], ['move', 'Move words']]) {
     push(`**${title}**`, '')
     for (const g of grouped(level))
       push(`- *${g.title}* — ${g.rows.map(link).join(' · ')}`)
@@ -167,6 +168,8 @@ export function renderCatalogReference() {
      'One `@`, and it describes the column it sits on.'],
     ['model', 'Model attributes',
      'Two `@@`, and it describes the whole model rather than one of its columns.'],
+    ['move', 'Move words',
+     'One `@`, after the target of a `@@transitions` move. `@system` and `@gate` share a spelling with another word, so `litestone explain @system` answers for both.'],
   ]) {
     push(`## ${title}`, '', lead, '')
     // A level with one group needs no group heading — the declarations are all

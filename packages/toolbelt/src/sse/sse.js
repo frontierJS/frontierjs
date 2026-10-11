@@ -28,6 +28,8 @@ const BREAK = /[\r\n]/
 export function formatEvent({ data, event, id, retry } = {}) {
   // A line break in a field ends the field, so the rest of it would be read as
   // a field of its own — a name that frames a second event nobody sent.
+  if (event != null && typeof event !== 'string') throw new TypeError(`sse: an event name must be a string, not ${typeof event}`)
+  if (id != null && typeof id !== 'string') throw new TypeError(`sse: an id must be a string, not ${typeof id}`)
   if (event != null && BREAK.test(event)) throw new TypeError(`sse: an event name cannot hold a line break (${JSON.stringify(event)})`)
   if (id != null && (BREAK.test(id) || id.includes('\0'))) throw new TypeError(`sse: an id cannot hold a line break or NUL (${JSON.stringify(id)})`)
   if (retry != null && !(Number.isInteger(retry) && retry >= 0)) throw new TypeError(`sse: retry is a whole number of ms, not ${JSON.stringify(retry)}`)
@@ -36,8 +38,12 @@ export function formatEvent({ data, event, id, retry } = {}) {
   if (id != null) out += `id: ${id}\n`
   if (event) out += `event: ${event}\n`
   if (retry != null) out += `retry: ${retry}\n`
+  // A function or symbol encodes to undefined, and `data: undefined` is a frame
+  // a reader gets as the text "undefined".
+  const body = JSON.stringify(data ?? null)
+  if (body === undefined) throw new TypeError(`sse: data of type ${typeof data} cannot be written as JSON`)
   // JSON never holds a raw line break, so one data line carries any value.
-  return out + `data: ${JSON.stringify(data ?? null)}\n\n`
+  return out + `data: ${body}\n\n`
 }
 
 /**

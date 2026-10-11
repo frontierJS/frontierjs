@@ -36,7 +36,7 @@ describe('a jsonl trail decodes its Json columns', () => {
       expect(rows.find((r: any) => r.operation === 'read').meta).toEqual({ tool: 'x' })
       expect(rows.find((r: any) => r.operation === 'create').meta).toBeNull()
 
-      const lines = readFileSync(join(dir, 'audit', 'auditTrail.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      const lines = readFileSync(join(dir, 'audit', 'AuditTrail.jsonl'), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
       expect(lines.every((l: any) => Array.isArray(l.records))).toBe(true)
       db.$close()
     } finally { rmSync(dir, { recursive: true, force: true }) }

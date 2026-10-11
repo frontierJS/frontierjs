@@ -14,9 +14,10 @@
 import { describe, test, expect, beforeAll, afterEach, vi } from 'vitest'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { mkdirSync, writeFileSync, readFileSync } from 'fs'
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 
-import { islandEntrySource, injectIslandScript, injectIntoPages } from '../src/build/island-bundle.js'
+import { islandEntrySource, injectIslandScript, injectIntoPages, relativeApiCalls, buildIslandBundle } from '../src/build/island-bundle.js'
+import { build } from 'vite'
 import { prerenderRoutes } from '../src/build/prerender.js'
 import { tmpDir } from './tmp.js'
 
@@ -469,5 +470,58 @@ describe('island loader', () => {
     expect(win.document.body.innerHTML).toContain('prerendered')
     expect(err.mock.calls.flat().join(' ')).toMatch(/failed to load or mount/)
     err.mockRestore()
+  })
+})
+
+// ── A relative API path in an island (FJS-1233) ───────────────────────────────
+
+describe('relativeApiCalls', () => {
+  test('finds a literal opening on /api, in any quote, and nothing that builds the URL from an origin', () => {
+    const hit = (s) => relativeApiCalls(s).length
+    expect(hit("fetch('/api/event-types/1')")).toBe(1)
+    expect(hit('fetch("/api/event-types/1")')).toBe(1)
+    expect(hit('fetch(`/api/event-types/${id}`)')).toBe(1)
+    expect(hit("const base = '/api'")).toBe(1)
+
+    // The spelling that works on a separate origin, and prose about the path.
+    expect(hit('fetch(`${API_URL}/api/event-types/${id}`)')).toBe(0)
+    expect(hit("fetch(API_URL + '/api/x')")).toBe(0)
+    expect(hit("const a = '/apiary'")).toBe(0)
+    expect(hit("// fetch('/api/x') is wrong here")).toBe(0)
+    expect(hit(" * calls '/api/x'")).toBe(0)
+  })
+
+  test('reports the line it is on', () => {
+    expect(relativeApiCalls("a\nb\nfetch('/api/x')\n")).toEqual([{ line: 3, text: "fetch('/api/x')" }])
+  })
+})
+
+describe('buildIslandBundle', () => {
+  test('warns, naming the file and line, for an island fetching /api by a relative path', async () => {
+    // Inside the package, not /tmp: the generated entry imports
+    // @frontierjs/sierra/islands, which only resolves from beneath it.
+    const root = join(__dirname, 'tmp-island-relative-api')
+    rmSync(root, { recursive: true, force: true })
+    mkdirSync(join(root, 'src/islands'), { recursive: true })
+    const module = join(root, 'src/islands/Slots.js')
+    writeFileSync(module, "export default () => fetch('/api/event-types/1')\n")
+
+    const warned = []
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a) => { warned.push(a.join(' ')) })
+    try {
+      await buildIslandBundle({
+        islands: [{ component: 'Slots', module }],
+        root, outDir: join(root, 'dist'), viteBuild: build,
+        // The generated entry imports the runtime loader by package name.
+        plugins: [],
+      })
+    } finally {
+      spy.mockRestore()
+      rmSync(root, { recursive: true, force: true })
+    }
+
+    const text = warned.join('\n')
+    expect(text).toContain('src/islands/Slots.js:1')
+    expect(text).toContain('relative path')
   })
 })

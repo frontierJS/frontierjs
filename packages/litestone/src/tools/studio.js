@@ -403,6 +403,7 @@ export async function cmdStudio(cfg) {
   })()
 
   let _liveParse = { text: BOOT_SCHEMA_TEXT, parsed: parseResult }
+  const adviseMemo = new WeakMap()   // parsed schema -> { findings, missing }
 
   function currentSchemaParse() {
     try {
@@ -447,13 +448,29 @@ export async function cmdStudio(cfg) {
   //
   // This travels WITH the answer rather than sitting on a badge, because the
   // reading and the caveat are read at different moments otherwise.
+  //
+  // The pristine side is the boot parse and never changes, so the answer is a
+  // function of the live DDL alone, and SQLite's schema_version moves on every
+  // CREATE, ALTER and DROP from any connection. Building the pristine database,
+  // introspecting and diffing was 20-33 ms on 62 tables, paid by the Advisor,
+  // Migrations and the Overview on every visit (`FJS-2322`).
+  const diffMemo = new WeakMap()   // handle -> { version, dbName, diff }
+  const schemaVersionOf = handle => {
+    try { return handle.query('PRAGMA schema_version').get().schema_version } catch { return null }
+  }
   async function diffAgainstSchema(dbName, handle) {
+    const version = schemaVersionOf(handle)
+    const hit     = diffMemo.get(handle)
+    if (version != null && hit && hit.version === version && hit.dbName === dbName) return hit.diff
+
     const { buildPristineForDatabase } = await import('../core/migrate.js')
     const pristineDb = openDatabase(':memory:')
     try {
       const pristine = buildPristineForDatabase(pristineDb, parseResult, dbName)
       const live     = introspect(handle)
-      return diffSchemas(pristine, live, parseResult, dbName, { pluralize: cfg.pluralize })
+      const diff     = diffSchemas(pristine, live, parseResult, dbName, { pluralize: cfg.pluralize })
+      if (version != null) diffMemo.set(handle, { version, dbName, diff })
+      return diff
     } finally { pristineDb.close() }
   }
 
@@ -614,6 +631,95 @@ export async function cmdStudio(cfg) {
     return Response.json(data, { status })
   }
 
+  // ── Revision: what a panel compares to know its answer is still true ────────
+  // Every response carries it, so the page learns of its own writes from the
+  // reply to them and of everyone else's from the drift poll. Four sources,
+  // because no one of them sees all the others: `generation` counts what Studio
+  // wrote (SQLite's data_version only moves for ANOTHER connection's commit),
+  // data_version and schema_version cover a writer outside, and the stamps cover
+  // the schema file and the migration files, which no database knows about.
+  let generation = 0
+  const WRITE_ROUTES = ['/api/row/', '/api/rows/', '/api/import', '/api/repl', '/api/factory',
+    '/api/migrations/apply', '/api/migrations/auto', '/api/migrations/create',
+    '/api/maint/', '/api/transform/run', '/api/tenants/migrate', '/api/tenants/open',
+    '/api/perf/advisor/fix', '/api/seed/run', '/api/schema-source']
+  // /api/query is the one route that is a read or a write by its text.
+  const READ_SQL = /^\s*(SELECT|EXPLAIN|WITH|PRAGMA\s+(TABLE_INFO|INDEX_LIST|FOREIGN_KEY_LIST))\b/i
+  const isWrite  = (req, path, body) => req.method === 'POST'
+    && (path === '/api/query' ? !READ_SQL.test(body.sql ?? '') : WRITE_ROUTES.some(p => path.startsWith(p)))
+
+  function stampOf(path) {
+    try {
+      const st = statSync(path)
+      if (!st.isDirectory()) return String(st.mtimeMs)
+      // A migration is edited in place as often as it is added, and a directory's
+      // mtime moves only for the second; a multi-database layout nests one deeper.
+      let n = 0, sum = 0
+      const walk = dir => {
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          const p = join(dir, e.name)
+          if (e.isDirectory()) walk(p)
+          else { n++; sum += statSync(p).mtimeMs }
+        }
+      }
+      walk(path)
+      return `${n}:${sum}`
+    } catch { return '-' }
+  }
+
+  function revision() {
+    const parts = [generation]
+    for (const h of new Set([activeRawDb, ...Object.values(activeRawDbs ?? {})])) {
+      if (!h) continue
+      try { parts.push(h.query('PRAGMA data_version').get().data_version, schemaVersionOf(h)) } catch {}
+    }
+    parts.push(stampOf(resolve(cfg.schema)), stampOf(resolve(cfg.migrations)))
+    return parts.join('.')
+  }
+
+  // ── Transport: compression and revalidation ────────────────────────────────
+  // ~830 KB per reload went out as it was, so a host reached over a network paid
+  // for all of it every time; gzip makes the page 115 KB. The page and the
+  // catalog never change within a process, so they carry a tag and answer 304.
+  const COMPRESSIBLE = /^(text\/|application\/json)/
+  const tagOf = bytes => `"${Bun.hash(bytes).toString(36)}"`
+  const gzipped = new Map()   // key -> { gz, tag } for a body that is fixed for the process
+  function fixed(key, text, type) {
+    let hit = gzipped.get(key)
+    if (!hit) {
+      const bytes = new TextEncoder().encode(text)
+      hit = { gz: Bun.gzipSync(bytes), plain: bytes, tag: tagOf(bytes), type }
+      gzipped.set(key, hit)
+    }
+    return hit
+  }
+  function fixedResponse(req, hit) {
+    const headers = { 'Content-Type': hit.type, 'ETag': hit.tag, 'Cache-Control': 'no-cache', 'Vary': 'Accept-Encoding' }
+    if (req.headers.get('if-none-match') === hit.tag) return new Response(null, { status: 304, headers })
+    if (/\bgzip\b/.test(req.headers.get('accept-encoding') ?? ''))
+      return new Response(hit.gz, { headers: { ...headers, 'Content-Encoding': 'gzip' } })
+    return new Response(hit.plain, { headers })
+  }
+
+  // The last stop for every response: the revision on all of them, gzip on a
+  // JSON body big enough to be worth it.
+  async function ship(req, res) {
+    res.headers.set('X-Studio-Rev', revision())
+    const type = res.headers.get('content-type') ?? ''
+    // A download is a stream of unknown length; buffering it to compress it
+    // would hold the whole table in memory.
+    if (res.status === 304 || res.headers.has('content-encoding') || res.headers.has('content-disposition')
+        || !COMPRESSIBLE.test(type)
+        || !/\bgzip\b/.test(req.headers.get('accept-encoding') ?? '')) return res
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const headers = res.headers
+    headers.set('Vary', 'Accept-Encoding')
+    headers.delete('content-length')
+    if (bytes.length < 1024) return new Response(bytes, { status: res.status, headers })
+    headers.set('Content-Encoding', 'gzip')
+    return new Response(Bun.gzipSync(bytes), { status: res.status, headers })
+  }
+
   // ── Server-side search / sort helpers for /api/table and /api/table-dump ──
   // Turns the Browse filter box text into a real WHERE clause: substring match
   // on String fields, exact match on numeric fields when the query is numeric,
@@ -705,16 +811,16 @@ export async function cmdStudio(cfg) {
   // schema writes. A non-loopback --host is refused above unless it carries a
   // --token, so by the time this runs the bind is either loopback or authed.
   const hostname = hostFlag ?? '127.0.0.1'
-  const server = Bun.serve({
-    port,
-    hostname,
+  const router = {
     async fetch(req) {
       const url  = new URL(req.url)
       const path = url.pathname
       const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
 
       if (path === '/' || path === '/index.html')
-        return new Response(html, { headers: { 'Content-Type': 'text/html' } })
+        return fixedResponse(req, fixed('html', html, 'text/html'))
+
+      if (isWrite(req, path, body)) generation++
 
       if (!path.startsWith('/api/')) return new Response('Not Found', { status: 404 })
 
@@ -746,7 +852,7 @@ export async function cmdStudio(cfg) {
           const stats     = getDbStats()
           const counts    = await getRowCounts(stats)
           // Use db.$schema — the augmented schema that includes auto-generated
-          // trail models (e.g. auditTrail) and view stubs. parseResult.schema
+          // trail models (e.g. AuditTrail) and view stubs. parseResult.schema
           // is the raw parsed result and is missing these synthetic models.
           const liveSchema = activeDb.$schema
           const multiDb   = liveSchema.databases.some(db => !db.driver || db.driver === 'sqlite')
@@ -1193,12 +1299,14 @@ export async function cmdStudio(cfg) {
         // re-applies: one implementation of "where is this legal", and the
         // browser gets an answer instead of a second copy of POSITION_RULES.
         if (path === '/api/catalog')
-          return json({
-            catalog:   CATALOG.map(r => ({ ...r, positions: positionsOf(r), doc: docFor(r),
+          return fixedResponse(req, fixed('catalog', JSON.stringify({
+            // A move word is written inside a @@transitions argument, and the
+            // panel's "place this word" gesture inserts at a field or a model.
+            catalog:   CATALOG.filter(r => r.level !== 'move').map(r => ({ ...r, positions: positionsOf(r), doc: docFor(r),
                                           synonyms: synonymsFor(r), tier: tierFor(r) })),
             groups:    GROUPS,
             positions: POSITIONS,
-          })
+          }), 'application/json'))
 
         // The visibility table and the rules, over the schema as it stands. The
         // interview needs the table with no edit in hand, and the rules are
@@ -1210,14 +1318,18 @@ export async function cmdStudio(cfg) {
           // endpoint because a panel asks both at once; two lists because a
           // defect and a suggestion cannot share a severity word.
           const { OPPORTUNITIES, checkOpportunities } = await import('../core/opportunities.js')
+          // The findings are a function of the parsed schema, which
+          // currentSchemaParse hands back by identity until the text changes.
           const parsed = currentSchemaParse().schema
+          let found = adviseMemo.get(parsed)
+          if (!found) adviseMemo.set(parsed, found = { findings: checkRules(parsed), missing: checkOpportunities(parsed) })
           return json({
             visibility:    VISIBILITY,
             perCaller:     PER_CALLER,
             rules:         RULES.map(({ id, severity, title }) => ({ id, severity, title })),
-            findings:      checkRules(parsed),
+            findings:      found.findings,
             opportunities: OPPORTUNITIES.map(({ id, confidence, word, title }) => ({ id, confidence, word, title })),
-            missing:       checkOpportunities(parsed),
+            missing:       found.missing,
           })
         }
 
@@ -2034,10 +2146,9 @@ export async function cmdStudio(cfg) {
 
             const outputs = []
             const result = await execute(
-              absDb,
+              { db: absDb, pipeline },
               { verbose: true, outputPath: resolvedOut, schemaPath: cfg.schema },
               run,
-              pipeline,
             ).catch(e => { throw e })
             .finally(() => { console.log = origLog })
 
@@ -2256,7 +2367,8 @@ export async function cmdStudio(cfg) {
         return json({ error: e.message }, 500)
       }
     },
-  })
+  }
+  const server = Bun.serve({ port, hostname, fetch: async req => ship(req, await router.fetch(req)) })
 
   const displayHost = (hostname === '127.0.0.1' || hostname === '0.0.0.0') ? 'localhost' : hostname
   // server.port, never the requested one: `--port=0` asks the OS for any free

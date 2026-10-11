@@ -8,15 +8,15 @@
 //      partial state, bookkeeping committed atomically, FK pragma restored.
 import { describe, it, test, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, rmSync, statSync, utimesSync } from 'fs'
 import { tempDir } from '../src/tmp-dirs.js'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { parse } from '../src/core/parser.js'
 import { splitStatements, parseChecks } from '../src/core/migrate.js'
 import { createClient } from '../src/index.js'
-import { create, apply, status, autoMigrate, appliedMigrations,
-         listMigrationFiles, nextMigrationName } from '../src/core/migrations.js'
+import { create, apply, status, verify, autoMigrate, appliedMigrations,
+         listMigrationFiles, nextMigrationName, unresolvedBlocks } from '../src/core/migrations.js'
 
 const V1 = `
 model Post {
@@ -202,6 +202,22 @@ model Tag {
     expect(again.refused).toBeUndefined()
     expect(again.failed).toBeUndefined()
     expect(db.query(`SELECT name FROM sqlite_master WHERE name = 'tag'`).all()).toEqual([{ name: 'tag' }])
+  })
+
+  // The file cache must not trust a timestamp: a rewrite inside one mtime
+  // tick, or with the mtime restored, still has to read back as the new text
+  // (FJS-2267).
+  it('a rewritten file reads back as its new text even when its mtime did not move', () => {
+    const { dir } = freshLab()
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, '20200101000000_held.sql')
+    writeFileSync(path, '-- "post": rebuild BLOCKED\nSELECT 1;\n')
+    expect(unresolvedBlocks(dir, ['20200101000000_held.sql'])).toEqual(['20200101000000_held.sql'])
+
+    const { atimeMs, mtimeMs } = statSync(path)
+    writeFileSync(path, '-- resolved by hand\nSELECT 1;\n')
+    utimesSync(path, atimeMs / 1000, mtimeMs / 1000)
+    expect(unresolvedBlocks(dir, ['20200101000000_held.sql'])).toEqual([])
   })
 })
 
@@ -1015,6 +1031,15 @@ model Post {
     recipe(create(db, parse(`${POST}}\n`), 'seq', dir).sql)
   })
 
+  it('a compound scope partitions by every column and seeds the same key the client writes', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const sql = create(db, parse(`${POST.replace('scope: views', 'scope: [views, title]')}}\n`), 'seq', dir).sql
+    expect(sql).toContain('ROW_NUMBER() OVER (PARTITION BY "views", "title" ORDER BY "id")')
+    expect(sql).toContain(`json_array(CAST("views" AS TEXT), CAST("title" AS TEXT))`)
+    expect(sql).toContain('"views" IS NOT NULL AND "title" IS NOT NULL GROUP BY "views", "title"')
+  })
+
   it('a rebuild-path block names them too', async () => {
     const { dir, db } = freshLab()
     await seedV1(db, dir)
@@ -1097,5 +1122,36 @@ model Post {
     expect(rating.notnull).toBe(1)
     expect(rating.dflt_value).toBeNull()
     expect((db.query(`SELECT COUNT(*) c FROM post WHERE rating = 3`).get() as { c: number }).c).toBe(2)
+  })
+})
+
+// FJS-2426: apply, status and verify take the SQLite handle while autoMigrate
+// beside them takes the client; a client handed to one used to die in
+// ensureTrackingTable with `"run" is not a table in this schema`.
+describe('apply, status and verify refuse a client by name (FJS-2426)', () => {
+  const setup = async () => {
+    const { dir, db } = freshLab()
+    const client = await createClient({ db: ':memory:', schema: V1 })
+    return { dir, db, client }
+  }
+
+  it('status', async () => {
+    const { dir, client } = await setup()
+    expect(() => status(client as any, dir)).toThrow(/\$rawDbs\.main/)
+  })
+
+  it('apply', async () => {
+    const { dir, client } = await setup()
+    await expect(apply(client as any, dir)).rejects.toThrow(/\$rawDbs\.main/)
+  })
+
+  it('verify', async () => {
+    const { dir, client } = await setup()
+    expect(() => verify(client as any, parse(V1), dir)).toThrow(/\$rawDbs\.main/)
+  })
+
+  it('a raw handle still works', async () => {
+    const { dir, db } = await setup()
+    expect(status(db, dir)).toEqual([])
   })
 })

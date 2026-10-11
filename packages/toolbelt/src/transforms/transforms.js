@@ -31,13 +31,15 @@ export function isTransform(name) {
 /**
  * One value through an ordered list of transforms. A name this kit does not
  * know is skipped: a newer schema read by an older reader must not throw.
+ * `null` and `undefined` are absent, not text, and come back as they went in:
+ * `String(null)` is `'null'`, which would turn a cleared field into a value.
  *
  * @param {readonly string[]|null|undefined} names
  * @param {unknown} value
  * @returns {unknown}
  */
 export function transform(names, value) {
-  if (!names?.length) return value
+  if (!names?.length || value == null) return value
   let v = value
   for (const name of names) if (isTransform(name)) v = TRANSFORMS[name](v)
   return v

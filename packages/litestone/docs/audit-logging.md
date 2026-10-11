@@ -258,7 +258,7 @@ const history = await trail.findMany({
 })
 ```
 
-The auto-generated model name for a trail database is `<dbName>Trail` — `audit` → `auditTrail`.
+The auto-generated model name for a trail database is `<DbName>Trail` — `audit` → `AuditTrail`, read as `db.auditTrail`.
 
 ## @secret — encrypted + guarded + logged
 

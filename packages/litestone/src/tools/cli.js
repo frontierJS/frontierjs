@@ -34,6 +34,7 @@ import { resolveTenancy }                              from '../core/tenancy.js'
 import { modelToAccessor }           from '../core/ddl.js'
 import { findPrincipal }                               from './principal.js'
 import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag, getFlags,
+         KNOWN_FLAGS, unknownFlags,
          fatal, rel, header, loadSchema, getEncKey, resolveDbPath,
          declaresDatabases, clientDb, loadGateResolver,
          loadBaselineSchema, parseBaseline }        from './cli-helpers.js'
@@ -169,13 +170,24 @@ const HELP = `
     ${dim('  --only=User,Post')}                    only emit types for these models
     ${dim('  --audience=client|system')}             field visibility (default: client)
     ${cyan('litestone studio')} [--no-open]        open Litestone Studio
+    ${dim('  --port <n>')}                          listen here ${dim('(default: 8502)')}
     ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
     ${dim('  --host <addr> --token <secret>')}      serve beyond loopback; the token is required there
+    ${dim('  --insecure')}                          serve beyond loopback with no token
     ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
     ${dim(`  --eval '<expr>'`)}                     evaluate one line, print it as JSON, exit 1 on a throw
     ${dim('  --tenant <id>')}                       whose database, under strategy database (asked when omitted)
     ${cyan('litestone export')} <dataset> --as <who>  take an extract, graded as that account
+    ${dim('  --system')}                            as the system, in place of --as
+    ${dim('  --gate <path[#export]>')}              the app's own getLevel
+    ${dim('  --tenant <id>')}                       whose database, under strategy database
+    ${dim('  --format=<f>  --since=<instant>')}     override the dataset's declared format and window
+    ${dim('  --out=<dir>')}                         write <dataset>.<format> and its manifest here ${dim('(default: .)')}
+    ${dim('  --stdout')}                            the extract to stdout, no files
+    ${dim('  --include-protected  --with-deleted')} what an extract leaves out by default
     ${cyan('litestone doctor')}                     check setup, audit health
+    ${dim('  --ci')}                                one line per check, exit 1 on an error
+    ${dim('  --fix')}                               apply the fixes a check offers
     ${cyan('litestone seed')} [SeederClass]             seed the database
     ${cyan('litestone seed run')} [name]               run an infrastructure seed (--force to re-run)
     ${cyan('litestone introspect')} <db>              reverse-engineer db → schema.lite
@@ -217,12 +229,23 @@ const HELP = `
     ${dim('  --purpose=<path>')}                       the app's PURPOSE.md ${dim('(default: found above the schema)')}
     ${dim('  --snapshot')}                             write assistant.snapshot.md ${dim('(--check in CI)')}
     ${cyan('litestone jsonschema')}                   generate JSON Schema from schema.lite
+    ${dim('  --format=definitions|flat')}              document shape ${dim('(default: definitions)')}
+    ${dim('  --mode=create|update|full')}              which fields each model carries ${dim('(default: create)')}
+    ${dim('  --all-modes')}                            one document per mode
+    ${dim('  --include-timestamps  --include-deleted-at')}  fields left out by default
+    ${dim('  --out=<path>  --stdout')}                 where it goes
+    ${dim('  --snapshot')}                             the reviewable rendering ${dim('(--check in CI)')}
     ${cyan('litestone access')}                       write the access snapshot ${dim('(--check in CI)')}
+    ${dim('  --json  --out=<path>  --stdout')}         the snapshot as data, and where it goes
+    ${dim('  --for=<who>')}                            what one account can do now ${dim('(reads the database)')}
+    ${dim('  --from=<ref|path>  --strict')}            diff against a release; exit 1 unless it narrows, is new or unchanged
     ${cyan('litestone ddl')}                          write the DDL snapshot ${dim('(--check in CI)')}
+    ${dim('  --pluralize  --out=<path>  --stdout')}    table names, and where it goes
     ${cyan('litestone release')}                      classify the deploy: expand, contract or unknown
     ${dim('  --from=<ref|path>')}                      the release to compare against ${dim('(default: HEAD)')}
     ${dim('  --strict')}                               exit 1 unless the verdict is expand
     ${cyan('litestone mutate')}                       mutate the schema, report what the checks miss
+    ${dim('  --kinds=a,b')}                            only these kinds of mutant
 
   ${bold('Options')}
     ${dim('--schema=<path>')}     path to schema.lite         ${dim('(auto-detected if omitted)')}
@@ -242,6 +265,30 @@ const HELP = `
       migrations: './migrations',
     }
 `
+
+// A command's own help is its slice of HELP — the head line and the flag lines
+// under it, for every head that names the command (`migrate` has five) — so
+// there is one table and a flag added beside its command is discoverable at
+// once. Matching runs on the text with colors stripped, since `c` may be on.
+const ANSI_RE = /\x1b\[[0-9;]*m/g
+const HELP_ALIAS = { audit: 'doctor' }
+
+function helpFor(cmd) {
+  const word = HELP_ALIAS[cmd] ?? cmd
+  const lines = HELP.split('\n')
+  const options = lines.findIndex(l => l.replace(ANSI_RE, '').trim() === 'Options')
+  const config  = lines.findIndex(l => l.replace(ANSI_RE, '').startsWith('  Config'))
+  const out = []
+  let on = false
+  for (const line of lines.slice(0, options)) {
+    const head = line.replace(ANSI_RE, '').match(/^ {4}litestone (\S+)/)
+    if (head) on = head[1] === word
+    if (on) out.push(line)
+  }
+  if (!out.length) return null
+  return ['', `  ${bold('litestone ' + word)}`, '', ...out, '',
+          ...lines.slice(options, config)].join('\n')
+}
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -821,7 +868,7 @@ async function cmdDev(label, cfg) {
   let   pending     = 0
 
   try {
-    for (const { name, rawDb, migrationsDir } of dbs) {
+    for (const { name, rawDb, path, migrationsDir } of dbs) {
       if (multi) console.log(`  ${dim(`database: ${cyan(name)}`)}`)
 
       // Asked BEFORE anything is written: a drifted database cannot apply what
@@ -838,7 +885,7 @@ async function cmdDev(label, cfg) {
           `\n     ${dim('`db push` writes tables and no file, so a pushed change lives here and')}` +
           `\n     ${dim('nowhere else. A migration created now cannot re-apply over it.')}` +
           `\n\n     Keep the data:   ${cyan('litestone migrate create')}${dim(' then ')}${cyan('litestone migrate baseline')}` +
-          `\n     Start clean:     ${cyan('litestone db reset')}${dim('  then ')}${cyan('litestone migrate dev')}\n`
+          `\n     Start clean:     ${dim('delete ')}${cyan(rel(path))}${dim(' (and its -wal and -shm), then ')}${cyan('litestone migrate dev')}\n`
         )
         continue
       }
@@ -1998,7 +2045,7 @@ async function cmdAdvise(cfg) {
 
 
 async function cmdExplain(word) {
-  const { CATALOG, POSITIONS, positionsOf, typed, lookup, grouped, docFor, bySynonym } =
+  const { CATALOG, POSITIONS, positionsOf, typed, grouped, docFor, bySynonym } =
     await import('../core/catalog.js')
   const { VISIBILITY, PER_CALLER } = await import('../core/advise.js')
 
@@ -2025,8 +2072,9 @@ async function cmdExplain(word) {
   if (!word) {
     if (asJson) { process.stdout.write(JSON.stringify(CATALOG, null, 2) + '\n'); return }
     header('litestone explain')
-    for (const level of ['schema', 'field', 'model']) {
-      const label = level === 'schema' ? 'Declarations' : level === 'field' ? 'Field attributes' : 'Model attributes'
+    for (const level of ['schema', 'field', 'model', 'move']) {
+      const label = { schema: 'Declarations', field: 'Field attributes', model: 'Model attributes',
+                      move: 'Move words (inside @@transitions)' }[level]
       console.log(`  ${bold(label)}`)
       for (const g of grouped(level)) {
         console.log(`    ${dim(g.title)}`)
@@ -2042,11 +2090,13 @@ async function cmdExplain(word) {
 
   // A bare word may exist at two levels with different meanings. Showing both
   // beats picking one: @unique constrains a column and @@unique constrains a
-  // tuple, and a reader who typed neither prefix wanted to be told that.
+  // tuple, and a reader who typed neither prefix wanted to be told that. A typed
+  // prefix is the same question one step along: `@system` is a column attribute
+  // AND a move word, and the prefix is shared, so every row typed that way answers.
   const bare  = String(word).replace(/^@@?/, '')
   const typedPrefix = String(word).startsWith('@')
   const rows  = typedPrefix
-    ? [lookup(word)].filter(Boolean)
+    ? CATALOG.filter(r => typed(r) === word)
     : CATALOG.filter(r => r.word === bare)
 
   // A synonym is an exact hit, not a guess: `aggregate` IS @from, and answering
@@ -2118,8 +2168,12 @@ async function cmdExplain(word) {
       console.log(`  ${dim('one of five answers to the same question —')} ${cyan('litestone explain --visibility')}\n`)
   }
 
-  if (rows.length > 1)
-    console.log(`  ${dim('two words, one spelling — the prefix picks which:')} ${rows.map(r => cyan(typed(r))).join('  ')}`)
+  if (rows.length > 1) {
+    const sameSpelling = new Set(rows.map(typed)).size === 1
+    console.log(sameSpelling
+      ? `  ${dim('one spelling, two meanings — by where it sits:')} ${rows.map(r => cyan(POSITIONS[r.level] ?? r.level)).join('  ')}`
+      : `  ${dim('two words, one spelling — the prefix picks which:')} ${rows.map(r => cyan(typed(r))).join('  ')}`)
+  }
   console.log()
 }
 
@@ -4819,9 +4873,24 @@ async function main() {
     return
   }
 
+  // `litestone help export` and `litestone export --help` are one call. A word
+  // that is no command falls through to the whole list.
   if (!cmd || flag('help') || cmd === 'help') {
-    console.log(HELP)
+    const about = cmd === 'help' ? sub : cmd
+    console.log((about && helpFor(about)) || HELP)
     return
+  }
+
+  const unknown = unknownFlags()
+  if (unknown.length) {
+    const lines = unknown.map(name => {
+      const near = [...KNOWN_FLAGS].filter(k => k.includes(name) || name.includes(k) || editDistance(k, name) <= 2)
+      const hint = name === 'dry' && cmd === 'migrate'
+        ? `the preview is ${cyan('litestone migrate dry-run')}`
+        : near.length ? `did you mean ${near.slice(0, 4).map(k => cyan(`--${k}`)).join(', ')}?` : ''
+      return `${red(`--${name}`)}${hint ? `  ${dim(hint)}` : ''}`
+    })
+    fatal(`unknown flag${unknown.length > 1 ? 's' : ''}: nothing ran\n     ${lines.join('\n     ')}\n     ${dim(`litestone help${cmd ? ` ${cmd}` : ''}`)}`)
   }
 
   if (cmd === 'init')   { await cmdInit();   return }

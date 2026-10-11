@@ -226,7 +226,7 @@ describe('the walk itself', () => {
     const report = await validateRows(c)
     await c.$close()
 
-    expect(report.skipped).toEqual([{ model: 'auditTrail', reason: 'trail driver — its rows are written by the audit trail, not by a caller' }])
+    expect(report.skipped).toEqual([{ model: 'AuditTrail', reason: 'trail driver — its rows are written by the audit trail, not by a caller' }])
     expect(report.checked.map((r: any) => r.model)).toEqual(['User'])
   })
 })

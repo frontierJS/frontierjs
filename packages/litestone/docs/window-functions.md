@@ -34,7 +34,7 @@ const rows = await db.order.findMany({
 // rows[1] → { id: 2, amount: 30, status: 'paid', ..., rn: 2 }
 ```
 
-Each key in `window` becomes a computed column on every row. A window column rides on the whole row: it cannot be named in a `select`, and a `select` that names other columns leaves it out.
+Each key in `window` becomes a computed column on every row. With no `select` a window column rides on the whole row. A `select` is a projection: name the window key to keep it (`select: { id: true, rn: true }`), and a `select` that does not name it leaves it out.
 
 ## Positional functions
 

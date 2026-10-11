@@ -223,6 +223,13 @@ test('predicate: columnOf is how a belongsTo field finds its foreign key', funct
   assert.equal(evaluate(node, { record: { ownerId: 7 }, auth: { id: 7 } }), null)
 })
 
+test('predicate: `owner == auth().id` reads the foreign key too, as `owner == auth()` does (FJS-2215)', function () {
+  const env  = { record: { ownerId: 7 }, auth: { id: 7 }, columnOf: (n) => (n === 'owner' ? 'ownerId' : n) }
+  const node = cmp(fld('owner'), '==', { type: 'auth', field: 'id' })
+  assert.equal(evaluate(node, env), true)
+  assert.equal(evaluate(node, { ...env, auth: { id: 8 } }), false)
+})
+
 test('predicate: `owner == null` reads the foreign key, as the SQL half compiles it', function () {
   const env = { columnOf: (n) => (n === 'owner' ? 'ownerId' : n) }
   assert.equal(evaluate(cmp(fld('owner'), '==', lit(null)), { ...env, record: { ownerId: 7 } }), false)

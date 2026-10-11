@@ -85,7 +85,7 @@ try {
   const badRow = await api('/factory', { table: 'nope2' })
   ok('a non-access error offers no retry', !badRow.retryAsSystem, JSON.stringify(badRow))
 
-  const log = await api('/factory', { table: 'auditTrail' })
+  const log = await api('/factory', { table: 'AuditTrail' })
   ok('logger model refused by name', !log.ok && /append-only|Unknown table/.test(log.error ?? ''), log.error)
 
   const bad = await api('/factory', { table: 'nope' })

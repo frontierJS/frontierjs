@@ -25,6 +25,10 @@ export default defineConfig({
   ...base,
   root: ROOT,
 
+  // The app has one .env, at its root; vite reads the Vite root by default, so
+  // a VITE_ variable written there would reach nothing.
+  envDir: resolve(ROOT, '..'),
+
   // Same reason as the SPA config: @frontierjs/ui is aliased to the workspace
   // source, because `bun install` copies a workspace dep and a stale copy looks
   // exactly like a component that does not work.

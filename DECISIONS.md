@@ -15802,7 +15802,7 @@ It also answers the three questions `FJS-D153` left to a second connector:
   event or a refusal, called from a raw route over `ctx.$raw.rawBody`. A hook
   wrapping it is added once two apps write the same wrapper.
 
-Nothing enforces the contract yet. The `fli check` rule that would is `FJS-2544`.
+The contract is graded by `fli check`'s `connector-contract`: each `packages/conduit-*` holds a sink, a drive and `@frontierjs/conduit` as a peer. The rest of the list is a judgement no rule makes.
 *Lives in:* this ruling · the first extraction, `@frontierjs/conduit-stripe`.
 
 ### <a id="fjs-d889"></a>2026-10-10 · `FJS-D889` — A connector may own a PROTOCOL, and is then named for the protocol: `conduit-s3`, `conduit-oidc`, `conduit-openai`.

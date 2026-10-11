@@ -17,7 +17,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { createApp, createService, bearerClaim, BEARER, header, authorization, cookie, sessionGateLevel } from '../index.ts'
+import { createApp, createService, mergeHookMaps, bearerClaim, BEARER, header, authorization, cookie, sessionGateLevel } from '../index.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
@@ -581,6 +581,27 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     // The row the create wrote holds the link digest of the token the caller was handed.
     const digest = await fingerprint(made.token, { key: KEY, purpose: 'portalLink.tokenHash.link' })
     expect((await db.asSystem().portalLink.findFirst({ where: { tokenHash: digest } }))?.id).toBe(made.id)
+  })
+
+  // A service file has no registered service to call .hooks() on (FJS-2270):
+  // the definition's own `hooks:` key, merged with the file's other hooks, is the spelling.
+  test('mintOnCreate() rides a definition\'s hooks: key, merged with the service\'s own hooks', async () => {
+    const db = await grants()
+    const app = createApp({ db, principal: link })
+    let ownRan = false
+    app.services.register(createService({
+      name:  'portalLinks',
+      model: 'PortalLink',
+      hooks: mergeHookMaps(link.mintOnCreate(), { before: { create: [async () => { ownRan = true }] } }),
+      async create(ctx: ServiceContext) {
+        return (ctx.locals.db as any).portalLink.create({ data: ctx.data, system: [...ctx.system] })
+      },
+    }))
+
+    const made: any = await app.service('portalLinks').create({ customerId: 1 }, { auth: { user: SELLER as never } })
+    expect(typeof made.token).toBe('string')
+    expect('tokenHash' in made).toBe(false)
+    expect(ownRan).toBe(true)
   })
 })
 

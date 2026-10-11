@@ -100,3 +100,35 @@ describe('litestone explain', () => {
     expect(JSON.parse(miss.out).error).toContain('nosuchword')
   })
 })
+
+// FJS-1482 — the three words a @@transitions move takes. `@@transitions` names
+// them in its own signature, so a reader checking one of them must not be told
+// it does not exist, or handed the column attribute's meaning.
+describe('litestone explain — the words a move takes', () => {
+  test('@seals and @gate are words, and say they belong to a @@transitions move', () => {
+    for (const w of ['@seals', '@gate']) {
+      const { out, status } = run(w)
+      expect(status).toBe(0)
+      expect(out).toContain(w)
+      expect(out).toContain('@@transitions')
+    }
+  })
+
+  test('@system answers for the move AND the column, because the spelling is shared', () => {
+    const { out } = run('@system')
+    expect(out).toContain('trackingCode String @system')
+    expect(out).toContain('@@transitions')
+  })
+
+  test('@@gate stays the model attribute, and a bare gate answers both', () => {
+    expect(run('@@gate').out).not.toContain('floor on a move')
+    const bare = run('gate').out
+    expect(bare).toContain('@@gate')
+    expect(bare).toMatch(/(^|[^@])@gate/m)
+  })
+
+  test('--json carries the move rows with their level', () => {
+    const rows = JSON.parse(run('@seals', '--json').out)
+    expect(rows.map((r: any) => r.level)).toEqual(['move'])
+  })
+})

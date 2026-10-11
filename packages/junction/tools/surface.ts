@@ -206,6 +206,8 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
     // file and readable nowhere else.
     for (const [method, type] of Object.entries(svc.inputs).sort())
       out.push(`- **input** — \`${method}\` takes \`${type}\``)
+    for (const [method, type] of Object.entries(svc.outputs).sort())
+      out.push(`- **output** — \`${method}\` answers \`${type}\``)
     const grades = Object.entries(svc.methodGrades)
     if (grades.length) {
       out.push('- **who may call** —')

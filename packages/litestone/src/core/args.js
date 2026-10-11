@@ -1170,9 +1170,12 @@ export function withArgValidation(table, model, ctx) {
       if (!(isWrite && sel === false)) throw selectContainerRefusal(sel, method, isWrite)
     }
     if (sel && typeof sel === 'object' && !Array.isArray(sel)) {
+      // A window column rides on the row, so a select is the only place to ask
+      // for it; the names are the call's own `window` keys.
+      const win = args.window && typeof args.window === 'object' && !Array.isArray(args.window) ? args.window : null
       for (const [k, v] of Object.entries(sel)) {
-        if (!v || selectable.has(k)) continue
-        throw selectRefusal('select', k, selectable, method)
+        if (!v || selectable.has(k) || (win && Object.hasOwn(win, k))) continue
+        throw selectRefusal('select', k, win ? [...selectable, ...Object.keys(win)] : selectable, method)
       }
     }
     if (args?.distinct != null && typeof args.distinct !== 'boolean')

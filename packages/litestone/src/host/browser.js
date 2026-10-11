@@ -193,3 +193,9 @@ export function sleepSync(ms) {
   const end = performance.now() + ms
   while (performance.now() < end);
 }
+
+// ─── who is writing ───────────────────────────────────────────────────────
+//
+// No pid to read, and the caller's random suffix is what tells two contexts
+// apart, so the prefix only has to say where it came from.
+export const processId = () => 'browser'

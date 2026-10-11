@@ -43,6 +43,7 @@ export const POSITIONS = {
   enumMember: 'on an enum member',
   model:      'in a model',
   traitBlock: 'in a trait',
+  move:       'on a @@transitions move',
 }
 
 /**
@@ -325,7 +326,7 @@ const FIELD = [
     'sequence',
     'field',
     'identity',
-    '(scope: <field>)',
+    '(scope: <field> | [<field>, …])',
     "A counter scoped to another field's value — invoice #0001 per account. Litestone keeps the counters in _litestone_sequences.",
     'number Int @sequence(scope: accountId)',
     { extraFields: 'accountId Int' }
@@ -1327,17 +1328,65 @@ const MODEL = [
   )
 ]
 
+// ─── move ─────────────────────────────────────────────────────────────────────
+//
+// The three words a `@@transitions` move takes after its target. They are typed
+// with one `@` like a field attribute, and two of them share a spelling with
+// another row while meaning something else -- `@system` with the column's,
+// `@gate` with the model's `@@gate` -- so the prefix alone cannot pick the row,
+// and `explain` answers a `@` word with every `@` row of that name. `example` is
+// the whole `@@transitions` line, because a move word is legal nowhere else.
+
+const MOVE_CONTEXT = 'enum DocState {\n  draft\n  issued\n  void\n}'
+const MOVE_FIELDS  = 'state DocState @default(draft)'
+
+const MOVE = [
+  t(
+    'gate',
+    'move',
+    'access',
+    '(<0-9>)',
+    "The level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.",
+    '@@transitions(state, void: [draft, issued] -> void @gate(5))',
+    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'system'] }
+  ),
+  t(
+    'system',
+    'move',
+    'access',
+    '',
+    "The move is the APPLICATION's: a caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask. Not the column's @system, which is a value the application writes.",
+    '@@transitions(state, issue: draft -> issued @system @gate(5))',
+    { context: MOVE_CONTEXT, extraFields: MOVE_FIELDS, seeAlso: ['transitions', 'gate', 'guarded'] }
+  ),
+  t(
+    'seals',
+    'move',
+    'protect',
+    '',
+    "The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.",
+    '@@transitions(state, issue: draft -> issued @seals)',
+    {
+      context: MOVE_CONTEXT,
+      extraFields: 'state DocState @default(draft)\n  total Int @immutable',
+      seeAlso: ['transitions', 'sealed', 'immutable']
+    }
+  )
+]
+
 // ─── the table ────────────────────────────────────────────────────────────────
 
-export const CATALOG = [...TOP, ...FIELD, ...MODEL]
+export const CATALOG = [...TOP, ...FIELD, ...MODEL, ...MOVE]
 
 export const TOP_LEVEL       = TOP
 export const FIELD_ATTRS     = FIELD
 export const MODEL_ATTRS     = MODEL
+export const MOVE_WORDS      = MOVE
 
 /** Every position a word is legal in, computed from POSITION_RULES. */
 export function positionsOf(row) {
   if (row.level === 'schema') return ['schema']
+  if (row.level === 'move')   return ['move']
   const all = row.level === 'field' ? FIELD_POSITIONS : MODEL_POSITIONS
   return all.filter(pos => {
     const rule = POSITION_RULES[pos]
@@ -1349,7 +1398,7 @@ export function positionsOf(row) {
 
 /** The word as it is typed, prefix included: `model`, `@guarded`, `@@gate`. */
 export function typed(row) {
-  return row.level === 'schema' ? row.word : row.level === 'field' ? `@${row.word}` : `@@${row.word}`
+  return row.level === 'schema' ? row.word : row.level === 'model' ? `@@${row.word}` : `@${row.word}`
 }
 
 /**
@@ -1548,6 +1597,9 @@ export const DOCS = {
   'model:scope': 'filtering.md',
   'model:tenant': 'multi-tenancy.md',
   'model:transitions': 'schema.md',
+  'move:gate': 'schema.md',
+  'move:system': 'schema.md',
+  'move:seals': 'modeling.md',
   'model:auth': 'access-control.md',
   'model:person': 'audit-logging.md',
   'model:trail': 'audit-logging.md',
@@ -1661,7 +1713,11 @@ export const TIERS = {
     'model:tenant',
     'model:trait',
     'model:createdBy',
-    'model:updatedBy'
+    'model:updatedBy',
+    // move words
+    'move:gate',
+    'move:system',
+    'move:seals'
   ],
   situational: [
     // declarations
@@ -1768,12 +1824,12 @@ export const AXES = {
   access: [
     'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
     'field:capability', 'field:encrypted', 'field:hashed', 'field:personal',
-    'field:secret', 'field:allow', 'model:capabilities', 'model:gate', 'model:export',
+    'field:secret', 'field:allow', 'move:gate', 'move:system', 'model:capabilities', 'model:gate', 'model:export',
     'model:allow', 'model:deny', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
     'model:anonymous'
   ],
   life: [
-    'field:keep', 'field:immutable', 'field:sealed', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
+    'field:keep', 'field:immutable', 'field:sealed', 'move:seals', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
     'field:version', 'field:trail', 'model:sync', 'model:softDelete', 'model:expires',
     'model:effective', 'model:commitment', 'model:transitions', 'model:trail', 'model:createdBy',
     'model:updatedBy'

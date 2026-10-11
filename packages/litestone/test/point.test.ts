@@ -290,6 +290,17 @@ describe('near', () => {
     ])
     expect((await db.place.findMany({ where: { site: null } })).map((p: any) => p.name)).toEqual(['nowhere'])
   })
+
+  it('finds the rows that have a location, however it is spelled (FJS-2071)', async () => {
+    const db = await placesDb([
+      { name: 'here',    site: { lat: 1, lng: 2 } },
+      { name: 'nowhere', site: null },
+    ])
+    const names = async (where: any) => (await db.place.findMany({ where })).map((p: any) => p.name)
+    expect(await names({ site: { not: null } })).toEqual(['here'])
+    expect(await names({ NOT: { site: null } })).toEqual(['here'])
+    expect(await names({ OR: [{ site: { not: null } }, { name: 'nowhere' }] })).toEqual(['here', 'nowhere'])
+  })
 })
 
 describe('near, graded against a brute-force scan', () => {

@@ -1706,6 +1706,30 @@ export function unknownKeys(input: unknown, fields: Set<string>): string[] {
   })
 }
 
+const _toldAuthor = new WeakMap<object, Set<string>>()
+
+/**
+ * The way to accept a refused key, said to the app's author in the server log.
+ *
+ * It is advice for whoever can edit `db/schema.lite`, and the caller of a
+ * public gate is a stranger who cannot — sent in the 400 it only advertises
+ * the schema's seams (`FJS-2082`). Once per service, method and shape, so a
+ * caller varying the key cannot write the log at request rate.
+ */
+function tellAuthor(ctx: ServiceContext, what: string, escape: string): void {
+  const client = ctx.locals.db as object | undefined
+  const id     = `${ctx.service}.${String(ctx.method)}|${what}`
+  if (client) {
+    let told = _toldAuthor.get(client)
+    if (!told) { told = new Set(); _toldAuthor.set(client, told) }
+    if (told.has(id)) return
+    told.add(id)
+  }
+  console.warn(
+    `[Junction] service '${ctx.service}': ${String(ctx.method)} refused a key that ${what} does not declare. ${escape}`,
+  )
+}
+
 /**
  * Refuse the keys of ONE row that name nothing the shape declares.
  *
@@ -1739,10 +1763,11 @@ export function checkUnknownKeys(
     : []
   if (!bad.length && !locked.length) return
 
+  if (bad.length) tellAuthor(ctx, what, escape)
   throw fieldError([
     ...bad.map(field => ({
       field,
-      message: `is not a field of ${what}. ${escape}`,
+      message: `is not a field of ${what}.`,
     })),
     // The strip is for a column a client echoes back from a read. A @guarded
     // column is never read, so naming one is never an echo: dropping it would
@@ -1940,7 +1965,7 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
     const one = (row: unknown): Record<string, unknown> => {
       checkUnknownKeys(
         ctx, row, compiled.fields, compiled.model,
-        'Declare it `@transient` on the model if a caller should be able to send it.',
+        'Declare it `@transient` on the model in db/schema.lite if a caller should be able to send it.',
         compiled.guarded,
       )
       return compiled[mode].parse(row) as Record<string, unknown>
@@ -2129,13 +2154,16 @@ export function validateInput(defsKey: string, serviceName: string, method: stri
     const one = (row: unknown): Record<string, unknown> => {
       checkUnknownKeys(
         ctx, row, declared, `type ${defsKey}`,
-        `Add it to \`type ${defsKey}\` in the seed if this method should accept it.`,
+        `Add it to \`type ${defsKey}\` in db/schema.lite if this method should accept it.`,
       )
       const nested = undeclaredNestedKeys(row, jsonSchema.$defs[defsKey] as ClosedTypeDef, jsonSchema.$defs)
       if (nested.length) {
+        for (const type of new Set(nested.map(n => n.type))) {
+          tellAuthor(ctx, `type ${type}`, `Add it to \`type ${type}\` in db/schema.lite if this method should accept it.`)
+        }
         throw fieldError(nested.map(({ field, type }) => ({
           field,
-          message: `is not a field of type ${type}. Add it to \`type ${type}\` in the seed if this method should accept it.`,
+          message: `is not a field of type ${type}.`,
         })))
       }
       return schema.parse(row) as Record<string, unknown>
@@ -3204,13 +3232,20 @@ export const sessionGateLevel: (user?: GradableUser | null) => number = gradeSta
  *
  * Sibling of `sessionGateLevel()`: same boundary, same direction, one for the
  * ordinal gate and one for the policy predicate.
+ *
+ * The same rename carries the KIND of caller. The audit trail's `actorType`
+ * reads `type` and a session states `userType`, so the app's own principal
+ * (`createApp({ system })`) writing through its scoped client was filed as a
+ * user on every entry (`FJS-2514`). Only `service` crosses: `admin` is a
+ * standing a person holds, and the trail files that person as a user.
  */
 export function toDataPrincipal(user: unknown): unknown {
   if (!user || typeof user !== 'object') return user
-  const u = user as { id?: unknown; userId?: unknown }
-  if (u.id !== undefined && u.id !== null) return user
-  if (u.userId === undefined || u.userId === null) return user
-  return { ...user, id: u.userId }
+  const u = user as { id?: unknown; userId?: unknown; type?: unknown; userType?: unknown }
+  const type = u.type == null && u.userType === 'service' ? { type: 'service' } : null
+  if (u.id !== undefined && u.id !== null) return type ? { ...user, ...type } : user
+  if (u.userId === undefined || u.userId === null) return type ? { ...user, ...type } : user
+  return { ...user, id: u.userId, ...type }
 }
 
 // ─── Claims resolved per request ─────────────────────────────────────────────

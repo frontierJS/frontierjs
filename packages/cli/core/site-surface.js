@@ -119,6 +119,35 @@ ${dbLine}
 `
 }
 
+/**
+ * Where an island finds the API. A site is its own origin, so the relative
+ * `/api/...` every other surface uses lands on the site's own SPA fallback:
+ * 200 or 404 from a server that has no API, which an island reports as an empty
+ * answer. The origin is a build-time constant because a static page has no
+ * server to ask.
+ */
+export function siteApiModule({ apiPort = 8100 } = {}) {
+  return `// site/src/api.js -- where this site's islands find the API.
+//
+// Never fetch a relative '/api/...' from an island: this surface is its own
+// origin, so that path resolves against the site, which has no API. The page
+// then renders whatever the empty answer means -- no times, no products -- over
+// a request that never reached anything.
+//
+// Set VITE_API_URL in the app's .env for a deployment. Empty ('') means the
+// API is behind the same origin as the site, one proxy in front of both. Unset
+// is this app's own API port in dev.
+export const API_URL = import.meta.env?.VITE_API_URL ?? 'http://localhost:${apiPort}'
+
+/**
+ * What createJunctionClient needs, and it is TWO keys: \`url\` is the ORIGIN
+ * and \`apiPrefix\` is the PATH the app mounts its services under, which must
+ * match the server's own. Leave \`url\` out and it is the site's origin.
+ */
+export const clientOptions = { url: API_URL, apiPrefix: '/api' }
+`
+}
+
 export function siteViteConfig({ port = 8600 } = {}) {
   return `// site/config/vite.config.js
 // \`vite dev\` here is how the site is WRITTEN — routes served as a client-routed
@@ -144,6 +173,10 @@ const base = createSierraViteConfig(sierraConfig)
 export default defineConfig({
   ...base,
   root: ROOT,
+  // An app has ONE .env, at its root, and vite looks in the Vite root unless
+  // told otherwise -- so a VITE_ variable written beside every other setting
+  // reaches nothing and the client falls back to its default without a word.
+  envDir: resolve(ROOT, '..'),
   server: {
     ...base.server,
     // dev / siteDev / this app's project id — derived, never chosen. A public
@@ -319,7 +352,7 @@ CMD ["bun", "run", "site/deploy/serve.js"]
  */
 export function scaffoldSiteSurface({
   root, dir = 'site', appName = 'app', hasApi = true,
-  devPort = 8600, servePort = 8700,
+  devPort = 8600, servePort = 8700, apiPort = 8100,
 } = {}) {
   const base = resolve(root, dir)
   for (const d of SITE_SURFACE_DIRS) mkdirSync(resolve(base, d), { recursive: true })
@@ -329,6 +362,7 @@ export function scaffoldSiteSurface({
     ['config/vite.config.js',   siteViteConfig({ port: devPort })],
     ['index.html',              siteIndexHtml({ appName })],
     ['src/main.js',             siteMainEntry()],
+    ['src/api.js',              siteApiModule({ apiPort })],
     ['src/routes/index.mesa',   siteHomePage({ appName })],
     ['src/islands/Counter.mesa', siteIslandStarter()],
     ['deploy/serve.js',         siteServeEntry({ servePort })],
