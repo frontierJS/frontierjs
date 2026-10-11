@@ -6,8 +6,9 @@
  * Three runs of Sierra's shell (`@frontierjs/sierra/tui`) from `web/`:
  * `--list`, which says per route whether it lowers and names the first
  * blocker, run again over `fixtures/tui-imports/` for which import mounts a
- * file; `--frame` of `/reports/` and of `/plans/7/`, a route taking a param,
- * painted; and the interactive shell under a pty: `/reports/` opened, its
+ * file; `--frame` of `/reports/`, of `/plans/7/`, a route taking a param,
+ * and of `/settings/`, whose theme radios are the app's theme block, painted;
+ * and the interactive shell under a pty: `/reports/` opened, its
  * Orders link followed into `/orders/` and Esc walked back through both, a
  * typed `/plans/7/` opened and left with Esc;
  * `/people/`'s Drawer, the kit's modal `<dialog>`, opened over the page and
@@ -76,6 +77,13 @@ check(frame.stdout.includes('Revenue is administrator-only'), 'and the gate refu
 
 const param = spawnSync('bun', [TUI, '--frame', '/plans/7/', '--api', API], { cwd: WEB, encoding: 'utf8' })
 check(param.status === 0 && /^Plans\s*$/m.test(param.stdout), '--frame opens a route by a path that fills its param', param.stdout + param.stderr)
+
+// The app's theme block reaches the terminal: six themes offered, the default
+// checked, and the footer naming it (FJS-2565).
+const settings = spawnSync('bun', [TUI, '--frame', '/settings/', '--api', API], { cwd: WEB, encoding: 'utf8' })
+check(/\(•\) default\s+\( \) dark\s+\( \) forest\s+\( \) midnight\s+\( \) sunset\s+\( \) elite/.test(settings.stdout),
+  "/settings/ offers the app's six themes with its default checked", settings.stdout + settings.stderr)
+check(settings.stdout.includes('theme theme-default ·'), 'and its footer names the resolved theme', settings.stdout)
 
 // ─── interactive ──────────────────────────────────────────────────────
 

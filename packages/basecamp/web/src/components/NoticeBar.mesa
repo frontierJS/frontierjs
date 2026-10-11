@@ -11,6 +11,7 @@
   // mock behaves the same way, for the same reason.
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { PRIORITY_TONE } from '../notices.js'
 
@@ -22,17 +23,39 @@
 
   // Derived, so a new notice arriving over the WebSocket re-renders the bar
   // without anything here being told about it.
-  $: visible = notices.filter(n => !dismissed.includes(n.id)).slice(0, max)
+  $: live    = notices.filter(n => !dismissed.includes(n.id))
+  $: visible = live.slice(0, max)
+  $: summary = ['critical', 'warning', 'info']
+    .map(p => ({ p, n: live.filter(x => x.priority === p).length }))
+    .filter(s => s.n)
+
+  let collapsed = false
 
   function dismiss(id) {
     // A new array, not a push: Mesa re-derives from the assignment.
     dismissed = [...dismissed, id]
   }
+
+  // Every live notice, not just the few shown: "all" means all.
+  function dismissAll() {
+    dismissed = [...dismissed, ...live.map(n => n.id)]
+  }
 </script>
 
-{#if visible.length}
+{#if live.length}
   <section class="stack" aria-label={heading || 'Needs attention'}>
-    {#each visible as n}
+    <div class="cluster">
+      <Button variant="ghost" onclick={() => collapsed = !collapsed}>
+        {collapsed ? '▸' : '▾'}
+        {#if collapsed}
+          {summary.map(s => `${s.n} ${s.p}`).join(' · ')}
+        {:else}
+          Collapse
+        {/if}
+      </Button>
+      <Button variant="ghost" onclick={dismissAll}>Mark all</Button>
+    </div>
+    {#each collapsed ? [] : visible as n}
       <Alert tone={PRIORITY_TONE[n.priority]} title={n.title} dismissible onclose={() => dismiss(n.id)}>
         {n.detail}
         {#if n.href}

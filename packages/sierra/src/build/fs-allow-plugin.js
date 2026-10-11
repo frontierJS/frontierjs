@@ -12,29 +12,40 @@
  * console warning. The worker imports litestone's browser worker, so that
  * package's real directory has to be servable as well.
  *
+ * The same holds for every other linked package. Vite serves a file outside
+ * the list once an importer it has transformed resolves to it, so ui, css and
+ * toolbelt work on a warm server, and 403 when the browser asks first: a page
+ * reloaded from cached module URLs after a restart. So every `@frontierjs/*`
+ * the app links is allowed, not only the two the worker needs.
+ *
  * Setting `server.fs.allow` replaces Vite's default, so the workspace root
  * goes first to keep what was allowed before. Vite concatenates arrays when it
  * merges configs, so an app's own `fs.allow` still adds to this list.
  */
 
-import { existsSync, realpathSync } from 'fs'
+import { existsSync, readdirSync, realpathSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { searchForWorkspaceRoot } from 'vite'
 
 const SIERRA_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
-/** The real directory of `@frontierjs/<name>` as the app would resolve it. */
-function linkedPackageDir(root, name) {
+/** The real directory of every `@frontierjs/*` package, as the app would resolve it. */
+function linkedPackageDirs(root) {
   let dir = resolve(root)
   for (let i = 0; i < 6; i++) {
-    const pkgDir = resolve(dir, 'node_modules', '@frontierjs', name)
-    if (existsSync(pkgDir)) return realpathSync(pkgDir)
+    const scope = resolve(dir, 'node_modules', '@frontierjs')
+    if (existsSync(scope)) {
+      return readdirSync(scope)
+        .map(name => resolve(scope, name))
+        .filter(existsSync)
+        .map(p => realpathSync(p))
+    }
     const up = dirname(dir)
     if (up === dir) break
     dir = up
   }
-  return null
+  return []
 }
 
 export function fsAllowPlugin() {
@@ -44,8 +55,7 @@ export function fsAllowPlugin() {
     config(userConfig) {
       const root = resolve(userConfig.root ?? process.cwd())
       const allow = [searchForWorkspaceRoot(root), realpathSync(SIERRA_DIR)]
-      const litestone = linkedPackageDir(root, 'litestone')
-      if (litestone) allow.push(litestone)
+      for (const dir of linkedPackageDirs(root)) if (!allow.includes(dir)) allow.push(dir)
       return { server: { fs: { allow } } }
     },
   }

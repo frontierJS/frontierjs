@@ -45,7 +45,7 @@ half is built — a no-op after the first time — unless `desktop/dist` is miss
 which the shell's compile needs, and then the whole of `deploy/build.mjs` runs.
 
 ```js
-const { desktopBinary, desktopApiTarget, ensureServer, stopServer, surfaceRow } =
+const { desktopBinary, desktopApiTarget, ensureServer, movedShellBuild, stopServer, surfaceRow } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { detectRunner } = await import(resolve(global.fliRoot, 'core/db-preflight.js'))
 
@@ -71,7 +71,15 @@ if (flag.build) {
     ? `cargo build --manifest-path ${JSON.stringify(join(surface, 'shell', 'Cargo.toml'))}`
     // tauri-build reads frontendDist at compile time, so a first build needs the screens too.
     : `${JSON.stringify(process.execPath)} ${JSON.stringify(join(surface, 'deploy', 'build.mjs'))}`
-  $.exec({ command, cwd: surface, dry: flag.dry })
+  try {
+    $.exec({ command, cwd: surface, dry: flag.dry })
+  } catch (err) {
+    const was = movedShellBuild(surface)
+    if (!was) throw err
+    log.error(`The shell's build cache was compiled at ${was}, and this app has moved since — cargo reused output that names the old place.`)
+    log.error(`Clear it, then run this again: cargo clean --manifest-path ${relative(process.cwd(), join(surface, 'shell', 'Cargo.toml'))}`)
+    process.exit(1)
+  }
 }
 
 const binary = desktopBinary(surface)

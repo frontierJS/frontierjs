@@ -41,8 +41,8 @@
  */
 
 import { spawn }                                from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { resolve, dirname, basename, isAbsolute, relative } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { resolve, dirname, basename, isAbsolute, relative, sep } from 'node:path'
 import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
@@ -532,6 +532,33 @@ export function desktopBinary(surface, { release = false, platform = process.pla
     ?.split('"')[1]
   if (!crate) return null
   return resolve(surface, 'shell', 'target', release ? 'release' : 'debug', platform === 'win32' ? `${crate}.exe` : crate)
+}
+
+/**
+ * The directory the shell's build cache was compiled in, when that is not where
+ * the shell is now — or `null`. A build script's output is cached with absolute
+ * paths in it, and cargo reuses it after the app is moved or renamed, so
+ * tauri-build reads files under a directory that no longer exists. Cargo's
+ * `root-output` holds each script's OUT_DIR, which is how the old place is read.
+ *
+ * Only asked after a failed build: most cached scripts never use their paths
+ * again, so a moved cache usually builds clean.
+ */
+export function movedShellBuild(surface) {
+  const target = resolve(surface, 'shell', 'target')
+  const here   = existsSync(target) ? realpathSync(target) : target
+  for (const profile of ['debug', 'release']) {
+    const build = resolve(target, profile, 'build')
+    if (!existsSync(build)) continue
+    for (const dir of readdirSync(build)) {
+      const file = resolve(build, dir, 'root-output')
+      if (!existsSync(file)) continue
+      const outDir = readFileSync(file, 'utf8').trim()
+      const at = outDir.lastIndexOf(`${sep}target${sep}`)
+      if (at !== -1 && outDir.slice(0, at + 7) !== here) return outDir.slice(0, at)
+    }
+  }
+  return null
 }
 
 /**

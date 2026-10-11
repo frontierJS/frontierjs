@@ -18,6 +18,11 @@ title: Sign in
   //
   // `session.js` already recorded that this screen is where the reason should
   // surface. It said so and nothing here read it.
+  //
+  // Sierra ALSO puts a refused sign-in on `session.error` (and rethrows it to
+  // the form), so once this page has made an attempt the banner would repeat
+  // the form's message under a "could not reach the server" title — a wrong
+  // password reported as an outage. `attempted` hands the message to the form.
   $: (session.error, session.awaitingCode)
 
   // A plain `let` is already component state — it must NOT go in a `$:` path
@@ -26,6 +31,7 @@ title: Sign in
   let email    = ''
   let password = ''
   let code     = ''
+  let attempted = false
 
   // <Form> owns the in-flight flag, the form-level message and the submit
   // guard, so none of the three is declared here. There is no resource behind
@@ -44,12 +50,14 @@ title: Sign in
   // A password accepted for an account with a second factor signs nobody in:
   // `session.awaitingCode` is set and the code box below replaces the form.
   async function submit() {
+    attempted = true
     await signIn(email, password)
     if (session.awaitingCode) { password = ''; return }
     goto(landing())
   }
 
   async function verify() {
+    attempted = true
     await submitCode(code.trim())
     code = ''
     goto(landing())
@@ -87,7 +95,7 @@ title: Sign in
      1280px screen is a wall, not a form. The width is a vocabulary term,
      not a number chosen here. -->
 <div class="container narrow">
-  {#if session.error}
+  {#if session.error && !attempted}
     <Alert tone="warning" id="session-error" title="Could not reach the server">
       {session.error}
     </Alert>

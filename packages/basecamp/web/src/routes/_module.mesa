@@ -672,6 +672,9 @@ siteName: Basecamp
   /* NoticeBar renders nothing once every notice is dismissed; an empty rail
      would still hold a gap above the content, or a blank 20rem column. */
   .notice-rail:not(:has(section)) { display: none; }
+  /* The workbench is a working surface, not a reading column: let it take the
+     whole width the screen gives it. */
+  .screen-body:has(:global(.workbench)) { max-inline-size: none; }
 
   @media (min-width: 1536px) {
     .screen-grid:has(> .notice-rail section) {

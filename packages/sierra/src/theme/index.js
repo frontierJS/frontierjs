@@ -118,13 +118,18 @@ function normalize(config) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 /**
- * Boot the theme system. Called by virtual:sierra.
+ * Boot the theme system. Called by virtual:sierra, the island bundle and the
+ * terminal shell.
+ *
+ * The value is resolved on every surface, and the document and OS-preference
+ * work happens only where they exist. A terminal has a `window` (OpenTUI plants
+ * one) with no `matchMedia` and no `document`, so `typeof window` is the test
+ * for neither (`FJS-2565`).
+ *
  * @param {object} config — theme config from sierra.config.js
  */
 export function initTheme(config = {}) {
   _config = normalize(config)
-
-  if (typeof window === 'undefined') return
 
   const resolved = resolveTheme()
   _w().value = resolved
@@ -132,7 +137,8 @@ export function initTheme(config = {}) {
 
   // Watch system preference changes (only relevant if default === 'system' or
   // if user hasn't overridden)
-  const mq = window.matchMedia('(prefers-color-scheme: dark)')
+  const mq = systemQuery()
+  if (!mq) return
   mq.addEventListener('change', () => {
     // Only react to system changes if the user hasn't persisted an override
     if (_config.persist) {
@@ -204,14 +210,19 @@ function resolveTheme() {
     if (stored && _config.themes.includes(stored)) return stored
   }
 
-  // 2. Config default
+  // 2. Config default. With no OS preference to read, 'system' is its light theme.
   if (_config.default === 'system') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-      ? _config.system.dark
-      : _config.system.light
+    return systemQuery()?.matches ? _config.system.dark : _config.system.light
   }
 
   return _config.themes.includes(_config.default) ? _config.default : _config.themes[0]
+}
+
+/** The OS dark-mode query, or null where there is no `matchMedia`: a server, and a terminal. */
+function systemQuery() {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null
 }
 
 function applyTheme(value) {

@@ -29,6 +29,14 @@ const { compileSource } = await import(resolve(HERE, '../../mesa/src/compiler.js
 const { parse: parseJs } = await import(resolve(HERE, '../../mesa/node_modules/acorn/dist/acorn.mjs'))
 const { listPage, createPage, editPage, resourceRoutePage } = await import(resolve(HERE, '../core/crud-templates.js'))
 const { resourceFile } = await import(resolve(HERE, '../core/resource-template.js'))
+const { homePage, isStarterHome } = await import(resolve(HERE, '../core/home-template.js'))
+
+// What `fli make:home` writes for two models, the people last.
+const HOME_AREAS = [
+  { model: 'Order', service: 'orders', href: '/orders/' },
+  { model: 'User',  service: 'users',  href: '/users/' },
+]
+const home = homePage({ title: 'Shop "Front"', summary: 'Sells things.', areas: HOME_AREAS, register: true })
 
 // The shape `fli make:scaffold` actually passes — see commands/make/scaffold.md.
 // Two imports off one file: the default export is the model's default form,
@@ -78,6 +86,7 @@ const GENERATED = {
   'make:route — list':   resourceRoutePage({ path: 'orders', model: 'Order', service: 'orders' }).content,
   'make:route — create': resourceRoutePage({ path: 'orders/create', model: 'Order', service: 'orders' }).content,
   'make:route — detail': resourceRoutePage({ path: 'orders/[id]', model: 'Order', service: 'orders' }).content,
+  'make:home — home page': home,
 }
 
 describe('what the generators write', () => {
@@ -199,7 +208,9 @@ describe('what the generators write', () => {
   test('a generated list page reads its state through list() and offers the window', () => {
     let lists = 0
     for (const [what, source] of Object.entries(GENERATED)) {
-      if (!source.includes('<Table')) continue
+      // The home page's table is five rows of one model, not a list page: it
+      // has no URL state and no window to offer.
+      if (!source.includes('<Table') || what.startsWith('make:home')) continue
       lists++
       expect(source, `${what} does not use list()`).toMatch(/const list = \w+\.list\(/)
       expect(source, `${what} still wires a load by hand`).not.toMatch(/\$:\s*page\.query/)
@@ -315,5 +326,34 @@ describe('make:route --resource', () => {
     for (const p of ['searchIndexes', 'searchIndexes/create', 'searchIndexes/[id]']) {
       expect(page(p).content, p).not.toContain('/searchIndexes/')
     }
+  })
+})
+
+describe('make:home', () => {
+  test('replaces the tour fli new writes and nothing else', () => {
+    expect(isStarterHome('  // ─── the tour ──────────\n')).toBe(true)
+    expect(isStarterHome(home)).toBe(false)
+  })
+
+  test('imports each area\'s own Resource and links its list page', () => {
+    expect(home).toContain("import { orders } from '@/resources/Order.mesa'")
+    expect(home).toContain("{ resource: orders, href: '/orders/', label: \"Orders\", one: \"Order\" }")
+  })
+
+  test('the title and summary are JS strings, so a quote in either cannot break the page', () => {
+    expect(home).toContain('const title   = "Shop \\"Front\\""')
+    expect(home).toContain('const summary = "Sells things."')
+  })
+
+  test('the template names no state, field or column: the machine is read off the Resource', () => {
+    expect(home).toContain('rule?.transitions')
+    expect(home).toContain('.columns()')
+    expect(home).toContain("replace(/^\\w/, c => c.toUpperCase())")
+    expect(home).not.toMatch(/status|createdAt: /)
+  })
+
+  test('the register link is offered only where the app has the page', () => {
+    expect(home).toContain('href="/register/"')
+    expect(homePage({ title: 'X', areas: HOME_AREAS })).not.toContain('href="/register/"')
   })
 })

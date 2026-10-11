@@ -192,9 +192,7 @@ describe('theme state', () => {
   // so it is a cycle — and it must wrap rather than stop at the end.
   test('and wraps, with more than two', () => {
     initTheme({ themes: ['a', 'b', 'c'], default: 'a' })
-    // Set the start explicitly: `initTheme` resolves nothing without a window
-    // (it is SSR-safe by design), so the value here is whatever ran last.
-    setTheme('a')
+    expect(theme.value).toBe('a')
     toggleTheme(); expect(theme.value).toBe('b')
     toggleTheme(); expect(theme.value).toBe('c')
     toggleTheme(); expect(theme.value).toBe('a')
@@ -257,6 +255,26 @@ describe('theme state', () => {
     initTheme({ attribute: 'data-theme', apply: 'attribute' })
     expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
+  })
+
+  // The terminal's shape: OpenTUI plants a `window` holding requestAnimationFrame
+  // and nothing else, so a `typeof window` guard passes and matchMedia throws.
+  // Skipping resolution there left the value blank (`FJS-2565`).
+  describe('with a window that has no matchMedia', () => {
+    const had = 'window' in globalThis
+    const prior = globalThis.window
+    beforeEach(() => { globalThis.window = { requestAnimationFrame: () => 0 } })
+    afterAll(() => { if (had) globalThis.window = prior; else delete globalThis.window })
+
+    test("'system' resolves to the app's light theme", () => {
+      initTheme({ themes: ['theme-forest', 'theme-midnight'], default: 'system' })
+      expect(theme.value).toBe('theme-forest')
+    })
+
+    test('a named default resolves to itself', () => {
+      initTheme({ themes: ['a', 'b', 'c'], default: 'c' })
+      expect(theme.value).toBe('c')
+    })
   })
 
   test('themes() answers what the app declared, in order', () => {

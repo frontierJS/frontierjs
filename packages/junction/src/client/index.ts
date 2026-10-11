@@ -818,6 +818,14 @@ export class AuthClient {
   // here — a connection resolved its principal at upgrade and would otherwise
   // go on answering as whoever it was before.
   //
+  // Reopened HERE, before the call resolves, and not left to the server's
+  // close: that close is sent after the answer, on another connection, and a
+  // browser can read the answer first. A call made in between — the "who am I
+  // now?" every screen asks next — went into the old socket and was answered
+  // as the old principal or rejected "WebSocket closed", which a session
+  // refresh reads as silence and keeps the identity it remembered
+  // (`FJS-2651`).
+  //
   // Neither returns the new principal. Who the caller is now is
   // `account.get('me')`, which is the same question it always was, asked of the
   // same place — a second answer here would be one more thing to keep in step.
@@ -833,6 +841,7 @@ export class AuthClient {
     const res = await this._c._request(
       'POST', `${this._prefix}/support/start`, { subjectId, reason, ...(ttl ? { ttl } : {}) }
     ) as { subjectId: string; endsAt: string }
+    this._c._principalChanged()
     this._c.emit('support:started', res)
     return res
   }
@@ -841,6 +850,7 @@ export class AuthClient {
    *  is what a reconnecting tab sends. */
   async endSupport(): Promise<{ ended: boolean }> {
     const res = await this._c._request('POST', `${this._prefix}/support/end`, {}) as { ended: boolean }
+    if (res?.ended) this._c._principalChanged()
     this._c.emit('support:ended', res)
     return res
   }
@@ -1296,6 +1306,16 @@ export class JunctionClient extends EventEmitter {
     if (this._intentionalClose || (!this._ws && !this._reconnectTimer)) return
     this._disconnect()
     this._openWs()
+  }
+
+  /**
+   * The token is the same and who it resolves to is not: a support episode
+   * began or ended. Cycled as a changed cookie is, before the call that
+   * crossed the edge resolves, so nothing after it rides the socket that
+   * resolved the old principal (`FJS-2651`).
+   */
+  _principalChanged(): void {
+    this._noteCredential(CREDENTIAL_CHANGED)
   }
 
   private _noteServerBuild(id: unknown): void {

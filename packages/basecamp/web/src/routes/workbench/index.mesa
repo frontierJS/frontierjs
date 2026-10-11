@@ -27,6 +27,7 @@ title: Workbench
   // between them sits and which one is zoomed are this browser's own, kept in
   // localStorage.
   import { ago }       from '../../datetime.js'
+  import { markdownText } from '@frontierjs/toolbelt/markdown'
   import { workbench } from '../../resources/Workbench.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -38,6 +39,7 @@ title: Workbench
   import Dot        from '@frontierjs/ui/components/display/Dot.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Markdown   from '@frontierjs/ui/components/display/Markdown.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
 
@@ -860,7 +862,11 @@ title: Workbench
                             <strong>Claude</strong>
                             <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
                           </button>
-                          <div class={`workbench-text${folded(p.id, it, i) ? ' clamp-2' : ''}`}>{it.text}</div>
+                          {#if folded(p.id, it, i)}
+                            <div class="workbench-text clamp-2">{markdownText(it.text)}</div>
+                          {:else}
+                            <div class="workbench-md"><Markdown text={it.text} headingBase={3} /></div>
+                          {/if}
                         </div>
                       {:else if it.kind === 'tools'}
                         <div class="text-sm text-muted workbench-tools" id={`chat-${p.id}-${i}`}>
@@ -972,7 +978,7 @@ title: Workbench
                   <p class="text-danger">The review stopped with an error.</p>
                 {/if}
                 {#if reviewReply(p.id)}
-                  <div class="workbench-text">{reviewReply(p.id)}</div>
+                  <div class="workbench-md"><Markdown text={reviewReply(p.id)} headingBase={3} /></div>
                   <div><Button size="xs" variant="outlined" onclick={() => useReview(p)}>Use as message</Button></div>
                 {/if}
                 {#each (transcripts[p.id].review.items ?? []).filter(it => it.kind === 'error') as it}
@@ -1117,7 +1123,7 @@ title: Workbench
      its pane and the message box never leaves the screen. */
   .workbench {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 15rem;
+    grid-template-columns: minmax(0, 1fr) 18rem;
     gap: var(--space-lg);
     block-size: max(34rem, calc(100dvh - var(--workbench-top, 10rem) - var(--screen-pad, 1rem)));
   }
@@ -1213,7 +1219,7 @@ title: Workbench
   .workbench-dock {
     display: flex;
     flex-direction: column;
-    gap: var(--space-xs);
+    gap: var(--space-sm);
     min-block-size: 0;
     overflow-y: auto;
   }
@@ -1221,15 +1227,21 @@ title: Workbench
     border: var(--border-width) solid var(--tint-rule);
     border-radius: var(--card-radius);
     background: var(--tint-surface);
+    box-shadow: var(--shadow-sm, none);
+    /* Little windows: the dock reads at a glance, so the type shrinks with them. */
+    font-size: 0.625rem;
+    line-height: 1.3;
   }
+  .workbench-tile .text-sm,
+  .workbench-tile .text-xs { font-size: inherit; }
   .workbench-tile[data-branch] { margin-inline-start: var(--space-md); }
   .workbench-tile[data-state='working'] { border-color: var(--rule-strong); }
   .workbench-tile-open {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-xs);
     inline-size: 100%;
-    padding: var(--space-xs) var(--space-sm);
+    padding: var(--space-sm);
     border: 0;
     background: none;
     color: inherit;
@@ -1282,6 +1294,10 @@ title: Workbench
   .workbench-chevron { margin-inline-start: auto; color: var(--ink-mute); }
   .workbench-tools, .workbench-result { align-self: flex-start; padding-inline: var(--space-sm); }
   .workbench-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* A long path or URL in a reply must wrap inside the bubble, and a fence
+     scrolls in its own box rather than widening the log. */
+  .workbench-md { min-inline-size: 0; overflow-wrap: anywhere; }
+  .workbench-md :global(pre) { max-inline-size: 100%; overflow-x: auto; }
   .workbench-tools code { overflow-wrap: anywhere; }
 
   .workbench-rail {

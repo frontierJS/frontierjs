@@ -45,6 +45,14 @@
 // size the model reads at, so a retina screenshot does not outgrow the request.
 // The log keeps a thumbnail of each, never the image: it lives in sessionStorage.
 //
+// "Clear" hides the log and forgets nothing: the session goes on with what
+// it knew, and a cleared run's Undo is one "Show cleared" away. "New chat" is
+// the button that forgets.
+//
+// The panel shrinks to a tab in the bottom-right corner, where it stays out of
+// the page it is editing. The tab survives a reload like the panel
+// does, and a pick expands it.
+//
 // Every request carries the app's own token when the page holds one: on a dev
 // server other people reach, the server asks the app's API who that is. Submit
 // is drawn only when the server says the checkout is a Workbench branch.
@@ -66,9 +74,12 @@
   const shown = keep('fli:ask:open')
   const saved = keep('fli:ask:log')
   const foldKeep = keep('fli:ask:fold')
+  const miniKeep = keep('fli:ask:mini')
 
-  let panel, title, list, hint, chips, tray, input, send, stop, submit, fresh, log, rail, folds, latch
+  let panel, tab, title, list, hint, chips, tray, input, send, stop, submit, fresh, log, rail, folds, latch
   let picks = [], sent = false, busy = false
+  // Closed hides the panel and its tab; shrunk hides the panel behind the tab.
+  let closed = false, shrunk = !!miniKeep.get()
   // Pasted images waiting for the next send: `{ type, data, thumb }`.
   let shots = []
   // The chips' answers, keys of the server's EDIT_KINDS and EDIT_SCOPES.
@@ -77,6 +88,8 @@
   let pickKey = 'alt'
   // What the log holds, as data, so a reload can draw it again.
   let entries = []
+  // Whether the rows "Clear" hid are drawn again, until the next Clear.
+  let unhide = false
 
   // The server's limit, and its whole HTML budget: a page section's outerHTML is
   // easily 50KB, and ten of them would outgrow the request before the prompt.
@@ -321,10 +334,19 @@
     drawing = 0
     const top = log.scrollTop
     log.textContent = ''
-    grouped(entries).forEach((g, i) => log.appendChild(node(g, i)))
+    const hidden = entries.filter(e => e.hid).length
+    if (hidden) {
+      const n = grouped(entries.filter(e => e.hid)).length
+      const more = make('button', 'align-self:center;padding:2px 9px;border:0;border-radius:999px;background:none;color:#94a3b8;font:12px/1.4 ui-sans-serif,system-ui;cursor:pointer', unhide ? 'Hide cleared' : `Show ${n} cleared`)
+      more.type = 'button'
+      more.onclick = () => { unhide = !unhide; drawSoon() }
+      log.appendChild(more)
+    }
+    grouped(unhide ? entries : entries.filter(e => !e.hid)).forEach((g, i) => log.appendChild(node(g, i)))
     if (busy) log.appendChild(make('div', 'align-self:flex-start;padding:0 11px;color:#94a3b8;font-size:12.5px;font-style:italic', 'Claude is working…'))
     log.scrollTop = stuck || toBottom ? log.scrollHeight : top
     toBottom = false
+    drawTab()
     folds.style.display = entries.length ? 'flex' : 'none'
     for (const b of folds.querySelectorAll('button')) {
       const on = (foldKeep.get() || 'none') === b.dataset.fold
@@ -372,6 +394,7 @@
     send.disabled = on
     submit.disabled = on
     stop.style.display = on ? '' : 'none'
+    drawTab()
     drawSoon()
   }
 
@@ -384,6 +407,14 @@
     fresh.title = 'Forget the conversation; the next ask starts a new session'
     // The log stays: its Undo buttons still undo, whichever conversation ran them.
     fresh.onclick = () => { store.set(null); line('New conversation.', 'meta') }
+    const wipe = make('button', BTN, 'Clear')
+    wipe.title = 'Hide the messages so far; the conversation and its Undos are kept'
+    wipe.onclick = () => {
+      for (const e of entries) e.hid = true
+      unhide = false
+      save()
+      drawSoon()
+    }
     const term = make('button', BTN, 'Continue in terminal')
     term.title = 'Copy a command that resumes this conversation in a terminal, or, before there is one, this ask for any agent'
     term.onclick = handoff
@@ -391,10 +422,14 @@
     latch.title = 'Click elements to pick them, without holding shift+alt (Esc leaves)'
     latch.onclick = () => { const i = inspector(); if (i) i.pickMode(!i.pickMode()) }
     drawLatch()
+    const shrink = make('button', BTN, '–')
+    shrink.title = 'Shrink to a tab in the corner (the conversation is kept)'
+    shrink.setAttribute('aria-label', 'Shrink to a tab')
+    shrink.onclick = () => fit(true)
     const close = make('button', BTN, '×')
     close.title = 'Close (the conversation is kept)'
-    close.onclick = () => { panel.style.display = 'none'; shown.set(null) }
-    head.append(latch, term, fresh, close)
+    close.onclick = () => { closed = true; shown.set(null); layout() }
+    head.append(latch, term, wipe, fresh, shrink, close)
 
     list = make('div', 'display:flex;flex-direction:column;gap:6px;max-height:24vh;overflow:auto')
     hint = make('div', 'margin-top:-6px;color:#94a3b8;font-size:12.5px')
@@ -440,7 +475,14 @@
     row.append(submit, stop, send)
 
     panel.append(head, list, hint, folds, chat, chips, tray, input, row)
-    document.body.appendChild(panel)
+
+    tab = make('button', `position:fixed;right:12px;bottom:12px;z-index:2147483646;display:none;align-items:center;gap:10px;box-sizing:border-box;width:min(580px,calc(100vw - 24px));padding:9px 14px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.2 ui-sans-serif,system-ui;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
+    tab.type = 'button'
+    tab.title = 'Open the Ask Claude panel'
+    tab.onclick = () => fit(false)
+    document.body.append(panel, tab)
+    drawTab()
+    layout()
     // The rail is drawn in fractions of the log, which a resize of the
     // panel moves without a scroll.
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (stuck) log.scrollTop = log.scrollHeight; drawRail() }).observe(log)
@@ -496,8 +538,36 @@
   }
 
   function show() {
-    panel.style.display = 'flex'
+    closed = false
     shown.set('1')
+    layout()
+  }
+
+  function layout() {
+    panel.style.display = closed || shrunk ? 'none' : 'flex'
+    tab.style.display = !closed && shrunk ? 'flex' : 'none'
+  }
+
+  function fit(small) {
+    shrunk = small
+    miniKeep.set(small ? '1' : null)
+    layout()
+    if (!small) { stuck = true; drawSoon(); input.focus() }
+  }
+
+  // The tab shows where the conversation left off: the last thing you asked,
+  // clipped to one line by the browser.
+  function drawTab() {
+    if (!tab) return
+    const last = entries.findLast(e => e.k === 'line' && e.tone === 'you')
+    const status = busy ? 'working…' : picks.length ? `${picks.length} picked` : ''
+    tab.textContent = ''
+    tab.append(
+      make('strong', 'flex:none', 'Ask Claude'),
+      make('span', 'flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:start;color:#94a3b8;font-size:13px', last ? last.text.replace(/\s+/g, ' ').trim() : ''),
+      ...(status ? [make('span', 'flex:none;color:#7dd3fc;font-size:12px', status)] : []),
+      make('span', 'flex:none;color:#94a3b8', '▴'),
+    )
   }
 
   function post(path, body) {
@@ -535,6 +605,7 @@
 
   function render() {
     drawChips()
+    drawTab()
     title.textContent = picks.length > 1 ? `Ask Claude to change these ${picks.length}` : picks.length ? 'Ask Claude to change this' : 'Ask Claude'
     list.textContent = ''
     list.style.display = picks.length ? 'flex' : 'none'
@@ -569,7 +640,7 @@
 
   function open(p) {
     if (!panel) build()
-    if (sent || panel.style.display === 'none') { picks = []; sent = false; kind = null; scope = null }
+    if (sent || closed) { picks = []; sent = false; kind = null; scope = null }
     if (!picks.some(x => x.el === p.el)) {
       if (picks.length >= MAX_PICKS) line(`${MAX_PICKS} elements is the most one ask takes`, 'error')
       else picks.push({ el: p.el, loc: p.loc, html: outline(p.el), inner: innerLocs(p.el), repeats: drawnFrom(p.loc), open: p.open })
@@ -578,6 +649,7 @@
     drawHint()
     render()
     show()
+    fit(false)
     input.focus()
   }
 

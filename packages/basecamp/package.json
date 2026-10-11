@@ -28,6 +28,7 @@
     "db:check": "bun db/generate.js --check",
     "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts",
     "db:seed": "bun db/seed.js",
+    "db:seed:admin": "bun db/seed-dev-admin.js",
     "db:tables": "sqlite3 db/basecamp.db '.schema'",
     "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit .outpost",
     "verify:screens": "bun web/test/verify-screens.mjs",

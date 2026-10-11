@@ -45,7 +45,9 @@
   </div>
 
   {#if !live.length}
-    <EmptyState title="All clear">No issues detected in this workspace.</EmptyState>
+    <div class="queue-empty">
+      <EmptyState title="All clear">No issues detected in this workspace.</EmptyState>
+    </div>
   {:else}
     <ul class="stack" id="notice-rows">
       {#each visible as n}
@@ -77,24 +79,23 @@
   /* empty state: icon, title and message share one row. Baseline alignment
      hangs the 2rem icon above the text, so center the row and size all three
      to one line box. */
-  .section-header + :global(:not(ul)) {
+  .queue-empty > :global(*) {
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
     gap: var(--space-sm);
     padding-block: 0;
-    /* .card > :not(:first-child) spaces this like a stacked block */
     margin-block: 0;
     text-align: start;
   }
-  .section-header + :global(:not(ul)) :global(.empty-icon) {
+  .queue-empty :global(.empty-icon) {
     --icon-size: 1.25rem;
     display: flex;
     align-items: center;
   }
-  .section-header + :global(:not(ul)) :global(.empty-title),
-  .section-header + :global(:not(ul)) :global(.empty-text) {
+  .queue-empty :global(.empty-title),
+  .queue-empty :global(.empty-text) {
     font-size: var(--text-md);
     line-height: 1.25rem;
   }

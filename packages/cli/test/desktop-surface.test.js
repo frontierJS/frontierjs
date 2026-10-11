@@ -21,7 +21,7 @@ import { tmpdir } from 'os'
 import {
   scaffoldDesktopSurface, desktopScripts, desktopNames, desktopSurfaceDirs,
   desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs,
-  ensureServer, surfaceRow,
+  ensureServer, movedShellBuild, surfaceRow,
 } from '../core/desktop-surface.js'
 import { runChecks } from '../core/checks.js'
 import { port, PROJECTS } from '../core/ports.js'
@@ -186,6 +186,24 @@ describe('what desktop:run reads', () => {
 
   test('no crate is no binary', () => {
     expect(desktopBinary(join(ROOT, 'nowhere', 'desktop'))).toBeNull()
+  })
+
+  test('a build cache compiled somewhere else names where', () => {
+    const root = appRoot('moved')
+    scaffoldDesktopSurface({ root, appName: 'moved' })
+    const surface = join(root, 'desktop')
+    const target  = join(surface, 'shell', 'target')
+    const output  = (crate, outDir) => {
+      mkdirSync(join(target, 'debug', 'build', crate), { recursive: true })
+      writeFileSync(join(target, 'debug', 'build', crate, 'root-output'), outDir)
+    }
+    expect(movedShellBuild(surface)).toBeNull()
+
+    output('serde-1', join(target, 'debug', 'build', 'serde-1', 'out'))
+    expect(movedShellBuild(surface)).toBeNull()
+
+    output('tauri-2', '/old/app/desktop/shell/target/debug/build/tauri-2/out')
+    expect(movedShellBuild(surface)).toBe('/old/app/desktop/shell')
   })
 
   test('only a loopback api is this machine\'s to start', () => {

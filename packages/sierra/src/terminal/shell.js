@@ -9,8 +9,8 @@
  *   runTerminalShell({ root, frame: '/x/7/' })   one path's frame, printed, no TTY
  *
  * The boot is `virtual:sierra`'s, minus what has no terminal meaning: the
- * Junction client from `config.junction`, and the schemas from the app's
- * `.lite` through the generator the Vite build uses.
+ * Junction client from `config.junction`, the schemas from the app's `.lite`
+ * through the generator the Vite build uses, and the theme from `config.theme`.
  *
  * Navigation is Sierra's own router, handed a memory History in place of the
  * address bar: `page`, a route's params, query and `load()`, `goto`, `back`
@@ -78,6 +78,10 @@ async function boot(root, apiUrl) {
     throw new Error('[Sierra] the terminal shell does not inject autoImport yet; this app configures it, so its routes would render undefined names')
   }
   const loader = await installTerminalLoader({ root })
+
+  // Before any route imports: a route reads `themes()` and `theme.value` at the
+  // top of its script, once.
+  if (config.theme) (await import('@frontierjs/sierra/theme')).initTheme(config.theme)
 
   const resource = await import('@frontierjs/sierra/resource')
   if (config.junction) resource.initJunction({ ...config.junction, url: apiUrl ?? config.junction.url, debug: false })
