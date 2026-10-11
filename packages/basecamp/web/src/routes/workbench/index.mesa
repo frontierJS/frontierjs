@@ -532,7 +532,7 @@ title: Workbench
               <span class="cluster">
                 {#if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
                 {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
-                {#if !p.from}<Button size="xs" variant="ghost" tone="danger" onclick={() => unpin(p)}
+                {#if !p.from}<Button size="xs" variant="ghost" onclick={() => unpin(p)}
                                      disabled={branchesOf(p).length > 0}
                                      title={branchesOf(p).length ? 'Archive its branches first' : `Unpin ${p.name}`}>Unpin</Button>{/if}
               </span>

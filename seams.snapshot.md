@@ -146,7 +146,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
 | `tokenStorage` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.nodes` / `resource.record(id)` | `packages/junction/src/client/nodes.ts` | mentions `nodes` — weak | — |
-| `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | — |
+| `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | 1 |
 | `$after` / `endCursor` / `resource.more()` | `packages/toolbelt/src/directives/directives.js` | mentioned | — |
 | `comparatorFor(orderBy)` | `packages/junction/src/core/query-values.ts` | yes | 1 |
 ## UI

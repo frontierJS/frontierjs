@@ -90,6 +90,13 @@
   const BTN = 'font:13px/1 ui-sans-serif,system-ui;padding:6px 11px;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer'
   const CHIP = 'font:12px/1 ui-sans-serif,system-ui;padding:4px 9px;border-radius:999px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer'
   const CHIP_ON = ';background:#0369a1;border-color:#0369a1;color:#f8fafc'
+  // The panel floats over the page it edits, so it is glass: the page stays
+  // in view behind it. The dimming in the filter is what keeps the light text
+  // legible when the page behind is white, and why there is no third, dimmer
+  // grey: over a white page it cannot be read at any dimming that keeps the
+  // page in view.
+  const GLASS = 'blur(8px) saturate(1.4) brightness(.7)'
+  const WELL = 'rgba(2,6,23,.5)'
 
   const KINDS = [
     ['text',     'Text',     'Only the words'],
@@ -220,8 +227,8 @@
     head.setAttribute('aria-expanded', String(!shut))
     head.onclick = () => flip(g.e)
     head.appendChild(make('strong', `color:${you ? '#7dd3fc' : '#e2e8f0'}`, you ? 'You' : 'Claude'))
-    if (you && g.e.at) head.appendChild(make('span', 'color:#64748b', ago(g.e.at)))
-    head.appendChild(make('span', 'margin-left:auto;color:#64748b', shut ? '▸' : '▾'))
+    if (you && g.e.at) head.appendChild(make('span', 'color:#94a3b8', ago(g.e.at)))
+    head.appendChild(make('span', 'margin-left:auto;color:#94a3b8', shut ? '▸' : '▾'))
     box.append(head, make('div', 'white-space:pre-wrap;overflow-wrap:anywhere' + (shut ? CLAMP : ''), g.e.text))
     return box
   }
@@ -232,7 +239,7 @@
     box.onclick = () => flip(g.e)
     const n = g.calls.length
     if (folded(g)) { box.appendChild(make('div', '', `› ${n} tool call${n === 1 ? '' : 's'}`)); return box }
-    if (n > SHOW_TOOLS) box.appendChild(make('div', 'color:#64748b', `… ${n - SHOW_TOOLS} more`))
+    if (n > SHOW_TOOLS) box.appendChild(make('div', 'color:#94a3b8', `… ${n - SHOW_TOOLS} more`))
     for (const c of g.calls.slice(-SHOW_TOOLS)) box.appendChild(make('div', 'overflow-wrap:anywhere', `› ${c}`))
     return box
   }
@@ -240,7 +247,7 @@
   // One block per file: its path, then each line marked removed, added or kept.
   // Folded, only the path and its counts stay.
   function diffs(g) {
-    const tones = { '-': 'background:rgba(239,68,68,.18);color:#fecaca', '+': 'background:rgba(34,197,94,.16);color:#bbf7d0', '…': 'color:#64748b', ' ': 'color:#94a3b8' }
+    const tones = { '-': 'background:rgba(239,68,68,.18);color:#fecaca', '+': 'background:rgba(34,197,94,.16);color:#bbf7d0', '…': 'color:#94a3b8', ' ': 'color:#94a3b8' }
     const shut = folded(g)
     const wrap = make('div', 'display:flex;flex-direction:column;gap:6px;align-self:stretch')
     for (const f of g.e.files) {
@@ -254,13 +261,13 @@
       // The path is the LAST node, so the page's text reads it straight into
       // its lines; `order` puts the counts back on the right.
       head.append(
-        make('span', 'color:#64748b', shut ? '▸' : '▾'),
-        make('span', 'order:1;margin-left:auto;white-space:nowrap;color:#64748b', `+${added} −${removed}`),
+        make('span', 'color:#94a3b8', shut ? '▸' : '▾'),
+        make('span', 'order:1;margin-left:auto;white-space:nowrap;color:#94a3b8', `+${added} −${removed}`),
         make('span', 'min-width:0;overflow-wrap:anywhere', f.file + (f.created ? '  (new file)' : '')),
       )
       box.appendChild(head)
       if (!shut) {
-        const pre = make('div', 'overflow-x:auto;padding:3px 0;background:#020617;font:12px/1.45 ui-monospace,monospace')
+        const pre = make('div', 'overflow-x:auto;padding:3px 0;background:' + WELL + ';font:12px/1.45 ui-monospace,monospace')
         for (const [op, text] of f.lines)
           pre.appendChild(make('div', `white-space:pre;padding:0 9px;${tones[op] || ''}`, op === '…' ? `… ${text}` : `${op} ${text}`))
         box.appendChild(pre)
@@ -273,7 +280,7 @@
   function runRow(e) {
     const row = make('div', 'display:flex;align-items:center;gap:8px;padding:0 11px;font-size:12.5px')
     row.dataset.run = e.run
-    row.appendChild(make('div', 'flex:1;white-space:pre-wrap;color:#64748b', e.text))
+    row.appendChild(make('div', 'flex:1;white-space:pre-wrap;color:#94a3b8', e.text))
     const btn = make('button', BTN, e.undone ? 'Undone' : 'Undo')
     btn.title = 'Put back what this run changed, leaving any later change alone'
     btn.disabled = e.undone || !!e.undoing
@@ -288,7 +295,7 @@
     if (g.kind === 'diff')  return diffs(g)
     if (g.kind === 'run')   return runRow(g.e)
     if (g.kind === 'error') return make('div', 'align-self:stretch;padding:7px 11px;border:1px solid rgba(239,68,68,.45);border-radius:8px;background:rgba(239,68,68,.12);color:#fca5a5;white-space:pre-wrap;overflow-wrap:anywhere', g.e.text)
-    return make('div', 'padding:0 11px;color:#64748b;font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere', g.e.text)
+    return make('div', 'padding:0 11px;color:#94a3b8;font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere', g.e.text)
   }
 
   // A reader who scrolled up to an earlier turn stays there; one at the
@@ -298,7 +305,7 @@
     const top = log.scrollTop
     log.textContent = ''
     grouped(entries).forEach((g, i) => log.appendChild(node(g, i)))
-    if (busy) log.appendChild(make('div', 'align-self:flex-start;padding:0 11px;color:#64748b;font-size:12.5px;font-style:italic', 'Claude is working…'))
+    if (busy) log.appendChild(make('div', 'align-self:flex-start;padding:0 11px;color:#94a3b8;font-size:12.5px;font-style:italic', 'Claude is working…'))
     log.scrollTop = stuck || toBottom ? log.scrollHeight : top
     toBottom = false
     folds.style.display = entries.length ? 'flex' : 'none'
@@ -352,7 +359,7 @@
   }
 
   function build() {
-    panel = make('div', 'position:fixed;right:12px;bottom:12px;z-index:2147483646;box-sizing:border-box;width:min(580px,calc(100vw - 24px));max-height:85vh;display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid #1e293b;border-radius:10px;background:#0f172a;color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)')
+    panel = make('div', `position:fixed;right:12px;bottom:12px;z-index:2147483646;box-sizing:border-box;width:min(580px,calc(100vw - 24px));max-height:85vh;display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
     const head = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px')
     title = make('strong', 'flex:1')
     head.appendChild(title)
@@ -373,9 +380,9 @@
     head.append(latch, term, fresh, close)
 
     list = make('div', 'display:flex;flex-direction:column;gap:6px;max-height:24vh;overflow:auto')
-    hint = make('div', 'margin-top:-6px;color:#64748b;font-size:12.5px')
+    hint = make('div', 'margin-top:-6px;color:#94a3b8;font-size:12.5px')
 
-    folds = make('div', 'display:none;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12px;color:#64748b')
+    folds = make('div', 'display:none;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12px;color:#94a3b8')
     folds.setAttribute('role', 'group')
     folds.setAttribute('aria-label', 'Collapse messages')
     folds.appendChild(make('span', 'margin-right:2px', 'Collapse'))
@@ -391,13 +398,13 @@
     // The rail is its scrollbar.
     log = make('div', 'flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:2px 0')
     log.onscroll = () => { stuck = log.scrollHeight - log.scrollTop - log.clientHeight < 24; drawRail() }
-    rail = make('nav', 'position:relative;flex:none;width:10px;border-radius:999px;background:#020617;display:none')
+    rail = make('nav', 'position:relative;flex:none;width:10px;border-radius:999px;background:' + WELL + ';display:none')
     rail.setAttribute('aria-label', 'Jump to a message')
     chat.append(log, rail)
 
-    chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#64748b;padding-top:10px;border-top:1px solid #1e293b')
+    chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#94a3b8;padding-top:10px;border-top:1px solid #1e293b')
 
-    input = make('textarea', 'box-sizing:border-box;width:100%;resize:vertical;min-height:84px;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:#020617;color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
+    input = make('textarea', 'box-sizing:border-box;width:100%;resize:vertical;min-height:84px;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:' + WELL + ';color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
     input.placeholder = 'What should change? (⌘/Ctrl+Enter sends)'
     input.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask() } }
 
@@ -513,7 +520,7 @@
     list.textContent = ''
     list.style.display = picks.length ? 'flex' : 'none'
     for (const p of picks) {
-      const row = make('div', 'display:flex;align-items:center;gap:6px;padding:7px 8px 7px 11px;border:1px solid #1e293b;border-radius:8px;background:#020617')
+      const row = make('div', 'display:flex;align-items:center;gap:6px;padding:7px 8px 7px 11px;border:1px solid #1e293b;border-radius:8px;background:' + WELL + '')
       row.dataset.pick = p.loc
       const what = make('div', 'flex:1;min-width:0')
       what.appendChild(make('div', 'font:12.5px/1.4 ui-monospace,monospace;color:#38bdf8;word-break:break-all', p.loc))
