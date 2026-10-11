@@ -17,6 +17,12 @@
   //     Duplicate
   //   </DropdownItem>
   //
+  //   <!-- End text and a trailing icon -->
+  //   <DropdownItem suffix="12">
+  //     Inbox
+  //     {#snippet trailing()}<IconChevronRight />{/snippet}
+  //   </DropdownItem>
+  //
   //   <DropdownItem href="/settings">Settings</DropdownItem>
   //   <DropdownItem disabled>Coming soon</DropdownItem>
   //
@@ -36,6 +42,8 @@
   export let kbd      = ''           // keyboard shortcut label shown on the right
   export let href     = undefined    // renders as <a> when set
   export let icon     = null         // snippet — leading icon
+  export let trailing = null         // snippet — trailing icon, after the shortcut hint
+  export let suffix   = ''           // end text — a count, a status — before the shortcut hint
   export let onclick  = undefined
   export let keepOpen = undefined    // stated: this row's say; unstated: the menu's
   export let checked  = undefined    // stated (true or false): a checkbox row, or a radio row with `radio`
@@ -70,11 +78,17 @@
     {#if icon}
       {@render icon?.()}
     {/if}
-    <span style:flex="1">
+    <span data-part="label" style:flex="1">
       <slot />
     </span>
+    {#if suffix}
+      <span data-part="suffix" style:color="var(--ink-mute)" style:font-size="var(--text-xs)">{suffix}</span>
+    {/if}
     {#if kbd}
       <kbd class="kbd">{kbd}</kbd>
+    {/if}
+    {#if trailing}
+      {@render trailing?.()}
     {/if}
   </a>
 {:else}
@@ -96,11 +110,17 @@
     {#if icon}
       {@render icon?.()}
     {/if}
-    <span style:flex="1" style:text-align="start">
+    <span data-part="label" style:flex="1" style:text-align="start">
       <slot />
     </span>
+    {#if suffix}
+      <span data-part="suffix" style:color="var(--ink-mute)" style:font-size="var(--text-xs)">{suffix}</span>
+    {/if}
     {#if kbd}
       <kbd class="kbd">{kbd}</kbd>
+    {/if}
+    {#if trailing}
+      {@render trailing?.()}
     {/if}
   </button>
 {/if}

@@ -56,13 +56,12 @@ import { join }                     from 'path'
 // So the option is normalized into a holder every client this env opens reads
 // through, and the holder is handed back on `env.clock`.
 //
-// WHAT IT DOES NOT COVER, and it is not a small caveat: `@default(now())` and
-// `@updatedAt` are stamped by SQLITE, not by this — a column DEFAULT and an
-// AFTER UPDATE trigger, both `strftime('%Y-%m-%dT%H:%M:%fZ','now')` (`ddl.js`).
-// Freezing the clock does not move them. A suite that needs a row to be old
-// STATES its timestamp on the write, which works because a column default only
-// applies to a column the write omits. What the clock does move is `now()` in a
-// policy and `@@softDelete`'s stamp. See `FJS-531`.
+// WHAT IT MOVES is everything the client writes or grades against: `now()` in a
+// policy, `@@softDelete`'s stamp, `@default(now())`, `@updatedAt` on create and
+// on update, and the retention cutoff. The client stamps those IN the statement
+// from this clock; a raw `UPDATE` through `db.sql` stamps nothing, so a row
+// written that way is the one place a suite still states its timestamp. See
+// `FJS-531`.
 
 function makeTestClock(source) {
   // A function is the caller's own source and they keep it. Moving it here would

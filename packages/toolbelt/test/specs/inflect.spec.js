@@ -472,3 +472,14 @@ test('inflect: a word named for an inherited member inflects as an ordinary word
   assert.equal(singularize('constructors'), 'constructor')
   assert.equal(singularize('valueOf'), 'valueOf')
 })
+
+// FJS-2221: a run of capitals is one word, and finding its end must be linear.
+test('inflect: words() splits a run of capitals in linear time', function () {
+  assert.deepEqual(words('HTTPStatus'), ['HTTP', 'Status'])
+  assert.deepEqual(words('ABc'), ['A', 'Bc'])
+  assert.deepEqual(words('orderID'), ['order', 'ID'])
+  const start = performance.now()
+  humanize('A'.repeat(40000))
+  words('A'.repeat(40000) + 'b')
+  assert.ok(performance.now() - start < 250, 'a 40000-capital run took ' + Math.round(performance.now() - start) + ' ms')
+})

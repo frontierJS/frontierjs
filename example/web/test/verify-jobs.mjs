@@ -28,7 +28,7 @@ const REF = 'ORD-JOBS-1'
 // lines in a file rather than a table. Relative to the app root, which is where
 // `bun run verify:jobs` is invoked from — the same resolution the declaration
 // gets, and the reason `FJS-449` is a hazard worth knowing about here.
-const AUDIT = 'db/audit/auditTrail.jsonl'
+const AUDIT = 'db/audit/AuditTrail.jsonl'
 
 await requireServers([['api (bun run api)', `${API}/api/health`]])
 

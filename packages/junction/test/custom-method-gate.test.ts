@@ -555,3 +555,15 @@ describe('a refused custom method hands an error mapper the gate’s two numbers
     } finally { off() }
   })
 })
+
+// FJS-2347 -- the one reader of service-to-accessor is on the package surface,
+// so an app does not re-derive it with a `model[0].toLowerCase()` of its own.
+describe('serviceAccessor is exported', () => {
+  test('the package entry answers the declared model, the name, or null', async () => {
+    const entry = await import('../index.ts')
+    expect(typeof entry.serviceAccessor).toBe('function')
+    expect(entry.serviceAccessor({ name: 'apps', model: 'App' })).toBe('App')
+    expect(entry.serviceAccessor({ name: 'apps' })).toBe('apps')
+    expect(entry.serviceAccessor({ name: 'apps', model: null })).toBeNull()
+  })
+})

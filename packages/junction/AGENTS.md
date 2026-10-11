@@ -238,6 +238,11 @@ array. Branch on `kind`.
 
 In the browser: `client.service('orders').invoke('pay', id, data)`.
 
+**`invoke()` answers by the same rule as `find`: a custom method returning an
+array arrives as the list envelope `{ kind: 'list', data, … }`, and one
+returning an object arrives as that object.** Read an array answer as `.data`;
+`answer?.data ?? answer` is a guess at a shape the server has already fixed.
+
 ---
 
 ## Who the caller is — sessions, claims, bearers
@@ -277,9 +282,12 @@ issue a link is the host's declaration, at the Data boundary. **The row is minte
 by the resolver, never by hand**: `portal.mint($.db, { clientId })` is the
 caller's own create with the digest written by naming the column
 (`system: ['tokenHash']`, `FJS-D819`) and answers `{ token, row }` once;
-`svc.hooks(portal.mintOnCreate())` makes the model's `create` the mint, with the
-token in the answer and out of the broadcast. A grant with a past `expiresAt` or a
-set `revokedAt` is no claim, and so is no row.
+`hooks: portal.mintOnCreate()` in the service's definition makes the model's
+`create` the mint, with the token in the answer and out of the broadcast; beside
+hooks of the file's own it is `hooks: mergeHookMaps(portal.mintOnCreate(), { … })`.
+A definition has no `.hooks()` — that exists only on the service
+`app.service()` returns, so `svc.hooks(…)` in a service file fails to load. A
+grant with a past `expiresAt` or a set `revokedAt` is no claim, and so is no row.
 
 **A link is redeemed once for the cookie** (`FJS-D340`):
 `app.post('/portal/redeem', portal.redeem(db, { maxAge }))`. The page posts the
@@ -309,6 +317,14 @@ actor (`FJS-D832`).
 it reads is gated at 0 for that operation and its `@@allow` does the scoping; a
 custom method it calls states `gate: 0` and `claims: ['portalClientId']`
 (*Services*, above). A resolver may not set `id` or `userId`.
+
+**A bearer's claims are not on `$.me`.** With no session `ctx.auth.user` stays
+`null` — promoting the claims to a user would grade every guest CREATOR(3) — so the
+claims reach only the Data boundary, through `$.db`. A `gate: 0` method that needs
+the grant itself reads it off the call: `bearerOf($, 'portalGrant')?.row` (or
+`$.locals[BEARER]` for the first grant), whose `row` holds every column the
+resolver's `claims` mapped, and `subject` the audit actor. A person who also holds
+a grant (`session: 'merge'`) has the claims merged onto `$.me` as well.
 
 Pinned by `test/principal-claims.test.ts`, `test/principal-list.test.ts` and `test/bearer-claim.test.ts`.
 

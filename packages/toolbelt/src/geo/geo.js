@@ -36,6 +36,16 @@ const toRad = (deg) => deg * RAD
 const toDeg = (rad) => rad / RAD
 
 /**
+ * A genuine number, or NaN. `Number('')`, `Number([])` and `Number(false)` are
+ * 0 and `Number(true)` is 1 -- a plausible coordinate nobody sent, which put an
+ * unset column on Null Island. Only a number or a non-blank string is one.
+ */
+const asNumber = (v) =>
+  typeof v === 'number' ? v
+    : typeof v === 'string' && v.trim() !== '' ? Number(v)
+      : NaN
+
+/**
  * A point, from either spelling. `{lat, lng}` is the wire and the column pair
  * is what a row out of an older schema carries, so both are read rather than
  * making every caller normalize first — which is exactly what four files of one
@@ -44,8 +54,8 @@ const toDeg = (rad) => rad / RAD
 function point(p, label = 'point') {
   if (!p || typeof p !== 'object')
     throw new Error(`${label}: expected { lat, lng }, got ${p === null ? 'null' : typeof p}`)
-  const lat = Number(p.lat ?? p.latitude)
-  const lng = Number(p.lng ?? p.longitude ?? p.lon)
+  const lat = asNumber(p.lat ?? p.latitude)
+  const lng = asNumber(p.lng ?? p.longitude ?? p.lon)
   if (!Number.isFinite(lat) || !Number.isFinite(lng))
     throw new Error(`${label}: lat and lng must both be numbers`)
   if (lat < -90 || lat > 90)
@@ -111,7 +121,7 @@ export function distance(a, b) {
  */
 export function boundingBox(center, metres) {
   const c = point(center, 'boundingBox(center)')
-  const m = Number(metres)
+  const m = asNumber(metres)
   if (!Number.isFinite(m) || m <= 0)
     throw new Error(`boundingBox: radius must be a positive number of metres, got ${metres}`)
 

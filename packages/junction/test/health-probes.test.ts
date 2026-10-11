@@ -15,6 +15,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createApp, healthPlugin, defaultConfig } from '../index.ts'
+import { createClient } from '../../litestone/src/index.js'
 import { renderPrometheus, wantsPrometheus, collectHealth, type MetricsResponse } from '../src/transport/health.ts'
 
 const PORT = 3931
@@ -222,5 +223,44 @@ describe('renderPrometheus emits numbers and invents nothing', () => {
 
   it('emits no TYPE line, because a counter cannot be told from a gauge by name', () => {
     expect(render({ http: { requests: { total: 9 } } })).not.toContain('# TYPE')
+  })
+})
+
+// `FJS-2350`. A database an app hands to createApp is a dependency it cannot
+// serve without; a probe that never asks it reads ready over a dead file.
+describe('createApp({ db }) contributes the database readiness', () => {
+  const dbApp = async (db: unknown) => createApp({
+    db: db as never,
+    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 200 } },
+  })
+
+  it('a live Litestone client reads ok under the name db', async () => {
+    const db = await createClient({ schema: 'model Thing { id Int @id  name String }', db: ':memory:' })
+    const body = await collectHealth(await dbApp(db), Date.now(), { checkTimeout: 500 })
+    expect(body.checks.db.status).toBe('ok')
+    db.$close()
+  })
+
+  it('a closed one reads fail, and the app is not ready', async () => {
+    const db = await createClient({ schema: 'model Thing { id Int @id  name String }', db: ':memory:' })
+    const app = await dbApp(db)
+    db.$close()
+    const body = await collectHealth(app, Date.now(), { checkTimeout: 500 })
+    expect(body.checks.db.status).toBe('fail')
+    expect(body.status).not.toBe('ok')
+  })
+
+  it('an app that passes no db gets no db check', async () => {
+    const body = await collectHealth(await dbApp(undefined), Date.now(), { checkTimeout: 500 })
+    expect(body.checks.db).toBeUndefined()
+  })
+
+  it('a healthPlugin check named db still wins', async () => {
+    const db = await createClient({ schema: 'model Thing { id Int @id  name String }', db: ':memory:' })
+    const app = await dbApp(db)
+    app._readinessApp.set('db', () => false)
+    const body = await collectHealth(app, Date.now(), { checkTimeout: 500 })
+    expect(body.checks.db.status).toBe('fail')
+    db.$close()
   })
 })

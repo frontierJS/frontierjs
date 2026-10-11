@@ -1115,7 +1115,7 @@ await runSeeder(db, BaseSeeder)
 await runSeeder(db, BaseSeeder)   // the block is skipped
 ```
 
-The key (`'base-v1'`) is stored in a `_litestone_seeds` table. Re-running the seeder skips already-run blocks.
+The key (`'base-v1'`) is stored in a `_litestone_seeds` table. Re-running the seeder skips already-run blocks. `await this.forget(db, 'base-v1')` un-records a key so the next run repeats the block — a no-op on a database that has never run one.
 
 ## Teardown
 

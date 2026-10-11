@@ -35,9 +35,9 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 8 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 7 |
+| `announce()` | `packages/junction/src/transport/channels.ts` | 7 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
-| `announce()` | `packages/junction/src/transport/channels.ts` | 6 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
@@ -136,7 +136,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `client.setCallHeader(name, value)` | `packages/junction/src/client/index.ts` | yes | — |
 | `x-fjs-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
-| `announce()` | `packages/junction/src/transport/channels.ts` | yes | 6 |
+| `announce()` | `packages/junction/src/transport/channels.ts` | yes | 7 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |

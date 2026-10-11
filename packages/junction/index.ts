@@ -39,7 +39,7 @@ export type { FieldError, FieldErrorBuilder }      from './src/core/field-errors
 export { createService, createBaseService, ServiceRegistry, callService, setServiceCache,
          SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
          READ_ONLY_METHODS, resolveMethodPolicy, serviceMethodNames,
-         methodEntryName, collectMethodInputs,
+         methodEntryName, collectMethodInputs, collectMethodOutputs, serviceAccessor,
          isMethodAllowed, allowedMethodNames } from './src/core/service.ts'
 export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodPolicy, MethodEntry, MethodDeclaration, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
@@ -133,7 +133,7 @@ export type { LitestoneServiceOptions, ParsedQuery,
 
 // ─── Channels ─────────────────────────────────────────────────────────────
 export { createChannelManager, Channel, channels, announce } from './src/transport/channels.ts'
-export type { Connection, AnnounceFn, WSMessage, PresenceMember }                          from './src/transport/channels.ts'
+export type { Connection, AnnounceFn, WSMessage, PresenceMember, ChannelClaimsFn }                         from './src/transport/channels.ts'
 
 // ─── Middleware plugins ───────────────────────────────────────────────────
 export { cors, helmet, rateLimit, requestLogger, bodyLimit, correlationId, csrf, combineOrigins } from './src/transport/middleware.ts'

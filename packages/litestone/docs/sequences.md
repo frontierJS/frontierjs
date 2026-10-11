@@ -71,8 +71,7 @@ model Document {
 
 Use a compound scope by passing an array:
 
-```lite failing
-// FJS-2302 — the parser does not accept a list here yet
+```lite
 model LineItem {
   id         Int @id
   accountId  Int
@@ -81,7 +80,7 @@ model LineItem {
 }
 ```
 
-Each `(accountId, orderId)` pair gets its own counter. The parser does not accept the list form yet (`FJS-2302`); until it does, a sequence scopes on one column.
+Each `(accountId, orderId)` pair gets its own counter. A row with any scope column `null` is not numbered, as with a single scope. The counter row's `scope` is the bare value for one column and a JSON list of the values as text for several.
 
 ## Interaction with createMany
 

@@ -135,8 +135,9 @@ Three rules hold between them:
 
 ## Asking where
 
-`near` is the only filter a point answers, and distance is the only ordering
-(`FJS-D318`).
+`near` is the only filter that compares a point, and distance is the only
+ordering (`FJS-D318`). Presence is asked as `null` (no location) or
+`{ not: null }` (has one); `NOT: { site: null }` means the same.
 
 ```lite
 model Job {

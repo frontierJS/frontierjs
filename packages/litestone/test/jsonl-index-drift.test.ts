@@ -32,9 +32,9 @@ const SCHEMA = (dir: string) => `
 /** A trail whose index table was built with `cols`, as an older release left it. */
 function seedIndex(dir: string, cols: string) {
   mkdirSync(join(dir, 'audit'), { recursive: true })
-  appendFileSync(join(dir, 'audit', 'auditTrail.jsonl'), '')
-  const d = new Database(join(dir, 'audit', 'auditTrail.jsonl.index.db'))
-  d.run(`CREATE TABLE "auditTrail_idx" (${cols}, "_offset" INTEGER NOT NULL, PRIMARY KEY ("_offset")) STRICT;`)
+  appendFileSync(join(dir, 'audit', 'AuditTrail.jsonl'), '')
+  const d = new Database(join(dir, 'audit', 'AuditTrail.jsonl.index.db'))
+  d.run(`CREATE TABLE "AuditTrail_idx" (${cols}, "_offset" INTEGER NOT NULL, PRIMARY KEY ("_offset")) STRICT;`)
   d.close()
 }
 
@@ -59,8 +59,8 @@ describe('the jsonl companion index rebuilds rather than failing every write', (
       expect(rows).toHaveLength(1)
       expect(rows[0].operation).toBe('create')
       // Rebuilt with the column, not merely tolerated.
-      const d = new Database(join(dir, 'audit', 'auditTrail.jsonl.index.db'))
-      const cols = d.query('SELECT name FROM pragma_table_info(?)').all('auditTrail_idx') as any[]
+      const d = new Database(join(dir, 'audit', 'AuditTrail.jsonl.index.db'))
+      const cols = d.query('SELECT name FROM pragma_table_info(?)').all('AuditTrail_idx') as any[]
       d.close()
       expect(cols.map(c => c.name)).toContain('correlationId')
     } finally { rmSync(dir, { recursive: true, force: true }) }

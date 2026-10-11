@@ -118,6 +118,21 @@ test('json: a half-typed number stays text rather than being refused', function 
   assert.equal(coerceLike(1, ''), '')
 })
 
+test('coerceLike: only a decimal literal is a number — 0x1F, 0b101, 0o17 and padding stay text (FJS-2217)', function () {
+  for (const text of ['0x1F', '0b101', '0o17', ' 12 ', '12 ', ' 12', '1_000', 'Infinity', '1e999']) {
+    assert.equal(coerceLike(1, text), text, JSON.stringify(text))
+  }
+  for (const [text, n] of [['42', 42], ['-3', -3], ['+5', 5], ['1.5', 1.5], ['1.50', 1.5], ['.5', 0.5], ['1e3', 1000], ['-2.5E-1', -0.25]]) {
+    assert.equal(coerceLike(1, text), n, text)
+  }
+})
+
+test('convertTo: a string becomes a number only by decimal grammar (FJS-2217)', function () {
+  assert.equal(convertTo('0x1F', 'number'), 0)
+  assert.equal(convertTo('0b101', 'number'), 0)
+  assert.equal(convertTo('1.5', 'number'), 1.5)
+})
+
 test('json: a container edited as text is only adopted once it parses', function () {
   assert.deepEqual(coerceLike({ a: 1 }, '{"a":2}'), { a: 2 })
   assert.equal(coerceLike({ a: 1 }, '{"a":'), '{"a":')
@@ -484,6 +499,15 @@ test('markRuns: EVERY occurrence, and the original casing', () => {
   assert.equal(runs.filter(r => r.hit).length, 2)
   assert.equal(runs.map(r => r.text).join(''), 'aXbXc', 'and marking never rewrites the text')
   assert.equal(runs.find(r => r.hit).text, 'X', 'the hit keeps the document’s casing, not the query’s')
+})
+
+test('markRuns: a character whose lowercase is longer does not shift the hit', () => {
+  // `İ`.toLowerCase() is two units, so indices read off the lowered text are
+  // not indices into the original.
+  const runs = markRuns('İİ ab', 'ab')
+  assert.equal(runs.map(r => r.text).join(''), 'İİ ab')
+  assert.deepEqual(runs.filter(r => r.hit).map(r => r.text), ['ab'])
+  assert.deepEqual(markRuns('İİ', 'İ').filter(r => r.hit).map(r => r.text), ['İ', 'İ'])
 })
 
 test('markRuns: no term is one run, not zero', () => {

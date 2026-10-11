@@ -56,7 +56,7 @@ const MAIL_SINK_PORT = process.env.MAIL_SINK_PORT ?? String(PORTS.mail)
 const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const MAIL = process.env.MAIL_SINK_URL ?? `http://localhost:${MAIL_SINK_PORT}`
 const BASE = `${API}/api`
-const TRAIL = join(ROOT, 'db/audit/auditTrail.jsonl')
+const TRAIL = join(ROOT, 'db/audit/AuditTrail.jsonl')
 
 const PASSWORD = 'correct-horse-battery'
 const ADMIN = 'alex@shop.test', STAFF = 'sam@shop.test', SHOPPER = 'robin@buyer.test'

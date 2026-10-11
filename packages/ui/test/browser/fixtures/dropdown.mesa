@@ -16,6 +16,7 @@
   import DropdownSeparator from '../../../components/overlay/DropdownSeparator.mesa'
 
   export let placement = 'bottom-start'
+  export let side      = 'bottom-center'   // the menu at the end of the page, scrolled to mid-viewport
 
   let chose = ''
   let runs  = 0
@@ -34,6 +35,8 @@
 -->
 <div style="height: 6rem"></div>
 
+<!-- Off the left edge, so a centered or right-side panel has room to be centered or to sit beside. -->
+<div style="padding-inline-start: 20rem">
 <DropdownMenu placement={placement}>
   {#snippet trigger()}
     <button type="button" class="btn" id="dd-trigger">Actions</button>
@@ -47,6 +50,23 @@
   <DropdownLabel>Danger zone</DropdownLabel>
   <DropdownItem tone="danger" onclick={pick('delete')}>Delete</DropdownItem>
 </DropdownMenu>
+</div>
+
+<!--
+  A menu for the side and alignment cases. The first trigger sits too near the
+  top of the viewport for an end- or center-aligned side panel to be anything
+  but clamped, so this one is scrolled to the middle of the window.
+-->
+<div style="padding: 20vh 20rem">
+  <DropdownMenu placement={side}>
+    {#snippet trigger()}
+      <button type="button" class="btn" id="dd-side">Side</button>
+    {/snippet}
+    <DropdownItem>One</DropdownItem>
+    <DropdownItem>Two</DropdownItem>
+    <DropdownItem>Three</DropdownItem>
+  </DropdownMenu>
+</div>
 
 <!--
   A SECOND menu, low on a scrollable page, for the flip-above case alone.
@@ -106,4 +126,22 @@
   <DropdownItem checked={grid} onclick={() => grid = !grid}>Grid view</DropdownItem>
   <DropdownItem radio checked={sort === 'name'} onclick={() => sort = 'name'}>By name</DropdownItem>
   <DropdownItem radio checked={sort === 'date'} onclick={() => sort = 'date'}>By date</DropdownItem>
+</DropdownMenu>
+
+<!--
+  Rows with an end text and a trailing icon, in a menu whose labels share a
+  first letter -- the type-ahead walk has to cycle Beta, Bravo and tell Alpha
+  from both. A disabled row sits among them and must never take focus.
+-->
+<DropdownMenu>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-rich">Rich</button>
+  {/snippet}
+  <DropdownItem suffix="12">Alpha</DropdownItem>
+  <DropdownItem disabled>Bacon</DropdownItem>
+  <DropdownItem>
+    Beta
+    {#snippet trailing()}<svg id="dd-trail" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" /></svg>{/snippet}
+  </DropdownItem>
+  <DropdownItem suffix="3" kbd="⌘B">Bravo</DropdownItem>
 </DropdownMenu>

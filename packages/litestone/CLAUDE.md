@@ -88,6 +88,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | a policy form | `test/policy-interpreters.test.ts` — both compilers, same rows |
 | an access rule | one row admitted and one refused, through a real scoped client |
 | a `@map`-sensitive path | `test/column-mapping.test.ts` — mapped and unmapped, compared |
+| a CLI flag | `KNOWN_FLAGS` in `src/tools/cli-helpers.js` — an unlisted flag is refused by name, and `test/cli-smoke.test.ts` fails one the sources read that is not listed (`FJS-2166`) |
 | a `.lite` word | `test/catalog.test.ts` fails until the catalog has its row, a tier, and an axis in `AXES` (`FJS-D635`) |
 | an example to `docs/`, `README.md` or `AGENTS.md` | nothing — `test/doc-examples.test.ts` runs every fence (`FJS-D860`): a ```lite block is built, a ```js block runs under the nearest ```lite above it; `fragment`, `throws` and `failing` on the info string are the whole contract, and `DOC_EXAMPLES_REPORT=1 DOC_EXAMPLES_ONLY=docs/x.md` lists what a page still fails |
 | a `src/` directory, or an axis import of a battery | `test/edge.test.ts` — classified, or a ruling |
@@ -183,7 +184,7 @@ same code on either runtime (`FJS-D305`), and `test/engine-seam.test.ts` grades 
   graph reaches a builtin through `#host`, never by its own name — a bundler
   replaces a bare `fs` with a proxy that throws on first access.
 - **The browser client is a worker running one call at a time**, and a page
-  proxy that refuses `$transaction` and releases the worker on `pagehide`
+  proxy that refuses `$transaction` and `$backup` by name and releases the worker on `pagehide`
   (`FJS-1179`). `engines/` runs SQL; `drivers/` is where one model's rows live.
 
 ## Where to look

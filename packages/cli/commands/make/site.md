@@ -96,13 +96,14 @@ const appPkgName = existsSync(appPkgPath)
 const projectId = projectIdFor(appPkgName, basename(root))
 const devPort   = portFor('siteDev',   { env: 'dev', projectId })
 const servePort = portFor('siteServe', { env: 'dev', projectId })
+const apiPort   = portFor('be',        { env: 'dev', projectId })
 
 // An app with no api/ has nothing to tap, and a `db:` pointing at a file that
 // is not there is a build that fails before it says anything useful.
 const hasApi = existsSync(join(root, 'api'))
 
 const { written, skipped } = scaffoldSiteSurface({
-  root, dir, appName, hasApi, devPort, servePort,
+  root, dir, appName, hasApi, devPort, servePort, apiPort,
 })
 
 for (const f of written) log.success(`Created ${f}`)

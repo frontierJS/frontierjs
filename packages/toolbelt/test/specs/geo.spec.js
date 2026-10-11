@@ -182,3 +182,14 @@ function compare(points, center, radius) {
   const kept = points.filter((p) => inBoxes(p, boxes))
   assert.ok(kept.length <= points.length, 'a prefilter cannot admit more than it was given')
 }
+
+// FJS-2223: Number('') / Number([]) / Number(true) are 0 / 0 / 1 -- Null Island.
+test('geo: a blank, empty or boolean coordinate is not a number', function () {
+  for (const bad of ['', ' ', [], true, false, null, {}]) {
+    assert.ok(!isPoint({ lat: bad, lng: 1 }), `lat ${JSON.stringify(bad)}`)
+    assert.ok(!isPoint({ lat: 1, lng: bad }), `lng ${JSON.stringify(bad)}`)
+  }
+  assert.throws(() => distance({ lat: ' ', lng: ' ' }, { lat: 1, lng: 1 }), /must both be numbers/)
+  assert.throws(() => boundingBox(LONDON, true), /radius must be/)
+  assert.ok(isPoint({ lat: '51.5', lng: '-0.12' }), 'a numeric string is still a number')
+})

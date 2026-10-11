@@ -13,7 +13,7 @@
 // page said only that it had fallen back to the list cache (`FJS-1179`). The
 // browser half answers `existsSync` with false, which is the true answer for a
 // device that has no migrations directory.
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync } from '#host'
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from '#host'
 import { resolve, join } from 'path'
 import { slug } from '@frontierjs/toolbelt/inflect'
 import { openDatabase } from './engine.js'
@@ -31,6 +31,18 @@ const MIGRATION_FILE   = /^(\d{14})_([a-z0-9_]+)\.(sql|js)$/
 // Anything that was plausibly meant to be a migration. Only used to report what
 // MIGRATION_FILE rejected — never to widen what runs.
 const MIGRATION_CANDIDATE = /\.(sql|js)$/
+
+// `apply`, `status` and `verify` run against ONE database's SQLite handle, since
+// a client holds several and the caller must say which. `autoMigrate` beside
+// them takes the client, so a client handed here is the likeliest mistake and
+// would otherwise die in a query as `"run" is not a table in this schema`.
+function requireRawHandle(db, fn) {
+  if (db?.$rawDbs !== undefined) {
+    throw new Error(
+      `${fn}() takes a SQLite handle, not a Litestone client. ` +
+      `Pass db.$rawDbs.main (or the named database's handle); autoMigrate() is the one that takes the client.`)
+  }
+}
 
 // ─── Tracking table ───────────────────────────────────────────────────────────
 
@@ -519,21 +531,22 @@ export function createForDatabase(rawDb, parseResult, dbName, label = 'migration
 // ─── APPLY ────────────────────────────────────────────────────────────────────
 // Applies all pending migration files in chronological order.
 
-// Parsed-SQL cache keyed by file path + mtime. tenants.migrate() calls apply()
-// once per tenant — without this, 500 tenants × 20 migration files means
-// 10,000 redundant readFileSync + splitStatements passes over identical bytes.
+// Parsed-SQL cache keyed by file path + the file's text. tenants.migrate()
+// calls apply() once per tenant — without this, 500 tenants × 20 migration
+// files means 10,000 redundant splitStatements passes over identical text.
+// The key is the text, never the mtime: a file rewritten inside one mtime tick
+// (a reviewer deleting a BLOCKED section, a test) reads back as its old text.
 const _sqlFileCache = new Map()
 function loadMigrationSql(filePath) {
-  const mtimeMs = statSync(filePath).mtimeMs
-  const hit = _sqlFileCache.get(filePath)
-  if (hit && hit.mtimeMs === mtimeMs) return hit
   const sql = readFileSync(filePath, 'utf8')
+  const hit = _sqlFileCache.get(filePath)
+  if (hit && hit.sql === sql) return hit
   const execSQL = sql
     .split('\n')
     .filter(l => !l.trimStart().startsWith('--'))
     .join('\n')
   const stmts = splitStatements(execSQL).filter(s => s.length > 0)
-  const entry = { mtimeMs, sql, stmts }
+  const entry = { sql, stmts }
   _sqlFileCache.set(filePath, entry)
   return entry
 }
@@ -658,6 +671,7 @@ function runInTransaction(rawDb, stmts, record = null, guard = null) {
 }
 
 export async function apply(db, dir = './migrations') {
+  requireRawHandle(db, 'apply')
   const absDir  = resolve(dir)
   const files   = listMigrationFiles(absDir)
   const skipped = unmatchedMigrationFiles(absDir)
@@ -744,6 +758,7 @@ export async function apply(db, dir = './migrations') {
 // Returns a row per migration file showing applied/pending/orphaned state.
 
 export function status(db, dir = './migrations') {
+  requireRawHandle(db, 'status')
   const absDir     = resolve(dir)
   const files      = listMigrationFiles(absDir)
   const applied    = appliedMigrations(db)
@@ -784,6 +799,7 @@ export function status(db, dir = './migrations') {
 // Returns: { state: 'in-sync' | 'pending' | 'drift', ... }
 
 export function verify(db, parseResult, dir = './migrations', { pluralize = false, dbName = 'main' } = {}) {
+  requireRawHandle(db, 'verify')
   const pristineDb     = openDatabase(':memory:')
   const pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
   pristineDb.close()

@@ -34,6 +34,7 @@ import { createProvider }     from './index.js'
 import { refUrl }             from './ref-url.js'
 import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@frontierjs/toolbelt/mime'
 import { buildWhere }         from '../core/query.js'
+import { ValidationError }    from '../core/validate.js'
 import { extname, basename }  from 'path'
 import { existsSync, readFileSync } from 'fs'
 
@@ -78,16 +79,11 @@ function checkAccept(mime, accept, model, field, claimed) {
     // `sniff` answered nothing the type being reported IS the claim, and saying
     // *the bytes are text/plain* about bytes nothing identified is the kind of
     // false precision an error is read as fact.
-    const err = new Error(
-      `${model}.${field}: file type "${mime}" not allowed — accepted: ${accept}` +
+    throw refuse(model, field,
+      `file type "${mime}" not allowed — accepted: ${accept}` +
       (claimed && baseType(claimed) !== mime
         ? `\n  The name claimed "${claimed}"; the bytes are ${mime}.`
-        : '')
-    )
-    err.name  = 'ValidationError'
-    err.field = field
-    err.model = model
-    throw err
+        : ''))
   }
 }
 
@@ -126,9 +122,10 @@ function isInlineFile(v) {
   return Object.keys(v).every(k => k === 'name' || k === 'type' || k === 'data')
 }
 
+// A real ValidationError, so `errors` names the field and a form marks the box;
+// a plain Error that only borrows the name carries no field list.
 function refuse(model, field, message) {
-  const err = new Error(`${model}.${field}: ${message}`)
-  err.name  = 'ValidationError'
+  const err = new ValidationError([{ path: [field], message }])
   err.field = field
   err.model = model
   return err
@@ -309,6 +306,19 @@ class FileStoragePlugin extends ExternalRefPlugin {
           'FileStorage: no provider or endpoint configured. ' +
           'Pass provider: \'r2\' | \'s3\' | \'local\' or set NODE_ENV=development to use local storage.'
         )
+      }
+    }
+    // Every provider but local signs its requests, and the signer reads the secret
+    // on the first upload -- so a missing one surfaced there as a TypeError about
+    // `secret.length`, long after the app built.
+    if (cfg.provider !== 'local') {
+      for (const option of ['accessKeyId', 'secretAccessKey']) {
+        if (!cfg[option]) {
+          throw new Error(
+            `FileStorage: provider '${cfg.provider ?? 'r2'}' needs ${option}. ` +
+            'Pass accessKeyId and secretAccessKey, or provider: \'local\' for files on disk.'
+          )
+        }
       }
     }
     this._provider = createProvider(cfg)

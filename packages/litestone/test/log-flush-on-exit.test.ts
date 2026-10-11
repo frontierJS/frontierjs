@@ -27,7 +27,7 @@ async function run(ending: string) {
     `
     const proc = Bun.spawn(['bun', '-e', script], { stdout: 'ignore', stderr: 'ignore' })
     await proc.exited
-    const file = join(dir, 'audit', 'auditTrail.jsonl')
+    const file = join(dir, 'audit', 'AuditTrail.jsonl')
     return existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0
   } finally { rmSync(dir, { recursive: true, force: true }) }
 }

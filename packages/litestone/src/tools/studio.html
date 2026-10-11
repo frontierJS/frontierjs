@@ -1777,6 +1777,13 @@ let currentPaged  = false // past page 1 — the copied query describes page 1 o
 const STUDIO_TOKEN = new URLSearchParams(location.search).get('token')
 const authHeaders = () => STUDIO_TOKEN ? { 'Authorization': 'Bearer ' + STUDIO_TOKEN } : {}
 
+// The server stamps every answer with a revision that moves when anything a
+// panel shows could have changed -- a write from here, a write from outside, the
+// schema file, a migration file. A panel remembers the one it loaded at and
+// reloads only when it has moved (FJS-2322).
+let _rev = null
+const _loadedAt = {}
+
 async function api(path, body, method) {
   const isGet = method === 'GET' || (!body && !method)
   const res = await fetch(API + path, isGet ? { headers: authHeaders() } : {
@@ -1784,7 +1791,17 @@ async function api(path, body, method) {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body)
   })
+  _rev = res.headers.get('x-studio-rev') ?? _rev
   return res.json()
+}
+
+// A failed load forgets it happened, or the panel would stay empty until
+// something else moved the revision.
+function loadIfMoved(panel, load) {
+  if (_rev !== null && _loadedAt[panel] === _rev) return
+  const at = _rev
+  _loadedAt[panel] = at
+  Promise.resolve().then(load).catch(() => { if (_loadedAt[panel] === at) delete _loadedAt[panel] })
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -1823,6 +1840,8 @@ async function boot() {
   // stale by the time anyone looks at it.
   driftLoad()
   setInterval(driftLoad, 5000)
+  // A hidden tab skips its polls, so coming back is the moment to ask.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) driftLoad() })
 
   // Header path — show "Multi-DB" when schema has multiple databases
   document.getElementById('dbPath').textContent = multiDb
@@ -2853,9 +2872,9 @@ addEventListener('keydown', e => {
 // that re-decided any of them would be a second answer to a question that
 // already has an owner, and the two would disagree on the day it mattered.
 //
-// Every load is fresh. A front page is looked at after doing something
-// elsewhere, so a cached one shows the world as it was before the thing you
-// just did.
+// A load is as fresh as the server's revision: a front page is looked at after
+// doing something elsewhere, so it reloads whenever that revision has moved
+// since it last did (loadIfMoved).
 
 async function ovInit() {
   const body = document.getElementById('ovBody')
@@ -3219,7 +3238,7 @@ const ER_GOLDEN_ANGLE = 137.508
 
 function erStem(name) {
   // PascalCase head. A leading run of capitals is one word (`APIKey` → `API`),
-  // and a name that is not PascalCase at all (`auditTrail`) is its own stem.
+  // and a name that is not PascalCase at all (`legacy_name`) is its own stem.
   const m = /^([A-Z][a-z0-9]*|[A-Z]+(?![a-z])|[a-z0-9]+)/.exec(name)
   return m ? m[1] : name
 }
@@ -3320,8 +3339,8 @@ function renderSchema() {
     const isSoft   = softDeleteMap[model.name]
     const hasFts   = model.attributes?.find(a => a.kind === 'fts')
     const isAuto   = model.attributes?.some(a => a.kind === 'auto') ||
-                     // trail auto-models: named <dbName>Trail and db is a trail driver
-                     (driver === 'trail' && model.name === dbName + 'Trail')
+                     // trail auto-models: named <DbName>Trail and db is a trail driver
+                     (driver === 'trail' && model.name === dbName.charAt(0).toUpperCase() + dbName.slice(1) + 'Trail')
     // Show DB label only in multi-DB mode and only when it's not main
     const showDbLabel = multiDb && dbName !== 'main'
 
@@ -4447,6 +4466,7 @@ function acFields() {
 let _drift = null
 
 async function driftLoad() {
+  if (document.hidden) return
   try {
     _drift = await api('/drift')
     driftRender()
@@ -5775,15 +5795,15 @@ function showTool(tool) {
   // A hidden element measures 0, so the column packing that runs at boot stacks
   // every card on a fallback height and a 26-field model lands under the one
   // below it. The first reveal is the first moment a height is real.
-  if (tool === 'overview')   ovInit()
+  if (tool === 'overview')   loadIfMoved('overview', ovInit)
   if (tool === 'schema')     erInit()
   if (tool === 'explore')    exInit()
   if (tool === 'access')     acInit()
   if (tool === 'compare')    cmpInit()
-  if (tool === 'migrations') loadMigrations()
-  if (tool === 'stats')      { loadStats(); loadDiskUsage(); renderRotateKey() }
+  if (tool === 'migrations') loadIfMoved('migrations', loadMigrations)
+  if (tool === 'stats')      { loadIfMoved('stats', () => Promise.all([loadStats(), loadDiskUsage()])); renderRotateKey() }
   if (tool === 'transform')  txInit()
-  if (tool === 'perf')        perfInit()
+  if (tool === 'perf')        loadIfMoved('perf', perfInit)
   if (tool === 'lite')        liteInit()
   if (tool === 'qlog') qlogStart(); else qlogStop()
   if (tool === 'tenants')    loadTenants()

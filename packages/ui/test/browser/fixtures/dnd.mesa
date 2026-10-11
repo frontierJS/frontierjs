@@ -14,9 +14,11 @@
   let other = [{ id: 9, t: 'nine' }]
   let log   = []
   let clicks = 0
+  let sources = []
 
   const record = (list, which) => ({ items, info }) => {
     log = [...log, `${list}:${which}:${info.trigger}`]
+    sources = [...sources, info.source]
     if (list === 'todo') todo = items
     else if (list === 'done') done = items
     else other = items
@@ -44,6 +46,7 @@
 <output id="state">{todo.map(i => i.id).join(',')}|{done.map(i => i.id).join(',')}|{other.map(i => i.id).join(',')}</output>
 <output id="log">{log.join(' ')}</output>
 <output id="clicks">{clicks}</output>
+<output id="sources">{sources.join(' ')}</output>
 
 <style>
   .board { display: flex; gap: 2rem; align-items: flex-start; }

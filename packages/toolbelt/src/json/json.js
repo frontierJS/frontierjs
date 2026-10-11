@@ -255,6 +255,19 @@ export function format(value, indent = 2) {
   }
 }
 
+const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i
+
+/**
+ * Text → the finite number it spells in decimal, else null. `Number()` also
+ * reads `0x1F` as 31, `0b101` as 5 and `' 12 '` as 12, none of which a person
+ * typing into a number cell meant as a number.
+ */
+function decimal(text) {
+  if (!DECIMAL.test(text)) return null
+  const n = Number(text)
+  return Number.isFinite(n) ? n : null
+}
+
 /**
  * Give an edited string the type the value it replaces had.
  *
@@ -283,9 +296,8 @@ export function coerceLike(original, next) {
     }
 
     case 'number': {
-      if (next.trim() === '') return next
-      const n = Number(next)
-      return Number.isFinite(n) ? n : next
+      const n = decimal(next)
+      return n === null ? next : n
     }
 
     case 'null': {
@@ -1175,7 +1187,7 @@ export function convertTo(value, kind) {
 
     case 'number': {
       if (typeof value === 'boolean') return value ? 1 : 0
-      const n = Number(typeof value === 'string' ? value.trim() : value)
+      const n = typeof value === 'string' ? decimal(value.trim()) : Number(value)
       return Number.isFinite(n) ? n : 0
     }
 
@@ -1226,18 +1238,35 @@ export function markRuns(text, term) {
   const needle = String(term ?? '')
   if (!needle) return [{ i: 0, text: source, hit: false }]
 
-  const hay = source.toLowerCase()
-  const nee = needle.toLowerCase()
+  // Lowercasing can change a character's length (`İ` becomes two units), so an
+  // index into the lowered text is not one into the original. Lower per
+  // character and keep, for each lowered unit, where its character starts and
+  // ends in the original.
+  let hay = ''
+  const starts = []
+  const ends = []
+  for (let p = 0; p < source.length;) {
+    const ch = String.fromCodePoint(source.codePointAt(p))
+    const lower = ch.toLowerCase()
+    for (let k = 0; k < lower.length; k++) { starts.push(p); ends.push(p + ch.length) }
+    hay += lower
+    p += ch.length
+  }
+  const nee = Array.from(needle, ch => ch.toLowerCase()).join('')
   const out = []
   let at = 0
   let i  = 0
+  let from = 0
 
   for (;;) {
-    const found = hay.indexOf(nee, at)
+    const found = hay.indexOf(nee, from)
     if (found === -1) break
-    if (found > at) out.push({ i: i++, text: source.slice(at, found), hit: false })
-    out.push({ i: i++, text: source.slice(found, found + nee.length), hit: true })
-    at = found + nee.length
+    const start = starts[found]
+    const end = ends[found + nee.length - 1]
+    if (start > at) out.push({ i: i++, text: source.slice(at, start), hit: false })
+    out.push({ i: i++, text: source.slice(start, end), hit: true })
+    at = end
+    from = found + nee.length
   }
   if (at < source.length) out.push({ i: i++, text: source.slice(at), hit: false })
   return out.length ? out : [{ i: 0, text: source, hit: false }]

@@ -20,6 +20,7 @@
 import { describe, test, expect } from 'bun:test'
 import { parse }       from '../src/core/parser.js'
 import { FileStorage } from '../src/storage/file-storage.js'
+import { ValidationError } from '../src/core/validate.js'
 
 const SCHEMA = `
   model Doc {
@@ -103,6 +104,25 @@ describe('@accept grades the bytes, not the name', () => {
     expect(err.name).toBe('ValidationError')
     expect(err.field).toBe('doc')
     expect(err.model).toBe('Doc')
+  })
+
+  // FJS-2423: a form reads `errors` to mark the box; a plain Error named
+  // 'ValidationError' carries none.
+  test('the refusal is a real ValidationError naming the field in errors', async () => {
+    const { p } = plugin()
+    const err: any = await save(p, 'doc', upload(PNG, 'report.pdf', 'application/pdf')).catch((e) => e)
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors).toHaveLength(1)
+    expect(err.errors[0].path).toEqual(['doc'])
+    expect(err.errors[0].message).toContain('not allowed')
+  })
+
+  test('an inline-file refusal is a real ValidationError too', async () => {
+    const { p } = plugin()
+    const err: any = await save(p, 'doc', { name: 'a.pdf', type: 'application/pdf', data: '!!not base64!!' }).catch((e) => e)
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors[0].path).toEqual(['doc'])
+    expect(err.field).toBe('doc')
   })
 
   test('honest bytes still pass, which is the control', async () => {

@@ -1094,7 +1094,7 @@ describe('@sequence per-scope auto-increment', () => {
     const field = result.schema.models[0].fields.find((f: any) => f.name === 'quoteNumber')
     const attr  = field?.attributes.find((a: any) => a.kind === 'sequence')
     expect(attr).toBeDefined()
-    expect(attr.scope).toBe('accountId')
+    expect(attr.scope).toEqual(['accountId'])
   })
 
   test('first quote for an account gets quoteNumber 1', async () => {
@@ -1189,6 +1189,62 @@ describe('@sequence per-scope auto-increment', () => {
     const q = await db.quote.create({ data: { id: 1, title: 'No account' } })
     expect(q.quoteNumber).toBeNull()
     db.$close()
+  })
+
+  test('@sequence(scope: [a, b]) parses to a list of columns', () => {
+    const result = parse(`
+      model Line {
+        id         Int @id
+        accountId  Int
+        orderId    Int
+        lineNumber Int @sequence(scope: [accountId, orderId])
+      }
+    `)
+    expect(result.valid).toBe(true)
+    const field = result.schema.models[0].fields.find((f: any) => f.name === 'lineNumber')
+    expect(field.attributes.find((a: any) => a.kind === 'sequence').scope).toEqual(['accountId', 'orderId'])
+  })
+
+  test('a compound scope counts each (a, b) pair on its own', async () => {
+    const db = await makeDb(`
+      model Line {
+        id         Int @id
+        accountId  Int
+        orderId    Int
+        lineNumber Int @sequence(scope: [accountId, orderId])
+      }
+    `, 'seq-compound')
+    const mk = (id: number, accountId: number, orderId: number) =>
+      db.line.create({ data: { id, accountId, orderId } })
+    const rows = [await mk(1, 1, 1), await mk(2, 1, 1), await mk(3, 1, 2), await mk(4, 2, 1), await mk(5, 1, 1)]
+    expect(rows.map((r: any) => r.lineNumber)).toEqual([1, 2, 1, 1, 3])
+    db.$close()
+  })
+
+  test('a compound scope with one column null is skipped', async () => {
+    const db = await makeDb(`
+      model Line {
+        id         Int  @id
+        accountId  Int
+        orderId    Int?
+        lineNumber Int? @sequence(scope: [accountId, orderId])
+      }
+    `, 'seq-compound-null')
+    const r = await db.line.create({ data: { id: 1, accountId: 1 } })
+    expect(r.lineNumber).toBeNull()
+    db.$close()
+  })
+
+  test('a compound scope naming a missing column is refused', () => {
+    const result = parse(`
+      model Line {
+        id         Int @id
+        accountId  Int
+        lineNumber Int @sequence(scope: [accountId, orderId])
+      }
+    `)
+    expect(result.valid).toBe(false)
+    expect(JSON.stringify(result.errors)).toContain("'orderId' does not exist")
   })
 })
 
@@ -1539,6 +1595,18 @@ describe('bun:sqlite — WAL + dual connections', () => {
     const raw = db.$db as Database
     const ps  = raw.query('PRAGMA page_size').get() as any
     expect(ps.page_size).toBe(8192)
+    db.$close()
+  })
+
+  // makeDb sets the size itself, which is what hid FJS-2303: the file createClient
+  // creates has to arrive at 8192 with nothing having asked for it first.
+  test('a file createClient creates is 8192, in WAL', async () => {
+    const path   = tmpDb('pagesize-fresh' + Math.random().toString(36).slice(2))
+    const result = parse(`model T { id Int @id }`)
+    const db     = await createClient({ parsed: result, db: path })
+    const raw    = db.$db as Database
+    expect((raw.query('PRAGMA page_size').get() as any).page_size).toBe(8192)
+    expect((raw.query('PRAGMA journal_mode').get() as any).journal_mode).toBe('wal')
     db.$close()
   })
 
@@ -5138,6 +5206,28 @@ describe('$walStatus()', () => {
 
 })
 
+describe('$ping()', () => {
+
+  test('answers true on a live client and on every flavor of it', async () => {
+    const db = await makeDb(`
+      model Item { id Int @id; val String }
+    `, 'ping')
+    expect(await db.$ping()).toBe(true)
+    expect(await db.asSystem().$ping()).toBe(true)
+    expect(await db.$setAuth({ id: 1 }).$ping()).toBe(true)
+    db.$close()
+  })
+
+  test('refuses once the client is closed, rather than answering false', async () => {
+    const db = await makeDb(`
+      model Item { id Int @id; val String }
+    `, 'ping-closed')
+    db.$close()
+    await expect(Promise.resolve().then(() => db.$ping())).rejects.toThrow(/closed/i)
+  })
+
+})
+
 // ─── computed: inline object ──────────────────────────────────────────────────
 
 
@@ -5487,6 +5577,17 @@ describe("databases: ':memory:'", () => {
     // No file on disk
     const { existsSync } = await import('fs')
     expect(existsSync('/dev/inmem.db')).toBe(false)
+    db.$close()
+  })
+
+  // FJS-2305: the shorthand moves every database, and a schema declaring none has only main
+  test('a schema with no database block opens in-memory', async () => {
+    const db = await createClient({
+      schema: `model User { id Int @id; name String }`,
+      databases: ':memory:',
+    } as any)
+    const u = await db.user.create({ data: { name: 'Alice' } })
+    expect(u.id).toBe(1)
     db.$close()
   })
 
@@ -9574,7 +9675,8 @@ describe('FileStorage plugin', () => {
   test('onBeforeCreate: Buffer value is uploaded and swapped to JSON ref', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({
-      provider: 'r2', bucket: 'test', keyPattern: ':model/:field/:uuid.:ext'
+      provider: 'r2', bucket: 'test', keyPattern: ':model/:field/:uuid.:ext',
+      accessKeyId: 'a', secretAccessKey: 's'
     }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9641,7 +9743,7 @@ describe('FileStorage plugin', () => {
 
   test('onBeforeUpdate: uploads new file, stashes old key, deletes old on afterWrite', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
-    const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
+    const plugin = FileStorage({ provider: 'r2', bucket: 'test', accessKeyId: 'a', secretAccessKey: 's' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx: any = {
       models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])),
@@ -9673,7 +9775,7 @@ describe('FileStorage plugin', () => {
 
   test('onBeforeUpdate: keepVersions: true skips old key cleanup', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
-    const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
+    const plugin = FileStorage({ provider: 'r2', bucket: 'test', accessKeyId: 'a', secretAccessKey: 's' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx: any = {
       models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])),
@@ -9717,7 +9819,7 @@ describe('FileStorage plugin', () => {
 
   test('onAfterDelete: deletes S3 objects for all @file fields', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
-    const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
+    const plugin = FileStorage({ provider: 'r2', bucket: 'test', accessKeyId: 'a', secretAccessKey: 's' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
     plugin.onInit(schema, ctx)
@@ -9746,7 +9848,7 @@ describe('FileStorage plugin', () => {
 
   test('onAfterDelete: skips rows with null @file fields gracefully', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
-    const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
+    const plugin = FileStorage({ provider: 'r2', bucket: 'test', accessKeyId: 'a', secretAccessKey: 's' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
     plugin.onInit(schema, ctx)
@@ -9759,7 +9861,7 @@ describe('FileStorage plugin', () => {
 
   test('onAfterDelete: does nothing on models with no @file fields', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
-    const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
+    const plugin = FileStorage({ provider: 'r2', bucket: 'test', accessKeyId: 'a', secretAccessKey: 's' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
     plugin.onInit(schema, ctx)
@@ -12103,7 +12205,7 @@ describe('generateTypeScript — emits the surface a real client has', () => {
       '$backup', '$attach', '$detach', '$rotateKey', '$close',
       '$checkWhere', '$checkOrderBy', '$protectedFields',
       '$schema', '$databases', '$softDelete', '$enums', '$cacheSize', '$attached',
-      '$rawDbs', '$walStatus',
+      '$rawDbs', '$walStatus', '$ping',
     ]
     for (const m of members) {
       expect((db as any)[m]).toBeDefined()
@@ -13419,6 +13521,31 @@ describe('Seeder.once()', () => {
     await seeder.once(db, 'key-a', async () => { ran++ })
     await seeder.once(db, 'key-b', async () => { ran++ })
     expect(ran).toBe(2)
+    db.$close()
+  })
+
+  // FJS-2348: a --force reseed has to un-record a key without a hand sqlite_master probe
+  test('forget() makes the next once() of that key run again, and leaves other keys', async () => {
+    const { db } = await makeTestClient(FACTORY_SCHEMA)
+    const { Seeder: S } = await import('../src/seeder.js')
+    const seeder = new S()
+    let a = 0, b = 0
+    await seeder.once(db, 'key-a', async () => { a++ })
+    await seeder.once(db, 'key-b', async () => { b++ })
+    await seeder.forget(db, 'key-a')
+    await seeder.once(db, 'key-a', async () => { a++ })
+    await seeder.once(db, 'key-b', async () => { b++ })
+    expect(a).toBe(2)
+    expect(b).toBe(1)
+    db.$close()
+  })
+
+  test('forget() on a database that has never run once() is a no-op, not a missing-table throw', async () => {
+    const { db } = await makeTestClient(FACTORY_SCHEMA)
+    const { Seeder: S } = await import('../src/seeder.js')
+    await new S().forget(db, 'never-ran')
+    const table = (db.$db ?? db.$rawDbs?.main).query(`SELECT 1 FROM sqlite_master WHERE name = '_litestone_seeds'`).get()
+    expect(table).toBeNull()
     db.$close()
   })
 })
@@ -24300,6 +24427,14 @@ model Task {
   test('unbound non-auth write throws', async () => {
     await expect(db.task.update({ where: { id: tasks[0].id }, data: { projectEdge: { isImportant: true } } }))
       .rejects.toThrow(/cannot resolve dimension/)
+    // the refusal names the binder that works for this dimension: scopedBy for a keyed one
+    await expect(db.task.update({ where: { id: tasks[0].id }, data: { projectEdge: { isImportant: true } } }))
+      .rejects.toThrow(/scopedBy\(\{ projectId \}\)(?!.*\$setAuth)/)
+  })
+  test('unbound @scoped write names $setAuth only — $scopedBy cannot bind it (FJS-2424)', async () => {
+    const attempt = db.$scopedBy({ userId: u1.id }).task.update({ where: { id: tasks[0].id }, data: { mine: { myFlag: true } } })
+    await expect(attempt).rejects.toThrow(/\$setAuth/)
+    await expect(attempt).rejects.not.toThrow(/scopedBy/)
   })
   test('@scoped write + per-viewer isolation', async () => {
     await db.$setAuth(u1).task.update({ where: { id: tasks[1].id }, data: { mine: { myFlag: true } } })

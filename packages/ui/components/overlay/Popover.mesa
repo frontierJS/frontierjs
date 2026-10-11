@@ -19,7 +19,7 @@
 
   import { tone as toTone, cx, placeAgainst } from '../../utils.js'
 
-  export let placement = 'bottom-start'  // 'bottom-start'|'bottom-end'|'top-start'|'top-end'
+  export let placement = 'bottom-start'  // '<side>-<align>': top|bottom|left|right, start|center|end
   export let offset    = 8               // gap between trigger and panel, px
   export let tone      = ''
   export let label     = ''              // accessible name for the panel

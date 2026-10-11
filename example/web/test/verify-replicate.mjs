@@ -277,7 +277,7 @@ try {
   t('restore.registryMatches',  matches('shops-registry.db'))
   t('restore.flagshipMatches',  matches('shops/flagship.db'))
   t('restore.latecomerMatches', matches('shops/latecomer.db'))
-  const trail = (root) => existsSync(join(root, 'audit', 'auditTrail.jsonl')) ? readFileSync(join(root, 'audit', 'auditTrail.jsonl'), 'utf8') : null
+  const trail = (root) => existsSync(join(root, 'audit', 'AuditTrail.jsonl')) ? readFileSync(join(root, 'audit', 'AuditTrail.jsonl'), 'utf8') : null
   t('restore.auditTrailFromBackup', trail(live) !== null && trail(back) === trail(live))
 
   const listed = litestone(back, 'tenant', 'list').out

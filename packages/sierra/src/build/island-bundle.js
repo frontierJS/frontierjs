@@ -94,6 +94,61 @@ hydrateIslands(registry)
 `
 }
 
+// ─── a relative API path in an island ─────────────────────────────────────────
+
+// A string literal that opens on the conventional API prefix and stands alone
+// as an expression: fetch('/api/x'), url = "/api", `/api/x/${id}`. A literal
+// that follows `+` or sits inside `${...}/api` is the spelling that works on a
+// separate origin, so only an opening bracket, `=`, `,`, `:`, `?`, `return` or
+// `=>` before the quote counts.
+const RELATIVE_API = /(?:^|[(=,:?[{]|\breturn|=>)\s*(['"`])\/api(?:\/|\1)/
+
+/**
+ * The lines of an island's source that name the API by a relative path.
+ *
+ * A prerendered site is its own origin, so a relative `/api/...` resolves
+ * against the SITE: the dev server answers its SPA fallback and the deployed
+ * origin has no API at all. Either way the island sees an empty answer, and a
+ * page built from it reads as a plausible business result (`FJS-1233`).
+ *
+ * @returns {Array<{ line: number, text: string }>}
+ */
+export function relativeApiCalls(source) {
+  const hits = []
+  source.split('\n').forEach((text, i) => {
+    const t = text.trim()
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*') || t.startsWith('<!--')) return
+    if (RELATIVE_API.test(t)) hits.push({ line: i + 1, text: t })
+  })
+  return hits
+}
+
+/**
+ * Warn, per source file under the app, for each relative API path -- in the
+ * island build only, since that is the one surface that is a separate origin
+ * by design. Warns rather than refuses: a deployment that puts the site and
+ * the API behind one proxy is the case where the relative path is right.
+ */
+function relativeApiPlugin(root) {
+  return {
+    name: 'sierra:island-relative-api',
+    enforce: 'pre',
+    transform(code, id) {
+      const file = id.split('?')[0]
+      if (file.startsWith('\0') || file.includes('/node_modules/') || !file.startsWith(root)) return null
+      for (const { line, text } of relativeApiCalls(code)) {
+        this.warn(
+          `${file.slice(root.length + 1)}:${line} names the API by a relative path (${text}). ` +
+          `This site is its own origin, so the path resolves against the site and not the API, ` +
+          `and the island sees an empty answer. Build the URL from the API's origin -- ` +
+          `VITE_API_URL, as site/src/api.js does.`
+        )
+      }
+      return null
+    },
+  }
+}
+
 /**
  * Build the island bundle.
  *
@@ -139,7 +194,7 @@ export async function buildIslandBundle(opts) {
       base,
       configFile: false,           // do not re-read the app's config and recurse
       logLevel: 'warn',
-      plugins,
+      plugins: [relativeApiPlugin(root), ...plugins],
       build: {
         outDir,
         emptyOutDir: false,        // the main build's output is already here

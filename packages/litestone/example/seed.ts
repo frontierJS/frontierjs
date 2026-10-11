@@ -237,7 +237,7 @@ console.log('  Databases:')
 console.log(`    main       ./example.db`)
 console.log(`    analytics  ./analytics.db`)
 console.log(`    logs       ./logs/apiRequest.jsonl`)
-console.log(`    audit      ./audit/auditTrail.jsonl  (logger driver — auto-populated)`)
+console.log(`    audit      ./audit/AuditTrail.jsonl  (logger driver — auto-populated)`)
 console.log()
 
 const counts = {

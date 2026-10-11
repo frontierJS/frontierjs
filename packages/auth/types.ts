@@ -492,6 +492,12 @@ export interface AuthPluginOptions {
    */
   passwordResetRateLimit?: RateLimitHookOptions
   /**
+   * `POST /auth/email/verify/request` — sends a mail per call to the signed-in
+   * user's own address, and a session is free to mint, so unbounded it is a
+   * mail cannon at one inbox (FJS-1853). Default: `{ max: 3, window: '15 minutes' }`.
+   */
+  emailVerifyRateLimit?: RateLimitHookOptions
+  /**
    * `POST /auth/magic-link/request` — mails an address the caller names, so it
    * is limited like a reset and for the same reason. Default:
    * `{ max: 3, window: '15 minutes' }`. `/magic-link/verify` sits behind

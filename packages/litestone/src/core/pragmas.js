@@ -198,6 +198,18 @@ export function applyIncrementalVacuum(db) {
 }
 
 /**
+ * Create the file with 8192-byte pages.
+ *
+ * Must run BEFORE `applyWal`, on a file with nothing in it: the size is fixed
+ * once the header is written, and the switch into WAL writes it. Issued after,
+ * SQLite reports success and keeps 4096 (`FJS-2303`). A file that already
+ * exists keeps its size; changing it is a full VACUUM, the operator's call.
+ */
+export function applyPageSize(db) {
+  db.run('PRAGMA page_size = 8192')
+}
+
+/**
  * Give back every freed page. A no-op unless the file is INCREMENTAL — asked
  * rather than assumed, since `incremental_vacuum` on any other mode is silently
  * nothing. Called per sweep batch, so it holds the write lock for one batch's

@@ -104,6 +104,13 @@ describe('the gap fill (FJS-1650)', () => {
     expect(got.map((r: any) => [r.placedAt, r._count])).toEqual([['2024-01', 1], ['2024-02', 0], ['2024-03', 1]])
   })
 
+  // FJS-2390: the UNION ALL answered the gap rows first, then the data rows.
+  it('a filled series answers in bucket order without an orderBy', async () => {
+    const db = await seeded([[1, '2024-01-15T10:00:00.000Z', 5], [2, '2024-03-15T10:00:00.000Z', 7]])
+    const got = await db.order.groupBy({ by: ['placedAt'], interval: { placedAt: 'month' }, fillGaps: { start: '2024-01-01', end: '2024-04-30' }, _count: true })
+    expect(got.map((r: any) => r.placedAt)).toEqual(['2024-01', '2024-02', '2024-03', '2024-04'])
+  })
+
   it('a bound that closes the quote is refused, and reads nothing either way', async () => {
     const db = await seeded(ROWS)
     const ask = (ch: string) => db.order.groupBy({

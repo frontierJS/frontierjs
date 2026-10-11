@@ -317,10 +317,10 @@ export function buildCreatedByMap(schema) {
 }
 // { modelName: [{ field, scope }] }
 // field: the field that gets the auto-incremented value
-// scope: the field whose value defines the partition (e.g. accountId)
+// scope: the fields whose values define the partition (e.g. [accountId])
 //
 // Example: quoteNumber @sequence(scope: accountId)
-//   → { quotes: [{ field: 'quoteNumber', scope: 'accountId' }] }
+//   → { quotes: [{ field: 'quoteNumber', scope: ['accountId'] }] }
 
 export function buildSequenceMap(schema) {
   const map = {}

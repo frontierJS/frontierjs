@@ -58,3 +58,9 @@ export { AsyncLocalStorage } from 'node:async_hooks'
 // is a SharedArrayBuffer per retry.
 const SLEEP = new Int32Array(new SharedArrayBuffer(4))
 export const sleepSync = (ms) => { Atomics.wait(SLEEP, 0, 0, ms) }
+
+// ─── who is writing ───────────────────────────────────────────────────────
+//
+// A name for this process in a lock owner or a cross-process writer id, so a
+// row says whose it is. The random suffix stays with the caller.
+export const processId = () => String(process.pid)

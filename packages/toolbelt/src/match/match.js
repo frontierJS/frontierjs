@@ -153,9 +153,9 @@ function _matchOp(rule, actual, op, operand) {
       // `col != ?` is NULL, not true, on a NULL column.
       return actual == null ? false : actual !== _operand(rule, operand)
     case 'has':      return Array.isArray(actual) ? actual.includes(operand) : null
-    case 'hasEvery': return Array.isArray(actual) ? operand.every(v => actual.includes(v)) : null
-    case 'hasSome':  return Array.isArray(actual) ? operand.some(v => actual.includes(v))  : null
-    case 'hasNone':  return Array.isArray(actual) ? !operand.some(v => actual.includes(v)) : null
+    case 'hasEvery': return Array.isArray(actual) && Array.isArray(operand) ? operand.every(v => actual.includes(v)) : null
+    case 'hasSome':  return Array.isArray(actual) && Array.isArray(operand) ? operand.some(v => actual.includes(v))  : null
+    case 'hasNone':  return Array.isArray(actual) && Array.isArray(operand) ? !operand.some(v => actual.includes(v)) : null
     case 'isEmpty':  return Array.isArray(actual) ? (operand ? actual.length === 0 : actual.length > 0) : null
     case 'near':     return _matchNear(actual, operand)
     default:         return null

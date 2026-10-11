@@ -1295,10 +1295,10 @@ export function generateIndexDDL(model, softDelete, { pluralize = false } = {}) 
 }
 
 /**
- * Everything one model emits — the table, its indexes, its FTS index and its
- * updatedAt trigger.
+ * Everything one model emits — the table, its indexes and its FTS index. No
+ * updatedAt trigger: the client owns that clock (FJS-D152).
  *
- * generateDDL calls this rather than repeating the four, because a caller
+ * generateDDL calls this rather than repeating the three, because a caller
  * assembling them by hand gets whichever ones it knew about when it was
  * written: asking for a model's DDL and receiving the table and the indexes
  * alone is a silently partial answer, and the two it drops are exactly the ones

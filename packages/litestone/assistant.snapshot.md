@@ -468,6 +468,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **an index over a Json column indexes the document, not anything inside it** (warn). The column holds one serialized document, so the index holds one entry per document — which answers *this exact document* and nothing else. A path filter cannot use it: json_extract() is opaque to the planner, so the query is a full scan with the index sitting beside it being written on every insert. What indexes a path is a @generated column over that path with an @@index on THAT.
 - **the unit is in the identifier, where nothing can read it** (info). timeoutSeconds Int states the unit and states it to a human only — no form renders it, no agent describing the model repeats it, and nothing checks that the value being written was measured in the same thing. @unit(s) puts the fact where those can reach it, and the name goes back to being the name. It changes no stored value: a unit declares what the number counts, it does not convert it.
 - **a bare check() in a write rule asks the parent the same write** (warn). check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
+- **a public create on a model whose required column defaults to auth()** (warn). A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.
 
 ## Opportunities
 
@@ -703,7 +704,7 @@ The value used when a write names no other. An array column takes an array liter
 createdAt DateTime @default(now())
 ```
 
-#### `@sequence` (scope: <field>)
+#### `@sequence` (scope: <field> | [<field>, …])
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: autoincrement, serial, nextval
 
@@ -1720,4 +1721,40 @@ The model-level form of @updatedBy.
 
 ```lite
 @@updatedBy
+```
+
+### Move words
+
+**Hide or lock a value**
+
+#### `@seals`
+
+tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `sealed`, `immutable`
+
+The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.
+
+```lite
+@@transitions(state, issue: draft -> issued @seals)
+```
+
+**Decide who may**
+
+#### `@gate` (<0-9>)
+
+tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `system`
+
+The level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.
+
+```lite
+@@transitions(state, void: [draft, issued] -> void @gate(5))
+```
+
+#### `@system`
+
+tier: **common** · legal in: on a @@transitions move · see also: `transitions`, `gate`, `guarded`
+
+The move is the APPLICATION's: a caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask. Not the column's @system, which is a value the application writes.
+
+```lite
+@@transitions(state, issue: draft -> issued @system @gate(5))
 ```

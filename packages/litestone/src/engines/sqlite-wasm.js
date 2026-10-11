@@ -91,6 +91,10 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
     // under a foreign key, and the server enforced them (`FJS-D485`).
     foreignKeys: false,
 
+    // One worker runs one call at a time, so a reader connection never runs
+    // beside the writer and only costs a second page cache.
+    singleConnection: true,
+
     // The pool has no xShmMap, so WAL is refused in silence and the default
     // rollback journal cost 12 ms per autocommit write in Chrome. PERSIST with
     // synchronous OFF is 0.11 ms: the journal still rolls back a tab killed
@@ -149,19 +153,19 @@ function wrap(db, capi) {
   const prepare = (sql) => {
     const stmt = db.prepare(sql)
     let wide = false
-    const read = (shape) => wide ? wideRow(stmt, capi, shape) : stmt.get(shape)
     return {
       get(...params) {
         try {
           bind(stmt, params)
-          return stmt.step() ? read({}) : undefined
+          return stmt.step() ? rowReader(stmt, capi, wide, false)() : undefined
         } finally { stmt.reset() }
       },
       all(...params) {
         try {
           bind(stmt, params)
+          let read
           const rows = []
-          while (stmt.step()) rows.push(read({}))
+          while (stmt.step()) rows.push((read ??= rowReader(stmt, capi, wide, false))())
           return rows
         } finally { stmt.reset() }
       },
@@ -169,8 +173,9 @@ function wrap(db, capi) {
       values(...params) {
         try {
           bind(stmt, params)
+          let read
           const rows = []
-          while (stmt.step()) rows.push(read([]))
+          while (stmt.step()) rows.push((read ??= rowReader(stmt, capi, wide, true))())
           return rows
         } finally { stmt.reset() }
       },
@@ -205,7 +210,7 @@ function wrap(db, capi) {
     close() { db.close() },
     // `sqlite3_js_db_export` is the whole file as bytes, which is what
     // `core/backup.js` means by serialize.
-    serialize() { return db.checkpointStart ? null : sqlite3Export(db) },
+    serialize() { return capi.sqlite3_js_db_export(db.pointer) },
   }
 }
 
@@ -223,18 +228,25 @@ function bind(stmt, params) {
 // bun's `safeIntegers` hands back 42n — and `narrowRow` turns only a BigInt into
 // the digits a wide column promises. So the INTEGER cells are read as int64
 // here, and every other storage class through oo1 as before.
-function wideRow(stmt, capi, row) {
-  const positional = Array.isArray(row)
-  for (let i = 0, n = stmt.columnCount; i < n; i++) {
-    const v = capi.sqlite3_column_type(stmt.pointer, i) === capi.SQLITE_INTEGER
-      ? capi.sqlite3_column_int64(stmt.pointer, i)
-      : stmt.get(i)
-    row[positional ? i : capi.sqlite3_column_name(stmt.pointer, i)] = v
+//
+// A column name is a call across the wasm boundary that decodes a string, and
+// oo1's own object read makes one per CELL: 20,000 decodes of the same ten
+// strings for a 2,000 x 10 result. So the names are read once per execution,
+// after its first row, and the rows of that execution are built from them. Per
+// execution rather than per prepared statement, because a cached `SELECT *`
+// is re-prepared by SQLite after an ALTER and answers different names.
+function rowReader(stmt, capi, wide, positional) {
+  if (positional && !wide) return () => stmt.get([])
+  const n     = stmt.columnCount
+  const names = positional ? null : stmt.getColumnNames()
+  return () => {
+    const row = positional ? new Array(n) : {}
+    for (let i = 0; i < n; i++) {
+      row[positional ? i : names[i]] = wide && capi.sqlite3_column_type(stmt.pointer, i) === capi.SQLITE_INTEGER
+        ? capi.sqlite3_column_int64(stmt.pointer, i)
+        : stmt.get(i)
+    }
+    return row
   }
-  return row
 }
 
-function sqlite3Export(db) {
-  const api = db.constructor?.sqlite3 ?? globalThis.sqlite3
-  return api?.capi?.sqlite3_js_db_export?.(db.pointer) ?? null
-}

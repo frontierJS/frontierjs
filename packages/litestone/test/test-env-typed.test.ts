@@ -135,3 +135,51 @@ describe('createTestEnv answers the app\'s client', () => {
     expect(out).toContain('use.ts')
   })
 })
+
+// FJS-2325 -- verifyTenantIsolation is on every TestEnv, so its type names it
+// and the verdicts' `got` values, or an app's filter on them is `any`.
+const TENANCY = `
+  import { createTestEnv } from '@frontierjs/litestone/testing'
+
+  export async function run() {
+    const env   = await createTestEnv({ schema: 'model Employee { id Int @id\\n name String }' })
+    const rows  = await env.verifyTenantIsolation({ ops: ['read', 'post-update'], actors: [{ workspaceId: 1 }, { workspaceId: 2 }] })
+    const leaks = rows.filter(r => r.got === 'leaked')
+    const model: string | null = leaks[0].model
+    // @ts-expect-error -- not a verdict
+    rows.filter(r => r.got === 'nope')
+    // @ts-expect-error -- not an op
+    await env.verifyTenantIsolation({ ops: ['nope'] })
+    return model
+  }
+`
+
+describe('verifyTenantIsolation is typed', () => {
+  test('the method and its verdict values are on TestEnv', () => {
+    const { ok, out } = compile(TENANCY, { 'db.d.ts': generated })
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})
+
+// FJS-2144 -- the runtime returns the main database file's path, so a test that
+// opens it from a second process reads it without a cast.
+const PATH = `
+  import { createTestEnv } from '@frontierjs/litestone/testing'
+
+  export async function run() {
+    const env = await createTestEnv({ schema: 'model Employee { id Int @id\\n name String }' })
+    const file: string = env.path
+    // @ts-expect-error -- a string, not a number
+    const n: number = env.path
+    return { file, n }
+  }
+`
+
+describe('env.path is typed', () => {
+  test('the main database file is a string on TestEnv', () => {
+    const { ok, out } = compile(PATH, { 'db.d.ts': generated })
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})

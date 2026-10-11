@@ -1893,7 +1893,6 @@ const db = await createClient({ path: './schema.lite', db: ':memory:',
     endpoint:   process.env.S3_ENDPOINT,
     accessKeyId:     process.env.S3_KEY,
     secretAccessKey: process.env.S3_SECRET,
-    dev: 'local',   // fallback to ./storage/ when no endpoint set
   })]
 })
 ```
@@ -2562,7 +2561,7 @@ bun scripts/build-binary.js --no-bytecode     # smaller, slower to start
 Targets: `bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-x64`, `bun-darwin-arm64`, `bun-windows-x64`.
 
 ```bash
-./dist/litestone db push --yes
+./dist/litestone db push
 ./dist/litestone migrate apply
 ./dist/litestone studio            # full UI, HTML embedded in the binary
 ```

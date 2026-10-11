@@ -49,8 +49,7 @@ describe('login limiter keying', () => {
 
 describe('routes with no limiter', () => {
 
-  // FJS-1853: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('POST /auth/email/verify/request is bounded — it sends a mail per call', async () => {
+  test('POST /auth/email/verify/request is bounded — it sends a mail per call', async () => {
     const app = await appWith(h.auth)
     await h.auth.createUser({ email: 'mailme@example.com', password: 'm-pw-1', name: 'M' })
     const { token } = signedIn(await h.auth.login('mailme@example.com', 'm-pw-1'))

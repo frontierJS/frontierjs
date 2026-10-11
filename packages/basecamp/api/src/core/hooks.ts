@@ -2,8 +2,9 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, $} from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, $} from '@frontierjs/junction'
 import type { Hook, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
+import { REDACTED }                       from '@frontierjs/toolbelt/redact'
 import { channelManager, workspaceChannelName } from '../channels.ts'
 import type { BasecampApp }                from '../basecamp.types.ts'
 import { grantsFor, grantsWithin }         from './capabilities.ts'
@@ -784,19 +785,21 @@ function recordable(ctx: ServiceContext, skip: Set<string>): boolean {
   return true
 }
 
-/** The litestone accessor for a service's model. Model names are PascalCase
- *  singular by repo invariant, and the accessor is the same word with a lower
- *  first letter — `model App` is `db.app`.
+/** The litestone accessor for a service's model — `model App` is `db.app`.
  *
  *  Read off `app.services`, the REGISTRY, and not off `app.service(name)`:
  *  that answers a ServiceCaller — the thing you make calls with — which
  *  carries no `model` at all, so asking it produced `undefined` and every
- *  audit row was written with no diff and nothing saying why. */
+ *  audit row was written with no diff and nothing saying why. The service-to-
+ *  accessor step is junction's `serviceAccessor`; the spelling on the client is
+ *  the first candidate the client has. */
 function accessorFor(app: BasecampApp, service: string): string | null {
-  const registry = (app as unknown as { services?: { get?: (n: string) => { model?: string } | undefined } }).services
-  const model    = registry?.get?.(service)?.model
-  if (!model) return null
-  return model[0].toLowerCase() + model.slice(1)
+  const registry = (app as unknown as { services?: { get?: (n: string) => { model?: string | null } | undefined } }).services
+  const accessor = serviceAccessor({ name: service, model: registry?.get?.(service)?.model })
+  if (!accessor) return null
+  const db = app.db.asSystem() as object
+  // `in`, not a read: a Litestone client throws on an unknown property.
+  return accessorCandidates(accessor).find(candidate => candidate in db) ?? null
 }
 
 // A value written into `AuditEvent.diff`. Long text is cut, because a trail row
@@ -839,7 +842,7 @@ function diffRows(
     if (JSON.stringify(from) === JSON.stringify(to)) continue
 
     diff[key] = protectedFields[key]
-      ? { before: from === undefined ? undefined : '[redacted]', after: to === undefined ? undefined : '[redacted]' }
+      ? { before: from === undefined ? undefined : REDACTED, after: to === undefined ? undefined : REDACTED }
       : { before: diffValue(from), after: diffValue(to) }
   }
 

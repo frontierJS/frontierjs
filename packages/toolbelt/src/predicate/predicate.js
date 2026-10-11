@@ -251,8 +251,8 @@ export function evaluate(node, env = {}) {
     case 'not':     return not3(truth(ev(node.expr)))
 
     case 'literal': return node.value
-    case 'field':   return own(record, node.name) ?? null
-    case 'path':    return resolvePath(node)
+    case 'field':   return read(node.name)
+    case 'path':   return resolvePath(node)
     case 'check':   return resolveCheck(node)
     case 'some':    return resolveSome(node)
     case 'now':     return now

@@ -185,3 +185,25 @@ describe('running it twice', () => {
     expect(readFileSync(edited, 'utf8')).toContain('// mine')
   })
 })
+
+describe('how an island reaches the API (FJS-1233)', () => {
+  test('the vite config reads the app root\'s .env, not the surface\'s', () => {
+    const root = appRoot('envdir')
+    scaffoldSiteSurface({ root })
+
+    const vite = readFileSync(join(root, 'site', 'config', 'vite.config.js'), 'utf8')
+    expect(vite).toMatch(/envDir:\s*resolve\(ROOT, '\.\.'\)/)
+    // The wrong fix: a proxy makes dev pass and leaves the served build broken.
+    expect(vite).not.toMatch(/proxy:/)
+  })
+
+  test('the API origin is a scaffolded constant that follows VITE_API_URL', () => {
+    const root = appRoot('apiurl')
+    scaffoldSiteSurface({ root, apiPort: 8110 })
+
+    const api = readFileSync(join(root, 'site', 'src', 'api.js'), 'utf8')
+    expect(api).toContain('import.meta.env?.VITE_API_URL')
+    expect(api).toContain('http://localhost:8110')
+    expect(api).toMatch(/apiPrefix:\s*'\/api'/)
+  })
+})

@@ -1316,19 +1316,21 @@ class Parser {
       }
 
       // ── Per-scope sequence ─────────────────────────────────────────────────
-      // @sequence(scope: fieldName)
-      // Auto-increments a counter scoped to the value of another field.
+      // @sequence(scope: fieldName) · @sequence(scope: [accountId, orderId])
+      // Auto-increments a counter scoped to the value of another field, or to
+      // the pair of them. `scope` is always a list of field names.
       // Classic use case: per-tenant document numbers (invoice #0001 per account).
       // Litestone manages a _litestone_sequences table internally.
       case 'sequence': {
         this.eat(TK.LPAREN)
+        const at  = this.peek()
         const key = this.eat(TK.IDENT).value
         if (key !== 'scope')
-          throw new ParseError(`@sequence only accepts (scope: fieldName), got (${key})`, this.peek())
+          throw new ParseError(`@sequence only accepts (scope: fieldName) or (scope: [field, …]), got (${key})`, at)
         this.eat(TK.COLON)
-        const scopeField = this.eat(TK.IDENT).value
+        const scope = this.check(TK.LBRACKET) ? this.parseFieldList() : [this.eat(TK.IDENT).value]
         this.eat(TK.RPAREN)
-        return { kind: 'sequence', scope: scopeField }
+        return { kind: 'sequence', scope }
       }
 
       // ── Manual order ───────────────────────────────────────────────────────
@@ -6987,9 +6989,10 @@ function validate(schema) {
       if (field.type.name !== 'Int')
         errors.push(`Model '${model.name}', field '${field.name}': @sequence requires an Integer or Integer? field, got ${field.type.name}`)
       const seqAttr = field.attributes.find(a => a.kind === 'sequence')
-      const scopeField = model.fields.find(f => f.name === seqAttr.scope)
-      if (!scopeField)
-        errors.push(`Model '${model.name}', field '${field.name}': @sequence(scope: ${seqAttr.scope}) — field '${seqAttr.scope}' does not exist on this model`)
+      for (const col of seqAttr.scope) {
+        if (!model.fields.some(f => f.name === col))
+          errors.push(`Model '${model.name}', field '${field.name}': @sequence(scope: ${seqAttr.scope.join(', ')}) — field '${col}' does not exist on this model`)
+      }
     }
   }
 
@@ -7857,10 +7860,20 @@ function validate(schema) {
             a.fields.length === cols.length && cols.every(x => a.fields.includes(x)))
         })
         if (!unique) {
+          // The tenancy pass lifts a field-level @unique into (tenant, column),
+          // so "add @unique" would name what the field already carries.
+          const scoped = targetModel.attributes.find(a =>
+            a.kind === 'uniqueIndex' && a.generated === 'tenancy' &&
+            a.fields.length === cols.length + 1 && cols.every(x => a.fields.includes(x)))
+          const oneToOne = scoped
+            ? `the @unique on '${targetModel.name}.${cols.join(', ')}' is scoped per '${scoped.fields[0]}' by the tenancy, ` +
+              `so one '${model.name}' can have one '${targetModel.name}' in each — mark it @unique(global) ` +
+              `or put @@tenant(none) on '${targetModel.name}' for a one-to-one.`
+            : `or add @unique to '${targetModel.name}.${cols.join(', ')}' for a one-to-one.`
           errors.push(
             `Model '${model.name}', field '${field.name}': '${targetModel.name}.${owner.name}' is not unique, ` +
             `so many '${targetModel.name}' rows can point back — write '${field.name} ${targetModel.name}[]' for a to-many, ` +
-            `or add @unique to '${targetModel.name}.${cols.join(', ')}' for a one-to-one.`
+            oneToOne
           )
           continue
         }

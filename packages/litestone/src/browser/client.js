@@ -127,6 +127,7 @@ export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAUL
       if (key === '$setAuth')  return (user) => make({ kind: 'auth', user })
       if (key === '$close')    return async () => { try { await post('close') } finally { release() } }
       if (key === '$transaction') return () => { throw new Error(REFUSAL) }
+      if (key === '$backup')      return () => { throw new Error(BACKUP_REFUSAL) }
 
       if (!models.has(key)) throw new Error(
         `[Litestone] '${key}' is not a model in this schema. Models: ${[...models].join(', ')}`)
@@ -154,6 +155,10 @@ const REFUSAL =
   '  For many rows at once use createMany() or upsertMany(), which carry their rows in ONE call\n' +
   '  and are the thing that makes a hydration take 0.3s instead of 46s.\n' +
   '  For an offline WRITE, the pending queue replays it against the server (FJS-D301).'
+
+const BACKUP_REFUSAL =
+  '[Litestone] $backup is not available on a browser client.\n' +
+  '  A backup is a file copy and a browser has no filesystem; the database is a name in OPFS.'
 
 // The worker sends a plain object because an Error loses its own properties to
 // structuredClone. Rebuilt here so that `err.code === 'ACCESS_DENIED'` is the

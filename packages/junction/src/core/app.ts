@@ -1773,6 +1773,10 @@ export function createApp(opts: AppOptions = {}): App {
     // When a replayed write was made, for the stamps (`FJS-D469`).
     installMadeAt(db)
     registerAuditMetrics(app, db)
+    // An app that cannot reach its database is not ready, and a probe that
+    // never asks reads ok over a lost file. Registered on the plugin tier, so a
+    // `healthPlugin({ checks: { db } })` of the app's own replaces it.
+    app.registerReadiness('db', () => (db as { $ping(): boolean }).$ping() === true)
     if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
     // Row tenancy scopes with policies rather than with a second database, so
     // there is nothing to swap — the failure mode is the opposite one, a
@@ -2306,6 +2310,28 @@ function applyConfiguredMiddleware(app: App, config: AppConfig): void {
     app.configure(csrf({ ...(origins?.length ? { origins } : {}),
       ...(declared.methods ? { methods: declared.methods as string[] } : {}),
       ...(declared.allowMissingOrigin !== undefined ? { allowMissingOrigin: declared.allowMissingOrigin as boolean } : {}) }))
+
+    // A cors block says a page on another origin is expected. Both shapes below
+    // are legal and leave that page refused with no word at boot: the browser
+    // reports an opaque "Failed to fetch", and the list that would fix it
+    // differs by host (a Tauri shell is tauri://localhost on Linux and macOS,
+    // http://tauri.localhost on Windows and Android).
+    const cors = http.cors as { origins?: string | string[]; credentials?: boolean } | undefined
+    const corsList = cors?.origins
+    const corsDeclared = Array.isArray(corsList) ? corsList.length > 0 : !!corsList
+    if (corsDeclared) {
+      if (!origins?.length) {
+        app.logger.warn(
+          `[Junction] cross-origin pages are refused: csrf is on and cors names '*', which csrf does not borrow, ` +
+          `so only the app's own origin may write. List each web origin by name in middleware.cors.origins or middleware.csrf.origins.`
+        )
+      } else if (app.http?.authCookie && !cors?.credentials) {
+        app.logger.warn(
+          `[Junction] cross-origin pages are refused: cookie auth is on and middleware.cors.credentials is not true, ` +
+          `so a browser never sends the session cookie from another origin. Set credentials: true beside an explicit origins list.`
+        )
+      }
+    }
   }
 
   // Behind cors and csrf, so a refused request is not counted against the

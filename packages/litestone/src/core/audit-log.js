@@ -9,13 +9,22 @@
 
 // The auto-generated model AST for driver:trail databases in auto mode.
 // Shape is fixed — owned by Litestone, not the user.
-// Model name: <dbName>Trail  e.g. audit → auditTrail
+// Model name: <DbName>Trail  e.g. audit → AuditTrail — PascalCase like every
+// model (Invariant 2); the accessor `db.auditTrail` is derived from it.
+/**
+ * @param {string} dbName
+ * @returns {string}
+ */
+export function trailModelName(dbName) {
+  return dbName.charAt(0).toUpperCase() + dbName.slice(1) + 'Trail'
+}
+
 /**
  * @param {string} dbName
  * @returns {ModelDef}
  */
 export function makeLoggerAutoModel(dbName) {
-  const name = dbName + 'Trail'
+  const name = trailModelName(dbName)
   const f = (/** @type {string} */ fieldName, /** @type {string} */ typeName, optional = false) => ({
     name: fieldName,
     type: { kind: 'scalar', name: typeName, optional, array: false },

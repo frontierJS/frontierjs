@@ -16,7 +16,7 @@
 // Rendered by `litestone catalog --snapshot`, byte-compared by `--check`.
 // Never imported by production code.
 
-import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, GROUPS, POSITIONS,
+import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, GROUPS, POSITIONS,
          POSITION_RULES, positionsOf, typed } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
@@ -36,7 +36,7 @@ function valuesCell(row) {
  * positions on fifty rows hides the four that differ, which are the only rows
  * this line exists for.
  */
-const ORDINARY = { field: 3, model: 2 }
+const ORDINARY = { field: 3, model: 2, move: 1 }
 
 function positionsCell(row) {
   const all = positionsOf(row)
@@ -57,7 +57,8 @@ export function renderCatalogSnapshot() {
        'changed. Blurbs are deliberately absent: prose churns on wording, and a',
        'snapshot that reshuffles on an edited sentence is one nobody reads.', '')
   push(`**${CATALOG.length} words** — ${TOP_LEVEL.length} declarations · ` +
-       `${FIELD_ATTRS.length} field attributes · ${MODEL_ATTRS.length} model attributes.`, '')
+       `${FIELD_ATTRS.length} field attributes · ${MODEL_ATTRS.length} model attributes · ` +
+       `${MOVE_WORDS.length} move words.`, '')
 
   push('## Declarations', '')
   push('| word | arity | accepts |', '| --- | --- | --- |')
@@ -65,7 +66,8 @@ export function renderCatalogSnapshot() {
     push(`| \`${esc(r.word)}\` | ${esc(r.arity)} | ${valuesCell(r)} |`)
   push('')
 
-  for (const [rows, title] of [[FIELD_ATTRS, 'Field attributes'], [MODEL_ATTRS, 'Model attributes']]) {
+  for (const [rows, title] of [[FIELD_ATTRS, 'Field attributes'], [MODEL_ATTRS, 'Model attributes'],
+                           [MOVE_WORDS, 'Move words']]) {
     push(`## ${title}`, '')
     push('| word | group | arity | legal | accepts | notes |', '| --- | --- | --- | --- | --- | --- |')
     for (const r of rows) {

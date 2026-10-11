@@ -70,7 +70,7 @@ refuses it by name.
 @createdBy                       stamp ctx.auth.id on CREATE
 @createdBy(auth().field)         stamp custom auth field on CREATE
 @version                         optimistic concurrency — Int, bumped on every write
-@sequence(scope: field)          per-scope auto-increment — see sequences.md
+@sequence(scope: field | [a, b])  per-scope auto-increment — see sequences.md
 ```
 
 `@createdBy` is a **stamp, not a default** — that is the whole difference from

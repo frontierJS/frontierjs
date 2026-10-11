@@ -65,6 +65,30 @@ export const getFlags   = name => {
   return out
 }
 
+// Every flag any command reads. `flag()` answers false for a name nothing
+// read, so a mistyped one used to vanish and the command ran without it:
+// `migrate create --dry` wrote the migration file it was meant to preview
+// (FJS-2166). `test/cli-smoke.test.ts` fails a flag read in `src/tools/` that
+// is not listed here.
+export const KNOWN_FLAGS = new Set([
+  'accept-data-loss', 'all-modes', 'apply', 'as', 'at', 'audience', 'augment',
+  'backup', 'bare', 'check', 'ci', 'concurrency', 'config', 'db', 'debug',
+  'dir', 'dry-run', 'env-file', 'eval', 'fix', 'for', 'force', 'format', 'from',
+  'from-backup', 'gate', 'help', 'host', 'include-deleted-at',
+  'include-protected', 'include-timestamps', 'insecure', 'interval', 'json',
+  'kinds', 'l0', 'level', 'meta', 'migrations', 'mode', 'no-camel', 'no-env',
+  'no-open', 'only', 'operations', 'out', 'params', 'pluralize', 'port',
+  'preview', 'purpose', 'readonly', 'reference', 'registry', 'rename', 'report',
+  'retention', 'schema', 'since', 'skip-existing', 'snapshot', 'stdout',
+  'strict', 'system', 'tenant', 'token', 'url', 'v', 'vacuum', 'verbose',
+  'verify', 'version', 'visibility', 'with-deleted', 'without-key', 'zip',
+])
+
+/** The `--flags` given that no command reads, spelled as typed. */
+export function unknownFlags() {
+  return [..._flagMap.keys()].filter(name => name && !KNOWN_FLAGS.has(name))
+}
+
 export function fatal(msg) {
   console.error(`\n  ${red('✗')}  ${msg}\n`)
   process.exit(1)

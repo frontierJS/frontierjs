@@ -889,10 +889,11 @@ value cannot tell you.
 
 ## Capabilities — the grid a ladder cannot express
 
-**Enforced, and the grant column is declared.** What is not built is the affordance —
-`x-capabilities` to a browser, a section in `access.snapshot.md`, and
-`db.$capabilitiesFor(principal)`. `IDEAS/shipped/permission-sets.md` § *Build order* is what
-is left.
+**Enforced, and the affordance is built.** `x-capabilities` is emitted in the JSON
+Schema, `access.snapshot.md` carries a *Capabilities* section, and
+`db.$capabilitiesFor(principal)` answers what a caller holds. What a browser does
+with it is not: `resource.transitions(row, level)` does not grade by the grid
+(`FJS-1508`), so a screen offers a move the server will then refuse.
 
 A `@@gate` is a ladder and answers *how far up is this caller*. A business
 application mostly asks a grid — *which nouns, and which verbs on them* — and a

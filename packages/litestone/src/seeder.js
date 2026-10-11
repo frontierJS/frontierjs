@@ -705,6 +705,20 @@ export class Seeder {
       key, new Date().toISOString()
     )
   }
+
+  /**
+   * Un-record a once() key so its block runs again — what a `--force` reseed
+   * needs. The history table is created by the first once(), so a database that
+   * never seeded has none; SQLite resolves a table at PREPARE time, so deleting
+   * from it unguarded throws rather than matching nothing.
+   */
+  async forget(db, key) {
+    const raw = db.$db ?? db.$rawDbs?.main ?? null
+    if (!raw) throw new Error('forget() requires a raw db connection via db.$db')
+
+    const table = raw.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_litestone_seeds'`).get()
+    if (table) raw.run('DELETE FROM "_litestone_seeds" WHERE key = ?', key)
+  }
 }
 
 // ─── Loading rows from outside ────────────────────────────────────────────────

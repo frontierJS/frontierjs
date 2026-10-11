@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**116 words** — 13 declarations · 68 field attributes · 35 model attributes.
+**119 words** — 13 declarations · 68 field attributes · 35 model attributes · 3 move words.
 
 ## Index
 
@@ -43,6 +43,11 @@ and shows you the diff first.
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
+
+**Move words**
+
+- *Hide or lock a value* — [`@seals`](#seals-move)
+- *Decide who may* — [`@gate`](#gate-move) · [`@system`](#system-move)
 
 ## Declarations
 
@@ -330,7 +335,7 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 
-#### `@sequence` `(scope: <field>)` <a id="sequence-field"></a>
+#### `@sequence` `(scope: <field> | [<field>, …])` <a id="sequence-field"></a>
 
 A counter scoped to another field's value — invoice #0001 per account. Litestone keeps the counters in _litestone_sequences.
 
@@ -1936,6 +1941,78 @@ model Example {
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@updatedBy`](#updatedby-field) · [`@@auth`](#auth-model)
 
+## Move words
+
+One `@`, after the target of a `@@transitions` move. `@system` and `@gate` share a spelling with another word, so `litestone explain @system` answers for both.
+
+### Hide or lock a value
+
+#### `@seals` <a id="seals-move"></a>
+
+The move is the moment this row becomes a DOCUMENT. After it the row's @sealed children may not be created, changed or removed, and its @immutable columns freeze (SealedDocumentError). A seal is an event rather than a state, so it is declared on the move and not as a predicate over the state column, and the sealed set is computed from the move's target. Takes no argument: WHICH children seal is @sealed on the relation field.
+
+```lite
+enum DocState {
+  draft
+  issued
+  void
+}
+
+model Example {
+  id Int @id
+  state DocState @default(draft)
+  total Int @immutable
+  @@transitions(state, issue: draft -> issued @seals)
+}
+```
+
+- **Deeper** — [modeling.md](modeling.md)
+- **See also** — [`@@transitions`](#transitions-model) · [`@sealed`](#sealed-field) · [`@immutable`](#immutable-field)
+
+### Decide who may
+
+#### `@gate` `(<0-9>)` <a id="gate-move"></a>
+
+The level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.
+
+```lite
+enum DocState {
+  draft
+  issued
+  void
+}
+
+model Example {
+  id Int @id
+  state DocState @default(draft)
+  @@transitions(state, void: [draft, issued] -> void @gate(5))
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-field)
+
+#### `@system` <a id="system-move"></a>
+
+The move is the APPLICATION's: a caller may ask for it and never make one, and the app states { system: true } on the call. The move still runs on the caller's own client, so the gate, the row policies and the audit actor all survive, which is the whole difference from asSystem(). Takes no argument. Combine with @gate(N) below 8 to say who may ask. Not the column's @system, which is a value the application writes.
+
+```lite
+enum DocState {
+  draft
+  issued
+  void
+}
+
+model Example {
+  id Int @id
+  state DocState @default(draft)
+  @@transitions(state, issue: draft -> issued @system @gate(5))
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@transitions`](#transitions-model) · [`@@gate`](#gate-model) · [`@guarded`](#guarded-field)
+
 ## Where a word is legal
 
 Which switch parses a word is not the same question as where you may type it.
@@ -2067,3 +2144,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `check-without-an-operation-in-a-write-rule` — a bare check() in a write rule asks the parent the same write
 
 *warn*. check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
+
+### `anonymous-create-auth-default` — a public create on a model whose required column defaults to auth()
+
+*warn*. A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.

@@ -87,11 +87,8 @@ describe('the browser graph', () => {
   // modules are IMPORTED by the browser graph and their server paths are never
   // run there, so the number is the debt, not a verdict on each line. A new use
   // in any file fails; a conversion through #host lowers the number here.
-  // client.js: the lock owner and the crossProcess writer id (FJS-2400);
-  // encryption.js: FJS-2398; backup.js: FJS-2401.
+  // encryption.js: FJS-2398.
   const CEILING: Record<string, number> = {
-    'core/backup.js':        2,
-    'core/client.js':        2,
     'core/encryption.js':    15,
     'core/tenancy.js':       1,
   }

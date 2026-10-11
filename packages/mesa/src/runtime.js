@@ -1376,7 +1376,10 @@ export function bindAttribute(el, name, fn) {
 export function bindClass(el, fn, className) {
   createEffect(
     () => {
-      fn() ? el.classList.add(className) : el.classList.remove(className)
+      // add/remove rewrite the class attribute even when the token set does
+      // not change, which a MutationObserver on the list reports per row.
+      const on = !!fn()
+      if (on !== el.classList.contains(className)) on ? el.classList.add(className) : el.classList.remove(className)
     },
     { value: false }
   )
@@ -4173,7 +4176,12 @@ export function spreadAttributes(el, fn) {
       if (!readOnly) el[k] = v ?? null
       return
     }
-    if (desc?.set) {
+    // A string meant for a boolean property is markup: `spellcheck="false"`
+    // assigned to the property is true, since any non-empty string is, where
+    // the attribute parser reads "false" as false. `set_attribute` already
+    // answers the same string with setAttribute; _DOM_PROPS keys keep the
+    // property because the attribute stops reflecting once it is written.
+    if (desc?.set && !(typeof v === 'string' && typeof el[k] === 'boolean' && !_DOM_PROPS.has(k))) {
       el[k] = v ?? null
       return
     }

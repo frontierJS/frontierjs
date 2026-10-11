@@ -115,3 +115,10 @@ test('sse: a line break in an event name or id is refused, the same name without
 test('sse: undefined data is written as null, never as the word undefined', function () {
   assert.equal(formatEvent({}), 'data: null\n\n')
 })
+
+test('sse: an id or event name that is not a string, and data JSON cannot carry, are refused by name', function () {
+  assert.throws(() => formatEvent({ id: 7, data: 1 }), /id must be a string/)
+  assert.throws(() => formatEvent({ event: 7, data: 1 }), /event name must be a string/)
+  assert.throws(() => formatEvent({ data: () => 1 }), /cannot be written as JSON/)
+  assert.throws(() => formatEvent({ data: Symbol('x') }), /cannot be written as JSON/)
+})

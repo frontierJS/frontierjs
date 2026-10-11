@@ -96,6 +96,12 @@ describe('wrapResult', () => {
     expect(wrapResult([{ id: 1 }], 'posts', 'patch')).toMatchObject({ kind: 'list' })
   })
 
+  test('a custom method answering an array is the list envelope, so invoke() callers read .data', () => {
+    const r = wrapResult([{ id: 1 }, { id: 2 }], 'words', 'forVerse')
+    expect(r).toMatchObject({ kind: 'list', object: 'words' })
+    expect(r.data).toEqual([{ id: 1 }, { id: 2 }])
+  })
+
   test('anything else becomes a single', () => {
     expect(wrapResult({ id: 1 }, 'posts', 'get')).toMatchObject({ kind: 'single', object: 'posts' })
     expect(wrapResult(null, 'posts', 'get')).toMatchObject({ kind: 'single', data: null })

@@ -35,6 +35,8 @@ export interface SurfaceService {
   customMethods: string[]
   /** The `type` in the seed each method's payload must satisfy, keyed by method. */
   inputs:        Record<string, string>
+  /** The `type` in the seed each method answers with, keyed by method. */
+  outputs:       Record<string, string>
   /**
    * Who may call each custom method the service answers, as the gate decides it.
    * Keyed by method, CRUD verbs excluded — those are graded by operation.
@@ -86,6 +88,7 @@ export function describeSurface(app: App): Surface {
       methods:       d.methods,
       customMethods: d.customMethods,
       inputs:        d.inputs ?? {},
+      outputs:       d.outputs ?? {},
       methodGrades:  gradeCustomMethods(d, client),
       channel,
       transactional: d.transactional,

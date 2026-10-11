@@ -17,6 +17,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { jsonLoss, jsonLossAdvice } from '@frontierjs/toolbelt/json'
+import { REDACTED } from '@frontierjs/toolbelt/redact'
 import { LEVELS, levelPasses, levelName, gradeStanding } from '@frontierjs/toolbelt/gate'
 import type { Database }                            from 'bun:sqlite'
 import { openDb, buildStatements, aggregateStats, reclaimFreePages, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
@@ -392,7 +393,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // arguments — the string, not a parse — so a redacted row keeps the shape a
   // reader expects and says why the value is not there.
   const redactList = (rows: JobRecord[], withData: boolean): JobRecord[] =>
-    withData ? rows : rows.map(r => ({ ...r, data: '[redacted]' }))
+    withData ? rows : rows.map(r => ({ ...r, data: REDACTED }))
 
   // ── admin routes ──────────────────────────────────────────────────────────
   //

@@ -556,9 +556,10 @@ model Customer {
   fullName    String?    @generated(`{firstName} {lastName}`)
   email       String     @email @unique @lower
   
-  /// Staff-only. Field-level @allow is the tool for "some callers may read this
-  /// column": the field is stripped from the response for anyone the policy
-  /// rejects, without a line of service code saying so.
+  /// Admin-only: a staff member who is not an admin never sees this column. Field-level
+  /// @allow is the tool for "some callers may read this column": the field is
+  /// stripped from the response for anyone the policy rejects, without a line of
+  /// service code saying so.
   ///
   /// NOT @guarded — that is a system-context lock (@guarded / @guarded),
   /// not a level, and it takes no numeric argument. @guarded(5) does not parse.

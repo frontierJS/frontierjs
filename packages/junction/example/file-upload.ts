@@ -34,6 +34,7 @@ import {
   requestLogger,
   defaultConfig,
   cors,
+  isServiceResult,
 } from '../index.ts'
 
 import { withLitestoneDb } from '../src/core/litestone.ts'
@@ -135,7 +136,7 @@ autoMigrate(db)
 function rowsOf(result: unknown): Record<string, unknown>[] {
   if (!result || typeof result !== 'object') return []
   const r       = result as Record<string, unknown>
-  const payload = ('kind' in r && 'data' in r) ? r.data : r   // envelope or bare
+  const payload = isServiceResult(r) ? r.data : r   // envelope or bare
   if (!payload || typeof payload !== 'object') return []
   return (Array.isArray(payload) ? payload : [payload]) as Record<string, unknown>[]
 }

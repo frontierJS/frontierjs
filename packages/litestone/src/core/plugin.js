@@ -77,7 +77,9 @@ export class Plugin {
 
   // Called after any delete completes — single or bulk.
   // rows = array of the rows that were deleted (fetched before the SQL ran).
-  // For soft deletes, rows have deletedAt set to the new timestamp.
+  // A soft delete does NOT fire it: the row survives and can be restored, so
+  // anything this hook cleans up (an external file) must outlive it. Only a
+  // hard delete — `delete()`, or `deleteMany()` — reaches here.
   // This is the right place for S3 object cleanup — the SQL has already
   // committed so there's no risk of deleting storage for a row that survived.
   async onAfterDelete(model, rows, ctx) {}
