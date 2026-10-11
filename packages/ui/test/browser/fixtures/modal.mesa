@@ -6,7 +6,10 @@
 
   export let dismissible = true
 
-  let open   = false
+  // A prop so a spec can mount the overlay already open, the way a caller
+  // writes {#if shown}<Modal open> -- that path never passes through a change.
+  export let open = false
+
   let closes = 0
 </script>
 

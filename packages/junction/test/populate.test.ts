@@ -68,6 +68,28 @@ describe('the client can ask for a relation', () => {
     restore()
   })
 
+  test('a by-id patch and remove carry their directives', async () => {
+    // Dropped on both, so a template read with `$withTemplates` could not be
+    // saved or removed from the browser: the Data boundary leaves a template
+    // out of every write that does not ask (FJS-2626).
+    let m = mockFetch({ id: '1' })
+    await client().service('quotes').patch('1', { title: 'x' }, { withTemplates: true })
+    expect(m.url().pathname).toBe('/quotes/1')
+    expect(m.url().searchParams.get('$withTemplates')).toBe('true')
+    m.restore()
+
+    m = mockFetch({ id: '1' })
+    await client().service('quotes').remove('1', { onlyTemplates: true })
+    expect(m.url().pathname).toBe('/quotes/1')
+    expect(m.url().searchParams.get('$onlyTemplates')).toBe('true')
+    m.restore()
+
+    m = mockFetch({ id: '1' })
+    await client().service('quotes').patch('1', { title: 'x' })
+    expect(m.url().search).toBe('')
+    m.restore()
+  })
+
   test('the WebSocket frame carries the same directive', async () => {
     // The client prefers the socket whenever one is up, so a directive on the
     // HTTP builder alone is a difference nothing can see from the call site.

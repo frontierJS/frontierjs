@@ -43,7 +43,7 @@
 //   until each answers, asserts, and kills.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, appendFileSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, appendFileSync, mkdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -1311,6 +1311,25 @@ try {
   await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '.', ctrlKey: true, bubbles: true }))`)
   await until(panels, ([s]) => s, 'Ctrl+. did not bring the sidebar back')
   check('Ctrl+. brings them back', true)
+
+  // A pin outlives its folder: renamed on disk, the card says so, runs are
+  // refused by path, and Unpin is reachable from a card that is not in focus.
+  const BETA = join(SSH_HOME, 'code', 'beta')
+  const betaPin = (await call('POST', '/workbench', 'pin', { path: BETA })).body
+  renameSync(BETA, `${BETA}-renamed`)
+  await goto('/workbench/')
+  const betaCard = `document.getElementById('workbench-${betaPin?.id}')`
+  await until(`!!${betaCard}?.querySelector('.workbench-gone')`, v => v, 'a renamed checkout drew no warning')
+  check('a renamed checkout\'s card warns, even out of focus',
+    await evaluate(`${betaCard}.dataset.focus === 'false' && ${betaCard}.querySelector('.workbench-gone').offsetParent !== null`))
+  check('…and offers no message box or diff', !(await evaluate(`!!${betaCard}.querySelector('[id^=workbench-draft-], .workbench-diff-panel')`)))
+  const goneSend = await call('POST', `/workbench/${betaPin?.id}`, 'send', { prompt: 'hello' })
+  check('…and a send is refused by the path', goneSend.status === 400 && /no longer there/.test(goneSend.body?.message ?? ''), JSON.stringify(goneSend))
+  await answer('confirm', true)
+  await evaluate(`${button(betaCard, 'Unpin')}.click()`)
+  await until(`!${betaCard}`, v => v, 'Unpin left the renamed checkout\'s card')
+  check('…and Unpin from its header removes it', true)
+  renameSync(`${BETA}-renamed`, BETA)
 
   // ⌘K's Recent group. Both visits are full page loads, so the entry it
   // offers has to have come back out of storage.

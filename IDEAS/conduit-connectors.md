@@ -219,9 +219,9 @@ Ruled 2026-10-10, before step A:
 - **What a connector package contains** — `FJS-D890`, read off the eight above. It
   binds `@frontierjs/conduit-*` only, and answers `FJS-D153`'s three questions:
   sink and fixture, return, pure-function verifier.
-- **Auth goes through one signer seam** — `FJS-D891`. Every connector after Stripe and
-  Telnyx in the order needs a scheme `TargetAuth` lacks, so the seam (`FJS-2542`)
-  comes before twilio, turnstile, push and s3. google-maps fits today's `api_key`.
+- **Auth goes through one signer seam** — `FJS-D891`, built (`FJS-2542`): an
+  `auth: { type: 'signed', signer, ref }` target, the function the connector's. It is
+  what twilio (Basic), turnstile (secret in body), push (minted JWT) and s3 sign with.
 - **SigV4 moves to toolbelt** — `FJS-D892` (`FJS-2543`), because litestone cannot
   import `conduit-s3`.
 

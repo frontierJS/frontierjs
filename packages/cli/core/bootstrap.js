@@ -10,7 +10,7 @@ import { resolve } from 'path'
 import { homedir } from 'os'
 import { logger, loadEnv, fliVersion } from './utils.js'
 import { printPlanFromFile } from './prose.js'
-import { buildRegistry, uniqueCommands, getModule } from './registry.js'
+import { buildRegistry, uniqueCommands, getModule, userCommandsDir } from './registry.js'
 import { loadConfig } from './config.js'
 import { setVerbose } from './verbosity.js'
 import { flagSpelling, flagConstraint, withModuleFlags } from './flags.js'
@@ -353,9 +353,10 @@ export async function run(process) {
     }
 
     const core = commands.filter((m) => m._source === 'core')
+    const user = commands.filter((m) => m._source === 'user')
     const project = commands.filter((m) => m._source === 'project')
 
-    if (!core.length && !project.length) {
+    if (!core.length && !user.length && !project.length) {
       logger('No commands found.', 'warn')
       logger('Run `fli init` to scaffold cli/src/routes/ in this project.', 'info')
       return
@@ -426,19 +427,22 @@ export async function run(process) {
       })
     }
 
-    // Project commands
-    if (project.length) {
+    // A user or project command can shadow a core one in silence, so the
+    // section header naming where it came from is the only place that shows.
+    const printSection = (label, where, cmds) => {
+      if (!cmds.length) return
       line()
       process.stdout.write(`  ${dim('─'.repeat(58))}\n`)
-      process.stdout.write(`  ${dim('project')}  ${gray(global.projectRoot)}\n`)
+      process.stdout.write(`  ${dim(label)}  ${gray(where)}\n`)
       line()
-      const groups = groupByNs(project)
-      Object.entries(groups).forEach(([ns, cmds], i) => {
+      Object.entries(groupByNs(cmds)).forEach(([ns, list], i) => {
         if (i > 0) line()
         printNsHeader(ns)
-        for (const m of cmds) printRow(m)
+        for (const m of list) printRow(m)
       })
     }
+    printSection('user', userCommandsDir(), user)
+    printSection('project', global.projectRoot, project)
 
     // Footer
     line()

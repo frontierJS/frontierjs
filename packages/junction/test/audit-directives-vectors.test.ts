@@ -136,9 +136,9 @@ describe('a directive VALUE the grammar does not admit is refused by name, as an
 
   // FJS-2465
   test('orderByPair marks the column normalizeOrderBy sorts by, on the bracket-indexed spelling', () => {
-    // `$orderBy[0][name]=desc` parses to `{ '0': { name: 'desc' } }` — an object
-    // with a field named '0', which the boundary refuses; the header marker
-    // must not say `name` where the server says `0`.
+    // `{ '0': { name: 'desc' } }` — an object with a field named '0', which the
+    // boundary refuses; the header marker must not say `name` where the server
+    // says `0`.
     const raw = { '0': { name: 'desc' } }
     const [first] = normalizeOrderBy(raw)
     expect(orderByPair(raw).key).toBe(Object.keys(first)[0])

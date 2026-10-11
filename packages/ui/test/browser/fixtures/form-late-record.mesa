@@ -1,0 +1,68 @@
+<script>
+  // form-late-record.mesa — the async-detail shape: the row arrives AFTER mount.
+  //
+  // A detail page mounts `<Form record={row}>` while `row` is still loading, so
+  // the form sets up on `undefined`, seeds a blank, and only then is handed the
+  // stored row. Everything the form grades off the row it was OPENED on — the
+  // seal, the withheld columns, the baseline `reset()` returns to — was taken
+  // at setup from the blank, so a sealed column stayed editable, a withheld
+  // one stayed an ordinary box, and `reset()` put the blank back with no id
+  // and the next `auto` submit created a second row (`FJS-2588`).
+  //
+  // `#early` is the pair: the same row handed in at mount, which always worked.
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList, coerceToSchema, buildFieldRules, withheldFields }
+    from '@frontierjs/sierra/field-rules'
+
+  const MODEL = {
+    type: 'object',
+    properties: {
+      id:    { type: 'string', readOnly: true, title: 'Id' },
+      code:  { type: 'string', title: 'Code', 'x-litestone-kind': 'immutable' },
+      name:  { type: 'string', title: 'Name' },
+      notes: { type: ['string', 'null'], title: 'Notes', 'x-litestone-read-policy': true },
+    },
+  }
+  const FIELDS = buildFieldRules(MODEL)
+
+  let sent = []
+  window.kitSent = () => sent
+
+  const RESOURCE = {
+    context: { model: 'Widget', service: 'widgets', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ code: '', name: '', notes: '' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    // A plain `@immutable` is frozen on any row that exists, as `createResource`
+    // answers it — and on nothing when there is no row.
+    sealedFields: (record) => record ? ['code'] : [],
+    requiredFields: () => [],
+    withheld: (record) => withheldFields(FIELDS, record),
+    save: (data, opts) => {
+      sent = [...sent, { mode: opts?.mode ?? '-', data }]
+      return Promise.resolve({ ok: true })
+    },
+    service: {},
+  }
+
+  // `notes` is absent: the read policy kept it back.
+  const STORED = { id: 'w-1', code: 'C-1', name: 'W1' }
+
+  let row = undefined
+  let lateApi = null
+  window.kitLoad = () => { row = { ...STORED } }
+  // Another row selected, whose read DID carry `notes`.
+  window.kitSelect = () => { row = { id: 'w-2', code: 'C-2', name: 'W3', notes: 'kept' } }
+</script>
+
+<div id="early">
+  <Form resource={RESOURCE} record={{ ...STORED }} />
+</div>
+
+<div id="late">
+  <Form resource={RESOURCE} record={row} bind:this={lateApi} />
+  <button type="button" id="late-reset" on:click={() => lateApi.reset()}>reset</button>
+</div>

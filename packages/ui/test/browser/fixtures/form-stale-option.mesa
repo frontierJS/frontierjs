@@ -1,0 +1,57 @@
+<script>
+  // form-stale-option.mesa — a value the list no longer offers, then another.
+  //
+  // `optionsFor` marks the field invalid when the list comes back with the
+  // current value pinned `unavailable`, and that message is in `_control`,
+  // which refuses every submit. Form raised it, so no control ever retracted
+  // it: picking another value left the message up and the form unsubmittable
+  // (`FJS-2592`).
+  //
+  // Two doors a pick comes back by: a hand-written <Select>, which reaches the
+  // form only as a bubbled event, and a generated field, which writes through
+  // `writeField`.
+  import Form from '../../../components/forms/Form.mesa'
+  import Select from '../../../components/forms/Select.mesa'
+
+  const FIELDS = {
+    status: { type: 'string', title: 'Status' },
+  }
+
+  const OPTIONS = {
+    options: [
+      { value: 'retired', label: 'Retired', unavailable: true, disabled: true },
+      { value: 'alpha',   label: 'Alpha' },
+      { value: 'bravo',   label: 'Bravo' },
+    ],
+    total: 2, truncated: false,
+  }
+
+  const resource = (generated) => ({
+    context:     { model: 'Post', service: 'posts', idField: 'id' },
+    fields:      FIELDS,
+    formFields:  () => generated ? [{ name: 'status', control: 'select', title: 'Status' }] : [],
+    options:     async () => OPTIONS,
+    make:        () => ({ status: 'retired' }),
+    validate:    () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service:     {},
+  })
+
+  let handSent = 0
+  let genSent  = 0
+  let genApi   = undefined
+</script>
+
+<div id="hand">
+  <Form resource={resource(false)} onsubmit={() => { handSent += 1; return {} }}>
+    <Select name="status" value="retired" />
+  </Form>
+  <output id="hand-sent">{handSent}</output>
+</div>
+
+<div id="gen">
+  <Form resource={resource(true)} bind:this={genApi} onsubmit={() => { genSent += 1; return {} }} />
+  <output id="gen-sent">{genSent}</output>
+  <button type="button" id="gen-reset" on:click={() => genApi.reset()}>reset</button>
+  <button type="button" id="gen-reset-next" on:click={() => genApi.reset({ status: 'bravo' })}>reset next</button>
+</div>

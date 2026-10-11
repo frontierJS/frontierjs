@@ -234,6 +234,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-capabilities` | model | `{operations, moves, columns}` — action → the capability NAME it requires | affordance; a screen deciding which buttons a grant-holder could press |
 | `x-version` | model | the `@version` column's name, so a client knows what to round-trip | sierra `field-rules.js` |
 | `x-label-field` | model | the `@@label(field)` column's name — which column identifies a row to a person | sierra `field-rules.js`, `resource.js` |
+| `x-templates` | model | the `@@hasTemplates` marker column's name — every write leaves a template out unless it asks, so a client saving a row it read with `$withTemplates` has to know the row is one | sierra `resource.js` (`save`) |
 | `x-sortable` | field | **ABSENT means sortable.** A string says why not: `array` \| `json` \| `file` \| `encrypted` \| `hashed` \| `computed` \| `transient` | a generated table header |
 | `x-filterable` | field | **ABSENT means filterable.** A string says why not: `computed` \| `transient` \| `encrypted` | a generated filter bar |
 | `x-aggregatable` | field | **ABSENT means an aggregate may name it.** A string says why not — `computed` \| `transient` \| `from` \| `relation` — or, on a real column whose storage is opaque, what an aggregate would answer about: `encrypted` \| `array` \| `json` \| `file`. Narrower than sortable: a `@from` sorts fine and cannot be summed (`FJS-D226`) | nothing yet |

@@ -35,13 +35,18 @@
   const searchable = { fields: ['body', 'title'], labels: ['Body', 'Title'] }
   const refused    = { fields: null, reason: 'the model declares no @@fts' }
 
-  // A sort and a page size that must survive, and an offset that must not.
+  // A sort and a page size that must survive, and an offset that must not. The
+  // rest are what a list is READING — the Trash, a scope, a window — and survive
+  // a Clear as the sort does.
   // Held as the two halves the bar now speaks: filters, and directives in their
   // unprefixed form (Invariant 10). The bar merges them for display and splits
   // them again on the way out, so recording both is what lets the spec assert
   // the SPLIT rather than only the round trip.
   let query      = {}
-  let directives = { orderBy: 'title', limit: 20, offset: 40 }
+  let directives = {
+    orderBy: 'title', limit: 20, offset: 40,
+    onlyDeleted: true, select: ['title'], populate: ['author'], scope: ['mine'], asOf: '2026-10-01',
+  }
   let last       = ''
 
   function apply(nextQuery, nextDirectives) {

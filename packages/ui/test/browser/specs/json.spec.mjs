@@ -861,6 +861,45 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#hand-saves').textContent`, '1',
     'and it submits again once the box parses')
 
+  /* ── a control unmounted while it reports takes its report with it ───── */
+
+  // Only the control can retract its report, so one taken off screen while
+  // its box was broken left the form refusing every submit with nothing on
+  // screen to say why (FJS-2591).
+  const gone = `document.querySelector('#gone [name=payload]')`
+
+  await t.clickAt('#gone [name=payload]')
+  await t.evaluate(`${gone}.setSelectionRange(${gone}.value.length, ${gone}.value.length); return true;`)
+  await t.type('%')
+  await t.clickAt('#gone-save')
+  await t.eventually(`document.querySelector('#gone-saves').textContent`, '0',
+    'the control refuses the submit while it is on screen')
+
+  await t.clickAt('#gone-hide')
+  await t.eventually(`!!document.querySelector('#gone [name=payload]')`, false,
+    'the control is gone')
+  await t.clickAt('#gone-save')
+  await t.eventually(`document.querySelector('#gone-saves').textContent`, '1',
+    'an unmounted control no longer refuses the submit')
+
+  // A contributed control may never retract. The form still refuses over its
+  // report, and with the control gone it says so at the top rather than
+  // nowhere.
+  await t.clickAt('#leak-save')
+  await t.eventually(`document.querySelector('#leak-saves').textContent`, '0',
+    'a never-retracting control refuses while on screen')
+  t.is(await t.evaluate(`return !!document.querySelector('#leak [role=alert]');`), false,
+    'and with its box on screen the form adds no second message')
+
+  await t.clickAt('#leak-hide')
+  await t.eventually(`!!document.querySelector('#leak [name=payload]')`, false,
+    'the leaky control is gone')
+  await t.clickAt('#leak-save')
+  await t.eventually(`document.querySelector('#leak-saves').textContent`, '0',
+    'its report still refuses the submit')
+  await t.eventually(`document.querySelector('#leak [role=alert]')?.textContent.includes('This box cannot be read') ?? false`, true,
+    'and the refusal is said at the top, where a message with no box goes')
+
   /* ── a document set from outside reaches the box ──────────────────────── */
 
   // The text is seeded from `value`, and a seed alone leaves a reset, a record

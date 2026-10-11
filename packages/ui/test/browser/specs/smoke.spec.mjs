@@ -32,6 +32,21 @@ export async function run(t) {
   t.ok(bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent',
     '@frontierjs/css is loaded and paints the button')
 
+  // FJS-2602: a sheet beside css that redeclares a css token on an unlayered
+  // :root outranks @layer tokens and @layer themes, so every spec measured
+  // under a type scale no app has and a theme on <html> changed nothing.
+  const scale = await t.evaluate(`
+    const html = document.documentElement;
+    const sm = () => getComputedStyle(html).getPropertyValue('--text-sm').trim();
+    const plain = sm();
+    html.classList.add('theme-press');
+    const press = sm();
+    html.classList.remove('theme-press');
+    return { plain, press };
+  `)
+  t.is(scale.plain, '0.8125rem', 'the type scale on the page is the one @frontierjs/css ships')
+  t.is(scale.press, '0.75rem', 'a theme on <html> retunes the type scale')
+
   // A click through the input pipeline, not el.click(): the delegation root is
   // what a mount registers, and a component reached without one renders fine
   // and handles nothing (Invariant 11).

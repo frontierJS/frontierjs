@@ -414,3 +414,37 @@ describe('a foreign key the app names under system:', () => {
     db.$close()
   })
 })
+
+// A template is a live row, not a hidden one (FJS-2630). The template filter
+// says which rows a statement is about; grading a parent by it refused every
+// stage and step added under a template, by a caller who had just read it.
+describe('a template parent is not a hidden one', () => {
+  const TEMPLATES = `
+    model Task {
+      id       Int     @id @default(autoincrement())
+      ownerId  String
+      title    String
+      parentId Int?
+      parent   Task?   @relation(fields: [parentId], references: [id])
+      children Task[]
+      @@hasTemplates
+      @@allow('all', ownerId == auth().id)
+    }
+  `
+  test("a child under a template the caller reads is written; one under another's is refused", async () => {
+    const db: any = await createClient({ db: ':memory:', schema: TEMPLATES })
+    const sys = db.asSystem()
+    await sys.task.create({ data: { ownerId: 'alice', title: 'Onboarding', isTemplate: true } })   // 1
+    await sys.task.create({ data: { ownerId: 'bob', title: 'Theirs', isTemplate: true } })         // 2
+    const alice = db.$setAuth({ id: 'alice' })
+
+    const stage = await alice.task.create({ data: { ownerId: 'alice', title: 'Stage 0', parentId: 1, isTemplate: true } })
+    expect(stage.parentId).toBe(1)
+    // An instance under a template the caller reads is as legal as a template.
+    expect((await alice.task.create({ data: { ownerId: 'alice', title: 'A run step', parentId: 1 } })).parentId).toBe(1)
+
+    const e = await refusal(alice.task.create({ data: { ownerId: 'alice', title: 'x', parentId: 2, isTemplate: true } }))
+    expect(e).toBeInstanceOf(ForeignKeyError)
+    expect(shape(e)).toEqual(shape(await refusal(alice.task.create({ data: { ownerId: 'alice', title: 'x', parentId: 999, isTemplate: true } }))))
+  })
+})

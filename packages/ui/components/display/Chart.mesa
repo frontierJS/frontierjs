@@ -23,7 +23,7 @@
   // the mark's <title> and should be in a table beside the chart, because a
   // tooltip may enhance and never gate.
 
-  import { tone as toTone, cx } from '../../utils.js'
+  import { tone as toTone, cx, plotValue, plotRuns } from '../../utils.js'
 
   export let rows    = []       // object[] — one per category, in axis order
   export let x       = 'x'      // the field naming each category
@@ -42,15 +42,19 @@
 
   const t = toTone(tone)
 
-  const values = rows.map(r => Number(r?.[y]) || 0)
+  // A missing value is a gap — no column, a break in the line, "no data" —
+  // never a zero the data did not state.
+  const values = rows.map(r => plotValue(r?.[y]))
+  const plotted = values.filter(v => v != null)
+  const runs = plotRuns(values)
   const innerW = W - M.left - M.right
   const innerH = height - M.top - M.bottom
 
   // Clean ticks over a domain that always holds zero, so a column grows from a
   // real baseline and a line's height is never a truncated axis's.
   const scale = (() => {
-    const lo = Math.min(0, ...values)
-    const hi = Math.max(0, ...values)
+    const lo = Math.min(0, ...plotted)
+    const hi = Math.max(0, ...plotted)
     const span = hi - lo || 1
     const raw = span / 4
     const mag = 10 ** Math.floor(Math.log10(raw))
@@ -71,6 +75,7 @@
   // A column: square at the baseline, a 4px round on its data end.
   function columnPath(i) {
     const v = values[i]
+    if (v == null) return ''
     const x0 = xAt(i) - barW / 2, x1 = x0 + barW
     const yv = yAt(v)
     const h = Math.abs(zero - yv)
@@ -81,22 +86,31 @@
     return `M${x0},${zero} V${yv - r} Q${x0},${yv} ${x0 + r},${yv} H${x1 - r} Q${x1},${yv} ${x1},${yv - r} V${zero} Z`
   }
 
-  const linePath = values.map((v, i) => `${i ? 'L' : 'M'}${xAt(i)},${yAt(v)}`).join(' ')
-  const areaPath = values.length
-    ? `${linePath} L${xAt(values.length - 1)},${zero} L${xAt(0)},${zero} Z`
-    : ''
+  // One subpath per run. A run of one point repeats it, so the round cap
+  // draws a dot where a bare moveto would draw nothing.
+  const runPath = (run) => run.concat(run.length === 1 ? run : [])
+    .map((i, k) => `${k ? 'L' : 'M'}${xAt(i)},${yAt(values[i])}`).join(' ')
+  const linePath = runs.map(runPath).join(' ')
+  const areaPath = runs
+    .map(run => `${runPath(run)} L${xAt(run[run.length - 1])},${zero} L${xAt(run[0])},${zero} Z`)
+    .join(' ')
 
   const tickText = (v) => (formatTick ?? format)(v)
+  const valueText = (v) => v == null ? 'no data' : format(v)
   // A value label at either end anchors inward, so it never hangs off the plot.
   const anchorAt = (i) => xAt(i) > W - M.right - 40 ? 'end' : xAt(i) < M.left + 40 ? 'start' : 'middle'
   const labelX   = (i) => anchorAt(i) === 'end' ? xAt(i) + barW / 2 : anchorAt(i) === 'start' ? xAt(i) - barW / 2 : xAt(i)
 
   // Label selectively: the largest value and the last, never every mark.
   const labelled = (() => {
-    if (!values.length) return new Set()
-    let top = 0
-    values.forEach((v, i) => { if (v > values[top]) top = i })
-    return new Set([top, values.length - 1])
+    if (!plotted.length) return new Set()
+    let top = null, last = null
+    values.forEach((v, i) => {
+      if (v == null) return
+      if (top == null || v > values[top]) top = i
+      last = i
+    })
+    return new Set([top, last])
   })()
 
   // As many category labels as fit at ~48 units each, evenly skipped.
@@ -107,11 +121,11 @@
   let active = null
   const tip = (() => {
     if (active == null || !rows[active]) return null
-    const value = format(values[active])
+    const value = valueText(values[active])
     const cat   = formatX(rows[active][x])
     const w = Math.max(value.length * 8, cat.length * 6.5) + 20
     const cx_ = Math.min(Math.max(xAt(active), M.left + w / 2), W - M.right - w / 2)
-    const top = Math.max(2, Math.min(yAt(values[active]), zero) - 52)
+    const top = Math.max(2, Math.min(yAt(values[active] ?? 0), zero) - 52)
     return { value, cat, w, x: cx_ - w / 2, y: top }
   })()
 </script>
@@ -144,7 +158,7 @@
       <path class="fjs-chart-area" d={areaPath} />
       <path class="fjs-chart-line" d={linePath} />
       {#each values as v, i}
-        {#if labelled.has(i) || active === i}
+        {#if v != null && (labelled.has(i) || active === i)}
           <circle class="fjs-chart-dot" cx={xAt(i)} cy={yAt(v)} r="4" />
         {/if}
       {/each}
@@ -168,13 +182,13 @@
         class="fjs-chart-hit"
         x={M.left + band * i} y={M.top} width={band} height={innerH}
         tabindex="0"
-        aria-label={`${formatX(r[x])}: ${format(values[i])}`}
+        aria-label={`${formatX(r[x])}: ${valueText(values[i])}`}
         data-index={i}
         on:pointerenter={() => { active = i }}
         on:pointerleave={() => { if (active === i) active = null }}
         on:focus={() => { active = i }}
         on:blur={() => { if (active === i) active = null }}
-      ><title>{formatX(r[x])}: {format(values[i])}</title></rect>
+      ><title>{formatX(r[x])}: {valueText(values[i])}</title></rect>
     {/each}
 
     {#if tip}

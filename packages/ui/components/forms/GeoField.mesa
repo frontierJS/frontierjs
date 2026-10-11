@@ -158,6 +158,7 @@
     localError = message
     form?.reportInvalid?.(name, message)
   }
+  $.onDestroy(() => { if (localError) form?.reportInvalid?.(name, null) })
 </script>
 
 {#snippet control()}

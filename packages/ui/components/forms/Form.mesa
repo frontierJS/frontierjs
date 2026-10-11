@@ -190,19 +190,18 @@
   if (record === undefined) record = seed
 
   // The row as it was HANDED IN, kept because `record` is replaced on every
-  // keystroke. Only the seal reads it, and only for the reason below.
+  // keystroke. The seal, the withheld columns and `pristine` are read off it.
   //
-  // `var` is load-bearing and `const` is the bug: a `const` reading a reactive
-  // value SUBSCRIBES to it (Rule 13 against Rule 25a), so as a `const` this is
-  // a live view of `record` and the seal below re-grades on every keystroke.
-  // `var` on either this or `_sealed` cuts the chain; it is on both because a
-  // name saying *as handed in* that is really live is the next version of the
-  // same defect, and neither one writes, so nothing on screen says so.
+  // `const` is the bug: a `const` reading a reactive value SUBSCRIBES to it
+  // (Rule 13 against Rule 25a), so as a `const` this is a live view of `record`
+  // and the seal below re-grades on every keystroke, and nothing on screen says
+  // so. A `let` initializer is a snapshot (Rule 14), and `_openRow()` below is
+  // the one thing that writes these three again.
   //
   // A create has opened no row, whatever it was seeded with: `make()` hands
   // back a draft, and asking the seal of a draft freezes every `@immutable`
   // column on the one form that is allowed to write it.
-  var _opened = method === 'patch' || (method !== 'create' && record?.[idField] != null)
+  let _opened = method === 'patch' || (method !== 'create' && record?.[idField] != null)
     ? record : undefined
 
   // Which columns are frozen FOR THIS ROW. `@immutable` on a model that seals
@@ -215,15 +214,15 @@
   // stored row is still a draft and the boundary would accept the column. The
   // cost is not a frozen box: `_writable()` drops every sealed key, so a
   // correction made in that same submit is deleted on the way out.
-  var _sealed = resource?.sealedFields?.(_opened) ?? []
+  let _sealed = resource?.sealedFields?.(_opened) ?? []
 
   // Which columns the server KEPT BACK from this read. A field `@allow('read',
   // …)` is enforced by stripping the key, so the form holds no value for it and
   // an ordinary empty box would write that emptiness over what is stored — a
   // write the boundary ACCEPTS, because a read policy is not a write policy.
-  // The same `var` as the seal and for the same reason: it is a fact about the
+  // A snapshot like the seal and for the same reason: it is a fact about the
   // response, settled when the row arrived.
-  var _withheld = resource?.withheld?.(_opened) ?? []
+  let _withheld = resource?.withheld?.(_opened) ?? []
 
   // …and its opposite number, which is `$:` where the seal is `var` — and the
   // difference is the whole feature. A seal is graded against the row that was
@@ -248,11 +247,34 @@
   // form down.
   $: { if (record === undefined) record = seed }
 
-  // The baseline reset() returns to. Snapshotted at mount (`var`, outside the
-  // reactive graph) because a form that reset to the CURRENT record would be a
+  // The baseline reset() returns to. Snapshotted at mount and when a row is
+  // opened (`var`, outside the reactive graph) because a form that reset to the CURRENT record would be a
   // no-op. Shallow on purpose — a row is flat, and a deep clone would copy
   // File objects and Dates into things that no longer compare equal.
   var pristine = { ...seed }
+
+  // A row that reaches the form AFTER setup is opened when it arrives. A detail
+  // page mounts the form while its row is still loading, so setup sees nothing
+  // and seeds a blank; graded only there, the stored row kept its sealed and
+  // withheld columns as ordinary boxes, and `reset()` went back to the blank
+  // with no id, so the next `auto` submit created a second row (`FJS-2588`).
+  // A different row pushed in later is a different row opened, by the same rule.
+  //
+  // An id the person TYPED opens nothing: on a natural key that box is the
+  // id, and opening the draft would freeze the box under the first keystroke.
+  var _typed = undefined
+
+  function _openRow(row) {
+    _opened   = row
+    _sealed   = resource?.sealedFields?.(row) ?? []
+    _withheld = resource?.withheld?.(row) ?? []
+    pristine  = { ...row }
+  }
+
+  $: {
+    if (method !== 'create' && record !== _typed && record?.[idField] != null
+        && record[idField] !== _opened?.[idField]) _openRow(record)
+  }
 
   // What descendants read. Rebuilt whenever any part changes, which is what
   // makes a <Field> three levels down re-render on its own error.
@@ -296,7 +318,10 @@
         // long form is filled in.
         .then((r) => {
           const stale = r?.options?.find((o) => o?.unavailable)
-          if (stale) reportInvalid(name, `${stale.label} is no longer available — choose another`)
+          if (stale) {
+            _stale = { ..._stale, [name]: { value: stale.value, message: `${stale.label} is no longer available — choose another` } }
+            reportInvalid(name, _stale[name].message)
+          }
           return r
         }),
     reportInvalid,
@@ -354,8 +379,10 @@
   // hands back a value without emitting an event would otherwise leave a form
   // that has been edited saying it is pristine. Setting it twice is free.
   function writeField(name, value) {
-    record = { ...record, [name]: value }
+    _typed = { ...record, [name]: value }
+    record = _typed
     dirty  = true
+    _gradeStale(name, value)
     _autoBump()
   }
 
@@ -420,6 +447,23 @@
 
     _control = map
     _recompute()
+  }
+
+  // The control refusals this form raised ITSELF — a value `optionsFor` found
+  // pinned `unavailable` — keyed to the value each was raised for. No control
+  // raised them, so no control retracts them: without this the message outlived
+  // the person picking another value, and `submit()` refused for good
+  // (`FJS-2592`). So they are graded here, against whatever value the field
+  // takes next, by `writeField`, `handleChange` and `reset()`.
+  let _stale = {}
+
+  function _gradeStale(name, value) {
+    const raised = _stale[name]
+    if (!raised) return
+    const same = Array.isArray(value)
+      ? value.some((v) => String(v) === String(raised.value))
+      : String(value ?? '') === String(raised.value ?? '')
+    reportInvalid(name, same ? raised.message : null)
   }
 
   const _mode = () =>
@@ -563,7 +607,16 @@
     // A control's own refusal is not subject to that rule: it came from a
     // control that is on screen, which is the only thing `rendered` was
     // standing in for. So a hand-written form refuses over it too.
-    if (Object.keys(_control).length) return undefined
+    if (Object.keys(_control).length) {
+      // A control taken off screen without retracting leaves a refusal with
+      // no box beside it — a submit that does nothing and says nothing
+      // (`FJS-2591`). Said at the top, as an unshown server message is.
+      formError = Object.entries(_control)
+        .filter(([name]) => !formEl?.querySelector(`[name="${CSS.escape(name)}"]`))
+        .map(([, m]) => m)
+        .join(' ')
+      return undefined
+    }
     if (rendered.some(f => errors[f.name])) return undefined
 
     const out = await _perform()
@@ -751,6 +804,10 @@
     // this form is now about something else.
     committed = false
     clearErrors()
+    // Generated fields only: they draw `record`, so the reset puts the stale
+    // value back on screen. A hand-written control keeps what its element
+    // holds, which `record` does not follow.
+    for (const f of rendered) _gradeStale(f.name, record[f.name])
     _clearUserValidity()
   }
 
@@ -783,7 +840,8 @@
    * the same thing again. A control error is about TEXT that is still in the
    * box: clearing it would leave the form submittable over something the
    * person can see is wrong, and nothing would put the message back until they
-   * typed. It is retracted by the control that raised it, and by nothing else.
+   * typed. It is retracted by whatever raised it — the control, or this form
+   * for a stale option (`_stale`).
    */
   export function clearErrors() {
     errors    = {}
@@ -814,6 +872,16 @@
       const next = { ..._server }
       delete next[key]
       _server = next
+    }
+
+    // A hand-written control reaches this form only as this event, so its
+    // value is read off the element. A generated one is graded in
+    // `writeField` instead: a combobox's search box carries the field's name,
+    // and what is typed into it is not yet a value.
+    if (_stale[key] && !rendered.some((f) => f.name === key)) {
+      const el = e.target
+      _gradeStale(key, el.type === 'select-multiple'
+        ? [...el.selectedOptions].map((o) => o.value) : el.value)
     }
 
     if (validateOn === 'input' && !_revealed.includes(key)) {

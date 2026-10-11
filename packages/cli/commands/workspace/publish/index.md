@@ -1,7 +1,7 @@
 ---
 title: workspace:publish
 description: Bump and publish changed workspace packages to npm
-alias: ws:pub
+alias: ws-pub
 examples:
   - fli ws-pub patch
   - fli ws-pub minor --filter fli --filter frontier-core

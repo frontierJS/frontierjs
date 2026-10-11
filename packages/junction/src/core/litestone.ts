@@ -972,6 +972,19 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   }
 
   /**
+   * `$withTemplates` / `$onlyTemplates` on a write BY ID. Litestone excludes a
+   * template from writes as from reads and takes the same two flags to reach
+   * one, so a by-id write that drops them answers 404 for a template the same
+   * caller just read — a template screen could list its rows and save none.
+   */
+  function templateArgs(q: { withTemplates?: boolean, onlyTemplates?: boolean }): Record<string, unknown> {
+    return {
+      ...(q.withTemplates ? { withTemplates: true } : {}),
+      ...(q.onlyTemplates ? { onlyTemplates: true } : {}),
+    }
+  }
+
+  /**
    * The `@system` columns a hook on this call said the APPLICATION is supplying.
    *
    * `ctx.system.add('slots')` in a hook; `system: [...]` on the litestone call,
@@ -1376,7 +1389,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       // Single round trip: litestone's update() returns null when no row
       // matches — no need for a findUnique existence probe first (which
       // doubled the query count and was a TOCTOU race).
-      const args: Record<string, unknown> = { where, data: ctx.data }
+      const args: Record<string, unknown> = { where, data: ctx.data, ...templateArgs(q) }
       if (q.select)      args.select      = q.select
       if (q.include)     args.include     = q.include
       if (q.withDeleted) args.withDeleted = true
@@ -1403,7 +1416,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         const where = { [idField]: ctx.id, ...writeWhere(q) }
 
         // Single round trip — update() returns null when no row matches.
-        const args: Record<string, unknown> = { where, data: ctx.data }
+        const args: Record<string, unknown> = { where, data: ctx.data, ...templateArgs(q) }
         if (q.select)      args.select      = q.select
         if (q.include)     args.include     = q.include
         if (q.withDeleted) args.withDeleted = true
@@ -1474,12 +1487,13 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
           const stamped = await table.update({
             where,
             data: { [softDelete]: new Date().toISOString() },
+            ...templateArgs(q),
           })
           if (!stamped) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
           return stamped
         }
 
-        const removed = await table.remove({ where })
+        const removed = await table.remove({ where, ...templateArgs(q) })
         if (!removed) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
         return removed
       }

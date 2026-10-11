@@ -75,6 +75,20 @@ export async function run(t) {
     'undo hands back undefined — the stored file is left alone')
   t.ok(await t.evaluate(`return !!document.querySelector('#existing [data-file-current]');`),
     'and the stored photograph is on screen again')
+  await t.eventually(`document.querySelectorAll('#existing .list-row').length`, 0,
+    'and the file list below the dropzone is empty — the undone file is not still listed')
+
+  // FileUpload draws its own remove button on the file it lists. On a file
+  // that was only picked, removing it is undo: handing back null there clears
+  // the STORED file, which nobody asked for.
+  await t.evaluate(pick('#existing', { name: 'again.png', type: 'image/png', bytes: 24 }))
+  await t.eventually(`document.querySelector('#handed').textContent`, 'again.png',
+    'a second pick hands the File')
+  await t.clickAt('#existing [aria-label="Remove again.png"]')
+  await t.eventually(`document.querySelector('#handed').textContent`, 'undefined',
+    'removing the picked file from the list hands back undefined, not null')
+  t.ok(await t.evaluate(`return !!document.querySelector('#existing [data-file-current]');`),
+    'and the stored photograph is on screen again')
 
   await t.clickAt('#existing [data-file-clear]')
   await t.eventually(`document.querySelector('#handed').textContent`, 'null',

@@ -51,6 +51,10 @@
 <button id="grow-sparkline" onclick={() => live = [...live, 12, 3]}>grow</button>
 <div id="probe-chart"><Chart rows={months} x="m" y="v" label="Net per month" format={v => `${v} u`} /></div>
 <button id="grow-chart" onclick={() => months = [...months, { m: 'Apr', v: 20 }]}>grow chart</button>
+<div id="probe-chart-gap"><Chart rows={[{ m: 'Jan', v: 10 }, { m: 'Feb' }, { m: 'Mar', v: 12 }]} x="m" y="v" label="With a gap" /></div>
+<div id="probe-chart-gap-line"><Chart rows={[{ m: 'Jan', v: 10 }, { m: 'Feb', v: 11 }, { m: 'Mar', v: null }, { m: 'Apr', v: 12 }]} x="m" y="v" type="line" label="Line with a gap" /></div>
+<div id="probe-sparkline-undef"><Sparkline data={[2, undefined, 40, 78]} label="With undefined" /></div>
+<div id="probe-sparkline-null"><Sparkline data={[20, null, 40, 78]} label="With null" /></div>
 <div id="probe-bar"><Bar value={74} max={100} label="Disk" unit="%" /></div>
 <div id="probe-avatar"><Avatar name="Ada Lovelace" status="online" /></div>
 <div id="probe-avatars"><AvatarGroup users={USERS} max={4} /></div>

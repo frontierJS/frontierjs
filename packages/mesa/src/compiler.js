@@ -664,8 +664,9 @@ function noteReadonlyWrite(accessorMap, name, shadowed) {
 // Only where Mesa already re-runs the expression: a template binding, a prop
 // and a synchronous derived `const`. A function literal is skipped unless it is
 // handed to a method call (`rows.map((r) => money(r))`), because anything else —
-// a handler first — runs later, outside the effect. `{#await}` and an async `const` are given a map without the register,
-// since a re-run there is a request rather than a diff.
+// a handler first — runs later, outside the effect. `{#await}`, an async `const`
+// and `{@attach}` are given a map without the register, since a re-run there is
+// a request or a teardown rather than a diff.
 
 const WATCHED_CALLS = Symbol.for('mesa.watchedCalls')
 
@@ -7308,8 +7309,10 @@ export function bindProp(prop, node, element) {
     const rawExp = prop.value
     // Setters, as for a component prop: an attachment's options very often
     // carry a callback that writes state, and without them the target was
-    // rewritten as a READ that does not parse (FJS-1958).
-    const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawExp
+    // rewritten as a READ that does not parse (FJS-1958). No watched calls: a
+    // re-run is a teardown and a setup, and a dndzone set up again cancels the
+    // drag in flight (FJS-2616).
+    const exp = ctx.accessors ? rewriteExpr(rawExp, withoutWatchedCalls(ctx.accessors), ctx.setters, ctx.proxyFireFns) : rawExp
     this.detectDependency(rawExp)
     return {
       bind: xNode('attach', { el: element.bindName(), exp }, (w, n) => {

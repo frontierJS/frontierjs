@@ -228,6 +228,10 @@ title: Workbench
     return out
   }
 
+  // The card on centre stage: the last one clicked, else the first.
+  let focusId = null
+  const isFocus = (p) => (pins.some(x => x.id === focusId) ? focusId : ordered(pins)[0]?.id) === p.id
+
   const branchesOf = (p) => pins.filter(b => b.from === p.id)
   const parentOf   = (p) => pins.find(x => x.id === p.from)
   const plural     = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -493,13 +497,6 @@ title: Workbench
     <Button type="submit" disabled={pinning || !path.trim()}>{pinning ? 'Pinning…' : 'Pin'}</Button>
   </form>
 
-  <Callout tone="warning" title="Every permission, no prompts">
-    <p class="text-sm">
-      Each message runs <code>claude -p</code> in that checkout with permissions bypassed —
-      it can edit any file and run any command as you. Budget is per message.
-    </p>
-  </Callout>
-
   {#if error}
     <article class="alert danger" id="screen-error">
       <div class="alert-content">{error}</div>
@@ -523,7 +520,8 @@ title: Workbench
       {#each ordered(pins) as p (p.id)}
         <Card>
           <article class="stack workbench-card" id={`workbench-${p.id}`} data-state={status[p.id]?.state}
-                   data-branch={p.branch ?? null} on:click={() => markSeen(p)}>
+                   data-focus={isFocus(p) ? 'true' : 'false'}
+                   data-branch={p.branch ?? null} on:click={() => { focusId = p.id; markSeen(p) }}>
             <div class="section-header">
               <h2 class="h5 cluster">
                 <Dot tone={status[p.id]?.unread ? 'success' : TONE[status[p.id]?.state ?? 'idle']}
@@ -534,8 +532,19 @@ title: Workbench
               <span class="cluster">
                 {#if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
                 {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
+                {#if !p.from}<Button size="xs" variant="ghost" tone="danger" onclick={() => unpin(p)}
+                                     disabled={branchesOf(p).length > 0}
+                                     title={branchesOf(p).length ? 'Archive its branches first' : `Unpin ${p.name}`}>Unpin</Button>{/if}
               </span>
             </div>
+
+            {#if p.missing}
+              <Callout tone="warning" class="workbench-gone" title="Folder is gone">
+                <p class="text-sm"><code>{p.path}</code> is no longer there, so nothing runs here.
+                  {p.from ? 'Archive the branch to forget it.' : 'Unpin it, or pin the checkout where it went.'}</p>
+                {#if p.from}<Button size="xs" variant="ghost" tone="danger" onclick={() => archive(p)}>Archive</Button>{/if}
+              </Callout>
+            {/if}
 
             {#if p.from}
               <div class="text-sm text-muted workbench-from">
@@ -558,12 +567,14 @@ title: Workbench
               </div>
             {/if}
 
+            {#if p.git}
             <div class="cluster text-sm">
               {#if p.git.branch}<code>{p.git.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
               {#if p.git.changes}<Pill tone="warning">{p.git.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
               {#if p.git.ahead}<Pill tone="info">↑{p.git.ahead}</Pill>{/if}
               {#if p.git.lastCommitAt}<span class="text-muted">{ago(p.git.lastCommitAt)}</span>{/if}
             </div>
+            {/if}
 
             <div class="text-sm text-muted workbench-now" aria-live="polite">
               {#if status[p.id]?.state === 'working'}
@@ -691,6 +702,7 @@ title: Workbench
               {/if}
             </div>
 
+            {#if !p.missing}
             <details class="text-sm workbench-diff-panel" on:toggle={(e) => toggleDiff(p, e.target.open)}>
               <summary>
                 Diff{diffs[p.id] ? ` · ${diffs[p.id].total} file${diffs[p.id].total === 1 ? '' : 's'}` : ''}
@@ -742,6 +754,8 @@ title: Workbench
               {/if}
             </details>
 
+            {/if}
+
             {#if comments[p.id]?.length}
               <div class="stack text-sm workbench-comments" aria-label={`Comments going with the next message to ${p.name}`}>
                 {#each comments[p.id] as c, i}
@@ -754,6 +768,7 @@ title: Workbench
               </div>
             {/if}
 
+            {#if !p.missing}
             <form class="stack" on:submit={(e) => send(p, e)}>
               <label class="visually-hidden" for={`workbench-draft-${p.id}`}>Message to Claude in {p.name}</label>
               <textarea class="field" rows="3" id={`workbench-draft-${p.id}`}
@@ -789,6 +804,7 @@ title: Workbench
                 {/if}
               </div>
             </form>
+            {/if}
 
             <details class="text-sm">
               <summary>Settings · <code>{p.path}</code></summary>
@@ -804,9 +820,6 @@ title: Workbench
                 {/if}
                 <div class="cluster">
                   <Button type="submit" variant="outlined">Save</Button>
-                  {#if !p.from}<Button variant="ghost" tone="danger" onclick={() => unpin(p)}
-                                       disabled={branchesOf(p).length > 0}
-                                       title={branchesOf(p).length ? 'Archive its branches first' : null}>Unpin</Button>{/if}
                 </div>
               </form>
             </details>
@@ -818,7 +831,10 @@ title: Workbench
 {/if}
 
 <style>
-  .workbench-grid { --grid-min: 28rem; gap: var(--space-lg); }
+  .workbench-grid { display: grid; grid-template-columns: minmax(0, 1fr) 16rem; align-items: start; gap: var(--space-lg); }
+  .workbench-grid > :has(.workbench-card[data-focus='true']) { grid-column: 1; grid-row: 1 / span 99; }
+  .workbench-grid > :not(:has(.workbench-card[data-focus='true'])) { grid-column: 2; font-size: 0.85em; cursor: pointer; }
+  .workbench-card[data-focus='false'] > :not(.section-header):not(.workbench-now):not(.workbench-gone) { display: none; }
   /* A long run would otherwise grow the card past the screen and push the
      input out of reach. */
   .workbench-chat {

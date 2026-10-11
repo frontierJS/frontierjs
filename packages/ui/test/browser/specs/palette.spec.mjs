@@ -193,9 +193,8 @@ export async function run(t) {
   // below is one of those, asked as a measurement.
 
   // The token is read off document.body and not off documentElement: the
-  // fixture carries the theme class on <body>, so :root answers tokens.css's
-  // default while the panel renders the theme's. That read agreed only while
-  // theme-default set nothing tokens.css did not already set.
+  // fixture carries the theme class on <body>, so :root answers the package's
+  // default while the panel renders the theme's.
   t.is(await t.evaluate(`
     const panel = document.querySelector('.fjs-cp-panel');
     const token = getComputedStyle(document.body).getPropertyValue('--card-radius').trim();

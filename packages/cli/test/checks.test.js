@@ -1182,6 +1182,23 @@ describe('the silent config hazards', () => {
     expect(findings.every(f => f.file.endsWith('serve.test.ts'))).toBe(true)
   })
 
+  // `port` inside `export` let a UUID's `-8000-` group read as port 8000 (ELA's
+  // Graph stand-in tenant id). The word is read, and a number joined to a hyphen is not.
+  test('port is a word, not a substring, and a UUID group is not a port', () => {
+    const root = tree('port-literal-word', {
+      ...CLEAN,
+      'api/test/standin.ts':
+        "export const TENANT_ID = '00000000-0000-4000-8000-00000000e1a0'\n" +
+        "import { report } from './fixtures/7123.js'\n" +
+        "const supported = [7200, 8300]\n" +
+        "const apiPort = 8120\n" +
+        "const API_PORT = 8121\n" +
+        "fetch('http://localhost:8122/' + '00000000-0000-4000-8000-00000000e1a0')\n",
+    })
+    const { findings } = only(root, 'test-port-literal')
+    expect(findings.map(f => [f.line, f.message.match(/port (\d+)/)?.[1]])).toEqual([[4, '8120'], [5, '8121'], [6, '8122']])
+  })
+
   test('a port literal is excused by an allowance keyed to the file, with its reason', () => {
     const root = tree('port-literal-allow', {
       ...CLEAN,

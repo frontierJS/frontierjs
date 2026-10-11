@@ -896,6 +896,13 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   const labelAttr = model.attributes.find(a => a.kind === 'labelField')
   if (labelAttr) result['x-label-field'] = labelAttr.field
 
+  // ── x-templates ────────────────────────────────────────────────────────────
+  // The column `@@hasTemplates` marks a template with. Every write leaves a
+  // template out unless it asks, so a client saving a row it read with
+  // `$withTemplates` has to know the row IS one, or its save answers 404.
+  const templatesAttr = model.attributes.find(a => a.kind === 'hasTemplates')
+  if (templatesAttr) result['x-templates'] = templatesAttr.field
+
   // ── x-identify ─────────────────────────────────────────────────────────────
   // The same question for a SET: which columns identify a row to a person, so a
   // generated table can rank its columns by something other than the order they

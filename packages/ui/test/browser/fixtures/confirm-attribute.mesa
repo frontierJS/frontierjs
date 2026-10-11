@@ -30,6 +30,9 @@
         data-confirm-label="Leave"
         on:click={() => did('leave')}>Leave</button>
 
+<button id="busy-delete" class="btn danger" data-confirm="Delete while busy?"
+        on:click={() => did('busy-delete')}>Delete</button>
+
 <form id="form" on:submit|preventDefault={() => { submits++; did('submit') }}>
   <button id="submit" type="submit" data-confirm="Send it?">Send</button>
 </form>

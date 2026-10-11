@@ -1,0 +1,17 @@
+<script>
+  // number-input.mesa — NumberInput typed into a keystroke at a time.
+  //
+  // `bounded` has a floor above every single digit, so the first keystroke of
+  // any two-digit number is below it; `stepped` keeps the default step of 1,
+  // so a decimal typed into it is finer than the step.
+  import NumberInput from '../../../components/forms/NumberInput.mesa'
+
+  let bounded = 50
+  let stepped = 0
+</script>
+
+<NumberInput id="bounded" bind:value={bounded} min={10} max={99} />
+<output id="bounded-value">{bounded}</output>
+
+<NumberInput id="stepped" bind:value={stepped} />
+<output id="stepped-value">{stepped}</output>

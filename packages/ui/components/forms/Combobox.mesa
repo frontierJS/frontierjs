@@ -205,19 +205,21 @@
     onchange?.(value)
   }
 
+  // A clear is null, never undefined: JSON drops an undefined key, so the
+  // PATCH would omit the column and the relation would survive (Invariant 9).
   function clear() {
-    value = undefined
+    value = null
     query = ''
     open  = false
     _typed = false
-    onchange?.(undefined)
+    onchange?.(null)
     inputEl?.focus()
   }
 
   function handleInput() {
     open = true
     _typed = true
-    if (!query) { value = undefined; onchange?.(undefined) }
+    if (!query) { value = null; onchange?.(null) }
     // Only once the list is known to be cut. A six-member enum stays instant
     // and issues nothing; a relation nobody can scroll to becomes reachable.
     if (_searchAll) askServer(query)

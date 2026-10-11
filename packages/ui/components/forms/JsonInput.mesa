@@ -124,6 +124,11 @@
     form?.reportInvalid?.(name, message)
   }
 
+  // An `{#if}` can take the control away while it reports, and then nothing is
+  // left to retract it (`FJS-2591`). Only its OWN report: another control under
+  // the same name may still be refusing.
+  $.onDestroy(() => { if (parseError) form?.reportInvalid?.(name, null) })
+
   function handleBlur(e) {
     // Reformatting on blur is the one place it cannot interrupt anybody, and it
     // is what makes a pasted one-liner readable without a Format button.

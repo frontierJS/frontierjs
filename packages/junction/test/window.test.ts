@@ -418,3 +418,190 @@ describe('an unrecognized $ directive', () => {
     expect((await request(await app()).get('/things?pri%24ce=5')).status).toBe(200)
   })
 })
+
+// ─── A refetch keeps the window ───────────────────────────────────────────────
+//
+// `FJS-2612`. A push the store cannot judge — a `changed`, a relation filter,
+// a reconnect — refetches, and the refetch re-asked the load's own directives,
+// whose limit is ONE page. A kanban grown to 1,154 cards held 100 after one
+// drag. The window is what only a change of filter or order resets
+// (`FJS-D145`), and the server clamps `$limit` to its `paginate.max`, so the
+// grown window is re-paged by cursor rather than asked for as one big limit.
+
+/** A keyset server over ids 1..n that never answers more than `max` rows. */
+function keysetServer(n: number, max: number) {
+  const original = globalThis.fetch
+  const asked: string[] = []
+  globalThis.fetch = (async (url: string | URL) => {
+    const u = new URL(String(url))
+    asked.push(u.search)
+    const after = Number((u.searchParams.get('$after') ?? 'c0').slice(1))
+    const limit = Math.min(Number(u.searchParams.get('$limit') ?? max), max)
+    const ids   = Array.from({ length: n }, (_, i) => i + 1).filter(id => id > after)
+    const data  = ids.slice(0, limit).map(id => ({ id }))
+    const last  = data.at(-1)?.id
+    return new Response(JSON.stringify({
+      kind: 'list', object: 'items', errors: [], data, limit, offset: 0, total: null,
+      endCursor: last ? `c${last}` : null, hasMore: ids.length > data.length,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as unknown as typeof fetch
+  return { restore: () => { globalThis.fetch = original }, asked }
+}
+
+const settle = () => new Promise(r => setTimeout(r, 20))
+
+describe('a refetch keeps the grown window (FJS-2612)', () => {
+  test('a `changed` push re-asks the whole window, not its first page', async () => {
+    const m = keysetServer(9, 2)
+    const r: any = client().resource('items', 'id', { model: 'Item' })
+    await r.load({}, { orderBy: 'id' })
+    await r.more()
+    await r.more()
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4, 5, 6])
+
+    const seen: number[] = []
+    r.store.subscribe((rows: unknown[]) => seen.push(rows.length))
+    r.service._receive('changed', { count: 1 })
+    await settle()
+
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4, 5, 6])
+    // Swapped once, at the end: a screen never reads the first page mid-re-page.
+    expect(seen.filter(n => n < 6)).toEqual([])
+    // And it still grows from the edge the refetch landed on.
+    expect(r.hasMore()).toBe(true)
+    expect((await r.more()).map((x: any) => x.id)).toEqual([7, 8])
+    m.restore()
+  })
+
+  test('a reconnect does the same', async () => {
+    const m = keysetServer(9, 2)
+    const c: any = client()
+    const r: any = c.resource('items', 'id', { model: 'Item' })
+    await r.load({}, { orderBy: 'id' })
+    await r.more()
+    const random = Math.random
+    Math.random = () => 0
+    try {
+      c._noteConnected({}); c._noteDisconnected(); c._noteConnected({})
+    } finally { Math.random = random }
+    await settle()
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 4])
+    m.restore()
+  })
+
+  test('a window that never grew re-asks one page and nothing more', async () => {
+    const m = keysetServer(9, 2)
+    const r: any = client().resource('items', 'id', { model: 'Item' })
+    await r.load({}, { orderBy: 'id' })
+    const before = m.asked.length
+    r.service._receive('changed', { count: 1 })
+    await settle()
+    expect(m.asked.length - before).toBe(1)
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2])
+    m.restore()
+  })
+})
+
+describe('a refetch keeps the grown window, against a real app (FJS-2612)', () => {
+  test('a window past paginate.max survives a `changed` push', async () => {
+    const db = await shop()
+    const { createApp, defaultConfig } = await import('../index.ts')
+    const app: any = createApp({
+      db,
+      config: {
+        port: 0, services: { dir: '/nonexistent' },
+        http: { ...defaultConfig.http, drainTimeout: 50 },
+      },
+    } as never)
+    app.services.register(createService({ name: 'items', model: 'Item', paginate: { default: 10, max: 10 } }))
+    await app.start()
+    try {
+      const c: any = createJunctionClient({ url: `http://localhost:${app.http.port}` })
+      const r: any = c.resource('items', 'id', { model: 'Item' })
+      await r.load({}, { orderBy: 'id' })
+      await r.more()
+      expect(r.store.get()).toHaveLength(20)
+
+      r.service._receive('changed', { count: 1 })
+      await new Promise(res => setTimeout(res, 200))
+
+      expect(r.store.get().map((x: any) => x.id)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))
+      expect((await r.more()).map((x: any) => x.id)).toEqual([21, 22, 23, 24, 25])
+      c.disconnect?.()
+    } finally {
+      ;(db as any).$close(); await app.stop()
+    }
+  })
+})
+
+// ─── A drained window takes a new row ─────────────────────────────────────────
+//
+// `FJS-2617`. `more()` grows `limit` by what it adds, so a window drained to
+// the query's end has a limit equal to its row count. A create then placed the
+// row and trimmed the last one as page-2 overflow while `total` went up — a row
+// gone with no way back, and `hasMore()` true against a `more()` with nothing
+// to ask, which spun a load-everything loop on resolved promises.
+
+describe('a drained window takes a created row (FJS-2617)', () => {
+  test('counted: the row joins, nothing is trimmed, and hasMore agrees with more', async () => {
+    const m = mockPages([
+      { data: [{ id: 1 }, { id: 3 }], endCursor: 'c1', hasMore: true,  total: 4 },
+      { data: [{ id: 5 }, { id: 7 }], endCursor: 'c2', hasMore: false, total: 4 },
+    ])
+    const r: any = client().resource('items', 'id', { model: 'Item' })
+    await r.load({}, { limit: 2, orderBy: 'id' })
+    await r.more()
+    expect(r.hasMore()).toBe(false)
+
+    r.service._receive('created', { id: 9 })
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 3, 5, 7, 9])
+    expect(r.hasMore()).toBe(false)
+
+    r.service._receive('created', { id: 2 })
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 5, 7, 9])
+    expect(r.hasMore()).toBe(false)
+    expect(await r.more()).toEqual([])
+    m.restore()
+  })
+
+  test('keyset, no count: the server said the window holds the end, so the row joins', async () => {
+    const m = mockPages([
+      { data: [{ id: 1 }, { id: 3 }], endCursor: 'c1', hasMore: true },
+      { data: [{ id: 5 }],            endCursor: null, hasMore: false },
+    ])
+    const r: any = client().resource('items', 'id', { model: 'Item' })
+    await r.load({}, { limit: 2, orderBy: 'id' })
+    await r.more()
+
+    r.service._receive('created', { id: 2 })
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2, 3, 5])
+    expect(r.hasMore()).toBe(false)
+    m.restore()
+  })
+
+  test('a window with rows past it still trims: page 1 is its first limit rows', async () => {
+    const m = mockPages([
+      { data: [{ id: 1 }, { id: 3 }], endCursor: 'c1', hasMore: true, total: 4 },
+    ])
+    const r: any = client().resource('items', 'id', { model: 'Item' })
+    await r.load({}, { limit: 2, orderBy: 'id' })
+
+    r.service._receive('created', { id: 2 })
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2])
+    expect(r.hasMore()).toBe(true)
+    m.restore()
+  })
+
+  test('an answer that states no end keeps the bound — a full page is not a drained one', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      kind: 'list', object: 'items', errors: [], data: [{ id: 1 }, { id: 3 }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+    const r: any = client().resource('items', 'id', { model: 'Item' })
+    await r.load({}, { limit: 2, orderBy: 'id' })
+
+    r.service._receive('created', { id: 2 })
+    expect(r.store.get().map((x: any) => x.id)).toEqual([1, 2])
+    globalThis.fetch = original
+  })
+})

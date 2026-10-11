@@ -341,11 +341,11 @@ test('directives: the pair is read off a REAL url, which is where it broke', fun
     'the shape that THREW: three pages assumed a string and called .replace on it')
   assert.deepEqual(pairFor('$orderBy[]=-name'),        { key: 'name', dir: 'desc' },
     'the append spelling is the array, and it descends to the column')
-  // `k[0]` names a member, so these are a column called 0 — what the Data
-  // boundary refuses, and the header must not say `name` where it says `0`
-  // (FJS-2465).
-  assert.deepEqual(pairFor('$orderBy[0][name]=desc'),  { key: '0', dir: 'asc' })
-  assert.deepEqual(pairFor('$orderBy[0]=desc'),        { key: '0', dir: 'desc' })
+  // `k[0]` is the first element, the spelling the encoder writes for an
+  // ordering list (FJS-2628), so the header marks the column the boundary
+  // sorts by (FJS-2465).
+  assert.deepEqual(pairFor('$orderBy[0][name]=desc'),  { key: 'name', dir: 'desc' })
+  assert.deepEqual(pairFor('$orderBy[0]=-name'),       { key: 'name', dir: 'desc' })
 })
 
 test('directives: a distance ordering marks the point column, not a coordinate', function () {

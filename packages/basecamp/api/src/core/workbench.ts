@@ -289,6 +289,12 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return readPins().find(p => p.id === id) ?? null
   }
 
+  /** A pin outlives its folder: a rename or a delete leaves it naming nothing,
+   *  and a run there would fail on spawn rather than say why. */
+  function goneRefusal(p: Pin): { refused: string } | null {
+    return existsSync(p.path) ? null : { refused: `'${p.path}' is no longer there — unpin ${p.name}, or pin the checkout where it went` }
+  }
+
   /** Pin a git checkout. Pinning one twice answers the pin already there. */
   function pin(input: unknown): { pin: Pin } | { refused: string } {
     const where = resolveRoot(input)
@@ -347,6 +353,8 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const parent = getPin(id)
     if (!parent) return { refused: `no pinned checkout '${id}'` }
     if (parent.from) return { refused: `${parent.name} is itself a branch — fork its parent` }
+    const gone = goneRefusal(parent)
+    if (gone) return gone
     const preview = input.preview === true
     if (preview && !parent.preview) return { refused: `${parent.name} has no preview settings — configure them before forking a preview` }
     const slug  = input.slug == null || input.slug === '' ? freeSlug(parent) : String(input.slug).trim()
@@ -748,6 +756,8 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
     if (alive(p.pid)) return { refused: 'the run is still working; checks run when it ends' }
+    const gone = goneRefusal(p)
+    if (gone) return gone
     const done = doneScript(p.path)
     if (!done) return { refused: `${p.name} carries no fli done — neither packages/cli/core/done.js nor @frontierjs/cli` }
     const prior = readChecks(id)
@@ -772,6 +782,8 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     if (!p) return { refused: `no pinned checkout '${id}'` }
     if (alive(p.pid))       return { refused: 'the run is still working; review it when it ends' }
     if (alive(p.reviewPid)) return { refused: 'a review is already running' }
+    const gone = goneRefusal(p)
+    if (gone) return gone
     const { askArgv, reviewPrompt } = await loadAskClaude()
     const request = (await fold(logFile(id))).items.findLast(i => i.kind === 'you')
     const child = launch(reviewFile(id), p.path, askArgv(), reviewPrompt({ request: request?.kind === 'you' ? request.text : '' }), (code, signal) => {
@@ -792,6 +804,8 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     if (!p) return { refused: `no pinned checkout '${id}'` }
     const text = prompt.trim()
     if (!text) return { refused: 'say something' }
+    const gone = goneRefusal(p)
+    if (gone) return gone
     if (alive(p.pid)) {
       const q = queues.get(id) ?? []
       q.push(text)

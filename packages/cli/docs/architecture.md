@@ -4,14 +4,15 @@ Reference moved from PROJECT_STATE.md: command roots, engine files, command anat
 
 ## Architecture
 
-### Two command roots
+### Three command roots
 
 | Root | Path | Label | Who adds them |
 |---|---|---|---|
 | `fliRoot/commands/` | Core FLI commands | `core` | FLI team |
+| `$XDG_CONFIG_HOME/fli/commands/` (`~/.config/fli/commands/`) | Personal commands, every project | `user` | One person |
 | `projectRoot/cli/src/routes/` | Project-specific commands | `project` | Each project |
 
-Both are scanned at startup. Project commands override core commands with the same title.
+All three are scanned at startup, in that order. A title in a later root overrides the same title in an earlier one: project over user over core.
 
 ### Core engine files (~2900 LOC)
 

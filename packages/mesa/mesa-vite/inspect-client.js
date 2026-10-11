@@ -15,6 +15,13 @@
  * did. The picker is somebody else's — this client knows no more about what a
  * pick is for than it knows about the editor `/__open-in-editor` launches.
  *
+ * PICK MODE latches shift+modifier, for picking one element after another
+ * without holding two keys: a plain click picks and the modifier alone still
+ * opens. It survives a reload in sessionStorage, because an edit HMR cannot
+ * swap reloads the page between picks, and it draws a badge while on, because
+ * a page whose clicks have stopped working with nothing on screen to say why
+ * reads as a broken app. Escape or the badge leaves it.
+ *
  * A path holding a backtick or `${` would break the template literal it is
  * embedded in, so both are JSON-encoded rather than interpolated raw.
  */
@@ -80,6 +87,9 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
 
   let box = null, label = null, current = null, armed = false
   const pickers = []
+  const modeWatchers = []
+  const MODE_KEY = 'fjs:inspect:pick-mode'
+  let mode = false, badge = null
 
   // A picker that throws must not leave the click swallowed and nothing done.
   // The opener rides on the pick rather than the global: a page script reaches it
@@ -120,27 +130,61 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     document.documentElement.style.cursor = ''
   }
 
+  function drawBadge() {
+    if (!mode) { if (badge) badge.remove(); badge = null; return }
+    if (badge || !document.body) return
+    badge = document.createElement('button')
+    badge.type = 'button'
+    badge.textContent = 'Pick mode — click an element · Esc to leave'
+    badge.title = 'Leave pick mode'
+    badge.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:5px 10px;border-radius:999px;border:1px solid #0369a1;background:#0f172a;color:#e2e8f0;font:12px/1.4 ui-sans-serif,system-ui;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)'
+    badge.onclick = () => setMode(false)
+    document.body.appendChild(badge)
+  }
+
+  function setMode(on) {
+    on = !!on
+    if (on === mode) return mode
+    mode = on
+    try { on ? sessionStorage.setItem(MODE_KEY, '1') : sessionStorage.removeItem(MODE_KEY) } catch {}
+    if (!on) disarm()
+    drawBadge()
+    for (const fn of modeWatchers) { try { fn(mode) } catch (err) { console.warn('[mesa] pick-mode watcher failed', err) } }
+    return mode
+  }
+
   window.addEventListener('mousemove', (e) => {
-    if (!e[FLAG]) { if (armed) disarm(); return }
+    if (!mode && !e[FLAG]) { if (armed) disarm(); return }
     armed = true
-    document.documentElement.style.cursor = 'crosshair'
-    paint(locatedFrom(e.composedPath()[0]))
+    const el = locatedFrom(e.composedPath()[0])
+    // Pick mode leaves the crosshair off what cannot be picked, the ask panel
+    // among it, so its own buttons still look like buttons.
+    document.documentElement.style.cursor = mode && !el ? '' : 'crosshair'
+    paint(el)
   }, true)
 
   // Capture phase, and both halves of the click: a mousedown the app handles is
-  // enough to navigate away before the click ever lands.
+  // enough to navigate away before the click ever lands. An element with no
+  // location is let through, which is what keeps a picker's own panel usable.
   const swallow = (e) => {
-    if (!armed || !e[FLAG]) return
+    if (!mode && (!armed || !e[FLAG])) return
     const el = locatedFrom(e.composedPath()[0])
     if (!el) return
     e.preventDefault()
     e.stopPropagation()
-    if (e.type === 'click') { e.shiftKey && FLAG !== 'shiftKey' ? pick(el) : open(el); disarm() }
+    if (e.type !== 'click') return
+    const shifted = e.shiftKey && FLAG !== 'shiftKey'
+    const opens = mode ? e[FLAG] && !shifted : !shifted
+    opens ? open(el) : pick(el)
+    disarm()
   }
   window.addEventListener('mousedown', swallow, true)
   window.addEventListener('click',     swallow, true)
 
   window.addEventListener('keydown', (e) => { if (e.key === 'Escape') disarm() }, true)
+  // Bubble phase: an Escape something on the page already answered — a
+  // picker's text box cancelling, a dialog closing — is not a request to leave.
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mode && !e.defaultPrevented) setMode(false) })
   window.addEventListener('blur', disarm)
 
   // Also reachable from the console, and from a keyboard: the focused element
@@ -155,7 +199,13 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     locate: (el) => { const f = locatedFrom(el); return f && f.getAttribute(ATTR) },
     root:   ROOT,
     onPick: (fn) => { pickers.push(fn); return () => { const i = pickers.indexOf(fn); if (i !== -1) pickers.splice(i, 1) } },
+    // No argument reads the mode; a boolean sets it. Either way, the mode is returned.
+    pickMode: (on) => on === undefined ? mode : setMode(on),
+    onPickMode: (fn) => { modeWatchers.push(fn); return () => { const i = modeWatchers.indexOf(fn); if (i !== -1) modeWatchers.splice(i, 1) } },
   }
+
+  try { if (sessionStorage.getItem(MODE_KEY)) mode = true } catch {}
+  if (mode) document.body ? drawBadge() : document.addEventListener('DOMContentLoaded', drawBadge, { once: true })
 
   console.log('%c[mesa] inspector ready — hold ${key} and click an element to open its source', 'color:#38bdf8')
 })()

@@ -1,0 +1,31 @@
+<script>
+  // picker-clear.mesa — clearing a single-value picker hands its listener null.
+  //
+  // `undefined` is what JSON.stringify drops, so a clear that announced it
+  // sent a PATCH without the column and the relation survived (`FJS-2587`).
+  // Each `<output>` is the wire a PATCH carrying the announced value would be.
+  import Combobox from '../../../components/forms/Combobox.mesa'
+  import MultiSelect from '../../../components/forms/MultiSelect.mesa'
+
+  const OPTIONS = [{ value: 'c-1', label: 'North' }, { value: 'c-2', label: 'South' }]
+  const wire = (v) => JSON.stringify({ customerId: v })
+
+  let combo = 'unset'
+  let typed = 'unset'
+  let multi = 'unset'
+</script>
+
+<div id="combo">
+  <Combobox name="customerId" value="c-2" options={OPTIONS} onchange={(v) => combo = wire(v)} />
+  <output>{combo}</output>
+</div>
+
+<div id="typed">
+  <Combobox name="customerId" value="c-2" options={OPTIONS} onchange={(v) => typed = wire(v)} />
+  <output>{typed}</output>
+</div>
+
+<div id="multi">
+  <MultiSelect name="customerId" value="c-2" options={OPTIONS} onchange={(v) => multi = wire(v)} />
+  <output>{multi}</output>
+</div>

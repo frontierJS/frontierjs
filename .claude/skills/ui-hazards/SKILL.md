@@ -55,6 +55,7 @@ Detail: `references/mesa.md`
 - **A `type="number"` or `"range"` input binds a NUMBER, and an empty box binds `undefined`.**
 - **In a `.md` file `{…}` interpolates a bare path only; anything else stays literal text, with no error.**
 - **A compiled component called directly instead of through `mount()` renders and never answers a click.**
+- **A parent sends a prop only when ITS value changed, so re-sending the same value does not reset a child's own edit** (`FJS-2589`)
 
 ## Driving a browser
 Detail: `references/driving-a-browser.md`

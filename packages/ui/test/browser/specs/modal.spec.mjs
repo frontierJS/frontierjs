@@ -98,4 +98,15 @@ export async function run(t) {
   await t.evaluate(`await new Promise(r => setTimeout(r, 120)); return true;`)
   t.ok(await t.evaluate(`return document.querySelector('dialog.dialog').open;`),
     'dismissible={false} refuses Escape')
+
+  /* ── mounted open ────────────────────────────────────────────────────
+   *
+   * `{#if shown}<Modal open>` mounts with `open` already true, so the value
+   * never changes and a watch that only reacts to a change never opens it:
+   * the content renders inside a closed dialog and nothing is on screen.
+   */
+  await t.mount('modal', { open: true })
+  await t.evaluate(`await new Promise(r => setTimeout(r, 120)); return true;`)
+  t.ok(await t.evaluate(`return document.querySelector('dialog.dialog').matches(':modal');`),
+    'a Modal mounted with open={true} is opened as a modal')
 }

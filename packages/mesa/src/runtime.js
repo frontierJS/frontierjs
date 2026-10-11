@@ -5537,13 +5537,21 @@ export function pushProps(anchor, newProps) {
     for (const name of Object.keys(newProps)) {
       const p = registry.get(name)
       if (!p) continue
+      // Compared with what the PARENT last sent, not with what the child holds.
+      // The push re-runs whenever any prop moves, and a child that wrote its own
+      // copy of an unbound prop had that edit reverted by the parent's unchanged
+      // value — `<Form record={row} bind:dirty>` lost the keystroke that flipped
+      // `dirty` (`FJS-2589`).
+      const given = newProps[name]
+      if ('pushed' in p && Object.is(p.pushed, given)) continue
+      p.pushed = given
       // Use directWrite when available — it bypasses the compiled setter's
       // "function as updater" logic (typeof v === 'function' ? v(cur) : v).
       // That logic is correct for user mutations (count++) but wrong here:
       // pushProps always delivers a plain value, never an updater function.
       // Without this, passing a snippet function as a prop calls it with the
       // current signal value as __anchor → TypeError: can't read before.
-      const value = givenProp(p, newProps[name])
+      const value = givenProp(p, given)
       if (p.directWrite) p.directWrite(value)
       else p.set(value)
     }

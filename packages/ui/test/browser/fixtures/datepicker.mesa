@@ -24,13 +24,20 @@
   let endDate   = undefined
   let changes   = 0
   let picked    = ''
+  let stamps    = ''
 
   function record(e) {
     changes++
     const start = e.startDate ? new Date(e.startDate) : null
     const end   = e.endDate   ? new Date(e.endDate)   : null
-    const ymd   = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
+    const pad   = (n, w = 2) => String(n).padStart(w, '0')
+    const ymd   = (d) => d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` : ''
+    // A range that is right by the day can still be wrong by the hour; the
+    // inclusive end is a time, so a day-only readout passes with it on the
+    // wrong edge.
+    const full  = (d) => d ? `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}` : ''
     picked = end ? `${ymd(start)}..${ymd(end)}` : ymd(start)
+    stamps = end ? `${full(start)}..${full(end)}` : full(start)
   }
 </script>
 
@@ -50,3 +57,4 @@
 
 <output id="changes">{changes}</output>
 <output id="picked">{picked}</output>
+<output id="stamps">{stamps}</output>

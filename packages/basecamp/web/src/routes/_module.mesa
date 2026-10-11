@@ -21,6 +21,7 @@ siteName: Basecamp
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
 
   import NoticeBar from '../components/NoticeBar.mesa'
+  import NavIcon   from '../components/NavIcon.mesa'
   import { servers }     from '../resources/Server.mesa'
   import { deployments } from '../resources/Deployment.mesa'
   import { jobs }        from '../resources/Job.mesa'
@@ -208,6 +209,7 @@ siteName: Basecamp
     })),
 
     { id: 'focus',    group: 'Session', label: focus ? 'Leave focus mode' : 'Focus mode', sub: 'Ctrl+.', action: toggleFocus },
+    { id: 'rail',     group: 'Session', label: rail ? 'Expand the sidebar' : 'Collapse the sidebar', action: toggleRail },
     { id: 'sign-out', group: 'Session', label: 'Sign out', action: out },
   ]
 
@@ -235,51 +237,51 @@ siteName: Basecamp
   // sidebar at full width, a drawer below 767px — and two copies of it is how
   // one of them silently loses a screen.
   const PRIMARY = [
-    { href: '/',             label: 'Overview', exact: true },
-    { href: '/apps/',        label: 'Apps'        },
-    { href: '/deployments/', label: 'Deployments' },
-    { href: '/servers/',     label: 'Servers'     },
-    { href: '/alerts/',      label: 'Alerts'      },
+    { href: '/',                    label: 'Overview',        icon: 'home', exact: true },
+    { href: '/apps/',               label: 'Apps',            icon: 'apps' },
+    { href: '/deployments/',        label: 'Deployments',     icon: 'deployments' },
+    { href: '/servers/',            label: 'Servers',         icon: 'servers' },
+    { href: '/alerts/',             label: 'Alerts',          icon: 'alerts' },
   ]
 
   const NAV = [
-    { label: 'Work', open: true, links: [
-      { href: '/dashboards/', label: 'Dashboards'  },
-      { href: '/projects/',   label: 'Projects'    },
-      { href: '/jobs/',       label: 'Jobs'        },
-      { href: '/flags/',      label: 'Flags'       },
-      { href: '/activity/',   label: 'Activity'    },
-      { href: '/trash/',      label: 'Trash'       },
+    { label: 'Work', icon: 'work', open: true, links: [
+      { href: '/dashboards/',         label: 'Dashboards',      icon: 'dashboards' },
+      { href: '/projects/',           label: 'Projects',        icon: 'projects' },
+      { href: '/jobs/',               label: 'Jobs',            icon: 'jobs' },
+      { href: '/flags/',              label: 'Flags',           icon: 'flags' },
+      { href: '/activity/',           label: 'Activity',        icon: 'activity' },
+      { href: '/trash/',              label: 'Trash',           icon: 'trash' },
     ] },
-    { label: 'Infrastructure', links: [
-      { href: '/networks/',   label: 'Networking'  },
-      { href: '/volumes/',    label: 'Volumes'     },
-      { href: '/registry/',   label: 'Registry'    },
-      { href: '/dns/',        label: 'DNS & edge'  },
-      { href: '/cleanup/',    label: 'Cleanup'     },
-      { href: '/infra-graph/', label: 'Graph'      },
+    { label: 'Infrastructure', icon: 'servers', links: [
+      { href: '/networks/',           label: 'Networking',      icon: 'networks' },
+      { href: '/volumes/',            label: 'Volumes',         icon: 'volumes' },
+      { href: '/registry/',           label: 'Registry',        icon: 'registry' },
+      { href: '/dns/',                label: 'DNS & edge',      icon: 'dns' },
+      { href: '/cleanup/',            label: 'Cleanup',         icon: 'cleanup' },
+      { href: '/infra-graph/',        label: 'Graph',           icon: 'graph' },
     ] },
-    { label: 'Build', links: [
-      { href: '/blueprints/', label: 'Blueprints'  },
-      { href: '/recipes/',    label: 'Recipes'     },
-      { href: '/portal/',     label: 'Portal'      },
-      { href: '/git-activity/', label: 'Git activity' },
-      { href: '/git-activity/local/', label: 'Local repos' },
-      { href: '/workbench/',  label: 'Workbench'   },
-      { href: '/pages/',      label: 'Pages'       },
-      { href: '/registers/',  label: 'Registers'   },
-      { href: '/observability/', label: 'Observability' },
-      { href: '/channels/',   label: 'Channels'    },
+    { label: 'Build', icon: 'build', links: [
+      { href: '/blueprints/',         label: 'Blueprints',      icon: 'blueprints' },
+      { href: '/recipes/',            label: 'Recipes',         icon: 'recipes' },
+      { href: '/portal/',             label: 'Portal',          icon: 'portal' },
+      { href: '/git-activity/',       label: 'Git activity',    icon: 'git' },
+      { href: '/git-activity/local/', label: 'Local repos',     icon: 'local-repos' },
+      { href: '/workbench/',          label: 'Workbench',       icon: 'workbench' },
+      { href: '/pages/',              label: 'Pages',           icon: 'pages' },
+      { href: '/registers/',          label: 'Registers',       icon: 'registers' },
+      { href: '/observability/',      label: 'Observability',   icon: 'observability' },
+      { href: '/channels/',           label: 'Channels',        icon: 'channels' },
     ] },
-    { label: 'Settings', links: [
-      { href: '/secrets/',    label: 'Secrets'     },
-      { href: '/api-keys/',   label: 'API keys'    },
-      { href: '/cloud-spend/', label: 'Cloud spend' },
-      { href: '/admin/',      label: 'Admin'       },
+    { label: 'Settings', icon: 'settings', links: [
+      { href: '/secrets/',            label: 'Secrets',         icon: 'secrets' },
+      { href: '/api-keys/',           label: 'API keys',        icon: 'api-keys' },
+      { href: '/cloud-spend/',        label: 'Cloud spend',     icon: 'spend' },
+      { href: '/admin/',              label: 'Admin',           icon: 'admin' },
       // Not hidden once it is finished, and that is a choice: the six checks
       // go back to undone when the thing they recorded is deleted, so a link
       // that disappeared would be the one thing on it that could go stale.
-      { href: '/onboarding/', label: 'Getting started' },
+      { href: '/onboarding/',         label: 'Getting started', icon: 'onboarding' },
     ] },
   ]
 
@@ -295,7 +297,7 @@ siteName: Basecamp
   // the refusal actually is.
   $: session.user
   const navGroups = () => session.user?.isSystemAdmin
-    ? [...NAV, { label: 'System', links: [{ href: '/hub/', label: 'Hub' }] }]
+    ? [...NAV, { label: 'System', icon: 'system', links: [{ href: '/hub/', icon: 'hub', label: 'Hub' }] }]
     : NAV
 
   // Below 767px the design system hides `.shell > .sidebar` and says its
@@ -317,6 +319,17 @@ siteName: Basecamp
     focus = !focus
     try { localStorage.setItem(FOCUS_KEY, focus ? '1' : '0') } catch {}
   }
+
+  // A collapsed sidebar is a rail of glyphs, not a hidden one — that is focus
+  // mode's job. Only the wide sidebar collapses; the drawer below 767px is
+  // already out of the way until it is opened.
+  const RAIL_KEY = 'basecamp.rail'
+  let rail = false
+  try { rail = localStorage.getItem(RAIL_KEY) === '1' } catch {}
+  function toggleRail() {
+    rail = !rail
+    try { localStorage.setItem(RAIL_KEY, rail ? '1' : '0') } catch {}
+  }
 </script>
 
 <!--
@@ -324,8 +337,8 @@ siteName: Basecamp
   @frontierjs/ui: the frame (shell / topbar / sidebar / screen) and the nav
   (navlist / navlink / navlist-label) are vocabulary; the badges, pills,
   buttons, switcher, drawer and account menu are components. The one <style>
-  block below is layout only — the notice rail, which the vocabulary has no
-  word for. No color, no utility classes (repo invariant 13) — which is also why the
+  block below is layout only — the notice rail and the collapsed sidebar,
+  which the vocabulary has no word for. No color, no utility classes (repo invariant 13) — which is also why the
   topbar still crowds below ~600px: there is no way to say "drop this below md"
   without one, and the package refused to ship the vocabulary (FJS-338).
 -->
@@ -347,14 +360,18 @@ siteName: Basecamp
      The leading `page.route` in the expression is load-bearing: isActive()
      reads it internally, but Mesa decides what an expression depends on from
      the expression's own TEXT, so without the read written here the attribute
-     is set once at mount and the highlight never moves. -->
+     is set once at mount and the highlight never moves.
+
+     The label stays in the DOM when the rail hides it, so it is still the
+     link's name; `title` is the only way a sighted person reads it then. -->
 {#snippet navlinks(links)}
   <ul class="navlist">
     {#each links as link}
       <li>
         <a class="navlink" href={link.href}
            aria-current={(page.route, current(link)) ? 'page' : null}
-        >{link.label}</a>
+           title={rail ? link.label : null}
+        ><NavIcon name={link.icon} /><span class="nav-text">{link.label}</span></a>
       </li>
     {/each}
   </ul>
@@ -366,8 +383,11 @@ siteName: Basecamp
      cannot re-close what the person opened. -->
 {#snippet navlists()}
   {#each navGroups() as group}
-    <details open={group.open || group.links.some(current) ? true : null}>
-      <summary class="navlist-label">{group.label}</summary>
+    <details class="nav-group" open={group.open || group.links.some(current) ? true : null}>
+      <summary class="navlist-label" title={rail ? group.label : null}>
+        <NavIcon name={group.icon} /><span class="nav-text">{group.label}</span>
+        <span class="nav-chevron"><NavIcon name="chevron" /></span>
+      </summary>
       {@render navlinks(group.links)}
     </details>
   {/each}
@@ -493,7 +513,14 @@ siteName: Basecamp
        down from 1920px, so the topbar holds PRIMARY only.
        Hidden below 767px by the package; the drawer below covers that. -->
   {#if session.user && !focus}
-    <nav class="sidebar" aria-label="Main">
+    <nav class="sidebar" class:rail={rail} aria-label="Main">
+      <button class="btn ghost square rail-toggle" id="rail-toggle"
+              aria-label={rail ? 'Expand the sidebar' : 'Collapse the sidebar'}
+              aria-expanded={rail ? 'false' : 'true'}
+              title={rail ? 'Expand the sidebar' : 'Collapse the sidebar'}
+              on:click={toggleRail}>
+        {#if rail}<NavIcon name="panel-open" />{:else}<NavIcon name="panel-close" />{/if}
+      </button>
       {@render navlists()}
     </nav>
   {/if}
@@ -558,6 +585,52 @@ siteName: Basecamp
 <ConfirmProvider />
 
 <style>
+  /* A group label carries a glyph and a chevron, so the UA's list-item
+     marker would be a third thing in the row and the only one that does
+     not turn with the group. */
+  .nav-group > summary {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-sm);
+    list-style:  none;
+  }
+  .nav-group > summary::-webkit-details-marker { display: none; }
+  .nav-chevron {
+    display:             inline-flex;
+    margin-inline-start: auto;
+    transform:           rotate(-90deg);
+    transition:          transform var(--motion-fast);
+  }
+  .nav-group[open] .nav-chevron { transform: none; }
+
+  .rail-toggle {
+    display:             flex;
+    margin-inline-start: auto;
+  }
+
+  /* The rail keeps every label in the accessibility tree — a link whose only
+     content is an aria-hidden glyph has no name at all. */
+  .sidebar.rail {
+    inline-size:    auto;
+    padding-inline: var(--space-sm);
+  }
+  .sidebar.rail .nav-text {
+    position:    absolute;
+    inline-size: 1px;
+    block-size:  1px;
+    overflow:    hidden;
+    clip-path:   inset(50%);
+    white-space: nowrap;
+  }
+  .sidebar.rail .nav-chevron { display: none; }
+  .sidebar.rail .rail-toggle { margin-inline: auto; }
+  .sidebar.rail .navlink,
+  .sidebar.rail .nav-group > summary { justify-content: center; }
+  .sidebar.rail .nav-group + .nav-group {
+    margin-block-start: var(--space-sm);
+    border-block-start: var(--border-width) solid var(--rule);
+  }
+
   /* Below 1536px a rail would squeeze every table on every screen to
      ~700px, so the notices stack above the content as one column. */
   .screen-grid {

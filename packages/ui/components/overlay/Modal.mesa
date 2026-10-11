@@ -51,12 +51,16 @@
 
   // Drive the element from `open`. showModal() is what puts the dialog in the
   // top layer — .show() and the `open` attribute do not, and neither traps
-  // focus or renders a backdrop.
-  $: open, () => {
+  // focus or renders a backdrop. A `$:` watch fires on change only, so
+  // `{#if shown}<Modal open>` would render its content inside a closed dialog
+  // without the onMount call.
+  function sync() {
     if (!dialogEl) return
     if (open && !dialogEl.open) dialogEl.showModal()
     else if (!open && dialogEl.open) dialogEl.close()
   }
+  $: open, () => sync()
+  $.onMount(sync)
 
   // The platform closes the dialog on Escape without telling `open`; this is
   // the one place the two states could drift, so it is wired explicitly.

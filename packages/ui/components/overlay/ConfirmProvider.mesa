@@ -75,8 +75,12 @@
     const el = pending?.el
     pending  = null
     if (!el) return
+    // The re-fire is synchronous, so the mark is cleared when click() returns
+    // as well as by the listener: click() on a disabled control dispatches
+    // nothing, and a mark left set would wave the element's next click through
+    // with no question asked (FJS-2585).
     refire.el = el
-    el.click()
+    try { el.click() } finally { refire.el = null }
   }
 
   function cancel() {

@@ -165,6 +165,31 @@ describe('the template and soft-delete directives reach a real client', () => {
     expect(out.data.map(r => r.id)).toEqual([2])
   })
 
+  // A by-id write dropped the two flags the read had taken, so a template the
+  // caller had just listed answered 404 to its own save and its own removal.
+  test('a write by id reaches a template when it asks for templates, and not otherwise', async () => {
+    const db = await tmplDb()
+    const asks = { service: 'quotes', id: 2, ...splitParams({ $withTemplates: 'true' }) }
+
+    const patched = await quotes().patch(ctx(db, { ...asks, method: 'patch', data: { title: 'edited' } })) as { title: string }
+    expect(patched.title).toBe('edited')
+    const updated = await quotes().update(ctx(db, { ...asks, method: 'update', data: { title: 'replaced' } })) as { title: string }
+    expect(updated.title).toBe('replaced')
+
+    const bare = await quotes().patch(ctx(db, { service: 'quotes', id: 2, method: 'patch', data: { title: 'x' } }))
+      .catch((e: Error) => e) as Error & { status?: number }
+    expect(bare.name).toBe('NotFound')
+  })
+
+  test('a remove by id reaches a template when it asks for templates', async () => {
+    const db = await tmplDb()
+    const removed = await quotes().remove(
+      ctx(db, { service: 'quotes', id: 2, method: 'remove', ...splitParams({ $onlyTemplates: 'true' }) })) as { id: number }
+    expect(removed.id).toBe(2)
+    const left = await quotes().find(ctx(db, { service: 'quotes', directives: { withTemplates: true } })) as { data: { id: number }[] }
+    expect(left.data.map(r => r.id)).toEqual([1])
+  })
+
   test('a directive the model cannot satisfy is a 400, not a silent no-op', async () => {
     // FJS-293: this answered the live rows — the opposite of the question —
     // with nothing anywhere saying the flag had not applied.

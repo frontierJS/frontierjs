@@ -183,6 +183,7 @@
     localError = message
     form?.reportInvalid?.(name, message)
   }
+  $.onDestroy(() => { if (localError) form?.reportInvalid?.(name, null) })
 
   // A value set from outside — a reset, a record that arrived after mount —
   // replaces the text, unless the text already reads as that value.

@@ -411,7 +411,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `package.json` `stores/` `tokens.css` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `package.json` `stores/` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |

@@ -31,7 +31,6 @@ stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
 dnd.js        dndzone — drag and drop between flow lists, an {@attach}
 utils.js      shared helpers
-tokens.css    the kit's own tokens, on top of @frontierjs/css
 test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
 test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
               coverage) · server.mjs (compiles .mesa on demand) · page.js
@@ -358,7 +357,10 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     hand-written form**, where `FJS-316` deliberately stops the record-level
     checks (the control is on screen by construction — it is the thing that
     reported); and `clearErrors()` does NOT clear it, because it is about text
-    still in the box and only the control that raised it can retract it. Guard
+    still in the box and only the control that raised it can retract it — so a
+    reporting control also retracts its own report in `onDestroy`, or an
+    `{#if}` hiding it locks the form (`FJS-2591`); one that does not is said
+    in `formError` once its `[name]` is gone from the form. Guard
     a `reportInvalid` on no-change: it rebuilds `$context.form`, which
     re-derives the control that called it.
 - **`CodeInput` is a transparent `<textarea>` over glow's paint in one grid

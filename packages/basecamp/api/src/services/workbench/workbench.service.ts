@@ -32,6 +32,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
+import { existsSync }              from 'node:fs'
 import { dirname }                 from 'node:path'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
@@ -92,12 +93,18 @@ export function createWorkbenchService(app: BasecampApp) {
       const pins = wb().readPins()
       return {
         dir:  wb().dir,
-        pins: await Promise.all(pins.map(async p => ({
-          ...p,
-          git:    await describeRepo(dirname(p.path), p.path),
-          checkable: !!doneScript(p.path),
-          status: await wb().status(p),
-        }))),
+        pins: await Promise.all(pins.map(async p => {
+          // A renamed or deleted folder: git there answers nothing, and every
+          // run is refused, so the screen says so instead of a blank card.
+          const missing = !existsSync(p.path)
+          return {
+            ...p,
+            missing,
+            git:    missing ? null : await describeRepo(dirname(p.path), p.path),
+            checkable: !missing && !!doneScript(p.path),
+            status: await wb().status(p),
+          }
+        })),
       }
     },
 

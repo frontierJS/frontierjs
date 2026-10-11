@@ -3502,6 +3502,7 @@ function _shouldSkipField(field, model) {
   if (attrs.some(a => a.kind === 'computed')) return true
   if (attrs.some(a => a.kind === 'transient')) return true  // no column — the API lifts it off the payload
   if (attrs.some(a => a.kind === 'from'))     return true  // subquery — not writable
+  if (attrs.some(a => a.kind === 'derived'))  return true  // expression over the row — not writable
   if (attrs.some(a => a.kind === 'generated')) return true
   if (attrs.some(a => a.kind === 'funcCall'))  return true
   // @sequence — the db owns this counter. An explicit value IS honored and moves

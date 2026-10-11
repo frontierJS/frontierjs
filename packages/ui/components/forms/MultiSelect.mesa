@@ -18,6 +18,7 @@
   import Field from '../forms/Field.mesa'
   import { uid, resolveError, resolveRule, stated, truncationNote, withNote, optionsNote, lockedBy } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
+  import { parseCell }      from '@frontierjs/toolbelt/cells'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,13 @@
   // Coerce value to correct type
   function coerce(v) {
     return type === 'number' ? Number(v) : String(v)
+  }
+
+  // A value typed in is read strictly, not by `coerce`: Number() reads `abc`
+  // as NaN, which goes over the wire as null, and `0x1F` as 31, while the chip
+  // shows the text typed (FJS-2595).
+  function mint(text) {
+    return type === 'number' ? parseCell(text, 'float') : { value: text }
   }
 
   // Normalize options to { value, textContent, disabled }
@@ -316,7 +324,9 @@
     for (const v of next) selectedValues.add(v)
 
     const vals = [...next]
-    value = multiple ? vals : (vals[0] ?? undefined)
+    // Null, not undefined: JSON drops an undefined key and the clear never
+    // reaches the PATCH (Invariant 9).
+    value = multiple ? vals : (vals[0] ?? null)
 
     // What MOVED, then what the selection now IS. A listener that has to
     // persist a minted option needs it to exist before anything reacts to the
@@ -365,8 +375,10 @@
       if (target) {
         selectedValues.has(target.value) ? remove(target.value) : add(target)
       } else if (allowNew && inputValue.trim()) {
-        const newOpt = { value: coerce(inputValue.trim()), textContent: inputValue.trim(), disabled: false }
-        add(newOpt, { created: true })
+        const text   = inputValue.trim()
+        const minted = mint(text)
+        if (minted.reason) return
+        add({ value: minted.value, textContent: text, disabled: false }, { created: true })
         inputValue = ''
       }
       return
@@ -542,7 +554,9 @@
           {#if filtered.length === 0}
             <li class="item text-muted" aria-disabled="true">
               {allowNew && inputValue.trim()
-                ? `Press Enter to add "${inputValue.trim()}"`
+                ? (mint(inputValue.trim()).reason
+                    ? `Cannot add "${inputValue.trim()}": ${mint(inputValue.trim()).reason}`
+                    : `Press Enter to add "${inputValue.trim()}"`)
                 : allowNew ? 'Type a value and press Enter' : 'No options'}
             </li>
           {:else}

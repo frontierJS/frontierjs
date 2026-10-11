@@ -37,6 +37,10 @@
 // person goes on with every tool their own session has. Before there is a
 // conversation it copies what a first ask would send instead, for any agent.
 //
+// "Pick mode" latches shift+alt in the inspector, so a plain click picks the
+// next element. The inspector owns the mode and draws its own way out; the
+// button only flips it and redraws when the inspector says it changed.
+//
 // Every request carries the app's own token when the page holds one: on a dev
 // server other people reach, the server asks the app's API who that is. Submit
 // is drawn only when the server says the checkout is a Workbench branch.
@@ -57,11 +61,14 @@
   const store = keep('fli:ask:session')
   const shown = keep('fli:ask:open')
   const saved = keep('fli:ask:log')
+  const foldKeep = keep('fli:ask:fold')
 
-  let panel, title, list, hint, chips, input, send, stop, submit, fresh, log
+  let panel, title, list, hint, chips, input, send, stop, submit, fresh, log, rail, folds, latch
   let picks = [], sent = false, busy = false
   // The chips' answers, keys of the server's EDIT_KINDS and EDIT_SCOPES.
   let kind = null, scope = null
+  // The inspector's modifier, as the last pick named it.
+  let pickKey = 'alt'
   // What the log holds, as data, so a reload can draw it again.
   let entries = []
 
@@ -135,57 +142,205 @@
   }
   const save = () => saved.set(entries.length ? JSON.stringify(entries) : null)
 
-  const COLORS = { tool: '#94a3b8', error: '#fca5a5', you: '#7dd3fc', meta: '#64748b' }
-
   function line(text, tone) {
-    remember({ k: 'line', text, tone })
-    drawLine(text, tone)
-  }
-
-  function drawLine(text, tone) {
-    log.appendChild(make('div', `white-space:pre-wrap;margin:0 0 6px;color:${COLORS[tone] || '#e2e8f0'}`, text))
-    log.scrollTop = log.scrollHeight
+    remember({ k: 'line', text, tone, at: Date.now() })
+    if (tone === 'you') toBottom = true
+    drawSoon()
   }
 
   function diff(files) {
     remember({ k: 'diff', files })
-    drawDiff(files)
+    drawSoon()
   }
 
   // The end of a run that changed something, with the Undo for that run.
   function ended(run, text) {
-    const entry = { k: 'run', run, text, undone: false }
-    remember(entry)
-    drawEnded(entry)
+    remember({ k: 'run', run, text, undone: false })
+    drawSoon()
   }
 
-  function drawEnded(entry) {
-    const row = make('div', 'display:flex;align-items:center;gap:6px;margin:0 0 6px')
-    row.dataset.run = entry.run
-    row.appendChild(make('div', `flex:1;white-space:pre-wrap;color:${COLORS.meta}`, entry.text))
-    const btn = make('button', BTN, entry.undone ? 'Undone' : 'Undo')
-    btn.title = 'Put back what this run changed, leaving any later change alone'
-    btn.disabled = entry.undone
-    btn.onclick = () => undoRun(entry, btn)
-    row.appendChild(btn)
-    log.appendChild(row)
-    log.scrollTop = log.scrollHeight
+  // ─── the chat ────────────────────────────────────────────────────────
+  // The log is redrawn whole from `entries`, so a fold, a flip or an undo is
+  // a change to data and never to a node another draw would throw away.
+  // A timer and not requestAnimationFrame: a hidden tab never runs a frame,
+  // and the log would stay empty until somebody looked.
+
+  const SHOW_TOOLS = 4
+  const FOLDS = [['none', 'None'], ['you', 'Mine'], ['ai', 'Claude'], ['both', 'Both']]
+  let flips = new WeakSet()
+  // Whether the reader is at the end of the log, kept from the last scroll:
+  // a row above it growing shrinks the log, and only this says to follow.
+  let drawing = 0, toBottom = false, stuck = true
+
+  function drawSoon() {
+    if (!log || drawing) return
+    drawing = setTimeout(draw, 16)
+  }
+
+  // A run is mostly tool calls; a row of them is one block showing the last
+  // few, so the words are not lost between the calls.
+  function grouped(list) {
+    const out = []
+    for (const e of list) {
+      const kind = e.k === 'line' ? ({ you: 'you', tool: 'tools', error: 'error', meta: 'meta' }[e.tone] || 'ai') : e.k
+      const last = out[out.length - 1]
+      if (kind === 'tools' && last?.kind === 'tools') { last.calls.push(e.text.replace(/^· /, '')); continue }
+      out.push({ kind, e, calls: kind === 'tools' ? [e.text.replace(/^· /, '')] : null })
+    }
+    return out
+  }
+
+  const sideOf = kind => kind === 'you' ? 'you' : kind === 'ai' || kind === 'tools' || kind === 'diff' ? 'ai' : null
+  function folded(g) {
+    const side = sideOf(g.kind)
+    if (!side) return false
+    const mode = foldKeep.get() || 'none'
+    return (mode === 'both' || mode === side) !== flips.has(g.e)
+  }
+  function flip(e) {
+    flips.has(e) ? flips.delete(e) : flips.add(e)
+    drawSoon()
+  }
+
+  const ago = at => {
+    if (!at) return ''
+    const s = Math.round((Date.now() - at) / 1000)
+    return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : new Date(at).toLocaleDateString()
+  }
+
+  const HEAD = 'display:flex;align-items:baseline;gap:6px;width:100%;padding:0;border:0;background:none;color:inherit;font:12px/1.4 ui-sans-serif,system-ui;text-align:start;cursor:pointer'
+  const CLAMP = ';display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden'
+
+  function bubble(g, i) {
+    const you = g.kind === 'you', shut = folded(g)
+    const box = make('div', `max-width:88%;padding:7px 11px;border:1px solid ${you ? '#0369a1' : '#334155'};border-radius:10px;background:${you ? 'rgba(3,105,161,.22)' : '#1e293b'};align-self:${you ? 'flex-end;border-bottom-right-radius:3px' : 'flex-start;border-bottom-left-radius:3px'}`)
+    if (you) box.dataset.turn = i
+    const head = make('button', HEAD + ';margin-bottom:2px')
+    head.type = 'button'
+    head.setAttribute('aria-expanded', String(!shut))
+    head.onclick = () => flip(g.e)
+    head.appendChild(make('strong', `color:${you ? '#7dd3fc' : '#e2e8f0'}`, you ? 'You' : 'Claude'))
+    if (you && g.e.at) head.appendChild(make('span', 'color:#64748b', ago(g.e.at)))
+    head.appendChild(make('span', 'margin-left:auto;color:#64748b', shut ? '▸' : '▾'))
+    box.append(head, make('div', 'white-space:pre-wrap;overflow-wrap:anywhere' + (shut ? CLAMP : ''), g.e.text))
+    return box
+  }
+
+  function tools(g) {
+    const box = make('div', 'align-self:flex-start;max-width:100%;padding:0 11px;color:#94a3b8;font:12px/1.5 ui-monospace,monospace;cursor:pointer')
+    box.title = 'Show or hide these calls'
+    box.onclick = () => flip(g.e)
+    const n = g.calls.length
+    if (folded(g)) { box.appendChild(make('div', '', `› ${n} tool call${n === 1 ? '' : 's'}`)); return box }
+    if (n > SHOW_TOOLS) box.appendChild(make('div', 'color:#64748b', `… ${n - SHOW_TOOLS} more`))
+    for (const c of g.calls.slice(-SHOW_TOOLS)) box.appendChild(make('div', 'overflow-wrap:anywhere', `› ${c}`))
+    return box
   }
 
   // One block per file: its path, then each line marked removed, added or kept.
-  function drawDiff(files) {
+  // Folded, only the path and its counts stay.
+  function diffs(g) {
     const tones = { '-': 'background:rgba(239,68,68,.18);color:#fecaca', '+': 'background:rgba(34,197,94,.16);color:#bbf7d0', '…': 'color:#64748b', ' ': 'color:#94a3b8' }
-    for (const f of files) {
-      const box = make('div', 'margin:0 0 8px;border:1px solid #1e293b;border-radius:4px;overflow:hidden')
+    const shut = folded(g)
+    const wrap = make('div', 'display:flex;flex-direction:column;gap:6px;align-self:stretch')
+    for (const f of g.e.files) {
+      const box = make('div', 'border:1px solid #334155;border-radius:6px;overflow:hidden')
       box.dataset.diff = f.file
-      box.appendChild(make('div', 'padding:3px 6px;background:#1e293b;color:#e2e8f0;font:12px/1.4 ui-monospace,monospace', f.file + (f.created ? '  (new file)' : '')))
-      const pre = make('div', 'overflow-x:auto;font:12px/1.45 ui-monospace,monospace')
-      for (const [op, text] of f.lines)
-        pre.appendChild(make('div', `white-space:pre;padding:0 6px;${tones[op] || ''}`, op === '…' ? `… ${text}` : `${op} ${text}`))
-      box.appendChild(pre)
-      log.appendChild(box)
+      const head = make('button', HEAD + ';align-items:center;padding:5px 9px;background:#1e293b;color:#e2e8f0;font:12px/1.4 ui-monospace,monospace')
+      head.type = 'button'
+      head.setAttribute('aria-expanded', String(!shut))
+      head.onclick = () => flip(g.e)
+      const added = f.lines.filter(l => l[0] === '+').length, removed = f.lines.filter(l => l[0] === '-').length
+      // The path is the LAST node, so the page's text reads it straight into
+      // its lines; `order` puts the counts back on the right.
+      head.append(
+        make('span', 'color:#64748b', shut ? '▸' : '▾'),
+        make('span', 'order:1;margin-left:auto;white-space:nowrap;color:#64748b', `+${added} −${removed}`),
+        make('span', 'min-width:0;overflow-wrap:anywhere', f.file + (f.created ? '  (new file)' : '')),
+      )
+      box.appendChild(head)
+      if (!shut) {
+        const pre = make('div', 'overflow-x:auto;padding:3px 0;background:#020617;font:12px/1.45 ui-monospace,monospace')
+        for (const [op, text] of f.lines)
+          pre.appendChild(make('div', `white-space:pre;padding:0 9px;${tones[op] || ''}`, op === '…' ? `… ${text}` : `${op} ${text}`))
+        box.appendChild(pre)
+      }
+      wrap.appendChild(box)
     }
-    log.scrollTop = log.scrollHeight
+    return wrap
+  }
+
+  function runRow(e) {
+    const row = make('div', 'display:flex;align-items:center;gap:8px;padding:0 11px;font-size:12.5px')
+    row.dataset.run = e.run
+    row.appendChild(make('div', 'flex:1;white-space:pre-wrap;color:#64748b', e.text))
+    const btn = make('button', BTN, e.undone ? 'Undone' : 'Undo')
+    btn.title = 'Put back what this run changed, leaving any later change alone'
+    btn.disabled = e.undone || !!e.undoing
+    btn.onclick = () => undoRun(e)
+    row.appendChild(btn)
+    return row
+  }
+
+  function node(g, i) {
+    if (g.kind === 'you' || g.kind === 'ai') return bubble(g, i)
+    if (g.kind === 'tools') return tools(g)
+    if (g.kind === 'diff')  return diffs(g)
+    if (g.kind === 'run')   return runRow(g.e)
+    if (g.kind === 'error') return make('div', 'align-self:stretch;padding:7px 11px;border:1px solid rgba(239,68,68,.45);border-radius:8px;background:rgba(239,68,68,.12);color:#fca5a5;white-space:pre-wrap;overflow-wrap:anywhere', g.e.text)
+    return make('div', 'padding:0 11px;color:#64748b;font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere', g.e.text)
+  }
+
+  // A reader who scrolled up to an earlier turn stays there; one at the
+  // bottom, or one who just sent, follows the run.
+  function draw() {
+    drawing = 0
+    const top = log.scrollTop
+    log.textContent = ''
+    grouped(entries).forEach((g, i) => log.appendChild(node(g, i)))
+    if (busy) log.appendChild(make('div', 'align-self:flex-start;padding:0 11px;color:#64748b;font-size:12.5px;font-style:italic', 'Claude is working…'))
+    log.scrollTop = stuck || toBottom ? log.scrollHeight : top
+    toBottom = false
+    folds.style.display = entries.length ? 'flex' : 'none'
+    for (const b of folds.querySelectorAll('button')) {
+      const on = (foldKeep.get() || 'none') === b.dataset.fold
+      b.style.cssText = CHIP + (on ? CHIP_ON : '')
+      b.setAttribute('aria-pressed', String(on))
+    }
+    drawRail()
+  }
+
+  // ─── the jump rail ───────────────────────────────────────────────────
+  // A notch per message you sent, placed where it sits in the log, so a fold
+  // that shortens the log moves the notches with it. The thumb is the part
+  // of the log on screen; the lit notch is the turn being read, the last one
+  // starting above the upper third of it.
+
+  function drawRail() {
+    const h = log.scrollHeight || 1
+    const turns = [...log.querySelectorAll('[data-turn]')]
+    rail.textContent = ''
+    rail.style.display = turns.length ? '' : 'none'
+    if (!turns.length) return
+    const thumbTop = log.scrollTop / h * 100, thumbH = log.clientHeight / h * 100
+    if (thumbH < 99) rail.appendChild(make('span', `position:absolute;left:0;right:0;top:${thumbTop}%;height:${thumbH}%;border-radius:999px;background:#334155;pointer-events:none`))
+    const tops = turns.map(el => el.offsetTop / h * 100)
+    let at = -1
+    tops.forEach((t, k) => { if (t <= thumbTop + thumbH / 3) at = k })
+    turns.forEach((el, k) => {
+      const lit = k === at
+      const text = (el.lastChild?.textContent || '').slice(0, 80)
+      // A 4px notch is too thin to hit; the border is the hit area.
+      const n = make('button', `position:absolute;left:-6px;right:-6px;top:calc(${tops[k]}% - 5px);height:${lit ? 6 : 4}px;box-sizing:content-box;padding:0;border:5px solid transparent;border-left-width:4px;border-right-width:4px;background-color:${lit ? '#7dd3fc' : '#0369a1'};background-clip:content-box;cursor:pointer`)
+      n.type = 'button'
+      n.title = text
+      n.setAttribute('aria-label', `Message ${k + 1}: ${text}`)
+      if (lit) n.setAttribute('aria-current', 'true')
+      n.onmouseenter = () => { n.style.backgroundColor = '#7dd3fc' }
+      n.onmouseleave = () => { if (!lit) n.style.backgroundColor = '#0369a1' }
+      n.onclick = () => log.scrollTo({ top: el.offsetTop - 8, behavior: 'smooth' })
+      rail.appendChild(n)
+    })
   }
 
   function setBusy(on) {
@@ -193,11 +348,12 @@
     send.disabled = on
     submit.disabled = on
     stop.style.display = on ? '' : 'none'
+    drawSoon()
   }
 
   function build() {
-    panel = make('div', 'position:fixed;right:12px;bottom:12px;z-index:2147483646;width:min(560px,calc(100vw - 24px));max-height:80vh;display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)')
-    const head = make('div', 'display:flex;align-items:center;gap:6px')
+    panel = make('div', 'position:fixed;right:12px;bottom:12px;z-index:2147483646;box-sizing:border-box;width:min(580px,calc(100vw - 24px));max-height:85vh;display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid #1e293b;border-radius:10px;background:#0f172a;color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)')
+    const head = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px')
     title = make('strong', 'flex:1')
     head.appendChild(title)
     fresh = make('button', BTN, 'New chat')
@@ -207,18 +363,41 @@
     const term = make('button', BTN, 'Continue in terminal')
     term.title = 'Copy a command that resumes this conversation in a terminal, or, before there is one, this ask for any agent'
     term.onclick = handoff
+    latch = make('button', BTN, 'Pick mode')
+    latch.title = 'Click elements to pick them, without holding shift+alt (Esc leaves)'
+    latch.onclick = () => { const i = inspector(); if (i) i.pickMode(!i.pickMode()) }
+    drawLatch()
     const close = make('button', BTN, '×')
     close.title = 'Close (the conversation is kept)'
     close.onclick = () => { panel.style.display = 'none'; shown.set(null) }
-    head.append(term, fresh, close)
+    head.append(latch, term, fresh, close)
 
-    list = make('div', 'display:flex;flex-direction:column;gap:4px;max-height:30vh;overflow:auto')
-    hint = make('div', 'color:#64748b;font-size:12.5px')
-    log = make('div', 'overflow:auto;flex:1;min-height:0')
+    list = make('div', 'display:flex;flex-direction:column;gap:6px;max-height:24vh;overflow:auto')
+    hint = make('div', 'margin-top:-6px;color:#64748b;font-size:12.5px')
 
-    chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12px;color:#64748b')
+    folds = make('div', 'display:none;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12px;color:#64748b')
+    folds.setAttribute('role', 'group')
+    folds.setAttribute('aria-label', 'Collapse messages')
+    folds.appendChild(make('span', 'margin-right:2px', 'Collapse'))
+    for (const [key, text] of FOLDS) {
+      const b = make('button', CHIP, text)
+      b.type = 'button'
+      b.dataset.fold = key
+      b.onclick = () => { foldKeep.set(key === 'none' ? null : key); flips = new WeakSet(); drawSoon() }
+      folds.appendChild(b)
+    }
 
-    input = make('textarea', 'resize:vertical;min-height:120px;padding:8px;border-radius:4px;border:1px solid #334155;background:#020617;color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
+    const chat = make('div', 'display:flex;gap:8px;flex:1;min-height:96px')
+    // The rail is its scrollbar.
+    log = make('div', 'flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:2px 0')
+    log.onscroll = () => { stuck = log.scrollHeight - log.scrollTop - log.clientHeight < 24; drawRail() }
+    rail = make('nav', 'position:relative;flex:none;width:10px;border-radius:999px;background:#020617;display:none')
+    rail.setAttribute('aria-label', 'Jump to a message')
+    chat.append(log, rail)
+
+    chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#64748b;padding-top:10px;border-top:1px solid #1e293b')
+
+    input = make('textarea', 'box-sizing:border-box;width:100%;resize:vertical;min-height:84px;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:#020617;color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
     input.placeholder = 'What should change? (⌘/Ctrl+Enter sends)'
     input.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask() } }
 
@@ -234,13 +413,13 @@
     send.onclick = ask
     row.append(submit, stop, send)
 
-    panel.append(head, list, hint, log, chips, input, row)
+    panel.append(head, list, hint, folds, chat, chips, input, row)
     document.body.appendChild(panel)
-    for (const e of entries) {
-      if (e.k === 'line') drawLine(e.text, e.tone)
-      else if (e.k === 'diff') drawDiff(e.files)
-      else if (e.k === 'run') drawEnded(e)
-    }
+    // The rail is drawn in fractions of the log, which a resize of the
+    // panel moves without a scroll.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => { if (stuck) log.scrollTop = log.scrollHeight; drawRail() }).observe(log)
+    toBottom = true
+    draw()
     refresh()
   }
 
@@ -271,6 +450,25 @@
     line(`${r.created ? 'Opened' : 'Updated'} the pull request: ${r.pr}`, 'meta')
   }
 
+  const inspector = () => window.__fjsInspect && window.__fjsInspect.pickMode ? window.__fjsInspect : null
+
+  function drawLatch() {
+    if (!latch) return
+    const i = inspector()
+    const on = !!(i && i.pickMode())
+    latch.style.cssText = BTN + (on ? ';background:#0369a1;border-color:#0369a1' : '') + (i ? '' : ';display:none')
+    latch.setAttribute('aria-pressed', String(on))
+    drawHint()
+  }
+
+  function drawHint() {
+    if (!hint) return
+    const i = inspector()
+    hint.textContent = i && i.pickMode()
+      ? `Pick mode: a click adds an element · ${pickKey}-click opens its source · Esc leaves`
+      : `${pickKey}-click opens the source in your editor · shift+${pickKey}-click asks here, and adds another element before you send`
+  }
+
   function show() {
     panel.style.display = 'flex'
     shown.set('1')
@@ -296,7 +494,7 @@
       ['page', 'Page', 'Wherever the same thing appears on the page'],
     ]
     const group = (label, options, current, pick) => {
-      chips.appendChild(make('span', 'margin-left:4px', label))
+      chips.appendChild(make('span', label === 'Change' ? 'margin-right:2px' : 'margin:0 2px 0 8px', label))
       for (const [key, text, tip] of options) {
         const b = make('button', CHIP + (current === key ? CHIP_ON : ''), text)
         b.title = tip
@@ -313,8 +511,9 @@
     drawChips()
     title.textContent = picks.length > 1 ? `Ask Claude to change these ${picks.length}` : picks.length ? 'Ask Claude to change this' : 'Ask Claude'
     list.textContent = ''
+    list.style.display = picks.length ? 'flex' : 'none'
     for (const p of picks) {
-      const row = make('div', 'display:flex;align-items:center;gap:6px')
+      const row = make('div', 'display:flex;align-items:center;gap:6px;padding:7px 8px 7px 11px;border:1px solid #1e293b;border-radius:8px;background:#020617')
       row.dataset.pick = p.loc
       const what = make('div', 'flex:1;min-width:0')
       what.appendChild(make('div', 'font:12.5px/1.4 ui-monospace,monospace;color:#38bdf8;word-break:break-all', p.loc))
@@ -349,8 +548,8 @@
       if (picks.length >= MAX_PICKS) line(`${MAX_PICKS} elements is the most one ask takes`, 'error')
       else picks.push({ el: p.el, loc: p.loc, html: outline(p.el), inner: innerLocs(p.el), repeats: drawnFrom(p.loc), open: p.open })
     }
-    const key = p.key || 'alt'
-    hint.textContent = `${key}-click opens the source in your editor · shift+${key}-click asks here, and adds another element before you send`
+    pickKey = p.key || 'alt'
+    drawHint()
     render()
     show()
     input.focus()
@@ -491,26 +690,28 @@
     try { await navigator.clipboard.writeText(r.command || r.text); copied = true } catch {}
     if (r.command) {
       line(copied ? 'Copied — paste it into a terminal to go on there:' : 'Run this in a terminal to go on there:', 'meta')
-      line(r.command)
+      line(r.command, 'meta')
     } else {
       line(copied ? `Copied this ask (${r.text.length} chars) — paste it into any agent` : 'Copy this ask into any agent:', 'meta')
-      if (!copied) line(r.text)
+      if (!copied) line(r.text, 'meta')
     }
   }
 
-  async function undoRun(entry, btn) {
-    if (entry.undone) return
-    btn.disabled = true
+  async function undoRun(entry) {
+    if (entry.undone || entry.undoing) return
+    entry.undoing = true
+    drawSoon()
     let r
     try {
       r = await post('/__fjs/ask/undo', { run: entry.run }).then(res => res.json())
     } catch (err) {
-      btn.disabled = false
       return line(String(err && err.message || err), 'error')
+    } finally {
+      delete entry.undoing
+      drawSoon()
     }
     // The server forgets a run once asked, so an error is as final as a success.
     entry.undone = true
-    btn.textContent = 'Undone'
     save()
     if (r.error) return line(r.error, 'error')
     for (const f of r.undone) line(`undone: ${f}`, 'meta')
@@ -526,6 +727,8 @@
   ;(function attach() {
     if (window.__fjsInspect && window.__fjsInspect.onPick) {
       window.__fjsInspect.onPick(open)
+      if (window.__fjsInspect.onPickMode) window.__fjsInspect.onPickMode(drawLatch)
+      drawLatch()
       console.log('%c[fli] ask ready — hold shift+alt and click an element to ask Claude to change it', 'color:#38bdf8')
       return
     }
