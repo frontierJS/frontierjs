@@ -1459,6 +1459,23 @@ with the terminal backend as its second consumer, not ahead of it.
    is never laid out or reached by Tab, a summary toggles unless its click
    is prevented, and a key rebuilds only on a different value; `details`,
    `key` and `press` fail when any stops. Tier: Assessment.
+   *Slice 30 2026-10-10, `<input type="file">` (`FJS-D894`) and the
+   canvas (`FJS-D895`):* a file input hidden by `hidden` or
+   `visually-hidden` lowered first, painting nothing, which opened 15
+   routes and left `/stocktake/` at one on screen. The owner ruled it a
+   path field: committing it reads the file into `files` and fires
+   `input` then `change`, `value` is `C:\fakepath\` plus the name, and a
+   path that reads nothing says so in the field and leaves the choice. A
+   hidden one opens in place on `click()`, the kit's `FileUpload` call,
+   and Enter or leaving it hides it and gives focus back. A live `hidden`
+   or `class` is read where it is written, so nothing about a file input
+   is refused at compile but a bind. FlowCanvas's pointer and wheel
+   handlers stay refused (`FJS-D895`); a declaration that a component has
+   no terminal form was proposed and failed *origin*, *concept*,
+   *derived* and *silence*. Specs: `files` 7/7 (6 breaks red), and
+   `terminal-emit` pins the gestures refused. Drive 362, vitest 2292,
+   `verify:tui` green. Report 430/565 (76%), ui 104/137. Routes 33 of 34.
+   The nine are in the two rulings. Tier: Assessment.
    *The nine for slice 21, answered before the `<pre>`/`{@html}` code
    (the focus half and the inline tags had landed first):* (1) origin:
    one fewer copy. Entity decoding has one home that both readers import,

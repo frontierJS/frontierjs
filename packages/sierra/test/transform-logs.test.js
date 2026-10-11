@@ -17,6 +17,9 @@
  * And every analysis warning printed twice: once through the compiler's default
  * `warning` callback, straight to the console, and once through `this.warn`,
  * while a warning only that callback carries reached the console alone.
+ *
+ * And a build named a failure's line in the source Mesa was handed, which has
+ * the frontmatter cut off, so the line was short by the block (`FJS-2519`).
  */
 
 import { describe, test, expect, beforeAll, vi } from 'vitest'
@@ -35,6 +38,8 @@ const WARNS = "<script>\nimport { cfg } from './cfg.js'\n</script>\n<p>{cfg.titl
 const SLOTS = '<script>\nimport Card from \'./Card.mesa\'\nlet x = true\n</script>\n' +
   '<Card>{#if x}<span slot="a">a</span>text{/if}</Card>\n'
 const FAILS = '<script>\nlet a = 1, b = 2\n$: { (a, b) }\n</script><p>{a}</p>\n'
+// The script fails to parse at line 7 of the file, line 3 once the block is cut.
+const FRONTED = '---\ntitle: Probe\nrender: spa\n---\n<script>\n  let b = (\n</script>\n<p>{b}</p>\n'
 
 let plugin
 
@@ -82,6 +87,12 @@ describe('transform logs', () => {
 
     expect(thrown.log.message).toContain('Mesa compilation failed')
     expect(thrown.log.line).toBeUndefined()
+  })
+
+  test('a build names a failure\'s line in the file, below its frontmatter', async () => {
+    const thrown = await plugin.transform.call(viteCtx(), FRONTED, ID).catch((e) => e)
+
+    expect(thrown.log.message).toContain('__Probe.mesa:7:')
   })
 
   test('a warning is said once, to Vite, and not to the console', async () => {

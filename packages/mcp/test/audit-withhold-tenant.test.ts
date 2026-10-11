@@ -44,7 +44,7 @@ beforeAll(async () => {
   app.services.register(createService({
     name: 'credentials', model: 'Credential',
     mint: async () => ($.db as unknown as Creds).asSystem().credential.create({
-      data: { label: 'minted', value: 'hunter2-minted', scope: 'scope-minted' },
+      data: { label: 'minted', value: 'hunter2-minted', privilege: 'privilege-minted' },
     }),
     methods: ['find', 'get', { method: 'mint', gate: 5 }],
   }))
@@ -75,6 +75,6 @@ describe('a protected column reaches no tool RESULT under strategy database (FJS
     expect(text).not.toContain('isError')
     expect(text).toContain('minted')
     expect(text).not.toContain('hunter2')
-    expect(text).not.toContain('scope-minted')
+    expect(text).not.toContain('privilege-minted')
   })
 })

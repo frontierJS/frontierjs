@@ -795,7 +795,7 @@ function fieldToTs(field, schema, modelNames, nullable = true) {
         }
         break
       }
-      case 'Bytes':     base = 'Buffer';  break
+      case 'Bytes':     base = 'Uint8Array';  break   // the client returns one; a Buffer method would throw
       case 'File':     base = 'FileRef'; break
       default:
         // Could be a model name (M2M) — use generic

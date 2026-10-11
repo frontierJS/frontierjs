@@ -49,6 +49,10 @@ const dated = `${new Date().getFullYear()}-${inv1.invoiceNumber}`     // → '20
 
 On create, Litestone bumps a counter row in `_litestone_sequences`, keyed by `(model, field, scope)` and created on every database that holds a `@sequence` field, with one `INSERT … ON CONFLICT DO UPDATE … RETURNING` inside the write transaction. SQLite serializes writers, so two creates in one scope cannot draw the same number, and a create that fails rolls its bump back with the row — the next create in that scope takes the number the failed one would have.
 
+## Adding a sequence to a table with rows
+
+A new `@sequence` column is `NOT NULL` with no default, so `migrate create` blocks the section instead of writing it. The blocked section names the recipe: number the existing rows per scope with `ROW_NUMBER() OVER (PARTITION BY <scope> ORDER BY …)` in the rebuild's copy, then seed the counter. A backfill that skips the seed leaves `_litestone_sequences` without a row for the scope, and the next create restarts at 1 beside rows numbered higher, with no error since nothing makes the column unique. The `ORDER BY` in the generated text is the primary key; replace it with the order the rows really arrived in.
+
 ## Multiple sequence fields
 
 A model can have multiple `@sequence` fields with different scopes:

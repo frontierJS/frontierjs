@@ -21,6 +21,7 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Database as BunDatabase } from 'bun:sqlite'
 import { createClient } from '../src/index.js'
 
 const dirs: string[] = []
@@ -572,5 +573,46 @@ describe('an ORM delete reads its own rows only for what hears them', () => {
 
   test('a plugin answering a delete is', async () => {
     expect(await ownReads(P => [new (class extends P { async onAfterDelete() {} })()])).toBe(1)
+  })
+})
+
+// FJS-2290: a sweep frees pages that stay in the file. A window grows the file to
+// its high-water mark unless the database was created able to hand pages back.
+describe('a sweep hands its pages back', () => {
+  const pages = (path: string) => {
+    const raw = new BunDatabase(path)
+    try {
+      return {
+        mode: raw.query('PRAGMA auto_vacuum').get() as { auto_vacuum: number },
+        free: (raw.query('PRAGMA freelist_count').get() as { freelist_count: number }).freelist_count,
+      }
+    } finally { raw.close() }
+  }
+
+  test('a database declaring a window is created incremental, and its free pages are reclaimed', async () => {
+    const dir  = tmp()
+    const path = join(dir, 'app.db')
+    const db   = await createClient({ schema: SCHEMA(dir) })
+    const sys  = db.asSystem()
+    const pad  = 'x'.repeat(2000)
+    for (let i = 0; i < 300; i++) await sys.log.create({ data: { body: pad, createdAt: ago(200) } })
+    await sys.log.create({ data: { body: 'fresh', createdAt: ago(2) } })
+
+    const swept = await sys.$retain()
+    expect(swept.find((r: any) => r.model === 'Log')?.removed).toBe(300)
+
+    const after = pages(path)
+    expect(after.mode.auto_vacuum).toBe(2)
+    expect(after.free).toBeLessThan(10)
+    db.$close()
+  })
+
+  test('a database with no window keeps the default', async () => {
+    const dir  = tmp()
+    const path = join(dir, 'plain.db')
+    const db   = await createClient({ schema: `database main { path "${path}" }\nmodel Log { id Int @id @default(autoincrement())  body String }` })
+    await db.asSystem().log.create({ data: { body: 'x' } })
+    expect(pages(path).mode.auto_vacuum).toBe(0)
+    db.$close()
   })
 })

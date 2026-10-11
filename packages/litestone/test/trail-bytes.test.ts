@@ -50,7 +50,7 @@ describe('@@trail and a Bytes column', () => {
     const row = await db.asSystem().invoice.create({ data: { name: 'a', pdf: bytes } })
     await db.asSystem().invoice.update({ where: { id: row.id }, data: { name: 'b' } })
     await flush()
-    const snaps = calls.filter(e => e.model === 'invoice' && e.field == null)
+    const snaps = calls.filter(e => e.model === 'Invoice' && e.field == null)
     expect(snaps.length).toBe(2)
     expect(JSON.parse(snaps[0].after).pdf).toBe(b64)
     expect(JSON.parse(snaps[1].before).pdf).toBe(b64)

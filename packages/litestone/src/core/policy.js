@@ -169,7 +169,7 @@ export function buildClaimSet(schema, declared = null) {
   const authModel = schema?.models?.find(m => (m.attributes ?? []).some(a => a.kind === 'auth')) ?? null
   const tenantClaim = schema?.tenancy?.claim ?? null
   // A claim on no row, named by the schema itself. This is the one source a
-  // tool that only has the file can read: `fli studio` and `litestone tinker`
+  // tool that only has the file can read: `fli studio` and `litestone repl`
   // open a client off schema.lite and cannot see the app's createClient call,
   // so before this every such tool refused a schema naming one (`FJS-772`).
   const schemaClaims = schema?.claims ?? []

@@ -26,6 +26,7 @@ import {
   statSync, openSync, readSync, writeSync, fstatSync, closeSync, dirname } from '#host'
 import { noteMintedDirectory } from '../core/db-path.js'
 import { buildWhere } from '../core/query.js'
+import { ValidationError } from '../core/validate.js'
 import { ID_GENERATORS } from '../core/ids.js'
 import { compactJsonl } from '../core/retention.js'
 import { indexPathFor, indexShapeFor, openIndexDb, ensureIndexTable, withWriteLock,
@@ -124,10 +125,36 @@ function makeAppender(filePath) {
 // ─── JavaScript query engine (no-index path) ──────────────────────────────────
 // Used when the model has no @@index, or the where clause touches non-indexed fields.
 
-function matchCondition(val, cond) {
+// The operators this reader answers. An operator outside the list is refused by
+// name: skipping it filtered nothing, so `{ $raw: sql`1 = 0` }` answered every
+// row where a SQLite model answers a 400 (`FJS-2298`). `$raw` is SQL over a
+// column and a JSONL record has none to run it on.
+const SCAN_OPS = ['not', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn', 'contains', 'startsWith', 'endsWith']
+
+function refuse(path, message) {
+  throw new ValidationError([{ path: ['where', ...path], message }])
+}
+
+const RAW_MESSAGE = '$raw is not answered by a jsonl or trail model -- it is SQL over a column and a record ' +
+  'here is a JSON line. Filter on the stored fields, or read the rows and narrow them in JS'
+
+// A record holds a date as the ISO string it was written with, so a Date in a
+// where is read as that string. Left as an object it had no operator keys and
+// answered every row (`FJS-2567`).
+const stored = (v) => v instanceof Date ? v.toISOString() : v
+
+function matchCondition(val, cond, key) {
+  cond = stored(cond)
   if (cond === null || cond === undefined) return val == null
   if (typeof cond !== 'object')            return val === cond
-  if ('not'        in cond && (cond.not === null ? val != null  : val === cond.not))      return false
+  cond = Object.fromEntries(Object.entries(cond).map(([op, v]) =>
+    [op, Array.isArray(v) ? v.map(stored) : stored(v)]))
+  for (const op of Object.keys(cond)) {
+    if (op === '$raw') refuse([key], `where.${key}.${RAW_MESSAGE}`)
+    if (!SCAN_OPS.includes(op))
+      refuse([key], `Unknown where operator "${op}" on field "${key}" -- one of: ${[...SCAN_OPS].sort().join(', ')}`)
+  }
+  if ('not'       in cond && (cond.not === null ? val != null  : val === cond.not))      return false
   if ('gt'         in cond && !(val >  cond.gt))   return false
   if ('gte'        in cond && !(val >= cond.gte))  return false
   if ('lt'         in cond && !(val <  cond.lt))   return false
@@ -142,13 +169,17 @@ function matchCondition(val, cond) {
 
 function matchWhere(record, where) {
   if (!where) return true
-  if (where.AND) return where.AND.every(w  => matchWhere(record, w))
-  if (where.OR)  return where.OR.some(w   => matchWhere(record, w))
-  if (where.NOT) return !matchWhere(record, where.NOT)
+  // Every key is read, so a sibling of AND/OR/NOT is checked and refused like any
+  // other -- an early return on the first combinator let `$raw` stand beside one.
+  let ok = true
   for (const [key, cond] of Object.entries(where)) {
-    if (!matchCondition(record[key], cond)) return false
+    if (key === '$raw')      refuse([], RAW_MESSAGE)
+    else if (key === 'AND')  ok = [].concat(cond).map(w => matchWhere(record, w)).every(Boolean) && ok
+    else if (key === 'OR')   ok = [].concat(cond).map(w => matchWhere(record, w)).some(Boolean) && ok
+    else if (key === 'NOT')  ok = !matchWhere(record, cond) && ok
+    else if (!matchCondition(record[key], cond, key)) ok = false
   }
-  return true
+  return ok
 }
 
 function applyOrderBy(records, orderBy) {
@@ -282,6 +313,10 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
       try { _indexDb.close() } catch { /* already dead — the reopen is the point */ }
       _indexDb = null
     }
+    // The sidecar lives beside the file, and a read can be the first thing to
+    // reach it: `new Database()` in a directory nothing has written yet is
+    // SQLITE_CANTOPEN.
+    ensureFile(filePath)
     _indexDb = openIndexDb(indexPath, busyTimeout)
     ensureIndexTable(_indexDb, model, shape, filePath)
     return _indexDb

@@ -40,6 +40,39 @@ export function hostsOf(list) {
   return hosts
 }
 
+/** The redirect route's `@id`: the app's own id with a suffix, so a stop that
+ *  takes `fjs-<app>` takes this one with it. */
+export const redirectsId = (appId) => `${routeId(appId)}-redirects`
+
+/** The `{host, to}` pairs a /deploy names, hosts lowercased and de-duplicated,
+ *  or a refusal naming the first bad one. `to` is an absolute http(s) URL:
+ *  Caddy expands `{…}` in a header value, so a target holding a brace would
+ *  read the machine's environment into a response, and a relative one is a
+ *  redirect to a path on the redirecting host. */
+export function redirectsOf(list) {
+  if (list == null) return []
+  if (!Array.isArray(list)) throw new Error(`redirects must be a list of { host, to } — got ${JSON.stringify(list)}`)
+  const seen = new Set()
+  return list.map(r => {
+    const [host] = hostsOf([r?.host])
+    const to     = String(r?.to ?? '').trim()
+    let url
+    try { url = new URL(to) } catch {}
+    if (!url || !/^https?:$/.test(url.protocol) || /[{}]/.test(to))
+      throw new Error(`'${to}' is not a URL a redirect from ${host} can point at — it must be http(s) and hold no braces`)
+    if (seen.has(host)) throw new Error(`${host} is redirected twice`)
+    seen.add(host)
+    return { host, to }
+  })
+}
+
+/** A target naming only an origin keeps the request's path and query, so
+ *  `www.shop.test/cart` lands on `shop.test/cart`; one naming a page IS that page. */
+const locationFor = (to) => {
+  const url = new URL(to)
+  return url.pathname === '/' && !url.search && !url.hash ? `${url.origin}{http.request.uri}` : to
+}
+
 export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn = globalThis.fetch } = {}) {
   admin = admin.replace(/\/$/, '')
 
@@ -91,19 +124,25 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      *
      * `host` replaces the Host header upstream. The static origin picks an app
      * by its Host label, and a public hostname's first label is not the app's.
+     *
+     * `redirects` are answered by Caddy and dial nothing, so an app may have
+     * them with no `hosts` and no port. Each side the call leaves out is
+     * removed, since a release that dropped its last redirect would otherwise
+     * keep answering it.
      */
-    route({ appId, hosts, port, host = null }) {
+    route({ appId, hosts = [], port, host = null, redirects = [] }) {
       return serially(async () => {
-        if (!hosts?.length) throw new Error('a route needs at least one hostname')
-        if (!(Number.isInteger(Number(port)) && Number(port) > 0))
+        if (!hosts.length && !redirects.length) throw new Error('a route needs at least one hostname')
+        if (hosts.length && !(Number.isInteger(Number(port)) && Number(port) > 0))
           throw new Error(`a route needs the port the app is published on — got '${port}'`)
         const id   = routeId(appId)
         const http = must(await caddy('GET', '/config/'), 'reading its config')?.apps?.http ?? {}
         const live = http.servers?.[SERVER]
 
+        const named = [...hosts, ...redirects.map(r => r.host)]
         for (const other of live?.routes ?? []) {
-          if (other['@id'] === id) continue
-          const taken = (other.match ?? []).flatMap(m => m.host ?? []).filter(h => hosts.includes(h))
+          if (other['@id'] === id || other['@id'] === redirectsId(appId)) continue
+          const taken = (other.match ?? []).flatMap(m => m.host ?? []).filter(h => named.includes(h))
           if (taken.length)
             throw new Error(`${taken.join(', ')} is already routed to ${other['@id'] ?? 'a route outpost did not write'}`)
         }
@@ -113,7 +152,23 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
           routes: [],
         }), 'creating the ingress server')
 
-        const route = {
+        // PATCH by id replaces in place; Caddy answers 404 for an id it has not
+        // seen, which is a first deploy.
+        const put = async (route) => {
+          const replaced = await caddy('PATCH', `/id/${route['@id']}`, route)
+          if (replaced.status === 404)
+            must(await caddy('POST', `/config/apps/http/servers/${SERVER}/routes`, route), `adding ${route['@id']}`)
+          else
+            must(replaced, `replacing ${route['@id']}`)
+        }
+        const drop = async (dropId) => {
+          const reply = await caddy('DELETE', `/id/${dropId}`)
+          if (reply.status !== 404) must(reply, `removing ${dropId}`)
+        }
+
+        // A side the app no longer has is taken out here, so a release that
+        // dropped its last redirect does not keep answering it.
+        if (hosts.length) await put({
           '@id':    id,
           match:    [{ host: hosts }],
           handle:   [{
@@ -121,15 +176,23 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
             ...(host ? { headers: { request: { set: { Host: [host] } } } } : {}),
           }],
           terminal: true,
-        }
-        // PATCH by id replaces in place; Caddy answers 404 for an id it has not
-        // seen, which is a first deploy.
-        const replaced = await caddy('PATCH', `/id/${id}`, route)
-        if (replaced.status === 404)
-          must(await caddy('POST', `/config/apps/http/servers/${SERVER}/routes`, route), `adding ${id}`)
-        else
-          must(replaced, `replacing ${id}`)
-        return { hosts }
+        })
+        else await drop(id)
+
+        if (redirects.length) await put({
+          '@id':    redirectsId(appId),
+          match:    [{ host: redirects.map(r => r.host) }],
+          handle:   [{
+            handler: 'subroute',
+            routes:  redirects.map(r => ({
+              match:  [{ host: [r.host] }],
+              handle: [{ handler: 'static_response', status_code: 308, headers: { Location: [locationFor(r.to)] } }],
+            })),
+          }],
+          terminal: true,
+        })
+        else await drop(redirectsId(appId))
+        return { hosts, redirects }
       })
     },
 
@@ -142,16 +205,20 @@ export function createIngress({ admin = 'http://127.0.0.1:2019', fetch: fetchFn 
      */
     unroute({ appId }) {
       return serially(async () => {
-        let reply
-        try {
-          reply = await caddy('DELETE', `/id/${routeId(appId)}`)
-        } catch (err) {
-          if (!err.unreachable) throw err
-          return { removed: false }
+        let removed = false
+        for (const id of [routeId(appId), redirectsId(appId)]) {
+          let reply
+          try {
+            reply = await caddy('DELETE', `/id/${id}`)
+          } catch (err) {
+            if (!err.unreachable) throw err
+            return { removed: false }
+          }
+          if (reply.status === 404) continue
+          must(reply, `removing ${id}`)
+          removed = true
         }
-        if (reply.status === 404) return { removed: false }
-        must(reply, `removing ${routeId(appId)}`)
-        return { removed: true }
+        return { removed }
       })
     },
   }

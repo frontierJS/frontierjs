@@ -772,7 +772,7 @@ describe('the gate ladder', () => {
 // `@@gate("1.5")` on WorkspaceMember says *an admin may update a membership*.
 // It is per MODEL, so it has no way to say *not their own* — and the standing
 // every gate in this app grades on is read off exactly this column. The service
-// hook is one door; a job, a hub screen and a `fli tinker` session at level 5
+// hook is one door; a job, a hub screen and a `fli db:repl` session at level 5
 // are others, and none of them runs it.
 //
 // Driven rather than described, and the first version of this was GREEN against

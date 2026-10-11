@@ -13,11 +13,12 @@
 // app` in one copy and `The app is read off a built app` in the other. A format
 // with two parsers grows two answers, and nothing here compared them.
 //
-// So the entry is never probed. Guessing `api/src/app.ts` is wrong for an app
-// that boots from its root (`packages/basecamp`), wrong for one that names an
-// `--export`, and silently wrong rather than absent — it would describe an app
-// that boots on junction's defaults. The committed snapshot already carries the
-// answer, and the `snapshots` CI phase already trusts it the same way: it reruns
+// So a committed snapshot's header outranks any probe. Guessing `api/src/app.ts`
+// is wrong for an app that boots from its root (`packages/basecamp`), wrong for
+// one that names an `--export`, and silently wrong rather than absent — it would
+// describe an app that boots on junction's defaults. Only an app with NO snapshot
+// yet falls back to the layout, the same row that seeds one. The snapshot
+// already carries the answer, and the `snapshots` CI phase already trusts it the same way: it reruns
 // each generator, named in the file's own header, from the file's own directory.
 //
 // The command travels as ARGV and never through a shell, and the binary is
@@ -28,7 +29,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve, dirname }         from 'node:path'
 import { spawnSync }                from 'node:child_process'
 
-import { resolveGenerator }         from './snapshots.js'
+import { resolveGenerator, expectedSnapshots } from './snapshots.js'
 
 export const SURFACE_FILE = 'surface.snapshot.md'
 
@@ -62,13 +63,21 @@ const ALLOWED_BIN = 'junction'
  * Everything needed to run another presentation over the same built app.
  *
  * `{ file, dir, args }` — `dir` is where the generator was run from, `args` the
- * flags after the subcommand, verbatim. Null when there is no snapshot, and it
- * THROWS when there is one whose header cannot be trusted: an unreadable header
- * is a different problem from an absent file and must not read as one.
+ * flags after the subcommand, verbatim. It THROWS when there is a snapshot whose
+ * header cannot be trusted: an unreadable header is a different problem from an
+ * absent file and must not read as one.
+ *
+ * With no snapshot the entry comes off the app's layout instead -- the row that
+ * seeds `surface.snapshot.md` -- run from the app root, where `.env` is. A fresh
+ * app has no header to read, and refusing it sent the first agent to cat the
+ * schema and every service. `file` is null then; null overall means no app module.
  */
 export function appEntry(root) {
   const file = surfaceFile(root)
-  if (!file) return null
+  if (!file) {
+    const seed = expectedSnapshots(root).find(r => r.file === SURFACE_FILE)
+    return seed ? { file: null, dir: root, args: seed.argv.slice(2) } : null
+  }
 
   const command = generatedBy(file)
   if (!command) throw new Error(`${file} names no generator in its header — regenerate it with \`junction surface --app <entry>\``)

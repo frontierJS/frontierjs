@@ -23,6 +23,25 @@ export function applyGeneratedDefaults(data, entries, stamped = null) {
   return out
 }
 
+// Read the clock again for the columns this write stamped from it. A create
+// stamps while it is prepared, and a write that then waits on the transaction
+// lock commits after whoever held it carrying a time from before they began;
+// `@default(now())` could not order rows against a commit (FJS-2153). Called
+// once the lock is held. A column the caller stated is not in `stamped`.
+/**
+ * @param {Row | null | undefined} data
+ * @param {{ field: string, generate: () => unknown, clock?: boolean }[] | null | undefined} entries
+ * @param {Set<string> | null} stamped
+ */
+export function restampClock(data, entries, stamped) {
+  if (!entries?.length || !stamped?.size) return data
+  let out = data
+  for (const { field, generate, clock } of entries) {
+    if (clock && stamped.has(field)) out = { ...(out ?? {}), [field]: generate() }
+  }
+  return out
+}
+
 // ─── ctx.auth → columns ───────────────────────────────────────────────────────
 // The two ways a write picks up the principal, and the one place each lives.
 // Both take a { field, authField }[] and return `data` untouched when there is
@@ -92,7 +111,7 @@ export function applyAuthDefaults(data, list, auth, stamped = null) {
 // Created once at client init. One row per (model, field, scope value).
 // Uses a single atomic upsert — safe under SQLite's single-writer guarantee.
 
-const SEQUENCE_TABLE = '_litestone_sequences'
+export const SEQUENCE_TABLE = '_litestone_sequences'
 
 /** @param {DbHandle} db */
 export function ensureSequenceTable(db) {

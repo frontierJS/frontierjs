@@ -206,7 +206,7 @@ extend model Flow {
 // header. It is on no row, so `@@auth User` cannot name it, and `Cart`'s
 // `@@allow('read', id == auth().cartId)` is a policy over it. Declared here
 // rather than only at `createClient` because a tool that has the schema and not
-// the app — `fli studio`, `litestone tinker` — grades the same names the app
+// the app — `fli studio`, `litestone repl` — grades the same names the app
 // does (`FJS-772`). The VALUE is still the app's, per request.
 //
 // It is an ID and not the token itself (`FJS-D343`): `bearerClaim` reads the
@@ -931,7 +931,7 @@ model Discount {
   /// atomic operator computes it inside SQLite, where nothing in this package
   /// runs (`FJS-D27`). This is the other half of that argument: a CHECK is IN
   /// the table, so it fires for the atomic operator too, and for a migration, a
-  /// seed, `asSystem()` and `fli tinker`. The service still refuses first and
+  /// seed, `asSystem()` and `fli db:repl`. The service still refuses first and
   /// says something useful; this is what makes the refusal true.
   @@check("maxRedemptions IS NULL OR redemptions <= maxRedemptions",
           "a code cannot be redeemed more times than its limit")

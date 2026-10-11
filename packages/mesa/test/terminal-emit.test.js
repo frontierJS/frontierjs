@@ -169,20 +169,26 @@ describe('terminal target', () => {
       ]) await expect(terminal(ok, 'O.mesa')).resolves.toBeTruthy()
     })
 
-    // A terminal opens no picker, so only a file input a browser shows no
-    // control for lowers, and only when that is static.
-    it('a file input on screen, hidden by a live attribute, or bound', async () => {
-      await refusal(`<input type="file" class="field" />\n`, 'F.mesa', 'type="file" on <input> at F.mesa:1:1 has no terminal lowering')
-      await refusal(`<script>let h = true</script>\n<input type="file" hidden={h} />\n`, 'H.mesa',
-        'type="file" on <input> at H.mesa:2:1 has no terminal lowering')
+    // A file input is a path field whatever hides it; only a bind is refused.
+    it('a bound file input', async () => {
       await refusal(`<script>let v = ''</script>\n<input type="file" hidden bind:value={v} />\n`, 'V.mesa',
         'bind:value on <input type="file"> at V.mesa:2:27 has no terminal lowering')
       await refusal(`<script>let f</script>\n<input type="file" hidden bind:files={f} />\n`, 'B.mesa',
         'bind:files at B.mesa:2:27 has no terminal lowering')
       for (const ok of [
+        `<input type="file" class="field" />\n`,
+        `<script>let h = true</script>\n<input type="file" hidden={h} />\n`,
         `<input type="file" hidden />\n`,
         `<script>let a = '*/*'</script>\n<input type="file" accept={a} class="x visually-hidden" />\n`,
       ]) await expect(terminal(ok, 'O.mesa')).resolves.toBeTruthy()
+    })
+
+    // FJS-D895: a terminal draws no canvas to point at, so these stay out of
+    // TERMINAL_EVENTS and the route that uses one stays refused.
+    it('a pointer or wheel gesture', async () => {
+      for (const event of ['pointerdown', 'pointermove', 'pointerup', 'wheel']) {
+        await refusal(`<div on:${event}={() => {}}></div>\n`, 'P.mesa', `on:${event} at P.mesa:1:6 has no terminal lowering`)
+      }
     })
 
     // A live `multiple` is checked where it is written, in the runtime.

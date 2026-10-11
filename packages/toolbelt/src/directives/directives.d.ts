@@ -26,6 +26,8 @@ export interface Directives {
   asOf?:          string
   withExpired?:   boolean
   onlyExpired?:   boolean
+  /** `@@scope` names, ANDed — read by the Data boundary as `where: { $scope }`. */
+  scope?:         string[]
 }
 
 /** Every `$` name that has a structured form. */

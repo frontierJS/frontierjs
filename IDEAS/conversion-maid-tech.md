@@ -284,6 +284,12 @@ moves the estimate most is whether `tables-from-the-seed.md` lands before the we
 port starts, because 292 of those route files are a list, a detail and a filter
 bar over one model.
 
+*Answered 2026-10-10:* it had landed. `tables-from-the-seed.md` shipped
+2026-09-08 (`FJS-D242`/`243`/`244`/`246`) and the layer above it, `resource.list()`
+(`list-controller.md`), 2026-09-12, both before the port began. And the count
+was files, not screens: 296 files are **103 pages**, 172 partials and 21
+layouts. The port's `ROUTES.md` grades the 103, one row each.
+
 ---
 
 ## Running the port
@@ -360,6 +366,11 @@ The new repo's `CLAUDE.md` carries five lines and no more:
    are built on an unproven pipeline. Then realm by realm.
 3. **The web port waits on `tables-from-the-seed.md`.** See the sequencing note
    above; hand-porting the list routes first ports work that record would delete.
+   *Superseded 2026-10-10:* nothing waits — that record and `resource.list()`
+   had shipped before the port started, and Phase 1's contacts screens were
+   generated on both. The port's Phase 7 is the web, on the generated screens,
+   with a hand-written one only where a generated one falls short (its
+   `PLAN.md` § *Phase 7*).
 
 **Moving the data is a track of its own.** Production rows go from Prisma's
 tables into Litestone's, rehearsed on a copy, and the litestream question under
@@ -412,6 +423,6 @@ Each is dead weight: its row is closed and the fix was found in the code on this
 ## See also
 
 - `tenant-authored-queries.md` — the one unowned problem, with the sandbox probe
-- `tables-from-the-seed.md` · `tenant-declared-fields.md` — both being worked in separate sessions
+- `shipped/tables-from-the-seed.md` · `shipped/tenant-declared-fields.md` — both shipped (2026-09-08 and 2026-09-01); `shipped/list-controller.md` is the layer above the first
 - `scoped-sql.md` — why the SQL half is a refusal rather than a design
 - `proving-grounds.md` — the corpus half, which this sits after

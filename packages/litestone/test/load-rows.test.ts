@@ -255,3 +255,30 @@ describe('parseCsv', () => {
     expect(parseCsv('a,b\n0123,""\n')[0]).toEqual({ a: '0123', b: '' })
   })
 })
+
+describe('loadRows on a model with list relations (FJS-2364)', () => {
+  const tagSchema = `
+model Tag {
+  id    Int    @id
+  name  String @unique
+  posts Post[]
+  notes Note[]
+}
+model Post {
+  id    Int   @id
+  title String
+  tags  Tag[]
+}
+model Note {
+  id    Int    @id
+  tagId Int?
+  tag   Tag?   @relation(fields: [tagId], references: [id])
+}
+`
+  it('a list relation, one-to-many or implicit many-to-many, is not a column the file must carry', async () => {
+    const db = (await createClient({ schema: tagSchema, db: ':memory:' })) as any
+    expect(await loadRows(db, 'Tag', 'name\nx\ny\n')).toEqual({ loaded: 2, rejects: [] })
+    await expect(loadRows(db, 'Tag', 'name,posts\nz,1\n')).rejects.toThrow("'posts' is not a column a source fills")
+    db.$close()
+  })
+})

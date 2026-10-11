@@ -180,7 +180,7 @@ How to choose between words that look alike, and the mistakes that do not raise 
 The schema is the seed — the API, the forms, the validators, the migrations and
 the access rules are derived from it. A rule written in a service hook holds for
 callers that go through that hook and for nobody else: not a migration, not a
-seed, not `fli tinker`, not a job on `db.`.
+seed, not `fli db:repl`, not a job on `db.`.
 
 ```lite
 enum Status { draft  issued  voided }
@@ -416,8 +416,9 @@ Everything above is loud. These are not.
 - **A `where` typo throws `ValidationError`**, naming the key with a *Did you
   mean* — an unknown field, an unknown operator, an `in` given a string, and a
   real key SQLite cannot filter (`@computed`, `@encrypted`). Over HTTP it is a 400.
-  A `jsonl` or `trail` model is the exception: its `where` drops an operator it
-  does not know, `$raw` included, and answers the unfiltered set (`FJS-2298`).
+  A `jsonl` or `trail` model answers the scalar operators only (`not`, `gt`, `gte`,
+  `lt`, `lte`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`) and refuses the
+  rest by name, `$raw` included: it is SQL, and a record there is a JSON line.
 
 - **The audit trail defers one event-loop tick.** A read in the same tick sees
   0 rows. Yield once; do not wait.

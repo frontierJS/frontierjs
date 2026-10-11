@@ -621,8 +621,12 @@ export async function createTestEnv(opts = {}) {
             // cannot read answers as missing (FJS-D576) — so a ForeignKeyError
             // here is a call the gate admitted.
             const admitted = err?.name === 'ForeignKeyError'
-            got    = refused ? 'deny' : admitted ? 'allow' : 'error'
-            thrown = refused || admitted ? null : (err?.message ?? String(err))
+            // A value set on a foreign key reads its source as the caller, so
+            // it refuses the fixture's parent the way a missing one is refused.
+            // The gate is asked first, so reaching the set is a level admitted.
+            const setRefused = _refusedBySet(schema.models.find(x => x.name === modelName), err)
+            got    = refused ? 'deny' : admitted || setRefused ? 'allow' : 'error'
+            thrown = refused || admitted || setRefused ? null : (err?.message ?? String(err))
           }
 
           if (got === 'error') mismatches.push({
@@ -1130,8 +1134,11 @@ export async function createTestEnv(opts = {}) {
               // that has nothing to say about tenancy, and counting one as
               // isolation is the shape this whole check exists to refuse.
               // A parent B cannot read answers as missing (FJS-D576), so a
-              // ForeignKeyError is the boundary only when that parent EXISTS.
+              // ForeignKeyError is the boundary only when that parent EXISTS. A
+              // value set on the foreign key refuses the same parent the same
+              // way, and tenancy scopes its source.
               else if (threw && !(threw instanceof AccessDeniedError || threw?.name === 'AccessDeniedError') &&
+                       !_refusedBySet(model, threw) &&
                        !(await _refusedParentExists(sys, model, threw)))
                 out.push({ model: model.name, op: 'create', actor: 'B', got: 'error',
                   message: `${model.name}.create — not graded: the write was refused by something other than access, so whether tenancy would have refused it is unknown: ${threw.message}` })
@@ -2757,6 +2764,15 @@ function withDeclaredCapabilities(who, schema) {
 // with all its rows on one side.
 function withPolicyClaims(who, schema) {
   const out = { ...who }
+  // The default id is a string, and a string cannot be the key of an Int
+  // @@auth model: `_ensureParent` fails to create the matching user, the
+  // matching-side row is dropped, and `auth().id` reads as ungraded.
+  const authModel = schema.models.find(m => m.attributes.some(a => a.kind === 'auth'))
+  const authKey   = authModel?.fields.find(f => f.attributes.some(a => a.kind === 'id'))
+  if (authKey?.type?.name === 'Int') {
+    if (out.id     === DEFAULT_POLICY_PRINCIPAL.id)     out.id     = 4242
+    if (out.userId === DEFAULT_POLICY_PRINCIPAL.userId) out.userId = 4242
+  }
   for (const model of schema.models) {
     const walk = (node, deny) => {
       if (!node || typeof node !== 'object') return
@@ -3389,6 +3405,23 @@ async function _refusedParentExists(sys, model, err) {
   return sys[modelToAccessor(err.target)].exists({ where })
 }
 
+// Whether a ValidationError is the value set on a foreign key refusing a parent
+// the caller cannot read. The set reads its source through the caller, so it is
+// the same visibility a ForeignKeyError reports (FJS-D576), delivered earlier;
+// the fixture's parent is the harness's, and a refusal of it says nothing about
+// the access rule under grade. Any other entry — a required column, a check —
+// keeps the throw an error.
+function _refusedBySet(model, err) {
+  if (err?.name !== 'ValidationError' || !err.errors?.length) return false
+  const fks = new Set(model.fields
+    .filter(f => f.type.kind === 'relation')
+    .flatMap(f => f.attributes.find(a => a.kind === 'relation' && a.fields)?.fields ?? []))
+  return err.errors.every(e => {
+    const field = model.fields.find(f => f.name === e.path?.[0])
+    return field && fks.has(field.name) && field.attributes.some(a => a.kind === 'values')
+  })
+}
+
 // The same row as something a Set can hold and a message can print. A
 // single-column key stays its own value, so nothing about the ordinary case
 // changes; a tuple becomes its columns in key order.
@@ -3475,6 +3508,11 @@ function _shouldSkipField(field, model) {
   // the counter forward, so emitting one both defeats the feature and collides
   // with any @@unique([scope, seqField]) declared alongside it.
   if (attrs.some(a => a.kind === 'sequence')) return true
+
+  // An optional @guarded column is written only at SYSTEM(8): a payload that
+  // names it, even as null, is refused for every other principal. A required one
+  // stays, since leaving it out fails the required check instead.
+  if (type.optional && attrs.some(a => a.kind === 'guarded')) return true
 
   // A key the database mints, and mints a DIFFERENT value each time.
   //

@@ -24,7 +24,7 @@ const CEILING: Record<string, number> = {
   'ddl.js':           100,
   'exclusion.js':     5,
   'include.js':       60,
-  'migrate.js':       47,
+  'migrate.js':       43,
   'migrations.js':    26,
   'opportunities.js': 3,
   'parser.js':        20,

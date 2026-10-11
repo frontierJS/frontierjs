@@ -12,7 +12,7 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 | `Boolean` | `INTEGER` 0/1 | `boolean` (auto-coerced) |
 | `DateTime` | `TEXT` ISO-8601 | `string` |
 | `Json` | `TEXT` | `object` (auto-parsed) |
-| `Bytes` | `BLOB` | `Buffer` |
+| `Bytes` | `BLOB` | `Uint8Array` |
 | `File` | `TEXT` JSON ref | bytes in S3/R2/local (FileStorage plugin) |
 | `File[]` | `TEXT` JSON array | multiple files |
 | `EnumName` | `TEXT` + CHECK | `string` |
@@ -339,7 +339,7 @@ how the two realms end up refusing the same write in different words.
 **These are the rules the database refuses, not the ones the client checks.** A
 validator above runs in this package and is emitted to the client, so a form can
 refuse a value before sending it; a CHECK is in the table, so it holds against a
-job writing through `db.`, a migration, `asSystem()`, a seed and `fli tinker` —
+job writing through `db.`, a migration, `asSystem()`, a seed and `fli db:repl` —
 every writer that does not pass through a service. The cost of that reach is
 that it cannot be evaluated in a browser, so it arrives as a refusal rather than
 as an affordance.

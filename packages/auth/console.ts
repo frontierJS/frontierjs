@@ -1,6 +1,6 @@
 // console.ts — commands auth contributes to an app's console
 //
-// An app's `db/tinker.js` spreads these into the commands `fli tinker` offers:
+// An app's `db/repl.js` spreads these into the commands `fli db:repl` offers:
 //
 //   import { resetPasswords } from '@frontierjs/auth/console'
 //   export default { resetPasswords }

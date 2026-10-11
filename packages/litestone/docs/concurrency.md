@@ -178,6 +178,17 @@ on one client queue in the promise chain and never contend for the file lock.
   answers are `ctx.afterCommit(fn)` for an effect that must happen once after
   the commit, and `ctx.enqueue(job, payload)` for one that must survive a crash.
 
+### `now()` is the clock, not the commit order
+
+A `create` or `createMany` that queues behind that lock reads the client's clock
+**after** it holds the lock, so its `@default(now())` and `@updatedAt` are no
+earlier than the stamps of the transaction it waited on. That is the most the
+clock can say: two writes from different clients or processes still read two
+clocks, and a stamp read under the lock is not a position in the commit order.
+**A column that must order rows by commit is a `@sequence`** — the counter is
+bumped inside the write, so a later commit always carries a higher number
+([sequences.md](sequences.md)).
+
 ---
 
 ## When the query itself is slow

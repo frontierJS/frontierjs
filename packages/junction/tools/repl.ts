@@ -5,6 +5,7 @@
 //   bun run repl                              connects to localhost:3000
 //   bun run tools/repl.ts --port 4000
 //   bun run tools/repl.ts --host api.myapp.com --https
+//   bun run tools/repl.ts --url http://localhost:8110   wins over the three above
 //
 // ─── Commands ─────────────────────────────────────────────────────────────
 //
@@ -85,7 +86,7 @@ const getArg = (flag: string, fallback: string) => {
 const useHttps = args.includes('--https')
 const host     = getArg('--host', 'localhost')
 const port     = parseInt(getArg('--port', '3000'), 10)
-let   baseUrl  = `${useHttps ? 'https' : 'http'}://${host}:${port}`
+let   baseUrl  = getArg('--url', '').replace(/\/$/, '') || `${useHttps ? 'https' : 'http'}://${host}:${port}`
 
 // ─── Session state ─────────────────────────────────────────────────────────
 

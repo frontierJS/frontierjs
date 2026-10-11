@@ -30,15 +30,34 @@ export function runtimeOf(row: Record<string, unknown>): Runtime {
  * The hostnames Caddy on the machine fronts an app by (`FJS-D564`), sent on
  * every `/deploy`. The live `Domain` rows and never a release's snapshot: a
  * rollback puts back old bytes and old config, not an old set of names on the
- * internet. A Domain that redirects is not routed yet (`FJS-1615`), so it is not
- * sent. A name sent here is a certificate Caddy asks Let's Encrypt for, so a
- * deleted row must drop out — `@@softDelete` is what takes it out of this read.
+ * internet. A Domain that redirects is not a host the app answers: it is in
+ * `routedRedirects`. A name sent here is a certificate Caddy asks Let's Encrypt
+ * for, so a deleted row must drop out — `@@softDelete` is what takes it out of
+ * this read.
  */
 export async function routedHosts(db: any, appId: string): Promise<string[]> {
   const rows = await db.asSystem().domain.findMany({
     where: { appId, redirectTo: null }, orderBy: { hostname: 'asc' },
   })
   return rows.map((d: { hostname: string }) => d.hostname)
+}
+
+/**
+ * The app's redirecting Domains, sent beside `hosts` on every route push so
+ * Caddy answers them itself (`FJS-1615`). `redirectTo` is typed by a person, so
+ * a bare hostname is read as `https://` — Outpost refuses anything that is not
+ * an absolute http(s) URL, and the release would fail on a form that looked fine.
+ */
+export async function routedRedirects(db: any, appId: string): Promise<{ host: string, to: string }[]> {
+  const rows = await db.asSystem().domain.findMany({
+    where: { appId, redirectTo: { not: null } }, orderBy: { hostname: 'asc' },
+  })
+  return rows
+    .filter((d: { redirectTo: string }) => d.redirectTo.trim())
+    .map((d: { hostname: string, redirectTo: string }) => {
+      const to = d.redirectTo.trim()
+      return { host: d.hostname, to: /^[a-z][a-z0-9+.-]*:\/\//i.test(to) ? to : `https://${to}` }
+    })
 }
 
 /**

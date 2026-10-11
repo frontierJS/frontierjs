@@ -369,3 +369,19 @@ test('>= against a @default(now()) column lands a full day past the clock, not o
       @@check("resolvedAt IS NULL OR resolvedAt >= startedAt") }`)
   expect(ms(r.resolvedAt) - Date.now()).toBeGreaterThan(80_000_000)
 })
+
+// FJS-2367 — an optional @guarded column is a system-context write whoever the
+// caller is, so a generated payload carrying it refuses every non-system seed.
+describe('an optional @guarded column is left out of the generated row', () => {
+  const schema = `model User { id Int @id @default(autoincrement()); email String @unique; apiKey String? @guarded }`
+
+  test('a factory on a non-system client seeds the row', async () => {
+    const { factories, db } = await makeTestClient(schema, { autoFactories: true })
+    const user = await factories.user.usingDb(db.$setAuth({ id: 1 })).createOne()
+    expect(user.email).toBeTruthy()
+  })
+
+  test('the definition does not name it', () => {
+    expect(row(schema, 1, 'User')).not.toHaveProperty('apiKey')
+  })
+})

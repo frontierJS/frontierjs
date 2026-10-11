@@ -33,11 +33,15 @@ const SCHEMA = `
 `
 
 /** The plugin with a provider that records rather than writes. */
+// One ctx stands for the one client: the plugin keeps its maps per client.
+const CTX = { models: {} as Record<string, unknown> }
+
 function plugin() {
   const puts: Array<{ key: string, contentType: string, size: number }> = []
   const p = FileStorage({ provider: 'local', publicBase: 'https://cdn.test', localPath: '/tmp' }) as any
   const schema = parse(SCHEMA).schema
-  p.onInit(schema, { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) })
+  CTX.models = Object.fromEntries(schema.models.map((m: any) => [m.name, m]))
+  p.onInit(schema, CTX)
   p._provider = {
     async put(key: string, _bytes: unknown, opts: any) { puts.push({ key, ...opts }) },
     async get() { return null },
@@ -60,7 +64,7 @@ const upload = (bytes: Uint8Array, name: string, type: string) =>
   new File([bytes as any], name, { type })
 
 const save = (p: any, field: string, value: unknown) =>
-  p.serialize(value, { field, model: 'Doc', id: 1, ctx: {} })
+  p.serialize(value, { field, model: 'Doc', id: 1, ctx: CTX })
 
 // ─── the refusal ──────────────────────────────────────────────────────────────
 
@@ -223,11 +227,12 @@ describe('a parameter is not part of the type', () => {
 
     const { p, puts } = plugin()
     const schema = parse(`model Doc { id Int @id; note File? @accept("text/plain") }`).schema
-    p.onInit(schema, { models: { Doc: schema.models[0] } })
+    CTX.models = { Doc: schema.models[0] }
+    p.onInit(schema, CTX)
     p._provider = { async put(k: string, _b: unknown, o: any) { puts.push({ key: k, ...o }) },
       async get() { return null }, async delete() {}, async sign(k: string) { return k } }
 
-    const ref = await p.serialize(f, { field: 'note', model: 'Doc', id: 1, ctx: {} })
+    const ref = await p.serialize(f, { field: 'note', model: 'Doc', id: 1, ctx: CTX })
     expect(ref.mime).toBe('text/plain')
     expect(puts.at(-1).contentType).toBe('text/plain')
   })

@@ -50,3 +50,11 @@ export { createCipheriv, createDecipheriv, randomBytes, createHmac, createHash }
 // method is answering as. `core/client.js` § the flavor of client a call is
 // running as has the argument.
 export { AsyncLocalStorage } from 'node:async_hooks'
+
+// ─── waiting ──────────────────────────────────────────────────────────────
+//
+// A synchronous sleep, because the engine contract is synchronous and a BUSY
+// retry has nowhere to await. One buffer for the process: allocating per call
+// is a SharedArrayBuffer per retry.
+const SLEEP = new Int32Array(new SharedArrayBuffer(4))
+export const sleepSync = (ms) => { Atomics.wait(SLEEP, 0, 0, ms) }

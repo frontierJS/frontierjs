@@ -136,15 +136,16 @@ export function buildGeneratedDefaultMap(schema, now) {
       // name `updatedAt` on a DateTime. Reading only the attribute would leave a
       // column named for the job unstamped now that no trigger covers it.
       if (isUpdatedAtField(field)) {
-        entries.push({ field: field.name, generate: () => nowISO(now) })
+        entries.push({ field: field.name, generate: () => nowISO(now), clock: true })
         continue
       }
       const def = field.attributes.find(a => a.kind === 'default')
       if (def?.value?.kind !== 'call') continue
-      const generate = def.value.fn === 'now'
+      const clock = def.value.fn === 'now'
+      const generate = clock
         ? () => nowISO(now)
         : GENERATED_DEFAULTS[def.value.fn]
-      if (generate) entries.push({ field: field.name, generate })
+      if (generate) entries.push(clock ? { field: field.name, generate, clock } : { field: field.name, generate })
     }
     if (entries.length) map[model.name] = entries
   }
@@ -951,7 +952,7 @@ export function buildBoolMap(schema) {
 
 
 // ─── Filter kind map ──────────────────────────────────────────────────────────
-// { modelName: Map<fieldName, 'array' | 'json' | 'file' | 'boolean' | 'any'> }
+// { modelName: Map<fieldName, 'array' | 'json' | 'file' | 'boolean' | 'number' | 'any'> }
 //
 // What a column HOLDS — the fact `buildWhere` cannot read off the operand, and
 // which three of its questions need. Whether a bare array means `IN` or `hasSome`
@@ -961,8 +962,8 @@ export function buildBoolMap(schema) {
 // answer plausibly and wrongly rather than failing (`FJS-210`). And whether a
 // long IN list may cast its values, which a column with no affinity may not.
 //
-// Anything absent is a plain scalar. Int and DateTime are deliberately absent —
-// SQLite's coercion answers what was asked there.
+// Anything absent is a plain scalar. DateTime is deliberately absent — it is ISO
+// text, and a string operator asks it a real question.
 export function buildFilterKindMap(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -973,6 +974,7 @@ export function buildFilterKindMap(schema) {
       else if (f.type.name === 'Json')    kinds.set(f.name, 'json')
       else if (f.type.name === 'File')    kinds.set(f.name, 'file')
       else if (f.type.name === 'Boolean') kinds.set(f.name, 'boolean')
+      else if (f.type.name === 'Int' || f.type.name === 'Float') kinds.set(f.name, 'number')
       // Only the synthesized trail model declares one.
       else if (f.type.name === 'Any')     kinds.set(f.name, 'any')
     }

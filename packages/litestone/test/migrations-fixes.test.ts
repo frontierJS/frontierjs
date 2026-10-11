@@ -140,6 +140,29 @@ model Post {
     expect((db.query(`SELECT COUNT(*) c FROM post`).get() as { c: number }).c).toBe(2)
   })
 
+  // The commented copy is the advice ("uncomment if the table is empty"), and
+  // a rebuild drops the table's indexes with it (FJS-2165).
+  it('a BLOCKED rebuild restates the indexes, so uncommenting it as told keeps them', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+
+    const pr2 = parse(`
+model Post {
+  id     Int    @id
+  title  String
+  rating Int
+  @@index([title])
+}
+`)
+    const made = create(db, pr2, 'blocked-idx', dir)
+    const sql = made.sql as string
+    expect(sql).toContain('BLOCKED')
+    const lines = sql.split('\n')
+    const rename = lines.findIndex(l => /ALTER TABLE .* RENAME TO "post"/.test(l))
+    expect(rename).toBeGreaterThan(-1)
+    expect(lines.slice(rename).join('\n')).toMatch(/-- CREATE INDEX .*idx_post_title/)
+  })
+
   // Applying the rest of the file and recording it left the database between
   // two schemas, and the backfill the comment asks for could no longer go into
   // a file already marked applied (FJS-1785).
@@ -963,5 +986,116 @@ describe('verify on a secondary database', () => {
     expect(v.state).toBe('drift')
     expect(v.diff).not.toContain('doc')
     db.close()
+  })
+})
+
+// A NOT NULL @sequence column on a table with rows has no value to copy, and
+// the number is not a default: the rows need numbering per scope AND the counter
+// needs seeding, or the next create restarts at 1 beside rows numbered higher
+// with no error (FJS-2155).
+describe('a @sequence column added to a table with rows', () => {
+  const POST = `
+model Post {
+  id     Int    @id
+  title  String
+  views  Int    @default(0)
+  seq    Int    @sequence(scope: views)
+`
+  const recipe = (sql: string) => {
+    expect(sql).toContain('BLOCKED')
+    expect(sql).toContain('ROW_NUMBER() OVER (PARTITION BY "views" ORDER BY "id")')
+    expect(sql).toContain('"_litestone_sequences"')
+    expect(sql).toContain(`'Post', 'seq'`)
+    expect(sql).toContain('MAX(lastNum, excluded.lastNum)')
+  }
+
+  it('an ALTER-path block names the numbering and the counter seed', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    recipe(create(db, parse(`${POST}}\n`), 'seq', dir).sql)
+  })
+
+  it('a rebuild-path block names them too', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const made = create(db, parse(`${POST}  tag    Tag    @relation(fields: [tagId], references: [id])
+  tagId  Int
+}
+model Tag {
+  id    Int    @id
+  name  String
+}
+`), 'seq', dir)
+    expect(made.sql).toContain('rebuild BLOCKED')
+    recipe(made.sql)
+  })
+
+  it('a blocked column that is not a sequence gets no recipe', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const made = create(db, parse(`
+model Post {
+  id     Int    @id
+  title  String
+  views  Int    @default(0)
+  rating Int
+}
+`), 'plain', dir)
+    expect(made.sql).toContain('BLOCKED')
+    expect(made.sql).not.toContain('_litestone_sequences')
+  })
+})
+
+// An ALTER-path block used to advise ADD COLUMN with a DEFAULT and a backfill,
+// which leaves a DEFAULT the schema never declared; apply then refused the
+// history and a second rebuild-only-drops-it migration was needed (FJS-2569).
+describe('a NOT NULL column added with no default to a table with rows', () => {
+  const blockedSchema = `
+model Post {
+  id     Int    @id
+  title  String
+  views  Int    @default(0)
+  rating Int
+  @@index([title])
+}
+`
+
+  it('the ALTER-path block carries the commented rebuild with a value slot per blocked column', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const made = create(db, parse(blockedSchema), 'rating', dir)
+    const sql = made.sql as string
+    expect(sql).toContain('rebuild BLOCKED')
+    expect(sql).toMatch(/-- INSERT INTO "post__new" \([^)]*"rating"[^)]*\)/)
+    expect(sql).toMatch(/-- .*NULL \/\* .*"rating"/)
+    expect(sql).toMatch(/-- CREATE INDEX .*idx_post_title/)
+    expect(sql).not.toMatch(/ADD COLUMN "rating"/)
+  })
+
+  it('filling the slot and deleting the BLOCKED line applies, with no DEFAULT left on the column', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const made = create(db, parse(blockedSchema), 'rating', dir)
+    const path = made.filePath!
+    const all = readFileSync(path, 'utf8').split('\n')
+    const start = all.findIndex(l => l.startsWith('-- rebuild "post"'))
+    const end = all.findIndex(l => l.includes('"post": add indexes'))
+    const filled = all
+      .map((l, i) => {
+        if (i < start && /^--\s+"post": rebuild BLOCKED/.test(l)) return '--'
+        if (i < start || i >= end) return l
+        return /^-- (rebuild|the copy|recreate)/.test(l) ? l : l.replace(/^-- ?/, '').replace(/NULL \/\*[^*]*\*\//, '3')
+      })
+      .join('\n')
+    writeFileSync(path, filled)
+
+    const res = await apply(db, dir)
+    expect(res.failed).toBeUndefined()
+    expect(res.refused).toBeUndefined()
+    const rating = (db.query(`PRAGMA table_info(post)`).all() as { name: string; dflt_value: unknown; notnull: number }[])
+      .find(c => c.name === 'rating')!
+    expect(rating.notnull).toBe(1)
+    expect(rating.dflt_value).toBeNull()
+    expect((db.query(`SELECT COUNT(*) c FROM post WHERE rating = 3`).get() as { c: number }).c).toBe(2)
   })
 })

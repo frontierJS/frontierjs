@@ -22,7 +22,7 @@ did not intend.
 The schema is the seed — the API, the forms, the validators, the migrations and
 the access rules are derived from it. A rule written in a service hook holds for
 callers that go through that hook and for nobody else: not a migration, not a
-seed, not `fli tinker`, not a job on `db.`.
+seed, not `fli db:repl`, not a job on `db.`.
 
 ```lite
 enum Status { draft  issued  voided }
@@ -293,8 +293,9 @@ Everything above is loud. These are not.
 - **A `where` typo throws `ValidationError`**, naming the key with a *Did you
   mean* — an unknown field, an unknown operator, an `in` given a string, and a
   real key SQLite cannot filter (`@computed`, `@encrypted`). Over HTTP it is a 400.
-  A `jsonl` or `trail` model is the exception: its `where` drops an operator it
-  does not know, `$raw` included, and answers the unfiltered set (`FJS-2298`).
+  A `jsonl` or `trail` model answers the scalar operators only (`not`, `gt`, `gte`,
+  `lt`, `lte`, `in`, `notIn`, `contains`, `startsWith`, `endsWith`) and refuses the
+  rest by name, `$raw` included: it is SQL, and a record there is a JSON line.
 
 - **The audit trail defers one event-loop tick.** A read in the same tick sees
   0 rows. Yield once; do not wait.
@@ -340,7 +341,7 @@ field `@allow`. It does not drop a `@check`, a `@@check`, an `@@arc` or
 `@immutable`** — those are in the table or in the constraint tier, so a system
 write is refused exactly as anybody's is. That asymmetry is the reason to reach
 for a constraint: it is the only rule that holds against a migration, a seed,
-an atomic operator and `fli tinker` at once.
+an atomic operator and `fli db:repl` at once.
 
 Raw SQL requires `asSystem()` once a schema declares any access rule, and
 enforces none of them. `where: { $raw: sql\`…\` }` keeps every policy and is the
@@ -377,8 +378,8 @@ env.close()
 - **Seeding past a gate is a system concern.** An unauthenticated factory grades
   `STRANGER` and throws `AccessDeniedError`. Seed with `env.factories.lead.asSystem()
   .withParents().createOne()`, or in `env.setup(({ factories }) => …)` /
-  `env.phases().arrange(…)`, whose factories are system-bound. A `@guarded` column
-  cannot be seeded as a non-system principal (`FJS-2367`).
+  `env.phases().arrange(…)`, whose factories are system-bound. A generated row
+  leaves out an optional `@guarded` column; a required one is system-only to seed.
 - **`env.actingAs(user)` is the app's `getLevel`; `env.atLevel(n)` is a synthetic
   one.** Use `actingAs` for any claim about behavior and `atLevel` only to walk the grid.
 - **The verifiers answer a list of mismatches; `[]` passes.** `verifyGateLadder`,

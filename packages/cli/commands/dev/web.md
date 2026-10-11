@@ -5,11 +5,16 @@ alias: web-dev
 examples:
   - fli dev:web
   - fli dev:web --test
+  - fli dev:web --host
 flags:
   test:
     char: t
     type: boolean
     description: Run with NODE_ENV=test
+    defaultValue: false
+  host:
+    type: boolean
+    description: Serve on every interface, so a phone on the LAN can open it
     defaultValue: false
 ---
 
@@ -17,6 +22,9 @@ Starts the one surface. A `web/` with its own `package.json` runs its own
 `dev`; otherwise the app's script for the surface runs at the root — `web` or
 `dev:web`, whichever the app declares. Running `dev` from inside `web/` there
 would reach the app's `dev`, which starts every surface.
+
+`--host` is `fli dev --host` for this one surface: `FLI_HOST=1`, which Sierra's
+base vite config reads into `server.host`.
 
 <script>
 import { existsSync, readFileSync } from 'fs'
@@ -30,7 +38,11 @@ const { detectRunner } = await import(resolve(global.fliRoot, 'core/db-preflight
 const root   = $.paths.root
 const dir    = $.paths.web
 const runner = detectRunner(root)
-const env    = { ...process.env, ...(flag.test ? { NODE_ENV: 'test' } : {}) }
+const env    = {
+  ...process.env,
+  ...(flag.test && { NODE_ENV: 'test' }),
+  ...(flag.host && { FLI_HOST: '1' }),
+}
 
 if (existsSync(resolve(dir, 'package.json'))) {
   $.exec({ command: `cd ${dir} && ${runner} run dev`, dry: flag.dry, env })

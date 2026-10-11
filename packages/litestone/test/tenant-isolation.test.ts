@@ -489,3 +489,72 @@ describe('the two policy checkers seed into the tenant their reader holds', () =
     expect(graded.filter((m: any) => /fall on the same side/.test(m.message)).map((m: any) => m.message)).toEqual([])
   })
 })
+
+// ─── a foreign key bound to a value set ─────────────────────────────────────────
+// FJS-2556. The set reads its source through the caller, so a parent the caller
+// cannot read is refused by the set as a ValidationError — the same visibility
+// a ForeignKeyError reports (FJS-D576), delivered one layer earlier.
+
+const VALUESET_FK = `
+  tenancy { strategy row  column accountId  claim accountId }
+
+  model Account {
+    id   Int    @id @default(autoincrement())
+    name String
+    @@tenant(none)
+  }
+
+  model Tag {
+    id        Int     @id @default(autoincrement())
+    accountId Int
+    account   Account @relation(fields: [accountId], references: [id])
+    kind      String
+    label     String
+  }
+
+  valueset ContactTags { source Tag }
+
+  model ContactTag {
+    id        Int     @id @default(autoincrement())
+    accountId Int
+    account   Account @relation(fields: [accountId], references: [id])
+    tagId     Int     @values(ContactTags)
+    tag       Tag     @relation(fields: [tagId], references: [id])
+    @@gate("4")
+  }
+`
+
+describe('a foreign key carrying @values (FJS-2556)', () => {
+  test('verifyGateLadder reads the set\'s refusal as the gate admitting', async () => {
+    const env  = await createTestEnv({ schema: VALUESET_FK })
+    const rows = (await env.verifyGateLadder({ ops: ['create'] })).filter(r => r.model === 'ContactTag')
+
+    // Levels 4-7 are admitted by the gate and refused by the set: no longer an
+    // error, and no mismatch either. Levels 0-3 are refused by the gate, which
+    // runs first, so they grade as the deny the schema declares (FJS-2564).
+    expect(rows).toEqual([])
+  })
+
+  test('a set on a column that is not a foreign key stays an error', async () => {
+    // Only the parent the harness built is the harness's to excuse; a plain
+    // column holding a value outside its set is the schema's own answer.
+    const env = await createTestEnv({ schema: `
+      model Color { id Int @id @default(autoincrement())  name String @unique }
+      valueset Colors { source Color value name }
+      model Paint {
+        id    Int    @id @default(autoincrement())
+        color String @values(Colors)
+        @@gate("4")
+      }
+    ` })
+    const rows = (await env.verifyGateLadder({ ops: ['create'] })).filter(r => r.model === 'Paint')
+    expect(rows.filter(r => r.got === 'error').length).toBeGreaterThan(0)
+  })
+
+  test('verifyTenantIsolation counts the set refusing another tenant\'s tag as the boundary', async () => {
+    const env  = await createTestEnv({ schema: VALUESET_FK })
+    const rows = await env.verifyTenantIsolation({ ops: ['create'] })
+    expect(rows.filter(r => r.model === 'ContactTag' && r.got === 'error')).toEqual([])
+    expect(leaks(rows)).toEqual([])
+  })
+})

@@ -257,7 +257,7 @@ export function parseQuery(
   const select = selectRaw != null ? parseSelect(selectRaw as SelectParam) : undefined
 
   return {
-    where:        parseWhere(query),
+    where:        scoped(parseWhere(query), directives.scope),
     orderBy:      orderByRaw != null ? parseSort(orderByRaw as SortParam) : undefined,
     offset,
     limit,
@@ -276,6 +276,18 @@ export function parseQuery(
     withExpired:   withExp  === true || undefined,
     onlyExpired:   onlyExp  === true || undefined,
   }
+}
+
+/**
+ * The `$scope` directive → Litestone's `where.$scope`, which validates each name
+ * against the model's declared `@@scope`s and compiles it (`FJS-D63`). A scope
+ * already on the where is kept beside it: the names AND either way.
+ */
+function scoped(where: Record<string, unknown>, scope: QueryDirectives['scope']): Record<string, unknown> {
+  if (scope === undefined) return where
+  const held = where.$scope
+  const names = held === undefined ? scope : [...(Array.isArray(held) ? held : [held]), ...scope]
+  return { ...where, $scope: names }
 }
 
 // ─── the aggregate request ────────────────────────────────────────────────────
@@ -336,7 +348,7 @@ export function parseAggregate(
   const fromBody  = spec.where && typeof spec.where === 'object' && !Array.isArray(spec.where)
     ? parseWhere(spec.where as Record<string, unknown>)
     : {}
-  const where = { ...fromQuery, ...fromBody }
+  const where = scoped({ ...fromQuery, ...fromBody }, directives.scope)
 
   // The same clamp a page gets. A group count is data-dependent, so this bounds
   // what comes BACK rather than what is computed — and the work bound is the
@@ -2936,6 +2948,27 @@ export function isCrudGatedMethod(method: string): boolean {
   return method in OP_FOR_METHOD
 }
 
+/**
+ * A custom method's level refusal, in the shape litestone's `AccessDeniedError`
+ * has. It is a plain Error rather than a `Forbidden` because an error mapper
+ * only sees what is NOT already a FrameworkError, and an app that answers with
+ * a ROLE has to read `required` and `got` to find one. Matched by name, as
+ * litestone's is: junction cannot import the class (optional peer), and
+ * `BY_NAME` turns it into a 403 when no mapper claims it. `code` is the 403 a
+ * `Forbidden` carried, because an in-process caller never meets the bridge and
+ * reads the status off the thrown value.
+ */
+function methodRefusal(service: string, method: string, required: number, got: number): Error {
+  const err = new Error(`'${service}.${method}' requires level ${required}, caller has level ${got}`) as Error & Record<string, unknown>
+  err.name      = 'AccessDeniedError'
+  err.code      = 403
+  err.model     = service
+  err.operation = method
+  err.required  = required
+  err.got       = got
+  return err
+}
+
 /** Said once per method, never per request — a refusal an attacker can repeat. */
 const _floorWarned = new Set<string>()
 
@@ -3043,8 +3076,7 @@ export function gateAuthAround(
           if (grade.graded) {
             const has = callerGateLevel(ctx.locals.db, accessor === null ? undefined : accessor ?? ctx.service, ctx.auth.user)
             if (!levelPasses(need, has))
-              throw new Forbidden(
-                `'${ctx.service}.${method}' requires level ${need}, caller has level ${has}`)
+              throw methodRefusal(ctx.service, method, need, has)
           }
         }
       }

@@ -48,6 +48,8 @@ export default defineConfig({
   root: ROOT,
 
   server: {
+    // Sierra's base carries `host`, which `fli dev --host` sets.
+    ...sierra.server,
     port: UI_PORT,
     // Refuse to hop. Vite's default is to take the next free port in silence,
     // which is how a drive ends up asserting against a different app.

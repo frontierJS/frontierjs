@@ -233,7 +233,9 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       // app's app. An app overrides both in its own config (`FJS-821`).
       port: parseInt(process.env.FLI_PORT_FE ?? process.env.PORT ?? '3000', 10),
       strictPort: true,
-      host: !!process.env.VITE_HOST_APP,
+      // `fli dev --host` sets it. An app config that replaces `server` rather
+      // than spreading this one drops it, and the flag does nothing.
+      host: !!process.env.FLI_HOST,
       open: false,
       hmr: {
         overlay: true,

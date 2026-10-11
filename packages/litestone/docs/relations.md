@@ -184,13 +184,7 @@ await db.user.findMany({ orderBy: { posts: { _sum: { views: 'desc' } } } })
 await db.post.findMany({ orderBy: { tags:  { _count: 'asc' } } })  // manyToMany
 ```
 
-See [sorting.md](./sorting.md) for the full sorting reference. One combination is a filed defect — a relation sort beside `select: { id: true }`:
-
-```js failing
-// FJS-2299
-await db.post.findMany({ orderBy: { author: { name: 'asc' } }, select: { id: true } })
-// ambiguous column name: id
-```
+See [sorting.md](./sorting.md) for the full sorting reference.
 
 ## One-to-one
 

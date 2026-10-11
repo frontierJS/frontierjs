@@ -136,8 +136,8 @@ export const TERMINAL_TAGS = {
  * control does. `check` is a box showing `[x]`/`[ ]`, or `(•)`/`( )` for a
  * radio, that Space or a press toggles, firing `input` then `change`; a
  * radio checked unchecks the others of its `name` in its form. `hidden` is
- * never laid out, as a browser never paints one. `file` is a picker a
- * terminal cannot open (`pickerHidden`). No `type` is `text`. Any type
+ * never laid out, as a browser never paints one. `file` is a field a path
+ * is typed into, since a terminal has no picker. No `type` is `text`. Any type
  * missing here, a typo included, is refused: at compile when written
  * statically, and when written while live, as `multiple` on `<select>` is,
  * since a range painted as a text field takes typing the control would
@@ -169,9 +169,7 @@ export const inputKind = (type) => INPUT_TYPES[type && type !== true ? String(ty
  * Whether a `type="file"` input is one a browser shows no control for, from
  * its `hidden` attribute and its `class`: `hidden`, or `@frontierjs/css`'s
  * `visually-hidden`, which the kit's `FileUpload` puts a button in front of.
- * Such an input paints nothing, and its `click()` fires `click` and opens
- * nothing, as a browser that refuses to open a picker does. One on screen is
- * refused: a reader would choose a file there and nothing would answer.
+ * Such an input paints nothing until its `click()` opens it.
  */
 export const pickerHidden = (hidden, cls) =>
   (hidden != null && hidden !== false) || (typeof cls === 'string' && cls.split(/\s+/).includes('visually-hidden'))

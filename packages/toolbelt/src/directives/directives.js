@@ -75,6 +75,12 @@ const asText = (v) => {
 
 const asBool = flagOf
 
+// Names, and a list of them is the value: `?$scope=a` is one, `$scope[]=a&…`
+// several. Each name is passed on as it arrived — a number or an empty list is
+// refused by the Data boundary, which holds the names a model declares; dropped
+// here it would answer the unnarrowed list with a 200.
+const asNames = (v) => (v === undefined || v === null || v === '' ? undefined : Array.isArray(v) ? v : [v])
+
 /*
  * The write direction, for the two rows that do not travel as themselves. A
  * list of field names is a comma-joined string on the wire, where the parser
@@ -94,6 +100,7 @@ const COUNT  = Object.freeze({ type: 'integer' })
 const TEXT   = Object.freeze({ type: 'string' })
 const FLAG   = Object.freeze({ type: 'boolean' })
 const OPAQUE = Object.freeze({ description: 'Any shape the query builder reads; this table does not fix one.' })
+const NAMES  = Object.freeze({ type: 'array', items: { type: 'string' } })
 
 /*
  * The directives proper — each has a structured form on the other side, and
@@ -133,6 +140,12 @@ const DIRECTIVES = Object.freeze([
   { param: '$asOf',          name: 'asOf',          read: asText,  schema: TEXT   },
   { param: '$withExpired',   name: 'withExpired',   read: asBool,  schema: FLAG   },
   { param: '$onlyExpired',   name: 'onlyExpired',   read: asBool,  schema: FLAG   },
+  // `@@scope` — a declared predicate asked for by NAME, the one spelling of one
+  // a browser can send (`FJS-D63`), and what a value set's `where` mints so a
+  // picker offers the list the Data boundary accepts (`FJS-430`). A directive
+  // and not a filter, because a `$` key never reaches the filters; junction
+  // hands it to Litestone as `where.$scope` (`FJS-2561`).
+  { param: '$scope',         name: 'scope',         read: asNames, schema: NAMES  },
 ].map(Object.freeze))
 
 /** Every `$` name that has a structured form. Derived — never restated. */
@@ -210,7 +223,7 @@ export function invalidDirectives(params) {
  */
 export function listedDirectives(params) {
   if (!params || typeof params !== 'object') return []
-  return [...DIRECTIVES.filter(({ read }) => read !== asIs).map(({ param }) => param), ...TRANSPORT_PARAMS]
+  return [...DIRECTIVES.filter(({ read }) => read !== asIs && read !== asNames).map(({ param }) => param), ...TRANSPORT_PARAMS]
     .filter((param) => Array.isArray(params[param]))
 }
 

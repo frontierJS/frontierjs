@@ -41,7 +41,7 @@
 import { defineJob }     from '@frontierjs/caravan'
 import { runsEitherWay } from './context.ts'
 import { executorOn, isExecutor } from '../providers/executor.ts'
-import { routedHosts }   from '../core/runtime.ts'
+import { routedHosts, routedRedirects } from '../core/runtime.ts'
 import { isInline }      from '../core/app-source.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 
@@ -110,7 +110,7 @@ export async function pushAppsOn(app: BasecampApp, serverId: string, status: str
 }
 
 interface RoutePush {
-  routed: { serverId: string; hosts: string[]; rebind: string | null }[]
+  routed: { serverId: string; hosts: string[]; redirects: { host: string; to: string }[]; rebind: string | null }[]
   failed: { server: string; error: string }[]
 }
 
@@ -119,11 +119,12 @@ interface RoutePush {
  * `running` placement on an `online` server, the set `servingAddresses` puts
  * in the ingress record, so a name the zone sends to a machine is a name that
  * machine routes. The hosts are the live rows (`routedHosts`), so a deleted
- * Domain, or one turned into a redirect, drops out, and an App with none left
- * is unrouted.
+ * Domain drops out, and an App with none left is unrouted. A redirecting Domain
+ * rides beside them as `redirects`, answered by Caddy itself (`FJS-1615`).
  *
- * An inline App is skipped: its origin is the static listener, which no route
- * fronts yet (`FJS-1615`).
+ * An inline App is routed to the static origin (`static: true`), as its
+ * release's Activate does, so a Domain changed between releases does not wait
+ * for the next one.
  */
 export async function routeDomainApp(app: BasecampApp, domainId: string): Promise<RoutePush> {
   const out: RoutePush = { routed: [], failed: [] }
@@ -131,9 +132,11 @@ export async function routeDomainApp(app: BasecampApp, domainId: string): Promis
   const domain = await sys.domain.findFirst({ where: { id: domainId }, withDeleted: true, select: { appId: true } }) as { appId: string } | null
   if (!domain) return out
   const row = await sys.app.findFirst({ where: { id: domain.appId }, select: { source: true } }) as { source: unknown } | null
-  if (!row || isInline(row.source)) return out
+  if (!row) return out
 
-  const hosts  = await routedHosts(app.db, domain.appId)
+  const isStatic  = isInline(row.source)
+  const hosts     = await routedHosts(app.db, domain.appId)
+  const redirects = await routedRedirects(app.db, domain.appId)
   const placed = await sys.appServer.findMany({ where: { appId: domain.appId, status: 'running' }, include: { server: true } }) as any[]
   const servers = new Map<string, string>()
   for (const p of placed) if (p.server?.status === 'online') servers.set(p.serverId, p.server.name ?? p.serverId)
@@ -141,9 +144,9 @@ export async function routeDomainApp(app: BasecampApp, domainId: string): Promis
   for (const [serverId, name] of servers) {
     const executor = await executorOn(app, serverId, name)
     if (!isExecutor(executor)) { out.failed.push({ server: name, error: executor.reason }); continue }
-    const reply = await executor.call('/route', { app_id: domain.appId, hosts })
+    const reply = await executor.call('/route', { app_id: domain.appId, hosts, redirects, ...(isStatic ? { static: true } : {}) })
     if (reply.error) { out.failed.push({ server: name, error: reply.error.message }); continue }
-    out.routed.push({ serverId, hosts, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
+    out.routed.push({ serverId, hosts, redirects, rebind: (reply.data?.rebind as string | null | undefined) ?? null })
   }
   return out
 }

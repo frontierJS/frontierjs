@@ -50,16 +50,16 @@ function heldBy(auth, model) {
 const EMPTY = new Set()
 
 export class CapabilityPlugin extends Plugin {
+  // Nothing read from the schema is kept on the instance. A tenant registry
+  // forwards one plugin to every client it opens, and a second onInit on `this`
+  // replaced the FIRST client's grid with the second schema's (`FJS-1380`). The
+  // declarations live on the client's ctx, which every hook is handed.
   onInit(schema, ctx) {
-    this._decls       = capabilityDeclarations(schema)
-    this._shapes      = ctx.shapes
+    ctx.capabilityDecls = capabilityDeclarations(schema)
   }
 
-  /** Does this model declare a grid at all, and does the grid cover reads? */
-  declares(model) { return this._decls[model] ?? null }
-
   _check(model, op, ctx) {
-    const decl = this._decls[model]
+    const decl = ctx.capabilityDecls[model]
     if (!decl) return                       // no grid declared, nothing to hold
     if (ctx.isSystem) return                // permission, not scope
     if (op === 'read' && !decl.read) return // writes-and-moves is the default
@@ -85,7 +85,7 @@ export class CapabilityPlugin extends Plugin {
    * columns at all (a bare touch) is an ordinary update.
    */
   _checkUpdate(model, args, ctx) {
-    const decl = this._decls[model]
+    const decl = ctx.capabilityDecls[model]
     if (!decl) return
     if (ctx.isSystem) return
 
@@ -96,9 +96,14 @@ export class CapabilityPlugin extends Plugin {
     // resolves to, which needs the stored row — so it is checked where the
     // transition is, and is neither graded nor charged to `update` here.
     // Otherwise a grant of `Server.reboot` alone could not reboot anything.
+    // A column the call names in `system: [...]` is written by the application,
+    // not edited by the caller, so no grant of the caller's is charged for it.
+    // The client has already refused an entry that is not a @system or @guarded
+    // column or a move field.
+    const named    = new Set(Array.isArray(args?.system) ? args.system : args?.system ? [args.system] : [])
     const graded   = keys.filter(k => decl.columns.has(k))
     const moves    = keys.filter(k => decl.moveFields.has(k) && !decl.columns.has(k))
-    const ungraded = keys.filter(k => !decl.columns.has(k) && !decl.moveFields.has(k))
+    const ungraded = keys.filter(k => !decl.columns.has(k) && !decl.moveFields.has(k) && !named.has(k))
 
     for (const k of graded) requireCapability(model, k, ctx)
     if (ungraded.length || (!graded.length && !moves.length)) requireCapability(model, 'update', ctx)
@@ -106,19 +111,19 @@ export class CapabilityPlugin extends Plugin {
 
   async onBeforeRead(model, args, ctx) {
     this._check(model, 'read', ctx)
-    for (const target of collectIncludedModels(args, model, this._shapes))
+    for (const target of collectIncludedModels(args, model, ctx.shapes))
       this._check(target, 'read', ctx)
   }
 
   async onBeforeCreate(model, args, ctx) {
     this._check(model, 'create', ctx)
-    for (const { model: m, op } of collectNestedOps(args?.data, model, this._shapes))
+    for (const { model: m, op } of collectNestedOps(args?.data, model, ctx.shapes))
       this._check(m, op, ctx)
   }
 
   async onBeforeUpdate(model, args, ctx) {
     this._checkUpdate(model, args, ctx)
-    for (const { model: m, op } of collectNestedOps(args?.data, model, this._shapes))
+    for (const { model: m, op } of collectNestedOps(args?.data, model, ctx.shapes))
       this._check(m, op, ctx)
   }
 

@@ -1359,6 +1359,14 @@ application code exists, because a construct the language cannot spell shows up
 as a comment in the schema. `litestone import` is the other door when the
 product being imitated has a public schema to read.
 
+**Every stressor seeds one standing admin: `dev@knight.works` / `test1234`.**
+It is the owner's login in every app, so the hour of ordinary use never starts
+with *which account*. Phase 0 writes `db/seed-dev-admin.ts` and a
+`db:seed:admin` script: idempotent, it creates the user or resets its password,
+and gives it the app's top standing AND the tenant link the demo data sits
+behind — an admin in no account sees no account. Prove it with `auth.login`,
+not by reading the seed. Dev databases only, never a production copy.
+
 Then the ordinary loop: `bun run dev`, `bun run check` (`fli check` + lint +
 typecheck), and `fli tinker` to ask the database what it actually did.
 

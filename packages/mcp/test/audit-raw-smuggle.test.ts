@@ -45,7 +45,7 @@ beforeAll(async () => {
   base = `http://localhost:${app.http.port}/mcp`
 
   const system = (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> }).asSystem()
-  await system.credential!.create({ data: { id: 7, label: 'prod-key', value: 'hunter2', scope: 'admin:all' } })
+  await system.credential!.create({ data: { id: 7, label: 'prod-key', value: 'hunter2', privilege: 'admin:all' } })
   await system.ledger!.create({ data: { id: 1, memo: 'secret-ledger', amount: 100 } })
 })
 
@@ -66,13 +66,13 @@ async function call(name: string, args: unknown, token?: string) {
 describe('AUDIT: a $-key in a find query must not survive the agent bridge (Invariant 10)', () => {
 
   test('$raw as a stranger is refused or inert — it must not act as a boolean oracle', async () => {
-    const hit  = await call('credentials_find', { query: { $raw: "scope LIKE 'admin%'" } })
-    const miss = await call('credentials_find', { query: { $raw: "scope LIKE 'zzz%'" } })
+    const hit  = await call('credentials_find', { query: { $raw: "privilege LIKE 'admin%'" } })
+    const miss = await call('credentials_find', { query: { $raw: "privilege LIKE 'zzz%'" } })
     // An oracle is: the two SQL predicates return DIFFERENT counts, revealing the
-    // @guarded `scope` one comparison at a time. Secure behavior refuses $raw
+    // @guarded `privilege` one comparison at a time. Secure behavior refuses $raw
     // (isError) or ignores it (both return the full table, equal counts).
     const oracle = !hit.isError && !miss.isError && hit.count !== miss.count
-    expect(oracle, `$raw acted as an oracle on @guarded scope: hit=${hit.count} miss=${miss.count}`).toBe(false)
+    expect(oracle, `$raw acted as an oracle on @guarded privilege: hit=${hit.count} miss=${miss.count}`).toBe(false)
   })
 
   test('$raw cannot subquery a table the caller\'s gate forbids (Ledger reads at 5)', async () => {

@@ -740,6 +740,8 @@ export class Seeder {
 const LOAD_MODES = ['insert', 'upsert', 'replace']
 // Not a column a source can fill: the engine or the schema computes it.
 const DERIVED = new Set(['computed', 'from', 'generated', 'derived', 'sequence', 'updatedAt'])
+// An implicit many-to-many is a relation the parser retags, so `kind === 'relation'` alone misses it.
+const isRelation = (f) => f.type.kind === 'relation' || f.type.kind === 'implicitM2M'
 const DRY_RUN = Symbol('loadRows.dryRun')
 
 export async function loadRows(db, modelName, source, opts = {}) {
@@ -897,7 +899,7 @@ function columnReader(model, schema, modelName, overflow) {
     const f = byName.get(name)
     if (!f)
       throw new Error(`loadRows(${modelName}): '${name}' is not a column of ${modelName}`)
-    if (f.type.kind === 'relation' || f.attributes.some(a => DERIVED.has(a.kind)))
+    if (isRelation(f) || f.attributes.some(a => DERIVED.has(a.kind)))
       throw new Error(`loadRows(${modelName}): '${name}' is not a column a source fills — it is computed or a relation`)
     const t = f.type.name
     if (t === 'Bytes' || t === 'File')
@@ -917,7 +919,7 @@ function columnReader(model, schema, modelName, overflow) {
   }
 
   function required(f) {
-    if (f.type.optional || f.type.kind === 'relation') return false
+    if (f.type.optional || isRelation(f)) return false
     if (f.attributes.some(a => DERIVED.has(a.kind) || a.kind === 'default')) return false
     // An Int @id with no default is the rowid, which SQLite assigns.
     if (f.attributes.some(a => a.kind === 'id') && f.type.name === 'Int') return false

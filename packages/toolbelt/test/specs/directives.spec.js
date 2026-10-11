@@ -230,6 +230,7 @@ test('directives: every name written is a name this table strips', function () {
     withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
     asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,
+    scope: ['active'],
   }
   const params = directiveParams(every)
 
@@ -409,6 +410,7 @@ test('directives: a single-valued directive given a list is reported; a list-val
     ['$limit', '$search', '$withDeleted', '$first'], 'table order, then the transport flags; a filter list is not a directive')
   assert.deepEqual(listedDirectives({ $select: ['a', 'b'], $populate: ['c'], $orderBy: [{ name: 'asc' }], $limit: 5 }), [],
     'select, populate and orderBy are lists by nature')
+  assert.deepEqual(listedDirectives({ $scope: ['a', 'b'] }), [], 'scope is a list of names')
   assert.deepEqual(listedDirectives(null), [])
 })
 
@@ -421,4 +423,15 @@ test('directives: a flag directive outside the flag grammar is reported, not rea
   assert.deepEqual(invalidDirectives(null), [])
   assert.deepEqual(parseDirectives({ $withDeleted: 'yes' }), {}, 'a reader without a boundary drops it rather than guessing false')
   assert.equal(parseDirectives({ $withDeleted: '' }).withDeleted, true, 'a bare flag is true, as for $first')
+})
+
+test('directives: $scope is a list of names — one name is a list of one (FJS-2561)', function () {
+  assert.deepEqual(parseDirectives({ $scope: 'active' }), { scope: ['active'] })
+  assert.deepEqual(parseDirectives(parseQueryString('$scope[]=a&$scope[]=b')), { scope: ['a', 'b'] })
+  assert.deepEqual(parseDirectives({ $scope: '' }), {}, 'an empty value is not asked, as $search= is')
+  // Not dropped: an unnarrowed list answered 200 is the defect. The Data
+  // boundary holds the declared names and refuses a number by name.
+  assert.deepEqual(parseDirectives({ $scope: 5 }), { scope: [5] })
+  assert.deepEqual(splitParams({ $scope: ['a'], kind: 'x' }), { query: { kind: 'x' }, directives: { scope: ['a'] } })
+  assert.deepEqual(directiveParams({ scope: ['a'] }), { $scope: ['a'] })
 })

@@ -166,3 +166,26 @@ describe('the corpus', () => {
     expect(hits).toEqual([])
   }, 60000)
 })
+
+// FJS-2330 — a model with no stored column is `CREATE TABLE "post" ()`, which
+// SQLite refuses with `near ")": syntax error` naming nothing the author wrote.
+describe('a model with no stored column', () => {
+  it('refuses a model holding only a model attribute', () => {
+    refuses(`model Post {\n  @@gate("1.3.4.6")\n}`, /Model 'Post'.*no stored (field|column)/)
+  })
+  it('refuses a model whose only fields are @computed', () => {
+    refuses(`model Post {\n  title String @computed\n}`, /Model 'Post'.*no stored (field|column)/)
+  })
+  it('refuses a model whose only fields are relations', () => {
+    refuses(`model Comment {\n  id Int @id\n}\nmodel Post {\n  comments Comment[]\n}`, /Model 'Post'.*no stored (field|column)/)
+  })
+  it('accepts the same model with one stored field', () => {
+    accepts(`model Post {\n  id Int @id\n  title String @computed\n  @@gate("1.3.4.6")\n}`)
+  })
+  it('accepts a model whose only stored field arrives by @@trait', () => {
+    accepts(`trait Stamped {\n  title String\n}\nmodel Post {\n  @@trait(Stamped)\n}`)
+  })
+  it('accepts an @@external model, which has no DDL', () => {
+    accepts(`model Post {\n  @@external\n}`)
+  })
+})

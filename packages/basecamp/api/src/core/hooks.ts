@@ -298,7 +298,7 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
 // has no principal at all, so *what you hold* is undefined there rather than
 // merely skipped. `WorkspaceMember.capabilities` carries the column guard
 // litestone puts on a `Capability[]`, and that guard covers every OTHER door:
-// a job, a hub screen, `fli tinker`. This covers the one a person walks
+// a job, a hub screen, `fli db:repl`. This covers the one a person walks
 // through. Measured, not assumed.
 //
 // Equal is allowed: an admin appointing an admin is what the role is for. It is

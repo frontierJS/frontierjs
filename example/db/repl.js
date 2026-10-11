@@ -1,6 +1,6 @@
-// db/tinker.js — the shop's own console commands
+// db/repl.js — the shop's own console commands
 //
-//   fli tinker --tenant flagship
+//   fli db:repl --tenant flagship
 //   flagship · anonymous(0) > .resetPasswords
 //
 // Each command runs against the tenant the console opened, so a reset reaches

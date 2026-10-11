@@ -6867,7 +6867,7 @@ describe('onLog callback', () => {
     const db = await makeLogDb((entry) => { calls.push(entry) })
     await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
-    const modelLog = calls.find(e => e.model === 'post' && e.field == null)
+    const modelLog = calls.find(e => e.model === 'Post' && e.field == null)
     expect(modelLog).toBeDefined()
     expect(modelLog.operation).toBe('create')
     db.$close()
@@ -6880,7 +6880,7 @@ describe('onLog callback', () => {
     await flush()
     const fieldLog = calls.find(e => e.field === 'body')
     expect(fieldLog).toBeDefined()
-    expect(fieldLog.model).toBe('post')
+    expect(fieldLog.model).toBe('Post')
     db.$close()
   })
 
@@ -7253,7 +7253,7 @@ describe('audit log redaction', () => {
 
   test('model-level snapshot redacts @secret, @encrypted and @guarded fields', async () => {
     const { calls, db } = await captureCreate()
-    const modelLog = calls.find(e => e.model === 'vault' && e.field == null)
+    const modelLog = calls.find(e => e.model === 'Vault' && e.field == null)
     const after = JSON.parse(modelLog.after)
     expect(after.secretF).toBe('[redacted]')
     expect(after.encF).toBe('[redacted]')
@@ -7276,7 +7276,7 @@ describe('audit log redaction', () => {
   // may not keep it (FJS-D657). The mark says which kind was dropped.
   test('model-level snapshot writes [personal] for a @personal field', async () => {
     const { calls, row, db } = await captureCreate()
-    const modelLog = calls.find(e => e.model === 'vault' && e.field == null)
+    const modelLog = calls.find(e => e.model === 'Vault' && e.field == null)
     expect(JSON.parse(modelLog.after).emailF).toBe('[personal]')
     expect(row.emailF).toBe(SECRETS[4])
     db.$close()
@@ -7290,7 +7290,7 @@ describe('audit log redaction', () => {
     await db.asSystem().vault.update({ where: { id: row.id }, data: { emailF: null, plain: 'erased' } })
     await db.asSystem().vault.delete({ where: { id: row.id } })
     await flush()
-    const erasure = calls.filter(e => e.model === 'vault' && e.field == null && e.operation !== 'create')
+    const erasure = calls.filter(e => e.model === 'Vault' && e.field == null && e.operation !== 'create')
     expect(erasure.length).toBeGreaterThanOrEqual(2)
     expect(JSON.stringify(erasure)).not.toContain(SECRETS[4])
     expect(JSON.stringify(calls)).not.toContain(SECRETS[4])
@@ -7299,7 +7299,7 @@ describe('audit log redaction', () => {
 
   test('unprotected fields are still logged in full — the trail stays useful', async () => {
     const { calls, db } = await captureCreate()
-    const modelLog = calls.find(e => e.model === 'vault' && e.field == null)
+    const modelLog = calls.find(e => e.model === 'Vault' && e.field == null)
     const after = JSON.parse(modelLog.after)
     expect(after.name).toBe('k')
     expect(after.plain).toBe('not-a-secret')
@@ -7352,11 +7352,11 @@ describe('audit log redaction', () => {
     expect(serialized).not.toContain('ORIGINAL')
     expect(serialized).not.toContain('ROTATED')
 
-    const upd = calls.find(e => e.model === 'vault' && e.field == null && e.operation === 'update')
+    const upd = calls.find(e => e.model === 'Vault' && e.field == null && e.operation === 'update')
     expect(JSON.parse(upd.before).secretF).toBe('[redacted]')
     expect(JSON.parse(upd.after).secretF).toBe('[redacted]')
 
-    const del = calls.find(e => e.model === 'vault' && e.field == null && e.operation === 'delete')
+    const del = calls.find(e => e.model === 'Vault' && e.field == null && e.operation === 'delete')
     expect(JSON.parse(del.before).secretF).toBe('[redacted]')
     db.$close()
   })
@@ -9556,17 +9556,19 @@ describe('FileStorage plugin', () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
-    plugin.onInit(schema, { models: {} })
-    expect(plugin._fileMap.User.avatar.keepVersions).toBe(false)
-    expect(plugin._fileMap.User.resume.keepVersions).toBe(true)
+    const ctx = { models: {} }
+    plugin.onInit(schema, ctx)
+    expect(plugin._maps(ctx).fieldMap.User.avatar.keepVersions).toBe(false)
+    expect(plugin._maps(ctx).fieldMap.User.resume.keepVersions).toBe(true)
   })
 
   test('onInit ignores models with no @file fields', async () => {
     const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(`model Post { id Int @id; title String }`).schema
-    plugin.onInit(schema, { models: {} })
-    expect(plugin._fileMap.Post).toBeUndefined()
+    const ctx = { models: {} }
+    plugin.onInit(schema, ctx)
+    expect(plugin._maps(ctx).fieldMap.Post).toBeUndefined()
   })
 
   test('onBeforeCreate: Buffer value is uploaded and swapped to JSON ref', async () => {
@@ -15284,6 +15286,26 @@ describe('createTestEnv', () => {
     env.close()
   })
 
+  test('verifyRowPolicies grades auth().id under the default principal when the @@auth key is an Int (FJS-2365)', async () => {
+    // The default principal's id was the string 'policy-principal', so the
+    // parent User could not be created on an Int key and the matching-side
+    // row was dropped: every row excluded, reported as ungraded.
+    const env = await createTestEnv({ schema: `
+      model User {
+        id Int @id
+        @@auth
+      }
+      model Note {
+        id      Int  @id
+        ownerId Int
+        owner   User @relation(fields: [ownerId], references: [id])
+        @@allow('read', ownerId == auth().id)
+      }
+    ` })
+    expect(await env.verifyRowPolicies()).toEqual([])
+    env.close()
+  })
+
   test('verifyRowPolicies reports a CROSSED predicate rather than guessing', async () => {
     // Both ways a policy reaches another model, because the grader is blind to
     // them for one reason: it makes ONE row, and what admits that row lives on
@@ -20099,6 +20121,22 @@ describe('type declarations', () => {
     const ts = generateTypeScript(r.schema!)
     expect(ts).toMatch(/address\?:\s*Address \| null/)
   })
+
+  // FJS-2300: a Buffer method on a Bytes field typechecked and threw at run time
+  test('typegen types a Bytes field as Uint8Array, which is what the client returns', async () => {
+    const { generateTypeScript } = await import('../src/tools/typegen.js')
+    const r = parse(`model M { id Int @id; blob Bytes; extra Bytes? }`)
+    const ts = generateTypeScript(r.schema!)
+    expect(ts).toMatch(/blob:\s*Uint8Array\b/)
+    expect(ts).toMatch(/extra\?:\s*Uint8Array \| null/)
+    expect(ts).not.toMatch(/\bBuffer\b/)
+
+    const db = await createClient({ schema: `model M { id Int @id; blob Bytes; extra Bytes? }`, db: ':memory:' })
+    await db.m.create({ data: { id: 1, blob: new Uint8Array([1, 2, 3]) } })
+    const row = await db.m.findUnique({ where: { id: 1 } })
+    expect(row!.blob instanceof Uint8Array).toBe(true)
+    db.$close()
+  })
 })
 
 // ─── Date object coercion ────────────────────────────────────────────────────
@@ -22541,9 +22579,10 @@ describe('ExternalRefPlugin', () => {
   test('serialize is called on create — value swapped for JSON ref', async () => {
     const plugin = makePlugin()
     const schema = parse(`model Doc { id Int @id; content TestRef? }`)
-    plugin.onInit(schema.schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema.schema, ctx)
     const args = { data: { id: 1, content: 'hello world' } }
-    await plugin.onBeforeCreate('Doc', args, {} as any)
+    await plugin.onBeforeCreate('Doc', args, ctx)
     const ref = JSON.parse(args.data.content as any)
     expect(ref.raw).toBe('hello world')
     expect(ref.model).toBe('Doc')
@@ -22552,31 +22591,34 @@ describe('ExternalRefPlugin', () => {
   test('resolve called in onAfterRead when autoResolve: true', async () => {
     const plugin = makePlugin(true)
     const schema = parse(`model Doc { id Int @id; content TestRef? }`)
-    plugin.onInit(schema.schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema.schema, ctx)
     const rows = [
       { id: 1, content: JSON.stringify({ raw: 'hello', model: 'Doc', field: 'content' }) }
     ]
-    await plugin.onAfterRead('Doc', rows, {} as any)
+    await plugin.onAfterRead('Doc', rows, ctx)
     expect(rows[0].content).toBe('HELLO')
   })
 
   test('resolve NOT called in onAfterRead when autoResolve: false', async () => {
     const plugin = makePlugin(false)
     const schema = parse(`model Doc { id Int @id; content TestRef? }`)
-    plugin.onInit(schema.schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema.schema, ctx)
     const rawRef = JSON.stringify({ raw: 'hello', model: 'Doc', field: 'content' })
     const rows = [{ id: 1, content: rawRef }]
-    await plugin.onAfterRead('Doc', rows, {} as any)
+    await plugin.onAfterRead('Doc', rows, ctx)
     expect(rows[0].content).toBe(rawRef)  // unchanged
   })
 
   test('cleanup called in onAfterDelete', async () => {
     const plugin = makePlugin()
     const schema = parse(`model Doc { id Int @id; content TestRef? }`)
-    plugin.onInit(schema.schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema.schema, ctx)
     const ref = { raw: 'hello', model: 'Doc', field: 'content' }
     const rows = [{ id: 1, content: JSON.stringify(ref) }]
-    await plugin.onAfterDelete('Doc', rows, {} as any)
+    await plugin.onAfterDelete('Doc', rows, ctx)
     expect(plugin.cleanedUp).toHaveLength(1)
     expect(plugin.cleanedUp[0].raw).toBe('hello')
   })
@@ -22584,12 +22626,13 @@ describe('ExternalRefPlugin', () => {
   test('cacheKey memoizes resolve results', async () => {
     const plugin = makePlugin(true)
     const schema = parse(`model Doc { id Int @id; content TestRef? }`)
-    plugin.onInit(schema.schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema.schema, ctx)
     const ref = { raw: 'hello', model: 'Doc', field: 'content' }
     const rows1 = [{ id: 1, content: JSON.stringify(ref) }]
     const rows2 = [{ id: 2, content: JSON.stringify(ref) }]
-    await plugin.onAfterRead('Doc', rows1, {} as any)
-    await plugin.onAfterRead('Doc', rows2, {} as any)
+    await plugin.onAfterRead('Doc', rows1, ctx)
+    await plugin.onAfterRead('Doc', rows2, ctx)
     // Both should resolve to same value from cache
     expect(rows1[0].content).toBe('HELLO')
     expect(rows2[0].content).toBe('HELLO')
@@ -22620,13 +22663,14 @@ describe('ExternalRefPlugin — select resolve: false', () => {
 
     const plugin = new UpperPlugin({ autoResolve: true })
     const schema = parse(`model Doc { id Int @id; title UpperRef? }`).schema
-    plugin.onInit(schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema, ctx)
 
     const rawRef = JSON.stringify({ raw: 'hello' })
     const rows = [{ id: 1, title: rawRef }]
 
     // With resolve: false — should skip resolution
-    await plugin.onAfterRead('Doc', rows, {} as any, {
+    await plugin.onAfterRead('Doc', rows, ctx, {
       select: { title: { resolve: false } }
     })
     expect(rows[0].title).toBe(rawRef)  // raw JSON string
@@ -22643,11 +22687,12 @@ describe('ExternalRefPlugin — select resolve: false', () => {
 
     const plugin = new UpperPlugin({ autoResolve: true })
     const schema = parse(`model Doc { id Int @id; title UpperRef? }`).schema
-    plugin.onInit(schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema, ctx)
 
     const rows = [{ id: 1, title: JSON.stringify({ raw: 'hello' }) }]
 
-    await plugin.onAfterRead('Doc', rows, {} as any, { select: { title: true } })
+    await plugin.onAfterRead('Doc', rows, ctx, { select: { title: true } })
     expect(rows[0].title).toBe('HELLO')
   })
 
@@ -22662,10 +22707,11 @@ describe('ExternalRefPlugin — select resolve: false', () => {
 
     const plugin = new UpperPlugin({ autoResolve: true })
     const schema = parse(`model Doc { id Int @id; title UpperRef? }`).schema
-    plugin.onInit(schema, { models: {} } as any)
+    const ctx = { models: {} } as any
+    plugin.onInit(schema, ctx)
 
     const rows = [{ id: 1, title: JSON.stringify({ raw: 'hello' }) }]
-    await plugin.onAfterRead('Doc', rows, {} as any, {})
+    await plugin.onAfterRead('Doc', rows, ctx, {})
     expect(rows[0].title).toBe('HELLO')
   })
 })

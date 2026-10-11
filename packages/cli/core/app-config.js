@@ -336,7 +336,17 @@ Everything derives from \`db/schema.lite\`: **Data (Model) → API (Service) →
 (Resource)**. A rule declared in the schema reaches the API, the validators, the
 forms and the migrations at once; the same rule written in code reaches one
 caller. Change the schema first, then let a generator write what follows from it.
+${has.has('@frontierjs/junction') ? `
+## Orient with one command
 
+Before opening the schema or a service, run this. It boots the app once and prints
+every service method, route, job and notification, and who may reach each. Read
+code only for the one thing it points you at:
+
+\`\`\`bash
+fli app:atlas
+\`\`\`
+` : ''}
 ## Read the guide your change touches
 ${docLines.length ? `
 Only the rows your change touches. A \`.mesa\` screen is mesa, plus ui and css

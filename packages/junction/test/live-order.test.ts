@@ -364,6 +364,7 @@ describe('every directive the client sends is one the bridge strips', () => {
     search: 'acme', withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
     asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,
+    scope: ['active'],
   }
   const FILTERS = { status: 'active' }
 
@@ -380,7 +381,9 @@ describe('every directive the client sends is one the bridge strips', () => {
     globalThis.fetch = original
 
     const params = new URL(asked).searchParams
-    const sent = [...params.keys()].filter(k => k.startsWith('$'))
+    // A list-valued directive goes out as `$scope[]=…`, the query string's
+    // spelling of a list, and is read back under its own name.
+    const sent = [...params.keys()].filter(k => k.startsWith('$')).map(k => k.replace(/\[\]$/, ''))
     for (const k of sent) expect([...RESERVED_PARAMS]).toContain(k)
     // Every directive with a structured form reaches the wire.
     for (const k of DIRECTIVE_PARAMS) expect(sent).toContain(k)

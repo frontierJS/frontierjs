@@ -31,7 +31,7 @@
 // this code.)
 //
 // What the timeout is genuinely for is **another process** — a second API, a
-// job runner, `fli tinker`, a migration — where the holder makes progress
+// job runner, `fli db:repl`, a migration — where the holder makes progress
 // independently and the waiter has something to wait FOR. There a 1.5s hold is
 // waited out and the write commits.
 //
@@ -47,6 +47,8 @@
 // declaration is one answer to a question that differs by who is asking.
 // Code is written against the process, exactly as a relative `database { path }`
 // is resolved against it.
+
+import { sleepSync } from '#host'
 
 /** Milliseconds a connection waits for the write lock when nobody says otherwise.
  *
@@ -177,7 +179,31 @@ export function applyWal(db, timeout) {
     try { db.run('PRAGMA journal_mode = WAL'); return }
     catch (e) {
       if (e?.code !== 'SQLITE_BUSY' || Date.now() >= deadline) throw e
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(50, 2 ** attempt) + Math.random() * 5)
+      sleepSync(Math.min(50, 2 ** attempt) + Math.random() * 5)
     }
   }
+}
+
+/**
+ * Create the file able to hand freed pages back to the filesystem.
+ *
+ * Must run BEFORE `applyWal`, on a file with nothing in it: SQLite reports
+ * success for the change on any other file and reads it back as 0 on the next
+ * open, so `reclaimFreePages` would be a silent no-op for the life of the file.
+ * A file that already exists keeps its mode; changing it is a full VACUUM,
+ * which is a blocking rewrite and the operator's call.
+ */
+export function applyIncrementalVacuum(db) {
+  db.run('PRAGMA auto_vacuum = INCREMENTAL')
+}
+
+/**
+ * Give back every freed page. A no-op unless the file is INCREMENTAL — asked
+ * rather than assumed, since `incremental_vacuum` on any other mode is silently
+ * nothing. Called per sweep batch, so it holds the write lock for one batch's
+ * pages and not for a year's.
+ */
+export function reclaimFreePages(db) {
+  if (db.query('PRAGMA auto_vacuum').get()?.auto_vacuum !== 2) return
+  db.run('PRAGMA incremental_vacuum')
 }

@@ -1728,6 +1728,14 @@ describe('the hostnames a release routes', () => {
     await sys.domain.delete({ where: { id: gone.id } })
 
     expect(await routedHosts(app.db, web.id)).toEqual([`shop-${tag}.test`, `store-${tag}.test`])
+    // The redirect is sent beside them (FJS-1615), a bare hostname read as https.
+    const { routedRedirects } = await import('../src/core/runtime.ts')
+    await domain(web.id, 'bare', { redirectTo: `shop-${tag}.test` })
+    expect(await routedRedirects(app.db, web.id)).toEqual([
+      { host: `bare-${tag}.test`, to: `https://shop-${tag}.test` },
+      { host: `www-${tag}.test`,  to: `https://shop-${tag}.test` },
+    ])
+    expect(await routedRedirects(app.db, api.id)).toEqual([])
     expect(await routedHosts(app.db, api.id)).toEqual([`api-${tag}.test`])
   })
 })

@@ -373,6 +373,12 @@ describe('the agent guidance', () => {
     expect(apiOnly).not.toContain('`src/resources/`')
   })
 
+  test('an app with an API is told to run app:atlas before reading its code', () => {
+    // FJS-1561. A pair: an app with no junction has nothing for it to boot.
+    expect(apiOnly).toContain('fli app:atlas')
+    expect(appAgentsMd({ name: 'demo', packages: ['@frontierjs/litestone'] })).not.toContain('app:atlas')
+  })
+
   test('a guide is read a section at a time, through a package the app has', () => {
     // A reader told only not to read a guide whole read it whole anyway
     // (FJS-1549); the command is the instruction. Paired: the path it outlines

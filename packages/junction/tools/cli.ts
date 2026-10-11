@@ -2,7 +2,7 @@
 // tools/cli.ts
 // Package bin entry — powers `bunx @frontierjs/junction <command>`.
 //
-//   bunx @frontierjs/junction repl [--port]   interactive REPL
+//   bunx @frontierjs/junction repl [--url]     interactive REPL
 //
 // Each tool is a self-executing script that reads its own args from
 // Bun.argv.slice(2), so we re-spawn it as its own process with the
@@ -28,7 +28,7 @@ const target = TOOLS[cmd ?? '']
 if (!target) {
   console.log('Usage: junction <repl|surface|errors|jobs|principal|notifications|atlas|call> [args]')
   console.log()
-  console.log('  repl [--port N]   interactive REPL against a running app')
+  console.log('  repl [--url U]    interactive REPL against a running app (or --host/--port/--https)')
   console.log('  surface --app <m> write the API surface snapshot  (--check in CI)')
   console.log('  errors            write the error boundary snapshot  (--check in CI)')
   console.log('  jobs --app <m>    write the jobs snapshot — what runs with no caller (--check in CI)')

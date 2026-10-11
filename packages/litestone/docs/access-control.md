@@ -172,7 +172,7 @@ origin.
 or a test that holds a client and not an app.
 
 **Declare it in the schema rather than only at `createClient`.** A tool that has
-the file and not the app — `litestone studio`, `litestone tinker`, `fli auth:*` —
+the file and not the app — `litestone studio`, `litestone repl`, `fli auth:*` —
 builds a client off `schema.lite` alone and cannot see your call, so a claim
 named only there made every one of those tools refuse a schema that was correct
 (`FJS-772`). The name is the schema's; the value stays the app's.
@@ -585,7 +585,7 @@ model Grant { id Int @id  lensId Int  lens Lens @relation(fields: [lensId], refe
 ```
 
 Without it the rule had two homes, and both are copies. A principal resolver
-filled a `claim teamIds` per request, so a job, a seed and `fli tinker` graded
+filled a `claim teamIds` per request, so a job, a seed and `fli db:repl` graded
 against a list they had to recompute. A `readerIds String[] @system` on the
 parent was kept by the one service that moved it, so a revoke made on the model
 left the grantee reading (`FJS-1291`). Here the membership row is the only

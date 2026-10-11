@@ -59,7 +59,7 @@ await new Promise(r => setTimeout(r, 0))   // an entry lands one event-loop tick
 const [entry] = await sys.auditTrail.findMany({ where: { operation: 'update', field: 'salary' } })
 // {
 //   operation:  'update',             // create | update | delete | read
-//   model:      'user',               // the accessor spelling (FJS-2380)
+//   model:      'User',               // the model name, as a $audit event spells it
 //   field:      'salary',             // only for @trail field-level entries; null on a model-level one
 //   transition: null,                 // the named @@transitions move, where an update was one
 //   records:    [1],                  // the affected IDs
@@ -70,7 +70,7 @@ const [entry] = await sys.auditTrail.findMany({ where: { operation: 'update', fi
 //   meta:       { requestId: 'req_xyz' },
 //   createdAt:  '2026-01-15T10:30:00.000Z',
 // }
-if (entry?.model !== 'user' || !/\b1\b/.test(JSON.stringify(entry.records))) throw new Error(`unexpected entry ${JSON.stringify(entry)}`)
+if (entry?.model !== 'User' || !/\b1\b/.test(JSON.stringify(entry.records))) throw new Error(`unexpected entry ${JSON.stringify(entry)}`)
 ```
 
 The entry's `records`, `before`, `after` and `meta` are `Json` columns and read back decoded on a jsonl trail and a SQL trail alike. `onLog` is handed the entry before that, with the four as JSON text.
@@ -93,8 +93,8 @@ await sys.widget.createMany({ data: [{ id: 1, state: 'draft' }, { id: 2, state: 
 await sys.widget.updateMany({ where: { state: 'draft' }, data: { state: 'live' } })
 await new Promise(r => setTimeout(r, 0))
 
-const [entry] = await sys.auditTrail.findMany({ where: { model: 'widget', operation: 'update' } })
-// { operation: 'update', model: 'widget', records: [1, 2, 3], before: null, after: null, ... }
+const [entry] = await sys.auditTrail.findMany({ where: { model: 'Widget', operation: 'update' } })
+// { operation: 'update', model: 'Widget', records: [1, 2, 3], before: null, after: null, ... }
 if (entry.before !== null || entry.after !== null || !/1,2,3/.test(JSON.stringify(entry.records))) throw new Error('a bulk write logs ids and no images')
 ```
 
@@ -123,12 +123,12 @@ await sys.vault.create({ data: { id: 7, name: 'prod', apiKey: 'sk-1' } })
 await sys.vault.update({ where: { id: 7 }, data: { apiKey: 'sk-2' } })
 await new Promise(r => setTimeout(r, 0))
 
-const entries = await sys.auditTrail.findMany({ where: { model: 'vault', operation: 'update' } })
-// { operation: 'update', model: 'vault', field: 'apiKey',
+const entries = await sys.auditTrail.findMany({ where: { model: 'Vault', operation: 'update' } })
+// { operation: 'update', model: 'Vault', field: 'apiKey',
 //   records: [7], before: '[redacted]', after: '[redacted]', actorId: 'user_abc', ... }
 
 // model-level image — name is logged, apiKey is not
-// { operation: 'update', model: 'vault', field: null, records: [7],
+// { operation: 'update', model: 'Vault', field: null, records: [7],
 //   before: { id: 7, name: 'prod', apiKey: '[redacted]' },
 //   after:  { id: 7, name: 'prod', apiKey: '[redacted]' }, ... }
 const text = JSON.stringify(entries)
@@ -167,8 +167,8 @@ await sys.candidate.create({ data: { id: 3, email: 'c@example.com', coverLetter:
 await sys.candidate.update({ where: { id: 3 }, data: { stage: 'interview' } })
 await new Promise(r => setTimeout(r, 0))
 
-const [entry] = await sys.auditTrail.findMany({ where: { model: 'candidate', operation: 'update' } })
-// { operation: 'update', model: 'candidate', field: null, records: [3],
+const [entry] = await sys.auditTrail.findMany({ where: { model: 'Candidate', operation: 'update' } })
+// { operation: 'update', model: 'Candidate', field: null, records: [3],
 //   after: { id: 3, email: '[personal]', coverLetter: '[personal]', stage: 'interview' }, ... }
 const after = JSON.stringify(entry.after)
 if (/c@example/.test(after) || !/\[personal\]/.test(after) || !/interview/.test(after)) throw new Error('personal data is dropped, the rest kept')
@@ -229,9 +229,9 @@ const trail = db.asSystem().auditTrail
 await db.$setAuth({ id: 'user_abc' }).candidate.create({ data: { id: 1, email: 'c@example.com', stage: 'new' } })
 await new Promise(r => setTimeout(r, 0))
 
-// All writes to the candidate table — `model` holds the accessor spelling (FJS-2380)
+// All writes to Candidate — `model` holds the model name, the spelling `$audit({ model })` takes
 const writes = await trail.findMany({
-  where:   { model: 'candidate' },
+  where:   { model: 'Candidate' },
   orderBy: { createdAt: 'desc' },
   limit:   50,
 })
@@ -243,21 +243,19 @@ const actorWrites = await trail.findMany({
 if (writes.length !== 1 || actorWrites.length !== 1) throw new Error('expected the one create')
 ```
 
-A `$raw` predicate over `records` — *all changes to a specific record* — is ignored by the jsonl reader rather than applied or refused (`FJS-2298`), so until that is fixed the narrowing is done in JS:
+A `$raw` predicate over `records` — *all changes to a specific record* — is refused by name: the jsonl reader filters JSON lines in JS and `$raw` is SQL, so the narrowing is done in JS:
 
-```js failing
-// FJS-2298 — the trail reader drops a `$raw` it does not understand
+```js throws
 const trail = db.asSystem().auditTrail
 await db.asSystem().candidate.create({ data: { id: 1, email: 'c@example.com', stage: 'new' } })
 await new Promise(r => setTimeout(r, 0))
 
 const history = await trail.findMany({
   where: {
-    model:   'candidate',
+    model:   'Candidate',
     records: { $raw: sql`json_extract(records, '$[0]') = ${999}` }
   }
 })
-if (history.length !== 0) throw new Error('no entry names record 999')
 ```
 
 The auto-generated model name for a trail database is `<dbName>Trail` — `audit` → `auditTrail`.

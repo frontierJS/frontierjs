@@ -443,14 +443,13 @@ model ApiRequest {
 }
 ```
 
-```js failing
+```js
 // Single createClient — routes automatically
 const db = await createClient({ path: './schema.lite' })
 
 await db.pageView.create({ data: { path: '/home', duration: 142 } })  // → analytics.db
 await db.apiRequest.create({ data: { method: 'GET', path: '/', status: 200 } })  // → logs/
-await db.asSystem().auditTrail.findMany({ where: { model: 'user' } })  // → audit/ — system-only
-// FJS-2379: a trail nothing has written yet refuses the read
+await db.asSystem().auditTrail.findMany({ where: { model: 'User' } })  // → audit/ — system-only
 ```
 
 **Drivers:**

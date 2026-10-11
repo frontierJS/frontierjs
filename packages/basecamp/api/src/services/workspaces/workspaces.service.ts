@@ -263,7 +263,7 @@ export function createWorkspacesService(app: BasecampApp) {
       //
       // `WorkspaceMember` denies it at the Data boundary as well
       // (`@@deny('update', userId == auth().id)`), and that is the rule that
-      // covers a job, a hub screen and a `fli tinker` session — but not this
+      // covers a job, a hub screen and a `fli db:repl` session — but not this
       // path: `members()` is `asSystem()`, because membership is what decides
       // access and cannot be read through the caller it is deciding about. So
       // the one door a person actually walks through is the one door the

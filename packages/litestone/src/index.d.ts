@@ -737,6 +737,7 @@ export interface LitestoneClient {
    */
   $audit(entry: {
     operation: string
+    /** The model name (`User`); its accessor or table name is written as the model's. */
     model?: string
     field?: string | null
     records?: unknown[]

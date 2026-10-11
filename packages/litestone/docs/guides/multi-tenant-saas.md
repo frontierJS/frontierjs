@@ -218,15 +218,15 @@ await db.$setAuth(admin).user.update({ where: { id: admin.id }, data: { name: 'A
 await new Promise(r => setImmediate(r))   // an entry lands one tick after its write
 
 const audit = await db.asSystem().auditTrail.findMany({
-  where:   { model: 'user', operation: 'update' },
+  where:   { model: 'User', operation: 'update' },
   orderBy: { createdAt: 'desc' },
   limit:   100,
 })
-// → [{ operation: 'update', model: 'user', records: [1], actorId: 1, ... }]
+// → [{ operation: 'update', model: 'User', records: [1], actorId: 1, ... }]
 if (audit.length !== 1 || audit[0].actorId !== admin.id) throw new Error(JSON.stringify(audit))
 ```
 
-`model` is the accessor spelling (`user`, not `User` — `FJS-2380`). The entry's
+`model` is the model name (`User`, the spelling `$audit({ model })` takes). The entry's
 `tenant` column is what tells one tenant's rows from another's in the shared
 file; it is filled by `logContext`, which Junction's seam supplies per request.
 

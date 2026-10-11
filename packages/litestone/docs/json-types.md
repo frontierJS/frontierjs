@@ -53,16 +53,20 @@ await db.user.create({ data: {
 // → ValidationError: address.postalCode: is required
 ```
 
-A `@default` on a member is parsed and never applied, so a write that leaves
-`country` out is refused as missing rather than filled in:
+A literal `@default` on a member fills a key the document left out, so a write
+that omits `country` stores `'US'` rather than being refused as missing:
 
-```js failing
-// FJS-2301
-await db.user.create({ data: {
+```js
+const cy = await db.user.create({ data: {
   name: 'Cy',
-  address: { street: '1 Main', city: 'Boston', postalCode: '02101' },   // country should default to 'US'
+  address: { street: '1 Main', city: 'Boston', postalCode: '02101' },
 }})
+cy.address.country   // 'US'
 ```
+
+It fills a whole document only — a create, or an update that states the value.
+A `$merge` patch leaves an absent key alone, since the stored one stays. An
+explicit `null` is not absent and is graded as the caller's word.
 
 ## Why typed JSON
 
@@ -98,7 +102,7 @@ A type describes a JSON value, which means anything that doesn't make sense in J
 | Validators (`@email`, `@regex`, `@length`, `@gte`, `@lt`, `@url`, `@minItems`, ...) | ✓ |
 | Transforms (`@trim`, `@lower`, `@upper`) | ✓ |
 | `@computed` fields | ✓ |
-| Literal `@default("US")` | ✓ parses — not applied on write (`FJS-2301`) |
+| Literal `@default("US")` | ✓ fills an absent key of a whole-document write |
 | Relations (`@relation`) | ✗ |
 | `Bytes`, `File` field types | ✗ |
 | `@id`, `@unique`, `@map` | ✗ |

@@ -503,7 +503,7 @@ describe('a protected column never reaches a tool description', () => {
     const every = [...at(8).tools, ...at(8).withheld]
     const json  = JSON.stringify(every.map(t => t.input.schema))
     expect(json).not.toContain('value')
-    expect(json).not.toContain('scope')
+    expect(json).not.toContain('privilege')
   })
 
   test('and the ordinary columns of the SAME model survive', () => {
@@ -515,7 +515,7 @@ describe('a protected column never reaches a tool description', () => {
     const props = Object.keys((create?.input.schema?.properties ?? {}) as object)
     expect(props).toContain('label')
     expect(props).not.toContain('value')
-    expect(props).not.toContain('scope')
+    expect(props).not.toContain('privilege')
   })
 
   test('the audience is not reachable through the projection at all', () => {

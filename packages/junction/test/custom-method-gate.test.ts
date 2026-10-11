@@ -508,3 +508,50 @@ describe('customMethodGrade', () => {
     expect(customMethodGrade('refund', {},            undefined)).toEqual({ source: 'floor', level: null, graded: false })
   })
 })
+
+// ─── the refusal carries the two numbers (`FJS-2346`) ────────────────────────
+//
+// A refusal that names the level only in prose cannot be turned into the word
+// an app's callers use — a role. Litestone's own `AccessDeniedError` carries
+// `required` and `got`, and an app's error mapper reads them; the method gate
+// is the same refusal and says it the same way.
+
+describe('a refused custom method hands an error mapper the gate’s two numbers', () => {
+
+  test('required, got and the method arrive on the error the mapper sees', async () => {
+    const { registerErrorMapper } = await import('../src/core/errors.ts')
+    const seen: any[] = []
+    const off = registerErrorMapper((err: any) => { seen.push(err); return null })
+    try {
+      const s = await shop()
+      const out = await s.call('shopper', 'orders', 'settle')
+      expect(out.status).toBe(403)
+      expect(out.ran).toEqual([])
+
+      const refusal = seen.find(e => e?.name === 'AccessDeniedError')
+      expect(refusal).toBeDefined()
+      expect(refusal.required).toBe(5)
+      expect(refusal.got).toBe(4)
+      expect(refusal.operation).toBe('settle')
+      await s.close()
+    } finally { off() }
+  })
+
+  test('a mapper can answer with its own words, and the status stays 403', async () => {
+    const { registerErrorMapper, Forbidden } = await import('../src/core/errors.ts')
+    const off = registerErrorMapper((err: any) =>
+      err?.name === 'AccessDeniedError' && err.required === 5
+        ? new Forbidden('Requires admin role') : null)
+    try {
+      const s = await shop()
+      const res = await s.app.http.fetch(new Request('http://localhost/orders/1', {
+        method: 'POST',
+        headers: { 'x-service-method': 'settle', 'content-type': 'application/json', authorization: 'Bearer shopper' },
+        body: '{}',
+      }))
+      expect(res.status).toBe(403)
+      expect(JSON.stringify(await res.json())).toContain('Requires admin role')
+      await s.close()
+    } finally { off() }
+  })
+})

@@ -761,7 +761,7 @@ function makeApiCoreGateTs() {
 // the session is built (auth's sessionFields), not matched as a string here.
 //
 // Its own file so a test can install it without opening the app's database
-// (api/test/access.test.ts), and so \`fli tinker --gate api/src/core/gate.ts\`
+// (api/test/access.test.ts), and so \`fli db:repl --gate api/src/core/gate.ts\`
 // can grade a console the way the API grades a request. Anything graded by a
 // different resolver passes against a ladder the API does not run.
 

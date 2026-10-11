@@ -13,7 +13,7 @@ import { expandCapabilityType } from './capabilities.js'
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
-import { pointColumnNames } from './ddl.js'
+import { pointColumnNames, isStoredField } from './ddl.js'
 import { inferFromFk } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
@@ -6417,6 +6417,15 @@ function validate(schema) {
     const NO_COLUMN = { none: 'is @computed, so it is derived in JS after the row is read and there is no column',
                         expression: 'is computed by SQLite from the row rather than stored, so there is no column to constrain' }
     const reason = (name) => NO_COLUMN[storageOf(name)]
+
+    // A table needs a column. With none, the DDL is `CREATE TABLE "post" ()`
+    // and SQLite answers `near ")": syntax error` at createClient, naming
+    // nothing the author wrote. `@@external` emits no DDL, so it is exempt.
+    if (!model.fields.some(isStoredField) && !model.attributes.some(a => a.kind === 'external'))
+      errors.push(`Model '${model.name}' has no stored field — a table needs at least one column, and ` +
+                  `@computed, @transient, @from, @derived, @edge and relation fields are not stored. ` +
+                  `Add a stored field, or mark the model @@external if another system owns the table`)
+
     for (const field of model.fields) {
       const why = reason(field.name)
       if (why && field.attributes.some(a => a.kind === 'unique'))

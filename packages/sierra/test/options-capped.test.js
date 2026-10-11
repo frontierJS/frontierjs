@@ -19,7 +19,7 @@ let CALLS = []
 
 // One table per service. A list read answers the first two rows and a total;
 // a lookup by `in` answers the rows that match it AND the narrowing it carries
-// — `$scope: ['active']` excludes the retired row, which is what makes a
+// — a `scope: ['active']` directive excludes the retired row, which is what makes a
 // narrowed lookup different from an unnarrowed one.
 const TABLES = {
   contacts: [
@@ -38,13 +38,13 @@ vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: (name) => ({
       on: () => {},
-      find: async (filter = {}) => {
-        CALLS.push({ name, filter })
+      find: async (filter = {}, directives = {}) => {
+        CALLS.push({ name, filter, directives })
         const rows = TABLES[name === 'crews' ? 'contacts' : name] ?? []
         const lookup = Object.entries(filter).find(([, v]) => v && typeof v === 'object' && Array.isArray(v.in))
         if (lookup) {
           const [col, { in: wanted }] = lookup
-          const hit = rows.filter(r => wanted.includes(r[col]) && !(filter.$scope && r.retired))
+          const hit = rows.filter(r => wanted.includes(r[col]) && !(directives.scope && r.retired))
           return { data: hit, total: hit.length }
         }
         return { data: rows.slice(0, 2), total: TOTAL[name] }
@@ -116,7 +116,8 @@ describe('a value set whose list is capped (FJS-2555)', () => {
   test("the membership question carries the set's own narrowing", async () => {
     await createResource('tasks', { model: 'Task' }).options('tag', { record: { tag: 'far' } })
     const lookup = CALLS.find(c => c.filter.label?.in)
-    expect(lookup.filter).toMatchObject({ $scope: ['active'], label: { in: ['far'] } })
+    expect(lookup.filter).toEqual({ label: { in: ['far'] } })
+    expect(lookup.directives.scope).toEqual(['active'])
   })
 })
 

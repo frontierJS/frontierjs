@@ -90,6 +90,8 @@ export default defineConfig({
   root: ROOT,
 
   server: {
+    // Sierra's base carries `host`, which `fli dev --host` sets.
+    ...sierra.server,
     port: UI_PORT,   // dev/fe, project 2 — see packages/cli/core/ports.js
 
     // Refuse to hop ports. Vite's default is to take the next free one and

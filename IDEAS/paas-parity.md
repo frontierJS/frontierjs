@@ -30,7 +30,6 @@ These are the gaps that keep Basecamp from being a PaaS at all.
 | Nothing releases on a git push: `IGit` is a stub and no route takes a push event (blocked by FJS-1496) | [FJS-1781](../ISSUES.md#fjs-1781) |
 | No app data is backed up: only Basecamp's own database is | [FJS-1782](../ISSUES.md#fjs-1782) · [FJS-1766](../ISSUES.md#fjs-1766) |
 | No OAuth or OIDC sign-in, although `@frontierjs/auth` ships it | [FJS-1783](../ISSUES.md#fjs-1783) |
-| A `Domain.redirectTo` is routed on no machine | [FJS-1615](../ISSUES.md#fjs-1615) |
 | Nothing probes a deployed URL | [FJS-1557](../ISSUES.md#fjs-1557) · [uptime-monitoring.md](uptime-monitoring.md) |
 
 ## The rest, in rough order of value

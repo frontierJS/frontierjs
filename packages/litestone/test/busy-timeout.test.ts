@@ -341,7 +341,7 @@ describe('the wait is set before the WAL switch', () => {
     const registry = join(d, 'tenants-registry.db')
     await holdRollbackFile(registry, 300)
 
-    const reg: any = await createTenantRegistry({ schema: SCHEMA, resolveFrom: d, dir: join(d, 'tenants'), registry })
+    const reg: any = await createTenantRegistry({ schema: SCHEMA, dir: join(d, 'tenants'), registry })
     await reg.create('acme', {})
     expect(reg.exists('acme')).toBe(true)
     await reg.close()
@@ -349,7 +349,7 @@ describe('the wait is set before the WAL switch', () => {
 
   test('a tenant FILE another process holds is created, not refused', async () => {
     const d = tmp()
-    const reg: any = await createTenantRegistry({ schema: SCHEMA, resolveFrom: d, dir: join(d, 'tenants'), registry: join(d, 'r.db') })
+    const reg: any = await createTenantRegistry({ schema: SCHEMA, dir: join(d, 'tenants'), registry: join(d, 'r.db') })
     await holdRollbackFile(join(d, 'tenants', 'acme.db'), 300)
 
     await reg.create('acme', {})

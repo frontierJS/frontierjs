@@ -711,7 +711,7 @@ model Post { id Int @id @default(autoincrement())  title String }
   const registry = async (maxOpen: number) => {
     const dir = tmp()
     return createTenantRegistry({
-      schema: POOL_SCHEMA, resolveFrom: dir, dir,
+      schema: POOL_SCHEMA, dir,
       registry: join(dir, 'r.db'), maxOpen,
     })
   }
@@ -970,5 +970,41 @@ describe('upsertMany conflictTarget under row tenancy', () => {
     await caller.job.upsertMany({ data: [{ externalId: 'x', title: 'one' }], conflictTarget: ['accountId', 'externalId'] })
     await caller.job.upsertMany({ data: [{ externalId: 'x', title: 'two' }], conflictTarget: ['accountId', 'externalId'] })
     expect((await caller.job.findMany({})).map((j: any) => j.title)).toEqual(['two'])
+  })
+})
+
+// FJS-1565 — the registry took an option it did not know and dropped it, so
+// `plugins` passed beside `clientOptions` built a registry with no plugin in it.
+describe('createTenantRegistry options', () => {
+  const open = (extra: Record<string, unknown>) => {
+    const dir = tmp()
+    return createTenantRegistry({
+      schema: `tenancy { strategy database }\nmodel Post { id Int @id }`,
+      dir, registry: join(dir, 'r.db'), ...extra,
+    } as never)
+  }
+
+  it('refuses an unknown option by name, and lists what is legal', async () => {
+    const err: any = await open({ zzz: 1 }).catch((e: any) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toContain('unknown option')
+    expect(err.message).toContain('zzz')
+    expect(err.message).toContain('clientOptions')
+  })
+
+  it('points a createClient option at clientOptions rather than dropping it', async () => {
+    const err: any = await open({ plugins: [] }).catch((e: any) => e)
+    expect(err.message).toContain('plugins')
+    expect(err.message).toContain('clientOptions: { plugins')
+  })
+
+  it('suggests the option a near miss is one edit from', async () => {
+    const err: any = await open({ maxOpn: 3 }).catch((e: any) => e)
+    expect(err.message).toContain('did you mean `maxOpen`')
+  })
+
+  it('still opens with only legal options', async () => {
+    const tenants = await open({ maxOpen: 3, clientOptions: { plugins: [] } })
+    tenants.close()
   })
 })

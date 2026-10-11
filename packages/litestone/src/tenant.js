@@ -29,7 +29,8 @@ import { openDatabase, openWalDatabase } from './core/engine.js'
 import { applyBusyTimeout, busyTimeoutFor } from './core/pragmas.js'
 import { existsSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve, join, dirname } from 'path'
-import { createClient }    from './core/client.js'
+import { createClient, CLIENT_OPTIONS } from './core/client.js'
+import { suggestKey }      from './core/args.js'
 import { generateDDL, generateDDLForDatabase } from './core/ddl.js'
 import { apply }           from './core/migrations.js'
 import { splitStatements } from './core/migrate.js'
@@ -51,6 +52,17 @@ function assertSafeId(id) {
     throw new Error(`Tenant ID "${id}" contains invalid characters. Use: a-z A-Z 0-9 - _ .`)
   if (id === 'registry')
     throw new Error(`"registry" is reserved — it is used for the tenant registry database`)
+}
+
+// ─── apply() verdict ──────────────────────────────────────────────────────────
+// A directory whose files all fail the naming pattern is answered with
+// `unmatched` and a message but no `error`, so reading `error` alone takes it
+// for an empty history and builds a tenant holding none of the schema.
+
+function migrationFailure(result) {
+  if (result.error)     return `migration "${result.failed}": ${result.error}`
+  if (result.unmatched) return result.message
+  return null
 }
 
 // ─── LRU connection pool ──────────────────────────────────────────────────────
@@ -492,10 +504,11 @@ class TenantRegistry {
       // A refusal or a failure registered a tenant whose file held none of the
       // schema, and the first query said `no such table`.
       const result = await apply(raw, this.#migrationsDir)
-      if (result.error) {
+      const failure = migrationFailure(result)
+      if (failure) {
         raw.close()
         for (const f of [path, `${path}-wal`, `${path}-shm`]) if (existsSync(f)) unlinkSync(f)
-        throw new Error(`Tenant "${id}" was not created — migration "${result.failed}": ${result.error}`)
+        throw new Error(`Tenant "${id}" was not created — ${failure}`)
       }
     } else {
       // Fall back to fresh DDL from schema. A tenant's single file holds ALL
@@ -722,7 +735,8 @@ class TenantRegistry {
         // await BEFORE closing — previously this fired-and-forgot the promise,
         // closed the DB immediately, and reported 0 applied migrations.
         const result = await apply(raw, this.#migrationsDir)
-        if (result.error) throw new Error(`migration "${result.failed}" failed: ${result.error}`)
+        const failure = migrationFailure(result)
+        if (failure) throw new Error(failure)
         return { applied: result.applied?.filter(a => a.ok).length ?? 0 }
       } finally {
         raw.close()
@@ -807,6 +821,31 @@ class TenantRegistry {
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
+// The refusal comes from the rest object, so this list is for the message only.
+// A createClient option passed at the top level is the likeliest mistake and the
+// costliest one — `plugins` beside `clientOptions` built a registry whose tenant
+// clients carried no plugin, and no gate or level reached them (FJS-1565).
+const REGISTRY_OPTIONS = [
+  'path', 'schema', 'parsed', 'dir', 'registry', 'maxOpen', 'encryptionKey',
+  'migrationsDir', 'databases', 'clientOptions',
+]
+
+function assertRegistryOptions(rest) {
+  const unknown = Object.keys(rest)
+  if (!unknown.length) return
+  const lines = unknown.map(k => {
+    if (CLIENT_OPTIONS.includes(k))
+      return `  ${k} is a createClient option — it belongs in \`clientOptions: { ${k} }\`, which reaches every tenant client`
+    const near = suggestKey(k, REGISTRY_OPTIONS)
+    return `  ${k}${near ? ` — did you mean \`${near}\`?` : ''}`
+  })
+  throw new Error(
+    `createTenantRegistry(): unknown option${unknown.length > 1 ? 's' : ''}\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `  Options: ${REGISTRY_OPTIONS.join(', ')}`
+  )
+}
+
 /**
  * Create and initialize a TenantRegistry.
  *
@@ -836,7 +875,10 @@ export async function createTenantRegistry({
   databases,
   // Extra createClient options forwarded to every tenant connection
   clientOptions  = {},
+  ...unknownOptions
 } = {}) {
+  assertRegistryOptions(unknownOptions)
+
   // Resolve schema — same order as createClient
   const parseResult = (() => {
     if (schemaParsed)  return schemaParsed

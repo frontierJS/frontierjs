@@ -23,7 +23,7 @@ import {
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
-import { validate, applyTransforms, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
+import { validate, applyTransforms, applyTypedDefaults, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, typeMemberDefault, ValidationError } from './validate.js'
 import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
 import { createExclusionLedger } from './exclusion.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
@@ -72,7 +72,7 @@ import {
   jsonlFilePath,
 } from './databases.js'
 import {
-  applyGeneratedDefaults, noteStamp, stampFromAuth, applyAuthDefaults, ensureSequenceTable,
+  applyGeneratedDefaults, restampClock, noteStamp, stampFromAuth, applyAuthDefaults, ensureSequenceTable,
   applySequences,
 } from './stamps.js'
 import {
@@ -360,7 +360,7 @@ function authStamped(row, modelName, ctx) {
  * @property {Set<string>} boolFields
  * @property {Set<string>} bigFields
  * @property {Record<string, { values: Set<string>, enumName: string, optional: boolean, array: boolean }>} enumFields
- * @property {Map<string, 'array' | 'json' | 'file' | 'boolean'>} fieldKinds
+ * @property {Map<string, 'array' | 'json' | 'file' | 'boolean' | 'number' | 'any'>} fieldKinds
  * @property {Record<string, 'NUMERIC' | 'TEXT' | 'BLOB'>} affinity
  * @property {boolean} softDelete
  * @property {boolean} softDeleteCascade
@@ -374,7 +374,7 @@ function authStamped(row, modelName, ctx) {
  * @property {Record<string, any>} edges        `@edge` storage, by field
  * @property {Record<string, string[]>} coFk    child model → the FK columns a nested write propagates
  * @property {{ field: string, generate: () => string } | null} autoId
- * @property {{ field: string, generate: () => unknown }[]} generatedDefaults
+ * @property {{ field: string, generate: () => unknown, clock?: boolean }[]} generatedDefaults
  * @property {{ field: string, authField: string, fillsNull: boolean }[]} authDefaults
  * @property {{ field: string, value: unknown }[]} literalDefaults
  * @property {{ field: string, sourceField: string }[]} fieldRefDefaults
@@ -2257,7 +2257,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
           emitLog(db, {
             operation,
-            model:   tableName,
+            model:   modelName,
             field,
             transition,
             records,
@@ -2278,7 +2278,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
         emitLog(db, {
           operation,
-          model:   tableName,
+          model:   modelName,
           field:   null,
           transition,
           records: ids,
@@ -2656,6 +2656,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _authDefaultOf = new Map(shape.authDefaults.map(d => [d.field, d.authField]))
   const _authFillsNull = new Set(shape.authDefaults.filter(d => d.fillsNull).map(d => d.field))
   const NUMERIC_TYPES = new Set(['Int', 'Float', 'BigInt', 'Decimal'])
+
+  // On a create: does this value leave the column holding what omitting the key
+  // would have? Only a literal default is comparable; anything computed is not.
+  function storesWhatOmissionStores(key, value) {
+    const field = _fieldsByName.get(key)
+    if (!field?.attributes?.some(a => a.kind === 'default')) return value === null
+    const def = typeMemberDefault(field)
+    return !!def && value === def.value
+  }
 
   function refuseOp(key, msg) { throw new ValidationError([{ path: [key], message: msg }]) }
 
@@ -3635,10 +3644,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // that partition needs the whole payload in one place. A create is the other
     // shape: `Model.create` is the grant for making the row exist at all and is
     // not the one a column grant was meant to withhold, so both apply.
+    //
+    // The grant is charged for WRITING the column. A key carrying what leaving
+    // it out would store (`null` on a column with no default, the literal
+    // default itself) writes nothing, and a generated create form names every
+    // column `make()` seeded, so charging it refused the form for a field it
+    // does not show (`FJS-1517`). An update cannot make this test: the stored
+    // value is not in hand, and a `null` there may be a clear.
     if (!ctx.isSystem && requireAll && _capabilityWriteKeys.size &&
         data && typeof data === 'object' && !Array.isArray(data)) {
       for (const k of Object.keys(data))
-        if (_capabilityWriteKeys.has(k)) requireCapability(modelName, k, ctx)
+        if (_capabilityWriteKeys.has(k) && !storesWhatOmissionStores(k, data[k])) requireCapability(modelName, k, ctx)
     }
 
     // ── The escalation guard on a grant column ────────────────────────────
@@ -3678,7 +3694,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // stating it here is what keeps this correct if that strip ever moves.
     else if (model) refuseClearingRequired(data)
 
-    const transformed = model ? applyTransforms(data, model) : { ...data }
+    let transformed = model ? applyTransforms(data, model) : { ...data }
+    if (model && ctx.typeMap?.size) transformed = applyTypedDefaults(transformed, model, ctx.typeMap)
     // Array rules — shape, element type, @minItems/@maxItems/@uniqueItems —
     // live in validate.js with every other rule, and `buildValidationMap` flags
     // a model with any array field so this call is reached. They were enforced
@@ -4554,7 +4571,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
     const orderSql = [flatOrderSql, ...orderParts].filter(Boolean).join(', ')
     const orderFrag = orderSql ? sqlFragment(` ORDER BY ${orderSql}`, hasJoins ? _relOrderParams : _flatOrderParams) : null
-    const sqlCols   = parsedSelect?.sqlCols ?? '*'
+    // A JOIN brings a second table with its own `id`, so an aliased read names
+    // the table each selected column comes from.
+    const sqlCols   = needsAlias && parsedSelect?.dbCols?.length
+      ? parsedSelect.dbCols.map(c => `t.${quoteIdent(c)}`).join(', ')
+      : parsedSelect?.sqlCols ?? '*'
     const distinctKw = distinct ? 'DISTINCT ' : ''
     // A @from subquery correlates to the outer table by name, so an aliased
     // query needs the aliased variant. Emitting the plain one under `t` fails
@@ -5323,7 +5344,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // here rather than ahead of the lock, so the rows `afterDelete` is told
   // about are the rows the statement reached.
   function writeUnit(plan) {
-    const { statements, returning, where, batch } = plan
+    const { returning, where, batch } = plan
+    // A plan that stamped a clock while it was planned reads it again now the
+    // lock is held (FJS-2153).
+    const statements = plan.restamp ? plan.restamp() : plan.statements
     const total  = statements.length
     // A plan that chose to run without a transaction and finds one open now
     // would join it and go with its rollback, which is the defect `FJS-638`
@@ -5566,8 +5590,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
     const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
     refuseSystemEntries(system, ['update'])
-    await enforceValueSets(modelName, [data], ctx, { where })
+    // After the gate: a caller it refuses is told so, not what the set holds.
     if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, system }, ctx)
+    await enforceValueSets(modelName, [data], ctx, { where })
     // Same stamp update() runs. Missing it here was worse than missing it
     // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
     // the identity beside it stayed at whoever wrote last through update() —
@@ -5752,8 +5777,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // was stored as the document — `{"$merge":{"a":1}}`.
     for (const row of data) extractWriteOps(row, { where: 'createMany' })
     refuseSystemEntries(system, ['create'])
-    await enforceValueSets(modelName, data, ctx)
     if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
+    await enforceValueSets(modelName, data, ctx)
     refuseOffEntry(data)
     // The rows as the caller wrote them: every stamp lands later, inside the unit.
     const hidden = await hiddenParents(data, [], system)
@@ -5851,10 +5876,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const _cardRequires = shape.cardinality.requiresChildren
     if (_cardRequires) { const r = refuseChildlessCreate(_cardRequires, data); if (r) throw r }
     refuseSystemEntries(system, ['create'])
-    await enforceValueSets(modelName, [data], ctx)
     // The plugins first: a value one writes into the payload is a value the
     // row lands with, and grading before it would pass it ungraded (FJS-1307).
     if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select, system }, ctx)
+    await enforceValueSets(modelName, [data], ctx)
     refuseOffEntry([data])
     // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
     // What the ENGINE puts in this payload, so the @guarded/@system refusals
@@ -5919,8 +5944,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   async function prepareUpdate({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
                                  withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
     refuseSystemEntries(system, ['update'])
-    await enforceValueSets(modelName, [data], ctx, { where })
     if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
+    await enforceValueSets(modelName, [data], ctx, { where })
     const stamped = new Set()
     data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
     const [_upHidden] = await hiddenParents([data], [stamped], system)
@@ -6198,7 +6223,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // stamp — an INSERT takes the column DEFAULT, which is the same expression.
   // No audience by construction, so it announces nothing; the choice between
   // this statement and the read-then-write path is the verb's.
-  function upsertPlan({ where, createData, updateData, insRow, updRow, wKey, insCols, updCols }) {
+  function upsertPlan({ where, createData, updateData, insRow, updRow, wKey, insCols, updCols, restamp = null }) {
     const sets = sqlJoin([
       sqlJoin(updCols.map(c => sqlJoin([ident(col(c)), sqlFragment(' = ?', [updRow[c] ?? null])], '')), ', '),
       ...stampSets(updCols).map(t => sqlFragment(t)),
@@ -6213,7 +6238,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       where: null, args: { where, create: createData, update: updateData }, query: stmt, prefetch: false,
       moves: null, exclusion: null, post: false, softCascade: null, batch: false, logs: false, system: null,
       announce: null, result: { select: undefined, include: undefined }, bare: tx.state.depth === 0,
-      refuse: null, before: null, transition: null,
+      refuse: null, before: null, transition: null, restamp,
     }
   }
 
@@ -6277,8 +6302,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // calls rather than one array: a create-shaped payload IS the row, while
     // the update half is about a row that already exists, so a dependent
     // binding grades it against `where` (`FJS-D122`).
-    await enforceValueSets(modelName, [createData], ctx)
-    await enforceValueSets(modelName, [updateData], ctx, { where })
+    // With a plugin installed the fast path is never taken and the slow path's
+    // create() and update() each check their own, after the gate: checking here
+    // would answer a caller the gate refuses with the set instead.
+    if (!plugins?.hasPlugins) {
+      await enforceValueSets(modelName, [createData], ctx)
+      await enforceValueSets(modelName, [updateData], ctx, { where })
+    }
     refuseOffEntry([createData])
     // Threaded through to both halves: the lookup has to SEE the row the
     // update would write, or an upsert against an excluded row reads as
@@ -6361,7 +6391,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (_sealInsertSql) return null
       if (_selfFreezes.length) return null
 
-      return upsertPlan({ where, createData, updateData, insRow, updRow, wKey, insCols, updCols })
+      // The INSERT's clock columns were read while this was planned; the lock
+      // is taken later, in writeUnit, which asks for the statement again then.
+      const clocked = shape.generatedDefaults?.some(e => e.clock && _fpStamped.has(e.field))
+      const restamp = clocked ? () => {
+        const cNow = restampClock(cData, shape.generatedDefaults, _fpStamped)
+        const row = writeData({ ...cNow, [wKey]: cNow[wKey] ?? wVal }, { requireAll: true, system, stamped: _fpStamped, creating: true })
+        return upsertPlan({ where, createData, updateData, insRow: row, updRow, wKey, insCols: Object.keys(row), updCols }).statements
+      } : null
+
+      return upsertPlan({ where, createData, updateData, insRow, updRow, wKey, insCols, updCols, restamp })
     }
     return null
   }
@@ -7592,6 +7631,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         _crOut = insertRow(false, _crEdges.edgeWrites, true)
       } else {
         _crOut = await tx.exclusive(async () => {
+          // The clock is read again now the lock is held: the stamp from
+          // prepareCreate predates the wait (FJS-2153).
+          data = restampClock(data, shape.generatedDefaults, stamped)
           // Apply @sequence fields — inject per-scope auto-incremented values.
           // Ahead of the split, because the split is what the INSERT is built
           // from: injecting a sequence into `data` after it has been taken apart
@@ -7769,7 +7811,6 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       })()
       for (const row of data) extractWriteOps(row, { where: 'upsertMany' })
       refuseSystemEntries(system, ['create', 'update'])
-      await enforceValueSets(modelName, data, ctx)
       const { mode: _usMode, wantRows: _usWantRows } = announceFor(announce)
       // The create/update split costs one SELECT per row and is what a logged
       // model already pays for its trail. At the `rows` tier it is worth paying
@@ -7794,6 +7835,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
               .filter(k => !target.includes(k))
         await plugins.beforeUpdate(modelName, { data: Object.fromEntries(_usKeys.map(k => [k, undefined])), system }, ctx)
       }
+      await enforceValueSets(modelName, data, ctx)
       refuseOffEntry(data)
       const _usHidden = await hiddenParents(data, [], system)
 
@@ -8920,7 +8962,7 @@ export { schemaAnchor } from './db-path.js'
 // object, so a name missing here costs a "did you mean" and never a wrong
 // answer — and `test/client-options.test.ts` parses the destructure and fails
 // if the two disagree.
-const CLIENT_OPTIONS = [
+export const CLIENT_OPTIONS = [
   'path', 'schema', 'parsed', 'resolveFrom', 'db', 'computed', 'encryptionKey',
   'hooks', 'onEvent', 'announce', 'filters', 'plugins', 'databases', 'access',
   'readOnly', 'busyTimeout', 'pluralize', 'onLog', 'onQuery', 'policyDebug',
@@ -11526,7 +11568,17 @@ function makeLockPrimitive(rawWriteDb) {
     const table = jsonlTableCache[ctx.trailDbMap[dbName].trailModel ?? `${dbName}Trail`]
     if (!table) throw new Error(`$audit: the log table for '${dbName}' is not available.`)
 
-    const built = buildLogEntry(entry, { ...ctx, auth: principal ?? ctx.auth }, ctx.onLog)
+    // The column holds the MODEL name for a @@trail write, so an event naming
+    // the same model by its accessor or its table must land under it, or one
+    // `where: { model }` matches half the trail and reads as *not logged*
+    // (FJS-2380). A name that is no model (an extract's dataset) is kept.
+    let model = entry.model
+    if (typeof model === 'string' && !ctx.shapes[model]) {
+      const named = Object.keys(ctx.shapes).find(n => modelToAccessor(n) === model || ctx.shapes[n].tableName === model)
+      if (named) model = named
+    }
+
+    const built = buildLogEntry({ ...entry, model }, { ...ctx, auth: principal ?? ctx.auth }, ctx.onLog)
 
     // A STATED value wins over onLog's. onLog is a generic enricher that runs
     // over every entry; a $audit caller is naming this one event and knows more

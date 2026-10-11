@@ -11,9 +11,9 @@
  *      carries the scope and the display column, where the relation carries
  *      neither. Answered as a plain relation it would fetch the whole related
  *      table and offer rows the set excludes.
- *   2. The declared `@@scope` TRAVELS, as a filter. `$checkWhere` validates a
- *      `$scope`, so it survives junction's autoFilter and litestone applies it
- *      — which is what makes the offered list the same list the Data boundary
+ *   2. The declared `@@scope` TRAVELS, as the `scope` directive. Junction hands
+ *      it to litestone as `where.$scope`, which validates and applies it — a
+ *      `$scope` in the FILTERS is refused at the bridge (`FJS-2561`) — which is what makes the offered list the same list the Data boundary
  *      will accept.
  *   3. A declared `where` is SQL, which a browser may never send — so it mints
  *      a `@@scope` of its own at parse and arrives here as one more NAME. Both
@@ -148,10 +148,11 @@ describe('what the picker asks for', () => {
     expect(out.total).toBe(2)
   })
 
-  test('a declared @@scope travels as a filter', () => {
+  test('a declared @@scope travels as a directive, never a filter', () => {
     // The half that makes the offered list the same list the server accepts.
     return createResource('tasks').options('scoped').then(() => {
-      expect(LAST.filter).toEqual({ $scope: ['active'] })
+      expect(LAST.filter).toEqual({})
+      expect(LAST.directives.scope).toEqual(['active'])
     })
   })
 
@@ -159,7 +160,7 @@ describe('what the picker asks for', () => {
     // `FJS-430`. SQL cannot cross and a name can, so the narrowing that used to
     // be invisible here is now just another entry in the list.
     await createResource('tasks').options('narrow')
-    expect(LAST.filter).toEqual({ $scope: ['active', 'LiveTag'] })
+    expect(LAST.directives.scope).toEqual(['active', 'LiveTag'])
   })
 
   test('search matches the display column, and the list is ordered by it', async () => {
@@ -189,12 +190,13 @@ describe('there is no set the picker has to over-offer', () => {
     // report: the scope crosses, so the offered list IS the accepted list.
     await createResource('tasks').options('narrow')
     expect(said()).not.toContain('narrowed by a declared')
-    expect(LAST.filter.$scope).toContain('LiveTag')
+    expect(LAST.directives.scope).toContain('LiveTag')
   })
 
   test('a set with no narrowing sends no scope at all', async () => {
     await createResource('tasks').options('tag')
     expect(LAST.filter).toEqual({})
+    expect('scope' in LAST.directives).toBe(false)
   })
 })
 

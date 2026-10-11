@@ -15,7 +15,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/serve.js` | the origin those files answer on. A SECOND listener, its own port, nothing signed — see below |
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers |
-| `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, on `/route` and on `/static/activate` (to the static origin, Host set to `<app_id>.localhost`), DELETEd on stop and `/static/retire`, the ingress server made on the first one |
+| `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, on `/route` (`static: true` for an inline app) and on `/static/activate` (to the static origin, Host set to `<app_id>.localhost`), DELETEd on stop and `/static/retire`, the ingress server made on the first one. A `redirects: [{host, to}]` list is a SECOND route, `fjs-<app>-redirects`, a Caddy-answered 308 that needs no container; a target is an http(s) URL with no braces, because Caddy expands `{…}` in a header, and an origin-only target keeps the request's path |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 

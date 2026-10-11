@@ -9,7 +9,7 @@
 // column names read back to field names.
 
 import { openDatabase, currentEngine } from './engine.js'
-import { applyWal, applyBusyTimeout, busyTimeoutFor } from './pragmas.js'
+import { applyWal, applyBusyTimeout, applyIncrementalVacuum, busyTimeoutFor } from './pragmas.js'
 import { resolve, dirname, envVar, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname } from '#host'
 import { noteMintedDirectory } from './db-path.js'
 import { ClientClosedError } from './errors.js'
@@ -379,7 +379,7 @@ function resolveDbPath(pathDef, override, anchor = null) {
  * @param {unknown} busyTimeout
  * @returns {{ rawWriteDb: RawDb | null, rawReadDb: RawDb, writeDb: DbHandle | null, readDb: DbHandle }}
  */
-function openSqliteConnections(absPath, busyTimeout) {
+function openSqliteConnections(absPath, busyTimeout, shrinks) {
   // SQLite can create a DB file but not its parent directory. If the configured
   // path points into a directory that doesn't exist yet, pre-create it so the
   // first `litestone repl`/`studio`/`createClient` call doesn't fail with a
@@ -417,6 +417,12 @@ function openSqliteConnections(absPath, busyTimeout) {
   // and with the timeout applied after it the loser had nothing to wait on and
   // threw `SQLITE_BUSY_RECOVERY` out of `createClient`, before a line of the
   // app had run. Measured at 1 in 10 simultaneous boots (`FJS-655`).
+  // A declared window frees pages for good, so the file is created able to
+  // give them back (`FJS-2290`) -- see applyIncrementalVacuum for the order.
+  if (shrinks) {
+    applyBusyTimeout(rawWriteDb, busyTimeout)
+    applyIncrementalVacuum(rawWriteDb)
+  }
   const journal = currentEngine()?.journal
   if (journal) {
     applyBusyTimeout(rawWriteDb, busyTimeout)
@@ -557,10 +563,10 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
    * @param {string} name
    * @param {boolean} wantsWrite
    */
-  function connectionsFor(absPath, name, wantsWrite) {
+  function connectionsFor(absPath, name, wantsWrite, shrinks) {
     const shared = absPath === ':memory:' ? null : opened.get(absPath)
     if (shared) return shared
-    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name))
+    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name), shrinks)
     if (!wantsWrite) {
       conns.rawWriteDb?.close()
       conns.rawWriteDb = null
@@ -593,7 +599,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
     }
 
     const wantsWrite = absPath === ':memory:' ? access === 'readwrite' : writable.has(absPath)
-    const conns = connectionsFor(absPath, db.name, wantsWrite)
+    const conns = connectionsFor(absPath, db.name, wantsWrite, !!db.retention)
 
     if (access === 'readonly') {
       registry[db.name] = { driver: 'sqlite', access: 'readonly', absPath, retention: db.retention, trailModel: db.trailModel, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb(db.name, 'readonly'), readDb: conns.readDb }

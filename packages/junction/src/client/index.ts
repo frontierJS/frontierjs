@@ -2105,7 +2105,7 @@ export class JunctionClient extends EventEmitter {
       return rows
     }
 
-    return { service: svc, store, load, stale, record, mutate, more: more_, hasMore }
+    return { service: svc, store, load, stale, record, mutate, more: more_, hasMore, total: () => total }
   }
 
   // ── HTTP request ─────────────────────────────────────────────────────
@@ -3044,6 +3044,11 @@ export interface ResourceResult<T extends Record<string, unknown> = Record<strin
   more: () => Promise<T[]>
   /** Is there anything past the window? */
   hasMore: () => boolean
+  /**
+   * How many rows the query matches, as of the last `load()` and kept in step
+   * with the store. Null before any answer, and when the service reported none.
+   */
+  total: () => number | null
 }
 
 export interface RecordOptions<T extends Record<string, unknown> = Record<string, unknown>> {

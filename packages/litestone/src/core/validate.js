@@ -293,6 +293,81 @@ export function transformValue(field, value) {
   return transform(transformNames(field.attributes), value)
 }
 
+// ─── Typed JSON defaults ─────────────────────────────────────────────────────
+// A literal `@default` on a member of a `type` fills an ABSENT key of a whole
+// document (`FJS-2301`). Graded after this runs, so `is required` is only said
+// of a member with no default. Absent is not null: an explicit `null` is the
+// caller clearing the key and stays what they wrote (Invariant 9).
+//
+// Whole-document writes only. A `$merge` patch is graded in 'partial' mode and
+// never reaches here -- an absent key there keeps what is stored, and filling
+// it would overwrite the stored value with the default.
+//
+// Returns the input untouched when nothing needed filling, else a copy; the
+// caller's object is never written to.
+
+const LITERAL_DEFAULT_KINDS = new Set(['string', 'number', 'boolean', 'enum'])
+
+/** The `{ value }` a type member's literal `@default` supplies, else null. The
+ *  one definition of which defaults a type applies: the write path fills from
+ *  it and the JSON Schema stops calling the member required because of it. */
+export function typeMemberDefault(field) {
+  const def = field.attributes?.find(a => a.kind === 'default')
+  return def && LITERAL_DEFAULT_KINDS.has(def.value?.kind) ? { value: def.value.value } : null
+}
+
+function fillTypeDefaults(value, typeName, typeMap) {
+  const type = typeMap.get(typeName)
+  if (!type || value == null || typeof value !== 'object' || Array.isArray(value)) return value
+
+  let out = value
+  const set = (key, v) => { if (out === value) out = { ...value }; out[key] = v }
+
+  for (const field of type.fields) {
+    const present = field.name in value && value[field.name] !== undefined
+    if (!present) {
+      const def = typeMemberDefault(field)
+      if (def) set(field.name, def.value)
+      continue
+    }
+
+    const nested = field.type.name === 'Json'
+      ? field.attributes?.find(a => a.kind === 'type')?.name
+      : (typeMap.has(field.type.name) ? field.type.name : null)
+    if (!nested) continue
+
+    const v = value[field.name]
+    if (field.type.array) {
+      if (!Array.isArray(v)) continue
+      const filled = v.map(el => fillTypeDefaults(el, nested, typeMap))
+      if (filled.some((el, i) => el !== v[i])) set(field.name, filled)
+    } else {
+      const filled = fillTypeDefaults(v, nested, typeMap)
+      if (filled !== v) set(field.name, filled)
+    }
+  }
+  return out
+}
+
+/** `data` with the literal `@default` of every typed-Json member filled in
+ *  where the document left the key out. The column's own `@default` is not this
+ *  one: it fills a column nobody wrote, and this fills a key inside a document
+ *  somebody did. */
+export function applyTypedDefaults(data, model, typeMap) {
+  let out = data
+  for (const field of model.fields) {
+    if (field.type.name !== 'Json') continue
+    const typeAttr = field.attributes.find(a => a.kind === 'type')
+    if (!typeAttr) continue
+    const v = data[field.name]
+    const filled = fillTypeDefaults(v, typeAttr.name, typeMap)
+    if (filled === v) continue
+    if (out === data) out = { ...data }
+    out[field.name] = filled
+  }
+  return out
+}
+
 // ─── Typed JSON validation ───────────────────────────────────────────────────
 // When a Json field has @type(T), validate the JSON value against the type's
 // shape. Recursive — type fields can themselves be Json @type(Other).

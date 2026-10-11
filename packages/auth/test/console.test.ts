@@ -1,6 +1,6 @@
 // test/console.test.ts
 //
-// `resetPasswords`, the command an app's `db/tinker.js` borrows. Graded by
+// `resetPasswords`, the command an app's `db/repl.js` borrows. Graded by
 // SIGNING IN, never by reading the column: a hash auth cannot verify is still a
 // changed column, and that is the failure a copy of the hashing would produce.
 // The refusal is paired with the same call forced, so a command that did

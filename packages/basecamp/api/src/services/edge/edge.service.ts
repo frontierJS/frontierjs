@@ -107,7 +107,7 @@ export async function edgeHealth(app: BasecampApp, accounts: EdgeAccount[]): Pro
 const why = (err: unknown) => err instanceof Error ? err.message : String(err)
 
 /** A refusal meaning *not yet* rather than *wrong*: no ingress zone, an App
- *  running nowhere, a hostname in no connected zone, a redirect. `sync` answers
+ *  running nowhere, a hostname in no connected zone. `sync` answers
  *  it as the 409 it is; `syncStep` records it as skipped, because a workspace
  *  that never connected an edge account writes Domains too, and a job failing
  *  on every one of them is an alarm about nothing. A record somebody else made
@@ -176,9 +176,6 @@ export function createEdgeService(app: BasecampApp) {
   // CNAME's own set, and this refuses the A or AAAA beside it, which Cloudflare
   // would otherwise reject with a message about neither).
   async function push(domain: DomainRow) {
-    if (domain.redirectTo)
-      throw new NotYet(`${domain.hostname} redirects, and no machine routes a redirect yet (FJS-1615) — nothing to point it at`)
-
     const host     = fqdn(domain.hostname)
     const accounts = await edgeAccounts()
     let ingress: ZoneAt | null, home: ZoneAt | null, addresses: string[], present: EdgeRecord[]

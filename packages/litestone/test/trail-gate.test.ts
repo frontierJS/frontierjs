@@ -57,7 +57,7 @@ describe('the synthesized trail model is gated at SYSTEM', () => {
       await expect(db.$setAuth({ id: 'u-1', level: 7 }).auditTrail.findMany({})).rejects.toThrow()
       const rows = await db.asSystem().auditTrail.findMany({})
       expect(rows.length).toBe(1)
-      expect(rows[0].model).toBe('secret')
+      expect(rows[0].model).toBe('Secret')
     })
   })
 })

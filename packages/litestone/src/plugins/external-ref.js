@@ -61,6 +61,8 @@
 import { Plugin } from '../core/plugin.js'
 import { buildWhere } from '../core/query.js'
 
+const NO_MAPS = Object.freeze({ fieldMap: Object.freeze({}), relationMap: Object.freeze({}) })
+
 export class ExternalRefPlugin extends Plugin {
   // Subclasses set this to match the DSL scalar type name
   // e.g. 'File', 'GitHub', 'Stripe'
@@ -69,8 +71,10 @@ export class ExternalRefPlugin extends Plugin {
   constructor(config = {}) {
     super()
     this.config      = config
-    this._fieldMap   = {}   // { model: { field: { isArray, ...opts } } }
-    this._relationMap = {}  // { model: { relationField: targetModel } }
+    // Per client, never on the instance: a tenant registry forwards one plugin
+    // to every client it opens, and a map kept here merged the second schema's
+    // File columns into the first client's (`FJS-1380`).
+    this._perClient  = new WeakMap()
     this._cache      = new Map()  // cacheKey → resolved value (bounded LRU)
     this._cacheMax   = config.cacheSize ?? 1000   // hard cap on cached entries
     this._autoResolve = config.autoResolve ?? false  // subclasses can override default
@@ -103,9 +107,19 @@ export class ExternalRefPlugin extends Plugin {
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
+  // The maps this client's schema declares. `ctx.shapes` is the one object every
+  // flavor of a client shares; a ctx without it (a unit test's) is its own key.
+  _maps(ctx) {
+    return this._perClient.get(ctx.shapes ?? ctx) ?? NO_MAPS
+  }
+
   onInit(schema, ctx) {
     if (!this.fieldType)
       throw new Error(`${this.constructor.name}: fieldType must be set`)
+
+    const fieldMap    = {}   // { model: { field: { isArray, ...opts } } }
+    const relationMap = {}   // { model: { relationField: targetModel } }
+    this._perClient.set(ctx.shapes ?? ctx, { fieldMap, relationMap })
 
     for (const model of schema.models) {
       for (const field of model.fields) {
@@ -117,13 +131,13 @@ export class ExternalRefPlugin extends Plugin {
           // depending on how it was reached. Nothing reports it: both are
           // strings, and the wrong one only fails where it is finally used, as
           // a broken <img>.
-          if (!this._relationMap[model.name]) this._relationMap[model.name] = {}
-          this._relationMap[model.name][field.name] = field.type.name
+          if (!relationMap[model.name]) relationMap[model.name] = {}
+          relationMap[model.name][field.name] = field.type.name
           continue
         }
         if (field.type.name !== this.fieldType) continue
-        if (!this._fieldMap[model.name]) this._fieldMap[model.name] = {}
-        this._fieldMap[model.name][field.name] = {
+        if (!fieldMap[model.name]) fieldMap[model.name] = {}
+        fieldMap[model.name][field.name] = {
           isArray:  !!field.type.array,
           optional: !!field.type.optional,
           ...this._fieldOptions(field),
@@ -217,7 +231,7 @@ export class ExternalRefPlugin extends Plugin {
   // ── Create ────────────────────────────────────────────────────────────────
 
   async onBeforeCreate(model, args, ctx) {
-    const fields = this._fieldMap[model]
+    const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
 
     const idField = ctx.models?.[model]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
@@ -260,7 +274,7 @@ export class ExternalRefPlugin extends Plugin {
   // ── Update ────────────────────────────────────────────────────────────────
 
   async onBeforeUpdate(model, args, ctx) {
-    const fields = this._fieldMap[model]
+    const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
 
     // Which fields carry incoming raw values? (Others are untouched refs.)
@@ -317,7 +331,7 @@ export class ExternalRefPlugin extends Plugin {
 
   async onAfterWrite(model, operation, result, ctx) {
     if (operation !== 'update') return
-    const fields = this._fieldMap[model]
+    const fields = this._maps(ctx).fieldMap[model]
     if (!fields) return
 
     // Collect all stale refs first, then clean them up in PARALLEL —
@@ -344,7 +358,7 @@ export class ExternalRefPlugin extends Plugin {
   // ── After delete ──────────────────────────────────────────────────────────
 
   async onAfterDelete(model, rows, ctx) {
-    const fields = this._fieldMap[model]
+    const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !rows.length) return
 
     await Promise.all(rows.flatMap(row =>
@@ -381,8 +395,9 @@ export class ExternalRefPlugin extends Plugin {
    *        ref — which is not an error, just the wrong string.
    */
   async _resolveRows(model, rows, ctx, select, seen) {
-    const fields    = this._fieldMap[model]
-    const relations = this._relationMap[model]
+    const { fieldMap, relationMap } = this._maps(ctx)
+    const fields    = fieldMap[model]
+    const relations = relationMap[model]
     if (!fields && !relations) return
 
     await Promise.all(rows.map(async row => {

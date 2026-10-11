@@ -50,7 +50,7 @@ import { runsAsCaller }         from './context.ts'
 import domainDns                from './domain-dns.job.ts'
 import { isInline, isGit, inlineFilesFor } from '../core/app-source.ts'
 import { releaseEnv } from '../core/variables.ts'
-import { runtimeOf, routedHosts, markRunning, type Runtime } from '../core/runtime.ts'
+import { runtimeOf, routedHosts, routedRedirects, markRunning, type Runtime } from '../core/runtime.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -326,6 +326,7 @@ function runner(app: BasecampApp) {
         },
         source:        ctx.config.source ?? service.source ?? {},
         hosts:         await routedHosts(app.db, deploy.appId),
+        redirects:     await routedRedirects(app.db, deploy.appId),
       }, { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
@@ -418,7 +419,8 @@ function runner(app: BasecampApp) {
         digest,
         // The live Domain rows, as `/deploy` sends them: a hostname deleted
         // since the last release drops out here.
-        hosts:  await routedHosts(app.db, deploy.appId),
+        hosts:         await routedHosts(app.db, deploy.appId),
+        redirects:     await routedRedirects(app.db, deploy.appId),
       })
       if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)
 

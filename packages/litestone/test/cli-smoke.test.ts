@@ -830,7 +830,7 @@ model Vault {
   }, 30_000)
 })
 
-// `fli tinker -e` — the console run once. What a caller parses is stdout, so
+// `fli db:repl -e` — the console run once. What a caller parses is stdout, so
 // the answer is alone there and the standing goes to stderr; and the exit code
 // is the verdict, because there is no next prompt to read a refusal off.
 describe('CLI smoke — repl --eval', () => {
@@ -853,7 +853,7 @@ model Note {
     expect(r.exit).toBe(0)
     expect(JSON.parse(r.stdout)).toEqual([{ email: 'a@b.test' }])
     expect(r.stderr).toContain('Standing: anonymous(0)')
-    expect(r.stdout).not.toContain('litestone tinker')
+    expect(r.stdout).not.toContain('litestone repl')
   })
 
   test('a throw exits 1 with the message on stderr and nothing on stdout', async () => {

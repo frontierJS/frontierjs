@@ -810,7 +810,7 @@ describe('an outpost endpoint takes a signature or nothing', () => {
 // the three methods that write it are the three methods that write standing.
 //
 // The schema denies a self-update at the Data boundary (`FJS-410`), and that is
-// what covers a job, a hub screen and a `fli tinker` session — but not these:
+// what covers a job, a hub screen and a `fli db:repl` session — but not these:
 // membership is what decides access, so it cannot be read through the caller it
 // is deciding about, and all three writers go through `asSystem()`, the one
 // context every policy is bypassed in. Measured before the fix, through this

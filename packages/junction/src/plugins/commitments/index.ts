@@ -244,6 +244,8 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
           `@@commitment declares — declared: ${[...declared].join(', ') || 'none'}.`)
       }
 
+      await refuseUnprincipled(app)
+
       jobs.handle(COMMITMENT_FIRE_JOB, ctx => fire(app, ctx.data, ctx.tenantId ?? null), { queue })
 
       // Registered through handle() with a cron rather than schedule(): the
@@ -377,6 +379,25 @@ function declaredKeys(app: App): Set<string> {
   const models = (app as { tenants?: { schema?: { models?: Array<{ name: string; attributes: Array<{ kind: string; name?: string }> }> } } })
     .tenants?.schema?.models ?? []
   return new Set(models.flatMap(m => m.attributes.filter(a => a.kind === 'commitment').map(a => `${m.name}.${a.name}`)))
+}
+
+/**
+ * A fire runs as `createApp({ system })`, and with none it is STRANGER(0): every
+ * `@system` move on a graded model is refused, retried, and named only in the
+ * job's error. A model declaring no `@@gate` has nothing to refuse it, so it
+ * needs no principal. Not asked under `tenants`, where no client opens without
+ * a tenant.
+ */
+async function refuseUnprincipled(app: App): Promise<void> {
+  const db = app.db as (CommitmentClient & { $schema?: { models: Array<{ name: string; attributes: Array<{ kind: string }> }> } }) | undefined
+  if (!declares(db) || await app.runAs(null, user => user)) return
+  const gated = new Set((db!.$schema?.models ?? []).filter(m => m.attributes.some(a => a.kind === 'gate')).map(m => m.name))
+  const graded = db!.$commitments.filter(d => gated.has(d.model))
+  if (!graded.length) return
+  throw new Error(
+    `[Junction] commitments(): ${graded.map(d => `${d.model}.${d.transition}`).join(', ')} ` +
+    `${graded.length > 1 ? 'are' : 'is'} declared on a gated model, and a fire runs as ` +
+    `createApp({ system }) — this app declares none, so every move would be refused as STRANGER(0).`)
 }
 
 /**

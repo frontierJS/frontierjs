@@ -220,7 +220,7 @@ follow, and the second is worse than the first:
   same 800ms hold — waited it out and committed.
 
 So the timeout is worth having for the case it is for (another API, a job
-runner, `fli tinker`, a migration) and is not a substitute for not contending.
+runner, `fli db:repl`, a migration) and is not a substitute for not contending.
 Within one client `$transaction` takes a FIFO lock, so two transactions queue in
 JavaScript and never reach the SQLite lock at all — which is why the in-process
 case is normally fine without any of this. **One client per database file per

@@ -10935,6 +10935,22 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d895"></a>2026-10-10 · `FJS-D895` — A pointer or wheel gesture has no terminal lowering, and a component states nothing about the surfaces it reaches: the refusal is the statement.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) slices 29 and 30, where `/automations/flows/:flowId/` stopped at FlowCanvas's `on:pointerdown`. The owner picked **A** (the canvas stays off the terminal) over **B** (a terminal form of a flow, the nodes and links as text) and **C** (lower pointer and wheel to the terminal's mouse reports). C draws nothing to drag, since an svg paints its label or nothing. The route stays refused, and `fli dev:tui --list` naming `on:pointerdown` is the reason a reader needs.
+
+**A declaration was proposed and cut.** A component saying it has no terminal form would state a second time what the refusal already names (§ V *origin*, *derived*), add a noun (*concept*), and could hide a route that lowers with nothing saying so (*silence*). "Browser-only" is the wrong word too: on a phone a pointer event is a touch, and `FJS-D692` cuts the gesture set from the terminal's table and the phone's together. B is not refused: a flow drawn as text is a terminal form a later slice may build.
+
+**§ V.** *Origin*: `TERMINAL_EVENTS` (`packages/mesa/src/terminal/tags.js`), which already owns what the terminal lowers. *Concept*: none. *Complexity*: the problem's, since a terminal has no canvas. *Predictability*: unchanged; an event outside the table is refused as every other is. *Derived*: the route's refusal is derived from the component. *Owner*: the table. *Boundary*: the refusal names file and line. *Failure*: a refusal, as a gesture a reader could not make would otherwise be a dead control. *Silence*: that a pointer or wheel handler is refused for the terminal; `terminal-emit.test.js` *a pointer or wheel gesture* fails if one enters the table.
+
+### <a id="fjs-d894"></a>2026-10-10 · `FJS-D894` — On the terminal a file input is a field a path is typed into; a hidden one opens in place on `click()`.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) slice 30, where `/stocktake/` stopped at a file input on screen. The owner picked **A** (a path field) over **B** (keep refusing it) and **C** (paint it inert). C drops a control a reader needed with nothing said, the trade slice 16 already refused for an unlabeled svg (*ergonomics vs. strictness*).
+
+Committing the field, by Enter or by leaving it, reads the file into `files` and fires `input` then `change`, as a browser does when its picker closes on a new choice. `value` is the browser's `C:\fakepath\` plus the name. A path that reads no file leaves the choice as it was and says `no file at <path>` in the emptied field. One hidden by a static or live `hidden` or `visually-hidden` paints nothing until `click()`, the call the kit's `FileUpload` makes from its button: then it shows in place, and Enter or leaving it hides it and hands focus back. A bind on a file input stays refused.
+
+**§ V, answered after the edit, so late.** *Origin*: one row in `INPUT_TYPES` and one class, `FilePath`. *Concept*: none; it is the text field the terminal already has. *Complexity*: the problem's, since a terminal has no picker. *Predictability*: `files`, `value` and the event order are a browser's. *Derived*: whether one paints is `pickerHidden`, read on every `hidden` or `class` write. *Owner*: the terminal runtime's `element()` and `set_attribute`. *Boundary*: `files` holds real `File`s. *Failure*: a bad path is said in the field rather than thrown. *Silence*: that a committed path reaches `files` and `change`, and a hidden one opens on `click()`; `test/terminal/specs/files.spec.mjs` fails when either stops.
+
 ### <a id="fjs-d856"></a>2026-10-10 · `FJS-D856` — Is `part:` the spelling — `part="header"` on the child, `part:header="dense"` on the parent.
 
 Asked in [`IDEAS/child-part-styling.md`](IDEAS/child-part-styling.md) § Open questions. **A** was picked over **B** (custom properties per styled property, the DatePicker shape), **C** (a prop map, `parts={{ header: 'dense' }}`, as Tailwind-ish kits pass a class string per slot).

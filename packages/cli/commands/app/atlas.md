@@ -27,11 +27,12 @@ it once through `describeAppModel`, and prints the model; nothing here re-derive
 a fact those four registers already own, and nothing is committed — a fifth file
 derived from four gated ones would be a second origin.
 
-The entry module is not probed. It comes out of the committed
-`surface.snapshot.md`'s own header, which names the generator and the flags it
-ran with — the same line the `snapshots` CI phase reruns, from the same
-directory. So an app that boots from its root, or names an `--export`, is read
-correctly rather than guessed at.
+The entry module comes out of the committed `surface.snapshot.md`'s own header,
+which names the generator and the flags it ran with — the same line the
+`snapshots` CI phase reruns, from the same directory. So an app that boots from
+its root, or names an `--export`, is read correctly rather than guessed at. A
+fresh app has no snapshot yet, and takes the entry its layout calls for — the row
+that seeds one — so the first run needs nothing written beforehand.
 
 **Needs bun.** Junction is Bun-only and this shells out to it; `fli` itself runs
 under node.

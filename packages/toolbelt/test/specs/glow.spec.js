@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { glow, glowLine } from '../../src/glow/glow.js'
+import { glow, glowLine, glowOpen } from '../../src/glow/glow.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SAMPLES = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'guide-samples.json'), 'utf8'))
@@ -429,4 +429,30 @@ test('glow: a JSON key is its own token, not the span to the last colon (FJS-220
   assert.ok(out.includes('<b>"a"</b>'), 'the first key is not a token')
   assert.ok(out.includes('<b>"b"</b>'), 'the second key is not a token')
   assert.ok(out.includes('<em>"x"</em>'), 'a value between two keys lost its string token')
+})
+
+test('glow: the language attribute cannot carry markup (FJS-2202)', function () {
+  const evil = '"><img src=x onerror=alert(1)>'
+  const out = glow('x', { language: evil })
+
+  assert.ok(!out.includes('<img'), 'the language attribute put live markup on the page')
+  assert.ok(out.startsWith('<code language="'), 'the wrapper changed shape')
+  assert.equal(glowOpen(evil), out.slice(0, out.indexOf('>') + 1), 'glowOpen is not the wrapper glow writes')
+  assert.equal(glowOpen(), '<code language="*">')
+  assert.equal(glowOpen(['js', 'sql']), '<code language="js">')
+})
+
+test('glow: a $ run inside {…} is painted as typed (FJS-2203)', function () {
+  /*
+   * The braces' content went to String.replace as a replacement PATTERN, so
+   * `$$` painted as `$` and `$&` as the matched text — the caret in an overlay
+   * editor then drifted from the paint.
+   */
+  const cases = ['"{$$}"', '"${$$}"', '{$$var}', "'{$&}'", "'{$'}'", '"{$`}"']
+  const langs = ['js', 'bash', 'html', 'md']
+  cases.forEach(function (src) {
+    langs.forEach(function (language) {
+      assert.equal(textOf(glow(src, { language, prefix: false })), src, 'lost: ' + src + ' as ' + language)
+    })
+  })
 })

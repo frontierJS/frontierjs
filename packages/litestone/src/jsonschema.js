@@ -144,7 +144,7 @@ import { parseGateString } from './plugins/gate.js'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 import { unitInfo } from '@frontierjs/toolbelt/units'
 import { contentTypeFor, isTextType } from '@frontierjs/toolbelt/mime'
-import { TIME_PATTERNS, transformNames } from './core/validate.js'
+import { TIME_PATTERNS, transformNames, typeMemberDefault } from './core/validate.js'
 import { dependsOnClock, determinedColumns } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js'
@@ -230,7 +230,10 @@ export function generateJsonSchema(schema, options = {}) {
       const fs = applyPresentation(
         fieldToJsonSchema(f, schema, enumDefs, inlineEnums, audience, typeDefs), f)
       props[f.name] = fs
-      if (!f.type.optional) required.push(f.name)
+      // A member with a literal @default is filled when the document omits
+      // it, so a caller validating against this schema must not be told the key
+      // is required.
+      if (!f.type.optional && !typeMemberDefault(f)) required.push(f.name)
     }
     const def = {
       type:                 'object',

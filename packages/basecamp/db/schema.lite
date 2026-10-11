@@ -697,7 +697,7 @@ model WorkspaceMember {
   // requireWorkspaceRole('admin', 'owner') with one guard, *cannot demote the
   // last owner*, so an admin naming their own userId with role: 'owner' was
   // granting themselves level 6. A hook is one door; a job, a hub screen and a
-  // `fli tinker` session at level 5 are others.
+  // `fli db:repl` session at level 5 are others.
   //
   // A model-level @@deny rather than `role @allow('write', userId != auth().id)`,
   // and the difference is the whole reason this is written twice: a FIELD write

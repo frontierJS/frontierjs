@@ -275,8 +275,6 @@ class FileStoragePlugin extends ExternalRefPlugin {
     this._provider = null
   }
 
-  // Alias for test compatibility — _fieldMap is the canonical name in base class
-  get _fileMap() { return this._fieldMap }
 
   // Extract per-field options from schema (keepVersions, accept)
   _fieldOptions(field) {
@@ -319,7 +317,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
 
   // serialize: Buffer/File/fromPath → upload → return ref object
   async serialize(value, { field, model, id, ctx }) {
-    const fieldOpts = this._fieldMap[model]?.[field] ?? {}
+    const fieldOpts = this._maps(ctx).fieldMap[model]?.[field] ?? {}
     const { bytes, mime, filename, name, size } = await readValue(value, field, model)
     // The stored type is the evidence and never the claim: `mime` is what the
     // client or the filename SAID, and it is also what gets persisted on the ref
@@ -393,7 +391,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
   }
 
   async onBeforeCreate(model, args, ctx) {
-    const fields = this._fieldMap[model]
+    const fields = this._maps(ctx).fieldMap[model]
     if (fields && args.data) {
       const many = Array.isArray(args.data)
       for (const row of [].concat(args.data)) {
@@ -416,7 +414,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // keepVersions: skip stashing old ref (so cleanup won't run in onAfterWrite)
 
   async onBeforeUpdate(model, args, ctx) {
-    const fields = this._fieldMap[model]
+    const fields = this._maps(ctx).fieldMap[model]
     if (!fields || !args.data) return
 
     for (const [field, opts] of Object.entries(fields)) {

@@ -16,7 +16,7 @@
 //     free, it passes either way.
 
 import { describe, it, expect, afterAll } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
@@ -75,4 +75,41 @@ describe('tenants.create() builds the file in one transaction', () => {
     expect(performance.now() - t0).toBeLessThan(1500)
     reg.close()
   }, 20000)
+})
+
+// FJS-1608: with a migrationsDir, create() used to discard what apply() returned.
+describe('tenants.create() with a migrationsDir reads what apply() answers', () => {
+  const GOOD = 'CREATE TABLE "author" ("id" INTEGER PRIMARY KEY, "name" TEXT NOT NULL);'
+
+  function withMigrations(files: Record<string, string>) {
+    const dir = mkdtempSync(join(tmpdir(), 'ls-tenant-create-'))
+    dirs.push(dir)
+    mkdirSync(join(dir, 'tenants'))
+    mkdirSync(join(dir, 'migrations'))
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, 'migrations', name), body)
+    const pending = createTenantRegistry({
+      parsed: parse(SCHEMA), dir: join(dir, 'tenants'), registry: join(dir, 'registry.db'),
+      migrationsDir: join(dir, 'migrations'),
+    })
+    return { dir, pending }
+  }
+
+  const refuses: Array<[string, Record<string, string>]> = [
+    ['a migration that throws', { '20260101000000_init.sql': `${GOOD}\nCREATE TABLE "author" ("id" INTEGER);` }],
+    ['a .js migration, refused before anything runs', { '20260101000000_init.sql': GOOD, '20260102000000_data.js': 'export default () => {}' }],
+    ['files that match no migration name', { 'init.sql': GOOD }],
+  ]
+
+  for (const [label, files] of refuses) {
+    it(`${label} leaves no file and no registration`, async () => {
+      const { dir, pending } = withMigrations(files)
+      const reg = await pending
+      const file = join(dir, 'tenants', 'acme.db')
+
+      await expect(reg.create('acme')).rejects.toThrow(/was not created/)
+      expect(existsSync(file)).toBe(false)
+      expect(reg.exists('acme')).toBe(false)
+      reg.close()
+    })
+  }
 })

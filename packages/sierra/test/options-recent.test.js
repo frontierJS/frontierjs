@@ -144,8 +144,8 @@ describe('a declared head', () => {
   test('fetches the head rows through the SET filter, scope included', async () => {
     await ask(RECENT)
     const head = finds().find(c => c.filter?.name?.in)
-    expect(head.filter).toEqual({ $scope: ['current'], name: { in: ['Black', 'Clay'] } })
-    expect(head.directives).toEqual({ limit: 2 })
+    expect(head.filter).toEqual({ name: { in: ['Black', 'Clay'] } })
+    expect(head.directives).toEqual({ limit: 2, scope: ['current'] })
   })
 
   test('a rank that answers nothing leaves the ordinary list', async () => {

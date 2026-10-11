@@ -104,7 +104,7 @@ export interface ServiceTypes {
 
 The accessor on the client type is camelCase: `readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>`.
 
-A `Bytes` column is emitted as `Buffer` while the runtime hands back a `Uint8Array` (`FJS-2300`).
+A `Bytes` column is emitted as `Uint8Array`, which is what the client hands back on every runtime; a `Buffer` is one, but a row read is not a `Buffer`.
 
 `--augment=junction` appends `declare module '@frontierjs/junction/client' { interface ServiceTypes extends GeneratedServiceTypes {} }`, written only when asked for because a module augmentation names a package an app may not have installed.
 

@@ -536,6 +536,23 @@ describe('composed: the rows carry what a push does not', () => {
     expect(list.loading).toBe(false)
   })
 
+  test('total answers the query\'s whole count, on both paths, and null before any answer', async () => {
+    await boot('/invoices/')
+    total = 134
+    const store = track(invoicesResource().list({ state: 'local' }))
+    const composed = track(invoicesResource().list({ state: 'local', composed: true }))
+    await settle()
+    expect(store.total).toBe(134)
+    expect(composed.total).toBe(134)
+
+    total = ROWS.length
+    store.reload()
+    composed.reload()
+    await settle()
+    expect(store.total).toBe(ROWS.length)
+    expect(composed.total).toBe(ROWS.length)
+  })
+
   test('growing the window widens the limit and re-reads from the top', async () => {
     await boot('/invoices/')
     total = 10

@@ -1,4 +1,4 @@
-// The console — `litestone repl` / `fli tinker`.
+// The console — `litestone repl` / `fli db:repl`.
 //
 // Two things here are worth a suite rather than a look:
 //
@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { PassThrough }          from 'node:stream'
-import { startRepl, evalOnce, describeStanding, tinkerCommands } from '../src/tools/repl.js'
+import { startRepl, evalOnce, describeStanding, replCommands } from '../src/tools/repl.js'
 
 /** Drive a session: feed lines, collect what it printed. */
 async function session(lines: string[], binds: any = {}) {
@@ -161,7 +161,7 @@ describe('dot commands', () => {
   })
 })
 
-describe("an app's own commands — db/tinker.js", () => {
+describe("an app's own commands — db/repl.js", () => {
   it('.name runs the command with the clients, the words after it, and the tenant', async () => {
     let seen: any
     const commands = { resetPasswords: { help: 'set them all', run: async (ctx: any) => { seen = ctx; ctx.out('  done') } } }
@@ -206,39 +206,39 @@ describe("an app's own commands — db/tinker.js", () => {
     const withOne = await session(['.help'], { commands: { resetPasswords: { help: 'every password to one value', run: async () => {} } } })
     expect(withOne).toMatch(/\.resetPasswords\s+every password to one value/)
 
-    expect(await session(['.help'])).toContain('db/tinker.js')
+    expect(await session(['.help'])).toContain('db/repl.js')
   })
 })
 
-describe('tinkerCommands — what the file must look like', () => {
+describe('replCommands — what the file must look like', () => {
   const ok = { resetPasswords: { help: 'h', run: async () => {} } }
 
   it('a table of { help, run } is accepted', () => {
-    expect(tinkerCommands({ default: ok })).toBe(ok)
+    expect(replCommands({ default: ok })).toBe(ok)
   })
 
   it('no default export is refused, naming the shape', () => {
-    expect(() => tinkerCommands({ resetPasswords: ok.resetPasswords })).toThrow('export default an object')
+    expect(() => replCommands({ resetPasswords: ok.resetPasswords })).toThrow('export default an object')
   })
 
   it('a bare function is refused — beside the same function inside { run } accepted', () => {
     const fn = async () => {}
-    expect(() => tinkerCommands({ default: { purge: fn } })).toThrow('.purge needs a run function')
-    expect(() => tinkerCommands({ default: { purge: { run: fn } } })).not.toThrow()
+    expect(() => replCommands({ default: { purge: fn } })).toThrow('.purge needs a run function')
+    expect(() => replCommands({ default: { purge: { run: fn } } })).not.toThrow()
   })
 
   it('a built-in name is refused — beside the same command under another name', () => {
-    expect(() => tinkerCommands({ default: { exit: ok.resetPasswords } })).toThrow('.exit is built in')
-    expect(() => tinkerCommands({ default: { leave: ok.resetPasswords } })).not.toThrow()
+    expect(() => replCommands({ default: { exit: ok.resetPasswords } })).toThrow('.exit is built in')
+    expect(() => replCommands({ default: { leave: ok.resetPasswords } })).not.toThrow()
   })
 
   it('a name with a space is refused — beside a hyphenated one', () => {
-    expect(() => tinkerCommands({ default: { 'reset all': ok.resetPasswords } })).toThrow('not a command name')
-    expect(() => tinkerCommands({ default: { 'reset-all': ok.resetPasswords } })).not.toThrow()
+    expect(() => replCommands({ default: { 'reset all': ok.resetPasswords } })).toThrow('not a command name')
+    expect(() => replCommands({ default: { 'reset-all': ok.resetPasswords } })).not.toThrow()
   })
 })
 
-describe('evalOnce — fli tinker -e', () => {
+describe('evalOnce — fli db:repl -e', () => {
   const run = async (code: string, binds: any = {}) => {
     const out: string[] = [], err: string[] = []
     const exit = await evalOnce({ code, db: {}, sys: {}, ...binds, out: (l: string) => out.push(l), err: (l: string) => err.push(l) })

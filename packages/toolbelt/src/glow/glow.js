@@ -308,7 +308,8 @@ export function parseRow(row, lang) {
 
 function renderString(str) {
   return encode(str).replace(/\$?\{([^\}]+)\}/g, function (_, content) {
-    return elem('i', _.replace(content, elem('b', content)))
+    // a function replacer: a string one reads `$$`, `$&` and `$'` in the source as patterns
+    return elem('i', _.replace(content, () => elem('b', content)))
   })
 }
 
@@ -473,5 +474,15 @@ export function glow(str, opts = { prefix: true, mark: true }) {
     open = out.open
   }
 
-  return `<code language="${primaryLang(lang) || '*'}">${html.join(NL)}</code>`
+  return `${glowOpen(lang)}${html.join(NL)}</code>`
+}
+
+/*
+  The opening `<code language>` tag. `language` is caller text and lands in an
+  attribute, so a `"` in it would close the attribute and the rest would be
+  live markup. A caller that wraps glowLine output itself opens here too.
+*/
+export function glowOpen(lang) {
+  const name = encode(primaryLang(lang) || '*').replaceAll('"', '&quot;')
+  return `<code language="${name}">`
 }

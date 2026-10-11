@@ -35,12 +35,16 @@ const ref = (key: string) => JSON.stringify({
   key, provider: 'local', publicBase: 'https://cdn.test', size: 1, mime: 'image/png',
 })
 
+// One ctx stands for the one client: the plugin keeps its maps per client.
+const CTX = { models: {} as Record<string, unknown> }
+
 function plugin() {
   const p = FileStorage({
     provider: 'local', publicBase: 'https://cdn.test', localPath: '/tmp',
   }) as any
   const schema = parse(SCHEMA).schema
-  p.onInit(schema, { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) })
+  CTX.models = Object.fromEntries(schema.models.map((m: any) => [m.name, m]))
+  p.onInit(schema, CTX)
   return p
 }
 
@@ -48,7 +52,7 @@ describe('a File column is resolved wherever the read reached it', () => {
 
   test('top level — the case that always worked', async () => {
     const rows = [{ id: 1, name: 'Tee', hero: ref('a.png') }]
-    await plugin().onAfterRead('Product', rows, {})
+    await plugin().onAfterRead('Product', rows, CTX)
     expect(rows[0].hero).toBe('https://cdn.test/a.png')
   })
 
@@ -57,7 +61,7 @@ describe('a File column is resolved wherever the read reached it', () => {
       { id: 7, productId: 1, file: ref('b.png') },
       { id: 8, productId: 1, file: ref('c.png') },
     ] }]
-    await plugin().onAfterRead('Product', rows, {})
+    await plugin().onAfterRead('Product', rows, CTX)
     expect((rows[0].images as any[]).map(i => i.file))
       .toEqual(['https://cdn.test/b.png', 'https://cdn.test/c.png'])
   })
@@ -65,7 +69,7 @@ describe('a File column is resolved wherever the read reached it', () => {
   test('through a to-one include, in the other direction', async () => {
     const rows = [{ id: 7, productId: 1, file: ref('b.png'),
                     product: { id: 1, name: 'Tee', hero: ref('a.png') } }]
-    await plugin().onAfterRead('Image', rows, {})
+    await plugin().onAfterRead('Image', rows, CTX)
     expect(rows[0].file).toBe('https://cdn.test/b.png')
     expect((rows[0].product as any).hero).toBe('https://cdn.test/a.png')
   })
@@ -75,7 +79,7 @@ describe('a File column is resolved wherever the read reached it', () => {
                     product: { id: 1, name: 'Tee', hero: null, images: [
                       { id: 8, productId: 1, file: ref('c.png') },
                     ] } }]
-    await plugin().onAfterRead('Image', rows, {})
+    await plugin().onAfterRead('Image', rows, CTX)
     expect((rows[0].product as any).images[0].file).toBe('https://cdn.test/c.png')
   })
 
@@ -87,13 +91,13 @@ describe('a File column is resolved wherever the read reached it', () => {
       { id: 7, productId: 1, file: null, product: shared },
       { id: 8, productId: 1, file: null, product: shared },
     ]
-    await plugin().onAfterRead('Image', rows, {})
+    await plugin().onAfterRead('Image', rows, CTX)
     expect(shared.hero).toBe('https://cdn.test/a.png')
   })
 
   test('a relation the caller did not include costs nothing and stays absent', async () => {
     const rows = [{ id: 1, name: 'Tee', hero: ref('a.png') }]
-    await plugin().onAfterRead('Product', rows, {})
+    await plugin().onAfterRead('Product', rows, CTX)
     expect('images' in rows[0]).toBe(false)
   })
 
@@ -101,7 +105,7 @@ describe('a File column is resolved wherever the read reached it', () => {
     const rows = [{ id: 1, name: 'Tee', hero: ref('a.png'), images: [
       { id: 7, productId: 1, file: ref('b.png') },
     ] }]
-    await plugin().onAfterRead('Product', rows, {}, { select: { hero: { resolve: false } } })
+    await plugin().onAfterRead('Product', rows, CTX, { select: { hero: { resolve: false } } })
     expect(rows[0].hero).toBe(ref('a.png'))
     expect((rows[0].images as any[])[0].file).toBe('https://cdn.test/b.png')
   })

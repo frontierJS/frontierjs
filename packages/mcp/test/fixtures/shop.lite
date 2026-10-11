@@ -88,7 +88,7 @@ model Credential {
   id    Int    @id
   label String
   value String @secret
-  scope String @guarded
+  privilege String @guarded
 }
 
 /// A declared input type — what `describe().inputs` names for a custom method.

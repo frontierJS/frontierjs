@@ -15,11 +15,15 @@ const SCHEMA = `
   }
 `
 
+// One ctx stands for the one client: the plugin keeps its maps per client.
+const CTX = { models: {} as Record<string, unknown> }
+
 function plugin(config: Record<string, unknown> = {}) {
   const puts: string[] = []
   const p = FileStorage({ provider: 'local', publicBase: 'https://cdn.test', localPath: '/tmp', ...config }) as any
   const schema = parse(SCHEMA).schema
-  p.onInit(schema, { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) })
+  CTX.models = Object.fromEntries(schema.models.map((m: any) => [m.name, m]))
+  p.onInit(schema, CTX)
   p._provider = {
     async put(key: string) { puts.push(key) },
     async get() { return null },
@@ -34,14 +38,14 @@ const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 
 describe('the default key', () => {
   test('a create names no row id and a recognized Buffer gets its extension', async () => {
     const { p } = plugin()
-    const ref = await p.serialize(Buffer.from(PNG), { field: 'body', model: 'Batch', id: undefined, ctx: {} })
+    const ref = await p.serialize(Buffer.from(PNG), { field: 'body', model: 'Batch', id: undefined, ctx: CTX })
     expect(ref.key).toMatch(/^Batch\/body\/[0-9a-f]{12}\.png$/)
     expect(ref.key).not.toContain('new')
   })
 
   test('an update keys the same way', async () => {
     const { p } = plugin()
-    const ref = await p.serialize(Buffer.from(PNG), { field: 'body', model: 'Batch', id: 'upd', ctx: {} })
+    const ref = await p.serialize(Buffer.from(PNG), { field: 'body', model: 'Batch', id: 'upd', ctx: CTX })
     expect(ref.key).toMatch(/^Batch\/body\/[0-9a-f]{12}\.png$/)
   })
 
@@ -58,20 +62,20 @@ describe('the original filename', () => {
   test('a File keeps its name on the ref, unsanitized', async () => {
     const { p } = plugin()
     const file = new File([PDF], 'Rechnung März 2026.pdf', { type: 'application/pdf' })
-    const ref = await p.serialize(file, { field: 'body', model: 'Batch', id: undefined, ctx: {} })
+    const ref = await p.serialize(file, { field: 'body', model: 'Batch', id: undefined, ctx: CTX })
     expect(ref.name).toBe('Rechnung März 2026.pdf')
   })
 
   test('a path in the name is dropped and control characters stripped', async () => {
     const { p } = plugin()
     const file = new File([PDF], '..\\..\\etc/pass\r\nwd\u0000.pdf', { type: 'application/pdf' })
-    const ref = await p.serialize(file, { field: 'body', model: 'Batch', id: undefined, ctx: {} })
+    const ref = await p.serialize(file, { field: 'body', model: 'Batch', id: undefined, ctx: CTX })
     expect(ref.name).toBe('passwd.pdf')
   })
 
   test('bytes with no name leave the ref without one', async () => {
     const { p } = plugin()
-    const ref = await p.serialize(Buffer.from(PNG), { field: 'body', model: 'Batch', id: undefined, ctx: {} })
+    const ref = await p.serialize(Buffer.from(PNG), { field: 'body', model: 'Batch', id: undefined, ctx: CTX })
     expect('name' in ref).toBe(false)
   })
 
@@ -80,7 +84,7 @@ describe('the original filename', () => {
     const { fromPath } = await import('../src/storage/file-storage.js')
     const dir = await import('node:fs').then(fs => fs.mkdtempSync('/tmp/fjs1997-'))
     await Bun.write(`${dir}/Übersicht Q3.pdf`, PDF)
-    const ref = await p.serialize(fromPath(`${dir}/Übersicht Q3.pdf`), { field: 'body', model: 'Batch', id: undefined, ctx: {} })
+    const ref = await p.serialize(fromPath(`${dir}/Übersicht Q3.pdf`), { field: 'body', model: 'Batch', id: undefined, ctx: CTX })
     expect(ref.name).toBe('Übersicht Q3.pdf')
   })
 })

@@ -7,11 +7,16 @@ examples:
   - fli dev --dry
   - fli dev --no-check
   - fli dev --debug
+  - fli dev --host
 flags:
   check:
     type: boolean
     description: Skip both preflights — the ports and the database
     defaultValue: true
+  host:
+    type: boolean
+    description: Serve the web surface on every interface, so a phone on the LAN can open it
+    defaultValue: false
 ---
 
 Runs the project's own `dev` script with the right runner, on this app's own
@@ -69,6 +74,13 @@ also sets `DEBUG=1` on the servers `fli dev` starts. That is the switch
 Junction already reads — its boot diagnostics, and `config.debug`, which puts
 `mode=debug` on the banner and a 5xx's detail in the response — so it asks the
 servers the same thing it asks fli: the whole error, not the clean line.
+
+**`--host` is the same shape**: it sets `FLI_HOST=1` on the servers, and
+Sierra's base vite config reads it into `server.host`, so vite binds every
+interface and prints a Network URL. Only the web port has to be reachable — vite
+proxies `/api` and `/ws` to the API on localhost. An app config that replaces
+`server` rather than spreading `base.server` drops the setting, and vite's banner
+then shows no Network line.
 
 **The runner is decided by a lockfile found by walking UP.** A package inside a
 workspace has no lockfile of its own — the one lockfile is at the workspace root
@@ -140,7 +152,12 @@ if (flag.check) {
 
 const runner = detectRunner(root)
 // `env:` and never an assignment to process.env, which a child under bun does not see.
-const env = { ...process.env, ...session.vars, ...(flag.debug && { DEBUG: '1' }) }
+const env = {
+  ...process.env,
+  ...session.vars,
+  ...(flag.debug && { DEBUG: '1' }),
+  ...(flag.host && { FLI_HOST: '1' }),
+}
 
 const composed = composedSurfaces(manifest.scripts, session.rows)
 if (!composed) {

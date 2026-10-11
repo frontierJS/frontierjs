@@ -100,7 +100,7 @@ A certificate reaches that Caddy from one of three places:
    a real Caddy, across a Caddy restart. Routes move only on `/deploy` and
    `/stop`, and a `Domain` edited between releases through `/route` from
    `domain:dns` (`FJS-1610`, built). The bind still moves only on a release
-   (`FJS-1616`); redirects and inline apps are not routed (`FJS-1615`).
+   (`FJS-1616`).
 2. ~~**Loopback bind** — D7.~~ **Built with Phase 1**, per app: an app with no
    hostname keeps its port on every interface.
 3. **Push** — `uploaded` through the channel D2 secured; D5's enum and report.

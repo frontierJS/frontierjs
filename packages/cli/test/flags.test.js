@@ -45,7 +45,7 @@ describe('declarationProblem', () => {
 
   test('refuses an `as` that offers json, since JSON is `--json` (FJS-D401)', () => {
     expect(declarationProblem('as', { type: 'string', choices: ['report', 'json'] })).toMatch(/JSON is `--json`/)
-    // `as` naming a person (db:tinker) has no choices and is not a layout.
+    // `as` naming a person (db:repl) has no choices and is not a layout.
     expect(declarationProblem('as', { type: 'string', defaultValue: '' })).toBeNull()
     expect(declarationProblem('format', { type: 'string', choices: ['json', 'csv'] })).toBeNull()
   })

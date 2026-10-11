@@ -537,8 +537,10 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   through `domain:dns`, which sends `/route` to every running placement on an
   online server — and a machine it cannot reach fails the job so it retries.
   The container's BIND does not move until the next release (`FJS-1616`). A
-  redirect is routed nowhere, and an inline app only by its release's Activate
-  — `domain:dns` skips it between releases (`FJS-1615`).
+  redirecting Domain is not a host: `routedRedirects()` sends it as `redirects`
+  beside `hosts`, on `/deploy`, `/static/activate` and `/route`, and Caddy
+  answers it with a 308 itself (`FJS-1615`). An inline app's `/route` carries
+  `static: true`, which dials the static origin the way Activate does.
 - **A status column with a machine behind it is declared, and the level for a
   move goes on the move.** `Server`, `Deployment` and `Job` carry
   `@@transitions(status, …)`, so a move is `db.<model>.transition(id, name)` and

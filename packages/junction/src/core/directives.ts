@@ -12,7 +12,7 @@
 // ─── Query directives ─────────────────────────────────────────────────────
 // The internal form of what arrives on the wire as $limit, $offset, $orderBy,
 // $select, $populate, $search, $withDeleted, $onlyDeleted, $withTemplates,
-// $onlyTemplates, $asOf, $withExpired, $onlyExpired — the same names, in the
+// $onlyTemplates, $asOf, $withExpired, $onlyExpired, $scope — the same names, in the
 // same order, as the table in
 // `@frontierjs/toolbelt/directives`, which is what the bridge reads them by.
 //
@@ -62,6 +62,11 @@ export interface QueryDirectives {
   asOf?:          string
   withExpired?:   boolean
   onlyExpired?:   boolean
+  /**
+   * `@@scope` names, ANDed. The adapter hands them to Litestone as
+   * `where.$scope`, which refuses a name the model does not declare.
+   */
+  scope?:         string[]
 }
 
 // ─── The page ─────────────────────────────────────────────────────────────

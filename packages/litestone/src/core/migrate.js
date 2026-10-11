@@ -18,6 +18,8 @@ import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL
 // `#host`, for the reason `drivers/jsonl.js` says: a bare node builtin in this
 // graph throws when the module is merely imported in a browser (`FJS-1179`).
 import { createHash } from '#host'
+import { SEQUENCE_TABLE } from './stamps.js'
+import { quoteIdent } from './query.js'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 // Works on any db handle with .prepare() (Bun Database).
@@ -1203,6 +1205,86 @@ function rowCountGuard(tableName, tmp) {
   ]
 }
 
+// The header migrations.js reads to hold a file (`BLOCKED_SECTION`): its first
+// line must keep the `"table": rebuild BLOCKED` shape.
+function blockedRebuildHint(tableName, blockedCols) {
+  return [
+    `-- ${quoteIdent(tableName)}: rebuild BLOCKED — adds NOT NULL column(s) with no DEFAULT:`,
+    ...blockedCols.map(c => `--     ${c.name} ${c.type}`),
+    `-- Existing rows have no value for them. Fix one of:`,
+    `--   • add a @default() to the field, or make it optional (?)`,
+    `--   • replace the NULL in the copy below with a value expression for each blocked column`,
+    `--   • if the table is empty, uncomment the rebuild as-is`,
+    `-- Then delete the BLOCKED line above; migrate apply refuses this file while it stands.`,
+  ]
+}
+
+// A NOT NULL @sequence column has no value to copy and no @default that could
+// give one: the rows need numbering per scope AND the counter needs seeding, or
+// the next create restarts at 1 beside rows numbered higher — nothing makes the
+// column unique, so there is no error. Litestone does not pick the order the
+// existing rows are numbered in; the primary key is the stand-in to replace.
+function sequenceRecipe(model, tableName, blockedCols) {
+  const seqs = (model?.fields ?? []).flatMap(f => {
+    const a = f.attributes?.find(a => a.kind === 'sequence')
+    return a && blockedCols.some(c => c.name === f.name) ? [{ field: f.name, scope: a.scope }] : []
+  })
+  if (!seqs.length) return []
+  const pk = model.attributes?.find(a => a.kind === 'id')?.fields
+          ?? model.fields.filter(f => f.attributes?.some(a => a.kind === 'id')).map(f => f.name)
+  const order = pk.length ? pk.map(quoteIdent).join(', ') : 'rowid'
+  const lines = []
+  for (const { field, scope } of seqs) {
+    const [f, s] = [quoteIdent(field), quoteIdent(scope)]
+    lines.push(`-- @sequence column ${f} (scope: ${scope}) — number the existing rows and seed the counter:`)
+    lines.push(`--   1. in the rebuild's INSERT ... SELECT, replace the NULL selected for ${f} with`)
+    lines.push(`--        ROW_NUMBER() OVER (PARTITION BY ${s} ORDER BY ${order}) AS ${f}`)
+    lines.push(`--      (ORDER BY decides which row is number 1 — replace it with the real arrival order)`)
+    lines.push(`--   2. after the rebuild, seed the counter so the next create continues from the highest number:`)
+    lines.push(`--        CREATE TABLE IF NOT EXISTS ${quoteIdent(SEQUENCE_TABLE)} (model TEXT NOT NULL, field TEXT NOT NULL, scope TEXT NOT NULL,`)
+    lines.push(`--          lastNum INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (model, field, scope));`)
+    lines.push(`--        INSERT INTO ${quoteIdent(SEQUENCE_TABLE)} (model, field, scope, lastNum)`)
+    lines.push(`--          SELECT '${model.name}', '${field}', CAST(${s} AS TEXT), MAX(${f}) FROM ${quoteIdent(tableName)}`)
+    lines.push(`--          WHERE ${s} IS NOT NULL GROUP BY ${s}`)
+    lines.push(`--          ON CONFLICT (model, field, scope) DO UPDATE SET lastNum = MAX(lastNum, excluded.lastNum);`)
+  }
+  return lines
+}
+
+// The rebuild and everything dropping the table takes with it that litestone
+// owns: its views, out of the way before the rename (which reparses every one),
+// and its indexes, which a bare rebuild leaves off — the commented copy of a
+// BLOCKED rebuild is advice to uncomment as-is, so it carries them too.
+function rebuildStatements(model, parseResult, pluralize, d) {
+  const lines = []
+  if (d.dropViews?.length) {
+    lines.push(`-- "${d.name}": views over it, dropped for the rebuild and restored after`)
+    for (const v of d.dropViews) lines.push(`DROP VIEW IF EXISTS "${v}";`)
+    lines.push(``)
+  }
+  lines.push(rebuildSQL(model, parseResult, pluralize, d))
+  lines.push(``)
+  const idxSQL = generateIndexDDL(model, undefined, { pluralize })
+  if (idxSQL.length) {
+    lines.push(`-- recreate indexes for "${d.name}"`)
+    lines.push(idxSQL.join('\n'))
+    lines.push(``)
+  }
+  for (const v of d.restoreViews ?? []) {
+    lines.push(v.sql.trim().replace(/;?$/, ';'))
+    // SQLite does not resolve a view body at CREATE time, so a view over a
+    // column this rebuild just dropped is recreated happily and fails only
+    // when something selects from it — in production, months later. Read
+    // zero rows from it here instead: inside the migration's transaction,
+    // so a view the schema change invalidated rolls the whole thing back.
+    lines.push(`SELECT 1 FROM "${v.name}" LIMIT 0;`)
+  }
+  if (d.restoreViews?.length) lines.push(``)
+  return lines
+}
+
+const commentedOut = lines => lines.join('\n').split('\n').map(l => l.startsWith('--') ? l : `-- ${l}`).join('\n')
+
 function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   // Must match createTable's physical columns exactly — implicit m2m and @edge
   // fields have no host column, so they can't appear in the INSERT ... SELECT.
@@ -1235,8 +1317,22 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
       .map(f => f.name),
   )
 
-  const copyNames = targetColNames.filter(n => !addedNames.has(n) && !generatedNames.has(n))
+  // A NOT NULL column with no DEFAULT has no value for the rows already there.
+  // It is named in the copy with a NULL to replace rather than left out, so the
+  // person finishing a BLOCKED rebuild edits a slot instead of inventing a
+  // column list, and the table keeps the schema's own DEFAULTs (none) instead
+  // of a stand-in the schema never declared.
+  const blockedNames = new Set(
+    (diff?.cols?.added ?? [])
+      .filter(c => c.notnull && c.default == null && !generatedNames.has(c.name))
+      .map(c => c.name),
+  )
+
+  const copyNames = targetColNames.filter(n => (!addedNames.has(n) || blockedNames.has(n)) && !generatedNames.has(n))
   const copyCols   = copyNames.map(n => `"${n}"`).join(', ')
+  const selectCols = copyNames
+    .map(n => blockedNames.has(n) ? `NULL /* ${quoteIdent(n)}: a value for the existing rows */` : quoteIdent(n))
+    .join(', ')
 
   const fullDDL   = generateTableDDL(model, parseResult.schema, { pluralize })
   const isStrict  = fullDDL.trimEnd().endsWith('STRICT;')
@@ -1251,7 +1347,7 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   lines.push(``)
   if (copyNames.length) {
     lines.push(`INSERT INTO "${tmp}" (${copyCols})`)
-    lines.push(`  SELECT ${copyCols} FROM "${tableName}";`)
+    lines.push(`  SELECT ${selectCols} FROM "${tableName}";`)
   } else {
     lines.push(`-- no columns shared with the old table — nothing to copy`)
   }
@@ -1352,14 +1448,9 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
         // of generating SQL that destroys or corrupts the table.
         const blocked = (d.cols?.added ?? []).filter(c => c.notnull && c.default == null)
         if (blocked.length) {
-          lines.push(`-- "${d.name}": rebuild BLOCKED — adds NOT NULL column(s) with no DEFAULT:`)
-          for (const c of blocked) lines.push(`--     ${c.name} ${c.type}`)
-          lines.push(`-- Existing rows have no value for them. Fix one of:`)
-          lines.push(`--   • add a @default() to the field, or make it optional (?)`)
-          lines.push(`--   • hand-write the copy below with a value expression for each blocked column`)
-          lines.push(`--   • if the table is empty, uncomment the rebuild as-is`)
-          lines.push(`-- Then delete the BLOCKED line above; migrate apply refuses this file while it stands.`)
-          lines.push(rebuildSQL(model, parseResult, pluralize, d).split('\n').map(l => `-- ${l}`).join('\n'))
+          lines.push(...blockedRebuildHint(d.name, blocked))
+          lines.push(...sequenceRecipe(model, d.name, blocked))
+          lines.push(commentedOut(rebuildStatements(model, parseResult, pluralize, d)))
           lines.push(``)
           continue
         }
@@ -1390,34 +1481,11 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           lines.push(`--   • move it into the schema, where litestone regenerates it`)
           lines.push(`--   • if it is no longer wanted, drop it by hand and uncomment`)
           lines.push(`-- Then delete the BLOCKED line above; migrate apply refuses this file while it stands.`)
-          lines.push(rebuildSQL(model, parseResult, pluralize, d).split('\n').map(l => `-- ${l}`).join('\n'))
+          lines.push(commentedOut(rebuildStatements(model, parseResult, pluralize, d)))
           lines.push(``)
           continue
         }
-        // Out of the way before the rename, which reparses every view.
-        if (d.dropViews?.length) {
-          lines.push(`-- "${d.name}": views over it, dropped for the rebuild and restored after`)
-          for (const v of d.dropViews) lines.push(`DROP VIEW IF EXISTS "${v}";`)
-          lines.push(``)
-        }
-        lines.push(rebuildSQL(model, parseResult, pluralize, d))
-        lines.push(``)
-        const idxSQL = generateIndexDDL(model, undefined, { pluralize })
-        if (idxSQL.length) {
-          lines.push(`-- recreate indexes for "${d.name}"`)
-          lines.push(idxSQL.join('\n'))
-          lines.push(``)
-        }
-        for (const v of d.restoreViews ?? []) {
-          lines.push(v.sql.trim().replace(/;?$/, ';'))
-          // SQLite does not resolve a view body at CREATE time, so a view over a
-          // column this rebuild just dropped is recreated happily and fails only
-          // when something selects from it — in production, months later. Read
-          // zero rows from it here instead: inside the migration's transaction,
-          // so a view the schema change invalidated rolls the whole thing back.
-          lines.push(`SELECT 1 FROM "${v.name}" LIMIT 0;`)
-        }
-        if (d.restoreViews?.length) lines.push(``)
+        lines.push(...rebuildStatements(model, parseResult, pluralize, d))
         continue
       }
 
@@ -1438,11 +1506,12 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
       }
 
       if (d.blockedAdds.length) {
-        lines.push(`-- "${d.name}": blocked columns — NOT NULL with no DEFAULT`)
-        lines.push(`-- Fix: make optional (?), add a @default(), or do a manual rebuild,`)
-        lines.push(`-- then delete each BLOCKED line; migrate apply refuses this file while one stands.`)
-        for (const col of d.blockedAdds)
-          lines.push(`-- ALTER TABLE "${d.name}" ADD COLUMN "${col.name}" ${col.type} NOT NULL;  -- BLOCKED`)
+        // The advice is a rebuild and not ADD COLUMN ... DEFAULT then a backfill:
+        // the DEFAULT stays on the column, the schema does not declare it, and
+        // the next migrate apply refuses the history it left behind.
+        lines.push(...blockedRebuildHint(d.name, d.blockedAdds))
+        lines.push(...sequenceRecipe(model, d.name, d.blockedAdds))
+        lines.push(commentedOut(rebuildStatements(model, parseResult, pluralize, d)))
         lines.push(``)
       }
 

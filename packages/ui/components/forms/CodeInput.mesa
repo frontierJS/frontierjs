@@ -39,7 +39,7 @@
   // bind:this exposes: focus()
 
   import Field    from './Field.mesa'
-  import { glowLine, glowLanguage } from '@frontierjs/toolbelt/glow'
+  import { glowLine, glowLanguage, glowOpen } from '@frontierjs/toolbelt/glow'
   import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   export let value       = ''
@@ -121,7 +121,7 @@
 
   // `html[from..to)` as chunks; `last` is whether `to` ends the document.
   function chunk(html, from, to, last, lang) {
-    const open = `<code language="${lang || '*'}">`
+    const open = glowOpen(lang)
     const parts = [], sizes = []
     for (let i = from; i < to; i += CHUNK) {
       const end = Math.min(i + CHUNK, to)

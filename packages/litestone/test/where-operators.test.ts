@@ -160,3 +160,43 @@ describe('a list operator given a non-list is a ValidationError', () => {
     expect(await sys.book.findMany({ where: { tags: { hasSome: ['x', 'y'] } } })).toHaveLength(1)
   })
 })
+
+// ─── a text operator on a NUMBER ──────────────────────────────────────────
+//
+// `{ qty: { contains: '1' } }` compiled to `qty LIKE '%1%'`, which SQLite
+// answers by coercing the number to text: 1, 10 and 214 all matched, a plausible
+// list that is not the question a quantity can be asked. FJS-1128.
+
+describe('a text operator on a number is a ValidationError', () => {
+
+  const NUM_SCHEMA = `
+    model Item { id Int @id  qty Int  weight Float  label String  at DateTime }
+  `
+  async function items() {
+    const c: any = await createClient({ db: ':memory:', schema: NUM_SCHEMA })
+    const sys = c.asSystem()
+    for (const [id, qty] of [[1, 1], [2, 10], [3, 214]] as const)
+      await sys.item.create({ data: { id, qty, weight: qty, label: 'l', at: '2024-01-05T00:00:00.000Z' } })
+    return sys
+  }
+
+  for (const field of ['qty', 'weight']) {
+    for (const op of ['contains', 'startsWith', 'endsWith']) {
+      test(`${op} on ${field}`, async () => {
+        const sys = await items()
+        const err = await refusal(() => sys.item.findMany({ where: { [field]: { [op]: '1' } } }))
+        expect(err).toBeInstanceOf(ValidationError)
+        expect(err!.message).toMatch(new RegExp(field))
+        expect(err!.message).toMatch(/gte|lte|equals/)
+      })
+    }
+  }
+
+  test('the numeric questions still answer, and so do text and DateTime', async () => {
+    const sys = await items()
+    expect(await sys.item.findMany({ where: { qty: { gte: 10 } } })).toHaveLength(2)
+    expect(await sys.item.findMany({ where: { qty: { equals: 10 } } })).toHaveLength(1)
+    expect(await sys.item.findMany({ where: { label: { contains: 'l' } } })).toHaveLength(3)
+    expect(await sys.item.findMany({ where: { at: { contains: '2024-01' } } })).toHaveLength(3)
+  })
+})

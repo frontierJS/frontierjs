@@ -1,11 +1,20 @@
 <script>
   let inputEl
   let heard = 0
+  let picked = ''
+  let shown = ''
+  const describe = (input) => {
+    const f = input.files[0]
+    return f ? f.name + ' ' + f.size + ' ' + input.value : 'none'
+  }
 </script>
 
 <p>before</p>
-<input bind:this={inputEl} type="file" class="visually-hidden" on:click={() => heard++} />
+<input bind:this={inputEl} type="file" class="visually-hidden"
+       on:click={() => heard++} on:change={(e) => { picked = describe(e.target) }} />
 <input type="file" accept="application/json" hidden />
 <p>after</p>
 <button type="button" on:click={() => inputEl?.click()}>Browse</button>
-<p>heard [{heard}]</p>
+<p>heard [{heard}] picked [{picked}]</p>
+<input type="file" on:change={(e) => { shown = describe(e.target) }} />
+<p>shown [{shown}]</p>

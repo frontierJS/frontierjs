@@ -196,10 +196,9 @@ await db.post.findMany({
 
 **Restriction:** only `belongsTo` (FK on this model's table) relations work. `hasMany` is inherently ambiguous for sorting. Use aggregate orderBy instead.
 
-A relation sort beside a `select` that names a column both tables carry (`select: { id: true }`) fails on `ambiguous column name: id`:
+A `select` beside a relation sort can name a column both tables carry:
 
-```js failing
-// FJS-2299
+```js
 await db.post.findMany({ orderBy: { author: { name: 'asc' } }, select: { id: true } })
 ```
 

@@ -47,7 +47,7 @@ export function describeStanding({ label = null, graded = 0, synthetic = false }
 
 // ─── an app's own commands ────────────────────────────────────────────────────
 //
-// `db/tinker.js`, beside the schema, default-exports `{ name: { help, run } }`.
+// `db/repl.js`, beside the schema, default-exports `{ name: { help, run } }`.
 // `.name a b` calls `run({ db, sys, args: ['a', 'b'], out, tenant })`. The file
 // is refused whole rather than entry by entry: a command silently missing from
 // the list reads as a typo at the prompt, not as a broken file.
@@ -55,7 +55,7 @@ export function describeStanding({ label = null, graded = 0, synthetic = false }
 const BUILT_IN     = ['help', 'standing', 'exit']
 const COMMAND_NAME = /^[A-Za-z][\w-]*$/
 
-export function tinkerCommands(mod, file = 'db/tinker.js') {
+export function replCommands(mod, file = 'db/repl.js') {
   const table = mod?.default
   if (!table || typeof table !== 'object' || Array.isArray(table))
     throw new Error(`${file} must export default an object of commands — { resetPasswords: { help, run } }`)
@@ -174,7 +174,7 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
 //
 //   evalOnce({ code, db, sys, commands, tenant, out, err })  → Promise<0 | 1>
 //
-// `fli tinker -e`: one line, the same evaluator and the same dot commands as the
+// `fli db:repl -e`: one line, the same evaluator and the same dot commands as the
 // prompt, then out. Without it an agent reaches for `sqlite3` against the app's
 // file, which answers every question with the gate switched off.
 //
@@ -190,7 +190,7 @@ export async function evalOnce({ code, db, sys, commands = {}, tenant = null, ou
     if (line.startsWith('.')) {
       const [name, ...args] = line.slice(1).split(/\s+/)
       if (!Object.hasOwn(commands, name)) {
-        err(`  No command .${name}. ${Object.keys(commands).length ? `Known: ${Object.keys(commands).map(n => '.' + n).join(' ')}` : 'db/tinker.js declares none.'}`)
+        err(`  No command .${name}. ${Object.keys(commands).length ? `Known: ${Object.keys(commands).map(n => '.' + n).join(' ')}` : 'db/repl.js declares none.'}`)
         return 1
       }
       await commands[name].run({ db, sys, args, out, tenant })
@@ -312,7 +312,7 @@ function helpLines(accessors, commands = {}) {
     '',
     ...(own.length
       ? [...own.map(([n, c]) => `  ${`.${n}`.padEnd(width)}  ${c.help ?? ''}`.trimEnd()), '']
-      : ['  db/tinker.js beside the schema adds commands of your own', '']),
+      : ['  db/repl.js beside the schema adds commands of your own', '']),
   ]
 }
 

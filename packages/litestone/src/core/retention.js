@@ -23,6 +23,7 @@ import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex, utf8Length, utf
   from '../drivers/jsonl-index.js'
 import { modelToTableName, fieldToColumnName } from './ddl.js'
 import { quoteIdent }       from './query.js'
+import { reclaimFreePages } from './pragmas.js'
 
 // ─── Duration parser ──────────────────────────────────────────────────────────
 // Accepts: 30d, 90d, 1y, 24h, 60m, 3600s
@@ -190,6 +191,9 @@ export async function runSqliteRetention(rawWriteDb, models, retention, {
         // FTS and cascade triggers wrote too, so the line said 17 rows removed
         // for one (FJS-320).
         removed += rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
+        // The freed pages are returned with the batch that freed them, so the
+        // file never holds more than one batch of dead space (FJS-2290).
+        reclaimFreePages(rawWriteDb)
       } catch (err) {
         // A table that exists and will not sweep is worth saying out loud: the
         // whole point of the declaration is rows going away.

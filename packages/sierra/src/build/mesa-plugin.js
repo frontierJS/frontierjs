@@ -444,9 +444,11 @@ export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = 
           warning: (w) => direct.push(typeof w === 'string' ? w : (w.message ?? String(w))),
           loc: isDev && inspectOn(mesaOptions),
           locRoot: root,
+          // Not dev-only: a compile error names its line through this map too,
+          // and a build without it named a line short by the frontmatter.
           // A `.md` file's locs name the template Markdown compiles to, not
           // its lines, so there is nothing to map them back onto.
-          locLines: isDev && !id.endsWith('.md') ? locLines(source, content) : null,
+          locLines: id.endsWith('.md') ? null : locLines(source, content),
           // Everything the app configured, including any `externalSignals` of
           // its own. Sierra declares NONE: it exports no module-level signal, so
           // it has nothing to tell the compiler about (`FJS-060`). The map is an

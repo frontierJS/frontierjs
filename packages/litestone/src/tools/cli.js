@@ -1123,7 +1123,7 @@ async function cmdVerify(cfg) {
 
 // ─── the console ──────────────────────────────────────────────────────────────
 //
-// `litestone repl`, and `fli tinker` over it. What it resolves is the STANDING —
+// `litestone repl`, and `fli db:repl` over it. What it resolves is the STANDING —
 // which principal, graded by which resolver, at which level — and the prompt
 // loop itself is `tools/repl.js`.
 //
@@ -1294,7 +1294,7 @@ async function cmdRepl(cfg) {
     fatal(`${cyan('--eval')} takes an expression: ${cyan(`--eval 'db.order.count()'`)}.`)
   const once = code != null
 
-  if (!once) header('litestone tinker')
+  if (!once) header('litestone repl')
 
   // It drove `bun repl` as a subprocess once, fed through `.load` and two fixed
   // sleeps. That worked and could never satisfy the rule this command lives by:
@@ -1303,14 +1303,14 @@ async function cmdRepl(cfg) {
   const parseResult = loadSchema(cfg.schema)
   const { isSoftDelete } = await import('../core/ddl.js')
   const { createClient } = await import('../core/client.js')
-  const { startRepl, evalOnce, describeStanding, tinkerCommands } = await import('./repl.js')
+  const { startRepl, evalOnce, describeStanding, replCommands } = await import('./repl.js')
 
   // Loaded before any database opens: a broken commands file is a refusal
   // naming the file, not a session that starts and lacks the command.
-  const commandsFile = join(dirname(resolve(cfg.schema)), 'tinker.js')
+  const commandsFile = join(dirname(resolve(cfg.schema)), 'repl.js')
   let commands = {}
   if (existsSync(commandsFile)) {
-    try { commands = tinkerCommands(await import(commandsFile), rel(commandsFile)) }
+    try { commands = replCommands(await import(commandsFile), rel(commandsFile)) }
     catch (e) { fatal(`${rel(commandsFile)} could not be loaded.\n     ${e.message}`) }
   }
 
@@ -2392,7 +2392,7 @@ const ACCESS_STRICT_OK = new Set(['unchanged', 'new', 'narrows'])
 // here cannot drift. Everything else in `access` describes the DECLARED surface
 // and needs no database; this one is a join over rows and opens one.
 //
-// The person is found through the same resolver `tinker --as` uses, read through
+// The person is found through the same resolver `repl --as` uses, read through
 // asSystem() — you are an operator looking somebody up, so finding the row must
 // not depend on what that row is allowed to see.
 //

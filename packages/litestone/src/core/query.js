@@ -444,9 +444,12 @@ export function likePattern(op, operand) {
 // `has` and is not `has`. On a Boolean the value is 0/1, so `contains: 'tru'`
 // answers nothing at all.
 //
-// Int and DateTime are deliberately NOT here: SQLite's coercion answers the
-// question that was asked, and `{ when: { contains: '2024-01' } }` against an ISO
-// column is a genuinely useful way to ask for a month.
+// On a number SQLite coerces the value to text, so `{ qty: { contains: '1' } }`
+// answers 1, 10 and 214 — a list, not a refusal, for a question a quantity cannot
+// be asked.
+//
+// DateTime is deliberately NOT here: it is stored as ISO text, so
+// `{ when: { contains: '2024-01' } }` is a genuinely useful way to ask for a month.
 const TEXT_OP_REFUSALS = {
   array:   (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" holds a JSON array, so "${op}" would substring-match the stored document rather than its elements — ` +
                       `use "has" for an element, or "hasSome"/"hasEvery" for several`,
@@ -454,6 +457,8 @@ const TEXT_OP_REFUSALS = {
                       `declare @type(...) on the column to filter by a path`,
   file:    (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" holds a file reference document, so "${op}" would match its serialized text rather than anything about the file`,
   boolean: (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
+  number:  (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" is a number, so "${op}" would substring-match its digits (1 matches 10 and 214) — ` +
+                      `use "equals", or "gte"/"lte" for a range`,
 }
 
 /**
@@ -1785,6 +1790,7 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, shapes, j
 // Returns:
 //   {
 //     sqlCols:          string       — SQL column list ('*' or '"id", "email"')
+//     dbCols:           string[]|null — the column names in sqlCols; null for '*'
 //     relationSelects:  object       — { relName: true | { select: {...} } }
 //     requestedFields:  Set<string>  — all fields the user wants back
 //     injectedFKs:      Set<string>  — FK cols added for joins but not requested
@@ -1924,13 +1930,17 @@ export function parseSelectArg(select, modelName, shapes, include, computedFns) 
     }
   }
 
+  // The column names behind `sqlCols`, for a caller whose FROM is aliased and
+  // whose JOIN brings a second table with an `id` of its own.
+  const dbCols = needsAllDbCols ? null : Object.keys(dbFields).map(c => columnMap[c] ?? c)
+
   const sqlCols = needsAllDbCols
     ? '*'
-    : Object.keys(dbFields).length > 0
-      ? Object.keys(dbFields).map(c => `"${columnMap[c] ?? c}"`).join(', ')
+    : dbCols.length > 0
+      ? dbCols.map(c => `"${c}"`).join(', ')
       : '"_no_cols_"'  // edge case: only computed/relation fields selected
 
-  return { sqlCols, relationSelects, requestedFields, injectedFKs, needsAllDbCols, requestedFrom }
+  return { sqlCols, dbCols, relationSelects, requestedFields, injectedFKs, needsAllDbCols, requestedFrom }
 }
 
 // ─── Post-select trimming ─────────────────────────────────────────────────────

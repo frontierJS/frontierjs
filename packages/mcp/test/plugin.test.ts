@@ -71,7 +71,7 @@ beforeAll(async () => {
   app.services.register(createService({
     name: 'credentials', model: 'Credential',
     mint: async () => ($.db as unknown as Creds).asSystem().credential.create({
-      data: { label: 'minted', value: 'hunter2-minted', scope: 'scope-minted' },
+      data: { label: 'minted', value: 'hunter2-minted', privilege: 'privilege-minted' },
     }),
     methods: ['find', 'get', 'create', { method: 'mint', gate: 5 }],
   }))
@@ -420,16 +420,16 @@ describe('a tool call is a call from outside (FJS-D609, FJS-D613)', () => {
   })
 
   // A hit/miss pair over a @guarded column: answered at all, the two counts
-  // read `scope` one comparison at a time (FJS-1816).
+  // read `privilege` one comparison at a time (FJS-1816).
   const smuggled = {
-    'a top-level $raw':        (like: string) => ({ $raw: `scope LIKE '${like}%'` }),
-    'a $raw under NOT':        (like: string) => ({ NOT: { $raw: `scope NOT LIKE '${like}%'` } }),
-    'a $raw under OR':         (like: string) => ({ OR: [{ id: -1 }, { $raw: `scope LIKE '${like}%'` }] }),
-    'a forged tag under NOT':  (like: string) => ({ NOT: { $raw: { _litestoneRaw: true, sql: `scope NOT LIKE '${like}%'`, params: [] } } }),
+    'a top-level $raw':        (like: string) => ({ $raw: `privilege LIKE '${like}%'` }),
+    'a $raw under NOT':        (like: string) => ({ NOT: { $raw: `privilege NOT LIKE '${like}%'` } }),
+    'a $raw under OR':         (like: string) => ({ OR: [{ id: -1 }, { $raw: `privilege LIKE '${like}%'` }] }),
+    'a forged tag under NOT':  (like: string) => ({ NOT: { $raw: { _litestoneRaw: true, sql: `privilege NOT LIKE '${like}%'`, params: [] } } }),
   }
   for (const [label, where] of Object.entries(smuggled)) {
     test(`${label} is refused, never answered`, async () => {
-      const r = await callTool('credentials_find', { query: where('scope') }, 'shopper')
+      const r = await callTool('credentials_find', { query: where('privilege') }, 'shopper')
       expect(r.body.result?.isError).toBe(true)
       expect(JSON.stringify(r.body)).toMatch(/\$raw/)
     })
@@ -455,7 +455,7 @@ describe('a credential column reaches no tool schema', () => {
     const text   = JSON.stringify(create?.inputSchema ?? {})
     expect(text).toContain('label')
     expect(text).not.toContain('value')
-    expect(text).not.toContain('scope')
+    expect(text).not.toContain('privilege')
   })
 
   test('and no schema anywhere in the list names one, on a list this test did not write', async () => {
@@ -493,7 +493,7 @@ describe('a protected column reaches no tool RESULT (FJS-D473)', () => {
     expect(res.body.result?.isError ?? false).toBe(false)
     expect(res.text).toContain('minted')
     expect(res.text).not.toContain('hunter2')
-    expect(res.text).not.toContain('scope-minted')
+    expect(res.text).not.toContain('privilege-minted')
   })
 })
 

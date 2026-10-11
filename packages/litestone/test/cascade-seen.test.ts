@@ -107,8 +107,8 @@ describe('a cascade is a delete the plugins and the trail hear about', () => {
       expect(spy.deleted.Application?.sort()).toEqual([10, 11])
       expect(spy.deleted.Scorecard?.sort()).toEqual([100, 101])
       const lines = await deleteLines(sys)
-      expect(lines.application).toEqual([10, 11])
-      expect(lines.scorecard).toEqual([100, 101])
+      expect(lines.Application).toEqual([10, 11])
+      expect(lines.Scorecard).toEqual([100, 101])
       db.$close()
     })
   }
@@ -120,8 +120,8 @@ describe('a cascade is a delete the plugins and the trail hear about', () => {
       expect(spy.deleted.Application?.sort()).toEqual([10, 11, 20])
       expect(spy.deleted.Scorecard?.sort()).toEqual([100, 101, 200])
       const lines = await deleteLines(sys)
-      expect(lines.application).toEqual([10, 11, 20])
-      expect(lines.scorecard).toEqual([100, 101, 200])
+      expect(lines.Application).toEqual([10, 11, 20])
+      expect(lines.Scorecard).toEqual([100, 101, 200])
       db.$close()
     })
   }
@@ -156,8 +156,8 @@ describe('the two stores the stressor measured', () => {
     await sys.scorecard.create({ data: { id: 100, appId: 10 } })
     await sys.person.delete({ where: { id: 1 } })
     const lines = await deleteLines(sys)
-    expect(lines.application).toEqual([10])
-    expect(lines.scorecard).toEqual([100])
+    expect(lines.Application).toEqual([10])
+    expect(lines.Scorecard).toEqual([100])
     db.$close()
   })
 
@@ -235,8 +235,8 @@ describe('the @hardDelete children of a soft cascade are removed rows too (FJS-1
     expect(spy.deleted.Document?.sort()).toEqual([10, 11])
     expect(spy.deleted.Page).toEqual([100])
     const lines = await deleteLines(sys)
-    expect(lines.document).toEqual([10, 11])
-    expect(lines.page).toEqual([100])
+    expect(lines.Document).toEqual([10, 11])
+    expect(lines.Page).toEqual([100])
     db.$close()
   })
 
@@ -246,7 +246,7 @@ describe('the @hardDelete children of a soft cascade are removed rows too (FJS-1
     expect(spy.deleted.Document?.sort()).toEqual([10, 11, 20])
     expect(spy.deleted.Page?.sort()).toEqual([100, 200])
     const lines = await deleteLines(sys)
-    expect(lines.document).toEqual([10, 11, 20])
+    expect(lines.Document).toEqual([10, 11, 20])
     db.$close()
   })
 })
@@ -288,7 +288,7 @@ describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (F
   async function updateLines(sys: any) {
     await tick()
     const rows = await sys.auditRow.findMany({ where: { operation: 'update' } })
-    return rows.filter((r: any) => r.model === 'note')
+    return rows.filter((r: any) => r.model === 'Note')
   }
 
   for (const verb of ['delete', 'deleteMany'] as const) {

@@ -525,10 +525,15 @@ describe('sync', () => {
     expect(after.conflicts.map((d: any) => d.hostname)).toEqual(['www.shop.test'])
   })
 
-  test('a redirect, an app running nowhere, and a developer are each refused', async () => {
-    await expect(edge(admin).call('sync', moved.id, {}))
-      .rejects.toMatchObject({ code: 409, message: expect.stringContaining('FJS-1615') })
+  // FJS-1615: a redirect answers from Caddy on the machine the CNAME leads to,
+  // so the zone side is the same push as any other Domain's.
+  test('a redirecting Domain is pushed to the zone like any other', async () => {
+    const out = await edge(admin).call('sync', moved.id, {}) as any
+    expect(out.record).toMatchObject({ type: 'CNAME', name: 'go.example.test', content: `${web.id}.shop.test`,
+      mark: { fleet: 'basecamp', domainId: moved.id } })
+  })
 
+  test('an app running nowhere, and a developer, are each refused', async () => {
     const quiet = await (env.system as any).domain.create({ data: { workspaceId: site.id, appId: idle.id, hostname: 'idle.example.test' } })
     await expect(edge(admin).call('sync', quiet.id, {}))
       .rejects.toMatchObject({ code: 409, message: expect.stringContaining('runs on no online server') })
@@ -614,11 +619,25 @@ describe('sync', () => {
     const out = await routeDomainApp(app, api.id)
     expect(out.failed).toEqual([])
     expect(out.routed.map(r => r.serverId).sort()).toEqual([online1.id, online2.id].sort())
-    // The redirect is not routed, and the deleted Domain dropped out.
+    // The redirect is not a host the app answers, and the deleted Domain dropped out.
     const hosts = out.routed[0].hosts.map(h => h.toLowerCase())
     expect(hosts).toContain('www.shop.test')
     expect(hosts).not.toContain('go.example.test')
     expect(hosts).not.toContain('shop.example.test')
+    // The redirect goes to the machine beside them (FJS-1615).
+    expect(out.routed[0].redirects).toEqual([{ host: 'go.example.test', to: 'https://api.example.test' }])
+  })
+
+  test('an inline App is routed to the static origin, not skipped (FJS-1615)', async () => {
+    const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
+    const sys    = env.system as any
+    const inline = await sys.app.create({ data: { workspaceId: site.id, environmentId: web.environmentId, name: 'paste', slug: 'paste',
+      source: { kind: 'inline', files: [] } } })
+    await sys.appServer.create({ data: { appId: inline.id, serverId: online1.id, status: 'running' } })
+    const d = await sys.domain.create({ data: { workspaceId: site.id, appId: inline.id, hostname: 'paste.example.test' } })
+    const out = await routeDomainApp(app, d.id)
+    expect(out.failed).toEqual([])
+    expect(out.routed.map(r => r.hosts)).toEqual([['paste.example.test']])
   })
 
   test('a machine with no outpost to take its route is a failure naming it, so the job retries', async () => {

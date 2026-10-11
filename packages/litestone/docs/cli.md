@@ -120,7 +120,7 @@ Launch the browser UI at `http://localhost:8502` and open it (`--no-open` to not
 ```bash
 litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>] [--tenant <id>] [--eval '<expr>']
 ```
-A console that boots at a gate level, with `db`, the model accessors and tab completion. `--as` resolves an account the way `export --as` does; `--level` fixes the standing with no user; `--eval` runs one expression, prints it as JSON and exits 1 on a throw. A `tinker.js` beside the schema adds commands.
+A console that boots at a gate level, with `db`, the model accessors and tab completion. `--as` resolves an account the way `export --as` does; `--level` fixes the standing with no user; `--eval` runs one expression, prints it as JSON and exits 1 on a throw. A `repl.js` beside the schema adds commands.
 
 ```bash
 litestone doctor

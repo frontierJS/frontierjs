@@ -177,6 +177,86 @@ class Field extends InputRenderable {
   }
 }
 
+/**
+ * `<input type="file">`: a terminal has no picker, so the control is a field
+ * a path is typed into. Committing it, by Enter or by leaving the field,
+ * reads that file into `files` and fires `input` then `change`, as a browser
+ * does when its picker closes on a new choice (`choose`). `value` is the
+ * browser's `C:\fakepath\` plus the name, and `''` clears the choice.
+ *
+ * One hidden by `pickerHidden` paints nothing until `click()`, which the
+ * kit's `FileUpload` calls from its own button: then it shows in place and
+ * takes focus, and leaving it hides it again, as a picker opens on demand.
+ */
+class FilePath extends Field {
+  __files = []
+  __placeholder = 'path to a file'
+  __hidden = false
+  __opener = null
+  __picks = 0
+  get files() { return this.__files }
+  get value() { return this.__files[0] ? `C:\\fakepath\\${this.__files[0].name}` : '' }
+  set value(v) { if (v === '' || v == null) this.__files = [] }
+  /** The typed text, written without the engine's `input`. */
+  say(text, placeholder = this.__placeholder) {
+    this.__muted = true
+    try { super.value = text } finally { this.__muted = false }
+    this.placeholder = placeholder
+  }
+  open() {
+    if (!this.__hidden) { this.focus(); return }
+    this.__opener = _renderer?.currentFocusedRenderable ?? null
+    this.visible = true
+    this.focus()
+  }
+  blur() {
+    super.blur()
+    if (!this.__hidden || !this.visible) return
+    this.visible = false
+    const back = this.__opener
+    this.__opener = null
+    if (back && !back.isDestroyed && back.focusable) back.focus()
+  }
+}
+
+/**
+ * The path committed in a file field, read into its `files`. A path that
+ * reads no file leaves the choice as it was and says so in the empty field,
+ * since a browser's picker can only offer a file that exists. `~/` is the
+ * home directory and anything else is resolved from the working directory.
+ */
+async function choose(node, text) {
+  const pick = ++node.__picks
+  const path = text.trim()
+  let files = []
+  if (path) {
+    const at = path.startsWith('~/') ? (process.env.HOME ?? '~') + path.slice(1) : path
+    try {
+      const f = Bun.file(at)
+      const bytes = await f.arrayBuffer()
+      // A browser's type is the bare media type: no `;charset=`.
+      const type = f.type.split(';')[0]
+      files = [new File([bytes], at.split(/[\\/]/).pop(), { type: type === 'application/octet-stream' ? '' : type })]
+    } catch {
+      if (pick === node.__picks) node.say('', `no file at ${path}`)
+      return
+    }
+  }
+  if (pick !== node.__picks || node.isDestroyed) return
+  if (!files.length && !node.__files.length) return
+  node.__files = files
+  node.placeholder = node.__placeholder
+  dispatch(node, 'input')
+  dispatch(node, 'change')
+}
+
+/** A file field's commit, and Enter, which in one opened by `click()` hands
+ *  focus back to what opened it rather than submitting the form. */
+function fileSource(node) {
+  node.on('change', (text) => void choose(node, text))
+  node.on('enter', () => { if (node.__hidden) node.blur() })
+}
+
 // ─── typed fields ─────────────────────────────────────────────────────
 
 // HTML's valid date, time, month and week strings (§ 2.3.5). `read` answers
@@ -536,10 +616,12 @@ export function element(tag, attrs = {}) {
       break
     case 'input': {
       const kind = inputKind(attrs.type)
-      if (!kind || (kind === 'file' && !pickerHidden(attrs.hidden, attrs.class))) {
-        throw new Error(`[Mesa] <input type="${attrs.type}"> has no terminal lowering`)
-      }
-      if (kind === 'field') {
+      if (!kind) throw new Error(`[Mesa] <input type="${attrs.type}"> has no terminal lowering`)
+      if (kind === 'file') {
+        node = new FilePath(r, { minWidth: 20 })
+        // The kit opens its hidden picker with `input.click()`.
+        node.click = () => { if (!dispatch(node, 'click').defaultPrevented) node.open() }
+      } else if (kind === 'field') {
         // A browser's text field is 20 characters wide unless `size` says
         // otherwise; with no width of its own, a field beside its label in a
         // row shrinks to one cell.
@@ -552,9 +634,6 @@ export function element(tag, attrs = {}) {
       } else {
         node = new BoxRenderable(r, { visible: false })
       }
-      // The kit opens its hidden picker with `input.click()`; the event fires
-      // and no picker follows.
-      if (kind === 'file') node.click = () => void dispatch(node, 'click')
       node.__kind = kind
       break
     }
@@ -576,7 +655,8 @@ export function element(tag, attrs = {}) {
   // as the DOM's is, and through `up`, so a lifted dialog is still inside the
   // component that wrote it.
   node.contains = (other) => { for (let n = other; n; n = up(n)) if (n === node) return true; return false }
-  if (field) inputSource(node)
+  if (node instanceof FilePath) fileSource(node)
+  else if (field) inputSource(node)
   if (spec.role === 'button' || spec.role === 'summary' || node instanceof CheckBox) activatable(node)
   else if (node.__canFocus) focusSource(node)
   for (const name in attrs) set_attribute(node, name, attrs[name])
@@ -629,6 +709,12 @@ export function set_attribute(node, name, value) {
       return
     }
     if (name === 'checked' && node instanceof CheckBox) { node.checked = present; return }
+    // An opened picker stays open until it is left.
+    if ((name === 'hidden' || name === 'class') && node instanceof FilePath) {
+      node.__hidden = pickerHidden(node.__attrs.hidden, node.__attrs.class)
+      if (!node.focused) node.visible = !node.__hidden
+      return
+    }
   }
   if (node instanceof SelectBox) {
     if (name === 'multiple' && present) throw new Error('[Mesa] <select multiple> has no terminal lowering')

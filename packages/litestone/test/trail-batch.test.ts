@@ -53,7 +53,7 @@ describe('a real trail', () => {
       const lines = readFileSync(join(dir, 'audit', 'auditTrail.jsonl'), 'utf8').split('\n').filter(Boolean)
       expect(lines.map(l => JSON.parse(l).records)).toEqual(Array.from({ length: 20 }, (_, i) => [i + 1]))
       // The index rows name the right lines — an indexed read answers each one.
-      expect(await sys.auditTrail.count({ where: { model: 'thing' } })).toBe(20)
+      expect(await sys.auditTrail.count({ where: { model: 'Thing' } })).toBe(20)
       expect(db.$logStats()).toMatchObject({ written: 20, dropped: 0 })
       db.$close()
     } finally { rmSync(dir, { recursive: true, force: true }) }
@@ -62,7 +62,7 @@ describe('a real trail', () => {
   test('sql: an entry the trail model refuses costs that entry alone', async () => {
     const db: any = await createClient({ db: ':memory:', schema: `
       database main { path ":memory:" model AuditRow }
-      enum Audited { thing }
+      enum Audited { Thing }
       model AuditRow {
         id        Int      @id @default(autoincrement())
         operation String
@@ -90,5 +90,25 @@ describe('a real trail', () => {
     expect(rows.map((r: any) => r.records)).toEqual([[1], [2]])
     expect(db.$logStats()).toMatchObject({ written: 2, dropped: 1 })
     db.$close()
+  })
+})
+
+describe('a trail nothing has written yet', () => {
+  test('FJS-2379: a read answers no rows instead of refusing to open the index', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-trail-unwritten-'))
+    try {
+      const db: any = await createClient({ resolveFrom: dir, schema: `
+        database main  { path "${dir}/main.db" }
+        database audit { path "${dir}/audit/" driver trail }
+        model Thing { id Int @id  name String  @@trail(audit) }
+      ` })
+      // A where on an indexed field takes the index path, which is the one that opens the sidecar.
+      expect(await db.asSystem().auditTrail.findMany({ where: { model: 'Thing' } })).toEqual([])
+      expect(await db.asSystem().auditTrail.count({ where: { model: 'Thing' } })).toBe(0)
+      expect(await db.asSystem().auditTrail.findMany()).toEqual([])
+      await db.asSystem().thing.create({ data: { id: 1, name: 'a' } })
+      await tick(); await tick()
+      expect((await db.asSystem().auditTrail.findMany()).length).toBeGreaterThan(0)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

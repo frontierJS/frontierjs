@@ -2259,7 +2259,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * A failure is not fatal: a head is an affordance, so an unreachable rank
    * service leaves the plain list and says so once.
    */
-  function recentHead(vs, { setService, narrowed, shown, search, directives, fieldName }) {
+  function recentHead(vs, { setService, narrowed, scope, shown, search, directives, fieldName }) {
     // Searching is the other mode — the person knows what they want and a head
     // above the matches is noise. Stated directives are the caller's own order,
     // and a head would sit above it uninvited.
@@ -2279,7 +2279,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         if (!values.length) return []
 
         return setService.service
-          .getOptions({ ...narrowed, [vs.value]: { in: values } }, { limit: values.length })
+          .getOptions({ ...narrowed, [vs.value]: { in: values } }, { limit: values.length, ...(scope ? { scope } : {}) })
           .then(res2 => {
             const rows = Array.isArray(res2) ? res2 : (res2?.data ?? [])
             const by   = new Map(rows.map(r => [r?.[vs.value], r]))
@@ -2321,7 +2321,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * an id falls through to the id, because `17 (unavailable)` is worse than the
    * bug being fixed.
    */
-  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, isArray, strength = 'required', within = null }) {
+  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, isArray, strength = 'required', within = null, scope }) {
     const held = record?.[fieldName]
     if (held == null) return answer
     const wanted = (isArray ? (Array.isArray(held) ? held : [held]) : [held]).filter(v => v != null)
@@ -2340,7 +2340,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // what it does not find goes on to be judged below.
     if (answer.truncated !== false) {
       return service
-        .getOptions({ ...(within ?? {}), [valueField]: { in: missing } }, { limit: missing.length })
+        .getOptions({ ...(within ?? {}), [valueField]: { in: missing } }, { limit: missing.length, ...(scope ? { scope } : {}) })
         .then(res => {
           const rows = Array.isArray(res) ? res : (res?.data ?? [])
           return new Map(rows.map(r => [r?.[valueField], r?.[shown]]))
@@ -2461,9 +2461,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // the narrower, better-described answer: it names the column a person reads
     // and the scope the list is narrowed by.
     //
-    // Every narrowing the set applies travels as a NAME — `$checkWhere`
-    // validates a `$scope`, so it survives junction's autoFilter and litestone
-    // compiles it — which is what makes the offered list the SAME list the Data
+    // Every narrowing the set applies travels as a NAME — the `scope` directive,
+    // which junction hands to litestone as `where.$scope`, validated against the
+    // model's declared scopes — which is what makes the offered list the SAME list the Data
     // boundary will accept. A declared `where` is SQL and a browser may never
     // send SQL, so it mints a scope of its own at parse and arrives here as one
     // more name (`FJS-430`).
@@ -2497,17 +2497,18 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       if (key && !reload && _options.has(key)) return _options.get(key)
 
       const setService = relatedResource(serviceNameFor(vs.model) ?? vs.model, vs.model)
-      const narrowed   = {
-        ...(query ?? {}),
-        ...(vs.scopes?.length ? { $scope: vs.scopes } : {}),
-      }
+      // The scope is a DIRECTIVE on every read the set makes, never a filter: a
+      // `$` key in the filters is refused at the bridge, and the picker read
+      // 'No options' in every app (`FJS-2561`).
+      const narrowed = query ?? {}
+      const scope    = vs.scopes?.length ? vs.scopes : undefined
 
       const pending = Promise.all([
         setService.service.getOptions(
           { ...narrowed, ...(search ? { [shown]: { contains: String(search) } } : {}) },
-          directives ?? { limit, orderBy: optionsOrder(vs.order, shown) },
+          { ...(directives ?? { limit, orderBy: optionsOrder(vs.order, shown) }), ...(scope ? { scope } : {}) },
         ),
-        recentHead(vs, { setService, narrowed, shown, search, directives, fieldName }),
+        recentHead(vs, { setService, narrowed, scope, shown, search, directives, fieldName }),
       ])
         .then(([res, head]) => {
           const rows  = Array.isArray(res) ? res : (res?.data ?? [])
@@ -2522,7 +2523,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
             // the page beneath drops it rather than the total growing.
             { options: opts, total, truncated: total == null ? null : total > rows.length },
             { fieldName, record, service: setService.service, valueField: vs.value, labelField: shown,
-              isArray: rule?.type === 'array', strength: vs.strength, within: narrowed },
+              isArray: rule?.type === 'array', strength: vs.strength, within: narrowed, scope },
           )
         })
         .catch(err => {
@@ -2845,7 +2846,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    */
   function list(opts) {
     return createList({
-      store, load, more, hasMore: junctionResource.hasMore,
+      store, load, more, hasMore: junctionResource.hasMore, total: junctionResource.total,
       find:     service.find,
       loaded:   (rows) => warnComposed('list', rows),
       on:       service.on,
@@ -2890,7 +2891,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   return {
     service, store, stale, make, load, save, record, mutate, aggregate, list,
-    more, hasMore: junctionResource.hasMore,
+    more, hasMore: junctionResource.hasMore, total: junctionResource.total,
     /**
      * When the server last answered the rows on screen, or null when the last
      * load reached it. A number here means the list came off this device
@@ -2922,6 +2923,7 @@ function _emptyResource(name) {
     load:    async () => [],
     more:    async () => [],
     hasMore: () => false,
+    total:   () => null,
     cachedAt: () => null,
     mutate:  (_id, _intent, run) => (run ? run() : noop()),
     record:  () => ({

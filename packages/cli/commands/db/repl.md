@@ -1,13 +1,12 @@
 ---
-title: db:tinker
+title: db:repl
 description: A console that boots at a gate level — db scoped to a principal, sys for everything else
-alias: tinker
 examples:
-  - fli tinker
-  - fli tinker --as alice@example.com
-  - fli tinker --level 4
-  - fli tinker --as alice@example.com --gate ./api/gate.ts
-  - fli tinker -e 'db.order.count()' --as alice@example.com
+  - fli db:repl
+  - fli db:repl --as alice@example.com
+  - fli db:repl --level 4
+  - fli db:repl --as alice@example.com --gate ./api/gate.ts
+  - fli db:repl -e 'db.order.count()' --as alice@example.com
 flags:
   eval:
     char: e
@@ -74,7 +73,7 @@ calls the model *underneath* it, so there is no standing for a console to have.
 Here access is declared at the Data boundary, so a console can boot as somebody:
 
 ```
-$ fli tinker --as alice@example.com --gate ./api/gate.ts
+$ fli db:repl --as alice@example.com --gate ./api/gate.ts
 
   Standing:   alice@example.com(4) USER
   Graded by:  ./api/gate.ts
@@ -93,7 +92,7 @@ door.
 `sqlite3` against the app's file, which answers with every gate switched off:
 
 ```
-$ fli tinker -e 'db.order.count()' --as alice@example.com --gate ./api/gate.ts
+$ fli db:repl -e 'db.order.count()' --as alice@example.com --gate ./api/gate.ts
   Standing: alice@example.com(4) USER · graded by ./api/gate.ts
 3
 ```
@@ -146,7 +145,7 @@ because you act on what it shows you.
 neither, it refuses and asks rather than guessing which table holds principals:
 
 ```
-fli tinker --as Customer:ops@acme.test
+fli db:repl --as Customer:ops@acme.test
 ```
 
 ## Under `strategy database`, which file
@@ -157,8 +156,8 @@ outbox — and none of the tenant's rows. A console on `main` answers
 table, so it does not open there by default:
 
 ```
-fli tinker --tenant flagship --as ops@acme.test
-fli tinker                       # at a terminal: lists the tenants, 0 is main
+fli db:repl --tenant flagship --as ops@acme.test
+fli db:repl                       # at a terminal: lists the tenants, 0 is main
 ```
 
 Piped or scripted, with no `--tenant`, it refuses and names the known ones.
@@ -166,11 +165,11 @@ Piped or scripted, with no `--tenant`, it refuses and names the known ones.
 
 ## Commands of your own
 
-`db/tinker.js`, beside the schema, adds dot commands. It default-exports a
+`db/repl.js`, beside the schema, adds dot commands. It default-exports a
 table of `{ help, run }`, and `.name a b` calls `run` with the session:
 
 ```
-// db/tinker.js
+// db/repl.js
 import { resetPasswords } from '@frontierjs/auth/console'
 
 export default {

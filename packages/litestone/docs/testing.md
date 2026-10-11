@@ -881,8 +881,7 @@ await factories.lead.usingDb(env.system).withParents().createOne()   // any clie
 
 Or seed as a principal the app's own `getLevel` admits:
 
-```js failing
-// FJS-2367 — the generated factory sends the @guarded column, so a non-system seed is refused
+```js
 import { createTestEnv } from '@frontierjs/litestone/testing'
 import { GatePlugin } from '@frontierjs/litestone'
 
@@ -893,8 +892,8 @@ const env = await createTestEnv({
 })
 const adminUser = { id: 1, level: 5 }
 
-// Refused today: the generated payload carries `token: null`, and a @guarded
-// column is a system-context write whoever the caller is.
+// The generated payload leaves out the optional @guarded `token`, which only a
+// system-context write may name.
 await env.factories.lead.actingAs(adminUser).withParents().createOne()
 ```
 

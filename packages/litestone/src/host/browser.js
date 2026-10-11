@@ -178,3 +178,18 @@ export class AsyncLocalStorage {
 
   enterWith(store) { this.#store = store }
 }
+
+// ─── waiting ──────────────────────────────────────────────────────────────
+//
+// SharedArrayBuffer exists only when the page is cross-origin isolated, and a
+// device database is opened without that. Without it the wait is a spin to the
+// deadline: the worker blocks either way, and the holder is another context
+// that keeps running.
+export function sleepSync(ms) {
+  if (typeof SharedArrayBuffer === 'function') {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+    return
+  }
+  const end = performance.now() + ms
+  while (performance.now() < end);
+}

@@ -435,3 +435,47 @@ model Post {
     expect(p.errors.join('\n')).toContain('already declares one')
   })
 })
+
+// ─── the gate is asked first (FJS-2564) ───────────────────────────────────────
+//
+// A caller the gate refuses is told the gate refused. Answering with the set's
+// ValidationError instead leaks what the set holds and makes the refusal
+// unobservable to anything grading the ladder.
+
+describe('a write the gate refuses is not answered by the value set', () => {
+  const GATED = `
+    model Tag { id Int @id  label String @unique  @@label(label) }
+    valueset TaskTag { source Tag value label }
+    model Task {
+      id    Int     @id
+      title String
+      tag   String? @values(TaskTag)
+      @@gate("4")
+    }`
+
+  const gated: Record<string, (db: any) => Promise<unknown>> = {
+    create:     db => db.task.create({ data: { title: 'a', tag: 'nope' }, select: false }),
+    createMany: db => db.task.createMany({ data: [{ title: 'a', tag: 'nope' }] }),
+    update:     db => db.task.update({ where: { id: 1 }, data: { tag: 'nope' }, select: false }),
+    updateMany: db => db.task.updateMany({ where: {}, data: { tag: 'nope' } }),
+    upsert:     db => db.task.upsert({ where: { id: 9 }, create: { id: 9, title: 'a', tag: 'nope' }, update: { title: 'b' } }),
+    upsertMany: db => db.task.upsertMany({ data: [{ id: 9, title: 'a', tag: 'nope' }], conflictTarget: ['id'] }),
+  }
+
+  for (const name of Object.keys(gated)) {
+    it(`${name}: below the gate is AccessDenied, at it the set answers`, async () => {
+      const { GatePlugin } = await import('../src/plugins/gate.js')
+      const db = await createClient({
+        schema: GATED, db: ':memory:',
+        plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })],
+      })
+      await db.asSystem().task.create({ data: { id: 1, title: 'seed' }, select: false })
+
+      const below = await err(() => gated[name](db.$setAuth({ id: 1, level: 0 })))
+      expect(below?.constructor.name).toBe('AccessDeniedError')
+
+      const at = await err(() => gated[name](db.$setAuth({ id: 1, level: 4 })))
+      expect(at?.errors?.[0]).toEqual({ path: ['tag'], message: 'nope is not in TaskTag' })
+    })
+  }
+})

@@ -69,8 +69,9 @@ const _BARE_OPS = new Set([
 // Filters whose answer is not in the record, so a pushed row cannot be graded
 // against them: `$search` is an FTS5 index, `$onlyDeleted`/`$onlyTemplates` are
 // visibility flags the record does not carry a decidable answer for (the marker
-// column can be renamed, and this side holds no schema), `$raw` is SQL.
-const _OPAQUE = new Set(['$search', '$onlyDeleted', '$onlyTemplates', '$raw'])
+// column can be renamed, and this side holds no schema), `$raw` is SQL, and a
+// `$scope` names a predicate whose text this side never holds.
+const _OPAQUE = new Set(['$search', '$onlyDeleted', '$onlyTemplates', '$raw', '$scope'])
 
 // Not filters at all — `parseQuery` destructures these out before `parseWhere`
 // sees the rest. They ride in `query` only on the pre-directives fallback path.

@@ -100,7 +100,7 @@ an extract a second time, which is why there is no second answer to who may read
 A synthesized standing (`--level 5`) would evaluate every claim-based policy
 against nothing, and an absent claim is `NULL` — which the SQL half reads as
 *nobody* and the JS half as *everybody*. So the standing comes off a real row and
-`--gate` names the app's own resolver, exactly as `fli tinker` does.
+`--gate` names the app's own resolver, exactly as `fli db:repl` does.
 
 `--system` is the explicit escape. It reads everything, and the manifest says so.
 

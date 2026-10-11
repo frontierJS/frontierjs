@@ -157,8 +157,7 @@ describe('strategy database — a tenant file holds every sqlite database', () =
     const d = tmp()
     const reg: any = await createTenantRegistry({
       schema:   schema('./main.db', './analytics.db', TENANCY),
-      resolveFrom: d,
-      dir:      join(d, 'tenants'),
+      dir:     join(d, 'tenants'),
       registry: join(d, 'tenants-registry.db'),
     })
     await reg.create('acme', {})

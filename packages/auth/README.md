@@ -361,8 +361,8 @@ switched off. Optional to the type system, required in practice.
 
 ## In the console
 
-`@frontierjs/auth/console` holds commands for an app's `db/tinker.js`, which
-`fli tinker` loads:
+`@frontierjs/auth/console` holds commands for an app's `db/repl.js`, which
+`fli db:repl` loads:
 
 ```js
 import { resetPasswords } from '@frontierjs/auth/console'

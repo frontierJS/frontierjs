@@ -31,7 +31,8 @@
 
 <div class="fjs-code" {class} {...$attributes}>
   {#if highlighted}
-    <!-- glow escapes every slice of the source it emits, so this is not a hole.
+    <!-- glow escapes every slice of the source it emits, and the language
+         attribute, so this is not a hole.
          Never hand {@html} a string that has not been through glow. -->
     <pre class="code">{@html highlighted}</pre>
   {:else}

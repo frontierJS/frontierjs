@@ -17,6 +17,7 @@
  *   <FilterBar {filters} {search} value={list.query} directives={list.directives} onchange={list.apply} />
  *   <Table {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort} />
  *   {#if list.hasMore}<button on:click={list.more}>Load more</button>{/if}
+ *   <h1>{list.total ?? list.rows.length} Invoices</h1>        // total is null until the first answer
  *
  * ─── Where the state lives ─────────────────────────────────────────────────
  *
@@ -115,6 +116,7 @@ export function createList(resource, listQuery, opts = {}) {
   const [loading,   setLoading]   = createSignal(false)
   const [error,     setError]     = createSignal(null)
   const [more,      setMore]      = createSignal(false)
+  const [total,     setTotal]     = createSignal(null)
   const [localQ,    setLocalQ]    = createSignal(startQuery)
   const [localD,    setLocalD]    = createSignal(startDirectives)
 
@@ -138,6 +140,7 @@ export function createList(resource, listQuery, opts = {}) {
       const unsubscribe = untrack(() => resource.store.subscribe((next) => {
         setRows(next)
         setMore(resource.hasMore())
+        setTotal(resource.total?.() ?? null)
       }))
       onCleanup(unsubscribe)
     }
@@ -193,6 +196,7 @@ export function createList(resource, listQuery, opts = {}) {
           if (stamp !== issued) return
           setRows(rows)
           setMore(false)
+          setTotal(null)
           return
         }
         if (stamp !== issued) return
@@ -200,11 +204,13 @@ export function createList(resource, listQuery, opts = {}) {
         if (extent == null && typeof res?.limit === 'number') pageSize = res.limit
         setRows(data)
         setMore(res?.hasMore === true || (typeof res?.total === 'number' && res.total > data.length))
+        setTotal(typeof res?.total === 'number' ? res.total : null)
       } else {
         const loaded = await resource.load(query, currentDirectives())
         if (stamp !== issued) return
         resource.loaded?.(loaded)
         setMore(resource.hasMore())
+        setTotal(resource.total?.() ?? null)
       }
     } catch (err) {
       if (stamp === issued) setError(err)
@@ -308,6 +314,7 @@ export function createList(resource, listQuery, opts = {}) {
     get loading()    { return loading() },
     get error()      { return error() },
     get hasMore()    { return more() },
+    get total()      { return total() },
     apply,
     sort,
     more:   growWindow,

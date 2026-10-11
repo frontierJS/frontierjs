@@ -1279,10 +1279,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `basis` | `PayBasis` | yes | Basis | — | — |
 | `rate` | `integer` | yes | Rate | `minimum: 0` | — |
-| `hoursPerWeek` | `integer` = `40` | yes | Hours a week | `minimum: 0` `maximum: 168` | — |
+| `hoursPerWeek` | `integer` = `40` | — | Hours a week | `minimum: 0` `maximum: 168` | — |
 | `effectiveFrom` | `string`? | — | From | `format: "date"` | — |
 
-**On create**: required — `basis`, `rate`, `hoursPerWeek`
+**On create**: required — `basis`, `rate`
 
 ### `AsAtQuery`
 

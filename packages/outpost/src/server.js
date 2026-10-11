@@ -18,7 +18,7 @@
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic } from './static.js'
-import { createIngress, hostsOf } from './ingress.js'
+import { createIngress, hostsOf, redirectsOf } from './ingress.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -94,8 +94,9 @@ export function createOutpostServer(config, {
     // so this answers once the release is healthy, not once it has started.
     'POST /deploy': async (body) => {
       const appId = body.app_id ?? body.deployment_id
-      const hosts = hostsOf(body.hosts)
-      const port  = body.config?.port
+      const hosts     = hostsOf(body.hosts)
+      const redirects = redirectsOf(body.redirects)
+      const port      = body.config?.port
       if (hosts.length && !port) throw new Error('hosts need a published port to route to — config.port is not set')
       checkRunConfig(body.config)
 
@@ -105,7 +106,7 @@ export function createOutpostServer(config, {
         built = await docker.build({ appId, source: body.source, image })
 
       // A release that dropped its last hostname drops its route too.
-      if (hosts.length) await ingress.route({ appId, hosts, port })
+      if (hosts.length || redirects.length) await ingress.route({ appId, hosts, port, redirects })
       else await ingress.unroute({ appId })
 
       let started
@@ -125,7 +126,7 @@ export function createOutpostServer(config, {
         if (err.restored && hosts.length) {
           const live = await docker.published({ appId }).catch(() => null)
           if (live?.port && live.port !== port)
-            await ingress.route({ appId, hosts, port: live.port })
+            await ingress.route({ appId, hosts, port: live.port, redirects })
               .catch(e => log.error?.(`outpost: re-routing fjs-${appId} to the restored container failed — ${e.message}`))
         }
         throw err
@@ -150,12 +151,22 @@ export function createOutpostServer(config, {
     'POST /route': async (body) => {
       const appId = body.app_id
       if (!appId) throw new Error('a route needs the app_id it is for')
-      const hosts = hostsOf(body.hosts)
+      const hosts     = hostsOf(body.hosts)
+      const redirects = redirectsOf(body.redirects)
+      const routed    = hosts.length || redirects.length
+      // An inline app has no container: its hostnames go to the static origin,
+      // the way `/static/activate` routes them.
+      if (body.static) {
+        if (hosts.length && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
+        if (routed) await ingress.route({ appId, hosts, port: config.staticPort, host: `${appId}.localhost`, redirects })
+        else await ingress.unroute({ appId })
+        return { hosts, port: config.staticPort, rebind: null }
+      }
       if (body.port != null) {
         // A machine with no docker holds no container to collide with.
         if (await docker.published({ appId }).catch(() => null)) throw new Error(`fjs-${appId} is a container on this machine and is routed to the port it published — send no port`)
         const port = Number(body.port)
-        if (hosts.length) await ingress.route({ appId, hosts, port })
+        if (routed) await ingress.route({ appId, hosts, port, redirects })
         else await ingress.unroute({ appId })
         return { hosts, port, rebind: null }
       }
@@ -163,7 +174,7 @@ export function createOutpostServer(config, {
       if (hosts.length && !live) throw new Error(`no container fjs-${appId} on this machine to route to — deploy it first`)
       if (hosts.length && !live.port) throw new Error(`fjs-${appId} publishes no port to route to — set the app's port and redeploy`)
 
-      if (hosts.length) await ingress.route({ appId, hosts, port: live.port })
+      if (routed) await ingress.route({ appId, hosts, port: live?.port, redirects })
       else await ingress.unroute({ appId })
 
       const rebind = !live?.port ? null
@@ -215,11 +226,12 @@ export function createOutpostServer(config, {
     // a swap that fails leaves the hostnames on the release already live. A
     // list that dropped its last hostname drops the route.
     'POST /static/activate': async (body) => {
-      const hosts = hostsOf(body.hosts)
-      if (hosts.length) {
-        if (!config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
-        await ingress.route({ appId: body.app_id, hosts, port: config.staticPort, host: `${body.app_id}.localhost` })
-      } else if (body.hosts) await ingress.unroute({ appId: body.app_id })
+      const hosts     = hostsOf(body.hosts)
+      const redirects = redirectsOf(body.redirects)
+      if (hosts.length && !config.staticPort) throw new Error('this machine serves no static origin (OUTPOST_STATIC_PORT=0), so nothing can route a hostname to these files')
+      if (hosts.length || redirects.length)
+        await ingress.route({ appId: body.app_id, hosts, port: config.staticPort, host: `${body.app_id}.localhost`, redirects })
+      else if (body.hosts || body.redirects) await ingress.unroute({ appId: body.app_id })
       return { ...await statics.activate({ appId: body.app_id, slug: body.slug, digest: body.digest }), hosts }
     },
     'POST /static/health':   (body) => statics.healthCheck({ appId: body.app_id, digest: body.digest }),

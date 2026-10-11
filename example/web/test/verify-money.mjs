@@ -187,7 +187,7 @@ async function mint(fields) {
 // fine; and the receipt identity reads five.
 //
 // The other half is WHERE they hold. A `@@check` is in the table, so it fires
-// for a migration, a seed, `fli tinker`, an atomic `{ increment: 1 }` — which
+// for a migration, a seed, `fli db:repl`, an atomic `{ increment: 1 }` — which
 // computes inside SQLite, where nothing in this package runs — and for
 // `asSystem()`, the bypass that drops the gate, the row policies and
 // `@@softDelete` and cannot drop this. `carts.service.ts` counts a redemption

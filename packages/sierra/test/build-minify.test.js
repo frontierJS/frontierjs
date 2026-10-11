@@ -104,4 +104,18 @@ describe('the dev server port', () => {
       else process.env.FLI_PORT_FE = before
     }
   })
+
+  // `fli dev --host` reaches vite through this env and nothing else.
+  test('FLI_HOST puts the server on every interface, and its absence keeps it local', () => {
+    const before = process.env.FLI_HOST
+    try {
+      delete process.env.FLI_HOST
+      expect(createSierraViteConfig({ target: 'spa' }).server.host).toBe(false)
+      process.env.FLI_HOST = '1'
+      expect(createSierraViteConfig({ target: 'spa' }).server.host).toBe(true)
+    } finally {
+      if (before === undefined) delete process.env.FLI_HOST
+      else process.env.FLI_HOST = before
+    }
+  })
 })

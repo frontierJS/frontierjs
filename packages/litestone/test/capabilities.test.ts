@@ -1073,3 +1073,117 @@ describe('capabilityDrift', () => {
     expect(d.sql).toEqual([])
   })
 })
+
+describe('a @system column the application names is not the caller\'s edit', () => {
+  // FJS-1516. `system: ['respondedAt']` says the application writes that column,
+  // so charging it to `Model.update` demanded of a link holder who may only
+  // accept an offer the grant that edits every other field of it.
+  const SRC = `
+    enum S { a b }
+    model Doc {
+      id          Int       @id @default(autoincrement())
+      name        String    @default("n")
+      vars        String    @default("[]") @capability
+      respondedAt DateTime? @system
+      s           S         @default(a)
+      @@capabilities
+      @@transitions(s, ask: a -> b)
+    }`
+  const open = async () => createClient({ db: ':memory:', schema: SRC })
+  const as = (db: any, ...caps: string[]) => db.$setAuth({ id: 1, capabilities: caps })
+  const at = new Date().toISOString()
+
+  it('a move grant alone makes the move and the application\'s stamp beside it', async () => {
+    const db: any = await open()
+    const { id } = await db.asSystem().doc.create({ data: {} })
+    const row = await as(db, 'Doc.ask').doc.update({
+      where: { id }, data: { s: 'b', respondedAt: at }, system: ['respondedAt'] })
+    expect(row.s).toBe('b')
+    expect(row.respondedAt).toBeTruthy()
+    await db.$close()
+  })
+
+  it('a column grant alone writes that column and the stamp beside it', async () => {
+    const db: any = await open()
+    const { id } = await db.asSystem().doc.create({ data: {} })
+    const row = await as(db, 'Doc.vars').doc.update({
+      where: { id }, data: { vars: '[1]', respondedAt: at }, system: ['respondedAt'] })
+    expect(row.vars).toBe('[1]')
+    await db.$close()
+  })
+
+  it('a stamp alone is still an update the caller must be granted', async () => {
+    // The caller edited nothing the grid covers, so no finer grant stands in.
+    const db: any = await open()
+    const { id } = await db.asSystem().doc.create({ data: {} })
+    await expect(as(db, 'Doc.ask').doc.update({
+      where: { id }, data: { respondedAt: at }, system: ['respondedAt'] })).rejects.toThrow(/Doc\.update/)
+    await db.$close()
+  })
+
+  it('a stamp does not excuse an ordinary column named beside it', async () => {
+    const db: any = await open()
+    const { id } = await db.asSystem().doc.create({ data: {} })
+    await expect(as(db, 'Doc.ask').doc.update({
+      where: { id }, data: { s: 'b', name: 'z', respondedAt: at }, system: ['respondedAt'] }))
+      .rejects.toThrow(/Doc\.update/)
+    await db.$close()
+  })
+
+  it('a @system column NOT named on the call is still refused', async () => {
+    const db: any = await open()
+    const { id } = await db.asSystem().doc.create({ data: {} })
+    await expect(as(db, 'Doc.ask', 'Doc.update').doc.update({ where: { id }, data: { s: 'b', respondedAt: at } }))
+      .rejects.toThrow(/@system/)
+    await db.$close()
+  })
+})
+
+describe('a @capability column is charged when a write CHANGES it, not when it is named', () => {
+  // FJS-1517. A generated create form posts `make()`'s whole record, so every
+  // column it seeded is named: a `null` for the column nobody filled in and the
+  // literal default for the one that has one. Neither writes anything a create
+  // that left the key out would not, so neither is the column grant's business.
+  const SRC = `
+    model Offer {
+      id         Int     @id @default(autoincrement())
+      title      String  @default("t")
+      signedName String? @capability
+      vars       String  @default("[]") @capability
+      @@capabilities
+    }`
+  const open = async () => createClient({ db: ':memory:', schema: SRC })
+  const as = (db: any, ...caps: string[]) => db.$setAuth({ id: 1, capabilities: caps })
+
+  it('a create naming the column as null writes the row without the grant', async () => {
+    const db: any = await open()
+    const row = await as(db, 'Offer.create').offer.create({ data: { title: 'x', signedName: null } })
+    expect(row.signedName).toBeNull()
+    await db.$close()
+  })
+
+  it('a create restating the column\'s literal default writes the row without the grant', async () => {
+    const db: any = await open()
+    const row = await as(db, 'Offer.create').offer.create({ data: { title: 'x', vars: '[]' } })
+    expect(row.vars).toBe('[]')
+    await db.$close()
+  })
+
+  it('a create giving the column a value still needs its grant', async () => {
+    const db: any = await open()
+    await expect(as(db, 'Offer.create').offer.create({ data: { signedName: 'Ann' } }))
+      .rejects.toThrow(/Offer\.signedName/)
+    await expect(as(db, 'Offer.create').offer.create({ data: { vars: '[1]' } }))
+      .rejects.toThrow(/Offer\.vars/)
+    await db.$close()
+  })
+
+  it('an update clearing a column to null still needs its grant', async () => {
+    // The stored value is not in hand here, so a null may be a clear.
+    const db: any = await open()
+    const { id } = await db.asSystem().offer.create({ data: { signedName: 'Ann' } })
+    await expect(as(db, 'Offer.update').offer.update({ where: { id }, data: { signedName: null } }))
+      .rejects.toThrow(/Offer\.signedName/)
+    await db.$close()
+  })
+})

@@ -692,6 +692,80 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(await (await send(server, 'POST', '/stop', { app_id: 'app-1' })).json()).toMatchObject({ unrouted: false })
   })
 
+  describe('a redirect answers from Caddy, with no container behind it (FJS-1615)', () => {
+    const none = () => fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object' } })
+    const routeWith = (server, body) => send(server, 'POST', '/route', { app_id: 'app-1', ...body })
+
+    test('a redirect is a static_response with a Location, beside the app\'s own route', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, fakeRunner({
+        'docker run': { stdout: 'container-1\n' },
+        'docker inspect --format': { stdout: JSON.stringify({ '80/tcp': [{ HostIp: '127.0.0.1', HostPort: '7302' }] }) + '\n' },
+      }))
+      await deploy(server, {
+        hosts:     ['shop.example.com'],
+        redirects: [{ host: 'WWW.example.com', to: 'https://shop.example.com' }, { host: 'old.example.com', to: 'https://shop.example.com/sale' }],
+      })
+      const routes = caddy.config.apps.http.servers.ingress.routes
+      expect(routes.map(r => r['@id'])).toEqual(['fjs-app-1', 'fjs-app-1-redirects'])
+      expect(routes[1].match[0].host).toEqual(['www.example.com', 'old.example.com'])
+      const [www, old] = routes[1].handle[0].routes
+      expect(www.match[0].host).toEqual(['www.example.com'])
+      expect(www.handle[0]).toMatchObject({ handler: 'static_response', status_code: 308,
+        headers: { Location: ['https://shop.example.com{http.request.uri}'] } })
+      // A target that names a page is that page, not the page with the old path on the end.
+      expect(old.handle[0].headers.Location).toEqual(['https://shop.example.com/sale'])
+    })
+
+    test('an app with only redirects needs no container and no port', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, none())
+      const res = await routeWith(server, { redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
+      expect(res.status).toBe(200)
+      expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-app-1-redirects'])
+    })
+
+    test('dropping the last redirect takes its route out, and a stop takes both', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, none())
+      await routeWith(server, { redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
+      await routeWith(server, { redirects: [] })
+      expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
+
+      await routeWith(server, { redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
+      await send(server, 'POST', '/stop', { app_id: 'app-1' })
+      expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
+    })
+
+    test('a redirect host another app holds is refused, and a target Caddy would expand is refused', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, none())
+      await send(server, 'POST', '/route', { app_id: 'app-2', redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
+      const taken = await routeWith(server, { redirects: [{ host: 'www.example.com', to: 'https://elsewhere.example.com' }] })
+      expect((await taken.json()).error).toContain('already routed')
+
+      for (const to of ['https://shop.example.com/{env.SECRET}', 'shop.example.com', 'javascript:alert(1)']) {
+        const res = await routeWith(server, { redirects: [{ host: 'go.example.com', to }] })
+        expect(res.status).toBeGreaterThanOrEqual(400)
+      }
+      expect(caddy.config.apps.http.servers.ingress.routes.map(r => r['@id'])).toEqual(['fjs-app-2-redirects'])
+    })
+
+    test('a static app between releases is routed to the static origin, redirects beside it', async () => {
+      const caddy = fakeCaddy()
+      const fake   = none()
+      const server = createOutpostServer({ ...CONFIG, staticPort: 7181 }, {
+        docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+        ingress: createIngress({ fetch: caddy.fetch }), log: { warn() {}, error() {} },
+      })
+      const res = await routeWith(server, { static: true, hosts: ['shop.example.com'], redirects: [{ host: 'www.example.com', to: 'https://shop.example.com' }] })
+      expect(res.status).toBe(200)
+      const [app] = caddy.config.apps.http.servers.ingress.routes
+      expect(app.handle[0].upstreams[0].dial).toBe('127.0.0.1:7181')
+      expect(app.handle[0].headers.request.set.Host).toEqual(['app-1.localhost'])
+    })
+  })
+
   describe('/route — hostnames changed between releases (FJS-1610)', () => {
     const bound = (HostIp, HostPort = '7300') => fakeRunner({
       'docker run': { stdout: 'container-1\n' },

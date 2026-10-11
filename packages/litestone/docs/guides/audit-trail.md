@@ -122,7 +122,7 @@ await new Promise(r => setImmediate(r))   // the entry lands one tick later
 const [, entry] = await db.asSystem().auditTrail.findMany({ orderBy: { createdAt: 'asc' } })
 // {
 //   operation:     'update',
-//   model:         'user',       // the accessor spelling (FJS-2380)
+//   model:         'User',       // the model name, as a $audit event spells it
 //   field:         null,         // model-level entry (not field-level)
 //   transition:    null,         // the move's name, where the update was one
 //   records:       [1],          // ids of affected rows
@@ -170,13 +170,13 @@ const trail = db.asSystem().auditTrail
 // All writes to orders in the last 24 hours
 const recent = await trail.findMany({
   where: {
-    model:     'order',
+    model:     'Order',
     createdAt: { gte: new Date(Date.now() - 86400000).toISOString() },
   },
   orderBy: { createdAt: 'desc' },
   limit:   100,
 })
-// → [{ operation: 'update', model: 'order', records: [5], ... }, ...]
+// → [{ operation: 'update', model: 'Order', records: [5], ... }, ...]
 
 // All changes by a specific actor
 const actorHistory = await trail.findMany({
@@ -197,13 +197,12 @@ The trail model answers `findMany`, `findFirst`, `findUnique`, `count` and
 `findManyCursor`; it has no `aggregate` or `groupBy`, so a per-day count is
 the application's loop over a windowed `findMany`.
 
-**A `$raw` predicate on the trail is ignored** (`FJS-2298`): a `where` on a
-`driver trail` or `driver jsonl` model drops an operator it does not know and
-answers the unfiltered set. The full history of one record is therefore not a
-`json_extract` over `records` yet:
+**A `$raw` predicate on the trail is refused by name**: a `where` on a
+`driver trail` or `driver jsonl` model answers the scalar operators only, and
+`$raw` is SQL over a column. The full history of one record is therefore not a
+`json_extract` over `records`:
 
-```js failing
-// FJS-2298
+```js throws
 import { sql } from '@frontierjs/litestone'
 
 const db = await createClient({ path: './schema.lite', db: './app.db' })
@@ -212,11 +211,10 @@ await sys.order.create({ data: { id: 5, userId: 1, amount: 1 } })
 await sys.order.create({ data: { id: 6, userId: 1, amount: 1 } })
 await new Promise(r => setImmediate(r))
 
-const recordHistory = await sys.auditTrail.findMany({
-  where:   { model: 'order', $raw: sql`json_extract(records, '$[0]') = ${5}` },
+await sys.auditTrail.findMany({
+  where:   { model: 'Order', $raw: sql`json_extract(records, '$[0]') = ${5}` },
   orderBy: { createdAt: 'asc' },
 })
-if (recordHistory.length !== 1) throw new Error(`$raw was ignored: ${recordHistory.length} rows`)
 ```
 
 ---

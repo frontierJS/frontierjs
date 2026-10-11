@@ -51,14 +51,19 @@ const T0  = Date.parse('2026-01-01T00:00:00.000Z')
 const closers: Array<() => unknown> = []
 afterEach(async () => { for (const c of closers.splice(0)) await c() })
 
-type BootOpts = { plugin?: boolean; timeZone?: string; hooks?: Record<string, CommitmentHook>; relay?: boolean }
+const SYSTEM = { userId: 'system', role: 'system' } as any
 
-async function bootApp(schema = SCHEMA, { plugin = true, timeZone, hooks, relay = false }: BootOpts = {}) {
+type BootOpts = {
+  plugin?: boolean; timeZone?: string; hooks?: Record<string, CommitmentHook>; relay?: boolean
+  system?: any
+}
+
+async function bootApp(schema = SCHEMA, { plugin = true, timeZone, hooks, relay = false, system }: BootOpts = {}) {
   let t = T0
   const db = await createClient({ databases: ':memory:', schema, now: () => new Date(t) }) as any
   closers.push(() => db.$close())
 
-  const app = await createTestApp()
+  const app = await createTestApp({ system })
   app.db = db
 
   const queue = createCaravan({ db: ':memory:', pollInterval: 10 })
@@ -515,7 +520,7 @@ describe('the move is graded, not bypassed', () => {
     // standing refuses the move, and the refusal is counted and retried — a
     // row that is owed a move and cannot get one must not look settled.
     const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate("0.0.7.7")')
-    const { app, db, queue, advance, status } = await started(gated)
+    const { app, db, queue, advance, status } = await started(gated, { system: SYSTEM })
     const order = await db.asSystem().order.create({ data: {} })
 
     advance(14 * DAY)
@@ -524,7 +529,19 @@ describe('the move is graded, not bypassed', () => {
     expect(await status(order.id)).toBe('pending')
     expect(metrics(app).lapsed).toBe(0)
     expect(fires(queue)).toHaveLength(1)
-    expect(fires(queue)[0]!.error).toContain('declares no createApp({ system })')
+  })
+
+  // `FJS-1884`: a fire with no principal is STRANGER(0), which no gate above 0
+  // admits, so the first word of it was a retrying job's error.
+  it('a gated model with no createApp({ system }) is refused at boot, naming both', async () => {
+    const gated = SCHEMA.replace('model Order {', 'model Order {\n  @@gate("0.0.7.7")')
+    const err = await started(gated).then(() => null, (e: Error) => e)
+    expect(err?.message).toContain('Order.abandon')
+    expect(err?.message).toContain('createApp({ system })')
+  })
+
+  it('an ungated model needs no principal to be fired', async () => {
+    await started()
   })
 
   it('a row policy that hides the row from the app\'s principal FAILS the fire, naming both', async () => {

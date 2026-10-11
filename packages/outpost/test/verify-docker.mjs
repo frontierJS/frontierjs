@@ -325,7 +325,17 @@ try {
   t('route.answersTheNewName',     await untilHttps(ALSO))
   const unrouted = await call('/route', { app_id: APP, hosts: [] })
   t('route.emptyTakesTheRoute',    (await admin(`/id/${NAME}`)).status === 404 && /loopback/.test(unrouted.body?.rebind ?? ''))
+  // A redirect is Caddy's own answer, no upstream: Caddy has to ACCEPT the
+  // subroute and expand the request-uri placeholder in the Location (FJS-1615).
+  const GO = 'go.verify-docker.test'
+  const redirected = await call('/route', { app_id: APP, hosts: [HOST], redirects: [{ host: GO, to: `https://${HOST}` }] })
+  if (redirected.status !== 200) console.log(redirected.body)
+  await untilHttps(GO)
+  const hop = sh('curl', '-sS', '--max-time', '5', '-i', '--resolve', `${GO}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath,
+    `https://${GO}:${CADDY_HTTPS}/cart?x=1`).stdout
+  t('redirect.answers308WithTheRequestUri', /^HTTP\/\S+ 308/.test(hop) && new RegExp(`^location: https://${HOST}/cart\\?x=1\\r?$`, 'im').test(hop))
   await call('/route', { app_id: APP, hosts: [HOST] })
+  t('redirect.droppedWithTheLastOne', (await admin(`/id/${NAME}-redirects`)).status === 404)
 
   // ─── stop ───────────────────────────────────────────────────────────────
 
@@ -388,6 +398,7 @@ const expected = [
   'restore.whenDockerRefusesTheRun', 'restore.routeDialsTheRestoredPort',
   'restore.whenTheStartIsNotHealthy', 'restore.answersOverHttpsAgain',
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
+  'redirect.answers308WithTheRequestUri', 'redirect.droppedWithTheLastOne',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',
   'reports.areSigned', 'reports.heartbeatRegistersTheUrl', 'reports.heartbeatCarriesVitals',
