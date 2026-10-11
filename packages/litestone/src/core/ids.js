@@ -57,7 +57,7 @@ export function isServerAssignedId(field, model) {
 // ─── who fills the column ─────────────────────────────────────────────────────
 
 const SERVER_FILLED = new Set([
-  'default', 'updatedAt', 'sequence', 'computed', 'generated', 'funcCall',
+  'default', 'updatedAt', 'sequence', 'rank', 'computed', 'generated', 'funcCall',
   'from',    'edge',      'derived',
 ])
 

@@ -896,7 +896,8 @@ Build in `fjs-prototypes/transit`, with questions in its `PLAN.md`, as below.
 
 *Added 2026-10-06. The prior art, the field's failure record and the feature
 table are `prompt-to-app.md`; this entry does not repeat them. Phase 0 done
-2026-10-06 in `fjs-prototypes/base44`, whose `PLAN.md` carries the run.*
+2026-10-06 in `fjs-prototypes/charter` (named `base44` until 2026-10-10), whose
+`PLAN.md` carries the run.*
 
 **What it is.** A thin builder: a prompt goes to the Claude API, a
 `db/schema.lite` and its resources come back, and the loop runs parse, `fli

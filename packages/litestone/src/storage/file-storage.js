@@ -31,6 +31,7 @@
 
 import { ExternalRefPlugin } from '../plugins/external-ref.js'
 import { createProvider }     from './index.js'
+import { refUrl }             from './ref-url.js'
 import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@frontierjs/toolbelt/mime'
 import { buildWhere }         from '../core/query.js'
 import { extname, basename }  from 'path'
@@ -346,9 +347,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // fileUrl() still works for manual resolution of raw ref strings.
   async resolve(ref, { field, model, ctx }) {
     if (!ref) return null
-    const base = ref.publicBase || ref.endpoint
-    if (!base) return null
-    return `${base.replace(/\/$/, '')}/${ref.key}`
+    return refUrl(ref)
   }
 
   // cleanup: delete the S3/R2 object

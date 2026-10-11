@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**115 words** — 13 declarations · 67 field attributes · 35 model attributes.
+**116 words** — 13 declarations · 68 field attributes · 35 model attributes.
 
 ## Declarations
 
@@ -39,6 +39,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@map` | Identify a row | ("column_name") | on a model's field · on a trait's field |  |  |
 | `@default` | Identify a row | (value \| [value, …] \| now() \| uuid() \| ulid() \| cuid() \| nanoid() \| auth().<claim> \| autoincrement()) |  |  |  |
 | `@sequence` | Identify a row | (scope: <field>) |  |  |  |
+| `@rank` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
 | `@relation` | Reach another row | (["name",] fields: [...], references: [...][, onDelete][, onUpdate]) | on a model's field · on a trait's field | onDelete: Cascade · SetNull · Restrict · NoAction |  |
 | `@from` | Reach another row | (<Model>, last\|first\|count\|sum\|max\|min\|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates]) | on a model's field · on a trait's field | operation: last · first · count · exists |  |
 | `@edge` | Reach another row | (ref: <Model>[, key][, as][, onMissing: error\|skip]) |  | onMissing: error · skip |  |

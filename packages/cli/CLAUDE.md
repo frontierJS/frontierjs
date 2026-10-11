@@ -159,6 +159,14 @@ core/
                 with `gh` — refused while any other file is dirty, and in a
                 preview worktree while the branch holds anything outside the
                 Vite root
+  ask-context.js  what a pick's SOURCE says that its HTML does not, for the
+                ask prompt — the `{#each}` around it, the loops and files
+                under it (the only way to the route when the pick is a
+                layout's slot wrapper), and the resources those loop files
+                import with their model's fields. A text scan; a file it
+                cannot read adds nothing. The panel's kind and scope chips
+                are keys, and their sentences are `EDIT_KINDS`/`EDIT_SCOPES`
+                in `ask-claude.js`, so a request cannot write prompt text
   preview.js    what a PREVIEW branch may hold — `previewScope`, the one answer
                 behind `fli check`'s `preview-ui-only` and the panel's Submit.
                 A preview is a worktree whose private git dir holds

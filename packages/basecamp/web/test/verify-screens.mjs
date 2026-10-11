@@ -1122,6 +1122,58 @@ try {
     ok('and the new password signs in')
   }
 
+  // ─── Account: a new email address ──────────────────────────────────────
+  // Moved and then moved back, so every section below still signs in as the
+  // seeded owner. The link is read from the API's log, as the reset's is; the
+  // address in the pattern is what tells this link from an earlier one.
+  console.log('\n  your account — a new email address')
+  const linkFor = async (address) => {
+    const re = new RegExp(`verify your email link for ${address.replace(/[.+]/g, '\\$&')}: (\\S+)`)
+    for (let i = 0; i < 40; i++) {
+      const m = apiLog.match(re)
+      if (m) return m[1]
+      await sleep(250)
+    }
+    return null
+  }
+  const moveEmail = async (from, to) => {
+    await goto('/settings/')
+    await until(`!!document.getElementById('email-new')`, v => v, 'the change-email form never rendered')
+    await evaluate(`document.getElementById('change-email').open = true`)
+    await fill({ 'email-new': to, 'email-password': PASSWORD })
+    await click('#email-change-submit')
+    await until(`document.getElementById('email-change-sent')?.textContent ?? ''`, t => t.includes(to),
+      'asking for the change never said where the link went')
+    check(`asking to move to ${to} leaves the account on ${from} until the link is opened`,
+      (await text('#settings-profile')).includes(from))
+    const link = await linkFor(to)
+    check('the link is logged with no mailer, addressed to the NEW address', !!link, apiLog.slice(-300))
+    if (!link) return false
+    const url = new URL(link)
+    await goto(url.pathname + url.search)
+    await until(`document.getElementById('verify-email')?.dataset.state`, s => s && s !== 'working',
+      'the verify page never settled')
+    check('opening it lands on the verify page, done',
+      (await evaluate(`document.getElementById('verify-email').dataset.state`)) === 'done',
+      await text('#verify-email'))
+    await goto('/settings/')
+    await until(`document.getElementById('settings-profile')?.textContent ?? ''`, t => t.includes(to),
+      `settings never showed ${to} after the link`)
+    ok(`and the account answers to ${to} afterwards, still signed in`)
+    return true
+  }
+  const MOVED = 'sam.moved@example.com'
+  if (await moveEmail(EMAIL, MOVED)) {
+    await fill({ 'email-new': EMAIL.toUpperCase(), 'email-password': 'not-the-password' })
+    await evaluate(`document.getElementById('change-email').open = true`)
+    await click('#email-change-submit')
+    await until(`document.getElementById('email-change-error')?.textContent ?? ''`, t => t.length > 0,
+      'a wrong password was not refused on screen')
+    check('a wrong password is refused and the session that typed it survives',
+      (await evaluate(`location.pathname`)) === '/settings/')
+    await moveEmail(MOVED, EMAIL)
+  }
+
   // ─── Flags, secrets, recipes, channels — the writes each screen lacked ──
   // Each changes a value on screen and reads the row back through the API.
   console.log('\n  flags, secrets, recipes and channels — edits and rotations')

@@ -88,6 +88,25 @@ export const EDIT_RULES = [
   'Reply in two or three short lines: what you changed and where (file:line).',
 ].join('\n\n')
 
+// The panel's chips. The page sends a key and the sentence lives here, so a
+// request cannot put words of its own into the prompt through them. "every" is
+// the one a looped element needs: an ask about one card of twelve is otherwise
+// read as a change to that card, edited in with a condition.
+export const EDIT_KINDS = {
+  text:     'the words only. Leave markup, classes and script alone.',
+  style:    'how it looks: classes, and @frontierjs/css tones and treatments rather than colors. Leave the markup structure and the script alone.',
+  layout:   'arrangement and size: markup structure and layout classes. Leave the data and the behavior alone.',
+  behavior: 'what it does: event handlers and script. Keep how it looks.',
+  data:     'what it shows: which fields, records, order or filter. Reach the data through the resource the page already reads.',
+}
+
+export const EDIT_SCOPES = {
+  one:       'the picked element only, not its siblings and not other places that use the same component.',
+  every:     'every item its loop draws. Edit the loop body once, not one item.',
+  component: 'the whole component or section the element belongs to.',
+  page:      'the whole page, wherever the same thing appears on it.',
+}
+
 // An outerHTML is context, not the subject; a page section is easily 50KB. The
 // budget is for the whole prompt, so ten picks cost what one does.
 export const EDIT_MAX_HTML = 4000
@@ -205,21 +224,35 @@ export function askPrompt({ question, output = '', context = {}, git = null, rul
  * whole length when the page already cut `html`. The rules travel only on a
  * first question, as in `askPrompt`.
  */
-export function editPrompt({ instruction, picks = [], page = null, followUp = false }) {
+/**
+ * The prompt for one ask. `kind` and `scope` are `EDIT_KINDS`/`EDIT_SCOPES`
+ * keys. A pick may carry what `core/ask-context.js` read off the source —
+ * `loops` around it, `inner` loops and `files` under it — and `data` is the
+ * resources those files read, one line each.
+ */
+export function editPrompt({ instruction, picks = [], page = null, followUp = false, kind = null, scope = null, data = [] }) {
   const parts = []
   if (!followUp) parts.push(EDIT_RULES)
   const change = String(instruction ?? '').trim()
   if (change) parts.push(`Change: ${change}`)
+  if (Object.hasOwn(EDIT_KINDS, kind ?? ''))   parts.push(`What to change: ${EDIT_KINDS[kind]}`)
+  if (Object.hasOwn(EDIT_SCOPES, scope ?? '')) parts.push(`How far: ${EDIT_SCOPES[scope]}`)
   if (page) parts.push(`The page: ${String(page).slice(0, 300)}`)
   const htmls = picks.map(p => String(p.html ?? ''))
   const cuts  = shareBudget(htmls.map(h => h.length))
+  const loop  = l => `{#each ${l.head}} at ${l.at}`
   picks.forEach((p, i) => {
     const lines = [picks.length > 1 ? `Element ${i + 1} of ${picks.length}:` : 'The element:']
     if (p.loc) lines.push(`- source: ${p.loc}`)
+    if (p.repeats > 1) lines.push(`- drawn ${p.repeats} times on the page from that source`)
+    if (p.loops?.length) lines.push(`- inside: ${p.loops.map(loop).join(' › ')}`)
+    if (p.files?.length) lines.push(`- written in, under it: ${p.files.join(', ')}`)
+    if (p.inner?.length) lines.push(`- loops under it: ${p.inner.map(loop).join('; ')}`)
     const h = htmls[i], size = Math.max(Number(p.size) || 0, h.length)
-    if (h) lines.push(`- rendered HTML${cuts[i] < size ? ` (first ${cuts[i]} of ${size} chars)` : ''}:\n\`\`\`html\n${h.slice(0, cuts[i])}\n\`\`\``)
+    if (h) lines.push(`- rendered HTML, outlined (a run of siblings from one source folded to the first, long text clipped)${cuts[i] < size ? `, first ${cuts[i]} of ${size} chars` : ''}:\n\`\`\`html\n${h.slice(0, cuts[i])}\n\`\`\``)
     parts.push(lines.join('\n'))
   })
+  if (data.length) parts.push(['What those loops can read — the resources their files import:', ...data.map(d => `- ${d}`)].join('\n'))
   return parts.join('\n\n')
 }
 

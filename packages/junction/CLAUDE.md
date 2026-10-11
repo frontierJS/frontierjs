@@ -153,6 +153,7 @@ A change to either transport's context also needs `@frontierjs/testing`'s
   the rate limiter are off until configured**, and `'*'` is never applied for you.
 - **A test injects a transport rather than mocking a module**; `mock.module()` is
   process-wide in bun (`FJS-908`). A hand-built context sets `ctx.result = null`.
+- **An `around` that ends the call without assigning `ctx.result` is a 500, not a 204** (`FJS-946`, `test/around-forgot-next.test.ts`). It is graded only on a context the three builders made through `hookContext`; a hand-built one is exempt, so a test that forgets `next()` still passes.
 
 ## The two contexts
 

@@ -149,10 +149,15 @@ export function createLitestoneAuth(
   // Not gated on `hasAuditLog`: an app with no trail database still owes the
   // person the email. The address is read here rather than passed by each
   // caller, and only when somebody is listening.
+  //
+  // `address` is for the one change that moves the row's own address: read
+  // after the write, it would tell the new mailbox instead of the one that lost
+  // the account.
   async function credentialChanged(
-    event:  CredentialEvent,
-    userId: string,
-    entry:  Record<string, unknown> = {},
+    event:   CredentialEvent,
+    userId:  string,
+    entry:   Record<string, unknown> = {},
+    address?: string,
   ): Promise<void> {
     await audit(event, entry)
     if (!onCredentialChanged) return
@@ -162,7 +167,7 @@ export function createLitestoneAuth(
       await onCredentialChanged({
         event,
         userId:  String(userId),
-        email:   user.email,
+        email:   address ?? user.email,
         actorId: String(entry.actorId ?? userId),
         at:      sys.$now().toISOString(),
         meta:    (entry.meta ?? {}) as Record<string, unknown>,
@@ -417,6 +422,41 @@ export function createLitestoneAuth(
     }
     if (!await verifyPassword(password, cred.value)) throw new ReauthenticationFailedError()
     return user
+  }
+
+  /** The click on an `emailChange` link — `verifyEmail` finds the row and this spends it. */
+  async function confirmEmailChange(row: any): Promise<SessionContext> {
+    const user = await sys.user.findUnique({ where: { id: row.userId } })
+    if (!user) {
+      await sys.verification.delete({ where: { id: row.id } })
+      throw new UserNotFoundError()
+    }
+
+    // Asked again at the click: the address was free when the link was
+    // mailed, and somebody may have registered it since.
+    const to     = String(row.identifier)
+    const holder = await sys.user.findFirst({ where: { email: to } })
+    if (holder && String(holder.id) !== String(user.id)) {
+      await sys.verification.delete({ where: { id: row.id } })
+      throw new EmailTakenError()
+    }
+
+    const from    = String(user.email)
+    const changed = await sys.user.update({ where: { id: user.id }, data: { email: to, emailVerified: true } })
+    await sys.verification.delete({ where: { id: row.id } })
+
+    // Every token still in flight for the old address. A magic link to it
+    // would otherwise register a fresh account at the click, since the address
+    // no longer names this one.
+    await sys.verification.deleteMany({ where: { identifier: from }, ...PURGE })
+
+    // The OLD mailbox is told. Whoever changed the address held the session and
+    // the password; if that was not the owner, this mail is how they find out.
+    await credentialChanged('email.changed', String(user.id), {
+      model: 'User', records: [String(user.id)], actorId: String(user.id), actorType: 'user',
+    }, from)
+
+    return toContext(changed, 'verified')
   }
 
   // Guards for API key operations — encryptionKey is required for these.
@@ -1834,18 +1874,57 @@ export function createLitestoneAuth(
       await onEmailVerificationRequested?.(user.email, token)
     },
 
+    // ── requestEmailChange ───────────────────────────────────────────────
+    // Two proofs before the address moves: the password, because a session is
+    // what a stolen tab holds, and the mailbox, because the address is where a
+    // reset goes and one nobody proved hands the account to whoever typed it.
+    // The second is the link `verifyEmail` spends; until then the row is
+    // untouched and the account still answers to the old address.
+
+    async requestEmailChange(userId: string, currentPassword: string, newEmail: string): Promise<void> {
+      if (!onEmailVerificationRequested) {
+        throw new AuthConfigError('requestEmailChange needs onEmailVerificationRequested — the link it mails is the proof')
+      }
+      await requireCurrentPassword(userId, currentPassword)
+
+      const address = newEmail.trim().toLowerCase()
+      // Answered now rather than at the click, by the same 409 registering
+      // with the address answers anyone, so it discloses nothing new.
+      if (await sys.user.findFirst({ where: { email: address } })) throw new EmailTakenError()
+
+      // One change in flight per account: an earlier link naming a different
+      // address must not land after the person has moved on from it.
+      await sys.verification.deleteMany({ where: { purpose: 'emailChange', userId }, ...PURGE })
+
+      const token = generateToken()
+      await sys.verification.create({
+        data: {
+          purpose:    'emailChange',
+          identifier: address,
+          userId,
+          value:      token,
+          expiresAt:  expiresAt(emailVerificationTtl, sys.$now()),
+        }
+      })
+
+      await onEmailVerificationRequested(address, token)
+    },
+
     // ── verifyEmail ──────────────────────────────────────────────────────
 
     async verifyEmail(token: string): Promise<SessionContext> {
       // See the note in confirmPasswordReset — this matched a RESET token
-      // without the purpose filter (FJS-476).
+      // without the purpose filter (FJS-476). A change of address is the same
+      // proof of the same mailbox, so it is spent here rather than at a second
+      // route behind a second link.
       const verification = await sys.verification.findFirst({
         where: {
-          purpose: 'emailVerify',
+          purpose: { in: ['emailVerify', 'emailChange'] },
           value:   token,
         }
       })
       if (!verification) throw new InvalidTokenError('Invalid or expired verification token')
+      if (verification.purpose === 'emailChange') return confirmEmailChange(verification)
 
       const email = verification.identifier
       const user  = await sys.user.findFirst({ where: { email } })

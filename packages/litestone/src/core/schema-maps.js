@@ -334,6 +334,22 @@ export function buildSequenceMap(schema) {
   }
   return map
 }
+// ─── @rank ─────────────────────────────────────────────────────────────────────
+// { Model: [{ field, scope: [col, …] }] } — `scope` is field names, the order
+// the declaration gave them.
+export function buildRankMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    const ranks = []
+    for (const field of model.fields) {
+      const attr = field.attributes.find(a => a.kind === 'rank')
+      if (attr) ranks.push({ field: field.name, scope: [...attr.scope] })
+    }
+    if (ranks.length) map[model.name] = ranks
+  }
+  return map
+}
+
 // ─── Does this schema declare anything raw SQL would bypass? ─────────────────
 //
 // FJS-005. `sql` goes straight to the read connection: no @@gate, no @@allow,

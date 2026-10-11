@@ -393,7 +393,8 @@ enum NotificationKind {
 model User {
   id             String    @id @default(uuid())
   // The address is what a password reset and every notification go to, so a
-  // new one is proven before it is kept, and that flow is auth's. Writable here
+  // new one is proven before it is kept, and that flow is auth's
+  // (`account.requestEmailChange`, spent at `/auth/email/verify`). Writable here
   // it is an account taken over by whoever holds a session, with
   // `emailVerified` still true for an address nobody verified. `accountId`
   // moves a person between organizations, which is the hub's act.

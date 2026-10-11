@@ -739,7 +739,7 @@ export class Seeder {
 
 const LOAD_MODES = ['insert', 'upsert', 'replace']
 // Not a column a source can fill: the engine or the schema computes it.
-const DERIVED = new Set(['computed', 'from', 'generated', 'derived', 'sequence', 'updatedAt'])
+const DERIVED = new Set(['computed', 'from', 'generated', 'derived', 'sequence', 'rank', 'updatedAt'])
 // An implicit many-to-many is a relation the parser retags, so `kind === 'relation'` alone misses it.
 const isRelation = (f) => f.type.kind === 'relation' || f.type.kind === 'implicitM2M'
 const DRY_RUN = Symbol('loadRows.dryRun')

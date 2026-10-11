@@ -14,7 +14,7 @@ Junction's client renamed `resync` to `reconnected`; the resource adapter's `onR
 
 ## 2026-10-08 — `AGENTS.md` says a page never fills a required `@system` column (`FJS-1825`)
 
-§ Writes and forms gains one paragraph: the form leaves the column out, the Data boundary refuses a payload naming it, and the create needs a `before.create` hook calling `ctx.system.add('col')`, or a `@default`. Nothing in the guides said so, and a base44 build stopped at the root model's create. No code changes.
+§ Writes and forms gains one paragraph: the form leaves the column out, the Data boundary refuses a payload naming it, and the create needs a `before.create` hook calling `ctx.system.add('col')`, or a `@default`. Nothing in the guides said so, and a Charter build stopped at the root model's create. No code changes.
 
 ## 2026-10-08 — `analytics:` reaches a static page (`FJS-2058`, `FJS-D658`)
 
@@ -102,11 +102,11 @@ A studio showing the app it hosts had only the page's own client and schema tabl
 
 ## 2026-10-07 — a scalar list is a list control, not a JSON box (`FJS-1822`)
 
-`buildFieldRules` carries a scalar list's item type as `rule.items` (`String[]`, `Int[]`, a `Float[]`), and `controlFor` answers it with `{ control: 'multiselect', allowNew: true, itemType }` where it answered `json`. As a JSON box, the first tag a person typed was refused as not JSON, in five of the 21 apps the base44 stressor generated. A list of a declared `type T` is still a document and still `json`. `form-fields.test.js` grades both, off a schema litestone emits.
+`buildFieldRules` carries a scalar list's item type as `rule.items` (`String[]`, `Int[]`, a `Float[]`), and `controlFor` answers it with `{ control: 'multiselect', allowNew: true, itemType }` where it answered `json`. As a JSON box, the first tag a person typed was refused as not JSON, in five of the 21 apps the Charter stressor generated. A list of a declared `type T` is still a document and still `json`. `form-fields.test.js` grades both, off a schema litestone emits.
 
 ## 2026-10-06 — AGENTS.md names the signed-in person's id `session.user.userId` (`FJS-1827`)
 
-`session.user` is the server's SessionContext, which spells the id `userId` and has no `id`, and no guide said so. Pages written from the guides alone compared a row's owner column to `session.user.id`, always undefined, and hid the owner's own moves and edit form in 9 of 21 base44 stressor apps. The *Wrong guesses* table now carries that spelling and the shape. `test/agents-md-session.test.js` reads the field list out of junction's `SessionContext` and fails when the guide names no `userId`, or names a `session.user` field the interface does not have.
+`session.user` is the server's SessionContext, which spells the id `userId` and has no `id`, and no guide said so. Pages written from the guides alone compared a row's owner column to `session.user.id`, always undefined, and hid the owner's own moves and edit form in 9 of 21 Charter stressor apps. The *Wrong guesses* table now carries that spelling and the shape. `test/agents-md-session.test.js` reads the field list out of junction's `SessionContext` and fails when the guide names no `userId`, or names a `session.user` field the interface does not have.
 
 ## 2026-10-06 — a generated form leaves a `@@transitions` column out, and a move carries its label (`FJS-1433`, `FJS-1543`)
 

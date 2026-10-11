@@ -39,6 +39,7 @@ import { NOW_SQL, rawClause }  from './query.js'
 // holds together (`verifyRowPolicies`, `test/policy-interpreters.test.ts`), and
 // the browser runs these same bytes.
 import { evaluate as evalPredicate, truth, shiftInstant } from '@frontierjs/toolbelt/predicate'
+import { STANDING_FIELDS } from '@frontierjs/toolbelt/gate'
 
 // ─── Debug logger ─────────────────────────────────────────────────────────────
 // policyDebug: true     — logs SQL filters + denials
@@ -141,10 +142,10 @@ const _ALL_OPS = ['read', 'create', 'update', 'post-update', 'delete']
 
 const FRAMEWORK_CLAIMS = [
   'id', 'capabilities',
-  // The standing `FrontierGateGetLevel` reads, in declaration order. Kept here
-  // rather than imported from the plugin because the plugin is optional and
-  // this list is about what a schema may NAME, not about what is installed.
-  'role', 'isAdmin', 'isOwner', 'isSystemAdmin', 'verifiedAt', 'activatedAt',
+  // The standing `FrontierGateGetLevel` reads, named by the kit beside the
+  // grader. Taken from the kit and not from the plugin because the plugin is
+  // optional and this list is about what a schema may NAME, not what is installed.
+  ...STANDING_FIELDS,
   // The gate's grade for the model the rule belongs to — `claimValue` below.
   'level',
 ]

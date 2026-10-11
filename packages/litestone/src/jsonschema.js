@@ -1334,6 +1334,13 @@ function applyValidators(schema, attributes) {
       // anything holding `@frontierjs/toolbelt/units`, and a calendar unit has
       // none, so carrying it would put a null on the wire for every consumer to
       // decide about.
+      // A board reads which column orders it and which columns are its scope
+      // off this, rather than being told; `resource.move()` reads it to know
+      // what a move into another column writes.
+      case 'rank':
+        schema['x-rank'] = { scope: [...attr.scope] }
+        break
+
       case 'unit':
         schema['x-unit'] = { symbol: attr.symbol, dimension: unitInfo(attr.symbol)?.dimension ?? null }
         break

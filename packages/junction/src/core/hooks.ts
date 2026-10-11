@@ -9,7 +9,8 @@
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
 import { CRUD_METHODS } from './context.ts'
-import { toFrameworkError } from './errors.ts'
+import { toFrameworkError, GeneralError } from './errors.ts'
+import { answered, hookChainMessage } from '@frontierjs/toolbelt/hooks'
 
 // ─── Hook definitions ─────────────────────────────────────────────────────
 
@@ -252,6 +253,15 @@ export async function runPipeline(
   }
 
   await runAroundHooks(ctx, pipeline.around, 0, runWithError, telemetry)
+
+  // `null` is a legitimate answer, so the value cannot tell an around that
+  // forgot next() from one that answered nothing on purpose: only an
+  // assignment can. `answered` is false for any context `hookContext` did not
+  // make, and a hand-built one in a test is not broken for that, so only an
+  // accessor `result` is graded.
+  if (!answered(ctx) && Object.getOwnPropertyDescriptor(ctx, 'result')?.get) {
+    throw new GeneralError(hookChainMessage(ctx.service, String(ctx.method), 'around'))
+  }
 }
 
 // ─── Sequential around hook runner ───────────────────────────────────────

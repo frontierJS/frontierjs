@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **92**. With a stated owner: **92**. Stated and missing: **0**.
+Seams: **94**. With a stated owner: **94**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -29,6 +29,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 12 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 9 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
@@ -84,6 +85,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$context.form` | `packages/ui/components/forms/Form.mesa` | mentions `form` — weak | — |
 | `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `x-version` | `packages/litestone/src/jsonschema.js` | mentioned | — |
+| `x-rank` | `packages/litestone/src/jsonschema.js` | mentioned | — |
 | `retryable` | `packages/junction/src/core/errors.ts` | mentioned | — |
 | `buildTransitions()` / `transitionsAt()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
 | `buildCommitments()` / `commitmentsAt()` | `packages/sierra/src/resource/field-rules.js` | yes | — |
@@ -138,6 +140,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 12 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |

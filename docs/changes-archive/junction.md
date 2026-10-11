@@ -102,7 +102,7 @@ Under `tenancy { strategy row }`, `app.runAs(null, { tenant })` put the tenant o
 
 ## 2026-10-07 — a move named for a CRUD verb refuses start() (`FJS-1909`)
 
-A `@@transitions` move whose name a service already answers (`restore`, `remove`, `create`, a service option) was dropped from the method table without a word. The screen still drew its button, and the call reached the verb: base44's `Project` declared `archive`/`restore`, and restore answered 400 *the model declares no @@softDelete*. `resolveTable` now reports each such move as an authoring finding, so `check-authoring` refuses start, naming the move.
+A `@@transitions` move whose name a service already answers (`restore`, `remove`, `create`, a service option) was dropped from the method table without a word. The screen still drew its button, and the call reached the verb: Charter's `Project` declared `archive`/`restore`, and restore answered 400 *the model declares no @@softDelete*. `resolveTable` now reports each such move as an authoring finding, so `check-authoring` refuses start, naming the move.
 
 Routing the move ahead of the verb was not chosen: `restore` would then mean two things, depending on whether the model declares `@@softDelete`, under one `X-Service-Method`. `test/declared-moves.test.ts` § *a move named for what a service already answers* boots `restore` (refused, red before) against `unarchive` (served). 2645 pass, typecheck clean.
 

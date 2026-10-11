@@ -10,6 +10,7 @@ defaults:
 <script>
 import { resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
+import { stripVTControlCharacters } from 'util'
 
 // ─── resolveDb ───────────────────────────────────────────────────────────────
 // Returns the db file path for the current environment.
@@ -121,6 +122,55 @@ const requireDb = ($, flag) => {
 const litestone = ($) => {
   return `cd ${JSON.stringify($.paths.root)} && ${$.bin('litestone')}`
 }
+
+// ─── litestoneQuiet ──────────────────────────────────────────────────────────
+// Runs litestone with its output held, for a command that composes it and
+// prints its own result. Litestone writes a banner, its schema warnings (to
+// stderr) and a footer around the lines a person wants, and `jsonschema` appends
+// its flag help — so a passthrough buries two lines in thirty.
+//
+// stderr is merged into the capture because the warnings are on it and a
+// `--verbose` reader wants them. stdin is closed, which is also what stops
+// litestone's data-loss question: it is asked only of a terminal, and this
+// output is not shown to one.
+//
+// `ok` false is a non-zero exit; the caller decides what to print. Null is a
+// `--dry` run, which executed nothing.
+const litestoneQuiet = ($, argv) => {
+  const res = $.exec({
+    command: `${litestone($)} ${argv} 2>&1`,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    allowFailure: true,
+  })
+  if (res == null) return null
+  const ok    = Buffer.isBuffer(res)
+  const raw   = (ok ? res : res.stdout)?.toString() ?? ''
+  const rows  = raw.split('\n').map((line) => ({ line, plain: stripVTControlCharacters(line) }))
+  const warnings = rows.map((r) => r.plain.match(/^\s*⚠\s+(.*)$/)?.[1]).filter(Boolean)
+  // Colored, as litestone wrote them; `plain` is for matching only.
+  const body     = rows.filter((r) => r.plain.trim() && !/^\s*⚠/.test(r.plain))
+  return { ok, raw, warnings, body }
+}
+
+// ─── showWarnings ────────────────────────────────────────────────────────────
+// A schema warning is a paragraph that names every model it covers, and the
+// same ones print on every push. The head — up to the first dash — says what
+// kind of thing it is; the rest is `--verbose`.
+const showWarnings = ($, warnings) => {
+  if (!warnings.length) return
+  for (const w of warnings) $.log.warn(w.split(/ — |\. /)[0])
+  if ($.flag.verbose) for (const w of warnings) $.log.detail(`  ${w}`)
+  else $.log.info($.chalk.dim('--verbose lists every model they name'))
+}
+
+// ─── jsonSchemaDone ──────────────────────────────────────────────────────────
+// The one line that says the derived document was written, shared by the two
+// commands that write it.
+const jsonSchemaDone = ($, json, out) => {
+  const counts = json.body.find((r) => /\d+ models/.test(r.plain))?.plain.trim().replace(/, mode=.*/, '')
+  $.log.success(`JSON Schema  ${$.chalk.dim(path.relative(process.cwd(), out))}${counts ? $.chalk.dim(` · ${counts}`) : ''}`)
+}
+
 </script>
 
 ## Setup

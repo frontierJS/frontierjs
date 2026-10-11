@@ -89,7 +89,7 @@ export const PER_CALLER = {
 
 const isOptional = f => f.type?.optional === true
 const has        = (f, kind) => (f.attributes ?? []).some(a => a.kind === kind)
-const hasDefault = f => has(f, 'default') || has(f, 'generated') || has(f, 'sequence')
+const hasDefault = f => has(f, 'default') || has(f, 'generated') || has(f, 'sequence') || has(f, 'rank')
 const modelAttr  = (m, kind) => (m.attributes ?? []).find(a => a.kind === kind)
 
 // A model whose rows may be WRITTEN on a device. `@@sync(read)` holds the table

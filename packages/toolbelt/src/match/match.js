@@ -260,6 +260,9 @@ export function matchesQuery(fields, record, query) {
 
     let one
     if (_OPAQUE.has(key)) {
+      // A flag at false, an empty search and an empty scope list ask nothing,
+      // and a client that folds its directives in states them all.
+      if (val === null || val === false || val === '' || (Array.isArray(val) && val.length === 0)) continue
       one = null
     } else if (key === '$or') {
       one = Array.isArray(val) ? _some(fields, record, val) : null

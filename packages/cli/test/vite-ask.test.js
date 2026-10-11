@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { EDIT_MAX_HTML, EDIT_RULES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
+import { EDIT_KINDS, EDIT_MAX_HTML, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
@@ -80,6 +80,31 @@ describe('editPrompt', () => {
     const picks = Array.from({ length: 10 }, () => ({ html: 'z'.repeat(EDIT_MAX_HTML) }))
     const p = editPrompt({ instruction: 'x', picks, followUp: true })
     expect((p.match(/z/g) || []).length).toBe(EDIT_MAX_HTML)
+  })
+
+  test('a chip is its sentence, and a key that is not one adds nothing', () => {
+    const p = editPrompt({ instruction: 'x', kind: 'style', scope: 'every', followUp: true })
+    expect(p).toContain(`What to change: ${EDIT_KINDS.style}`)
+    expect(p).toContain(`How far: ${EDIT_SCOPES.every}`)
+    const q = editPrompt({ instruction: 'x', kind: 'toString', scope: '__proto__', followUp: true })
+    expect(q).toBe('Change: x')
+  })
+
+  test('what the source said about a pick goes under it, and the resources once after all of them', () => {
+    const p = editPrompt({ instruction: 'x', followUp: true, data: ['`pins` from src/resources/Pin.mesa — model Pin at ../db/schema.lite:1: id, name'], picks: [{
+      loc: 'src/routes/_module.mesa:9:7', html: '<div></div>', repeats: 12,
+      loops: [{ head: 'pins as p (p.id)', at: 'src/routes/_module.mesa:4' }],
+      files: ['src/routes/workbench/index.mesa:30'],
+      inner: [{ head: 'p.files as f', at: 'src/routes/workbench/index.mesa:41' }],
+    }] })
+    expect(p).toContain([
+      '- source: src/routes/_module.mesa:9:7',
+      '- drawn 12 times on the page from that source',
+      '- inside: {#each pins as p (p.id)} at src/routes/_module.mesa:4',
+      '- written in, under it: src/routes/workbench/index.mesa:30',
+      '- loops under it: {#each p.files as f} at src/routes/workbench/index.mesa:41',
+    ].join('\n'))
+    expect(p.endsWith('the resources their files import:\n- `pins` from src/resources/Pin.mesa — model Pin at ../db/schema.lite:1: id, name')).toBe(true)
   })
 
   test('no instruction yet: no Change line, the picks still go', () => {
@@ -621,6 +646,21 @@ describe('the routes — admission and Submit, over HTTP against a real repo', (
     rmSync(`${ghLog}.made`)
     expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 200, created: true, files: ['web/Page.mesa'] })
     expect(readFileSync(ghLog, 'utf8')).toContain('pr create --head wb/trial --base main --title Text: “Hello again” → “Hi”')
+  })
+
+  test('a handoff carries the chips and what the source says, and a chip the server does not know is refused', async () => {
+    const post = await serve({ admit: null })
+    writeFileSync(join(app, 'List.mesa'), '<ul>\n  {#each items as it}\n    <li>{it}</li>\n  {/each}\n</ul>\n')
+    try {
+      const r = await post('/__fjs/ask/handoff', { instruction: 'smaller', kind: 'layout', scope: 'every', picks: [{ loc: 'List.mesa:3:5', html: '<li>a</li>', repeats: 3, inner: ['../x.mesa:1:1', 'List.mesa:3:5'] }] })
+      expect(r.status).toBe(200)
+      expect(r.text).toContain(`How far: ${EDIT_SCOPES.every}`)
+      expect(r.text).toContain(`- inside: {#each items as it} at ${join(app, 'List.mesa')}:2`)
+      expect(r.text).toContain('- drawn 3 times')
+      expect(r.text).not.toContain('x.mesa')
+      expect(await post('/__fjs/ask/handoff', { instruction: 'x', kind: 'rewrite' })).toMatchObject({ status: 400, error: 'no such kind of change: rewrite' })
+      expect(await post('/__fjs/ask', { instruction: 'x', scope: 'site' })).toMatchObject({ status: 400, error: 'no such scope: site' })
+    } finally { rmSync(join(app, 'List.mesa')) }
   })
 
 })

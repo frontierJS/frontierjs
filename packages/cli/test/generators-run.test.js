@@ -146,7 +146,7 @@ describe('a generated link names the URL its directory is served at', () => {
 })
 
 // make:scaffold ended on *Add a nav link to your layout* and nothing added one,
-// so in 0 of 21 apps the base44 stressor generated did the page after sign-up
+// so in 0 of 21 apps the Charter stressor generated did the page after sign-up
 // reach a model's list (`FJS-1808`). The layout here is the one `fli new`
 // writes, read out of new.md, so a change to it is graded too.
 describe('make:scaffold links the list from the layout fli new writes', () => {

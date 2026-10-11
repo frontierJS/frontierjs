@@ -145,6 +145,7 @@ own (§ *When a factor is lost*, below).
 |--------|------|-------------|
 | `GET`  | `/account/me` | The caller's session — what `/auth/me` was |
 | `POST` | `/account/me` + `X-Service-Method: changePassword` | Verify the current password, replace it, and sign out every other session |
+| `POST` | `/account/me` + `X-Service-Method: requestEmailChange` | `{ currentPassword, newEmail }`. Verify the password and mail a link to the new address through `onEmailVerificationRequested`; the address changes, verified, when `/auth/email/verify` spends that link, and the OLD address is told (`email.changed`) |
 | `GET`  | `/sessions` | Where else this caller is signed in; the current one is marked |
 | `DELETE` | `/sessions/{id}` | End one of them |
 | `POST` | `/sessions` + `X-Service-Method: revokeOthers` | Sign out everywhere else |
@@ -162,7 +163,7 @@ own (§ *When a factor is lost*, below).
 `account` also answers `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp` and
 `regenerateRecoveryCodes` (§ *Two-factor authentication*).
 
-In a browser they are `client.auth.me()`, `.changePassword()`, `.sessions()`,
+In a browser they are `client.auth.me()`, `.changePassword()`, `.requestEmailChange()`, `.sessions()`,
 `.revokeSession(id)`, `.revokeOtherSessions()`, `.apiKeys()`, `.createApiKey()`
 and `.revokeApiKey(id)` — and a Sierra app gets a reactive `session` object over
 the top (`@frontierjs/sierra/resource`).
@@ -347,12 +348,13 @@ createLitestoneAuth(db, {
 ```
 
 `event` is one of `CREDENTIAL_EVENTS` — `password.changed`, `password.reset`,
-`totp.enabled`, `totp.disabled`, `totp.reset`, `recoveryCodes.regenerated`,
+`email.changed`, `totp.enabled`, `totp.disabled`, `totp.reset`, `recoveryCodes.regenerated`,
 `recovery.used`, `apikey.created`, `apikey.revoked`, `oauth.linked`,
 `oauth.unlinked`, `support.started` — and is the audit trail's own name for the
 same change. `actorId` differs from `userId` only for `totp.reset` and
 `support.started`, where it is the operator; the second carries the episode's
-`reason` and `endsAt` in `meta`.
+`reason` and `endsAt` in `meta`. For `email.changed`, `email` is the address
+that was replaced — that mailbox is the one that just lost the account.
 Nothing secret is in it.
 
 It is an **observer**, unlike `onLogin` and the other three: a throw is logged

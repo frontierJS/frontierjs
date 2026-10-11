@@ -382,7 +382,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./frontmatter` | `src/frontmatter/frontmatter.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
 | exports | `./history` | `src/history/history.js` | yes |
-| exports | `./hooks` | `src/hooks/hooks.js` | yes |
+| exports | `./hooks (types)` | `src/hooks/hooks.d.ts` | yes |
+| exports | `./hooks (default)` | `src/hooks/hooks.js` | yes |
 | exports | `./ids (types)` | `src/ids/ids.d.ts` | yes |
 | exports | `./ids (default)` | `src/ids/ids.js` | yes |
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
@@ -396,6 +397,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |
 | exports | `./transforms` | `src/transforms/transforms.js` | yes |
+| exports | `./rank (types)` | `src/rank/rank.d.ts` | yes |
+| exports | `./rank (default)` | `src/rank/rank.js` | yes |
 | exports | `./redact (types)` | `src/redact/redact.d.ts` | yes |
 | exports | `./redact (default)` | `src/redact/redact.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |

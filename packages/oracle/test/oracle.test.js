@@ -34,7 +34,7 @@ const parses = (text) => {
 
 const clone = (x) => structuredClone(x)
 
-// base44's studio, 2026-10-09: a yoga studio's classes, read by every member
+// Charter's studio, 2026-10-09: a yoga studio's classes, read by every member
 // and posted by their instructor.
 const TIMETABLE = {
   entities: [{
@@ -137,7 +137,7 @@ describe('emit', () => {
   })
 
   // A unique over an optional column is refused at parse: NULLs never compare
-  // equal. Found by the base44 corpus (vaultwarden, an invite before sign-up).
+  // equal. Found by the Charter corpus (vaultwarden, an invite before sign-up).
   test('a membership whose person is optional keeps pending rows distinct', () => {
     const a = clone(hiring)
     a.entities[1].links[1].required = false
@@ -146,7 +146,7 @@ describe('emit', () => {
     expect(parses(text)).toBe(true)
   })
 
-  // `@secret @unique` is refused at parse: the IV is random. Found by the base44
+  // `@secret @unique` is refused at parse: the IV is random. Found by the Charter
   // edit turns (jazzhr, an applicant's private status link).
   test('a unique secret is deterministic, so it parses and can be looked up', () => {
     const a = clone(hiring)
@@ -196,7 +196,7 @@ describe('emit', () => {
 })
 
 // The promise the emitter exists to keep, run on a real client: a second
-// tenant reads nothing of the first's. fjs-prototypes/base44's access drive
+// tenant reads nothing of the first's. fjs-prototypes/charter's access drive
 // runs the same question over every app a model generates.
 describe('emitted access, on a real client', () => {
   test('a second company reads none of the first company\'s rows', async () => {
@@ -352,7 +352,7 @@ describe('checkAnswer refuses', () => {
   test('a required json with no document to start from, and takes one that states it', () => {
     // A person cannot type JSON, so a required document with no default is a
     // row nobody can create from a form: Calendly's weeklyHours and
-    // Dragonfly's data in the base44 stressor (`FJS-1823`).
+    // Dragonfly's data in the Charter stressor (`FJS-1823`).
     const answer = (rubric) => {
       const a = base()
       a.entities[5].fields.push({ name: 'rubric', type: 'json', required: true, ...rubric })
@@ -388,7 +388,7 @@ describe('checkAnswer refuses', () => {
 
   test('a move named for a CRUD verb, and takes the same move named for what the person does', () => {
     // Junction answers `restore` as the verb and refuses to start beside such a
-    // move; six base44 Phase 2 schemas wrote it as archive's inverse (`FJS-1909`).
+    // move; six Charter Phase 2 schemas wrote it as archive's inverse (`FJS-1909`).
     const answer = (name) => {
       const a = base()
       a.entities[2].lifecycle.moves[2].name = name

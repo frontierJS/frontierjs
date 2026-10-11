@@ -58,6 +58,9 @@ export interface GradableUser {
 /** Does this principal name somebody — an `id` or a `userId`? No identity grades STRANGER (`FJS-D515`). */
 export function isIdentified(user?: GradableUser | null): boolean
 
+/** The principal fields `gradeStanding` reads beyond identity; Litestone admits `auth().<field>` for each. */
+export const STANDING_FIELDS: readonly ['isSystemAdmin', 'isOwner', 'isAdmin', 'verifiedAt', 'activatedAt', 'role']
+
 /** A caller's standing. Explicit standing first, then lifecycle, then `role`. */
 export function gradeStanding(user?: GradableUser | null): number
 

@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**115 words** — 13 declarations · 67 field attributes · 35 model attributes.
+**116 words** — 13 declarations · 68 field attributes · 35 model attributes.
 
 ## Index
 
@@ -27,7 +27,7 @@ and shows you the diff first.
 
 **Field attributes**
 
-- *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field)
+- *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field) · [`@rank`](#rank-field)
 - *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
 - *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
@@ -344,6 +344,21 @@ model Example {
 
 - **Also typed** — `autoincrement` · `serial` · `nextval`
 - **Deeper** — [sequences.md](sequences.md)
+
+#### `@rank` `(scope: <field> | [<field>, …])` <a id="rank-field"></a>
+
+A position a person drags, as a fractional key: a move writes one row. A create with no key lands at the end of its scope, and so does an update moving a row to another scope; a read sorted by it ties on the id. The scope compares with IS, so NULL is one scope. `rebalance()` rewrites a scope's keys when drags have grown them.
+
+```lite
+model Example {
+  id Int @id
+  stateId Int
+  rank String @rank(scope: stateId)
+}
+```
+
+- **Also typed** — `sortorder` · `lexorank` · `reorder`
+- **Deeper** — [rank.md](rank.md)
 
 ### Reach another row
 

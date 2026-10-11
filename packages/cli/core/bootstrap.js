@@ -178,64 +178,68 @@ async function printNamespace(ns, commands, verbose = false) {
 }
 
 // ─── printHelp() — pretty-print a command's metadata ─────────────────────────
+// Same palette as printSearch/printNamespace: an exact `fli ? <name>` must not
+// read plainer than the partial match that lists the same command.
 function printHelp(meta, filePath) {
+  const dim    = (s) => chalk.dim(s)
+  const green  = (s) => chalk.green(s)
+  const yellow = (s) => chalk.yellow(s)
+  const cyan   = (s) => chalk.cyan(s)
+  const out    = (s = '') => process.stdout.write(s + '\n')
+
   meta = { ...meta, flags: withModuleFlags(meta.flags, getModule(meta.title?.split(':')[0])) }
-  logger(`${meta.title}`, 'info')
-  if (meta.description) {
-    logger(`  ${meta.description}`, 'info')
-  }
-  if (meta.effects) {
-    logger(`  ${chalk.yellow(`Effects: ${effectsText(meta)}`)}`, 'info')
-  }
+  const alias = meta.alias ? dim(` · ${meta.alias}`) : ''
+  out()
+  out(`  ${green(meta.title)}${alias}`)
+  if (meta.description) out(`  ${dim(meta.description)}`)
+  if (meta.effects) out(`  ${dim('effects')} ${amber(effectsText(meta))}`)
 
   // Usage line — built from metadata only, never from parsed argv
   const argNames = (meta.args || []).map(a => a.required ? `<${a.name}>` : `[${a.name}]`).join(' ')
   const flagHint = Object.keys(meta.flags || {}).length ? '[--flags]' : ''
-  const usageLine = [`fli ${meta.title}`, argNames, flagHint].filter(Boolean).join(' ')
-  logger(`\n  Usage: ${usageLine}`, 'info')
+  out()
+  out(`  ${yellow('usage')}`)
+  out(`    ${cyan('fli')} ${green(meta.title)}${argNames ? ' ' + cyan(argNames) : ''}${flagHint ? ' ' + dim(flagHint) : ''}`)
+  if (meta.alias) out(`    ${cyan('fli')} ${green(meta.alias)}`)
 
-  // Aliases
-  if (meta.alias) {
-    logger(`  Alias: fli ${meta.alias}`, 'info')
-  }
-
-  // Args
   if (meta.args?.length) {
-    logger('\n  Arguments:', 'info')
+    out()
+    out(`  ${yellow('arguments')}`)
     for (const arg of meta.args) {
-      const required = arg.required ? chalk.yellow(' (required)') : ''
+      const required = arg.required ? yellow(' (required)') : ''
       const bound    = flagConstraint(arg)
-      const choices  = bound ? chalk.dim(` (${bound})`) : ''
-      const def      = arg.defaultValue !== undefined ? chalk.dim(` [default: ${arg.defaultValue}]`) : ''
-      logger(`    ${arg.name.padEnd(20)} ${arg.description ?? ''}${required}${choices}${def}`, 'info')
+      const choices  = bound ? dim(` (${bound})`) : ''
+      const def      = arg.defaultValue !== undefined ? dim(` [default: ${arg.defaultValue}]`) : ''
+      out(`    ${cyan(arg.name.padEnd(20))} ${dim(arg.description ?? '')}${required}${choices}${def}`)
     }
   }
 
   // Flags — skip internal ones
   const flags = listedFlags(meta)
   if (flags.length) {
-    logger('\n  Flags:', 'info')
+    out()
+    out(`  ${yellow('flags')}`)
     for (const [name, def] of flags) {
-      const short = def.char ? `-${def.char}, ` : '    '
+      const short = def.char ? dim(`-${def.char}, `) : '    '
       const bound = flagConstraint(def)
-      const type  = def.type ? chalk.dim(` (${[def.type, bound].filter(Boolean).join(' ')})`) : ''
+      const type  = def.type ? dim(` (${[def.type, bound].filter(Boolean).join(' ')})`) : ''
       const def_  = def.defaultValue !== undefined && def.defaultValue !== '' && typeof def.defaultValue !== 'boolean'
-        ? chalk.dim(` [default: ${def.defaultValue}]`) : ''
-      logger(`    ${short}${flagSpelling(name, def).padEnd(20)} ${def.description ?? ''}${type}${def_}`, 'info')
+        ? dim(` [default: ${def.defaultValue}]`) : ''
+      out(`    ${short}${amber(flagSpelling(name, def).padEnd(20))} ${dim(def.description ?? '')}${type}${def_}`)
     }
   }
 
-  // Examples
   const examples = Array.isArray(meta.examples) ? meta.examples : meta.examples ? [meta.examples] : []
   if (examples.length) {
-    logger('\n  Examples:', 'info')
-    for (const ex of examples) {
-      logger(`    ${ex}`, 'info')
-    }
+    out()
+    out(`  ${yellow('examples')}`)
+    for (const ex of examples) out(`    ${dim(ex)}`)
   }
 
   if (filePath) {
-    try { printPlanFromFile(filePath, {}) } catch {}
+    try { printPlanFromFile(filePath, {}, { indent: '  ' }) } catch {}
+  } else {
+    out()
   }
 }
 

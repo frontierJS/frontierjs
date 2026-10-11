@@ -733,7 +733,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `manual-order.md` — A position a person drags, declared on the column
 - `mesa-kit-primitives.md` — the primitives the Mesa kit keeps re-writing
 - `no-port-app.md` — the app with no port: vendor-hosted and never-deployed as release artifact kinds
-- `on-page-editing.md` — the ask panel's next four moves, ranked by what on-page editors love
+- `on-page-editing.md` — the ask panel's next four moves, ranked by what on-page editors love; § Prompt economy is what a pick sends the model
 - `oracle-reasoning.md` — how it should reason
 - `orion-decision-step.md` — A decision step for orion: lookup tables and a stated reason
 - `orion-port.md` — Porting orion's mockup onto FrontierJS

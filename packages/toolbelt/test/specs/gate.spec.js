@@ -12,7 +12,7 @@
  * could have caught either one.
  */
 
-import { LEVELS, levelName, levelPasses, gradeStanding, canAtLevel }
+import { LEVELS, levelName, levelPasses, gradeStanding, canAtLevel, STANDING_FIELDS }
   from '../../src/gate/gate.js'
 
 // ─── the scale ────────────────────────────────────────────────────────────────
@@ -240,4 +240,22 @@ test('gate: unknowns are permissive, each paired with the shape that refuses', f
   assert.equal(canAtLevel(gate, 'delete', undefined), true)
   assert.equal(canAtLevel(gate, 'delete', null),      true)
   assert.equal(canAtLevel(gate, 'delete', 0),         false)
+})
+
+// ─── the fields the grader reads ──────────────────────────────────────────────
+
+test('gate: STANDING_FIELDS names every field gradeStanding reads (FJS-770)', function () {
+  // Litestone admits `auth().<field>` for exactly these, so a field the grader
+  // reads and the list omits is a startup throw on a claim the framework grades
+  // by. Graded against what the grader TOUCHES, since a list kept by hand is the
+  // thing that drifted. A caller with an id and a role and nothing else reaches
+  // every branch, so one call sees every field.
+  const touched = new Set()
+  gradeStanding(new Proxy({ id: 1, role: 'user' }, {
+    get(target, key) { touched.add(key); return target[key] },
+  }))
+
+  const identity = new Set(['id', 'userId'])
+  const read = [...touched].filter(k => !identity.has(k)).sort()
+  assert.deepEqual([...STANDING_FIELDS].sort(), read)
 })

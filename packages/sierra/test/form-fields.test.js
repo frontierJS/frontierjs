@@ -267,7 +267,7 @@ describe('controlFor — the one place a type becomes a control', () => {
 
   test('a scalar list is typed one item at a time, never as JSON', () => {
     // As a JSON box, the first tag a person typed was refused as not JSON, in
-    // five of the 21 apps the base44 stressor generated (`FJS-1822`).
+    // five of the 21 apps the Charter stressor generated (`FJS-1822`).
     expect(controlFor(rules().tags)).toEqual({ control: 'multiselect', task: 'text', allowNew: true, itemType: 'string' })
     expect(controlFor(buildFieldRules({ properties: { n: { type: 'array', items: { type: 'integer' } } } }).n))
       .toMatchObject({ control: 'multiselect', itemType: 'integer' })

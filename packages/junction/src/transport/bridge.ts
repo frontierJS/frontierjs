@@ -7,6 +7,7 @@ import type { TransportContext } from './types.ts'
 import { toFrameworkError, FrameworkError, BadRequest, sanitizeError } from '../core/errors.ts'
 import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
+import { hookContext } from '@frontierjs/toolbelt/hooks'
 
 // ─── Context types — moved to core (core/context.ts) ─────────────────────
 // The service layer's vocabulary (ServiceContext, ServiceResult, hook and
@@ -191,7 +192,7 @@ export const bridge = {
       finalMethod = (data as Record<string, unknown>)?.id != null ? 'patch' : 'create'
     }
 
-    return withCallEffects({
+    return withCallEffects(hookContext({
       service:   service,
       method:    finalMethod,
       type:      'before',
@@ -220,7 +221,7 @@ export const bridge = {
       statusCode: undefined,
       dispatch:   undefined,
       $raw:      raw
-    })
+    }))
   },
 
   // ── ServiceContext → HTTP Response ────────────────────────────────────
@@ -290,7 +291,7 @@ export const bridge = {
     // no rows with a 200 on the in-process and socket paths.
     const merged = { ...fromQuery, ...directives }
     refuseUnservableWindow(merged)
-    return withCallEffects({
+    return withCallEffects(hookContext({
       service,
       method,
       type:      'before',
@@ -320,7 +321,7 @@ export const bridge = {
       statusCode: undefined,
       dispatch:   undefined,
       $raw:      null
-    })
+    }))
   }
 
 }

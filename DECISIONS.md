@@ -6697,7 +6697,7 @@ The paper's recommendation, taken as written: A is what ships in `packages/lites
 
 ### <a id="fjs-d603"></a>2026-10-06 · `FJS-D603` — How does an edit say what happens to the rows it reshapes — In the migration, never the seed. Litestone owns a short, fixed set of row-keeping operations (`rename`, `backfill`, `split`). `migrate create` takes them from a prompt, a flag or a document, and Oracle's answer emits the same document. Litestone writes their SQL into the `.sql` file and names each one in its header. A change that needs an operation nobody gave is created with a placeholder, and apply refuses it. The shadow shows the rows carried over before the file may apply.
 
-Raised by base44 PLAN § Phase 3, where a rename deleted 3 of 3 values, a new required link half-applied (`FJS-1785`), and a content split dropped 8 of 8 bodies (`FJS-1787`). **D** was picked over:
+Raised by Charter PLAN § Phase 3, where a rename deleted 3 of 3 values, a new required link half-applied (`FJS-1785`), and a content split dropped 8 of 8 bodies (`FJS-1787`). **D** was picked over:
 
 - **A**, a schema word such as `@was("description")`. The seed says what is, not how it got there. The word means nothing on a fresh database and has to be removed later, and a backfill or a split would put a value expression in the seed. The owner ruled it out outright.
 - **B alone**, flags on `migrate create` that write SQL. A split does not fit on a command line, and the intent survives only as SQL.
@@ -6728,7 +6728,7 @@ Litestone goes one step further. It already guesses a rename (`renameTo` in `mig
 4. Oracle's answer gains the document (`FJS-1787`)
 
 It pairs with `FJS-1784`: a destructive file is not applied in the call that creates it. The placeholder refusal replaces `FJS-1785`'s half-apply.
-— `packages/litestone/src/core/migrations.js` · `packages/oracle/src/answer.js` · `packages/oracle/src/emit.js` · [base44 PLAN](../fjs-prototypes/base44/PLAN.md) · [Prisma — customizing migrations](https://www.prisma.io/docs/orm/prisma-migrate/workflows/customizing-migrations) · [Prisma Next — generating a migration](https://www.prisma.io/docs/orm/next/migrations/generating-a-migration) · [ZenStack — migration](https://zenstack.dev/docs/orm/migration).
+— `packages/litestone/src/core/migrations.js` · `packages/oracle/src/answer.js` · `packages/oracle/src/emit.js` · [Charter PLAN](../fjs-prototypes/charter/PLAN.md) · [Prisma — customizing migrations](https://www.prisma.io/docs/orm/prisma-migrate/workflows/customizing-migrations) · [Prisma Next — generating a migration](https://www.prisma.io/docs/orm/next/migrations/generating-a-migration) · [ZenStack — migration](https://zenstack.dev/docs/orm/migration).
 
 ### <a id="fjs-d518"></a>2026-09-29 · `FJS-D518` — Where does a data migration live — A data change is not a migration. `migrations/` holds `.sql` only, and the docs name the home for a data change: an app script chained after `migrate apply` and made idempotent by the rows it expects, which is what remnant chose (`remnant/PLAN.md` Q2). `.js` in the history becomes a refusal with a nonzero exit.
 
@@ -12512,7 +12512,7 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ### <a id="fjs-d878"></a>2026-10-10 · `FJS-D878` — When does `Label` badge "(Optional)" — Only when `required === false`. `undefined` is unspecified and badges nothing.
 
-Asked in [`FJS-1974`](ISSUES.md#fjs-1974). The prop's own doc already said `undefined` meant unspecified; the code read `!required`, so every kit control used outside a `<Form>` — a filter row, an editor's sliders, a chat box — was badged optional by a caller who had said nothing. Three stressors hit it (ela, base44, darkroom), and `Slider` takes no `required`, so its caller could not quiet the badge at all. Generated forms do not change: a `<Form>` resolves `rule.required` to a boolean, which `form-tail.spec.mjs` holds both ways round.
+Asked in [`FJS-1974`](ISSUES.md#fjs-1974). The prop's own doc already said `undefined` meant unspecified; the code read `!required`, so every kit control used outside a `<Form>` — a filter row, an editor's sliders, a chat box — was badged optional by a caller who had said nothing. Three stressors hit it (ela, charter, darkroom), and `Slider` takes no `required`, so its caller could not quiet the badge at all. Generated forms do not change: a `<Form>` resolves `rule.required` to a boolean, which `form-tail.spec.mjs` holds both ways round.
 
 *Lives in:* `packages/ui/components/forms/Label.mesa` · `actions.spec.mjs` (`#labels`).
 

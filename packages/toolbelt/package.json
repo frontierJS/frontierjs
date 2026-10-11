@@ -39,7 +39,10 @@
     "./frontmatter": "./src/frontmatter/frontmatter.js",
     "./glow": "./src/glow/glow.js",
     "./history": "./src/history/history.js",
-    "./hooks": "./src/hooks/hooks.js",
+    "./hooks": {
+      "types": "./src/hooks/hooks.d.ts",
+      "default": "./src/hooks/hooks.js"
+    },
     "./ids": {
       "types": "./src/ids/ids.d.ts",
       "default": "./src/ids/ids.js"
@@ -59,6 +62,10 @@
       "default": "./src/query/query.js"
     },
     "./transforms": "./src/transforms/transforms.js",
+    "./rank": {
+      "types": "./src/rank/rank.d.ts",
+      "default": "./src/rank/rank.js"
+    },
     "./redact": {
       "types": "./src/redact/redact.d.ts",
       "default": "./src/redact/redact.js"

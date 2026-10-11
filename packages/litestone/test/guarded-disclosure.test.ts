@@ -48,6 +48,10 @@ model Widget {
 }
 `
 
+// Admitted by the gate. A caller the gate refuses is told so before any column
+// is named (`FJS-914`), so disclosure is only observable from above it.
+const USER = { id: 'u1' }
+
 const client = () => createClient({ schema: SCHEMA, resolveFrom: import.meta.dir })
 
 /** The message a call refuses with, or '' when it does not refuse. */
@@ -60,7 +64,7 @@ describe('a refusal does not name a @guarded column (FJS-914)', () => {
 
   test('orderBy, no near match — the list branch', async () => {
     const db = await client()
-    const seen   = await refusal(db.$setAuth(null),        { orderBy: { zqxwvu: 'asc' } })
+    const seen   = await refusal(db.$setAuth(USER),        { orderBy: { zqxwvu: 'asc' } })
     const system = await refusal(db.asSystem(),            { orderBy: { zqxwvu: 'asc' } })
 
     expect(seen).toContain('Sortable: ')
@@ -75,8 +79,8 @@ describe('a refusal does not name a @guarded column (FJS-914)', () => {
 
   test('orderBy, one character away — the suggestion branch', async () => {
     const db = await client()
-    const guarded   = await refusal(db.$setAuth(null), { orderBy: { ssm:    'asc' } })
-    const ordinary  = await refusal(db.$setAuth(null), { orderBy: { notess: 'asc' } })
+    const guarded   = await refusal(db.$setAuth(USER), { orderBy: { ssm:    'asc' } })
+    const ordinary  = await refusal(db.$setAuth(USER), { orderBy: { notess: 'asc' } })
 
     // The branch a real typo takes. Filtering the list and not this one closes
     // the door nobody uses.
@@ -87,10 +91,10 @@ describe('a refusal does not name a @guarded column (FJS-914)', () => {
 
   test('where, both branches', async () => {
     const db = await client()
-    const list       = await refusal(db.$setAuth(null), { where: { zqxwvu: 'x' } })
-    const suggestion = await refusal(db.$setAuth(null), { where: { ssm:    'x' } })
+    const list       = await refusal(db.$setAuth(USER), { where: { zqxwvu: 'x' } })
+    const suggestion = await refusal(db.$setAuth(USER), { where: { ssm:    'x' } })
     const system     = await refusal(db.asSystem(),     { where: { zqxwvu: 'x' } })
-    const ordinary   = await refusal(db.$setAuth(null), { where: { notess: 'x' } })
+    const ordinary   = await refusal(db.$setAuth(USER), { where: { notess: 'x' } })
 
     expect(list).toContain('Valid fields: ')
     expect(list).not.toContain('ssn')
@@ -131,5 +135,45 @@ describe('a refusal does not name a @guarded column (FJS-914)', () => {
     expect(anon[0]!.sortable).toEqual(system[0]!.sortable)
     expect(anon[0]!.sortable).toContain('notes')
     expect(anon[0]!.sortable).toContain('email')
+  })
+})
+
+// The other half of the row. Narrowing what a refusal discloses leaves the
+// ORDINARY column names, because validation ran before the gate. A caller the
+// gate refuses is now told that, whatever they typed; a caller it admits still
+// hears the typo.
+describe('the gate answers before a key refusal does (FJS-914)', () => {
+  const typos: [string, unknown][] = [
+    ['orderBy list',       { orderBy: { zqxwvu: 'asc' } }],
+    ['orderBy suggestion', { orderBy: { emial:  'asc' } }],
+    ['where list',         { where:   { zqxwvu: 'x' } }],
+    ['where suggestion',   { where:   { emial:  'x' } }],
+    ['select',             { select:  { zqxwvu: true } }],
+    ['argument name',      { wher:    { id: 'x' } }],
+  ]
+
+  for (const [label, args] of typos) {
+    test(`${label} — a caller below the gate is denied and learns no column`, async () => {
+      const db = await client()
+      const seen = await refusal(db.$setAuth(null), args)
+      expect(seen).toContain('requires level')
+      for (const name of ['email', 'notes', 'id', 'ssn']) expect(seen, name).not.toContain(name)
+    })
+  }
+
+  test('a caller the gate admits still hears the typo', async () => {
+    const db = await client()
+    const seen = await refusal(db.$setAuth(USER), { orderBy: { emial: 'asc' } })
+    expect(seen).toContain('Did you mean: email?')
+    const system = await refusal(db.asSystem(), { where: { zqxwvu: 'x' } })
+    expect(system).toContain('Valid fields: ')
+  })
+
+  test('a write is answered the same way', async () => {
+    const db = await client()
+    expect(await refusal(db.$setAuth(null), { where: { emial: 'x' }, data: { notes: 'a' } }, 'update'))
+      .toMatch(/requires level|LOCKED/)
+    expect(await refusal(db.$setAuth(null), { where: { emial: 'x' } }, 'deleteMany'))
+      .toMatch(/requires level|LOCKED/)
   })
 })

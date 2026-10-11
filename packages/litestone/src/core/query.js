@@ -457,8 +457,8 @@ const TEXT_OP_REFUSALS = {
                       `declare @type(...) on the column to filter by a path`,
   file:    (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" holds a file reference document, so "${op}" would match its serialized text rather than anything about the file`,
   boolean: (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
-  number:  (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" is a number, so "${op}" would substring-match its digits (1 matches 10 and 214) — ` +
-                      `use "equals", or "gte"/"lte" for a range`,
+  number:  (/** @type {string} */ k, /** @type {string} */ op) => '"' + k + '" is a number, so "' + op + '" would substring-match its digits (1 matches 10 and 214) — ' +
+                      'use "equals", or "gte"/"lte" for a range',
 }
 
 /**

@@ -57,10 +57,11 @@ import {
 import { threeWay } from './three-way.js'
 import { buildCommitmentMap, dueSql, readBy } from './commitment.js'
 import { dueAt, offsetSpans, partsIn, plainDateIn } from '@frontierjs/toolbelt/datetime'
+import { after as rankAfter, isRankKey, spread as rankSpread } from '@frontierjs/toolbelt/rank'
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildLiteralDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
-  buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, shapesRead, isProtected, buildSecretMap,
+  buildSequenceMap, buildRankMap, schemaDeclaresAccessRules, buildFieldPolicyMap, shapesRead, isProtected, buildSecretMap,
   buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildExclusionMap, buildComputedSet, buildBoolMap, buildBigMap,
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
@@ -384,6 +385,7 @@ function authStamped(row, modelName, ctx) {
  * @property {string | null} sync              `@@sync`'s policy
  * @property {{ relationField: string, fkField: string, referencedField: string }[]} selfRelations
  * @property {{ field: string, scope: string }[]} sequences
+ * @property {{ field: string, scope: string[] }[]} ranks   `@rank` columns and the fields each orders within
  * @property {Record<string, any> | null} transitions   by field, where the model declares `@@transitions`
  * @property {{ self: any | null, parents: any[] }} seal
  * @property {{ read: boolean, moves: Set<string>, columns: Set<string>, moveFields: Set<string> } | null} capabilities
@@ -3226,6 +3228,95 @@ function makeTable(readDb, writeDb, shape, ctx) {
     )
   }
 
+  // ─── @rank ─────────────────────────────────────────────────────────────────
+  //
+  // A create with no key lands at the END of its scope, and so does an update
+  // that moves a row to another scope without stating one (`FJS-D366`). Both
+  // read the scope's last key, so both run where the INSERT or UPDATE runs:
+  // on the write connection, inside the unit. Read anywhere else, two creates
+  // in one scope mint the same key.
+  //
+  // The scope compares with IS, so every row whose parentId is NULL is one
+  // scope. The lookup is raw — no policy, no soft-delete — because a key a
+  // caller cannot see is still a key a new row must not tie with.
+  const _ranks = shape.ranks
+  const _rankFields = new Set(_ranks.map(r => r.field))
+  const _rankBind = v => typeof v === 'boolean' ? (v ? 1 : 0) : v instanceof Date ? v.toISOString() : v ?? null
+  const _sameScopeValue = (stored, v) => {
+    const b = _rankBind(v)
+    return stored == null || b == null ? stored == null && b == null : String(stored) === String(b)
+  }
+  // The scope a create lands in: a column left out takes its literal
+  // @default, which the DDL would fill after this has already looked.
+  const _rankScopeOf = (data, scope) =>
+    scope.map(f => data?.[f] !== undefined ? data[f] : (shape.literalDefaults.find(d => d.field === f)?.value ?? null))
+
+  function lastRankIn(field, scope, values) {
+    const where = scope.map(f => `${ident(col(f)).sql} IS ?`).join(' AND ')
+    const r = writeDb.query(`SELECT max(${ident(col(field)).sql}) AS k FROM ${T.sql}${where ? ` WHERE ${where}` : ''}`)
+      .get(...values.map(_rankBind))
+    const last = r?.k ?? null
+    if (last != null && !isRankKey(last)) throw new ValidationError([{
+      path: [field],
+      message: `${field}: the last key in this scope is ${JSON.stringify(last)}, which is not a rank key, so nothing can be minted after it. ` +
+               `db.${modelToAccessor(modelName)}.rebalance({ where }) rewrites the scope with keys @rank can extend.`,
+    }], { model: modelName, operation: 'create' })
+    return last
+  }
+
+  // `memo` carries a batch's own keys forward: the rows of a createMany are
+  // stamped before any of them is inserted, so the table cannot answer for them.
+  function applyRanks(data, stamped, memo = null) {
+    if (!_ranks.length || !data) return data
+    let out = data
+    for (const { field, scope } of _ranks) {
+      const values = _rankScopeOf(out, scope)
+      const key    = memo && field + '\0' + JSON.stringify(values.map(_rankBind))
+      if (out[field] != null) {
+        if (memo && isRankKey(out[field]) && !(memo.get(key) >= out[field])) memo.set(key, out[field])
+        continue
+      }
+      const last = memo?.has(key) ? memo.get(key) : lastRankIn(field, scope, values)
+      const next = rankAfter(last)
+      memo?.set(key, next)
+      noteStamp(stamped, data, field)
+      if (out === data) out = { ...data }
+      out[field] = next
+    }
+    return out
+  }
+
+  // An update moving the row to another scope, with no key stated, takes the
+  // end of the scope it lands in. One stating both is taken as written, and
+  // one naming its own scope again does not move.
+  const rankScopeTouched = data => !!data && _ranks.some(r =>
+    data[r.field] === undefined && r.scope.some(f => data[f] !== undefined))
+
+  function rankOnScopeChange(data, selAll, whereParams, stamped) {
+    if (!rankScopeTouched(data)) return data
+    const cur = writeDb.query(selAll).get(...whereParams)
+    if (!cur) return data
+    let out = data
+    for (const { field, scope } of _ranks) {
+      if (out[field] !== undefined) continue
+      if (scope.every(f => out[f] === undefined || _sameScopeValue(cur[col(f)], out[f]))) continue
+      const values = scope.map(f => out[f] !== undefined ? out[f] : cur[col(f)])
+      if (out === data) out = { ...data }
+      out[field] = rankAfter(lastRankIn(field, scope, values))
+      noteStamp(stamped, data, field)
+    }
+    return out
+  }
+
+  function refuseRankBulkMove(data, verb) {
+    const moved = _ranks.filter(r => data?.[r.field] === undefined && r.scope.some(f => data?.[f] !== undefined))
+    if (moved.length) throw new ValidationError(moved.map(r => ({
+      path: [r.field],
+      message: `${verb} moves rows to another ${r.scope.join(' + ')} without stating ${r.field}, and one statement would give ` +
+               `every row the same key. Move each row with update(), which puts it at the end of its new scope.`,
+    })), { model: modelName, operation: 'update' })
+  }
+
   function refuseSequenceWrite(data) {
     const denied = Object.keys(data).filter(k => _sequenceWriteKeys.has(k))
     if (denied.length) throw new ValidationError(
@@ -4173,6 +4264,23 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return _nullableCache.has(col)
   }
 
+  // A rank orders by (rank, key), whichever way it runs. Two devices that split
+  // one gap at the same moment mint one key, and without the key after it the
+  // two rows swap between reads; an ORDER BY that already names the key, or
+  // never names a rank, is taken as written.
+  function withRankTiebreak(orderBy) {
+    if (!_ranks.length || !orderBy) return orderBy
+    const items = Array.isArray(orderBy) ? orderBy : [orderBy]
+    const named = items.flatMap(i => (i && typeof i === 'object' ? Object.keys(i) : []))
+    let dir = null
+    for (const i of items) for (const k in i ?? {}) if (_rankFields.has(k)) dir = i[k]
+    if (dir == null) return orderBy
+    const keys = _keyCols().filter(c => !named.includes(c))
+    if (!keys.length) return orderBy
+    const d = typeof dir === 'object' ? (dir.dir ?? 'asc') : dir
+    return [...items, ...keys.map(c => ({ [c]: d }))]
+  }
+
   function _keyCols() {
     if (_keyColsCache) return _keyColsCache
     const model = shape.model
@@ -4496,6 +4604,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // rules are folded here, after the fast path, because that path is the one
   // statement whose precondition is the RAW where being empty.
   function buildSQL({ verb = 'findMany', where, args, orderBy, limit, offset, parsedSelect, distinct = false, windowSpec = null, withVectors = false } = {}) {
+    orderBy = withRankTiebreak(orderBy)
     // ── Ultra-fast path: no where, no order, no limit, live mode, no policy/filters ──
     // `narrows` speaks for a READ, so a write verb's fold is never skipped here.
     if (_fastFindManySql && VERBS[verb] === 'read' && !readNarrowed('softDelete') && !withVectors && !where && !orderBy && limit == null && offset == null && !parsedSelect && !windowSpec && !distinct && sdMode(args) === 'live') {
@@ -5588,6 +5697,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   async function planUpdateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
     const _umMove = _bulkTransitionField(data, 'updateMany')
     if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
+    refuseRankBulkMove(data, 'updateMany')
     const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
     refuseSystemEntries(system, ['update'])
     // After the gate: a caller it refuses is told so, not what the set holds.
@@ -5793,6 +5903,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // database: run before the unit it was 2 auto-commit statements per row
   // (~16x slower) and a counter stayed bumped when the batch failed.
   function createManyPlan({ data, system, hidden, mode, needRows }) {
+    const _rankMemo       = _ranks.length ? new Map() : null
     const autoId          = shape.autoId
     const genDefaults     = shape.generatedDefaults
     const authDefaults    = shape.authDefaults
@@ -5813,6 +5924,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (versionField) { noteStamp(stamped, d, versionField); d = { ...(d ?? {}), [versionField]: 1 } }
       // Apply @sequence per row — each row gets its own counter increment
       d = applySequences(d, modelName, shape.sequences, writeDb, stamped)
+      d = applyRanks(d, stamped, _rankMemo)
       // A validation failure here names the field and, without this, no row.
       // The row itself is NOT passed on: it is the caller's payload before
       // writeData ran, so a @encrypted value in it is still plaintext.
@@ -5926,7 +6038,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // lands (see `[PLAN]` on the table).
   async function planCreate(args) {
     const c = await prepareCreate(args)
-    const data = applySequences(c.data, modelName, shape.sequences, writeDb, c.stamped)
+    const data = applyRanks(applySequences(c.data, modelName, shape.sequences, writeDb, c.stamped), c.stamped)
     const { scalar, nested, hasNested } = extractNestedWrites(data)
     const { data: scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
     return createPlan({ ...scalarNoEdge, ...(await processBelongsToNested(nested)) }, { ...c, hasNested, edgeWrites, bare: false })
@@ -6025,6 +6137,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // SQLite's own refusal is — so it needs a rollback to throw into.
     const ownUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy && !_upHidden
       && !_tableTransitions && tx.state.depth === 0 && !_cardNotes && !exclTouched(data)
+      && !rankScopeTouched(data)
 
     // The plan: the WHERE and the SET, the before snapshot, the move's grade
     // and compare-and-swap, the version's, the seals — every conjunct that
@@ -6073,6 +6186,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         }
       }
 
+      if (_ranks.length) data = rankOnScopeChange(data, selAll, whereParams, stamped)
       const { data: _upValues, ops: _upOps } = extractWriteOps(data)
       const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped, where })
       const setParams = []
@@ -6327,6 +6441,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       !ctx.hasPolicies && !tableHasLogWork && !_tableTransitions && !_exclNotes &&
       !softDelete && !hasTemplates && !effective && !hasFieldPolicy && !_rawFilter &&
       !shape.sequences.length &&
+      !_ranks.length &&
       !shape.updatedBy.length &&
       !shape.version &&
       include === undefined && select === undefined &&
@@ -7619,7 +7734,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // 82% (`FJS-1106`). A @sequence bump, a nested write and an edge write are
       // further statements, so they keep the transaction.
       let _crOut
-      const _crSplit = shape.sequences.length ? null : extractNestedWrites(data)
+      const _crSplit = shape.sequences.length || _ranks.length ? null : extractNestedWrites(data)
       const _crEdges = _crSplit && !_crSplit.hasNested ? extractEdgeWrites(_crSplit.scalar) : null
       // A write that moves a count has to reach `commit`, which is where the
       // count is graded — the autocommit path never opens a transaction, so a
@@ -7639,6 +7754,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // from: injecting a sequence into `data` after it has been taken apart
           // writes the row without the column.
           data = applySequences(data, modelName, shape.sequences, writeDb, stamped)
+          data = applyRanks(data, stamped)
           // Split nested write ops from scalar fields
           const { scalar, nested, hasNested } = extractNestedWrites(data)
           const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
@@ -7870,6 +7986,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _nt = needsTiming()
       const _usT0 = _nt ? performance.now() : 0
       // Whole batch (incl. @sequence bumps) inside one transaction — see createMany.
+      // A key minted for the insert half is not the caller's, so a row that
+      // conflicts keeps its own unless the conflict moves it to another scope.
+      const _usRankMemo = _ranks.length ? new Map() : null
+      const _usMinted   = []
       await tx.wrapExclusive(() => {
         const rows = data.map((item, i) => {
           let d = item
@@ -7884,6 +8004,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           d = stampFromAuth(d, updatedBys, ctx.auth, stamped)
           if (usVersion) { noteStamp(stamped, d, usVersion); d = { ...(d ?? {}), [usVersion]: 1 } }
           d = applySequences(d, modelName, shape.sequences, writeDb, stamped)
+          d = applyRanks(d, stamped, _usRankMemo)
+          _usMinted[i] = _ranks.filter(r => stamped.has(r.field))
           try { return writeData(d, { requireAll: true, system, stamped, creating: true }) }
           catch (e) { throw asBatchRowError(e, i, data.length, null) }
         })
@@ -7965,8 +8087,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // derived from the shape's own columns, so a row carrying a column the
         // batch's first row omitted updates it on conflict rather than losing it.
         const stmts = new Map()
-        const stmtFor = (cols) => {
-          const key = cols.join(' ')
+        const stmtFor = (cols, minted = []) => {
+          const key = cols.join(' ') + (minted.length ? ' | ' + minted.map(r => r.field).join(' ') : '')
           let entry = stmts.get(key)
           if (entry) return entry
 
@@ -7981,20 +8103,29 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             ? `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) SELECT ${cols.map(() => '?').join(', ')} WHERE ${_sealInsertSql}`
             : `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
 
+          // The SET speaks columns, as the INSERT above does: a field name on a
+          // @map model is `no such column: excluded.<field>`.
+          const _qt = quoteIdent(tableName)
+          const _qc = (/** @type {string} */ c) => quoteIdent(col(c))
+          const _mintedRank = c => minted.find(r => r.field === c)
+          const _rankSet = (r) => {
+            const same = r.scope.map(f => `${_qt}.${_qc(f)} IS excluded.${_qc(f)}`).join(' AND ')
+            return `${_qc(r.field)} = CASE WHEN ${same} THEN ${_qt}.${_qc(r.field)} ELSE excluded.${_qc(r.field)} END`
+          }
           // @version rides the INSERT at 1 and is BUMPED on conflict, never taken
           // from `excluded` — that would reset an existing row to 1 and make every
           // stale editor's version look current again.
           const setPairs = updateCols
             .filter(c => c !== usVersion)
-            .map(c => `"${c}" = excluded."${c}"`)
-          if (usVersion) setPairs.push(`"${usVersion}" = "${tableName}"."${usVersion}" + 1`)
+            .map(c => _mintedRank(c) ? _rankSet(_mintedRank(c)) : `${_qc(c)} = excluded.${_qc(c)}`)
+          if (usVersion) setPairs.push(`${_qc(usVersion)} = ${_qt}.${_qc(usVersion)} + 1`)
           // A conflict is an update, so it stamps. `setPairs.length` is what
           // decides whether this row updates at all, so the stamp is added
           // after that test and never turns a DO NOTHING into a DO UPDATE.
           if (setPairs.length) setPairs.push(...stampSets(updateCols))
 
           if (setPairs.length) {
-            const conflictSql = target.map(c => `"${c}"`).join(', ')
+            const conflictSql = target.map(_qc).join(', ')
             s += ` ON CONFLICT(${conflictSql}) DO UPDATE SET ${setPairs.join(', ')}`
             if (_usGuardSql) s += ` WHERE ${_usGuardSql}`
           } else {
@@ -8011,7 +8142,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
         for (const [_i, row] of rows.entries()) {
           if (_usHidden[_i]) throw asBatchRowError(_usHidden[_i], count, rows.length, row)
-          const { cols, updateCols, stmt } = stmtFor(Object.keys(row))
+          const { cols, updateCols, stmt } = stmtFor(Object.keys(row), _usMinted[_i])
           const _usSeal = sealInsertGuard(row)
           // The guard's params bind LAST, because `ON CONFLICT … WHERE` is the
           // tail of the statement — after the VALUES and after the seal's own
@@ -8614,7 +8745,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // sort key answers the right rows in the wrong order, and nothing about
       // that is visible.
       if (ordered) {
-        const orderSql = buildOrderBy(orderBy, baseParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
+        const orderSql = buildOrderBy(withRankTiebreak(orderBy), baseParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
         if (orderSql) baseSql += ` ORDER BY ${orderSql}`
         baseSql += pageSql(limit, offset || null)
       }
@@ -8714,6 +8845,56 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         _move: transitionName,
         ...(system ? { system: [targetField] } : {}),
       })
+    },
+
+    // ── rebalance ───────────────────────────────────────────────────────────
+    // Rewrite a @rank column's keys, evenly and all one width, keeping the
+    // order: every drag into one gap adds about a fifth of a digit, so a spot
+    // dropped onto a few hundred times outgrows any @length (`FJS-D366`).
+    //
+    // It is a read and one update per row the order changes, through this
+    // accessor: the caller's policy decides which rows it reaches, each row is
+    // announced as its own update, and @version bumps — a device holding the
+    // old key loses its next drag of THAT row, which is the truth. `where`
+    // may span scopes; each is spread on its own.
+    async rebalance({ where, field } = {}) {
+      if (!_ranks.length) throw new CapabilityNotDeclaredError(modelName, 'rebalance()', '@rank',
+        'No field on this model declares @rank, so there is no order to rewrite.')
+      const rank = field
+        ? _ranks.find(r => r.field === field)
+        : _ranks.length === 1 ? _ranks[0] : null
+      if (!rank) throw new Error(field
+        ? `${modelName}.rebalance: '${field}' is not a @rank field — this model ranks ${_ranks.map(r => `'${r.field}'`).join(', ')}`
+        : `${modelName}.rebalance: this model ranks ${_ranks.map(r => `'${r.field}'`).join(' and ')} — name one: rebalance({ where, field })`)
+      const keyCols = _keyCols()
+      const rows = await this.findMany({
+        where,
+        select:  Object.fromEntries([...keyCols, ...rank.scope, rank.field].map(c => [c, true])),
+        orderBy: [{ [rank.field]: 'asc' }],
+      })
+      const scopes = new Map()
+      for (const row of rows) {
+        const key = JSON.stringify(rank.scope.map(f => _rankBind(row[f])))
+        if (!scopes.has(key)) scopes.set(key, [])
+        scopes.get(key).push(row)
+      }
+      let count = 0
+      await tx.exclusive(async () => {
+        for (const list of scopes.values()) {
+          const keys = rankSpread(list.length)
+          for (const [i, row] of list.entries()) {
+            if (row[rank.field] === keys[i]) continue
+            await this.update({
+              where: Object.fromEntries(keyCols.map(c => [c, row[c]])),
+              data:  { [rank.field]: keys[i] },
+              select: false,
+              _bypassVersion: true,
+            })
+            count++
+          }
+        }
+      })
+      return { count }
     },
 
     // ── due ─────────────────────────────────────────────────────────────────
@@ -9656,6 +9837,7 @@ function makeLockPrimitive(rawWriteDb) {
   const syncMap            = buildSyncMap(schema)
   const selfRelationMap    = buildSelfRelationMap(schema)
   const sequenceMap    = buildSequenceMap(schema)
+  const rankMap        = buildRankMap(schema)
   const enumMap        = buildEnumMap(schema)
   const transitionMap  = buildTransitionMap(schema)
   const sealMap        = buildSealMap(schema, relationMap,
@@ -9712,7 +9894,7 @@ function makeLockPrimitive(rawWriteDb) {
     jsonMap, generatedMap, computedSets, fromMap, relationMap, edgeMap, coFkMap, softDeleteMap, softDeleteCascadeMap,
     hasTemplatesMap, effectiveMap, commitmentMap, boolMap, affinityMap, bigMap, filterKindMap, autoIdMap,
     generatedDefaultMap, authDefaultMap, literalDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap,
-    versionMap, syncMap, selfRelationMap, sequenceMap, enumMap, transitionMap, sealMap, capabilityMap, ftsMap,
+    versionMap, syncMap, selfRelationMap, sequenceMap, rankMap, enumMap, transitionMap, sealMap, capabilityMap, ftsMap,
     validationMap, fieldPolicyMap, secretMap, policyMap, scopeMap, modelDbMap, valueSetMap,
     'cardinalityMap.byParent': cardinalityMap.byParent, 'cardinalityMap.byChild': cardinalityMap.byChild,
     'cardinalityMap.requiresChildren': cardinalityMap.requiresChildren, 'exclusionMap.byModel': exclusionMap.byModel,
@@ -9767,6 +9949,7 @@ function makeLockPrimitive(rawWriteDb) {
       sync:              declared(syncMap, name, null),
       selfRelations:     declared(selfRelationMap, name, []),
       sequences:         declared(sequenceMap, name, []),
+      ranks:             declared(rankMap, name, []),
       transitions:       declared(transitionMap, name, null),
       seal:              declared(sealMap, name, { self: null, parents: [] }),
       capabilities:      declared(capabilityMap, name, null),

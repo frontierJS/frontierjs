@@ -1,12 +1,17 @@
 ---
 id: manual-order
-status: proposed
+status: shipped
 dated: 2026-09-22
 ---
 
 # Idea — A position a person drags, declared on the column
 
-**Status: PROPOSED.** Measured in the linear stressor (Phase 4, Q3):
+**Status: BUILT 2026-10-10, ruled [`FJS-D366`](../DECISIONS.md#fjs-d366).** The
+word is `@rank(scope:)` (`packages/litestone/docs/rank.md`), the keys are
+`@frontierjs/toolbelt/rank`, and the drag is sierra's `resource.move()`.
+`packages/litestone/test/rank.test.ts`, `packages/toolbelt/test/specs/rank.spec.js`
+and `packages/sierra/test/resource-move.test.js` hold it. **This file is the
+ARGUMENT, not the reference.** Measured in the linear stressor (Phase 4, Q3):
 `fjs-prototypes/linear/web/test/verify-order.mjs` (50 concurrent drags over
 HTTP, in-process so junction's broadcast telemetry can be counted) and
 `web/test/verify-order-offline.mjs` (one device offline in a real browser,

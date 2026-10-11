@@ -1253,6 +1253,26 @@ export function withArgValidation(table, model, ctx) {
     return checkFieldRead() ? applyFieldRead(args, method) : args
   }
 
+  // A key refusal names the model's columns, and it runs before the gate does.
+  // So a ValidationError is answered by the gate first: a caller the gate would
+  // refuse hears that, and a caller it admits hears the typo (`FJS-914`). Only
+  // the failure path pays — a call that validates reaches the gate where it
+  // always did. `ctx.gateCheck` is absent in a schema with no `@@gate`.
+  const gateOps = (/** @type {string} */ method) =>
+    /^(create|upsert)/.test(method) ? ['create', 'update']
+      : /^(update|restore)/.test(method) ? ['update']
+      : /^(remove|delete)/.test(method) ? ['delete']
+      : ['read']
+  const gateFirst = async (/** @type {unknown} */ err, /** @type {string} */ method) => {
+    if (!(err instanceof ValidationError) || ctx.isSystem || typeof ctx.gateCheck !== 'function') return err
+    for (const op of gateOps(method)) await ctx.gateCheck(modelName, op, ctx)
+    return err
+  }
+  const guarded = async (/** @type {any} */ args, /** @type {string} */ method, /** @type {boolean} */ isWrite) => {
+    try { return guardArgs(args, method, isWrite) }
+    catch (e) { throw await gateFirst(e, method) }
+  }
+
   // async wrappers so a validation failure is a REJECTION, matching how the
   // underlying methods fail — a sync throw from a promise-returning API is a
   // third failure mode nobody handles.
@@ -1264,7 +1284,7 @@ export function withArgValidation(table, model, ctx) {
   const wrap = (/** @type {string} */ method, /** @type {boolean} */ isWrite) => {
     const fn = table[method]
     if (typeof fn !== 'function') return
-    out[method] = async (args = {}) => fn.call(table, guardArgs(args, method, isWrite))
+    out[method] = async (args = {}) => fn.call(table, await guarded(args, method, isWrite))
   }
   for (const m of ARG_READ_METHODS)  wrap(m, false)
   for (const m of ARG_WRITE_METHODS) wrap(m, true)
@@ -1277,8 +1297,8 @@ export function withArgValidation(table, model, ctx) {
   if (typeof table.create === 'function') {
     const fn = table.create
     out.create = async (args = {}) => {
-      checkArgNames(args, 'create')
-      checkSelect(args, 'create', true)
+      try { checkArgNames(args, 'create'); checkSelect(args, 'create', true) }
+      catch (e) { throw await gateFirst(e, 'create') }
       return fn.call(table, args)
     }
   }
@@ -1289,7 +1309,7 @@ export function withArgValidation(table, model, ctx) {
   // remembering to.
   if (typeof table.search === 'function') {
     const fn = table.search
-    out.search = async (/** @type {string} */ q, opts = {}) => fn.call(table, q, guardArgs(opts, 'search', false))
+    out.search = async (/** @type {string} */ q, opts = {}) => fn.call(table, q, await guarded(opts, 'search', false))
   }
   return out
 }

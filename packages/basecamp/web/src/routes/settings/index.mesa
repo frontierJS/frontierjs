@@ -11,8 +11,10 @@ title: Your settings
   //                  about the device, not the person.
   //   Profile        the caller's own User row, `users.get('me')`, edited by
   //                  User.mesa's default form. The address and the standing
-  //                  come from `client.auth.me()`, the session, and are not
-  //                  a person's to edit.
+  //                  come from `client.auth.me()`, the session. The address
+  //                  is not a column the form may write: it moves through
+  //                  `client.auth.requestEmailChange`, which mails the new
+  //                  one, and the move lands on /verify-email/ at the click.
   //   Password       `client.auth.changePassword` — the current one is required
   //                  by the server, which is the whole point of the control.
   //   Notifications  the new `notification-preferences` service.
@@ -74,6 +76,11 @@ title: Your settings
   let error     = null
   let loading   = true
   let busy      = null
+
+  let newEmail      = ''
+  let emailPassword = ''
+  let emailError    = null
+  let emailSentTo   = null
 
   let current   = ''
   let next      = ''
@@ -215,6 +222,23 @@ title: Your settings
     }
   }
 
+  // Nothing changes here: the address on the account stays the old one until
+  // the link in the new mailbox is opened, so the screen says where it went
+  // rather than showing the new address as if it were already in force.
+  async function requestEmailChange() {
+    emailError = null; busy = 'email'
+    const to = newEmail.trim()
+    try {
+      await getClient().auth.requestEmailChange(emailPassword, to)
+      emailSentTo = to; newEmail = ''; emailPassword = ''
+      toasts.success(`Link sent to ${to}`)
+    } catch (e) {
+      emailError = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   // ─── Two-step sign-in ─────────────────────────────────────────────────
   async function totpStep(fn) {
     totpError = null; busy = 'totp'
@@ -302,6 +326,36 @@ title: Your settings
         </span>
       </dd></div>
     </dl>
+
+    <details id="change-email">
+      <summary>Change email</summary>
+      {#if emailSentTo}
+        <Callout tone="info" title="Check the new inbox" id="email-change-sent">
+          A link went to <strong>{emailSentTo}</strong>. Your address changes when it is opened;
+          until then you still sign in as {me?.email}.
+        </Callout>
+      {/if}
+      {#if emailError}
+        <article class="alert danger" id="email-change-error">
+          <div class="alert-content">{emailError}</div>
+        </article>
+      {/if}
+      <form class="stack" novalidate onsubmit={e => { e.preventDefault(); requestEmailChange() }}>
+        <Input id="email-new" name="newEmail" type="email" label="New address"
+               autocomplete="email" required value={newEmail}
+               oninput={e => newEmail = e.target.value} />
+        <Input id="email-password" name="currentPassword" type="password" label="Your password"
+               hint="Asked again because a password reset goes to this address"
+               autocomplete="current-password" required value={emailPassword}
+               oninput={e => emailPassword = e.target.value} />
+        <div class="cluster">
+          <Button type="submit" variant="primary" id="email-change-submit"
+                  disabled={busy === 'email' || !newEmail.trim() || !emailPassword}>
+            {busy === 'email' ? 'Sending…' : 'Send the link'}
+          </Button>
+        </div>
+      </form>
+    </details>
   </Card>
 
   <Card id="settings-appearance">

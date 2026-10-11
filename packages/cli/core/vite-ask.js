@@ -39,7 +39,8 @@ import { fileURLToPath } from 'node:url'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
-import { editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { EDIT_KINDS, EDIT_SCOPES, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { askContext } from './ask-context.js'
 import { previewScope } from './preview.js'
 
 const CLIENT_ID   = '/@frontierjs/cli/ask-client'
@@ -48,6 +49,7 @@ const CLIENT_FILE = fileURLToPath(new URL('./vite-ask-client.js', import.meta.ur
 const MAX_BODY    = 256 * 1024
 const LOC         = /^[\w./-]+\.(mesa|md):\d+:\d+$/
 const MAX_PICKS   = 10
+const MAX_INNER   = 60
 const MAX_TEXT    = 2000
 
 /** True when the request came from a page this dev server served. */
@@ -440,14 +442,28 @@ export function locateText(src, { ext, line, col, tag, old, next }) {
   return { start: hits[0].start, end: hits[0].end, from, to, text: encode[ext](next) }
 }
 
-// A loc ends up in the prompt as a path to open; one that is not a relative
-// path to a compiled source is dropped, and its HTML still goes as context.
+// A loc ends up in the prompt as a path to open, and `ask-context.js` reads
+// the file it names; one that is not a relative path to a compiled source is
+// dropped, and its HTML still goes as context.
+const readLoc = loc => typeof loc === 'string' && LOC.test(loc) && !loc.includes('..') ? loc : null
+
 function readPicks(list = []) {
   return (list ?? []).map(p => ({
-    loc:  typeof p?.loc === 'string' && LOC.test(p.loc) && !p.loc.includes('..') ? p.loc : null,
-    html: typeof p?.html === 'string' ? p.html : '',
-    size: Number(p?.size) || 0,
+    loc:     readLoc(p?.loc),
+    html:    typeof p?.html === 'string' ? p.html : '',
+    size:    Number(p?.size) || 0,
+    repeats: Math.max(0, Math.floor(Number(p?.repeats) || 0)),
+    inner:   Array.isArray(p?.inner) ? p.inner.slice(0, MAX_INNER).map(readLoc).filter(Boolean) : [],
   }))
+}
+
+// A chip is a key into `EDIT_KINDS`/`EDIT_SCOPES`; anything else is refused by
+// name rather than dropped, so a panel and a server out of step say so.
+function readChips(body) {
+  const { kind = null, scope = null } = body
+  if (kind != null && !Object.hasOwn(EDIT_KINDS, kind)) return { error: `no such kind of change: ${String(kind).slice(0, 40)}` }
+  if (scope != null && !Object.hasOwn(EDIT_SCOPES, scope)) return { error: `no such scope: ${String(scope).slice(0, 40)}` }
+  return { kind, scope }
 }
 
 function readJson(req) {
@@ -531,7 +547,9 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     if (!instruction) return reply(res, 400, { error: 'say what to change' })
     if (body.picks != null && !Array.isArray(body.picks)) return reply(res, 400, { error: 'picks is a list' })
     if ((body.picks ?? []).length > MAX_PICKS) return reply(res, 400, { error: `at most ${MAX_PICKS} elements in one ask` })
-    const picks = readPicks(body.picks)
+    const chips = readChips(body)
+    if (chips.error) return reply(res, 400, { error: chips.error })
+    const { picks, data } = askContext(root, readPicks(body.picks))
 
     const run = `${boot}.${++seq}`
     const ledger = createLedger(root)
@@ -546,7 +564,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
       root, bin,
       edit:    root,
       session: body.session || null,
-      prompt:  editPrompt({ instruction, picks, page: body.page, followUp: !!body.session }),
+      prompt:  editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: !!body.session }),
       onEvent: e => {
         if (e.type === 'read' || e.type === 'edit' || e.type === 'write') return ledger.see(e)
         if (e.type === 'session') session = e.id
@@ -632,10 +650,12 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     }
     if (body.picks != null && !Array.isArray(body.picks)) return reply(res, 400, { error: 'picks is a list' })
     if ((body.picks ?? []).length > MAX_PICKS) return reply(res, 400, { error: `at most ${MAX_PICKS} elements in one ask` })
-    const picks = readPicks(body.picks).map(p => ({ ...p, loc: p.loc && resolve(root, p.loc) }))
+    const chips = readChips(body)
+    if (chips.error) return reply(res, 400, { error: chips.error })
+    const { picks, data } = askContext(root, readPicks(body.picks), { absolute: true })
     const instruction = String(body.instruction ?? '').trim()
     if (!instruction && !picks.length) return reply(res, 400, { error: 'pick an element or say what to change' })
-    return reply(res, 200, { text: editPrompt({ instruction, picks, page: body.page, followUp: true }) })
+    return reply(res, 200, { text: editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: true }) })
   }
 
   async function branch() {

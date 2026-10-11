@@ -143,11 +143,13 @@ import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined,
 } from './field-rules.js'
 import { session } from './session.js'
+import { directiveParams } from '@frontierjs/toolbelt/directives'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { humanize } from '@frontierjs/toolbelt/inflect'
 import { runPhase, runAroundHooks, mergeHooks, hookContext, answered } from '@frontierjs/toolbelt/hooks'
 import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jsonschema'
 import { mintId } from '@frontierjs/toolbelt/ids'
+import { jittered } from '@frontierjs/toolbelt/rank'
 import { createList } from './list.js'
 import { pendingQueue, unreachable } from './pending.js'
 import { attachmentQueue } from './attachments.js'
@@ -883,7 +885,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // and not in Junction, which holds no schema. Declared after the rules for
   // that reason; nothing can push before the first load in any case.
   const junctionResource = client.resource(serviceName, idField, {
-    match: (record, query) => matchesQuery(fields, record, query),
+    // The load's directives are folded back into the query: `$search`,
+    // `$onlyDeleted`, `$onlyTemplates` and `$scope` change which rows are in
+    // the list and ride only in the third argument, so without them the matcher
+    // upserts a row it cannot place.
+    match: (record, query, directives) =>
+      matchesQuery(fields, record, { ...query, ...directiveParams(directives) }),
     // A row leaving an imposed window emits no frame, so the list drops it at
     // its edge by the clock (`FJS-1274`). Absent where the model has none.
     ...(modelDef?.['x-effective']?.imposed
@@ -2785,6 +2792,78 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     return out
   }
 
+  // ── move — a drag, as one patch ─────────────────────────────────────────────
+
+  // The model's `@rank` columns, read off `x-rank` rather than named by the
+  // caller, so a board cannot order by one column and write another.
+  const _ranks = Object.entries(modelDef?.properties ?? {})
+    .filter(([, p]) => p?.['x-rank'])
+    .map(([field, p]) => ({ field, scope: p['x-rank'].scope ?? [] }))
+
+  /**
+   * Put a row between two others, and write that one row (`FJS-D366`).
+   *
+   *   board.move(card.id, { after: prev?.id, before: next?.id })
+   *   tree.move(page.id, { into: { parentId: folder.id }, after: last?.id })
+   *
+   * `after` is the row it lands after and `before` the row it lands before; one
+   * alone takes the other from the rows this resource holds, and `null` is the
+   * start or the end of the scope. `into` is the destination scope, for a move
+   * that leaves its column. A move into another scope with no neighbor named
+   * sends no key, and the server puts the row at the end of what it holds there,
+   * which this screen may only hold a page of.
+   *
+   * The key is minted HERE, from what this screen read, so a move made offline
+   * is one queued patch. `jittered` rather than the midpoint: two people
+   * dropping into one gap at once would otherwise send the same key, and the
+   * order between them would fall to their ids.
+   */
+  async function move(id, { after, before, into, field, optimistic = false } = {}) {
+    const rank = field ? _ranks.find(r => r.field === field) : _ranks.length === 1 ? _ranks[0] : null
+    if (!rank) throw new Error(_ranks.length
+      ? `[${serviceName}] move() on a model with ${_ranks.length} @rank columns needs one named — ` +
+        `move(id, { field: ${_ranks.map(r => `'${r.field}'`).join(' | ')}, … })`
+      : `[${serviceName}] move() needs a @rank column, and ${model ?? serviceName} declares none.`)
+
+    const held  = store.get() ?? []
+    const rowOf = (k) => held.find(r => r?.[idField] === k) ?? _read.get(k) ?? null
+    const row   = rowOf(id)
+    if (!row) throw new Error(`[${serviceName}] move(${JSON.stringify(id)}) — this resource holds no such row, ` +
+      `and the key is minted from the rows around it. Load the list it is in first.`)
+
+    const scope = {}
+    for (const f of rank.scope) scope[f] = into && f in into ? into[f] : (row[f] ?? null)
+    const inScope = (r) => rank.scope.every(f => (r?.[f] ?? null) === scope[f])
+    const key = (r) => r[rank.field]
+    const siblings = held
+      .filter(r => r?.[idField] !== id && inScope(r) && typeof key(r) === 'string')
+      .sort((x, y) => key(x) < key(y) ? -1 : key(x) > key(y) ? 1 : x[idField] < y[idField] ? -1 : x[idField] > y[idField] ? 1 : 0)
+
+    const neighbor = (k, side) => {
+      const r = rowOf(k)
+      if (!r) throw new Error(`[${serviceName}] move(): ${side} names ${JSON.stringify(k)}, which this resource does not hold.`)
+      if (!inScope(r)) throw new Error(`[${serviceName}] move(): ${side} names ${JSON.stringify(k)}, which is in another ` +
+        `${rank.scope.join(' + ')} than the one the row is moving to. Name a row in that scope, or pass \`into\`.`)
+      return r
+    }
+    const leaving = into && rank.scope.some(f => f in into && (row[f] ?? null) !== into[f])
+    let lo, hi
+    if (after === undefined && before === undefined) {
+      if (leaving) return save({ [idField]: id, ...into }, { mode: 'patch', optimistic })
+      lo = siblings.at(-1) ?? null; hi = null
+    } else {
+      lo = after == null ? (after === null ? null : undefined) : neighbor(after, 'after')
+      hi = before == null ? (before === null ? null : undefined) : neighbor(before, 'before')
+      if (lo === undefined) lo = hi ? siblings[siblings.indexOf(hi) - 1] ?? null : siblings.at(-1) ?? null
+      if (hi === undefined) hi = lo ? siblings[siblings.indexOf(lo) + 1] ?? null : siblings[0] ?? null
+    }
+    const a = lo ? key(lo) : null, b = hi ? key(hi) : null
+    if (a != null && b != null && a >= b) throw new Error(`[${serviceName}] move(): ${JSON.stringify(lo[idField])} and ` +
+      `${JSON.stringify(hi[idField])} hold ${a === b ? 'the same key' : 'keys in the other order'}, so there is no room ` +
+      `between them. A rebalance() of the scope on the server makes room.`)
+    return save({ [idField]: id, ...(into ?? {}), [rank.field]: jittered(a, b) }, { mode: 'patch', optimistic })
+  }
+
   // ── mutate — the write that shows before it lands ───────────────────────────
 
   /**
@@ -2890,7 +2969,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   }
 
   return {
-    service, store, stale, make, load, save, record, mutate, aggregate, list,
+    service, store, stale, make, load, save, move, record, mutate, aggregate, list,
     more, hasMore: junctionResource.hasMore, total: junctionResource.total,
     /**
      * When the server last answered the rows on screen, or null when the last
@@ -2936,6 +3015,7 @@ function _emptyResource(name) {
       release: () => {},
     }),
     save:    noop,
+    move:    noop,
     fields:    {},
     relations: {},
     formFields: () => [],

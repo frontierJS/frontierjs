@@ -3508,6 +3508,9 @@ function _shouldSkipField(field, model) {
   // the counter forward, so emitting one both defeats the feature and collides
   // with any @@unique([scope, seqField]) declared alongside it.
   if (attrs.some(a => a.kind === 'sequence')) return true
+  // @rank — a random string is not a key, and a factory's rows land at the end
+  // of their scope in the order they were made, which is what a seed means.
+  if (attrs.some(a => a.kind === 'rank')) return true
 
   // An optional @guarded column is written only at SYSTEM(8): a payload that
   // names it, even as null, is refused for every other principal. A required one

@@ -118,7 +118,9 @@ describe('where-field validation', () => {
   it('descends into AND/OR/NOT combinators', async () => {
     const db = await fresh()
     const scoped = db.$setAuth(VERIFIED)
-    await expect(scoped.lead.deleteMany({ where: { OR: [{ nam: 'x' }] } }))
+    // updateMany, not deleteMany: VERIFIED is below Lead's delete gate, and a
+    // caller the gate refuses hears that before any key (`FJS-914`).
+    await expect(scoped.lead.updateMany({ where: { OR: [{ nam: 'x' }] }, data: { name: 'y' } }))
       .rejects.toThrow(/Unknown field 'nam'/)
   })
 

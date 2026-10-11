@@ -1949,7 +1949,7 @@ async function cmdAdvise(cfg) {
   const rules  = checkRules(parsed)
   const missed = checkOpportunities(parsed)
 
-  // Exit 0 read as "clean" to the base44 grader, which passed a required
+  // Exit 0 read as "clean" to the Charter grader, which passed a required
   // @system column nothing fills (FJS-1825). The default still never fails; a
   // caller that wants a verdict asks for one, and only a defect earns it — a
   // word nobody declared is a suggestion, never a failure.

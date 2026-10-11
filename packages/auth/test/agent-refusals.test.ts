@@ -146,6 +146,14 @@ describe('an agent cannot change the credentials of the person it acts for', () 
     expect(await h.auth.login(p.email, PW)).toHaveProperty('token')
   })
 
+  test('account_requestEmailChange is refused, and no link is minted', async () => {
+    const p   = await person()
+    const res = await call(p.token, 'account_requestEmailChange', { data: { currentPassword: PW, newEmail: `moved-${p.email}` } })
+    expect(res.isError).toBe(true)
+    expect(res.content[0].text).toContain("agent's tool call")
+    expect(await h.sys.verification.findMany({ where: { purpose: 'emailChange', userId: p.userId } })).toEqual([])
+  })
+
   test('api-keys_remove is refused, and the key still authenticates', async () => {
     const p       = await person()
     const { id, key } = await h.auth.createApiKey(p.userId, { name: 'kept' })

@@ -815,7 +815,7 @@ describe('check-without-an-operation-in-a-write-rule', () => {
   })
 })
 
-// Spawned, because the exit code IS the assertion: the base44 grader read a
+// Spawned, because the exit code IS the assertion: the Charter grader read a
 // default-mode 0 as clean over a required @system column (FJS-1825).
 describe('advise --strict', () => {
   const CLI = resolve(import.meta.dir, '..', 'src', 'tools', 'cli.js')

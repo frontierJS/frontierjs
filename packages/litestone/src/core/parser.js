@@ -1331,6 +1331,25 @@ class Parser {
         return { kind: 'sequence', scope: scopeField }
       }
 
+      // ── Manual order ───────────────────────────────────────────────────────
+      // @rank(scope: stateId) · @rank(scope: [pageId, parentId])
+      // A position a person drags, as a fractional key minted between two
+      // neighbors, so a move writes one row (FJS-D366). The scope is a list
+      // compared with IS, so every row whose parentId is NULL shares ONE scope.
+      case 'rank': {
+        if (!this.check(TK.LPAREN))
+          throw new ParseError(`@rank needs the columns it orders within: @rank(scope: stateId) or @rank(scope: [pageId, parentId])`, this.peek())
+        this.eat(TK.LPAREN)
+        const at  = this.peek()
+        const key = this.eat(TK.IDENT).value
+        if (key !== 'scope')
+          throw new ParseError(`@rank only accepts (scope: field) or (scope: [field, …]), got (${key})`, at)
+        this.eat(TK.COLON)
+        const scope = this.check(TK.LBRACKET) ? this.parseFieldList() : [this.eat(TK.IDENT).value]
+        this.eat(TK.RPAREN)
+        return { kind: 'rank', scope }
+      }
+
       // ── Presentation ───────────────────────────────────────────────────────
       // @label("Customer") — what a human calls this field.
       //
@@ -5767,6 +5786,8 @@ function validate(schema) {
       for (const field of model.fields) {
         if (field.attributes.some(a => a.kind === 'sequence'))
           errors.push(`Model '${model.name}', field '${field.name}': @sequence is not supported on jsonl databases`)
+        if (field.attributes.some(a => a.kind === 'rank'))
+          errors.push(`Model '${model.name}', field '${field.name}': @rank is not supported on jsonl databases — its default reads the end of the scope, and a jsonl model is append-only`)
         if (field.attributes.some(a => a.kind === 'encrypted'))
           errors.push(`Model '${model.name}', field '${field.name}': @encrypted is not supported on jsonl databases`)
       }
@@ -6083,6 +6104,7 @@ function validate(schema) {
     scoped:      'a scoped value lives on a side table',
     slug:        'a slug is derived into a column on write',
     sequence:    'a sequence numbers rows, and this value has none',
+    rank:        'a rank orders stored rows, and this value is not stored',
     updatedAt:   'there is no stored value for a write to stamp',
     updatedBy:   'there is no stored value for a write to stamp',
     createdBy:   'there is no stored value for a write to stamp',
@@ -6968,6 +6990,38 @@ function validate(schema) {
       const scopeField = model.fields.find(f => f.name === seqAttr.scope)
       if (!scopeField)
         errors.push(`Model '${model.name}', field '${field.name}': @sequence(scope: ${seqAttr.scope}) — field '${seqAttr.scope}' does not exist on this model`)
+    }
+  }
+
+  // ── @rank validation ────────────────────────────────────────────────────────
+  // The default is a lookup over the scope, so every scope column has to be a
+  // stored scalar on this table, and the key cannot also have a second owner.
+  const RANK_OWNERS      = ['default', 'sequence', 'computed', 'generated', 'funcCall', 'from', 'derived', 'updatedAt', 'slug', 'transient']
+  const RANK_SCOPE_TYPES = new Set(['String', 'Int', 'Float', 'Boolean', 'DateTime'])
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const attr = field.attributes.find(a => a.kind === 'rank')
+      if (!attr) continue
+      const where = `Model '${model.name}', field '${field.name}': @rank`
+      if (field.type.name !== 'String' || field.type.array)
+        errors.push(`${where} requires a String field, got ${field.type.name}${field.type.array ? '[]' : ''} — the key is base-62 text compared byte by byte`)
+      else if (field.type.optional)
+        errors.push(`${where} requires a non-optional String — a row with no key has no place in the order, and litestone mints one on every create`)
+      const owner = field.attributes.find(a => RANK_OWNERS.includes(a.kind))
+      if (owner)
+        errors.push(`${where} conflicts with @${owner.kind === 'funcCall' ? 'default' : owner.kind} — @rank mints the key itself, at the end of the scope`)
+      const seen = new Set()
+      for (const name of attr.scope) {
+        if (seen.has(name)) errors.push(`${where}(scope: …) names '${name}' twice`)
+        seen.add(name)
+        if (name === field.name) { errors.push(`${where}(scope: …) names the rank column itself`); continue }
+        const col = model.fields.find(f => f.name === name)
+        if (!col)
+          errors.push(`${where}(scope: ${name}) — field '${name}' does not exist on this model`)
+        else if (col.type.array || !(RANK_SCOPE_TYPES.has(col.type.name) || enumNames.has(col.type.name)) ||
+                 col.attributes.some(a => ['computed', 'from', 'derived', 'transient', 'edge', 'scoped'].includes(a.kind)))
+          errors.push(`${where}(scope: ${name}) — '${name}' is not a stored scalar column; a scope names the foreign key (stateId), not the relation`)
+      }
     }
   }
 

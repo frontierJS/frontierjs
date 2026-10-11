@@ -1,7 +1,7 @@
 // FJS-1779 — the auto-factory built a fixture from field TYPES and not from the
 // rules the schema declares on them, so a quarter of the models in a generated
 // schema could not be seeded and went ungraded by every access drive. One test
-// per cause; each schema is the shape the base44 stressor measured.
+// per cause; each schema is the shape the Charter stressor measured.
 import { describe, test, expect } from 'bun:test'
 import { parse } from '../src/core/parser.js'
 import { generateFactory, makeTestClient, createTestEnv } from '../src/testing.js'
@@ -192,6 +192,16 @@ describe('generateFactory draws a distinct @regex value per row', () => {
 // ─── Through the client ──────────────────────────────────────────────────────
 
 describe('withParents() builds what the schema insists on', () => {
+  // FJS-1124: a chain method clones the factory, so a fresh asSystem() per call
+  // restarted the sequence and the unique-retry loop hid it until the seventh row.
+  test('a fresh asSystem() chain per call keeps one sequence and never retries', async () => {
+    const { factories } = await makeTestClient(
+      'model User { id Int @id @default(autoincrement()); email String @unique }', { autoFactories: true })
+    const emails: string[] = []
+    for (let i = 0; i < 10; i++) emails.push((await factories.user.asSystem().createOne()).email)
+    expect(emails.map(e => Number(e.match(/\d+$/)![0]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  })
+
   test('one counter per model — a parent inside a chain and a row at the top do not collide', async () => {
     const { factories } = await makeTestClient(`
       model Customer { id Int @id @default(autoincrement()); externalId String @unique @length(1, 120); payments Payment[] }

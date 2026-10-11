@@ -1,40 +1,38 @@
 ---
-id: blueprint
+id: charter
 status: proposed
 dated: 2026-10-10
 ---
 
-# Idea — Blueprint: the plan an app is built from, approved before it is built
+# Idea — Charter: the plan an app is built from, approved before it is built
 
-**Status: IDEA. A prototype runs in the base44 stressor; nothing here is in the
+**Status: IDEA. A prototype runs in the Charter stressor; nothing here is in the
 framework.** Dated 2026-10-10. Do not cite this file as describing behavior — see
 `VERIFYING.md`.
 
-**Vocabulary:** *Blueprint* is the **codename**, the prototype's own word. It is
-not ruled and is not in `VOCABULARY.md`. Two things to settle before it is
-ruled: basecamp's `Blueprint` is already a model, a catalog (`DECISIONS.md`
-cites it under tenancy), so the word would mean two things in this tree; and
-Bubble and Firebase Studio both call their pre-build plan a blueprint, so the
-word does not set the product apart.
+**Vocabulary:** *Charter* is the name, chosen 2026-10-10. It is not yet in
+`VOCABULARY.md`. The prototype was first called *Blueprint* and was renamed
+everywhere (Charter's model, service, files and `charter.json`) for two reasons:
 
-**Potential names**, kept for when this is named for real:
+- **Basecamp's `Blueprint` is already a model:** the catalog of one-click
+  third-party apps (`DECISIONS.md` cites it under tenancy). **Blueprint stays
+  basecamp's.** The two never share a word again: a *charter* is what to
+  **build**, before any code exists; a *blueprint* is what to **run**, a
+  prebuilt image and its parameters.
+- **Bubble and Firebase Studio both call their pre-build plan a blueprint**, so
+  that word did not set the product apart.
 
-| Name | Register | Why it fits |
-| --- | --- | --- |
-| Schematic | Technical, structural | A detailed representation of how the parts fit together |
-| Charter | Foundational | A document establishing the rules and the intent; who belongs and what they may do is most of a blueprint |
-| Foundation | Architectural | The structure everything else is built on, as the schema is |
-| Roughcut | Craft, workshop | The early form of something still being shaped |
-| Atlas | Maps | The whole app as a set of maps; may fit later, when a blueprint covers a live app and its rigs as well as the first build |
-
-*Homestead* is taken (the offline work, `FJS-D297`), and `app.claim` rules out
-*claim*.
+*Charter* fits because a charter sets out the rules and the intent, and who
+belongs and what they may do is most of one. **Set aside:** Schematic, Foundation,
+Roughcut and Atlas. Atlas may still fit later, as the name for a charter that
+covers a live app and its rigs as well as the first build. *Homestead* is taken
+(the offline work, `FJS-D297`), and `app.claim` rules out *claim*.
 
 ---
 
 ## What it is
 
-**A person says what they want; Blueprint turns that into a plan they can read,
+**A person says what they want; Charter turns that into a plan they can read,
 change and approve; only then is anything built.** The plan holds:
 
 - **the shape:** a SaaS product (many organizations), one person's tool, or one
@@ -59,16 +57,16 @@ is derived from.
 
 ## What exists today
 
-The base44 stressor carries a working prototype (uncommitted, 2026-10-10):
+The Charter stressor carries a working prototype (uncommitted, 2026-10-10):
 
 - **`/new/`, a nine-step wizard:** Shape → Who gets in → Billing (SaaS only) →
   Sign-in → Add-ons → Vendors → Your domain → Custom pieces → Review. Every step
   has a recommended answer, so clicking Next all the way through builds an app.
   Each sign-in, add-on and vendor shows its real status (built, in the starter,
   ready, planned, not built).
-- **A `Blueprint` model** in base44's schema. `blueprints.build` writes the app,
+- **A `Charter` model** in Charter's schema. `charters.build` writes the app,
   its brief and the first build turn in one transaction.
-- **The brief** (`base44/builder/blueprint.ts`) wraps the person's sentence. It
+- **The brief** (`charter/builder/charter.ts`) wraps the person's sentence. It
   says who owns which records and who outside the staff gets in. It lists what
   not to model (billing, sign-in, add-ons, vendors) and what will be built later
   (the custom pieces).
@@ -77,7 +75,7 @@ The base44 stressor carries a working prototype (uncommitted, 2026-10-10):
 - **Two starters** the shape picks between: `fjs-prototypes/saas-starter` and
   `fjs-prototypes/personal-starter` (just me, or a few people sharing). The
   starter is recorded, not installed: installing it needs Oracle to read a
-  host's schema (base44 `RIGS.md` R2).
+  host's schema (Charter `RIGS.md` R2).
 
 **First measured run:** a lawn-care scheduling tool settled in 2 turns, for
 $0.33 and about 90 seconds. The brief held: the model modelled `Company` and
@@ -98,8 +96,8 @@ the generated app is that system, so nobody can get in → **`FJS-2530`**.
 | **v0 · HighLevel** | v0 asks clarifying questions before generating. HighLevel's clarifying agent asks **at most three** | A cap on the questions |
 | **Bolt** | *Enhance prompt* rewrites the request. Its own guides warn that it drops details | What to avoid: a rewrite the person must re-check |
 | **Wasp Mage** | One planning call drafts entities, operations and pages as JSON, then cheaper calls write the code, then a repair loop | The plan as structured data a cheaper step builds from. Mage's plan was not graded; ours is |
-| **Spring Initializr** | Every choice is in a bookmarkable URL, and *Explore* shows the build file before you download it | A blueprint as a link, and a preview of what it writes |
-| **Better-T-Stack** | A web builder at `/new` that produces a CLI command you can copy. The CLI keeps the setup in `bts.jsonc` | A blueprint as a file the CLI replays |
+| **Spring Initializr** | Every choice is in a bookmarkable URL, and *Explore* shows the build file before you download it | A charter as a link, and a preview of what it writes |
+| **Better-T-Stack** | A web builder at `/new` that produces a CLI command you can copy. The CLI keeps the setup in `bts.jsonc` | A charter as a file the CLI replays |
 | **Clerk** | With personal accounts off, a *choose organization* step after sign-up makes every user create or join an organization before they get in | The onboarding `FJS-2530` is missing |
 
 ## The features, ranked
@@ -133,40 +131,40 @@ the generated app is that system, so nobody can get in → **`FJS-2530`**.
 6. **View as each role** on the first preview: owner, member, customer,
    anonymous visitor. The person sees what each one sees, which is the check
    Bubble's warning asks for.
-7. **Starting blueprints from the base44 corpus.** The 21 apps base44 drives (an
+7. **Starting charters from the Charter corpus.** The 21 apps Charter drives (an
    applicant tracker like JazzHR, a photo library like Immich, …) as presets.
    For the person they are a quick start; for the instrument, runs start from a
-   known blueprint and can be compared.
+   known charter and can be compared.
 8. **The cost and time before Build**, from measured runs by shape.
 
-### Tier 3: a blueprint outlives the first build
+### Tier 3: a charter outlives the first build
 
-9. **A blueprint as a file and a link.** `blueprint.json`, replayed by
-   something like `fli new --blueprint blueprint.json` (not built), and a URL
+9. **A charter as a file and a link.** `charter.json`, replayed by
+   something like `fli new --charter charter.json` (not built), and a URL
    that holds every choice. For the instrument this is the largest gain: the
-   same blueprint runs through the Oracle route and the freehand route.
+   same charter runs through the Oracle route and the freehand route.
 10. **Vendor keys that are checked**: collect the key, test it (Stripe test
     mode, Resend domain verification) and write the `attachments` entry
     `FJS-D824` rules for.
 11. **To-dos that build themselves.** A custom piece on the Plan tab gets a
     *Build this* button that installs it as a rig. This needs the installer
-    (`overview.md` 3.2) and Oracle answering against a host (base44 `RIGS.md`).
-12. **Re-run a blueprint on a live app.** Turn on two-factor or webhooks
-    after launch: Blueprint shows what would change and writes the migration.
+    (`overview.md` 3.2) and Oracle answering against a host (Charter `RIGS.md`).
+12. **Re-run a charter on a live app.** Turn on two-factor or webhooks
+    after launch: Charter shows what would change and writes the migration.
     This needs the same host-aware Oracle.
 13. **A go-live checklist** as the last screen: DNS, email domain, Stripe live
     mode, backups, through `fli deploy:doctor`. This would be the first reader of
     *Checklist*, the term `FJS-D693` reserves.
 
 **Left out on purpose:** a step that rewrites the person's prompt. Bolt's own
-guides warn that it drops details, and the blueprint is already the structured
+guides warn that it drops details, and the charter is already the structured
 version of the sentence. **Low priority:** a style step for a brand color and a
 logo that sets only CSS tokens; Firebase's blueprint takes a color scheme from
 an image.
 
 ## Why it might be a product
 
-**The other builders compete on how fast the first screen appears. Blueprint
+**The other builders compete on how fast the first screen appears. Charter
 competes on whether the approved plan is the app that ships.** Three things
 only this framework has make that claim checkable:
 
@@ -181,7 +179,7 @@ only this framework has make that claim checkable:
 
 **What it is not:** a hosted builder competing with Lovable or Base44 on
 breadth. Its natural first buyer is whoever starts FJS apps for clients: an
-agency, or this repo's own conversions. There, a blueprint is the discovery
+agency, or this repo's own conversions. There, a charter is the discovery
 document and the build in one.
 
 ## What it needs from the framework
@@ -190,19 +188,19 @@ document and the build in one.
 | --- | --- |
 | Oracle saying *the person signing up creates the organization and becomes its first member* | `FJS-2530`, open |
 | A scaffold that passes its own check | `FJS-2531`, open |
-| Oracle answering against an existing schema (a starter, then a live app) | base44 `RIGS.md` R2, unbuilt |
+| Oracle answering against an existing schema (a starter, then a live app) | Charter `RIGS.md` R2, unbuilt |
 | The rig installer | `overview.md` 3.2, idea |
 | The teams rig: organizations, memberships, invitations | `overview.md` 3.8, idea |
-| A blueprint file `fli new` replays | Not started |
+| A charter file `fli new` replays | Not started |
 
 ## Open questions
 
-- **Is a blueprint a framework artifact or an app's?** If `fli new` replays it, the
+- **Is a charter a framework artifact or an app's?** If `fli new` replays it, the
   format is the framework's, and so is the name.
-- **Is the blueprint the Oracle answer, or a wrapper around one?** The shape, the
+- **Is the charter the Oracle answer, or a wrapper around one?** The shape, the
   vendors and the custom pieces are not entities. Either the answer grows to
-  hold them, or the blueprint holds the answer next to them.
-- **Where does it run?** Inside base44 it is an instrument. As a product it is a
+  hold them, or the charter holds the answer next to them.
+- **Where does it run?** Inside Charter it is an instrument. As a product it is a
   page that calls a model, and `FJS-D601` keeps the model out of Oracle, so the
   caller is the product.
 

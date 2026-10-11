@@ -46,14 +46,15 @@
  *
  * ─── The trap this file exists to stay out of ────────────────────────────────
  *
- * **This drive leaves one account behind per run, and cannot not.** The service
- * declines DELETE by design — `Credential.userId` and `Session.userId` are bare
- * String columns with no relation behind them, so removing a `User` leaves live
- * sessions authenticating against nothing — and there is no other door. So every
- * count here is a DELTA or a re-read, never an absolute, and the address is
- * minted per run because `@unique` on a model with no `@@softDelete` makes a
- * fixed fixture key pass exactly once (`FJS-530`). Removing somebody properly is
- * `FJS-629`.
+ * **The accounts this drive makes are removed at the end, through `people`.**
+ * `users` declines DELETE — `Credential.userId` and `Session.userId` are bare
+ * String columns with no relation behind them, so removing a `User` there leaves
+ * live sessions authenticating against nothing — and `people.remove` is the
+ * door that clears credentials, sessions and pending tokens with the row. A run
+ * that dies before the sweep leaves its accounts, so every count mid-drive is
+ * still a DELTA or a re-read, and the address is minted per run because
+ * `@unique` on a model with no `@@softDelete` makes a fixed fixture key pass
+ * exactly once (`FJS-530`).
  *
  * Test ORDER is load-bearing and got this wrong once already. `verifySession`
  * re-reads the user row, so promoting somebody to `role: 'admin'` and then
@@ -169,6 +170,22 @@ const asAdmin   = await login(ADMIN)
 const asStaff   = await login(STAFF)
 const asShopper = await login(SHOPPER)
 
+// Every address this drive mints is `<letter>-<6 chars>@shop.test`, which no
+// seeded person matches. A run that died before its sweep left accounts, and
+// past 100 of them the first roster read no longer holds the seeded people.
+const madeBy = async (match) => {
+  const found = []
+  for (let offset = 0; ; offset += 100) {
+    const r = await fetch(`${API}/api/users?$limit=100&$offset=${offset}&$orderBy=email`, { headers: { authorization: `Bearer ${asAdmin}` } })
+    const page = (await r.json())?.data ?? []
+    found.push(...page.filter(u => match(u.email)))
+    if (page.length < 100) break
+  }
+  return found
+}
+const drop = (tok, id) => fetch(`${BASE}/people/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${tok}` } })
+for (const u of await madeBy(email => /^[a-z]-[a-z0-9]{6}@shop\.test$/.test(email))) await drop(asAdmin, u.id)
+
 const roster = async (tok) => {
   const r = await fetch(`${API}/api/users?$limit=100`, { headers: tok ? { authorization: `Bearer ${tok}` } : {} })
   return { status: r.status, rows: (await r.json().catch(() => null))?.data ?? null }
@@ -198,7 +215,8 @@ check('a stranger is refused by the GATE, not filtered', (await roster(null)).st
 // ADMINISTRATOR(5) — so 405 is the SERVICE's answer and not the ladder's, and
 // the reason is the one thing a gate cannot know: `Credential.userId` and
 // `Session.userId` are bare String columns with no relation behind them, so a
-// deleted row leaves live sessions authenticating against nothing.
+// deleted row leaves live sessions authenticating against nothing. The sweep at
+// the end of this file removes people through `people`, which does not.
 const removed = await fetch(`${API}/api/users/${all.rows[0].id}`, {
   method: 'DELETE', headers: { authorization: `Bearer ${asAdmin}` },
 })
@@ -248,7 +266,7 @@ check('the row is restored, so this drive is repeatable',
 // Every assertion here is a pair or a control. The negative cases run against a
 // fresh address each time — `@unique` on a soft-delete-free model means a fixed
 // fixture key passes exactly once (`FJS-530`), and this service declines DELETE,
-// so a run cannot tidy up after itself and must not need to.
+// so the run tidies up through `people` at the end and must not need it to have.
 
 console.log('\n  users — adding somebody')
 
@@ -752,6 +770,31 @@ await until(has('#rp-error'))
 check('the same link a second time is refused in words, and sets nothing',
       [await evaluate(has('#rp-error')), typeof (await post('/auth/login', { email: forgetful, password: 'Forgot-Passw0rd' })).body?.token],
       [true, 'string'])
+
+// ─── Removing the people this run made ─────────────────────────────────────
+//
+// `people.remove` is declared at ADMINISTRATOR(5), so the pair is a shopper
+// refused and an admin let through on the same id. The removed account's session
+// is the assertion that matters: `users` declines DELETE because a bare row
+// delete would leave it authenticating, and this door must not.
+
+console.log('\n  users — removing a person')
+
+const madeThisRun = () => madeBy(email => email.endsWith(`-${tag}@shop.test`))
+
+const mine = await madeThisRun()
+const held = (await post('/auth/login', { email: forgetful, password: 'Forgot-Passw0rd' })).body?.token
+
+check('the drive made people to remove', mine.length >= 4, true)
+check('one of them holds a live session', await whoami(held), 200)
+check('a shopper removing somebody is refused', (await drop(asShopper, mine[0].id)).status, 403)
+check('…and nobody went', (await madeThisRun()).length, mine.length)
+
+const statuses = []
+for (const u of mine) statuses.push((await drop(asAdmin, u.id)).status)
+check('an admin removes each of them', statuses.every(s => s === 200), true)
+check('…and none is left on the roster', (await madeThisRun()).length, 0)
+check('…and the session of a removed person authenticates against nothing', await whoami(held), 401)
 
 console.log('')
 console.log(`  ${pass} passed, ${fail} failed`)

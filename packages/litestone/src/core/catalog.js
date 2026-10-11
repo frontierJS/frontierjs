@@ -330,6 +330,15 @@ const FIELD = [
     'number Int @sequence(scope: accountId)',
     { extraFields: 'accountId Int' }
   ),
+  t(
+    'rank',
+    'field',
+    'identity',
+    '(scope: <field> | [<field>, …])',
+    "A position a person drags, as a fractional key: a move writes one row. A create with no key lands at the end of its scope, and so does an update moving a row to another scope; a read sorted by it ties on the id. The scope compares with IS, so NULL is one scope. `rebalance()` rewrites a scope's keys when drags have grown them.",
+    'rank String @rank(scope: stateId)',
+    { extraFields: 'stateId Int' }
+  ),
 
   // relate
   t(
@@ -1435,6 +1444,7 @@ export const DOCS = {
   'field:map': 'schema.md',
   'field:default': 'schema.md',
   'field:sequence': 'sequences.md',
+  'field:rank': 'rank.md',
 
   // relate
   'field:relation': 'relations.md',
@@ -1663,6 +1673,7 @@ export const TIERS = {
     // field attributes
     'field:map',
     'field:sequence',
+    'field:rank',
     'field:edge',
     'field:scoped',
     'field:hardDelete',
@@ -1741,7 +1752,7 @@ export const AXES = {
   shape: [
     'schema:import', 'schema:database', 'schema:model', 'schema:view', 'schema:enum',
     'schema:valueset', 'schema:scope', 'schema:function', 'schema:trait', 'schema:extend',
-    'schema:type', 'field:id', 'field:unique', 'field:map', 'field:default', 'field:sequence',
+    'schema:type', 'field:id', 'field:unique', 'field:map', 'field:default', 'field:sequence', 'field:rank',
     'field:relation', 'field:from', 'field:edge', 'field:scoped', 'field:computed',
     'field:transient', 'field:derived', 'field:generated', 'field:check', 'field:big',
     'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:trim',
@@ -1808,6 +1819,7 @@ export const SYNONYMS = {
   'field:derived':     ['calculated', 'formula'],
   'field:computed':    ['virtual'],
   'field:sequence':    ['autoincrement', 'serial', 'nextval'],
+  'field:rank':        ['sortorder', 'lexorank', 'reorder'],
   'field:scale':       ['precision'],
   'field:money':       ['price', 'cents'],
   'field:version':     ['etag'],

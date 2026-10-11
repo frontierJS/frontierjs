@@ -328,3 +328,25 @@ model Note {
     expect(await creates(allowOn('auth().suspended == null'), { id: 1, suspended: false })).toBe('deny')
   })
 })
+
+// ─── the framework's claims come from the grader (FJS-770) ───────────────────
+
+describe('every field the grader reads is a claim a policy may name', () => {
+  test('buildClaimSet admits all of STANDING_FIELDS, and a near miss is refused', async () => {
+    const { STANDING_FIELDS } = await import('@frontierjs/toolbelt/gate')
+    for (const field of STANDING_FIELDS) {
+      const schema = `${AUTH_USER}
+model Note {
+  id Int @id @default(autoincrement())
+  @@allow('read', auth().${field} != null)
+}`
+      expect(await refusal(schema, { claims: [] })).toBeNull()
+    }
+    const typo = `${AUTH_USER}
+model Note {
+  id Int @id @default(autoincrement())
+  @@allow('read', auth().${STANDING_FIELDS[0]}x != null)
+}`
+    expect(await refusal(typo, { claims: [] })).toContain('is not a claim')
+  })
+})

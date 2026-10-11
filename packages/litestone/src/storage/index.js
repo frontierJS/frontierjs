@@ -12,6 +12,7 @@
 
 import { S3Provider }     from './providers/s3.js'
 import { LocalProvider }  from './providers/local.js'
+import { refUrl }         from './ref-url.js'
 
 export { FileStorage, fromPath } from './file-storage.js'
 
@@ -36,19 +37,13 @@ export function parseRef(value) {
 
 // ─── fileUrl() ────────────────────────────────────────────────────────────────
 // Pure function — reconstructs the public URL from the stored JSON reference.
-// No credentials needed. Falls back to endpoint + key if no publicBase.
+// No credentials needed. Falls back to endpoint + bucket + key if no publicBase.
 
 export function fileUrl(value) {
   const ref = parseRef(value)
   if (!ref) return null
 
-  // If a publicBase was stored in the ref, use it
-  if (ref.publicBase) return `${ref.publicBase.replace(/\/$/, '')}/${ref.key}`
-
-  // Reconstruct from endpoint + bucket + key
-  if (ref.endpoint) return `${ref.endpoint.replace(/\/$/, '')}/${ref.bucket}/${ref.key}`
-
-  return null
+  return refUrl(ref)
 }
 
 // ─── fileUrls() — for File[] fields ──────────────────────────────────────────
@@ -60,12 +55,7 @@ export function fileUrls(value) {
   const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value) } catch { return null } })() : value
   if (!parsed) return []
   const arr = Array.isArray(parsed) ? parsed : [parsed]
-  return arr.map(ref => {
-    if (!ref) return null
-    if (ref.publicBase) return `${ref.publicBase.replace(/\/$/, '')}/${ref.key}`
-    if (ref.endpoint)   return `${ref.endpoint.replace(/\/$/, '')}/${ref.bucket}/${ref.key}`
-    return null
-  }).filter(Boolean)
+  return arr.map(ref => ref ? refUrl(ref) : null).filter(Boolean)
 }
 
 // ─── useStorage() ─────────────────────────────────────────────────────────────

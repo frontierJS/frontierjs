@@ -13,7 +13,7 @@ import type { RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
  * straight to the trail, which would record the change and tell nobody.
  */
 export const CREDENTIAL_EVENTS = [
-  'password.changed', 'password.reset',
+  'password.changed', 'password.reset', 'email.changed',
   'totp.enabled', 'totp.disabled', 'totp.reset',
   'recoveryCodes.regenerated', 'recovery.used',
   'apikey.created', 'apikey.revoked',
@@ -27,7 +27,12 @@ export interface CredentialChange {
   event:   CredentialEvent
   /** Whose account changed. */
   userId:  string
-  /** Where to tell them — read from the row when the change happens. */
+  /**
+   * Where to tell them — read from the row when the change happens. For
+   * `email.changed` it is the address being REPLACED: that mailbox just lost
+   * the account, and the new one is the change itself. Neither address is in
+   * `meta`, which the audit trail records and `@personal` keeps addresses out of.
+   */
   email:   string
   /** Who made the change: the account itself, or the operator for `totp.reset` and `support.started`. */
   actorId: string

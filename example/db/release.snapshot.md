@@ -44,7 +44,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
 | `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
 | `SubscriptionStatus` | `active` · `cancelled` · `pastDue` · `trialing` |
-| `VerificationPurpose` | `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
+| `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
 
 ## Value sets
 
@@ -1309,6 +1309,7 @@ table `verification` · db `main` · gate `8`
 | `provider` | `String` | yes | — | — |
 | `purpose` | `VerificationPurpose` | no | — | **required on write** |
 | `subject` | `String` | yes | — | — |
+| `userId` | `String` | yes | — | — |
 | `value` | `String` | no | — | unique · @guarded · **required on write** |
 
 ```

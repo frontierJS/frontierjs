@@ -962,6 +962,11 @@ export class AuthClient {
     await this._c.service(this._names.account).invoke('changePassword', 'me', { currentPassword, newPassword })
   }
 
+  /** Mail a link to `newEmail`; the address changes when that link is opened. */
+  async requestEmailChange(currentPassword: string, newEmail: string): Promise<void> {
+    await this._c.service(this._names.account).invoke('requestEmailChange', 'me', { currentPassword, newEmail })
+  }
+
   // ── The second factor — also the account's ────────────────────────
   //
   // The method names are the provider's, so the header a screen sends is the

@@ -105,7 +105,10 @@ function rewriteSpecifiers(src: string) {
     const entry = EXPORT_MAP[`.${sub ?? ''}`]
     const target = typeof entry === 'string' ? entry : entry?.import
     return target ? `${q}${resolve(PKG, target)}${q}` : all
-  })
+  // The toolbelt is litestone's one dependency, and a page pairing a column
+  // with the kit that mints its values shows both imports (`docs/rank.md`).
+  // Resolved from this package, since the block runs in a temp directory.
+  }).replace(/(['"])(@frontierjs\/toolbelt\/[\w-]+)\1/g, (all, q, spec) => `${q}${Bun.resolveSync(spec, PKG)}${q}`)
 }
 
 /** Names the block uses that this package exports, and the block neither imports nor declares. */

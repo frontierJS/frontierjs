@@ -40,6 +40,7 @@
 - [audit-logging.md](audit-logging.md) — @trail, @@trail, trail driver, onLog callback
 - [multi-database.md](multi-database.md) — database blocks, drivers (sqlite/jsonl/trail), @@db, @@external
 - [sequences.md](sequences.md) — @sequence per-scope auto-increment
+- [rank.md](rank.md) — @rank, a position a person drags; the default, the tie-break, rebalance()
 - [edge-fields.md](edge-fields.md) — @edge / @scoped: per-relationship & per-viewer values, scopedBy binder, eject-to-model
 
 ## Infrastructure

@@ -54,7 +54,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
 | `UserKind` | `ai` · `bot` · `human` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
-| `VerificationPurpose` | `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
+| `VerificationPurpose` | `emailChange` · `emailVerify` · `magicLink` · `oauthLink` · `passwordReset` |
 | `WidgetKind` | `activity_feed` · `alert_status` · `app_status` · `deploy_feed` · `job_history` · `server_fleet` · `server_health` · `service_health` · `stat_counter` |
 | `WorkspaceRole` | `admin` · `billing` · `developer` · `owner` · `viewer` |
 | `WorkspaceStatus` | `active` · `suspended` |
@@ -1719,6 +1719,7 @@ table `verification` · db `main` · gate `8`
 | `provider` | `String` | yes | — | — |
 | `purpose` | `VerificationPurpose` | no | — | **required on write** |
 | `subject` | `String` | yes | — | — |
+| `userId` | `String` | yes | — | — |
 | `value` | `String` | no | — | unique · @guarded · **required on write** |
 
 ```

@@ -10,7 +10,8 @@
 // transports and the browser client for free (DECISIONS.md § API design).
 //
 //   account    GET  /account/me            who this token is
-//              POST /account/me            X-Service-Method: changePassword
+//              POST /account/me            X-Service-Method: changePassword ·
+//                                          requestEmailChange
 //   sessions   GET  /sessions              where else am I signed in
 //              DEL  /sessions/{id}         end one of them
 //              POST /sessions              X-Service-Method: revokeOthers
@@ -266,7 +267,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // given, and on a service with no model that is a 500 rather than a
     // refusal. It also throws at construction on a name not defined below.
     methods: signedIn(
-      'get', 'changePassword',
+      'get', 'changePassword', 'requestEmailChange',
       // The second factor. On `account` rather than a service of its own for the
       // reason `changePassword` is here: it is a credential this account
       // authenticates with, not a collection the account owns — which is what
@@ -308,6 +309,25 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
       reauthenticate(ctx)
       await need('changePassword')(user.userId, currentPassword, newPassword, { exceptSessionId: user.sessionId })
+      return { ok: true }
+    },
+
+    // Mails the new address and changes nothing yet — the link it carries is
+    // spent at `/auth/email/verify`, the route a verification link already
+    // lands on. The password is asked for the reason `changePassword` asks it:
+    // the address is where a reset goes, so moving it is taking the account.
+    async requestEmailChange(ctx: ServiceContext) {
+      const user = caller(ctx)
+      refuseDelegated(ctx, user, 'change an email address')
+      const { currentPassword, newEmail } = (ctx.data ?? {}) as Record<string, string>
+      if (!currentPassword) throw new BadRequest('currentPassword is required')
+      if (typeof newEmail !== 'string' || !newEmail.trim()) throw new BadRequest('newEmail is required')
+      if (newEmail.trim().toLowerCase() === String(user.email).toLowerCase()) {
+        throw new BadRequest('That is already the address on this account')
+      }
+
+      reauthenticate(ctx)
+      await need('requestEmailChange')(user.userId, currentPassword, newEmail)
       return { ok: true }
     },
 

@@ -231,6 +231,13 @@ export interface IAuth {
     opts?: { exceptSessionId?: string },
   ): Promise<void>
 
+  /**
+   * Verify the current password, then mail a link to `newEmail`. Changes
+   * nothing until `verifyEmail` spends that link — the address a password reset
+   * goes to cannot be one nobody has proved they read.
+   */
+  requestEmailChange?(userId: string, currentPassword: string, newEmail: string): Promise<void>
+
   /** The user's live sessions. Never carries the token — see AuthSessionInfo. */
   listSessions?(userId: string):                       Promise<AuthSessionInfo[]>
 

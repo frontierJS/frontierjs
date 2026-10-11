@@ -2,6 +2,7 @@
 // Handles Cloudflare R2, AWS S3, Backblaze B2, MinIO — all use the S3 API.
 
 import { signRequest, presignUrl, uriEncode } from '../sigv4.js'
+import { refUrl } from '../ref-url.js'
 
 // ─── Provider map ─────────────────────────────────────────────────────────────
 
@@ -29,8 +30,8 @@ export class S3Provider {
   // the path, so the object written is a prefix of the one asked for, and the
   // signature agrees with the truncated request, so nothing refuses it.
   _objectUrl(key) {
+    if (this._endpoint) return refUrl({ endpoint: this._endpoint, bucket: this._bucket, key })
     const path = key.split('/').map(uriEncode).join('/')
-    if (this._endpoint) return `${this._endpoint}/${this._bucket}/${path}`
     return `https://${this._bucket}.s3.${this._region}.amazonaws.com/${path}`
   }
 
@@ -102,7 +103,7 @@ export class S3Provider {
   // ── Public URL ────────────────────────────────────────────────────────────
 
   publicUrl(key) {
-    if (this._publicBase) return `${this._publicBase.replace(/\/$/, '')}/${key}`
+    if (this._publicBase) return refUrl({ publicBase: this._publicBase, key })
     return this._objectUrl(key)
   }
 }

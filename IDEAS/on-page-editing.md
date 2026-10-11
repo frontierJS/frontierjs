@@ -6,7 +6,7 @@ dated: 2026-10-04
 
 # Idea — the ask panel's next four moves, ranked by what on-page editors love
 
-**Status: PROPOSED. Steps 1, 2 and 3 are built; step 4 is not.**
+**Status: PROPOSED. Steps 1, 2 and 3 are built; step 4 is not. § Prompt economy: P1–P4 built, P5–P8 not.**
 Do not cite this file as describing behavior — see `VERIFYING.md`.
 
 The ask panel is the dev-server half of on-page editing: alt-click opens the
@@ -22,7 +22,7 @@ narrowly enough to start.
 | a pick: `{ el, loc, file, key, open }` | `packages/mesa/mesa-vite/inspect-client.js` `pick()` | `loc` is `file:line:col` of the ELEMENT, stamped by the compiler as `data-fjs-loc` on `.mesa` and `.md` output |
 | several picks, one run, one Undo (step 1) | `vite-ask-client.js` `open()`/`render()`, `ask-claude.js` `editPrompt({ picks })` + `shareBudget` | a pick list the panel already holds; a direct text edit is one more control on a row |
 | a hover outline while the modifier is held | same file, `paint()` | the "what can I touch" affordance is already there |
-| picks → one prompt → one `claude -p` run | `packages/cli/core/vite-ask.js`, `ask-claude.js` `editPrompt()` | prompt carries each pick's `loc` + its share of 4000 chars of `outerHTML` |
+| picks → one prompt → one `claude -p` run | `packages/cli/core/vite-ask.js`, `ask-claude.js` `editPrompt()` | prompt carries each pick's `loc`, a folded outline of its HTML, the kind and scope chips, and what `ask-context.js` reads from the source (§ Prompt economy) |
 | the run's ledger: whole-file copy at first Read, Write detected from its result, undo that never overwrites another writer | `vite-ask.js` | every new way of changing a file goes through THIS ledger, so Undo stays one path |
 | a per-file diff in the panel | `vite-ask-client.js` `diff()` | — |
 | the conversation's session id | `ask-claude.js` (`system/init` event), kept in `sessionStorage` | it is already the id `claude --resume` takes |
@@ -125,6 +125,69 @@ is attached to a pick automatically, cropped to the element, for any
 instruction — the BugHerd lesson is that the capture people value is the one
 they did not have to take.
 
+Open against § Prompt economy: an image is roughly 1–1.5k tokens on every
+ask, and P1's outline plus P5's box line may settle most visual asks without
+one. Measure how often a run misreads layout before choosing "always
+attached" over a toggle that is off by default.
+
+## Prompt economy — what a pick tells the model
+
+Every token a pick sends that names the target saves the run a search for it.
+Ranked by tokens saved per unit of work. P1–P4 BUILT 2026-10-10
+(`docs/changes-archive/cli.md`); **the proof still owed is one real ask
+through `claude -p` from a Sierra dev server** — pick basecamp's workbench
+slot wrapper (`_module.mesa:514:7`) and check the run edits the
+`{#each ordered(pins)}` body at `:523` without a search. Build P5 on after
+that, not before.
+
+### P1–P4 — BUILT
+
+- **P1 Kind chips** — Text · Style · Layout · Behavior · Data, each one sentence
+  saying what to touch and what to leave. The page sends a key; the sentences
+  are `EDIT_KINDS` in `ask-claude.js`, so a request cannot inject prompt text,
+  and an unknown key is a 400 naming it.
+- **P2 Scope chips** — Just this · All ×N · Component · Page. *All ×N* shows only
+  when the pick's `loc` draws more than one element (a loop), and tells the run
+  to edit the loop body once. `EDIT_SCOPES`, same rule.
+- **P3 A folded outline in place of `outerHTML`** — a run of loop items keeps
+  the first and folds the rest to `<!-- +11 more from the same source -->`,
+  text clipped at 80 chars, svg and comments dropped. Measured: 5161 chars of
+  slot wrapper became a 1533-char prompt naming route, loop and fields.
+- **P4 What the source says** — `ask-context.js`: the `{#each}` around the
+  pick, the loops and files under it, the resources they import with the
+  model's fields (`appSchemaModels` returns `file` and `fields`).
+
+### P5 — Box and viewport line
+
+One line: the pick's `w×h`, its `display` (grid / flex / block) and the
+viewport width, from `getBoundingClientRect` and `getComputedStyle` the client
+already has. *Smaller* and *narrower* are relative; this is what to.
+
+### P6 — Model from the kind chip
+
+`runAsk` passes no `--model`, so a copy tweak runs on the model a redesign
+does. Text and Style run on Sonnet; Layout, Behavior, Data and no chip run on
+the default. **Derived from P1, not a new toggle** — a quick/think switch
+beside the kind chip would be a second control stating the same choice. Run
+`decision-rules` if an override control is wanted later.
+
+### P7 — Routes for a Behavior ask
+
+*Clicking goes to…* means the run greps the routes. One level simpler than a
+picker first: with Behavior on, add Sierra's route table (route → file, about
+400 tokens for basecamp) to the context. A dropdown fed from the same table
+(*on click → `/workbench/:id`*, *open a drawer*) only if runs still pick the
+wrong route.
+
+### P8 — A "like this" pick
+
+A second pick marked as the EXAMPLE, not a target — *make these look like the
+cards on /apps*. Today every pick is a target under one instruction. It needs
+a pick role in `inspect-client.js` and the panel, so it waits until "like X"
+asks show up in real use.
+
+Screenshots are step 4 above.
+
 ## The nine (`decision-rules`, answered before any edit)
 
 1. **Origin** — none added. Text edits land in the source the pick names; the
@@ -148,6 +211,19 @@ they did not have to take.
    Step 3's resume command: `verify:ask` runs the copied command in a shell.
 
 No § IV adjudication is in tension. Tier: Assessment (`IDEAS/`).
+
+**P5–P8, answered after the section was written** (late, named as late):
+origin — one kind → sentence + model table in `ask-claude.js`, so P6's model
+is a column beside `EDIT_KINDS` rather than a second map; concept — none, P8 is
+a pick ROLE; complexity — the problem's; predictability — P6 runs one panel on
+two models, so the run's log line names the model; derived — P5 measured at
+pick time, P6 from the chip, P7 from Sierra's route table, never a copy;
+owner — `editPrompt()`, `ask-context.js`, `inspect-client.js`; boundary — the
+page sends a kind key and never a model name; failure — no route table means
+no route line, not a refusal; silence — *stays true:* a Text ask spawns with
+`--model` set and a Behavior ask carries the routes; *what fails:* a
+`vite-ask.test.js` case on the spawned args and an `ask-context.test.js`
+case on the route line, each written with its step. No § IV adjudication.
 
 ## Not in this file
 

@@ -26,7 +26,7 @@ export interface WhereBase {
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
-export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink'
+export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink' | 'magicLink' | 'emailChange'
 
 export type MetricType = 'counter' | 'gauge' | 'histogram'
 
@@ -304,10 +304,30 @@ export interface Verification {
   value: string
   /**
    * oauthLink only: which identity is waiting to be attached once the address
-   * answers for itself. Null for the other two, which attach nothing.
+   * answers for itself. Null for the others, which attach nothing.
    */
   provider?: string | null
   subject?: string | null
+  /**
+   * emailChange only: whose account the address replaces the current one on.
+   * The identifier is the NEW address, which belongs to nobody yet, so the
+   * account cannot be found from it the way every other purpose finds one.
+   */
+  userId?: string | null
+  /**
+   * magicLink only: the six digits a person types on a device other than the
+   * one reading the mail. Found by `identifier` and compared, never looked up
+   * by itself — a million values cannot be unique across every address in
+   * flight, and a lookup by code alone would sign in whoever's code it was.
+   * @guarded
+   */
+  code?: string | null
+  /**
+   * magicLink only: wrong codes against this row. Counted on the row for the
+   * reason `LoginChallenge.attempts` is — a process-local count resets on a
+   * redeploy, and here that is six digits with no ceiling.
+   */
+  attempts: number
   expiresAt: string
   createdAt: string
 }
@@ -327,10 +347,29 @@ export interface VerificationCreate {
   value: string
   /**
    * oauthLink only: which identity is waiting to be attached once the address
-   * answers for itself. Null for the other two, which attach nothing.
+   * answers for itself. Null for the others, which attach nothing.
    */
   provider?: string | null
   subject?: string | null
+  /**
+   * emailChange only: whose account the address replaces the current one on.
+   * The identifier is the NEW address, which belongs to nobody yet, so the
+   * account cannot be found from it the way every other purpose finds one.
+   */
+  userId?: string | null
+  /**
+   * magicLink only: the six digits a person types on a device other than the
+   * one reading the mail. Found by `identifier` and compared, never looked up
+   * by itself — a million values cannot be unique across every address in
+   * flight, and a lookup by code alone would sign in whoever's code it was.
+   */
+  code?: string | null
+  /**
+   * magicLink only: wrong codes against this row. Counted on the row for the
+   * reason `LoginChallenge.attempts` is — a process-local count resets on a
+   * redeploy, and here that is six digits with no ceiling.
+   */
+  attempts?: number
   expiresAt: string
 }
 
@@ -341,6 +380,9 @@ export interface VerificationUpdate {
   value?: string
   provider?: string | null
   subject?: string | null
+  userId?: string | null
+  code?: string | null
+  attempts?: number
   expiresAt?: string
 }
 
@@ -351,6 +393,9 @@ export interface VerificationWhere extends WhereBase {
   value?: string | WhereOp<string> | null
   provider?: string | WhereOp<string> | null
   subject?: string | WhereOp<string> | null
+  userId?: string | WhereOp<string> | null
+  code?: string | WhereOp<string> | null
+  attempts?: number | WhereOp<number> | null
   expiresAt?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
   AND?: VerificationWhere[]
@@ -371,9 +416,8 @@ export type VerificationOrderBy =
  * ticket and no session. It is its own model rather than a fifth
  * `VerificationPurpose` for the reason `OauthFlow` below is not one either:
  * nobody is proving control of an ADDRESS here — there is no `identifier` and
- * the address was settled a step ago — and `attempts` is a column the other
- * purposes have no use for. Three answers to what a column means is three
- * tables wearing one name (`FJS-D261`).
+ * the address was settled a step ago. Three answers to what a column means is
+ * three tables wearing one name (`FJS-D261`).
  * 
  * `attempts` is the whole of what stands between a six-digit code and a
  * million guesses, so it is counted on the row rather than in a limiter: a
@@ -4398,7 +4442,11 @@ export interface WriteEvent {
 
 // ── LitestoneClient ──────────────────────────────────────────────────────────
 
-export interface LitestoneClient {
+type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
+type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
+
+export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>

@@ -207,6 +207,12 @@ test('match: what it refuses to decide — $search, $onlyDeleted and $raw', func
 })
 
 
+test('match: an opaque directive that asks nothing does not refuse (FJS-2563)', function () {
+  assert.equal(match(row(), { $onlyDeleted: false, $onlyTemplates: false, $search: '', $scope: [] }), true)
+  assert.equal(match(row(), { $scope: ['mine'] }), null)
+})
+
+
 test('match: what it refuses to decide — an operator it has never heard of', function () {
   assert.equal(match(row(), { name: { $soundsLike: 'acme' } }), null)
 })

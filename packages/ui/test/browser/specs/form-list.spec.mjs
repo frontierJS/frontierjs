@@ -3,7 +3,7 @@
  *
  * `FJS-1822`: a `String[]` rendered as a JSON box, so the first tag a person
  * typed was refused as *Unexpected token … is not valid JSON*. Five of the 21
- * apps the base44 stressor generated stopped there. A list whose items are a
+ * apps the Charter stressor generated stopped there. A list whose items are a
  * scalar is now the MultiSelect with nothing to choose from: a person types an
  * item and presses Enter, as in any tag box.
  */

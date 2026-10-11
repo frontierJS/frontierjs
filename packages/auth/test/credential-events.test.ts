@@ -87,6 +87,16 @@ describe('each change to how an account signs in tells the person', () => {
     expect(changes[0]).toMatchObject({ userId: u.userId, email: u.email })
   })
 
+  test('email.changed tells the OLD address — and the request, which moves nothing, tells nobody', async () => {
+    const u  = await makeUser()
+    const to = `moved-${u.email}`
+    expect(await tell(() => h.auth.requestEmailChange!(u.userId, PASSWORD, to))).toEqual([])
+
+    const changes = await tell(() => h.auth.verifyEmail!(h.verifyToken()))
+    expect(changes.map(c => c.event)).toEqual(['email.changed'])
+    expect(changes[0]).toMatchObject({ userId: u.userId, email: u.email })
+  })
+
   test('totp.enabled on confirm — and setup, which enables nothing, tells nobody', async () => {
     const u = await makeUser()
     let secret = ''

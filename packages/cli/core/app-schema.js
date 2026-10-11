@@ -188,12 +188,16 @@ export function shippedSchemas(root) {
  * `@@external` models are included and flagged — invariant 2 exempts them and
  * they usually have no service, so a caller filters rather than being filtered
  * for.
+ *
+ * `file` is the declaring file, relative to the app root, or the package's own
+ * path for a shipped one. `fields` is the column names in declared order — a
+ * line scan, so an `@@` attribute and a nested block's lines are not fields.
  */
 export function appSchemaModels(root) {
   const out  = []
   const seen = new Set()
 
-  const add = (text, origin) => {
+  const add = (text, origin, file) => {
     const lines = text.split('\n')
     for (const m of declaredModels(text)) {
       if (seen.has(m.name)) continue
@@ -210,25 +214,26 @@ export function appSchemaModels(root) {
       }
       const text = body.join('\n')
       out.push({
-        name: m.name, line: m.line, origin,
+        name: m.name, line: m.line, origin, file,
         external: /@@external/.test(text),
         gate:     readGate(text),
+        fields:   body.slice(1).map(l => l.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s+[A-Za-z]/)?.[1]).filter(Boolean),
       })
     }
   }
 
   const schema = join(root, 'db', 'schema.lite')
-  if (existsSync(schema)) add(readFileSync(schema, 'utf8'), 'app')
+  if (existsSync(schema)) add(readFileSync(schema, 'utf8'), 'app', 'db/schema.lite')
 
   // A sibling under db/ — what an `import` in schema.lite reaches, and where
   // `fli auth:install` puts the @@gate("8") machinery.
   const dbDir = join(root, 'db')
   for (const file of safeRead(dbDir)) {
     if (!file.endsWith('.lite') || file === 'schema.lite') continue
-    try { add(readFileSync(join(dbDir, file), 'utf8'), 'app') } catch { /* unreadable declares nothing */ }
+    try { add(readFileSync(join(dbDir, file), 'utf8'), 'app', `db/${file}`) } catch { /* unreadable declares nothing */ }
   }
 
-  for (const dep of shippedSchemas(root)) add(dep.text, dep.pkg)
+  for (const dep of shippedSchemas(root)) add(dep.text, dep.pkg, dep.file)
 
   return out
 }
@@ -240,7 +245,7 @@ export function appSchemaModels(root) {
 export function appSchemaViews(root) {
   const out  = []
   const seen = new Set()
-  const add = (text, origin) => {
+  const add = (text, origin, file) => {
     for (const v of declaredViews(text)) {
       if (seen.has(v.name)) continue
       seen.add(v.name)
@@ -249,15 +254,15 @@ export function appSchemaViews(root) {
   }
 
   const schema = join(root, 'db', 'schema.lite')
-  if (existsSync(schema)) add(readFileSync(schema, 'utf8'), 'app')
+  if (existsSync(schema)) add(readFileSync(schema, 'utf8'), 'app', 'db/schema.lite')
 
   const dbDir = join(root, 'db')
   for (const file of safeRead(dbDir)) {
     if (!file.endsWith('.lite') || file === 'schema.lite') continue
-    try { add(readFileSync(join(dbDir, file), 'utf8'), 'app') } catch { /* unreadable declares nothing */ }
+    try { add(readFileSync(join(dbDir, file), 'utf8'), 'app', `db/${file}`) } catch { /* unreadable declares nothing */ }
   }
 
-  for (const dep of shippedSchemas(root)) add(dep.text, dep.pkg)
+  for (const dep of shippedSchemas(root)) add(dep.text, dep.pkg, dep.file)
 
   return out
 }

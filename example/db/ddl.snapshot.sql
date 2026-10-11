@@ -51,11 +51,12 @@ CREATE TABLE IF NOT EXISTS "verification" (
   "value" TEXT NOT NULL UNIQUE,
   "provider" TEXT,
   "subject" TEXT,
+  "userId" TEXT,
   "code" TEXT,
   "attempts" INTEGER NOT NULL DEFAULT 0,
   "expiresAt" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("purpose" IN ('passwordReset', 'emailVerify', 'oauthLink', 'magicLink'))
+  CHECK ("purpose" IN ('passwordReset', 'emailVerify', 'oauthLink', 'magicLink', 'emailChange'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_verification_purpose_identifier" ON "verification" ("purpose", "identifier");
 CREATE INDEX IF NOT EXISTS "idx_verification_expiresAt" ON "verification" ("expiresAt");

@@ -281,6 +281,11 @@ export class GatePlugin extends Plugin {
     // is not this client's principal, so it needs both halves and may spell
     // neither. `null` where the model declares no gate for that operation.
     ctx.gateFor = (model, op) => accessMap[model]?.[op] ?? null
+
+    // The refusal itself, for a caller that must answer it before a validation
+    // message can name a column: a below-gate caller is told "denied" and never
+    // which keys the model has (`FJS-914`).
+    ctx.gateCheck = (model, op, forCtx) => this._check(model, op, forCtx ?? ctx)
   }
 
   // ── Resolve level for this request's auth user ──────────────────────────────

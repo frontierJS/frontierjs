@@ -8,6 +8,7 @@ import type { WsRouteOptions }       from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
+import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
 import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
@@ -1125,7 +1126,7 @@ export function createApp(opts: AppOptions = {}): App {
         query:  Record<string, unknown> = {},
         opts:   CallOptions = {}
       ): ServiceContext {
-        return withCallEffects({
+        return withCallEffects(hookContext({
           service:   name,
           method,
           type:      'before',
@@ -1160,7 +1161,7 @@ export function createApp(opts: AppOptions = {}): App {
           statusCode: undefined,
           dispatch:   undefined,
           $raw:       null,
-        })
+        }))
       }
 
       // Takes the context unbuilt: makeCtx refuses a principal with no

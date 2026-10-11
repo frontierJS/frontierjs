@@ -25620,8 +25620,13 @@ describe('a string operator on a column that is not text', () => {
     expect(rows.map((r: any) => r.id)).toEqual([1])
   })
 
-  test('Int and DateTime keep the answers they already gave', async () => {
-    expect((await db.doc.findMany({ where: { num:  { contains: '7' } } })).map((r: any) => r.id)).toEqual([1])
+  test('a number would match its own digits (FJS-1128)', async () => {
+    await expect(db.doc.findMany({ where: { num: { contains: '7' } } }))
+      .rejects.toThrow(/"num" is a number/)
+    expect((await db.doc.findMany({ where: { num: { gte: 42 } } })).map((r: any) => r.id)).toEqual([2])
+  })
+
+  test('DateTime and String keep the answers they already gave', async () => {
     expect((await db.doc.findMany({ where: { when: { contains: '2024-01' } } })).map((r: any) => r.id)).toEqual([1])
     expect((await db.doc.findMany({ where: { title: { contains: 'lph' } } })).map((r: any) => r.id)).toEqual([1])
   })

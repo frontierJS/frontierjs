@@ -50,6 +50,7 @@ Detail: `references/schema.md`
 - `$context.form` — the form context every control resolves from; `reportInvalid` goes the other way — `ui/components/forms/Form.mesa`
 - `buildRelations()` / `buildGate()` / `canAtLevel()` — `x-relations` and `x-gate` on the client; the gate is an affordance only — `sierra/src/resource/field-rules.js`
 - `x-version` — the `@version` column an update carries back — `litestone/src/jsonschema.js`
+- `x-rank` — which column a board orders by and the columns that are its scope — `litestone/src/jsonschema.js`
 - `retryable` — race or refusal on a 409, the one thing a status cannot carry — `junction/src/core/errors.ts`
 - `buildTransitions()` / `transitionsAt()` — `x-transitions`, the gate half of a move; `refusedBy` — `sierra/src/resource/field-rules.js`
 - `buildCommitments()` / `commitmentsAt()` — `x-commitments`, the date a `@system` move falls due — `sierra/src/resource/field-rules.js`
@@ -104,6 +105,7 @@ Detail: `references/api-ui.md`
 - `createJunctionClient()` / `client.resource(name)` — the browser client — `junction/src/client/index.ts`
 - `connectApp()` / `createResource(name, { app })` — a Resource over ANOTHER app: its client, its schema table — `sierra/src/resource/index.js`
 - `resource.save(data, { mode })` — the one owner of *write this record* — `sierra/src/resource/resource.js`
+- `resource.move(id, { after, before, into })` — a drag as one patch; the key minted on the device with `toolbelt/rank`, the one minter litestone uses too — `sierra/src/resource/resource.js`
 - `client.auth.*` — the browser half of `@frontierjs/auth` — `junction/src/client/index.ts`
 - `signIn` → `completeSignIn(code)` — a session or a challenge; the client holds the ticket — `junction/src/client/index.ts`
 - `client.auth.providers()` + `OAUTH_ERRORS` / `session.oauthMessage` — which providers exist, and what an OAuth error means — `junction/src/client/index.ts`

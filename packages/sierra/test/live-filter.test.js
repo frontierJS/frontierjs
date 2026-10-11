@@ -72,6 +72,24 @@ describe('createResource hands the matcher to Junction', () => {
     expect(match({ id: 1, score: 40 }, { score: '40' })).toBe(true)
   })
 
+  // FJS-2563: the directives a load ran with arrive as Junction's third
+  // argument, never in the filters, so an opaque one has to be read from there.
+  test('a load with an opaque directive cannot place a pushed row', async () => {
+    const { createResource } = await import('../src/resource/resource.js')
+    createResource('leads')
+    const { match } = _given.opts
+    const row = { id: 1, status: 'active' }
+
+    expect(match(row, { status: 'active' }, { search: 'acme' })).toBe(null)
+    expect(match(row, {}, { onlyDeleted: true })).toBe(null)
+    expect(match(row, {}, { onlyTemplates: true })).toBe(null)
+    expect(match(row, {}, { scope: ['mine'] })).toBe(null)
+    // A filter that already fails still wins over the unknown.
+    expect(match(row, { status: 'draft' }, { search: 'acme' })).toBe(false)
+    // Directives that ask for nothing leave the answer alone.
+    expect(match(row, { status: 'active' }, { limit: 20, orderBy: 'id', onlyDeleted: false, search: '', scope: [] })).toBe(true)
+  })
+
   test('`stale` comes through, in the shape useStore takes', async () => {
     const { createResource } = await import('../src/resource/resource.js')
     const leads = createResource('leads')

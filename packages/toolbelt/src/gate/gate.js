@@ -101,6 +101,16 @@ export function isIdentified(user) {
 // ─── the grader ───────────────────────────────────────────────────────────────
 
 /**
+ * The principal fields `gradeStanding` reads beyond identity, in the order it
+ * reads them. Litestone admits `auth().<field>` for each, so a field added to the
+ * grader and not here is a startup throw on a claim the framework grades by
+ * (`FJS-770`); the spec compares this list to what the grader touches.
+ */
+export const STANDING_FIELDS = Object.freeze([
+  'isSystemAdmin', 'isOwner', 'isAdmin', 'verifiedAt', 'activatedAt', 'role',
+])
+
+/**
  * A caller's standing, from the session an app hands the framework.
  *
  * **Standing outranks the lifecycle.** An owner who never completed an

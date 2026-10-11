@@ -117,11 +117,11 @@ identity over `@system` columns, and orderings against a `@default(now())`
 sibling — which is why the solver reads the SQL subset rather than one shape.
 The slug collision turned out to be two things: a regex sampler drawing one
 letter, and every clone of a factory restarting the sequence at 1. The pin rule
-(one relation per model) came from the base44 drive pinning every parent it had
+(one relation per model) came from the Charter drive pinning every parent it had
 made, which handed `IssueRelation` the same Issue twice.
 
-**Measured** by a ladder sweep over the 21 base44 freehand schemas, run from the
-scratchpad: 323 of 323 models seed, against 139 of 176 in the drive. The base44
+**Measured** by a ladder sweep over the 21 Charter freehand schemas, run from the
+scratchpad: 323 of 323 models seed, against 139 of 176 in the drive. The Charter
 apps have drifted from the tree on `driver logger` → `driver trail` and `@@log` →
 `@@trail`; the sweep rewrote them in memory, and quo's and chatwoot's
 `access.test.ts` fail to parse for the same reason, so their exclusion lists could

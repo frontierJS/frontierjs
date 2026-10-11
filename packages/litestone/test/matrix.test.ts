@@ -232,7 +232,7 @@ const OPS: Record<string, any> = {
 const GRID = `
 kind      | whereEq  whereIn  whereNot contains bareArr  hasOp    orderBy  groupBy  aggMax   update   updMany  createSt createOm select   delWhere
 text      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
-int       | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
+int       | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
 bool      | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
 datetime  | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
 array     | ok       ok       ok       ref      ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok
@@ -244,8 +244,8 @@ typedJson | ok       ref      ref      ref      ref      ref      ref      ok   
 encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ref      ok       ok       ok       ok       ok       ref
 encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ref      ok       ok       ok       ok       ok       ok
 hashed    | ok       ok       ok       ref      ok       ref      ref      ref      ref      ok       ok       ok       ok       ref      ok
-float     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
-money     | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
+float     | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok       ok       ok       ok
+money     | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok       ref      ok       ok
 guarded   | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ok       ref
 system    | ok       ok       ok       ok       ok       ref      ok       ok       ok       ref      ref      ref      ok       ok       ok
 transient | ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ref      ok       ref      ref

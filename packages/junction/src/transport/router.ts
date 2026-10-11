@@ -62,7 +62,7 @@ export class Router {
     if (this._built)
       throw new Error(`Cannot add route ${method} ${path} after router is built`)
 
-    const segments  = parsePath(path)
+    const segments  = parsePath(path, `${method} ${path}`)
     const dynamic   = segments.some(s => s.type !== 'static')
     const paramKeys = segments
       .filter((s): s is Extract<RouteSegment, { type: 'param' }> => s.type === 'param')
@@ -288,9 +288,19 @@ export { parsePath as parsePathSegments, splitPath as splitPathSegments, matchRo
 
 // '/users/{id}/posts' → [static('users'), param('id'), static('posts')]
 // Used only at startup — allocations here are irrelevant.
-function parsePath(path: string): RouteSegment[] {
+//
+// A segment beginning `:` is refused. It would register as a static segment no
+// request ever sends, and the route would answer 405 forever (FJS-1024).
+function parsePath(path: string, label = path): RouteSegment[] {
   const parts = splitPath(path)
   return parts.map(part => {
+    if (part.length > 1 && part.startsWith(':')) {
+      throw new Error(
+        `Route ${label}: a path parameter is written {name}, not ${part}. ` +
+        `A segment beginning ':' registers as a literal that no request matches, so the route would answer 405 forever. ` +
+        `Write ${path.replace(part, `{${part.slice(1)}}`)}.`
+      )
+    }
     const paramMatch = PARAM_PATTERN.exec(part)
     if (paramMatch) return { type: 'param', name: paramMatch[1] }
     if (part === WILDCARD) return { type: 'wildcard' }

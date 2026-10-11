@@ -14,6 +14,7 @@
 // All validators skip null/undefined values — use NOT NULL in schema for required fields.
 
 import { transform, isTransform } from '@frontierjs/toolbelt/transforms'
+import { isRankKey } from '@frontierjs/toolbelt/rank'
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 
@@ -114,6 +115,9 @@ const VALIDATORS = {
                                  ? TIME_RE_HMS.test(String(v))
                                  : TIME_RE_HM.test(String(v)),
   phone:       (v)          => PHONE_RE.test(String(v)),
+  // A key ending in '0' has no room below it that a shorter key could take,
+  // and a non-base-62 byte sorts differently in a browser than in SQLite.
+  rank:        (v)          => isRankKey(v),
   regex:       (v, pattern) => new RegExp(pattern).test(String(v)),
   length:      (v, min, max) => {
     const len = String(v).length
@@ -199,6 +203,7 @@ export const DEFAULT_MESSAGES = {
                             ? 'must be a 24-hour time in HH:MM or HH:MM:SS format (e.g. 09:30 or 09:30:45)'
                             : 'must be a 24-hour time in HH:MM format (e.g. 09:30)',
   regex:      (p) => `must match pattern ${p}`,
+  rank:       () => 'must be a rank key: base-62 digits (0-9, A-Z, a-z), not ending in 0 — mint one with between() from @frontierjs/toolbelt/rank',
   length:     (min, max) => {
     if (min != null && max != null) return `length must be between ${min} and ${max}`
     if (min != null) return `length must be at least ${min}`
@@ -632,6 +637,11 @@ export function validateField(fieldName, value, attributes) {
         defaultMsg = DEFAULT_MESSAGES.time(attr.seconds === true)
         break
 
+      case 'rank':
+        pass       = VALIDATORS.rank(value)
+        defaultMsg = DEFAULT_MESSAGES.rank()
+        break
+
       case 'regex':
         pass       = VALIDATORS.regex(value, attr.pattern)
         defaultMsg = DEFAULT_MESSAGES.regex(attr.pattern)
@@ -789,6 +799,7 @@ export const VALIDATOR_KINDS = new Set([
   // NULL sorts first, and the row is the best match for every query with a
   // 200. The pass is the only place either can be refused.
   'vector',
+  'rank',
 ])
 
 // An Int column whose value is a JS number on the way in and out: not an array,

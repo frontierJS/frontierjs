@@ -24,6 +24,15 @@
 // the one instruction covers them all, as one run with one Undo. The first pick
 // after a send, or into a closed panel, starts the next list.
 //
+// The chips say what kind of change and how far it reaches, as keys the server
+// turns into sentences. "All ×N" is offered only when a pick's source draws
+// more than one element on the page, which is a loop.
+//
+// A pick goes as an OUTLINE rather than its outerHTML: a loop's items share a
+// loc, so a run of siblings from one source keeps the first and counts the
+// rest, and long text is clipped. With it go the locs under the element, which
+// is the only way to the route's file when the pick is a layout's slot wrapper.
+//
 // "Continue in terminal" copies `claude --resume` for the conversation, so the
 // person goes on with every tool their own session has. Before there is a
 // conversation it copies what a first ask would send instead, for any agent.
@@ -49,8 +58,10 @@
   const shown = keep('fli:ask:open')
   const saved = keep('fli:ask:log')
 
-  let panel, title, list, hint, input, send, stop, submit, fresh, log
+  let panel, title, list, hint, chips, input, send, stop, submit, fresh, log
   let picks = [], sent = false, busy = false
+  // The chips' answers, keys of the server's EDIT_KINDS and EDIT_SCOPES.
+  let kind = null, scope = null
   // What the log holds, as data, so a reload can draw it again.
   let entries = []
 
@@ -59,6 +70,9 @@
   const MAX_PICKS = 10
   const HTML_CUT  = 4000
   const MAX_TEXT  = 2000
+  const MAX_INNER = 60
+  const CLIP_TEXT = 80
+  const CLIP_ATTR = 120
   // The server keeps 20 runs to undo; the log keeps what draws more than that.
   const MAX_ENTRIES = 300
 
@@ -67,6 +81,52 @@
   const css = (el, s) => { el.style.cssText = s; return el }
   const make = (tag, s, text) => { const el = css(document.createElement(tag), s || ''); if (text) el.textContent = text; return el }
   const BTN = 'font:13px/1 ui-sans-serif,system-ui;padding:6px 11px;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer'
+  const CHIP = 'font:12px/1 ui-sans-serif,system-ui;padding:4px 9px;border-radius:999px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer'
+  const CHIP_ON = ';background:#0369a1;border-color:#0369a1;color:#f8fafc'
+
+  const KINDS = [
+    ['text',     'Text',     'Only the words'],
+    ['style',    'Style',    'How it looks: classes, tones and treatments'],
+    ['layout',   'Layout',   'Arrangement and size'],
+    ['behavior', 'Behavior', 'What it does: handlers and script'],
+    ['data',     'Data',     'What it shows: fields, records, order, filter'],
+  ]
+
+  const locOf = el => el.getAttribute('data-fjs-loc')
+  const drawnFrom = loc => loc ? document.querySelectorAll(`[data-fjs-loc="${CSS.escape(loc)}"]`).length : 0
+
+  // The locs under an element, each once, in the page's order.
+  const innerLocs = el => [...new Set([...el.querySelectorAll('[data-fjs-loc]')].map(locOf))].slice(0, MAX_INNER)
+
+  // An svg's drawing is dropped whole: path data is the bulk of an icon and
+  // says nothing about the change. Comments go too; Mesa's are anchors.
+  function outline(el) {
+    const copy = el.cloneNode(true)
+    const walk = node => {
+      for (const a of [...node.attributes]) if (a.value.length > CLIP_ATTR) node.setAttribute(a.name, a.value.slice(0, CLIP_ATTR) + '…')
+      if (node.localName === 'svg') return node.replaceChildren()
+      if (node.localName === 'script' || node.localName === 'style') return node.replaceChildren()
+      let first = null, extra = 0
+      const fold = () => { if (extra) first.after(document.createComment(` +${extra} more from the same source `)); extra = 0 }
+      for (const child of [...node.childNodes]) {
+        if (child.nodeType === 8) { child.remove(); continue }
+        if (child.nodeType === 3) {
+          const t = child.data.replace(/\s+/g, ' ')
+          child.data = t.length > CLIP_TEXT ? t.slice(0, CLIP_TEXT) + '…' : t
+          continue
+        }
+        if (child.nodeType !== 1) continue
+        const loc = locOf(child)
+        if (loc && first && locOf(first) === loc) { child.remove(); extra++; continue }
+        fold()
+        first = child
+        walk(child)
+      }
+      fold()
+    }
+    walk(copy)
+    return copy.outerHTML.replace(/>\s+</g, '> <')
+  }
 
   function remember(entry) {
     entries.push(entry)
@@ -156,6 +216,8 @@
     hint = make('div', 'color:#64748b;font-size:12.5px')
     log = make('div', 'overflow:auto;flex:1;min-height:0')
 
+    chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:12px;color:#64748b')
+
     input = make('textarea', 'resize:vertical;min-height:120px;padding:8px;border-radius:4px;border:1px solid #334155;background:#020617;color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
     input.placeholder = 'What should change? (⌘/Ctrl+Enter sends)'
     input.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask() } }
@@ -172,7 +234,7 @@
     send.onclick = ask
     row.append(submit, stop, send)
 
-    panel.append(head, list, hint, log, input, row)
+    panel.append(head, list, hint, log, chips, input, row)
     document.body.appendChild(panel)
     for (const e of entries) {
       if (e.k === 'line') drawLine(e.text, e.tone)
@@ -223,7 +285,32 @@
 
   // One row per pick: where its source is, a glimpse of what it is (two items
   // of one loop share a loc), and the controls for that one element.
+  function drawChips() {
+    chips.textContent = ''
+    const most = Math.max(0, ...picks.map(p => p.repeats))
+    if (scope === 'every' && most < 2) scope = null
+    const scopes = [
+      ['one', 'Just this', 'This element only, not its siblings or other uses of its component'],
+      ...(most > 1 ? [['every', `All ×${most}`, 'Every item its loop draws']] : []),
+      ['component', 'Component', 'The whole component or section it belongs to'],
+      ['page', 'Page', 'Wherever the same thing appears on the page'],
+    ]
+    const group = (label, options, current, pick) => {
+      chips.appendChild(make('span', 'margin-left:4px', label))
+      for (const [key, text, tip] of options) {
+        const b = make('button', CHIP + (current === key ? CHIP_ON : ''), text)
+        b.title = tip
+        b.setAttribute('aria-pressed', String(current === key))
+        b.onclick = () => { pick(current === key ? null : key); drawChips() }
+        chips.appendChild(b)
+      }
+    }
+    group('Change', KINDS, kind, v => { kind = v })
+    group('Scope', scopes, scope, v => { scope = v })
+  }
+
   function render() {
+    drawChips()
     title.textContent = picks.length > 1 ? `Ask Claude to change these ${picks.length}` : picks.length ? 'Ask Claude to change this' : 'Ask Claude'
     list.textContent = ''
     for (const p of picks) {
@@ -257,10 +344,10 @@
 
   function open(p) {
     if (!panel) build()
-    if (sent || panel.style.display === 'none') { picks = []; sent = false }
+    if (sent || panel.style.display === 'none') { picks = []; sent = false; kind = null; scope = null }
     if (!picks.some(x => x.el === p.el)) {
       if (picks.length >= MAX_PICKS) line(`${MAX_PICKS} elements is the most one ask takes`, 'error')
-      else picks.push({ el: p.el, loc: p.loc, html: p.el.outerHTML, open: p.open })
+      else picks.push({ el: p.el, loc: p.loc, html: outline(p.el), inner: innerLocs(p.el), repeats: drawnFrom(p.loc), open: p.open })
     }
     const key = p.key || 'alt'
     hint.textContent = `${key}-click opens the source in your editor · shift+${key}-click asks here, and adds another element before you send`
@@ -322,7 +409,7 @@
     if (r.error) return line(r.error, 'error')
     if (r.fallback) {
       line(`not a plain text edit (${r.fallback}) — asking Claude`, 'meta')
-      return request(`Change the text "${old}" to exactly: ${next}`, [p])
+      return request(`Change the text "${old}" to exactly: ${next}`, [p], { kind: 'text', scope: null })
     }
     diff(r.files)
     ended(r.run, 'done · edited directly, no Claude run')
@@ -333,16 +420,17 @@
     if (!instruction || busy) return
     input.value = ''
     sent = true
-    return request(instruction, picks)
+    return request(instruction, picks, { kind, scope })
   }
 
-  async function request(instruction, list) {
+  async function request(instruction, list, chosen) {
     line(instruction, 'you')
     setBusy(true)
     let run = null
     try {
       const res = await post('/__fjs/ask', {
         instruction,
+        ...chosen,
         picks:   wire(list),
         page:    location.href,
         session: store.get(),
@@ -385,14 +473,14 @@
     }
   }
 
-  const wire = list => list.map(p => ({ loc: p.loc, html: p.html.slice(0, HTML_CUT), size: p.html.length }))
+  const wire = list => list.map(p => ({ loc: p.loc, html: p.html.slice(0, HTML_CUT), size: p.html.length, inner: p.inner, repeats: p.repeats }))
 
   async function handoff() {
     const session = store.get()
     let r
     try {
       r = await post('/__fjs/ask/handoff', session ? { session }
-        : { instruction: input.value.trim(), picks: wire(picks), page: location.href }).then(res => res.json())
+        : { instruction: input.value.trim(), kind, scope, picks: wire(picks), page: location.href }).then(res => res.json())
     } catch (err) {
       return line(String(err && err.message || err), 'error')
     }

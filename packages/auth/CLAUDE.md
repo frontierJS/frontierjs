@@ -265,6 +265,13 @@ index.ts     public API
   `findFirst({ where: { email } })` as a where-operator and the address was a
   FILTER (`FJS-296`). **A new route reads its body through that reader**; a new
   field is a line in `BODY_FIELDS`.
+- **`verifyEmail` spends two purposes, `emailVerify` and `emailChange`.** A
+  change of address is the same proof of the same mailbox, so it reuses the
+  route, the mail callback and the app's landing page rather than a second set.
+  The `emailChange` row's identifier is the NEW address, which names nobody, so
+  `Verification.userId` carries the account. `email.changed` is told to the OLD
+  address — `credentialChanged`'s `address` argument, because the row read after
+  the write already holds the new one.
 - **A route that spends a single-use token is a POST, and the mailed link lands
   on a web page that posts it** (`FJS-1839`, `FJS-D616`). `POST /auth/email/verify`
   takes the token in the body and answers `{ ok: true }`; a GET there is a 405.

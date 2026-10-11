@@ -33,8 +33,12 @@
 //            wiring foreign keys into an app's schema. So a delete here would
 //            leave live sessions pointing at a row that is gone: the person
 //            stays signed in, and the next request they make is authenticated
-//            against nothing. Taking somebody's access away is
-//            `isStaff: false` plus DELETE /auth/sessions, not a row removal.
+//            against nothing. Removing a person is `people.remove`, which
+//            @frontierjs/auth ships at ADMINISTRATOR(5): it clears the
+//            credentials, sessions and pending tokens with the row, and states
+//            its own level, so no `if (level < 5)` is written here. Taking
+//            access away without the row is `isStaff: false` plus
+//            DELETE /auth/sessions.
 //
 // The gate would have permitted it — delete at ADMINISTRATOR(5). A gate answers
 // *what kind of caller*; whether the operation makes sense at all is the

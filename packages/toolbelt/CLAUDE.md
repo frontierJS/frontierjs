@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
+`/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -161,6 +161,17 @@ src/sse/             the `text/event-stream` frame, both ways — `formatEvent`,
                      (`FJS-1581`). `data` is JSON both ways; a line that is not
                      JSON reads as its text. Ships a `.d.ts` — junction's
                      `SseEvent` extends it
+src/rank/            the key behind `@rank(scope:)` — a base-62 string compared
+                     BYTE by byte, never ending in '0', so there is always room
+                     between two. `between` splits a gap at its middle,
+                     `jittered` by coin flips so two devices splitting one gap
+                     rarely tie, `after` is the shortest later key (the append
+                     default; the midpoint to the end grows a digit every six),
+                     `spread` the even fixed-width keys a rebalance writes.
+                     Litestone mints the default and the rebalance, sierra's
+                     `resource.move()` mints on a device that may be offline,
+                     and the two must agree on the comparison (`FJS-D366`).
+                     Ships a `.d.ts` — sierra reads it
 src/redact/          *is this key a credential* — the question
                      `$protectedFields` cannot answer, because `authorization`
                      and `cookie` are on no row. Junction's logger, `defineEnv`

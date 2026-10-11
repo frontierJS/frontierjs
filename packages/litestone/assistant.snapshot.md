@@ -713,6 +713,16 @@ A counter scoped to another field's value — invoice #0001 per account. Litesto
 number Int @sequence(scope: accountId)
 ```
 
+#### `@rank` (scope: <field> | [<field>, …])
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: sortorder, lexorank, reorder
+
+A position a person drags, as a fractional key: a move writes one row. A create with no key lands at the end of its scope, and so does an update moving a row to another scope; a read sorted by it ties on the id. The scope compares with IS, so NULL is one scope. `rebalance()` rewrites a scope's keys when drags have grown them.
+
+```lite
+rank String @rank(scope: stateId)
+```
+
 **Reach another row**
 
 #### `@relation` (["name",] fields: [...], references: [...][, onDelete][, onUpdate])

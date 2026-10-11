@@ -53,7 +53,7 @@ mockup/          the old React recognizer. Not a workspace member, not ported,
   optional parent link admits every row that names no parent.
 - **An op nobody holds is gate 8, never a signed-in level with no policy.**
   That shape is what read every tenant's rows in the freehand run
-  (fjs-prototypes/base44, Phase 1). `shared` and `public` are the only ways to
+  (fjs-prototypes/charter, Phase 1). `shared` and `public` are the only ways to
   ask for it, and each is a finding.
 - **The catalog's `links` are advice.** The emitter never adds one the answer
   did not declare; `brief()` shows them as *usual links*.
@@ -66,7 +66,7 @@ mockup/          the old React recognizer. Not a workspace member, not ported,
 ## What proves a change
 
 `bun run test` first. A change to what is emitted is proved by
-`fjs-prototypes/base44`'s corpus run (`bun builder/run.ts --condition oracle`),
+`fjs-prototypes/charter`'s corpus run (`bun builder/run.ts --condition oracle`),
 which emits 21 apps, grades each with `parseFile` + `fli advise` + `fli check`,
 boots it, and runs an access drive reading every model as a stranger and as a
 second tenant.

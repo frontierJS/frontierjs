@@ -18,6 +18,13 @@ const { jsonSchemaPath } = await import(path.resolve(global.fliRoot, 'core/deriv
 const jsonOut = jsonSchemaPath(path.dirname(schema))
 
 log.info('Generating JSON Schema from schema.lite...')
-$.exec({ command: `${litestone($)} jsonschema --schema ${schema} --out ${jsonOut}` })
-log.success(`JSON Schema written to ${jsonOut}`)
+const json = litestoneQuiet($, `jsonschema --schema ${schema} --out ${jsonOut}`)
+if (!json) return
+if (!json.ok) {
+  echo(json.raw.trimEnd())
+  $.config.abort = true
+  return
+}
+showWarnings($, json.warnings)
+jsonSchemaDone($, json, jsonOut)
 ```

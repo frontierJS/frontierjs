@@ -13,7 +13,7 @@
 // `ACTORS` and entries from the catalog; the `.lite` is the emitter's. A model
 // that could write `@@allow` could write a wrong one, which is what a freehand
 // run measured: a quarter of its graded models were readable across tenants
-// (fjs-prototypes/base44, Phase 1).
+// (fjs-prototypes/charter, Phase 1).
 //
 // EVERY ROW HAS SOMEBODY. A gate is per model and never per row, so an entity
 // is refused unless its answer names who reaches a row: a link to User through
