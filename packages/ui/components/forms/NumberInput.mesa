@@ -97,9 +97,13 @@
     return format ? format(v) : String(v)
   }
 
+  // Unclamped: every number a person types passes through prefixes of itself,
+  // and `25` under a floor of 10 is `2` first — clamping that `2` to 10 makes
+  // the next keystroke `105`, which lands on the ceiling (FJS-2596). The bounds
+  // and the step apply on blur and on the stepper instead.
   function fromDisplay(s) {
     const parsed = parse ? parse(s) : parseFloat(s)
-    return isNaN(parsed) ? value : clamp(parsed)
+    return isNaN(parsed) ? value : parsed
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -108,8 +112,10 @@
   // typed string while editing and snaps to canonical form on blur.
   let inputValue = toDisplay(value)
 
-  // Sync when value prop changes from outside
-  $: value, () => { inputValue = toDisplay(value) }
+  // Sync when value prop changes from outside. A value the box's own text
+  // already reads as is the one being typed, and rewriting the box with it
+  // would eat a trailing `.` or `0` mid-number.
+  $: value, () => { if (fromDisplay(inputValue) !== value) inputValue = toDisplay(value) }
 
   // Button disabled states — re-derive when value/min/max change
   const canDecrement = resolvedMin === undefined || value > resolvedMin
@@ -142,6 +148,11 @@
   }
 
   function handleBlur() {
+    const settled = clamp(value)
+    if (settled !== value) {
+      value = settled
+      onchange?.({ value })
+    }
     // Snap display to canonical form on blur so e.g. "$1.5" becomes "$1.50"
     inputValue = toDisplay(value)
   }

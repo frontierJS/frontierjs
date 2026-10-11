@@ -402,7 +402,7 @@
     const text = what === 'path'
       ? (pathStyle === 'pointer' ? jsonPointer(row.path) : accessorPath(row.path, pathRoot))
       : format(row.value)
-    await copyText(text)
+    if (!(await copyText(text))) return
     copied = `${row.key}:${what}`
     clearTimeout(_copyTimer)
     _copyTimer = setTimeout(() => { copied = '' }, 1200)
@@ -1013,21 +1013,15 @@
 
 
   /*
-   * The actions sit in `.code`'s own top padding, and a `.btn.square` is taller
-   * than that padding — so the first row's tools end up UNDERNEATH the document
-   * copy button, which is a control that is on screen, hit-tests as something
-   * else, and looks completely fine. Measured on the fixture: the first row's
-   * copy-path button was unclickable.
+   * The actions are a grid item spanning the row, not an absolute box over the
+   * tree's top padding. A padding sized to clear a `.btn.square` misses by the
+   * type scale: at a 13px --text-sm the first row's copy-path button sat
+   * underneath the document copy button, on screen and hit-testing as
+   * something else.
    */
-  .fjs-json-tree:has(> .fjs-json-actions) {
-    padding-block-start: calc(var(--space-xl) + var(--space-md));
-  }
-
   .fjs-json-actions {
-    position:          absolute;
-    inset-block-start: var(--space-2xs);
-    inset-inline-end:  var(--space-2xs);
-    z-index:           1;
+    grid-column:       1 / -1;
+    justify-self:      end;
     display:           flex;
     align-items:       center;
     gap:               var(--space-3xs);

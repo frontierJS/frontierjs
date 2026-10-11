@@ -461,8 +461,10 @@ deep copy, which is also what to log and what to send over the wire.
 > **A watch adds a trigger only where Mesa already re-runs something**: a template binding
 > (text, attribute, `{#if}`, `{#each}`, a prop) and a `const` that is already derived. It
 > never creates reactivity. A static `const` stays the value it was at mount, and a handler,
-> a callback that runs later, an `{#await}` and an `await` in a `const` never read it —
-> a re-run in the last two is a request, not a diff. A watch on another path of the same
+> a callback that runs later, an `{#await}`, an `await` in a `const` and an `{@attach}`
+> never read it — a re-run of the next two is a request and of the last a teardown and a
+> setup, not a diff. An attachment that must follow an import names it in its options
+> getter (`{@attach zone(() => ({ items, focus: focus.client }))}`). A watch on another path of the same
 > import does not fire it, so the narrowest `$:` costs the least. What it costs is that
 > every such call in the component re-runs when a watch fires, whether or not it reads the
 > watched path; the result is compared before anything is written.

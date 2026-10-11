@@ -42,8 +42,8 @@ export async function run(t) {
   t.match(spark.label, /Signups/, 'a labeled sparkline is announced rather than decorative')
 
   // …AND IT REDRAWS WHEN THE DATA MOVES, which nothing here had ever asked.
-  // Every derived value in the component is a plain `const` — `normalized`,
-  // `pointsStr`, `areaPath` — so the body reads like one that runs once per
+  // Every derived value in the component is a plain `const` — `runs`,
+  // `areaPath`, `smoothPath` — so the body reads like one that runs once per
   // instance, and the whole point of a sparkline is data that changes. It does
   // recompute; this row is what says so, and what would notice if a change to
   // the compiler or to the component stopped it. The point COUNT is asserted
@@ -100,6 +100,41 @@ export async function run(t) {
   // And it redraws when the rows change.
   await t.clickAt('#grow-chart')
   t.is(await t.evaluate(`return document.querySelectorAll('#probe-chart .fjs-chart-bar').length`), 4, 'a fourth row draws a fourth bar')
+
+  // A missing value is a gap, never a zero (FJS-2605): drawn as 0 it is a
+  // claim the data never made, announced as one, and a single undefined in a
+  // sparkline used to make every coordinate NaN so the whole line vanished.
+  const gap = await t.evaluate(`
+    const svg = document.querySelector('#probe-chart-gap svg');
+    return {
+      ds:    [...svg.querySelectorAll('.fjs-chart-bar')].map(p => p.getAttribute('d')),
+      hits:  [...svg.querySelectorAll('.fjs-chart-hit')].map(r => r.getAttribute('aria-label')),
+      ticks: [...svg.querySelectorAll('.fjs-chart-tick')].map(t => t.textContent),
+    };
+  `)
+  t.ok(gap.ds[0] && !gap.ds[1] && gap.ds[2], 'a bar chart draws no column for a missing value')
+  t.is(JSON.stringify(gap.hits), JSON.stringify(['Jan: 10', 'Feb: no data', 'Mar: 12']), 'and announces it as no data, not 0')
+
+  const gapLine = await t.evaluate(`
+    const svg = document.querySelector('#probe-chart-gap-line svg');
+    return {
+      line: svg.querySelector('.fjs-chart-line').getAttribute('d'),
+      area: svg.querySelector('.fjs-chart-area').getAttribute('d'),
+      zero: Number(svg.querySelector('.fjs-chart-zero').getAttribute('y1')),
+    };
+  `)
+  t.is((gapLine.line.match(/M/g) ?? []).length, 2, 'a line breaks at a missing value rather than diving to zero')
+  t.ok(!/NaN|Infinity/.test(gapLine.line + gapLine.area), 'with no NaN in the line or the area')
+  t.ok(!gapLine.line.split(/[ML ]+/).filter(Boolean).some(p => Math.abs(Number(p.split(',')[1]) - gapLine.zero) < 0.5),
+    'and no point of the line sits on the zero line')
+
+  const sparkGap = await t.evaluate(`
+    const pts = sel => [...document.querySelectorAll(sel + ' polyline')].map(p => p.getAttribute('points'));
+    return { undef: pts('#probe-sparkline-undef'), nul: pts('#probe-sparkline-null') };
+  `)
+  t.ok(sparkGap.undef.length && sparkGap.undef.every(p => !/NaN|Infinity/.test(p)), 'an undefined in a sparkline leaves the rest of the line drawn')
+  t.is(sparkGap.undef.length, 2, 'as two runs either side of the gap')
+  t.is(sparkGap.nul.length, 2, 'a null in a sparkline is a gap, not a point at the floor')
 
   /* ── Bar ─────────────────────────────────────────────────────────────── */
 

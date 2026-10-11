@@ -149,6 +149,25 @@ test('query: parseParams takes the pairs the encoder emits', function () {
   assert.deepEqual(parseParams(encodePairs(ROUND_TRIP)), ROUND_TRIP)
 })
 
+// `OR[][direction]=…&OR[][type]…` cannot say which element a key belongs to,
+// so two branches read back as four and a find over HTTP widened to every row
+// the socket filtered out (FJS-2628). A container in an array names its index.
+test('query: an array element with more than one key keeps its keys together', function () {
+  const q = { OR: [{ direction: 'inbound' }, { direction: 'outbound', type: { notIn: ['email', 'text'] } }] }
+  assert.deepEqual(parseQueryString(encodeQueryString(q)), q)
+  assert.deepEqual(parseParams(encodePairs(q)), q)
+  const nested = { m: [[1, 2], [3]], orderBy: [{ a: 'asc' }, { b: 'desc' }] }
+  assert.deepEqual(parseQueryString(encodeQueryString(nested)), nested)
+})
+
+test('query: an index names an element, and a gap closes up', function () {
+  assert.deepEqual(parseQueryString('?OR[0][a]=1&OR[1][a]=2&OR[0][b]=3'), { OR: [{ a: 1, b: 3 }, { a: 2 }] })
+  assert.deepEqual(parseQueryString('?a[3][b]=1'), { a: [{ b: 1 }] })
+  assert.deepEqual(parseQueryString('?a[0]=x&a[1]=y'), { a: ['x', 'y'] })
+  // not a canonical index, so it stays a key
+  assert.deepEqual(parseQueryString('?a[01]=x'), { a: { '01': 'x' } })
+})
+
 test('query: a string that would read back as something else is quoted', function () {
   const pairs = Object.fromEntries(encodePairs({ a: '5', b: 'true', c: 'null', d: 'plain' }))
   assert.equal(pairs.a, '"5"')
@@ -288,4 +307,6 @@ test('query: the parser refuses an array past the item limit', function () {
   refused(() => parseQueryString(rep))
   const objs = '?' + Array.from({ length: LIMITS.items + 1 }, (_, i) => 'a[][b]=' + i).join('&')
   refused(() => parseQueryString(objs))
+  // an index past the limit would size a sparse array by what the caller typed
+  refused(() => parseQueryString('?a[' + LIMITS.items + '][b]=1'))
 })

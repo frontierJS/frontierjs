@@ -256,6 +256,43 @@ export async function run(t) {
   await t.eventually(`document.querySelector('.fjs-cp-list').scrollTop`, 0,
     'and the list scrolls back to the top with the cursor')
 
+  /* ── Tab, inside a modal ──────────────────────────────────────────────── */
+
+  // The palette has one cursor, and it is the arrow keys': Enter runs the row
+  // it names. A row that real focus can also reach is a second cursor — Tab to
+  // the third row, press Enter, and the FIRST row runs. And a panel that says
+  // `aria-modal` while Tab walks out of it into the page behind is lying to a
+  // screen reader about where the person is.
+  await t.mount('palette-modes', { closeOnSelect: false })
+
+  const where = `(() => {
+    const el = document.activeElement;
+    return document.querySelector('.fjs-cp-panel').contains(el)
+      ? (el.matches('.fjs-cp-row') ? 'row' : el.className.split(' ')[0])
+      : (el.tagName + '.' + el.className).toLowerCase();
+  })()`
+  const walk = async (n, modifiers = 0) => {
+    const seen = []
+    for (let i = 0; i < n; i++) {
+      await t.press('Tab', modifiers)
+      seen.push(await t.evaluate(`return ${where};`))
+    }
+    return [...new Set(seen)].join(',')
+  }
+
+  t.is(await walk(9), 'fjs-cp-input', 'Tab stays in the search box when it is the only stop in the panel')
+  t.is(await walk(3, 8), 'fjs-cp-input', 'and so does Shift+Tab')
+
+  await t.press('Enter')
+  await t.eventually(`document.querySelector('#ran').textContent`, 'theme',
+    'so Enter after a Tab runs the row the palette shows as active')
+
+  await t.type('order')
+  await t.eventually(`document.querySelectorAll('.fjs-cp-clear').length`, 1, 'a query adds the clear button')
+  t.is(await walk(4), 'fjs-cp-clear,fjs-cp-input', 'and Tab cycles between the two stops the panel has')
+  t.is(await walk(2, 8), 'fjs-cp-clear,fjs-cp-input', 'in both directions')
+  await t.press('Escape')
+
   /* ── the row, and what a caller can reach ─────────────────────────────── */
 
   await t.mount('palette-modes', { placeholder: 'Type a command' })

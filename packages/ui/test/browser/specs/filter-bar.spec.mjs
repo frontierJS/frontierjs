@@ -176,6 +176,11 @@ export async function run(t) {
   await t.clickAt(`${BAR} button.btn`)
   await t.eventually(held(`[d.search ?? '-', q.title ?? '-', d.orderBy ?? '-', d.limit ?? '-'].join('|')`),
     '-|-|title|20', 'Clear drops the search and the filters, and keeps the reading')
+  // Every directive but the search and the paging is part of the reading, not
+  // only the two a hand-written list would name: a Clear that dropped
+  // `onlyDeleted` turned a Trash view into the live rows (`FJS-2598`).
+  t.is(await t.evaluate('return ' + held(`[d.onlyDeleted, d.select, d.populate, [].concat(d.scope).join(), d.asOf, d.offset ?? '-'].join('|')`)),
+    'true|title|author|mine|2026-10-01|-', 'and keeps every other directive the list was read with')
 
   /* ── Every control has a NAME ─────────────────────────────────────────── */
   //

@@ -212,14 +212,14 @@
     emit(query)
   }
 
+  // Clear empties the filters and keeps every directive but three, read off the
+  // toolbelt table rather than listed: a list naming the ones to KEEP dropped
+  // `onlyDeleted`, and a Trash view cleared into the live rows (`FJS-2598`).
+  // `search` goes because it is WHAT is being asked for; `offset` and `after`
+  // because a different question has no page 3.
   function clearAll() {
-    const query = {}
-    // Sorting and page SIZE are not filters and survive a clear: somebody who
-    // sorted by total and then cleared the filters still meant that sort.
-    // `$search` is not on that list — it is WHAT is being asked for, and Clear
-    // means all of it.
-    for (const k of ['$orderBy', '$limit']) if (held?.[k] !== undefined) query[k] = held[k]
-    emit(query)
+    const { directives: { search, offset, after, ...kept } } = splitParams(held)
+    onchange?.({}, kept)
   }
 
   /** A bound column's rows, or the enum's own members. */

@@ -73,11 +73,19 @@
   // at a JSON blob is a broken-image icon and no explanation.
   $: unresolved = value != null && !existing && !picked
 
+  // FileUpload's list is drawn from the VALUE rather than kept by FileUpload:
+  // a list it held itself went on showing a file after Undo had dropped it.
+  $: listed = resolvedMultiple && Array.isArray(value) ? value.filter(isPicked)
+            : picked ? [picked] : []
+
   function choose(files) {
     // FileUpload always answers a list. A single-file column takes the first —
     // the input carries `multiple` only when the column is `File[]`, so a list
-    // longer than one is not reachable here.
-    onvalue?.(resolvedMultiple ? files : (files[0] ?? null))
+    // longer than one is not reachable here. An empty list is FileUpload's ×
+    // on a file that was only picked, which is undo: `null` would clear the
+    // stored file.
+    if (!files.length) return keepExisting()
+    onvalue?.(resolvedMultiple ? files : files[0])
   }
 
   // Back to what the server has. `null` would CLEAR the column, which is a
@@ -128,6 +136,7 @@
   label=""
   accept={resolvedAccept}
   multiple={resolvedMultiple}
+  files={listed}
   onchange={choose}
   {...$attributes}
 />

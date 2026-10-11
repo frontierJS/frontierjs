@@ -339,7 +339,7 @@ const asDir = (v) => (String(v).toLowerCase() === 'desc' ? 'desc' : 'asc')
  *
  * Every legal shape: inside an ARRAY, a value that is not a direction is
  * itself an ordering and the descent reaches the column. A plain object is
- * read the way the boundary reads it, so `$orderBy[0][name]=desc` answers
+ * read the way the boundary reads it, so `{0: {name: 'desc'}}` answers
  * the column `0`. An empty key
  * means *nothing is sorted*, which is not the same as sorted ascending by
  * nothing — a caller marking a header tests the key.
@@ -368,10 +368,10 @@ export function orderByPair(orderBy) {
 
   const [key, value] = entries[0]
 
-  // `$orderBy[0][name]=desc` parses to `{'0': {name:'desc'}}`: bracket notation
-  // names a member (`k[]` is the append), so on a non-array the index IS a
-  // column and the boundary refuses it as one. Descending would mark `name`
-  // where the server says `0`.
+  // `{0: {name:'desc'}}` is an OBJECT with a column called `0` — a prop built
+  // by hand, since a URL's `$orderBy[0][…]` parses to an array — and the
+  // boundary refuses it as one. Descending would mark `name` where the server
+  // says `0`.
   if (!Array.isArray(orderBy) && key === String(Number(key))) {
     const structured = value !== null && typeof value === 'object'
     return { key, dir: asDir(structured ? value.dir : value) }

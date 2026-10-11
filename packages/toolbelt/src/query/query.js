@@ -50,7 +50,10 @@
  * **Structure is brackets, never a sigil.** `?qty[gte]=10&id[in][]=1` is
  * `{ qty: { gte: 10 }, id: { in: [1] } }` — the operator vocabulary reaches the
  * wire at all, and it reads as itself in a URL. A repeated key is an array,
- * because that is what a multi-select form emits.
+ * because that is what a multi-select form emits. An integer segment names an
+ * array element — `OR[1][a]=x&OR[1][b]=y` is ONE branch with two keys, which
+ * `OR[]` cannot say — so an object whose keys are all integers reads back as
+ * an array.
  *
  * ── What this is NOT ──────────────────────────────────────────────────────
  *
@@ -172,12 +175,31 @@ function keyPath(key) {
 /** A fresh accumulator with no prototype to pollute. */
 const bag = () => Object.create(null)
 
+/** `0`, `12` — a position. `01` and `-1` are not, so they stay keys. */
+const isIndex = seg => /^(0|[1-9]\d*)$/.test(seg)
+
+/**
+ * The element at `seg` of `node`, when `node` is an array and `seg` names a
+ * position in it; `-1` otherwise. Past the item limit is refused, because a
+ * sparse write would otherwise size an array by what the caller typed.
+ */
+function indexIn(node, seg) {
+  if (!Array.isArray(node) || !isIndex(seg)) return -1
+  const at = Number(seg)
+  if (at >= LIMITS.items) throw tooMany('items')
+  return at
+}
+
+const isBag = v => v !== null && typeof v === 'object' && !Array.isArray(v)
+
 /**
  * Write `value` at `path` into `root`, growing containers as it goes.
  *
- * A segment that is `''` means *append to the array here*. A conflict between
- * two shapes for one key (`?a=1&a[b]=2`) is resolved by the LAST write, which
- * is the same rule a repeated scalar key follows.
+ * A segment that is `''` means *append to the array here*; one that is an
+ * index names an element, which is the only spelling that can put two keys in
+ * ONE element — `a[][x]=1&a[][y]=2` is two elements (`FJS-2628`). A conflict
+ * between two shapes for one key (`?a=1&a[b]=2`) is resolved by the LAST
+ * write, which is the same rule a repeated scalar key follows.
  */
 function assignPath(root, path, value) {
   if (path.some(seg => FORBIDDEN_KEYS.has(seg))) return
@@ -187,7 +209,15 @@ function assignPath(root, path, value) {
   for (let i = 0; i < path.length - 1; i++) {
     const seg  = path[i]
     const next = path[i + 1]
-    const wantArray = next === ''
+    const wantArray = next === '' || isIndex(next)
+
+    const at = indexIn(node, seg)
+    if (at !== -1) {
+      const ok = wantArray ? Array.isArray(node[at]) : isBag(node[at])
+      if (!ok) node[at] = wantArray ? [] : bag()
+      node = node[at]
+      continue
+    }
 
     if (seg === '') {
       // `a[][b]=1` — an array of objects. Append a container and descend.
@@ -202,12 +232,15 @@ function assignPath(root, path, value) {
     const existing = node[seg]
     // A named key never descends into an array: `last in node` and `node[seg]`
     // would read `length` or `map` off Array.prototype and throw (FJS-2186).
-    const ok = wantArray ? Array.isArray(existing) : (existing !== null && typeof existing === 'object' && !Array.isArray(existing))
+    const ok = wantArray ? Array.isArray(existing) : isBag(existing)
     if (!ok) node[seg] = wantArray ? [] : bag()
     node = node[seg]
   }
 
   const last = path[path.length - 1]
+  const at = indexIn(node, last)
+  if (at !== -1) { node[at] = value; return }
+
   if (last === '') {
     if (!Array.isArray(node)) return
     if (node.length >= LIMITS.items) throw tooMany('items')
@@ -231,9 +264,13 @@ function assignPath(root, path, value) {
   node[last] = value
 }
 
-/** Null-prototype bags are an implementation detail; callers get plain objects. */
+/**
+ * Null-prototype bags are an implementation detail; callers get plain objects.
+ * A gap an index left (`a[3][b]=1` alone) closes up, since a hole reaches a
+ * filter as an `undefined` operand.
+ */
 function plain(node) {
-  if (Array.isArray(node)) return node.map(plain)
+  if (Array.isArray(node)) return node.filter(() => true).map(plain)
   if (node === null || typeof node !== 'object') return node
   const out = {}
   for (const k in node) out[k] = plain(node[k])
@@ -350,8 +387,13 @@ function walk(out, prefix, value, depth) {
     if (!value.length) { out.push([prefix, '[]']); return }
     if (value.length > LIMITS.items) throw tooMany('items')
     // `k[]=a&k[]=b`, which parses back as an array of one element too — where a
-    // repeated bare key would read as a scalar the first time.
-    for (const item of value) walk(out, `${prefix}[]`, item, depth + 1)
+    // repeated bare key would read as a scalar the first time. A container
+    // names its index: under `k[]` every pair it writes appends a new element,
+    // so one OR branch with two keys read back as two branches (`FJS-2628`).
+    value.forEach((item, i) => {
+      const container = item !== null && typeof item === 'object' && !(item instanceof Date)
+      walk(out, container ? `${prefix}[${i}]` : `${prefix}[]`, item, depth + 1)
+    })
     return
   }
 

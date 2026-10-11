@@ -132,6 +132,12 @@ export async function run(t) {
   await pick(17)
   await t.eventually(`document.querySelector('#picked').textContent`, '2026-01-17..2026-01-20',
     'picking backwards swaps the ends rather than making an empty range')
+  // The swap is of DAYS: the inclusive end belongs to whichever day ends up
+  // last, so swapping finished timestamps put 23:59:59.999 on the start and
+  // midnight on the end, losing most of both edge days (FJS-2597).
+  await t.eventually(`document.querySelector('#stamps').textContent`,
+    '2026-01-17 00:00:00.000..2026-01-20 23:59:59.999',
+    'a backwards range starts at the first midnight and ends inclusive on the last day')
 
   /* ── days that must refuse a click ───────────────────────────────────── */
 

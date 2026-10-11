@@ -64,6 +64,29 @@ export async function run(t) {
     'a valueless data-confirm falls back to the provider default')
   await t.clickAt('[role=dialog] .btn.ghost')
 
+  /* ── disabled while its question is open ──────────────────────────────── */
+
+  // The disabled={submitting} shape (FJS-2585): el.click() on a disabled
+  // control dispatches nothing, so a mark cleared only by the re-fired click
+  // stayed on the element and its next click ran with no question asked.
+  await t.clickAt('#busy-delete')
+  await t.eventually(`${panel}?.textContent.includes('Delete while busy?')`, true,
+    'the guarded element asks')
+  // Set on the element: any click on the page is a click-away and would close
+  // the panel, which is not the shape under test.
+  await t.evaluate(`document.querySelector('#busy-delete').disabled = true; return true;`)
+  await t.clickAt('[role=dialog] .btn.danger')
+  await t.eventually(`!!${panel}`, false, 'confirming closes the panel')
+  t.is(await t.evaluate(`return ${ran};`), 'delete|delete|plain',
+    'and a disabled control runs nothing')
+  await t.evaluate(`document.querySelector('#busy-delete').disabled = false; return true;`)
+  await t.clickAt('#busy-delete')
+  await t.eventually(`!!${panel}`, true, 'its next click asks again')
+  t.is(await t.evaluate(`return ${ran};`), 'delete|delete|plain',
+    'and has not run')
+  await t.clickAt('[role=dialog] .btn.ghost')
+  await t.eventually(`!!${panel}`, false, 'cancel closes it')
+
   /* ── a submit button ──────────────────────────────────────────────────── */
 
   await t.clickAt('#submit')

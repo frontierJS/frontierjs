@@ -12,7 +12,7 @@
   //   <Sparkline data={values} tone="success" fill width={120} height={36} />
   //   <Sparkline data={values} tone="danger" />
 
-  import { tone as toTone, cx } from '../../utils.js'
+  import { tone as toTone, cx, plotValue, plotRuns } from '../../utils.js'
 
   export let data   = []      // number[] — raw values
   export let width  = 80      // px
@@ -29,34 +29,29 @@
   // SVG origin is top-left; we flip Y so higher values go up
   const pad = 2  // px padding so the stroke isn't clipped at edges
 
-  const normalized = (() => {
-    if (!data.length) return []
-    const min = Math.min(...data)
-    const max = Math.max(...data)
+  // A missing value is a gap: out of min/max, and a break between two runs.
+  // A point keeps its own slot on the x axis, so a gap reads as time passing.
+  const values = data.map(plotValue)
+  const runs = (() => {
+    const plotted = values.filter(v => v != null)
+    if (!plotted.length) return []
+    const min = Math.min(...plotted)
+    const max = Math.max(...plotted)
     const range = max - min || 1
     const innerW = width  - pad * 2
     const innerH = height - pad * 2
-    return data.map((v, i) => ({
-      x: pad + (i / Math.max(data.length - 1, 1)) * innerW,
-      y: pad + (1 - (v - min) / range) * innerH,
-    }))
+    const at = (i) => ({
+      x: pad + (i / Math.max(values.length - 1, 1)) * innerW,
+      y: pad + (1 - (values[i] - min) / range) * innerH,
+    })
+    return plotRuns(values).map(run => run.map(at))
   })()
 
-  // Build polyline points string
-  const pointsStr = normalized.map(p => `${p.x},${p.y}`).join(' ')
+  // A run of one point repeats it, so the round cap draws a dot.
+  const pointsOf = (pts) => (pts.length === 1 ? [pts[0], pts[0]] : pts).map(p => `${p.x},${p.y}`).join(' ')
 
-  // Build filled area path: line down to baseline, back to start
-  const areaPath = normalized.length
-    ? `M ${normalized[0].x},${height - pad}
-       L ${normalized.map(p => `${p.x},${p.y}`).join(' L ')}
-       L ${normalized[normalized.length - 1].x},${height - pad} Z`
-    : ''
-
-  // Smooth cubic bezier path
-  const smoothPath = (() => {
-    if (!normalized.length) return ''
-    const pts = normalized
-    let d = `M ${pts[0].x},${pts[0].y}`
+  const curveOf = (pts) => {
+    let d = ''
     for (let i = 1; i < pts.length; i++) {
       const prev = pts[i - 1]
       const curr = pts[i]
@@ -64,21 +59,23 @@
       d += ` C ${cpX},${prev.y} ${cpX},${curr.y} ${curr.x},${curr.y}`
     }
     return d
-  })()
+  }
 
-  const smoothAreaPath = (() => {
-    if (!normalized.length || !smooth) return ''
-    const pts = normalized
-    let d = `M ${pts[0].x},${height - pad} L ${pts[0].x},${pts[0].y}`
-    for (let i = 1; i < pts.length; i++) {
-      const prev = pts[i - 1]
-      const curr = pts[i]
-      const cpX  = (prev.x + curr.x) / 2
-      d += ` C ${cpX},${prev.y} ${cpX},${curr.y} ${curr.x},${curr.y}`
-    }
-    d += ` L ${pts[pts.length - 1].x},${height - pad} Z`
-    return d
-  })()
+  // Each run's filled area: line down to baseline, back to its start
+  const areaPath = runs.map(pts =>
+    `M ${pts[0].x},${height - pad} L ${pts.map(p => `${p.x},${p.y}`).join(' L ')} L ${pts[pts.length - 1].x},${height - pad} Z`
+  ).join(' ')
+
+  const smoothPath = runs.map(pts =>
+    `M ${pts[0].x},${pts[0].y}${pts.length === 1 ? ` L ${pts[0].x},${pts[0].y}` : curveOf(pts)}`
+  ).join(' ')
+
+  const smoothAreaPath = !smooth ? '' : runs.map(pts =>
+    `M ${pts[0].x},${height - pad} L ${pts[0].x},${pts[0].y}${curveOf(pts)} L ${pts[pts.length - 1].x},${height - pad} Z`
+  ).join(' ')
+
+  const lastRun = runs[runs.length - 1]
+  const last = lastRun?.[lastRun.length - 1]
 
   const fillId = `spark-fill-${Math.random().toString(36).slice(2, 7)}`
 </script>
@@ -95,7 +92,7 @@
   {class}
   {...$attributes}
 >
-  {#if fill && normalized.length}
+  {#if fill && runs.length}
     <defs>
       <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%"   stop-color="currentColor" stop-opacity="0.2" />
@@ -108,7 +105,7 @@
     />
   {/if}
 
-  {#if normalized.length}
+  {#if runs.length}
     {#if smooth}
       <path
         d={smoothPath}
@@ -119,20 +116,22 @@
         stroke-linejoin="round"
       />
     {:else}
-      <polyline
-        points={pointsStr}
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
+      {#each runs as pts}
+        <polyline
+          points={pointsOf(pts)}
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      {/each}
     {/if}
 
     <!-- Terminal dot at the last value -->
     <circle
-      cx={normalized[normalized.length - 1].x}
-      cy={normalized[normalized.length - 1].y}
+      cx={last.x}
+      cy={last.y}
       r="2"
       fill="currentColor"
     />

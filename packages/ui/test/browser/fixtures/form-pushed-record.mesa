@@ -1,0 +1,47 @@
+<script>
+  // form-pushed-record.mesa — a record handed DOWN, with dirty bound back UP.
+  //
+  // `record={row}` without `bind:` is the edit-a-selected-row shape: the page
+  // owns `row`, the form owns the draft. Binding `dirty` means the first
+  // keystroke changes parent state, the parent re-renders, and the form is
+  // pushed its props again — `row` among them, the same object it was handed
+  // at mount. A form that took that push as a new record put the original
+  // value back over the keystroke that caused it (`FJS-2589`).
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList, coerceToSchema } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    id:   { type: 'string', readOnly: true, title: 'Id' },
+    name: { type: 'string', title: 'Name' },
+  }
+
+  let sent = []
+  window.kitSent = () => sent
+
+  const RESOURCE = {
+    context: { model: 'Item', service: 'items', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ name: '' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    sealedFields: () => [],
+    save: (data) => {
+      sent = [...sent, data]
+      return Promise.resolve({ ...row, ...data })
+    },
+    service: {},
+  }
+
+  let row = { id: 'i-1', name: 'old' }
+  let dirty = false
+
+  // A different row selected: the form must take it, dirty or not.
+  window.kitSelect = (next) => { row = next }
+</script>
+
+<div id="form">
+  <Form resource={RESOURCE} record={row} bind:dirty />
+  <output id="dirty">{dirty ? 'dirty' : 'clean'}</output>
+</div>

@@ -89,4 +89,14 @@ export async function run(t) {
     'dismissible={false} refuses Escape')
   t.ok(await t.evaluate(`return !document.querySelector('dialog.drawer .dialog-close');`),
     'dismissible={false} renders no close button')
+
+  /* ── mounted open ────────────────────────────────────────────────────
+   *
+   * A Drawer mounted per card with `open={true}` never sees `open` change, so
+   * a watch that only reacts to a change leaves it closed.
+   */
+  await t.mount('drawer', { open: true })
+  await t.evaluate(`await new Promise(r => setTimeout(r, 120)); return true;`)
+  t.ok(await t.evaluate(`return document.querySelector('dialog.drawer').matches(':modal');`),
+    'a Drawer mounted with open={true} is opened as a modal')
 }

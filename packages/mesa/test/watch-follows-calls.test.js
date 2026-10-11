@@ -190,6 +190,21 @@ describe('where a watch adds no trigger (FJS-D404)', () => {
     expect(out).toContain('$$watches(money)(2)')
   })
 
+  // A re-run of an attachment is a teardown and a setup: a dndzone set up again
+  // cancels the drag in flight (FJS-2616).
+  it('an {@attach} is not set up again', async () => {
+    let setups = 0, teardowns = 0
+    const zone = () => () => { setups++; return () => { teardowns++ } }
+    await mount(`<script>
+  import { zone, prefs } from './store.js'
+  $: prefs.currency
+  let items = [1]
+</script>
+<ul {@attach zone(() => ({ items }))}></ul>`, { zone, prefs })
+    flip(); await settle()
+    expect([setups, teardowns]).toEqual([1, 0])
+  })
+
   it('a component watching no import emits nothing for it', async () => {
     const out = await compile(`<script>
   import { money } from './store.js'

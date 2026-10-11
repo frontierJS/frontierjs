@@ -343,6 +343,29 @@ try {
     await pickAt('#title')
     check('the first pick after a send starts a new list', (await rows()).length === 1, await rows())
 
+    // ── pick mode: a plain click picks, until Escape ───────────────────────
+    // Real input with no modifier held, which is the whole claim.
+    async function clickAt(selector) {
+      const box = await evaluate(`const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x + 10, y: r.y + r.height / 2 }`)
+      await cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y })
+      await cmd('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 })
+      await cmd('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 })
+    }
+    await evaluate(`${button('Pick mode')}.click(); return true`)
+    check('the panel turns pick mode on', await evaluate(`return window.__fjsInspect.pickMode() && ${button('Pick mode')}.getAttribute('aria-pressed') === 'true'`))
+    check('the hint says what a click does now', (await evaluate(`return ${panelText}`)).includes('Pick mode: a click adds an element'))
+    await clickAt('#lede')
+    check('in pick mode a plain click adds an element', (await rows()).length === 2, await rows())
+    await navigate(ORIGIN + '/')
+    await until('window.__fjsAsk && window.__fjsInspect && document.querySelector("#title")', 10_000, 'the page loaded again in pick mode')
+    check('pick mode survives a reload', await evaluate(`return window.__fjsInspect.pickMode()`))
+    await evaluate(`document.querySelector('textarea[placeholder^="What should change"]')?.focus(); return true`)
+    await press('Escape')
+    check('Escape leaves pick mode, from the panel\'s own textarea too', !await evaluate(`return window.__fjsInspect.pickMode()`))
+    const after = await rows()
+    await clickAt('#lede')
+    check('after which a plain click picks nothing', JSON.stringify(await rows()) === JSON.stringify(after), await rows())
+
     // ── a text edit with no model, and one that has to ask ────────────────
     // Typed into an input laid over the element, committed with Enter.
     async function editText(selector, next) {

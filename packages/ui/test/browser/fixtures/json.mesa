@@ -8,6 +8,7 @@
   import JsonInput from '../../../components/forms/JsonInput.mesa'
   import Form      from '../../../components/forms/Form.mesa'
   import Button    from '../../../components/forms/Button.mesa'
+  import LeakyControl from './leaky-control.mesa'
 
   let tlast      = undefined
   let ulast      = undefined
@@ -77,6 +78,16 @@
   // this is the form that only the control's own report can stop.
   let handSaves = 0
   let handDoc   = { keep: 1 }
+
+  // A reporting control taken off screen while it reports (FJS-2591). Nothing
+  // is left to retract the report, so the form refused every submit with no
+  // message anywhere.
+  let goneShown = true
+  let goneSaves = 0
+
+  // …and one that never retracts, which the form must at least say out loud.
+  let leakShown = true
+  let leakSaves = 0
 
   // The control, controlled: what the caller holds is written back from
   // onvalue AND replaced from outside, the two doors a document arrives by.
@@ -184,6 +195,30 @@
 </Form>
 
 <output id="hand-saves">{handSaves}</output>
+
+<h2>the same control, unmounted while it reports</h2>
+<Form id="gone" resource={RESOURCE} onsubmit={() => { goneSaves++ }}>
+  {#if goneShown}
+    <JsonInput name="payload" value={{ keep: 1 }} />
+  {/if}
+  {#snippet actions()}
+    <Button type="submit" id="gone-save">Save</Button>
+  {/snippet}
+</Form>
+<button type="button" id="gone-hide" on:click={() => { goneShown = false }}>hide the control</button>
+<output id="gone-saves">{goneSaves}</output>
+
+<h2>a control that never retracts, unmounted</h2>
+<Form id="leak" resource={RESOURCE} onsubmit={() => { leakSaves++ }}>
+  {#if leakShown}
+    <LeakyControl name="payload" />
+  {/if}
+  {#snippet actions()}
+    <Button type="submit" id="leak-save">Save</Button>
+  {/snippet}
+</Form>
+<button type="button" id="leak-hide" on:click={() => { leakShown = false }}>hide the control</button>
+<output id="leak-saves">{leakSaves}</output>
 
 <output id="saves">{saves}</output>
 <output id="sent">{JSON.stringify(sent)}</output>

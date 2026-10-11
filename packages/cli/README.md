@@ -122,7 +122,7 @@ example indented in a paragraph cannot break the command.
 
 Running one:
 
-1. Scan `<fliRoot>/commands/` (the framework's) and `<projectRoot>/cli/src/routes/` (yours)
+1. Scan `<fliRoot>/commands/` (the framework's), `$XDG_CONFIG_HOME/fli/commands/` (yours, in every project; `~/.config/fli/commands/` by default) and `<projectRoot>/cli/src/routes/` (the project's). A title in a later one overrides the same title in an earlier one
 2. Compile the `.md` to an ESM module — no temp build, no bundler
 3. Validate args and flags against the frontmatter
 4. Call the body with a `context`

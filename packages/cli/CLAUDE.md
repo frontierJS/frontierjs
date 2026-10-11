@@ -1223,8 +1223,10 @@ test/     one file per module under core/, plus the deploy pipeline's own
   renamed away from `fli dev` (and has since been removed), and `deploy:doctor`
   has no short alias, so `doctor` means `fli:doctor`. There are none left; a new
   one is answered by renaming, not by leaving it to the alphabet.
-- **A project command overrides a core one in SILENCE, and `make:shortcut` is
-  the one caller that refuses instead.** The silent override is the authoring
+- **A narrower command source overrides a wider one in SILENCE — project over
+  user (`$XDG_CONFIG_HOME/fli/commands`) over core — and `make:shortcut` is
+  the one caller that refuses instead.** `fli list`'s section headers are the
+  only place a shadowed core command shows. The silent override is the authoring
   model — a project shadowing `fli deploy` with its own is the feature — but it
   is the wrong default for a name typed from memory, so `core/shortcuts.js`
   asks the registry before writing and names what already holds the name. The

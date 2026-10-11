@@ -839,14 +839,17 @@ const CHECKS = {
   // The pattern is text: a number in 7000–8999 (8500–8509 is fli tooling's)
   // on a line that says `localhost`, `listen` or `port`. A fixture such as
   // `memory: 8192` says none of those, which the rule's own test holds.
+  // `port` is a word and not a substring: `export` and `import` hold it, and a
+  // UUID group such as `-8000-` is no port either, so a number joined to a
+  // hyphen or a word character is not read as one.
   'test-port-literal': ({ root }) => {
     const files = driveFiles(root, /^tests?$/)
     if (!files.length) return { skipped: 'no test directory' }
     const findings = []
     for (const path of files) {
       readCode(path).split('\n').forEach((line, i) => {
-        if (!/localhost|127\.0\.0\.1|listen|port/i.test(line)) return
-        for (const m of line.matchAll(/\b[78]\d{3}\b/g)) {
+        if (!/localhost|127\.0\.0\.1|listen/i.test(line) && !/(?<![a-z])port|Port|(?<![A-Z])PORT/.test(line)) return
+        for (const m of line.matchAll(/(?<![\w-])[78]\d{3}(?![\w-])/g)) {
           const n = Number(m[0])
           if (n < 7000 || (n >= 8500 && n <= 8509)) continue
           findings.push({

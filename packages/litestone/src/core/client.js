@@ -745,8 +745,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
       for (const g of grants) requireGrantSubset(modelName, fields.join(', '), r[g], ctx)
   }
 
-  async function canRead(tbl, where) {
-    try { return await tbl.exists({ where }) }
+  // A template is a live row the caller may read, not a hidden one: the
+  // template filter shapes which rows a statement is ABOUT, and grading a
+  // parent by it refused every child added under a template (FJS-2630).
+  async function canRead(tbl, where, templates = false) {
+    try { return await tbl.exists({ where, ...(templates ? { withTemplates: true } : {}) }) }
     catch (e) { if (e instanceof AccessDeniedError) return false; throw e }
   }
 
@@ -801,7 +804,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (values.some(v => v == null || typeof v === 'object')) continue
         const key = JSON.stringify(values)
         if (!verdict.has(key)) verdict.set(key, blind ||
-          await canRead(tbl, Object.fromEntries(p.references.map((r, j) => [r, values[j]]))) ||
+          await canRead(tbl, Object.fromEntries(p.references.map((r, j) => [r, values[j]])), ctx.shapes?.[p.target]?.hasTemplates != null) ||
           !parentRows(sink, p.references, values).length)
         if (verdict.get(key)) {
           requireParentGrants(p.target, p.fields, p.references, values)

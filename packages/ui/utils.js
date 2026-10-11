@@ -401,3 +401,35 @@ export function bandIndex(thresholds, value) {
   for (const t of thresholds) if (value > t) band++
   return band
 }
+
+/*
+ * ── Plotted values ───────────────────────────────────────────────────
+ */
+
+/**
+ * A value as a chart plots it: a finite number, or `null` for a gap.
+ *
+ * `Number(null)` and `Number('')` are 0, so coercing first draws a missing
+ * point as a real zero and announces it as one; and one `undefined` reaching
+ * `Math.min(...data)` makes every coordinate NaN, so the whole line vanishes.
+ */
+export function plotValue(v) {
+  if (v == null || v === '' || typeof v === 'boolean') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * The runs of consecutive plotted values, as arrays of indices — one stroke
+ * each, so a gap is a break in the line rather than a dive to the floor.
+ */
+export function plotRuns(values) {
+  const runs = []
+  let run = null
+  values.forEach((v, i) => {
+    if (v == null) { run = null; return }
+    if (!run) runs.push(run = [])
+    run.push(i)
+  })
+  return runs
+}

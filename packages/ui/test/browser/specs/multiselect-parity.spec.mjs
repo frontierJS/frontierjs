@@ -88,4 +88,26 @@ export async function run(t) {
 
   await t.eventually(log, 'add:email change:1 remove:email change:0 create:brand new add:brand new change:1',
     'a minted value reports create before add')
+
+  /* ── number mode mints only a decimal number ──────────────────────────── */
+
+  // Typed after a good one, so a control that refuses everything cannot pass.
+  await t.evaluate(`
+    document.querySelector('#numbers input').focus();
+    await waitSettled('body');
+  `)
+  for (const text of ['3', 'abc', '0x1F']) {
+    await t.type(text)
+    await t.press('Enter')
+    await t.evaluate(`
+      const input = document.querySelector('#numbers input');
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await waitSettled('body');
+    `)
+  }
+  await t.eventually(`document.querySelector('#counts').textContent.trim()`, '[3]',
+    'number mode refuses a new item that is not a decimal number')
+  t.is(await t.evaluate(`return ${pills('#numbers')}.map(p => p.textContent.trim()).join(',')`), '3',
+    'and draws no chip for one')
 }

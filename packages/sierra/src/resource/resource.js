@@ -1326,7 +1326,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         case 'find':    ctx.result = await proxy.find(ctx.query, ctx.directives);          break
         case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query, ctx.directives); break
         case 'create':  ctx.result = await proxy.create(ctx.data, undefined, callOpts);       break
-        case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data, undefined, callOpts); break
+        // A write's directives are only ever a template's reach (`_templateReach`).
+        case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data, _some(ctx.directives), callOpts); break
         case 'remove':  ctx.result = await proxy.remove(ctx.id, undefined, callOpts);         break
         case 'restore': ctx.result = await proxy.restore(ctx.id, undefined, callOpts); break
         // A custom service method — anything the server declared that is not
@@ -2753,10 +2754,29 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
     const id      = data?.[idField]
     const payload = _changed(id, data)
+    const reach   = _templateReach(id, data)
 
     return optimistic
-      ? mutate(id, payload, () => _call('patch', id, payload, {}))
-      : _call('patch', id, payload, {})
+      ? mutate(id, payload, () => _call('patch', id, payload, {}, reach))
+      : _call('patch', id, payload, {}, reach)
+  }
+
+  /**
+   * `{ withTemplates: true }` when the row being saved is a template, or was
+   * one as this resource read it. The Data boundary leaves a template out of
+   * every write that does not ask for it, so a template's own edit form — read
+   * with `$withTemplates` — answered 404 to its own save. The read row counts
+   * as well as the payload, because a demote sends the marker as false.
+   */
+  function _some(directives) {
+    return directives && Object.keys(directives).length ? directives : undefined
+  }
+
+  function _templateReach(id, data) {
+    const marker = modelDef?.['x-templates']
+    if (!marker) return {}
+    const base = _read.get(id)
+    return data?.[marker] === true || base?.[marker] === true ? { withTemplates: true } : {}
   }
 
   /**

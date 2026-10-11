@@ -102,6 +102,56 @@ export async function run(t) {
   t.is(picked.whilePicking, 0, 'and does not also open the editor')
   t.is(picked.after, 1, 'unregistering hands the click back to the editor')
 
+  // ── pick mode ─────────────────────────────────────────────────────────
+  // The latched shift+modifier. A plain click must PICK and not reach the app,
+  // the modifier alone must still open, and leaving must hand clicks back —
+  // a mode that cannot be left is a page whose buttons stopped working.
+  const latched = await t.evaluate(`
+    const asked = [], got = [], seen = [];
+    const real  = window.fetch;
+    window.fetch = (url, ...rest) => {
+      if (String(url).includes('__open-in-editor')) { asked.push(String(url)); return Promise.resolve(new Response('')); }
+      return real(url, ...rest);
+    };
+    const el = document.querySelector('#counter');
+    const at = (type, mods) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, ...mods }));
+    const click = (mods = {}) => { at('mousemove', mods); at('mousedown', mods); at('click', mods) };
+    const off   = window.__fjsInspect.onPick((p) => got.push(p.loc));
+    const unwatch = window.__fjsInspect.onPickMode((on) => seen.push(on));
+    const before = el.textContent;
+
+    const entered = window.__fjsInspect.pickMode(true);
+    const badge   = !![...document.querySelectorAll('button')].find(b => /Pick mode/.test(b.textContent));
+    const stored  = sessionStorage.getItem('fjs:inspect:pick-mode');
+    click();
+    const plain   = { got: got.length, asked: asked.length, text: el.textContent };
+    click({ altKey: true });
+    const alt     = { got: got.length, asked: asked.length };
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const left    = window.__fjsInspect.pickMode();
+    const gone    = ![...document.querySelectorAll('button')].find(b => /Pick mode/.test(b.textContent));
+    click();
+    await new Promise((r) => setTimeout(r, 50));
+    off(); unwatch();
+    window.fetch = real;
+    return { entered, badge, stored, plain, alt, left, gone, seen,
+      before, after: el.textContent, storedAfter: sessionStorage.getItem('fjs:inspect:pick-mode') };
+  `)
+  t.is(latched.entered, true, 'pickMode(true) turns pick mode on')
+  t.ok(latched.badge, 'and draws a badge saying so')
+  t.is(latched.stored, '1', 'kept for the tab, so an edit that reloads the page leaves it on')
+  t.is(latched.plain.got, 1, 'a plain click picks')
+  t.is(latched.plain.asked, 0, 'without opening the editor')
+  t.is(latched.plain.text, latched.before, "and without the app's own handler running")
+  t.is(latched.alt.got, 1, 'the modifier alone does not pick')
+  t.is(latched.alt.asked, 1, 'it opens the source, as it does outside the mode')
+  t.is(latched.left, false, 'Escape leaves pick mode')
+  t.ok(latched.gone, 'and takes the badge with it')
+  t.is(latched.storedAfter, null, 'and forgets it for the tab')
+  t.ok(latched.after !== latched.before, "after which a plain click is the app's again")
+  t.is(JSON.stringify(latched.seen), '[true,false]', 'a pick-mode watcher hears each change once')
+
   // The middleware is Vite's own. A spec that stubbed the whole path would
   // pass against a dev server that has no such route at all.
   const route = await t.evaluate(`

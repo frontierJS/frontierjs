@@ -200,6 +200,10 @@ try {
   const ringsTitle = await until(`document.getElementById('pages-viewer')?.contentDocument?.title ?? null`,
     t => /rings/.test(t ?? ''), 'the viewer never showed the page')
   check('a null window opens the page in a viewer here, not an error', /rings/.test(ringsTitle), ringsTitle)
+  // The iframe loads and answers its title inside a CLOSED dialog too, so the
+  // title alone passes against a viewer nobody can see.
+  check('and the viewer is on screen as a modal',
+    await evaluate(`!!document.getElementById('pages-viewer')?.closest('dialog')?.matches(':modal')`))
   check('and no error banner', !(await evaluate(`!!document.getElementById('screen-error')`)))
   // A real click inside the framed page, so the relay's parent branch runs.
   await evaluate(`(() => {

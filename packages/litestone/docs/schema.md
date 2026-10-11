@@ -1512,6 +1512,13 @@ await db.task.groupBy({ by: ['urgency'], _count: true })
 It is not a column: no DDL, no migration, and a write naming it is refused by
 name. A non-optional derived field is never "required" on create.
 
+**A null is false, never unknown.** A task with no `dueAt` is not `overdue`,
+and `!(dueAt < now())` is true for it: an ordering or `in` over a null answers
+false, `==` and `!=` treat null as a value, and a nullable Boolean column under
+`&&`, `||` or `!` is false. So `where: { overdue: false }` finds every row that
+reads false. A policy is the other way — there a null comparison stays
+unknown, which is what makes `@@deny` fire on it.
+
 **It is not `@generated`.** That creates a real stored column and must stay
 deterministic; the point here is a value that changes on its own because the
 clock moved.

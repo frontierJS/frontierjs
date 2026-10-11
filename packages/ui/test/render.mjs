@@ -29,6 +29,10 @@ const CASES = [
   ['components/forms/Input.mesa',       { label: 'Email', error: 'Taken' }, ['field-group', 'danger']],
   ['components/forms/Select.mesa',      { options: ['a'] },          ['field']],
   ['components/forms/Textarea.mesa',    {},                          ['field']],
+  // A nullable @length column hands a generated form null, and the counter
+  // reading its length took the whole mount down (FJS-2603). The counter is
+  // the assertion.
+  ['components/forms/Textarea.mesa',    { value: null, maxlength: 10 }, ['field', 'field-hint']],
   ['components/forms/Checkbox.mesa',    { label: 'Yes' },            ['field-check']],
   ['components/forms/Switch.mesa',      { label: 'On' },             ['field-check', 'switch']],
   // The Reset button is the assertion: this control composes another kit
@@ -43,6 +47,11 @@ const CASES = [
   ['components/display/Breadcrumbs.mesa', { items: [{ label: 'Home' }] }, ['breadcrumb']],
   ['components/display/Table.mesa',     { columns: [{ name: 'a', label: 'A' }] }, ['table', 'table-wrap']],
   ['components/display/Kbd.mesa',       {},                          ['kbd']],
+  // auth's user.name is String?, so null is the value a signed-in user hands
+  // over; a prop default covers undefined only, and a throw at setup takes the
+  // whole mount down (FJS-2604). The person icon is the assertion.
+  ['components/display/Avatar.mesa',    { name: null },              ['avatar', 'muted']],
+  ['components/display/AvatarGroup.mesa', { users: [{ name: null }, { name: 'Dana Ortiz' }] }, ['avatars', 'avatar', 'muted']],
   // Chart renders on the SERVER, which is the point of it: the same SVG prints
   // to PDF and screenshots to PNG for an email (DL V3, R5, R6). One mark per
   // row and a focusable hit target per row are the assertions.

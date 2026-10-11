@@ -15768,8 +15768,8 @@ are decided when the seam is built, not here: whether the four existing variants
 move onto it as built-in signers, and how a minted credential states when it
 expires.
 
-Work: `FJS-2542`.
-*Lives in:* `packages/conduit/src/types.ts` (`TargetAuth`, to gain the seam).
+Built under `FJS-2542`.
+*Lives in:* `packages/conduit/src/types.ts` (`signed`, `Signer`) · `packages/conduit/src/transports/base.ts` (`authorize`) · `packages/conduit/signers.test.ts`.
 
 **Built as one variant, `{ type: 'signed', signer, ref }`,** naming a function in
 `ConduitOptions.signers` — a name, because a descriptor is stored as JSON. The

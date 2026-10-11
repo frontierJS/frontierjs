@@ -48,8 +48,12 @@
     busy:    'danger',
   }
 
+  // A prop default covers undefined only, and auth's user.name is String?, so
+  // null is what a signed-in user without a name hands over (FJS-2604).
+  const n = name ?? ''
+
   // Derive initials from name — first letter of first two words
-  const initials = name
+  const initials = n
     .trim()
     .split(/\s+/)
     .slice(0, 2)
@@ -63,7 +67,7 @@
   // reported as one nothing watches (`FJS-1340`).
   var toneCount = TONES.length
   const autoTone = TONES[
-    name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % toneCount
+    n.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % toneCount
   ]
 
   const sz          = sizeMap[size] ?? sizeMap.md

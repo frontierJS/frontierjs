@@ -122,7 +122,6 @@ const PAGE = `<!doctype html>
 <meta charset="utf-8">
 <title>@frontierjs/ui — kit drive</title>
 <link rel="stylesheet" href="/@css/src/index.css">
-<link rel="stylesheet" href="/kit/tokens.css">
 <script type="importmap">${JSON.stringify(IMPORT_MAP)}</script>
 </head>
 <body class="theme-default">

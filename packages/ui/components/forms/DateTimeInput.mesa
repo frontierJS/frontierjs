@@ -41,8 +41,9 @@
    * test on it rather than an inline `new Date()`.
    *
    * An incomplete entry answers `''`: `datetime-local` reports an empty value
-   * for every state short of a whole date and time, so there is no partial to
-   * preserve and nothing to send.
+   * for every state short of a whole date and time. The component tells a
+   * partial from a cleared box by `validity.badInput`, which this string
+   * cannot carry.
    */
   export function fromLocalInput(local) {
     if (!local) return ''
@@ -149,7 +150,7 @@
   export let removable   = false
   export let onremovekey = undefined
 
-  export let onvalue = undefined      // (iso: string) => void — '' while incomplete
+  export let onvalue = undefined      // (iso: string) => void — '' when cleared, not called while partial
   export let onblur  = undefined
   export let onfocus = undefined
 
@@ -164,7 +165,10 @@
   const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
   const rule = resolveRule(form, name)
 
-  const displayError = resolveError(form, name, error, errors)
+  // What the control itself refuses, as opposed to what the server said.
+  let localError = ''
+
+  const displayError = resolveError(form, name, error, errors) || localError
   const resolvedRequired = stated(required, rule?.required)
 
   // A column whose rows carry seconds gets a seconds segment; one that does not
@@ -183,10 +187,25 @@
   let inputEl
   export function focus() { inputEl?.focus() }
 
+  // A segment backspaced reports '' with `badInput` set, the same '' a cleared
+  // box reports. Written through, it clears the record, and the re-render
+  // writes '' to the element and wipes every segment the person did not touch.
   function handleInput(e) {
+    if (e.target.validity?.badInput) {
+      setLocalError('Enter a whole date and time')
+      return
+    }
+    setLocalError('')
     value = fromLocalInput(e.target.value)
     onvalue?.(value)
   }
+
+  // A refusal never retracted is a form that can never be submitted again.
+  function setLocalError(message) {
+    localError = message
+    form?.reportInvalid?.(name, message)
+  }
+  $.onDestroy(() => { if (localError) form?.reportInvalid?.(name, null) })
 </script>
 
 {#snippet control()}
@@ -241,7 +260,7 @@
     badge={badge}
     help={help}
     hint={hint}
-    error={error}
+    error={error || localError}
     errors={errors}
     removable={removable}
     onremovekey={onremovekey}

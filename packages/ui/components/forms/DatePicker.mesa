@@ -569,9 +569,17 @@
       startDate  = _startDate
       endDate    = null
     } else {
-      const rawEnd = updateTime(endDateTime, timestamp)
-      _endDate = (inclusiveEnd && !showTimePicker) ? makeEndInclusive(rawEnd) : rawEnd
       // Picking backwards is ordinary: the second click may be before the first.
+      // The DAYS are ordered before any time is applied — swapping finished
+      // timestamps puts the inclusive end's 23:59:59.999 on the start and
+      // midnight on the end.
+      const firstDay = updateTime(undefined, _startDate)
+      const lastDay  = updateTime(undefined, timestamp)
+      const [startDay, endDay] = lastDay < firstDay ? [lastDay, firstDay] : [firstDay, lastDay]
+      _startDate = updateTime(startDateTime, startDay)
+      const rawEnd = updateTime(endDateTime, endDay)
+      _endDate = (inclusiveEnd && !showTimePicker) ? makeEndInclusive(rawEnd) : rawEnd
+      // Same day, end time typed earlier than the start time.
       if (_startDate > _endDate) [_startDate, _endDate] = [_endDate, _startDate]
       startDate = _startDate
       endDate   = _endDate

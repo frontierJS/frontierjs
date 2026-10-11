@@ -14,6 +14,7 @@
   // The event log. Recorded as a joined string because a spec reads text.
   let picked = []
   let events = []
+  let counts = []
 
   const log = (s) => { events = [...events, s] }
 </script>
@@ -45,5 +46,15 @@
   <MultiSelect name="tags" value={['Estimate', 'Repeat']} multiple allowNew />
 </div>
 
+<!--
+  An `Int[]` column, as a generated form draws it: number mode, typed into.
+  `Number()` read `abc` as NaN, which goes over the wire as null, and `0x1F`
+  as 31, while each chip showed the text typed (FJS-2595).
+-->
+<div id="numbers">
+  <MultiSelect name="counts" bind:value={counts} type="number" multiple allowNew />
+</div>
+
 <output id="events-log">{events.join(' ')}</output>
+<output id="counts">{JSON.stringify(counts)}</output>
 <output id="many-count">{many.length}</output>

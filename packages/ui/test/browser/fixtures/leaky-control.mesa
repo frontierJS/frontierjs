@@ -1,0 +1,11 @@
+<script>
+  // leaky-control.mesa — a contributed control that reports through
+  // `$context.form.reportInvalid` and never retracts, the shape `<Form>` has to
+  // survive from a control this kit does not ship (FJS-2591).
+  export let name = ''
+
+  const form = $context.form
+  form?.reportInvalid?.(name, 'This box cannot be read')
+</script>
+
+<input name={name} />

@@ -112,7 +112,7 @@
       a silent counter only helps people who can see it.
     -->
     <p class="field-hint" style:text-align="end" aria-live="polite">
-      {value.length} / {resolvedMaxlength}
+      {(value ?? '').length} / {resolvedMaxlength}
     </p>
   {/if}
 {/snippet}

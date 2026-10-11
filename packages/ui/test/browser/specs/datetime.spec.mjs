@@ -91,6 +91,27 @@ export async function run(t) {
 
   /* ── an incomplete entry is not a value ───────────────────────────────── */
 
+  // FJS-2593: one segment backspaced leaves the element reporting '' with
+  // `validity.badInput`. Written through, that '' cleared the record and the
+  // re-render cleared every other segment the person had not touched.
+  await t.evaluate(`document.querySelector('input[name=startsAt]').focus();`)
+  await t.press('Backspace')
+  const partial = await t.evaluate(`
+    await new Promise(r => setTimeout(r, 50));
+    const el = document.querySelector('input[name=startsAt]');
+    return { badInput: el.validity.badInput,
+             bound:    document.querySelector('#value').textContent };
+  `)
+  t.ok(partial.badInput, 'one segment backspaced leaves the element partial')
+  t.is(partial.bound, new Date('2026-07-01T14:45').toISOString(),
+    'and the record keeps the last whole instant rather than being cleared')
+  t.ok(await t.evaluate(`
+    await new Promise(r => setTimeout(r, 50));
+    return document.querySelector('input[name=startsAt]').validity.badInput;
+  `), 'and the segments not touched are still on screen')
+  await t.eventually(`document.querySelector('input[name=startsAt]').getAttribute('aria-invalid')`, 'true',
+    'and the control says what it shows is not a value')
+
   const cleared = await t.evaluate(`
     const el = document.querySelector('input[name=startsAt]');
     el.value = '';
@@ -99,6 +120,8 @@ export async function run(t) {
     return document.querySelector('#value').textContent;
   `)
   t.is(cleared, '', 'clearing the box sends nothing rather than an invented instant')
+  await t.eventually(`document.querySelector('input[name=startsAt]').getAttribute('aria-invalid')`, 'null',
+    'and a cleared box retracts the refusal')
 
   /* ── the schema path, with no control named anywhere ──────────────────── */
 

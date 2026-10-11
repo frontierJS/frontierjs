@@ -395,3 +395,21 @@ describe('an optional @guarded column is left out of the generated row', () => {
     expect(row(schema, 1, 'User')).not.toHaveProperty('apiKey')
   })
 })
+
+// An @derived field is an expression over the row's own columns and is refused
+// as a write, so a generated row naming it seeds nothing and the ladder grades
+// every level as an error.
+describe('an @derived field is left out of the generated row', () => {
+  const schema = `model T { id Int @id @default(autoincrement()); dueAt DateTime?; score Int
+    urgency Int @derived(dueAt < now() ? 2 : 0); @@gate("4.4.4.5") }`
+
+  test('the definition does not name it', () => {
+    expect(row(schema)).not.toHaveProperty('urgency')
+  })
+
+  test('the gate ladder is clean', async () => {
+    const env = await createTestEnv({ schema })
+    try { expect(await env.verifyGateLadder()).toEqual([]) }
+    finally { env.close() }
+  })
+})

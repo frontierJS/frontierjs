@@ -538,13 +538,17 @@ export class ServiceProxy<
         'PATCH', `${this._base}${qs}`, data, _callHeader(opts)
       ) as Promise<ListResult<T>>
     }
+    // params travels on a by-id write as it does on a by-id get: dropped, a
+    // template read with `$withTemplates` answered 404 to its own save.
     if (this._client._wsReady && !_hasFiles(data)) {
-      return this._client._wsCall(this.name, 'patch', idOrQuery, data, null, opts) as Promise<T>
+      return this._client._wsCall(
+        this.name, 'patch', idOrQuery, data, params ? buildWsQuery(null, params) : null, opts
+      ) as Promise<T>
     }
     const { body, extra } = _envelope(data, opts)
     return this._client._request(
       'PATCH',
-      `${this._base}/${idOrQuery}`,
+      `${this._base}/${idOrQuery}${params ? buildQueryString(undefined, params) : ''}`,
       body,
       extra
     ) as Promise<T>
@@ -572,10 +576,12 @@ export class ServiceProxy<
       ) as Promise<ListResult<T>>
     }
     if (this._client._wsReady) {
-      return this._client._wsCall(this.name, 'remove', idOrQuery, null, null, opts) as Promise<T>
+      return this._client._wsCall(
+        this.name, 'remove', idOrQuery, null, params ? buildWsQuery(null, params) : null, opts
+      ) as Promise<T>
     }
     return this._client._request(
-      'DELETE', `${this._base}/${idOrQuery}`, undefined, _callHeader(opts)
+      'DELETE', `${this._base}/${idOrQuery}${params ? buildQueryString(undefined, params) : ''}`, undefined, _callHeader(opts)
     ) as Promise<T>
   }
 
@@ -1631,13 +1637,20 @@ export class JunctionClient extends EventEmitter {
 
     // One refetch per burst — each answers the whole list, so N events landing
     // together are one question, not N.
+    //
+    // It re-asks the WINDOW, not the load's first page (`FJS-2612`): a list
+    // `more()` had grown to 1,154 rows held 100 after one undecidable push. Only
+    // a change of filter or order resets a window (`FJS-D145`), and a refetch is
+    // neither. The extent is carried only while the store answers the issued
+    // question — a newer load in flight has a window of one page.
     let refetchQueued = false
     const refetch = (delayMs = 0): void => {
       if (refetchQueued || issuedQuery === null) return
       refetchQueued = true
       setTimeout(() => {
         refetchQueued = false
-        void load(issuedQuery ?? {}, issuedParams).catch(() => {})
+        const extent = issuedQuery === lastQuery && issuedParams === lastParams ? store.get().length : 0
+        void answer(issuedQuery ?? {}, issuedParams, extent).catch(() => {})
       }, delayMs)
     }
 
@@ -1680,6 +1693,9 @@ export class JunctionClient extends EventEmitter {
     // client never constructs one, which is the whole of what opacity buys.
     let endCursor: string | null = null
     let more:      boolean       = false
+    // The server said `hasMore: false` in so many words. `more` false is also
+    // what an answer with no pagination metadata leaves, and that is not an end.
+    let ended:     boolean       = false
 
     const stale = new Stale()
 
@@ -1699,7 +1715,16 @@ export class JunctionClient extends EventEmitter {
     const hasMore = (): boolean =>
       total === null ? more : total > offset + store.get().length
 
+    // A window that holds the query's last row has no page 2 for an overflow
+    // row to move to (`FJS-2617`). Trimming one there lost it for good, and
+    // left `hasMore()` true against a `more()` with no cursor to ask — a
+    // load-everything loop then spun on resolved promises. An ordered window
+    // there grows by the row instead; an unordered one keeps `FJS-D466`'s bound.
+    const holdsEnd = (): boolean =>
+      total !== null ? total <= offset + store.get().length : ended
+
     const insert = (record: T): void => {
+      const atEnd = holdsEnd()
       if (total !== null) total++
 
       // Not the first page: this row may belong before it, and putting it here
@@ -1730,6 +1755,7 @@ export class JunctionClient extends EventEmitter {
 
       // Sorted insertion, and the overflow row genuinely moved to the next
       // page — page 1 of an ordered list IS its first `limit` rows.
+      if (limit !== null && atEnd) limit++
       store.place(record, key, cmp, limit ?? undefined)
     }
 
@@ -1832,27 +1858,42 @@ export class JunctionClient extends EventEmitter {
     // The superseded request is not cancelled — its caller awaited those rows
     // and still receives them. Only the SHARED store has an ordering problem.
     let issued = 0
-    const load = async (
-      query: Record<string, unknown> = {},
-      params: QueryDirectives = {}
+    // `extent` is how many rows the answer must reach before it replaces the
+    // store. It is walked by cursor rather than asked as one `$limit`, because
+    // the server clamps a limit to its `paginate.max` and a window past it
+    // would come back one page long. The store is set once, at the end, so a
+    // screen never reads the first page of a window it is re-asking.
+    const answer = async (
+      query: Record<string, unknown>,
+      params: QueryDirectives,
+      extent: number
     ): Promise<T[]> => {
       const stamp = ++issued
       issuedQuery  = query
       issuedParams = params
-      const res  = await svc.find(query, params)
-      const rows = res.data
+      const first = await svc.find(query, params)
+      let res  = first
+      let rows = first.data
+      while (stamp === issued && rows.length < extent && res.hasMore === true && typeof res.endCursor === 'string') {
+        res = await svc.find(query, { ...params, after: res.endCursor })
+        if (!res.data.length) break
+        rows = [...rows, ...res.data]
+      }
       if (stamp === issued) {
         lastQuery  = query
         lastParams = params
         // The envelope's, not the params': the effective limit is the server's
         // — a caller naming none still got one — and a service that answers no
         // pagination metadata leaves `limit` unknown, which turns the trimming
-        // off rather than inventing a page size.
-        limit  = typeof res.limit  === 'number' ? res.limit  : (params.limit ?? null)
-        offset = typeof res.offset === 'number' ? res.offset : (params.offset ?? 0)
-        total  = typeof res.total  === 'number' ? res.total  : null
+        // off rather than inventing a page size. A re-paged window grows it by
+        // what the slices added, as `more()` does.
+        limit  = typeof first.limit  === 'number' ? first.limit  : (params.limit ?? null)
+        if (limit !== null && res !== first) limit += rows.length - first.data.length
+        offset = typeof first.offset === 'number' ? first.offset : (params.offset ?? 0)
+        total  = typeof first.total  === 'number' ? first.total  : null
         endCursor = typeof res.endCursor === 'string' ? res.endCursor : null
         more      = res.hasMore === true
+        ended     = res.hasMore === false
         store.set(rows)
         // This answer is current by definition; whatever the list could not
         // account for before it has just been accounted for.
@@ -1860,6 +1901,10 @@ export class JunctionClient extends EventEmitter {
       }
       return rows
     }
+    const load = (
+      query: Record<string, unknown> = {},
+      params: QueryDirectives = {}
+    ): Promise<T[]> => answer(query, params, 0)
 
     // ── A row the clock takes out ──────────────────────────────────────────
     // Expiry's transition is the CLOCK, not a write, so it announces nothing:
@@ -2103,6 +2148,7 @@ export class JunctionClient extends EventEmitter {
       const rows = res.data
       endCursor  = typeof res.endCursor === 'string' ? res.endCursor : null
       more       = res.hasMore === true
+      ended      = res.hasMore === false
       // Appended, not placed: the server answered them in the window's own
       // order and they sort after everything already in it, which is what a
       // keyset scan means. `limit` grows with the window so the trim that

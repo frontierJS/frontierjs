@@ -1,0 +1,23 @@
+<script>
+  // copy-button.mesa -- the fallback copy, on the page and inside a Modal.
+  //
+  // A modal <dialog> makes the rest of the document inert, so a textarea the
+  // fallback puts on <body> cannot be focused or selected, and the copy
+  // answers true over an empty selection (FJS-2601).
+  import Modal      from '../../../components/overlay/Modal.mesa'
+  import Button     from '../../../components/forms/Button.mesa'
+  import CopyButton from '../../../components/display/CopyButton.mesa'
+
+  let open   = false
+  let copies = 0
+</script>
+
+<div id="on-page"><CopyButton text="page-text" label="Copy" oncopy={() => copies++} /></div>
+
+<Button id="open-modal" onclick={() => open = true}>Open</Button>
+
+<Modal bind:open={open} title="Key">
+  <div id="in-modal"><CopyButton text="modal-text" label="Copy" oncopy={() => copies++} /></div>
+</Modal>
+
+<output id="copies">{copies}</output>

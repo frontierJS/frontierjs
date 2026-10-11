@@ -155,6 +155,22 @@ describe('runs', () => {
     expect((await wb.transcript(id))!.items.at(-1)).toEqual({ kind: 'error', text: 'Stopped.' })
   })
 
+  test('a pin whose folder was renamed refuses every run by its path and still unpins', async () => {
+    const wb  = createWorkbench({ dir: join(tmp, 'wb-gone'), bin: fakeClaude().bin })
+    const dir = repo('gone', { done: UNFINISHED_DONE })
+    const r   = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    rmSync(dir, { recursive: true, force: true })
+
+    const gone = { refused: expect.stringContaining(`'${dir}' is no longer there`) }
+    expect(await wb.send(r.pin.id, 'hello')).toEqual(gone)
+    expect(wb.check(r.pin.id)).toEqual(gone)
+    expect(await wb.review(r.pin.id)).toEqual(gone)
+    expect(await wb.fork(r.pin.id)).toEqual(gone)
+    expect(wb.unpin(r.pin.id)).toBeNull()
+    expect(wb.getPin(r.pin.id)).toBeNull()
+  })
+
   test('a missing binary is an error in the transcript, not a silent idle', async () => {
     const wb = createWorkbench({ dir: join(tmp, 'wb-missing'), bin: join(tmp, 'no-such-claude') })
     const r = wb.pin(repo('zeta'))

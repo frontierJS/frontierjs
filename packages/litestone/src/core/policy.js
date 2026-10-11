@@ -449,7 +449,14 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
 // fact about the row. That shape is what `@@scope` and `@@allow` are for, and
 // the refusal says so.
 
-const DERIVED_SQL_OPS = { '==': '=', '!=': '!=', '<': '<', '>': '>', '<=': '<=', '>=': '>=' }
+// A derived field is two-valued where a policy is three-valued (FJS-2614). The
+// read coerces a Boolean's NULL to false, so a comparison over a null column
+// left UNKNOWN made a row that reads false match neither `false` nor `true`,
+// and `!` kept it UNKNOWN. `==`/`!=` are IS/IS NOT, so `a != b` is `!(a == b)`;
+// an ordering over a null answers false. The policy compiler keeps UNKNOWN,
+// which `@@deny` depends on.
+const DERIVED_SQL_OPS = { '==': 'IS', '!=': 'IS NOT', '<': '<', '>': '>', '<=': '<=', '>=': '>=' }
+const DERIVED_NULL_SAFE = new Set(['==', '!='])
 
 // `now() + 2d` as a SQLite date modifier on the same clock NOW_SQL reads. The
 // value is a whole number the grammar parsed and the unit comes from a closed
@@ -471,12 +478,14 @@ export function compileDerived(model, fieldName, node) {
   const bad = (msg) => {
     throw new Error(`${model.name}.${fieldName}: ${msg} — in @derived(${policyExprToString(node)})`)
   }
+  // A nullable Boolean column under a connective is falsy, as the read shows it.
+  const truth = (n) => n?.type === 'field' ? `COALESCE(${walk(n)}, 0)` : walk(n)
   const walk = (n) => {
     if (!n || typeof n !== 'object') bad('unsupported expression')
     switch (n.type) {
-      case 'or':      return `(${walk(n.left)} OR ${walk(n.right)})`
-      case 'and':     return `(${walk(n.left)} AND ${walk(n.right)})`
-      case 'not':     return `(NOT ${walk(n.expr)})`
+      case 'or':      return `(${truth(n.left)} OR ${truth(n.right)})`
+      case 'and':     return `(${truth(n.left)} AND ${truth(n.right)})`
+      case 'not':     return `(NOT ${truth(n.expr)})`
       case 'ternary': return `CASE WHEN ${walk(n.cond)} THEN ${walk(n.then)} ELSE ${walk(n.else)} END`
       case 'now':     return NOW_SQL
       case 'shift':   return nowShifted(n)
@@ -505,12 +514,13 @@ export function compileDerived(model, fieldName, node) {
           return `(${walk(n.right)} IS ${n.op === '==' ? '' : 'NOT '}NULL)`
         if (n.op === 'in') {
           if (n.right.type === 'list')
-            return `(${walk(n.left)} IN (${n.right.items.map(v => walk({ type: 'literal', value: v })).join(', ')}))`
+            return `COALESCE((${walk(n.left)} IN (${n.right.items.map(v => walk({ type: 'literal', value: v })).join(', ')})), 0)`
           if (n.right.type === 'field')
             return `EXISTS (SELECT 1 FROM json_each(${walk(n.right)}) WHERE value = ${walk(n.left)})`
           bad(`the right side of 'in' must be an array field or a literal list`)
         }
-        return `(${walk(n.left)} ${DERIVED_SQL_OPS[n.op]} ${walk(n.right)})`
+        const cmp = `(${walk(n.left)} ${DERIVED_SQL_OPS[n.op]} ${walk(n.right)})`
+        return DERIVED_NULL_SAFE.has(n.op) ? cmp : `COALESCE(${cmp}, 0)`
       }
       case 'auth':
         bad(`auth() is per-request and a @derived field is one value for the row, not one per reader. ` +

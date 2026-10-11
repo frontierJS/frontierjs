@@ -7,6 +7,9 @@
    * exist on a page served over plain HTTP or in an older browser, and a second
    * implementation would work on every machine the author tested and silently
    * do nothing on somebody's staging box.
+   *
+   * Answers whether the text reached the clipboard, so a caller says Copied!
+   * only when it did.
    */
   export async function copyText(text) {
     if (!text) return false
@@ -14,15 +17,36 @@
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      const el = document.createElement('textarea')
-      el.value = text
-      el.style.cssText = 'position:fixed;opacity:0'
-      document.body.appendChild(el)
-      el.select()
-      document.execCommand('copy')
-      document.body.removeChild(el)
-      return true
+      return execCopy(text)
     }
+  }
+
+  /*
+   * A modal <dialog> makes everything outside it inert, so a textarea on <body>
+   * cannot take focus or a selection and `execCommand('copy')` copies nothing
+   * while still answering true — the textarea goes inside the dialog holding
+   * focus. Selecting moves focus, and removing the focused textarea drops it to
+   * <body>, so it is handed back.
+   */
+  function execCopy(text) {
+    const back = document.activeElement
+    const host = back?.closest?.('dialog[open]') ?? document.body
+    const el   = document.createElement('textarea')
+    el.value = text
+    el.setAttribute('readonly', '')
+    el.setAttribute('aria-hidden', 'true')
+    el.style.cssText = 'position:fixed;inset-block-start:0;opacity:0'
+    host.appendChild(el)
+    el.select()
+    let ok = false
+    try {
+      ok = document.activeElement === el
+        && el.selectionEnd - el.selectionStart === text.length
+        && document.execCommand('copy')
+    } catch {}
+    el.remove()
+    if (back && back !== document.body && back.isConnected) back.focus({ preventScroll: true })
+    return ok
   }
 </script>
 
@@ -62,8 +86,7 @@
   var _timer = null
 
   async function copy() {
-    if (!text) return
-    await copyText(text)
+    if (!(await copyText(text))) return
     copied = true
     oncopy?.(text)
     clearTimeout(_timer)

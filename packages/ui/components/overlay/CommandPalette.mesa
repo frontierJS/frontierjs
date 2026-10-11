@@ -152,6 +152,17 @@
       case 'Escape':
         close()
         break
+      // The panel says aria-modal, and a div keeps none of that promise on its
+      // own: Tab walked out into the page behind the scrim. A scrollable list
+      // can become a stop of its own in Chrome, so the stops are named here
+      // rather than left to the tab order.
+      case 'Tab': {
+        e.preventDefault()
+        const stops = [inputEl, ...e.currentTarget.querySelectorAll('.fjs-cp-clear')].filter(Boolean)
+        const at    = stops.indexOf(document.activeElement)
+        stops[(at + (e.shiftKey ? -1 : 1) + stops.length) % stops.length]?.focus()
+        break
+      }
     }
   }
 
@@ -289,9 +300,14 @@
                 fired for whichever row happened to land under it, and Enter
                 ran a command nobody chose. Scrolling the list with the arrow
                 keys does the same thing, in the other direction.
+
+                Out of the tab order: the arrows are the one cursor, and Enter
+                runs the row they name. A row Tab could reach was a second
+                cursor, and Enter on it ran the arrows' row instead.
               -->
               <button
                 type="button"
+                tabindex="-1"
                 id={rowId(item)}
                 class="fjs-cp-row {isActive ? 'fjs-cp-row--active' : ''}"
                 data-active={isActive}

@@ -35,11 +35,15 @@
 
   let dialogEl
 
-  $: open, () => {
+  // A `$:` watch fires on change only, so a Drawer mounted with open={true}
+  // stays closed without the onMount call.
+  function sync() {
     if (!dialogEl) return
     if (open && !dialogEl.open) dialogEl.showModal()
     else if (!open && dialogEl.open) dialogEl.close()
   }
+  $: open, () => sync()
+  $.onMount(sync)
 
   function handleClose() {
     if (open) {

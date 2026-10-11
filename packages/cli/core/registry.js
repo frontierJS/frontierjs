@@ -1,14 +1,14 @@
 // ─── registry.js ──────────────────────────────────────────────────────────────
-// Builds the command registry by scanning two locations:
+// Builds the command registry by scanning three locations:
 //
-//   1. fliRoot/commands/          ← core FLI commands (ship with the tool)
-//   2. projectRoot/cli/src/routes/ ← project commands (user's cwd-based project)
+//   1. fliRoot/commands/              ← core FLI commands (ship with the tool)
+//   2. $XDG_CONFIG_HOME/fli/commands/ ← user commands (this person, every project)
+//   3. projectRoot/cli/src/routes/    ← project commands (user's cwd-based project)
 //
-// Project commands take precedence — if a project defines a command with the
-// same title as a core command, the project version wins.
+// The narrower scope wins a title: project over user over core.
 //
 // Registry shape:  Map<name|alias, { filePath, meta, source }>
-//   source: 'core' | 'project'
+//   source: 'core' | 'user' | 'project'
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { readFileSync, statSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'fs'
@@ -35,9 +35,16 @@ import { getConfig } from './config.js'
 // read or written is never an error: every path here falls back to parsing.
 const CACHE_VERSION = 1
 
+// Read per call, not at import: a test points XDG_CONFIG_HOME at a temp dir,
+// or the developer's own commands leak into the suite.
+export function userCommandsDir() {
+  const base = process.env.XDG_CONFIG_HOME || join(homedir(), '.config')
+  return join(base, 'fli', 'commands')
+}
+
 function cacheFile(routesDir) {
   const key = createHash('sha1')
-    .update([global.fliRoot, global.projectRoot, routesDir].join('\0'))
+    .update([global.fliRoot, userCommandsDir(), global.projectRoot, routesDir].join('\0'))
     .digest('hex')
     .slice(0, 10)
   return join(homedir(), '.fli', 'cache', `registry-${key}.json`)
@@ -139,15 +146,21 @@ export function buildRegistry() {
     extensions: ['md']
   })
 
+  const userFinder = findFilesPlugin({
+    directories: [userCommandsDir()],
+    extensions: ['md']
+  })
+
   // Project commands — from routesDir in .fli.json (default: cli/src/routes)
   const projectFinder = findFilesPlugin({
     directories: [resolve(global.projectRoot, routesDir)],
     extensions: ['md']
   })
 
-  // Load core first, then project — project entries overwrite core on collision
+  // Later sources overwrite earlier ones on collision
   const sources = [
     { finder: coreFinder,    source: 'core'    },
+    { finder: userFinder,    source: 'user'    },
     { finder: projectFinder, source: 'project' },
   ]
 
@@ -189,7 +202,7 @@ export function buildRegistry() {
             console.error(`    ${existing.filePath}`)
             console.error(`    ${filePath}  (overrides previous)`)
           }
-          // Project overriding core is intentional — silent
+          // A narrower source overriding a wider one is intentional — silent
         }
         registry.set(meta.title, entry)
 
@@ -213,8 +226,8 @@ export function buildRegistry() {
             // the warning stands, and a contested alias is a thing to resolve
             // by renaming one side rather than to leave to the alphabet.
             //
-            // Only within one source: a project overriding a core command is
-            // intentional, which is the rule the title branch above follows.
+            // Only within one source: a narrower source overriding a wider one
+            // is intentional, which is the rule the title branch above follows.
             console.error(`\x1b[33m⚠\x1b[0m alias "${meta.alias}" claimed by both ${aliasExisting.meta.title} and ${meta.title} — "${meta.alias}" runs ${meta.title}; use "${aliasExisting.meta.title}" for the other`)
             registry.set(meta.alias, entry)
           } else {
