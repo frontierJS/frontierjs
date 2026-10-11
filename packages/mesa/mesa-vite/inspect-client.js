@@ -50,20 +50,34 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   // is the real target, and walking out of a shadow root means stepping to its
   // host rather than to a parentElement that is null there. A widget mounted in
   // a shadow root is otherwise a dead zone.
+  //
+  // A component from a package (the kit's Button, a framework layout) stamps
+  // its own file, so the innermost stamp under the pointer is usually the
+  // package's and almost never what the person is editing. The walk goes on to
+  // the nearest element the app wrote, and settles for the innermost stamp
+  // only when no ancestor is the app's.
   function locatedFrom(node) {
-    let el = node
+    let el = node, first = null
     while (el) {
-      if (el.nodeType === 1 && el.hasAttribute(ATTR)) return el
+      if (el.nodeType === 1 && el.hasAttribute(ATTR)) {
+        if (own(el.getAttribute(ATTR))) return el
+        first = first || el
+      }
       el = el.parentElement || (el.getRootNode && el.getRootNode().host) || null
     }
-    return null
+    return first
   }
 
   // The attribute is app-controlled — {@html} renders whatever the app was
   // handed — and the value ends up on the editor's command line, so an
   // absolute path is never taken from it. Only a relative path to a compiled
   // source, no traversal, always joined onto the root the plugin baked in.
-  const LOC = /^[\\w./-]+\\.(mesa|md):\\d+:\\d+$/
+  // A file outside the root is stamped absolute, which joined onto the root
+  // names a file that does not exist; it is refused with the rest.
+  const LOC = /^(?!\\/)[\\w./-]+\\.(mesa|md):\\d+:\\d+$/
+
+  // Under the root but installed: an editable copy of somebody else's file.
+  const own = (loc) => !!absolute(loc) && !/(^|\\/)node_modules\\//.test(loc)
 
   function absolute(loc) {
     if (!ROOT) return null

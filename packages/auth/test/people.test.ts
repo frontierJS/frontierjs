@@ -242,6 +242,53 @@ describe('an administrator invites somebody', () => {
   })
 })
 
+// FJS-2643. Under row tenancy every person carries the app's `accountId`, and
+// `sessionFor` reads the row as the system with no tenant in play — so this
+// is the only thing holding an admin of one account off every other's people.
+// Each refusal re-reads what it could have changed, and is paired with the
+// same call succeeding inside the operator's own account.
+describe('an operator in an account acts inside it (FJS-2643)', () => {
+  async function member(accountId: string, role = 'user') {
+    const email = `acct-${Date.now()}-${seq++}@example.com`
+    const { userId } = await h.auth.createUser({ email, password: PW, role })
+    await h.sys.user.update({ where: { id: userId }, data: { accountId } })
+    const { token } = await h.auth.login(email, PW) as any
+    return { email, userId, token }
+  }
+
+  test('another account’s person is a miss to read, sign out or remove, and stays signed in', async () => {
+    const theirAdmin = await member('tidy', 'admin')
+    const mine = await member('sparkle')
+    const ownAdmin = await member('sparkle', 'admin')
+
+    expect((await get(theirAdmin.token, mine.userId)).status).toBe(404)
+    expect((await act(theirAdmin.token, `/${mine.userId}`, 'signOut')).status).toBe(404)
+    expect((await request(app).delete(`/people/${mine.userId}`).auth(theirAdmin.token)).status).toBe(404)
+    expect((await request(app).get('/account/me').auth(mine.token)).status).toBe(200)
+    expect(await h.sys.user.findFirst({ where: { id: mine.userId } })).not.toBeNull()
+
+    // The same calls from inside the account succeed.
+    expect((await get(ownAdmin.token, mine.userId)).status).toBe(200)
+    expect((await act(ownAdmin.token, `/${mine.userId}`, 'signOut')).status).toBe(200)
+    expect((await request(app).get('/account/me').auth(mine.token)).status).toBe(401)
+  })
+
+  test('an invitation lands in the operator’s account', async () => {
+    const admin = await member('sparkle', 'admin')
+    const email = `invited-acct-${Date.now()}@example.com`
+    const res = await act(admin.token, '', 'invite', { email })
+    expect(res.status).toBe(200)
+    const { userId } = await res.json() as any
+    expect((await h.sys.user.findFirst({ where: { id: userId } })).accountId).toBe('sparkle')
+  })
+
+  test('an operator with no account is unchanged', async () => {
+    const admin = await person('admin')
+    const mine = await member('sparkle')
+    expect((await get(admin.token, mine.userId)).status).toBe(200)
+  })
+})
+
 describe('over /mcp', () => {
   async function mcp(token: string, name: string, args: Record<string, unknown>) {
     const res = await fetch(`${base}/mcp`, {

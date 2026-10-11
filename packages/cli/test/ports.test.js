@@ -18,7 +18,7 @@ import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
          readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
-         portStatus } from '../core/ports.js'
+         portStatus, parseDockerPorts } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -647,5 +647,22 @@ describe('composedSurfaces', () => {
     expect(composedSurfaces({ dev: 'bun run web' }, rows)).toBeNull()
     expect(composedSurfaces({ dev: 'bun run api & bun run api' }, rows)).toBeNull()
     expect(composedSurfaces({}, rows)).toBeNull()
+  })
+})
+
+describe('parseDockerPorts — what docker ps published', () => {
+  test('the IPv4 and IPv6 publish of one port are one row', () => {
+    const out = 'search\tmeilisearch:v1\t0.0.0.0:7700->7700/tcp, [::]:7700->7700/tcp\n'
+    expect(parseDockerPorts(out)).toEqual([{ port: 7700, container: 7700, name: 'search', image: 'meilisearch:v1' }])
+  })
+
+  test('the host port is reported, not the container port', () => {
+    const out = 'db\tmysql\t127.0.0.1:33061->3306/tcp\n'
+    expect(parseDockerPorts(out)[0]).toMatchObject({ port: 33061, container: 3306 })
+  })
+
+  test('a range expands, and an unpublished container contributes nothing', () => {
+    const out = 'a\timg\t0.0.0.0:9000-9001->9000-9001/tcp\nb\timg\t3306/tcp\n'
+    expect(parseDockerPorts(out).map(r => [r.port, r.container])).toEqual([[9000, 9000], [9001, 9001]])
   })
 })

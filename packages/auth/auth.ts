@@ -1691,14 +1691,17 @@ export function createLitestoneAuth(
     // is the User row's to change afterwards, by someone allowed to.
 
     async createInvitation(
-      email: string, opts: { name?: string, actorId: string },
+      email: string, opts: { name?: string, accountId?: string, actorId: string },
     ): Promise<{ userId: string, token: string, expiresAt: string }> {
       const existing = await sys.user.findFirst({ where: { email } })
       if (existing) throw new EmailTakenError()
       if (onRegister) await onRegister({ email, name: opts.name ?? null })
 
+      // The operator's account when they have one: the column is the app's
+      // tenant hook (db/user.lite), and an invitation is into the account of
+      // whoever sent it (`FJS-2643`).
       const user = await registerUser(tx => tx.user.create({
-        data: { email, name: opts.name ?? null },
+        data: { email, name: opts.name ?? null, ...(opts.accountId != null ? { accountId: opts.accountId } : {}) },
       }))
 
       const token = generateToken()

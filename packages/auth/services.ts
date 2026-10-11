@@ -245,6 +245,15 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     }
     const person = await need('sessionFor')(userId)
     if (!person) throw new NotFound(`No user '${userId}'`)
+    // An operator who belongs to an account acts inside it. `sessionFor` reads
+    // the row as the system, with no tenant in play, so this is the only thing
+    // between an admin of one account and every person of every other
+    // (`FJS-2643`). Refused as the miss above, so a refusal never confirms
+    // somebody is there. An operator with no account — a single-tenant app,
+    // or a tier above every tenant — is unchanged.
+    if (operator.accountId != null && String(person.accountId ?? '') !== String(operator.accountId)) {
+      throw new NotFound(`No user '${userId}'`)
+    }
     if (standingLevel) {
       const mine = standingLevel(operator)
       const theirs = standingLevel(person)
@@ -646,8 +655,13 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { email, name } = (ctx.data ?? {}) as { email?: unknown; name?: unknown }
       if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequest('email must be an address')
       if (name !== undefined && name !== null && typeof name !== 'string') throw new BadRequest('name must be text')
+      // Into the operator's own account, the only one they act in (`aim`,
+      // above). Without it a row-tenanted app's invitation made a person in
+      // no account, who signs in to nothing (`FJS-2643`).
       return need('createInvitation')(email.trim().toLowerCase(), {
-        ...(name ? { name: name as string } : {}), actorId: operator.userId,
+        ...(name ? { name: name as string } : {}),
+        ...(operator.accountId != null ? { accountId: String(operator.accountId) } : {}),
+        actorId: operator.userId,
       })
     },
   }))

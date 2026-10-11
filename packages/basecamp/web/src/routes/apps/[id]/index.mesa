@@ -864,7 +864,7 @@ title: App
     {#if logs && logs.stdout}
       <Card>
         <h3 class="h5">stdout</h3>
-        <pre class="scroll-x" id="app-logs-stdout"><code>{logs.stdout}</code></pre>
+        <pre class="scroll-x" style:white-space="pre-wrap" style:overflow-wrap="anywhere" id="app-logs-stdout"><code>{logs.stdout}</code></pre>
       </Card>
     {/if}
 
@@ -873,7 +873,7 @@ title: App
            joining them here would invent an interleaving that never happened. -->
       <Card>
         <h3 class="h5">stderr</h3>
-        <pre class="scroll-x" id="app-logs-stderr"><code>{logs.stderr}</code></pre>
+        <pre class="scroll-x" style:white-space="pre-wrap" style:overflow-wrap="anywhere" id="app-logs-stderr"><code>{logs.stderr}</code></pre>
       </Card>
     {/if}
 

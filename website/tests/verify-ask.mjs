@@ -113,6 +113,14 @@ function create(file, content) {
 }
 process.stdin.on('data', d => prompt += d)
 process.stdin.on('end', async () => {
+  // An ask with images is one stream-json message; what each image is goes to
+  // a file the drive reads, with the width out of the PNG header.
+  if (process.argv.includes('--input-format')) {
+    const content = JSON.parse(prompt).message.content
+    prompt = content.find(c => c.type === 'text').text
+    writeFileSync(${JSON.stringify(join(ROOT, 'bin', 'images.json'))}, JSON.stringify(content.filter(c => c.type === 'image')
+      .map(c => ({ type: c.source.media_type, width: Buffer.from(c.source.data, 'base64').readUInt32BE(16) }))))
+  }
   say({ type: 'system', subtype: 'init', session_id: '5acea7bb-3850-44cf-81dc-97688510acda' })
   if (!prompt.includes('content/routes/index.mesa')) {
     say({ type: 'result', subtype: 'error_during_execution', is_error: true })
@@ -297,6 +305,30 @@ try {
       check('the replace-all changed both items', (file().match(/Thing/g) || []).length === 2)
       await undo()
       check('the replace-all undo put the file back byte for byte', file() === SOURCE)
+    }
+
+    // ── a pasted screenshot goes with the ask ─────────────────────────────
+    // A real paste needs a person at the keyboard, so the event is built: a PNG
+    // wider than the long edge the panel shrinks to.
+    const pasted = await evaluate(`
+      const c = document.createElement('canvas'); c.width = 2400; c.height = 1200
+      c.getContext('2d').fillRect(0, 0, 40, 40)
+      const blob = await new Promise(r => c.toBlob(r, 'image/png'))
+      const clip = new DataTransfer(); clip.items.add(new File([blob], 'shot.png', { type: 'image/png' }))
+      const e = new ClipboardEvent('paste', { clipboardData: clip, bubbles: true, cancelable: true })
+      document.querySelector('textarea[placeholder^="What should change"]').dispatchEvent(e)
+      return e.defaultPrevented`)
+    check('a paste holding only an image is taken by the panel', pasted === true, pasted)
+    if (await until(`document.querySelector('[data-shot] img')`, 5000, 'the pasted image shows above the box')
+      && await ask('Make the heading match the screenshot')) {
+      let images = null
+      try { images = JSON.parse(readFileSync(join(ROOT, 'bin', 'images.json'), 'utf8')) } catch {}
+      check('the image reached claude with the ask, shrunk to 1568 wide', JSON.stringify(images) === JSON.stringify([{ type: 'image/png', width: 1568 }]), images)
+      check('the box let go of it on send', !await evaluate(`return !!document.querySelector('[data-shot]')`))
+      check('the sent message shows its thumbnail', await evaluate(`return document.querySelectorAll('img[alt="pasted image"]').length`) === 1)
+      await undo()
+      check('the screenshot run undid byte for byte', file() === SOURCE)
+      await until(`document.querySelector('#title')?.textContent.trim() === ${JSON.stringify(BEFORE)}`, 10_000, 'the page lost the screenshot run\'s heading')
     }
 
     // ── a new file, and the edit that uses it ─────────────────────────────

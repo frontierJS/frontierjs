@@ -492,6 +492,47 @@ export function listeningPorts() {
 }
 
 /**
+ * Ports Docker publishes on the host — `fli ps --docker`.
+ *
+ * `listeningPorts()` cannot see these: the port is held by docker-proxy, which
+ * runs as root, and an unprivileged lsof does not list another user's socket.
+ * A container is therefore invisible to `busyKnownPorts()` even when it holds a
+ * port the schema names, and a port outside the schema (Meilisearch's 7700)
+ * decodes to whatever slot it happens to equal. Docker is the one authority on
+ * what it published, so ask it.
+ *
+ * Returns [] where docker is missing or its daemon is down: no containers is the
+ * honest answer to "which are running", and `ps` is not a docker doctor.
+ */
+export function dockerPorts() {
+  let out
+  try {
+    out = execFileSync('docker', ['ps', '--format', '{{.Names}}\t{{.Image}}\t{{.Ports}}'],
+      { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).toString()
+  } catch { return [] }
+  return parseDockerPorts(out)
+}
+
+/** `0.0.0.0:7700->7700/tcp, [::]:7700->7700/tcp` is one publish, not two. */
+export function parseDockerPorts(out) {
+  const rows = []
+  for (const line of out.split('\n')) {
+    const [name, image, ports = ''] = line.split('\t')
+    if (!name) continue
+    const seen = new Set()
+    for (const m of ports.matchAll(/:(\d+)(?:-(\d+))?->(\d+)(?:-\d+)?\/tcp/g)) {
+      const first = Number(m[1]), last = Number(m[2] ?? m[1])
+      for (let host = first; host <= last; host++) {
+        if (seen.has(host)) continue
+        seen.add(host)
+        rows.push({ port: host, container: Number(m[3]) + (host - first), name, image })
+      }
+    }
+  }
+  return rows.sort((a, b) => a.port - b.port)
+}
+
+/**
  * The half `getSessionStatus()` cannot see: ports that are HELD but were never
  * claimed through the broker. Every tool in the reserved block is that shape —
  * studio binds 8502 as a literal — and so is any app somebody started by hand,

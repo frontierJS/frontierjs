@@ -41,6 +41,10 @@
 // next element. The inspector owns the mode and draws its own way out; the
 // button only flips it and redraws when the inspector says it changed.
 //
+// An image pasted into the box goes with the next send, shrunk first to the
+// size the model reads at, so a retina screenshot does not outgrow the request.
+// The log keeps a thumbnail of each, never the image: it lives in sessionStorage.
+//
 // Every request carries the app's own token when the page holds one: on a dev
 // server other people reach, the server asks the app's API who that is. Submit
 // is drawn only when the server says the checkout is a Workbench branch.
@@ -63,8 +67,10 @@
   const saved = keep('fli:ask:log')
   const foldKeep = keep('fli:ask:fold')
 
-  let panel, title, list, hint, chips, input, send, stop, submit, fresh, log, rail, folds, latch
+  let panel, title, list, hint, chips, tray, input, send, stop, submit, fresh, log, rail, folds, latch
   let picks = [], sent = false, busy = false
+  // Pasted images waiting for the next send: `{ type, data, thumb }`.
+  let shots = []
   // The chips' answers, keys of the server's EDIT_KINDS and EDIT_SCOPES.
   let kind = null, scope = null
   // The inspector's modifier, as the last pick named it.
@@ -82,6 +88,12 @@
   const CLIP_ATTR = 120
   // The server keeps 20 runs to undo; the log keeps what draws more than that.
   const MAX_ENTRIES = 300
+  // The server's limit. The long edge past which the model downsamples anyway,
+  // and the PNG size past which a screenshot goes as a JPEG instead.
+  const MAX_IMAGES = 5
+  const SHOT_EDGE  = 1568
+  const SHOT_PNG   = 1024 * 1024
+  const THUMB_EDGE = 120
 
   const words = el => (el.textContent || '').replace(/\s+/g, ' ').trim()
 
@@ -95,8 +107,8 @@
   // legible when the page behind is white, and why there is no third, dimmer
   // grey: over a white page it cannot be read at any dimming that keeps the
   // page in view.
-  const GLASS = 'blur(8px) saturate(1.4) brightness(.7)'
-  const WELL = 'rgba(2,6,23,.5)'
+  const GLASS = 'blur(3px) saturate(1.4) brightness(.5)'
+  const WELL = 'rgba(2,6,23,.1)'
 
   const KINDS = [
     ['text',     'Text',     'Only the words'],
@@ -149,8 +161,8 @@
   }
   const save = () => saved.set(entries.length ? JSON.stringify(entries) : null)
 
-  function line(text, tone) {
-    remember({ k: 'line', text, tone, at: Date.now() })
+  function line(text, tone, imgs) {
+    remember({ k: 'line', text, tone, at: Date.now(), ...(imgs?.length ? { imgs } : {}) })
     if (tone === 'you') toBottom = true
     drawSoon()
   }
@@ -230,6 +242,11 @@
     if (you && g.e.at) head.appendChild(make('span', 'color:#94a3b8', ago(g.e.at)))
     head.appendChild(make('span', 'margin-left:auto;color:#94a3b8', shut ? '▸' : '▾'))
     box.append(head, make('div', 'white-space:pre-wrap;overflow-wrap:anywhere' + (shut ? CLAMP : ''), g.e.text))
+    if (g.e.imgs && !shut) {
+      const row = make('div', 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px')
+      for (const src of g.e.imgs) { const img = make('img', 'max-height:64px;max-width:120px;border-radius:4px;border:1px solid #334155'); img.src = src; img.alt = 'pasted image'; row.appendChild(img) }
+      box.appendChild(row)
+    }
     return box
   }
 
@@ -405,8 +422,10 @@
     chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#94a3b8;padding-top:10px;border-top:1px solid #1e293b')
 
     input = make('textarea', 'box-sizing:border-box;width:100%;resize:vertical;min-height:84px;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:' + WELL + ';color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
-    input.placeholder = 'What should change? (⌘/Ctrl+Enter sends)'
+    input.placeholder = 'What should change? Paste a screenshot to show it. (⌘/Ctrl+Enter sends)'
     input.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask() } }
+    input.onpaste = paste
+    tray = make('div', 'display:none;flex-wrap:wrap;gap:6px')
 
     const row = make('div', 'display:flex;gap:6px;justify-content:flex-end')
     submit = make('button', BTN + ';margin-right:auto', 'Submit for review')
@@ -420,7 +439,7 @@
     send.onclick = ask
     row.append(submit, stop, send)
 
-    panel.append(head, list, hint, folds, chat, chips, input, row)
+    panel.append(head, list, hint, folds, chat, chips, tray, input, row)
     document.body.appendChild(panel)
     // The rail is drawn in fractions of the log, which a resize of the
     // panel moves without a scroll.
@@ -621,22 +640,101 @@
     ended(r.run, 'done · edited directly, no Claude run')
   }
 
+  // ─── pasted images ───────────────────────────────────────────────────
+  // Copying from a page can put text and an image on the clipboard together;
+  // the text still pastes, and only a paste with no text is taken over.
+
+  function paste(e) {
+    const files = [...(e.clipboardData?.items ?? [])]
+      .filter(i => i.kind === 'file' && i.type.startsWith('image/'))
+      .map(i => i.getAsFile()).filter(Boolean)
+    if (!files.length) return
+    if (!e.clipboardData.types.includes('text/plain')) e.preventDefault()
+    for (const f of files) {
+      if (shots.length >= MAX_IMAGES) { line(`${MAX_IMAGES} images is the most one ask takes`, 'error'); break }
+      const slot = { pending: true }
+      shots.push(slot)
+      shrink(f).then(s => Object.assign(slot, s, { pending: false }), err => {
+        shots = shots.filter(x => x !== slot)
+        line(`could not read the pasted image — ${err && err.message || err}`, 'error')
+      }).finally(drawTray)
+    }
+    drawTray()
+  }
+
+  const canvasOf = (bitmap, edge) => {
+    const k = Math.min(1, edge / Math.max(bitmap.width, bitmap.height))
+    const c = document.createElement('canvas')
+    c.width = Math.max(1, Math.round(bitmap.width * k))
+    c.height = Math.max(1, Math.round(bitmap.height * k))
+    c.getContext('2d').drawImage(bitmap, 0, 0, c.width, c.height)
+    return c
+  }
+  const blobOf = (c, type, q) => new Promise((ok, no) => c.toBlob(b => b ? ok(b) : no(new Error('the browser would not encode it')), type, q))
+  const base64Of = blob => new Promise((ok, no) => {
+    const r = new FileReader()
+    r.onload = () => ok(String(r.result).slice(String(r.result).indexOf(',') + 1))
+    r.onerror = () => no(r.error)
+    r.readAsDataURL(blob)
+  })
+
+  // A JPEG has no alpha, so a transparent PNG drawn onto one goes black where
+  // it was clear; the white underneath is what a page shows through it.
+  async function shrink(file) {
+    const bitmap = await createImageBitmap(file)
+    const c = canvasOf(bitmap, SHOT_EDGE)
+    let blob = await blobOf(c, 'image/png')
+    if (blob.size > SHOT_PNG) {
+      const flat = document.createElement('canvas')
+      flat.width = c.width; flat.height = c.height
+      const g = flat.getContext('2d')
+      g.fillStyle = '#fff'; g.fillRect(0, 0, flat.width, flat.height); g.drawImage(c, 0, 0)
+      blob = await blobOf(flat, 'image/jpeg', 0.85)
+    }
+    const thumb = canvasOf(bitmap, THUMB_EDGE).toDataURL('image/jpeg', 0.7)
+    bitmap.close?.()
+    return { type: blob.type, data: await base64Of(blob), thumb }
+  }
+
+  function drawTray() {
+    if (!tray) return
+    tray.textContent = ''
+    tray.style.display = shots.length ? 'flex' : 'none'
+    shots.forEach((s, k) => {
+      const box = make('div', 'position:relative;width:64px;height:64px;border:1px solid #334155;border-radius:6px;overflow:hidden;background:' + WELL)
+      box.dataset.shot = k
+      if (s.pending) box.appendChild(make('div', 'padding:22px 0;text-align:center;color:#94a3b8;font-size:11px', '…'))
+      else { const img = make('img', 'width:100%;height:100%;object-fit:cover'); img.src = s.thumb; img.alt = `pasted image ${k + 1}`; box.appendChild(img) }
+      const drop = make('button', 'position:absolute;top:2px;right:2px;width:18px;height:18px;padding:0;border:0;border-radius:999px;background:rgba(15,23,42,.85);color:#e2e8f0;font:12px/18px ui-sans-serif,system-ui;cursor:pointer', '×')
+      drop.type = 'button'
+      drop.title = 'Leave this image out'
+      drop.onclick = () => { shots = shots.filter(x => x !== s); drawTray() }
+      box.appendChild(drop)
+      tray.appendChild(box)
+    })
+  }
+
   async function ask() {
     const instruction = input.value.trim()
     if (!instruction || busy) return
+    if (shots.some(s => s.pending)) return line('an image is still being read — send again in a moment', 'error')
+    const images = shots
     input.value = ''
+    shots = []
+    drawTray()
     sent = true
-    return request(instruction, picks, { kind, scope })
+    return request(instruction, picks, { kind, scope }, images)
   }
 
-  async function request(instruction, list, chosen) {
-    line(instruction, 'you')
+  async function request(instruction, list, chosen, images = []) {
+    line(instruction, 'you', images.map(s => s.thumb))
     setBusy(true)
     let run = null
     try {
       const res = await post('/__fjs/ask', {
         instruction,
         ...chosen,
+        images:  images.map(s => ({ type: s.type, data: s.data })),
         picks:   wire(list),
         page:    location.href,
         session: store.get(),
@@ -701,6 +799,7 @@
     } else {
       line(copied ? `Copied this ask (${r.text.length} chars) — paste it into any agent` : 'Copy this ask into any agent:', 'meta')
       if (!copied) line(r.text, 'meta')
+      if (shots.length) line('The pasted images are not in it — paste them into the agent too.', 'meta')
     }
   }
 

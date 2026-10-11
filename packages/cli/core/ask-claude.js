@@ -31,6 +31,10 @@
 // the two levers left are what this file still owns: the budget, and whether
 // the repo's own hooks run (a Stop hook that blocks spends the run's turns).
 // The workbench's REVIEWER is the read-only default again, with its own prompt.
+//
+// A pasted image cannot ride a text prompt, so an ask carrying one goes in as
+// one stream-json user message instead — the prompt as its text block, each
+// image a base64 block after it. Measured on 2.1.296, a resume included.
 
 import { spawn, spawnSync } from 'node:child_process'
 
@@ -76,6 +80,9 @@ export const ASK_RULES = [
 export const ASK_MAX_RULES = 4000
 
 export const EDIT_TOOLS = ['Read', 'Grep', 'Glob', 'Edit', 'Write']
+
+// The media types the API takes as an image block; anything else is refused there.
+export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 
 // What the browser's picker sends with an element: the page renders as narrow
 // a reply as the console does, and the file and line are where to start, not a
@@ -132,7 +139,13 @@ export const WORK_BUDGET_USD = 10
 // `fork` resumes `session` under a NEW id filed under the run's own directory,
 // which is what lets `claude --resume` from a workbench branch's folder find it;
 // a plain resume from there answers but stays filed under the old directory.
-export function askArgv({ session = null, edit = null, work = null, fork = false } = {}) {
+export function askArgv({ session = null, edit = null, work = null, fork = false, images = false } = {}) {
+  const argv = askFlags({ session, edit, work, fork })
+  if (images) argv.push('--input-format', 'stream-json')
+  return argv
+}
+
+function askFlags({ session, edit, work, fork }) {
   if (work) {
     const argv = [
       '-p',
@@ -184,6 +197,16 @@ export function resumeCommand(root, session) {
   return `cd ${shellWord(root)} && claude --resume ${session}`
 }
 
+/** What goes on stdin: the prompt as is, or with images one stream-json message. */
+export function askInput(prompt, images = []) {
+  if (!images.length) return prompt
+  const content = [
+    { type: 'text', text: prompt },
+    ...images.map(i => ({ type: 'image', source: { type: 'base64', media_type: i.type, data: i.data } })),
+  ]
+  return JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n'
+}
+
 const shellWord = s => /^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`
 
 export function gitContext(root) {
@@ -230,11 +253,12 @@ export function askPrompt({ question, output = '', context = {}, git = null, rul
  * `loops` around it, `inner` loops and `files` under it — and `data` is the
  * resources those files read, one line each.
  */
-export function editPrompt({ instruction, picks = [], page = null, followUp = false, kind = null, scope = null, data = [] }) {
+export function editPrompt({ instruction, picks = [], page = null, followUp = false, kind = null, scope = null, data = [], images = 0 }) {
   const parts = []
   if (!followUp) parts.push(EDIT_RULES)
   const change = String(instruction ?? '').trim()
   if (change) parts.push(`Change: ${change}`)
+  if (images > 0) parts.push(`I pasted ${images === 1 ? 'an image' : `${images} images`} with this; ${images === 1 ? 'it comes' : 'they come'} after this text.`)
   if (Object.hasOwn(EDIT_KINDS, kind ?? ''))   parts.push(`What to change: ${EDIT_KINDS[kind]}`)
   if (Object.hasOwn(EDIT_SCOPES, scope ?? '')) parts.push(`How far: ${EDIT_SCOPES[scope]}`)
   if (page) parts.push(`The page: ${String(page).slice(0, 300)}`)
@@ -316,16 +340,16 @@ export function readAskEvent(event) {
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, bin = 'claude', onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, images = [], bin = 'claude', onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
 
-  const child = spawn(bin, askArgv({ session, edit }), {
+  const child = spawn(bin, askArgv({ session, edit, images: images.length > 0 }), {
     cwd: root, detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   child.stdin.on('error', () => {})
-  child.stdin.end(prompt)
+  child.stdin.end(askInput(prompt, images))
 
   let buf = ''
   child.stdout.setEncoding('utf8')

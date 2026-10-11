@@ -11,7 +11,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_BASH, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, WORK_BUDGET_USD, askArgv, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
+import { ASK_BASH, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, WORK_BUDGET_USD, askArgv, askInput, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 const dir     = mkdtempSync(join(tmpdir(), 'fli-ask-claude-'))
@@ -172,6 +172,29 @@ describe('runAsk', () => {
   test('a session id that is not one is refused before anything starts', async () => {
     const { error } = await ask({ bin: '/nonexistent', session: '--dangerously-skip-permissions' })
     expect(error).toContain('not a session id')
+  })
+
+  test('an ask with images goes in as one stream-json message: the prompt, then each image', async () => {
+    const fake = fakeClaude([{ type: 'result', subtype: 'success', is_error: false }])
+    const images = [{ type: 'image/png', data: 'iVBORw0KGgo=' }, { type: 'image/jpeg', data: '/9j/4AAQ' }]
+    const { code } = await ask({ bin: fake.bin, images })
+    expect(code).toBe(0)
+    const seen = fake.seen()
+    expect(seen.argv).toEqual(askArgv({ images: true }))
+    expect(seen.argv.slice(-2)).toEqual(['--input-format', 'stream-json'])
+    expect(seen.input.endsWith('\n')).toBe(true)
+    expect(JSON.parse(seen.input)).toEqual({ type: 'user', message: { role: 'user', content: [
+      { type: 'text', text: 'the prompt' },
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: '/9j/4AAQ' } },
+    ] } })
+  })
+
+  test('with no images the prompt stays plain text and the input format is left alone', () => {
+    expect(askInput('hi')).toBe('hi')
+    expect(askInput('hi', [])).toBe('hi')
+    expect(askArgv()).not.toContain('--input-format')
+    expect(askArgv({ edit: '/app', images: true })).toContain('--input-format')
   })
 
   test('a failing claude says what it said on stderr, rather than answering nothing', async () => {

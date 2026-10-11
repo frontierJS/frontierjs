@@ -9,6 +9,7 @@ examples:
   - fli ports:status --clean
   - fli ports:status --sessions
   - fli ps --include-idle
+  - fli ps --docker
 args:
   -
     name: port
@@ -25,6 +26,10 @@ flags:
   json:
     type: boolean
     description: Output as JSON
+    defaultValue: false
+  docker:
+    type: boolean
+    description: Also list the ports Docker containers publish — lsof cannot see them
     defaultValue: false
   sessions:
     type: boolean
@@ -60,11 +65,16 @@ walk stops at service slot 0 and the port somebody types is often a slot
 `fli dev` handed out. The dev slots are cut to the one holding the port, idle
 or running, since the app that owns a free port is usually the question.
 
+**Docker.** `--docker` adds the ports containers publish. They are held by
+docker-proxy, a root process, which an unprivileged `lsof` does not list — so a
+container is absent from the first half above even on a port the schema names.
+Asked of `docker ps`, the one authority on what it published.
+
 `fli kill <port>` is what to do about a port you want back; it names the process
 before it signals it, and reads the same `pidsOnPort` this does.
 
 ```js
-const { getSessionStatus, releaseSession, busyKnownPorts, portStatus } = await import(resolve(global.fliRoot, 'core/ports.js'))
+const { getSessionStatus, releaseSession, busyKnownPorts, portStatus, dockerPorts } = await import(resolve(global.fliRoot, 'core/ports.js'))
 const { plural } = await import(resolve(global.fliRoot, 'core/text.js'))
 
 const target = String(arg.port ?? '').trim()
@@ -77,10 +87,11 @@ if (target && !(/^\d+$/.test(target) && only >= 1 && only <= 65535)) {
 const holds    = s => Object.values(s.ports || {}).flat().map(Number).includes(only)
 const sessions = getSessionStatus().filter(s => only == null || holds(s))
 const one      = only != null && !flag.sessions ? await portStatus(only) : null
+const docker   = flag.docker && !flag.sessions ? dockerPorts().filter(d => only == null || d.port === only) : []
 const busy     = flag.sessions ? [] : one ? (one.busy ? [one] : []) : await busyKnownPorts()
 
 if (flag.json) {
-  echo(JSON.stringify(one ? { port: one, sessions } : { busy, sessions }, null, 2))
+  echo(JSON.stringify(one ? { port: one, sessions, docker } : { busy, sessions, docker }, null, 2))
   return
 }
 
@@ -109,6 +120,15 @@ if (!flag.sessions) {
     }
     echo('')
   }
+}
+
+if (docker.length) {
+  echo(chalk`  {bold docker} {dim —} ${plural(docker.length, 'published port')}\n`)
+  for (const d of docker) {
+    echo(chalk`  {green ●}  {bold.cyan ${String(d.port).padEnd(6)}} {magenta ${d.name}} {dim → :${d.container}}`)
+    echo(chalk`     {gray ${d.image}}`)
+  }
+  echo('')
 }
 
 if (!sessions.length) {

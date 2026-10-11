@@ -58,7 +58,7 @@
           {#if n.href}
             <Button variant="ghost" onclick={() => goto(n.href)}>{n.action} →</Button>
           {/if}
-          <Button variant="ghost" aria-label={`Dismiss: ${n.title}`} onclick={() => dismiss(n.id)}>✕</Button>
+          <Button variant="ghost" aria-label={`Dismiss: ${n.title}`} onclick={() => dismiss(n.id)}>Got it</Button>
         </li>
       {/each}
     </ul>
@@ -70,3 +70,32 @@
     {/if}
   {/if}
 </Card>
+
+<style>
+  /* text column takes the slack, so the action buttons line up on the right edge */
+  li > :global(.stack) { flex: 1; }
+  /* empty state: icon, title and message share one row. Baseline alignment
+     hangs the 2rem icon above the text, so center the row and size all three
+     to one line box. */
+  .section-header + :global(:not(ul)) {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-sm);
+    padding-block: 0;
+    /* .card > :not(:first-child) spaces this like a stacked block */
+    margin-block: 0;
+    text-align: start;
+  }
+  .section-header + :global(:not(ul)) :global(.empty-icon) {
+    --icon-size: 1.25rem;
+    display: flex;
+    align-items: center;
+  }
+  .section-header + :global(:not(ul)) :global(.empty-title),
+  .section-header + :global(:not(ul)) :global(.empty-text) {
+    font-size: var(--text-md);
+    line-height: 1.25rem;
+  }
+</style>

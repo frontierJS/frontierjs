@@ -981,6 +981,14 @@ try {
   // a run of the stand-in claude above, in that checkout; the card says it is
   // working while it is, says done when it ends, and the tab says so too.
   console.log('\n  /workbench/ — a Claude Code chat per pinned checkout')
+  const call = (method, path, serviceMethod, payload) => evaluate(`fetch(${JSON.stringify(path)}, {
+      method: ${JSON.stringify(method)},
+      headers: { accept: 'application/json', 'content-type': 'application/json',
+        authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+        'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+        ${serviceMethod ? `'x-service-method': ${JSON.stringify(serviceMethod)},` : ''} },
+      ${payload ? `body: ${JSON.stringify(JSON.stringify(payload))},` : ''}
+    }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
   await fill({ root: '~/code' })
   await evaluate(`document.querySelector('#local-repos-form button[type=submit]').click()`)
   await until(`document.querySelectorAll('#local-repos-list [aria-label^="Pin alpha"]').length`, n => n === 1,
@@ -999,9 +1007,9 @@ try {
     (await evaluate(`${card}.textContent`)).replace(/\s+/g, ' ').slice(0, 200))
   check('and starts idle', (await evaluate(`${card}.dataset.state`)) === 'idle')
 
-  await evaluate(`(() => { const t = ${card}.querySelector('textarea')
+  await evaluate(`(() => { const t = ${card}.querySelector('.workbench-composer textarea')
     t.value = 'add a readme'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
-  await evaluate(`${card}.querySelector('form button[type=submit]').click()`)
+  await evaluate(`${card}.querySelector('.workbench-composer button[type=submit]').click()`)
   await until(`${card}.dataset.state`, s => s === 'working', 'the card never said it was working')
   check('a message turns the card to working', true)
   await until(`${card}.querySelector('.workbench-now')?.textContent ?? ''`, t => /Bash bun test/.test(t),
@@ -1026,11 +1034,13 @@ try {
 
   // After the run: the checkout's own fli done, the running cost, a review,
   // and the diff a line comment is made on.
-  const checks = await until(`${card}.querySelector('.workbench-checks')?.textContent ?? ''`, t => /unfinished/.test(t),
-    'the checks strip never showed fli done\'s report', 15_000)
-  check('a finished run runs the checkout\'s fli done and the card says what is unfinished',
+  const tab = (sel, key) => evaluate(`${sel}.querySelector('[data-tab=${key}]').click()`)
+  const checks = await until(`${card}.querySelector('[data-tab=checks]')?.textContent ?? ''`, t => /unfinished/.test(t),
+    'the checks tab never showed fli done\'s report', 15_000)
+  check('a finished run runs the checkout\'s fli done and its tab says what is unfinished',
     /1 unfinished/.test(checks) && /1 drive to run/.test(checks), checks.replace(/\s+/g, ' '))
-  await evaluate(`${card}.querySelector('.workbench-checks').open = true`)
+  await tab(card, 'checks')
+  await until(`!!${card}.querySelector('.workbench-checks')`, v => v, 'the checks tab opened no report')
   check('…and opening it lists the item and the drive to run',
     await evaluate(`/a\\.snapshot\\.md is stale/.test(${card}.querySelector('.workbench-checks').textContent)
       && /cd web && bun run verify/.test(${card}.querySelector('.workbench-checks').textContent)`))
@@ -1039,6 +1049,8 @@ try {
     /today \$0\.42/.test(await evaluate(`document.getElementById('workbench-today')?.textContent ?? ''`)))
 
   await evaluate(`[...${card}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Review').click()`)
+  await until(`!!${card}.querySelector('[data-tab=review]')`, v => v, 'Review drew no tab')
+  await tab(card, 'review')
   const reviewed = await until(`${card}.querySelector('.workbench-review')?.textContent ?? ''`, t => /Done: /.test(t),
     'the review never answered', 15_000)
   check('Review runs a read-only session and the card shows its reply', /read-only/.test(reviewed), reviewed.replace(/\s+/g, ' ').slice(0, 200))
@@ -1046,9 +1058,9 @@ try {
   check('…and its cost reaches the total', true)
   await evaluate(`[...${card}.querySelectorAll('.workbench-review button')].find(b => /Use as message/.test(b.textContent)).click()`)
   check('"Use as message" puts the reply in the message box rather than sending it',
-    await until(`${card}.querySelector('textarea').value`, v => /^A read-only reviewer/.test(v), 'the reply never reached the draft') && true)
+    await until(`${card}.querySelector('.workbench-composer textarea').value`, v => /^A read-only reviewer/.test(v), 'the reply never reached the draft') && true)
 
-  await evaluate(`(() => { const d = ${card}.querySelector('.workbench-diff-panel'); d.open = true })()`)
+  await tab(card, 'diff')
   const files = await until(`[...${card}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
     t => /claude-was-here\.txt/.test(t), 'the diff never listed the file the run wrote')
   check('the diff lists the tree\'s changes, untracked files included', /dirty\.txt/.test(files), files)
@@ -1066,9 +1078,9 @@ try {
   await until(`${card}.querySelector('.section-header').textContent`, t => !/\bnew\b/.test(t), 'opening the card did not mark it seen')
   check('clicking the card marks it seen', true)
 
-  await evaluate(`(() => { const t = ${card}.querySelector('textarea')
+  await evaluate(`(() => { const t = ${card}.querySelector('.workbench-composer textarea')
     t.value = 'slow one'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
-  await evaluate(`${card}.querySelector('form button[type=submit]').click()`)
+  await evaluate(`${card}.querySelector('.workbench-composer button[type=submit]').click()`)
   await until(`${card}.dataset.state`, s => s === 'working', 'the second message never started')
   await until(`[...${card}.querySelectorAll('button')].some(b => b.textContent.trim() === 'Stop')`, v => v, 'no Stop while working')
   await evaluate(`[...${card}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Stop').click()`)
@@ -1078,8 +1090,9 @@ try {
   check('the line comment went with that message, and left the box',
     /My comments on the diff:[\s\S]*dirty\.txt:1[\s\S]*why this file\?[\s\S]*slow one/.test(await evaluate(`${card}.querySelector('.workbench-log').textContent`))
       && !(await evaluate(`!!${card}.querySelector('.workbench-comments')`)))
-  check('a new message hides the checks and review it made stale',
-    !(await evaluate(`!!${card}.querySelector('.workbench-checks') || !!${card}.querySelector('.workbench-review')`)))
+  check('a new message hides the checks and review it made stale, and shows the chat',
+    !(await evaluate(`!!${card}.querySelector('[data-tab=checks], [data-tab=review]')`))
+      && await evaluate(`${card}.querySelector('[data-tab=chat]').getAttribute('aria-selected') === 'true'`))
 
   // Two messages sent, so two notches; a fold clamps one side and leaves the
   // other open, and a click on one message flips it against the mode.
@@ -1113,7 +1126,89 @@ try {
   await until(`document.querySelectorAll('#workbench-grid article[data-state]').length`, n => n === 2, 'Fork drew no second card')
   const branch = `document.querySelector('#workbench-grid article[data-branch]')`
   const drawn  = await evaluate(`[...document.querySelectorAll('#workbench-grid article[data-state]')].map(a => a.dataset.branch ?? 'parent').join(' ')`)
-  check('Fork draws the branch right after its parent', drawn === 'parent wb/try', drawn)
+  check('Fork puts the branch on the stage beside its parent', drawn === 'parent wb/try', drawn)
+
+  // The stage holds two; the rest are tiles in the dock, and this browser
+  // remembers which two.
+  const panes = `document.querySelectorAll('#workbench-grid article[data-state]').length`
+  await evaluate(`${branch}.querySelector('[aria-label^="Move"][aria-label$="to the dock"]').click()`)
+  await until(panes, n => n === 1, 'the dock button left the branch on the stage')
+  check('a pane moved to the dock becomes a tile there',
+    await evaluate(`!!document.querySelector('.workbench-dock .workbench-tile[data-branch="wb/try"]')`))
+  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2', key: '2', altKey: true, bubbles: true }))`)
+  await until(panes, n => n === 2, 'Alt+2 did not bring the branch back')
+  check('Alt+2 puts the second chat back on the stage', true)
+  await goto('/workbench/')
+  await until(panes, n => n === 2, 'a reload forgot the stage')
+  check('…and a reload keeps both on the stage',
+    (await evaluate(`[...document.querySelectorAll('#workbench-grid article[data-state]')].map(a => a.dataset.branch ?? 'parent').join(' ')`)) === 'parent wb/try')
+
+  // A third chat replaces the pane touched least recently, in that pane's
+  // slot. The pauses keep two touches from landing on one millisecond.
+  const GAMMA = join(SCRATCH, 'elsewhere', 'gamma')
+  mkdirSync(GAMMA, { recursive: true })
+  gitIn(GAMMA, 'init', '-q', '-b', 'main')
+  const gammaPin = (await call('POST', '/workbench', 'pin', { path: GAMMA })).body
+  await goto('/workbench/')
+  const gammaTile = `document.querySelector('.workbench-dock #workbench-${gammaPin?.id} .workbench-tile-open')`
+  await until(`!!${gammaTile}`, v => v, 'a third pin did not wait in the dock')
+  const onStage = `[...document.querySelectorAll('#workbench-grid article[data-state]')]
+    .map(a => a.dataset.branch ?? (a.id === 'workbench-${gammaPin?.id}' ? 'gamma' : 'parent')).join(' ')`
+  await evaluate(`${branch}.click()`); await sleep(20)
+  await evaluate(`${card}.click()`);   await sleep(20)
+  await evaluate(`${gammaTile}.click()`)
+  await until(onStage, s => s === 'parent gamma', 'a third chat did not replace the pane touched least recently')
+  check('a third chat replaces the pane touched least recently, in its slot', true)
+  await sleep(20)
+  await evaluate(`${card}.click()`);   await sleep(20)
+  await evaluate(`document.querySelector('.workbench-dock .workbench-tile[data-branch="wb/try"] .workbench-tile-open').click()`)
+  await until(onStage, s => s === 'parent wb/try', 'a chat staged and not touched since was kept over one touched after it')
+  check('…and a chat staged and not touched since is the stalest', true)
+  check('the unpinned third chat goes', (await call('POST', `/workbench/${gammaPin?.id}`, 'unpin')).status === 200)
+  await goto('/workbench/')
+  await until(panes, n => n === 2, 'unpinning a docked chat changed the stage')
+
+  // The split between the two panes: dragged with a real mouse, moved with
+  // the keys a separator promises, kept across a reload, evened by a
+  // double-click.
+  const handle = `document.querySelector('.workbench-split')`
+  const widths = `[...document.querySelectorAll('#workbench-grid article[data-state]')].map(a => Math.round(a.getBoundingClientRect().width))`
+  const at = await evaluate(`(() => { const r = ${handle}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
+  const mouse = (type, x, buttons) => send('Input.dispatchMouseEvent', { type, x, y: at.y, button: 'left', buttons, clickCount: 1 })
+  await mouse('mousePressed', at.x, 1)
+  for (const dx of [40, 80, 120]) await mouse('mouseMoved', at.x + dx, 1)
+  await mouse('mouseReleased', at.x + 120, 0)
+  const [wide, narrow] = await until(widths, ([a, b]) => a > b + 100, 'dragging the split did not widen the first pane')
+  check('dragging the split widens one pane at the other\'s cost', true, `${wide} / ${narrow}`)
+  await evaluate(`${handle}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))`)
+  await until(`${handle}.getAttribute('aria-valuenow')`, v => v === '25', 'Home did not move the split to its least')
+  check('Home moves the split to its least, and the separator says so', true)
+  await goto('/workbench/')
+  await until(`${handle}?.getAttribute('aria-valuenow')`, v => v === '25', 'a reload forgot the split')
+  check('…and a reload keeps it', (await evaluate(widths)).reduce((a, b) => b - a) > 100)
+  await evaluate(`${handle}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
+  const even = await until(widths, ([a, b]) => Math.abs(a - b) <= 2, 'a double-click did not even the panes')
+  check('a double-click evens them', true, even.join(' / '))
+
+  // Zoom: one pane takes the stage, the other waits in the dock still staged.
+  const zoomOf = (sel) => `${sel}.querySelector('[aria-label^="Zoom"], [aria-label="Show both panes"]')`
+  const alt = (code) => evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', altKey: true, bubbles: true }))`)
+  const stageWidth = await evaluate(`document.querySelector('.workbench-panes').getBoundingClientRect().width`)
+  await evaluate(`${zoomOf(card)}.click()`)
+  await until(panes, n => n === 1, 'Zoom left both panes drawn')
+  check('Zoom gives one pane the whole stage',
+    Math.abs((await evaluate(widths))[0] - stageWidth) <= 2 && await evaluate(`${zoomOf(card)}.getAttribute('aria-pressed') === 'true'`))
+  check('…and the other waits in the dock as a tile',
+    await evaluate(`!!document.querySelector('.workbench-dock .workbench-tile[data-branch="wb/try"]')`))
+  await alt('Digit2')
+  await until(onStage, s => s === 'wb/try', 'Alt+2 while zoomed did not show the branch')
+  check('Alt+2 while zoomed shows that chat zoomed', true)
+  await goto('/workbench/')
+  await until(onStage, s => s === 'wb/try', 'a reload forgot the zoom')
+  check('…and a reload keeps the zoom', true)
+  await alt('KeyZ')
+  await until(onStage, s => s === 'parent wb/try', 'Alt+Z did not bring both panes back')
+  check('Alt+Z brings both panes back, in their places', true)
   const branchText = (await evaluate(`${branch}.textContent`)).replace(/\s+/g, ' ')
   check('…naming its parent, its git branch and the uncommitted files it carried',
     /branch of alpha/.test(branchText) && /wb\/try/.test(branchText) && /carried 2 uncommitted files/.test(branchText), branchText.slice(0, 300))
@@ -1123,12 +1218,14 @@ try {
   const inTree = (file) => spawnSync('cat', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'try', file)], { encoding: 'utf8' }).stdout
   check('the tree is outside the repository, holding the parent\'s uncommitted file', inTree('dirty.txt') === 'y')
   check('…and its ignored .env', inTree('.env') === 'SECRET=alpha\n')
+  await tab(branch, 'settings')
+  await tab(card, 'settings')
   check('a branch\'s settings have no copy list, since a branch is not forked',
     !(await evaluate(`!!${branch}.querySelector('textarea[name=copy]')`)) && await evaluate(`!!${card}.querySelector('textarea[name=copy]')`))
 
-  await evaluate(`(() => { const t = ${branch}.querySelector('textarea')
+  await evaluate(`(() => { const t = ${branch}.querySelector('.workbench-composer textarea')
     t.value = 'in the branch'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
-  await evaluate(`${branch}.querySelector('form button[type=submit]').click()`)
+  await evaluate(`${branch}.querySelector('.workbench-composer button[type=submit]').click()`)
   await until(`${branch}.dataset.state`, s => s === 'done', 'the branch\'s run never finished', 15_000)
   check('a message runs in the branch, not in alpha',
     /in the branch/.test(spawnSync('cat', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'try', 'claude-was-here.txt')], { encoding: 'utf8' }).stdout)
@@ -1137,7 +1234,7 @@ try {
   check('the parent\'s total takes in its branch', true)
   check('a parent with a branch cannot be unpinned', await evaluate(`${button(card, 'Unpin')}.disabled`))
 
-  await evaluate(`(() => { const d = ${branch}.querySelector('.workbench-diff-panel'); d.open = true })()`)
+  await tab(branch, 'diff')
   const branchFiles = await until(`[...${branch}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
     t => /claude-was-here\.txt/.test(t), 'the branch\'s diff never listed what its run wrote')
   check('the branch\'s diff is its work alone, not what it carried', !/dirty\.txt/.test(branchFiles), branchFiles)
@@ -1202,14 +1299,6 @@ try {
   const registered = await heartbeat(credential, { outpost_url: `https://localhost:${MACHINE_PORT}` })
   check('the machine reports its command port', registered.status === 200, `${registered.status}`)
 
-  const call = (method, path, serviceMethod, payload) => evaluate(`fetch(${JSON.stringify(path)}, {
-      method: ${JSON.stringify(method)},
-      headers: { accept: 'application/json', 'content-type': 'application/json',
-        authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
-        'x-workspace-id': localStorage.getItem('basecamp_workspace'),
-        ${serviceMethod ? `'x-service-method': ${JSON.stringify(serviceMethod)},` : ''} },
-      ${payload ? `body: ${JSON.stringify(JSON.stringify(payload))},` : ''}
-    }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
   const alphaPin = (await call('GET', '/workbench', 'pins')).body?.pins?.find(p => !p.from)
   const projectId = (await call('GET', '/projects')).body?.data?.[0]?.id
   const settings = { projectId, app: '.', domain: 'preview.example.test', apiUrl: 'https://api.example.test', serverId }
@@ -1320,15 +1409,15 @@ try {
   await goto('/workbench/')
   const betaCard = `document.getElementById('workbench-${betaPin?.id}')`
   await until(`!!${betaCard}?.querySelector('.workbench-gone')`, v => v, 'a renamed checkout drew no warning')
-  check('a renamed checkout\'s card warns, even out of focus',
-    await evaluate(`${betaCard}.dataset.focus === 'false' && ${betaCard}.querySelector('.workbench-gone').offsetParent !== null`))
+  check('a renamed checkout\'s card warns, even as a tile in the dock',
+    await evaluate(`!!${betaCard}.closest('.workbench-dock') && ${betaCard}.querySelector('.workbench-gone').offsetParent !== null`))
   check('…and offers no message box or diff', !(await evaluate(`!!${betaCard}.querySelector('[id^=workbench-draft-], .workbench-diff-panel')`)))
   const goneSend = await call('POST', `/workbench/${betaPin?.id}`, 'send', { prompt: 'hello' })
   check('…and a send is refused by the path', goneSend.status === 400 && /no longer there/.test(goneSend.body?.message ?? ''), JSON.stringify(goneSend))
   await answer('confirm', true)
   await evaluate(`${button(betaCard, 'Unpin')}.click()`)
   await until(`!${betaCard}`, v => v, 'Unpin left the renamed checkout\'s card')
-  check('…and Unpin from its header removes it', true)
+  check('…and Unpin from its tile removes it', true)
   renameSync(`${BETA}-renamed`, BETA)
 
   // ⌘K's Recent group. Both visits are full page loads, so the entry it

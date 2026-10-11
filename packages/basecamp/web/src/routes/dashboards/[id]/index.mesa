@@ -331,9 +331,11 @@ title: Dashboard
         <h2 class="h4">Choose a widget</h2>
         <div class="tiles" style="--tile-min: 15rem" id="widget-kinds">
           {#each kinds as spec}
-            <Button variant="outlined" onclick={() => choose(spec)}>
-              {spec.label} — {spec.description}
-            </Button>
+            <Card>
+              <h3 class="h5">{spec.label}</h3>
+              <p class="text-sm text-muted">{spec.description}</p>
+              <Button variant="outlined" onclick={() => choose(spec)}>Choose</Button>
+            </Card>
           {/each}
         </div>
       {:else}

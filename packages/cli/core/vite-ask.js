@@ -30,6 +30,10 @@
 // what the run left; anything else means another writer has been in it, and a
 // whole-file restore would take their work with ours. Then it reverses the
 // run's own hunks, newest first, only where the new text occurs exactly once.
+//
+// An ask may carry images pasted into the panel. The panel shrinks them first;
+// the limits here are the API's own, so a request it would refuse stops here,
+// before a run starts that can only fail.
 
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -39,7 +43,7 @@ import { fileURLToPath } from 'node:url'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
-import { EDIT_KINDS, EDIT_SCOPES, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
 import { askContext } from './ask-context.js'
 import { previewScope } from './preview.js'
 
@@ -51,6 +55,10 @@ const LOC         = /^[\w./-]+\.(mesa|md):\d+:\d+$/
 const MAX_PICKS   = 10
 const MAX_INNER   = 60
 const MAX_TEXT    = 2000
+const MAX_IMAGES  = 5
+const MAX_IMAGE   = 5 * 1024 * 1024
+const ASK_BODY    = MAX_BODY + MAX_IMAGES * MAX_IMAGE
+const BASE64      = /^[A-Za-z0-9+/]+={0,2}$/
 
 /** True when the request came from a page this dev server served. */
 export function sameOrigin(req) {
@@ -466,13 +474,29 @@ function readChips(body) {
   return { kind, scope }
 }
 
-function readJson(req) {
+/** `[{ type, data }]`, data base64 with no `data:` prefix, or `{ error }`. */
+export function readImages(list) {
+  if (list == null) return []
+  if (!Array.isArray(list)) return { error: 'images is a list' }
+  if (list.length > MAX_IMAGES) return { error: `at most ${MAX_IMAGES} images in one ask` }
+  const out = []
+  for (const [i, img] of list.entries()) {
+    const type = String(img?.type ?? ''), data = img?.data
+    if (!IMAGE_TYPES.includes(type)) return { error: `image ${i + 1} is ${type.slice(0, 40) || 'of no type'} — paste a PNG, JPEG, GIF or WebP` }
+    if (typeof data !== 'string' || !BASE64.test(data)) return { error: `image ${i + 1} is not base64` }
+    if (data.length > MAX_IMAGE) return { error: `image ${i + 1} is over ${MAX_IMAGE >> 20}MB` }
+    out.push({ type, data })
+  }
+  return out
+}
+
+function readJson(req, limit = MAX_BODY) {
   return new Promise((ok, no) => {
     let size = 0, body = ''
     req.setEncoding('utf8')
     req.on('data', chunk => {
       size += chunk.length
-      if (size > MAX_BODY) { no(new Error('request too large')); req.destroy() }
+      if (size > limit) { no(new Error('request too large')); req.destroy() }
       else body += chunk
     })
     req.on('end', () => { try { ok(JSON.parse(body || '{}')) } catch { no(new Error('not JSON')) } })
@@ -542,9 +566,11 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
   async function ask(req, res) {
     if (current) return reply(res, 409, { error: 'Claude is already working on a change — stop it first' })
     let body
-    try { body = await readJson(req) } catch (e) { return reply(res, 400, { error: e.message }) }
+    try { body = await readJson(req, ASK_BODY) } catch (e) { return reply(res, 400, { error: e.message }) }
     const instruction = String(body.instruction ?? '').trim()
     if (!instruction) return reply(res, 400, { error: 'say what to change' })
+    const images = readImages(body.images)
+    if (images.error) return reply(res, 400, { error: images.error })
     if (body.picks != null && !Array.isArray(body.picks)) return reply(res, 400, { error: 'picks is a list' })
     if ((body.picks ?? []).length > MAX_PICKS) return reply(res, 400, { error: `at most ${MAX_PICKS} elements in one ask` })
     const chips = readChips(body)
@@ -564,7 +590,8 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
       root, bin,
       edit:    root,
       session: body.session || null,
-      prompt:  editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: !!body.session }),
+      images,
+      prompt:  editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: !!body.session, images: images.length }),
       onEvent: e => {
         if (e.type === 'read' || e.type === 'edit' || e.type === 'write') return ledger.see(e)
         if (e.type === 'session') session = e.id

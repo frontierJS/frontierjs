@@ -1932,7 +1932,10 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
                          defsKey, withVersionProperty(jsonSchema, updateSchemaDoc, defsKey), 'update')),
             transient: transientFields(jsonSchema, defsKey),
             fields:    modelFieldNames(client.$schema, defsKey),
-            guarded:   guardedFieldNames(client, accessor),
+            // Resolved, as getTable is: a service named for its URL ('accounts')
+            // asked `$protectedFields('accounts')`, which knows no such model,
+            // and the empty answer let a guarded key be stripped with a 2xx.
+            guarded:   guardedFieldNames(client, resolveAccessor(client, accessor)),
             model:     defsKey,
           })
         } catch (err) {

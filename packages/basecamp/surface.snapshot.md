@@ -159,11 +159,12 @@ name when it declares none.
 
 ### `account`
 
-- **methods** — `get`, `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
-- **custom methods** — `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
+- **methods** — `get`, `changePassword`, `requestEmailChange`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
+- **custom methods** — `changePassword`, `requestEmailChange`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **who may call** —
   - `get` — standing 1 or above — declared `gate: 1`
   - `changePassword` — standing 1 or above — declared `gate: 1`
+  - `requestEmailChange` — standing 1 or above — declared `gate: 1`
   - `totpStatus` — standing 1 or above — declared `gate: 1`
   - `setupTotp` — standing 1 or above — declared `gate: 1`
   - `confirmTotp` — standing 1 or above — declared `gate: 1`

@@ -250,6 +250,16 @@ describe('the moves a row may make', () => {
     }
   })
 
+  // The heading read 'Zone 3f2a9c…' on every generated detail page of a model
+  // keyed by uuid, though the model said which column names it (maidtech 7d).
+  test('a detail page is headed by the row\'s name where the model names one, and its delete says it', () => {
+    for (const [what, source] of pages.filter(([w]) => /edit|detail/.test(w))) {
+      expect(source, what).toMatch(/const nameOf = \(rec\) => \(rec && \w+\.labelSource !== 'fallback' && rec\[\w+\.labelField\]\) \|\| null/)
+      expect(source, what).toMatch(/<SectionHeader title=\{nameOf\(record\) \?\? '[^']+ ' \+ id\}/)
+      expect(source, what).toContain("confirm('Delete ' + (nameOf(record) ?? id) + '?')")
+    }
+  })
+
   test('the template names no move, state or column', () => {
     for (const [what, source] of pages) {
       expect(source, what).not.toMatch(/invoke\('/)

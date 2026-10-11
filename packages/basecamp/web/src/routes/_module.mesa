@@ -337,10 +337,9 @@ siteName: Basecamp
   @frontierjs/ui: the frame (shell / topbar / sidebar / screen) and the nav
   (navlist / navlink / navlist-label) are vocabulary; the badges, pills,
   buttons, switcher, drawer and account menu are components. The one <style>
-  block below is layout only — the notice rail and the collapsed sidebar,
-  which the vocabulary has no word for. No color, no utility classes (repo invariant 13) — which is also why the
-  topbar still crowds below ~600px: there is no way to say "drop this below md"
-  without one, and the package refused to ship the vocabulary (FJS-338).
+  block below is layout only — the notice rail, the collapsed sidebar and what
+  the topbar drops below 767px, which the vocabulary has no word for. No color,
+  no utility classes (repo invariant 13).
 -->
 <!-- The skip link is the first focusable thing on the page and is invisible
      until focused. Without it, a keyboard user tabs through the nav, the
@@ -403,20 +402,24 @@ siteName: Basecamp
         <button class="btn ghost square sidebar-toggle" aria-label="Open navigation"
                 aria-expanded={navOpen ? 'true' : 'false'} on:click={() => navOpen = true}>☰</button>
       {/if}
-      <strong>{page.siteName}</strong>
-      <Badge tone="muted">alpha</Badge>
+      <a class="cluster" href="/" aria-label="{page.siteName} home" style:text-decoration="none" style:color="inherit">
+        <img src="/favicon.svg" alt="" width="20" height="20" />
+        <strong>{page.siteName}</strong>
+      </a>
+      <span class="hide-sm"><Badge tone="muted">alpha</Badge></span>
       {#if session.user}
-        <Button variant={focus ? 'outlined' : 'ghost'} size="sm" id="focus-toggle"
-                aria-pressed={focus ? 'true' : 'false'} title="Hide the side panels (Ctrl+.)"
-                onclick={toggleFocus}>Focus</Button>
+        <span class="hide-sm">
+          <Button variant={focus ? 'outlined' : 'ghost'} size="sm" id="focus-toggle"
+                  aria-pressed={focus ? 'true' : 'false'} title="Hide the side panels (Ctrl+.)"
+                  onclick={toggleFocus}>Focus</Button>
+        </span>
       {/if}
     </span>
 
-    <!-- The few screens opened all day. Hidden with the rest of the nav's
-         wide-screen chrome below 767px is not possible without a utility
-         class (invariant 13), so the drawer repeats them instead. -->
+    <!-- The few screens opened all day. Below 767px the drawer repeats them
+         and this row is hidden (`.hide-sm`, the style block below). -->
     {#if session.user}
-      <nav class="cluster" aria-label="Primary">
+      <nav class="cluster hide-sm" aria-label="Primary">
         {#each PRIMARY as link}
           <a class="navlink" href={link.href}
              aria-current={(page.route, current(link)) ? 'page' : null}
@@ -438,7 +441,7 @@ siteName: Basecamp
         <!-- The custom property is set on a wrapper rather than passed as a
              prop: --field-inline-size inherits, and a kit component takes the
              props it declares — it is not a div with a style attribute. -->
-        <span style="--field-inline-size: auto">
+        <span class="hide-sm" style="--field-inline-size: auto">
           <Select
             id="workspace-switch"
             value={session.workspaceId}
@@ -451,13 +454,15 @@ siteName: Basecamp
 
       <!-- The live WebSocket as a tone, not a hand-mixed green. It opens only
            once a token is stored, so 'offline' before sign-in is correct. -->
-      <Pill tone={status.connected ? 'success' : 'muted'}>
-        {status.connected ? 'live' : 'offline'}
-      </Pill>
+      <span class="hide-sm">
+        <Pill tone={status.connected ? 'success' : 'muted'}>
+          {status.connected ? 'live' : 'offline'}
+        </Pill>
+      </span>
 
       {#if session.user}
         <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
-          Search <kbd class="kbd">⌘K</kbd>
+          Search <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
 
         <!-- The count is a Badge inside the trigger, so the unread number is
@@ -571,6 +576,20 @@ siteName: Basecamp
 {#if session.user}
   <Drawer side="left" open={navOpen} title="Navigation" onclose={() => navOpen = false}>
     <nav aria-label="Main">
+      {#if session.workspaces.length}
+        <!-- The topbar's switcher is hidden at this width, and the scope a page
+             is showing still has to be reachable. -->
+        <div class="drawer-switch">
+          <label class="visually-hidden" for="workspace-switch-nav">Workspace</label>
+          <Select
+            id="workspace-switch-nav"
+            value={session.workspaceId}
+            placeholder=""
+            options={session.workspaces.map(w => ({ value: w.id, label: w.name }))}
+            onchange={pick}
+          />
+        </div>
+      {/if}
       {@render navlinks(PRIMARY)}
       {@render navlists()}
     </nav>
@@ -602,6 +621,18 @@ siteName: Basecamp
     transition:          transform var(--motion-fast);
   }
   .nav-group[open] .nav-chevron { transform: none; }
+
+  /* The topbar below 767px is the drawer button, the name, search, the bell
+     and the account menu. The rest is in the drawer or one search away. */
+  @media (max-width: 767px) {
+    .hide-sm { display: none; }
+    .topbar {
+      gap:            var(--space-sm);
+      padding-inline: var(--space-md);
+    }
+    .topbar .cluster { flex-wrap: nowrap; gap: var(--space-xs); }
+  }
+  .drawer-switch { margin-block-end: var(--space-lg); }
 
   .rail-toggle {
     display:             flex;

@@ -17,7 +17,7 @@ import { EDIT_KINDS, EDIT_MAX_HTML, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
-import { admitCaller, askPlugin, createLedger, dirtyPaths, lineDiff, locateText, readAdmit, sameOrigin, submission, undoEdits } from '../core/vite-ask.js'
+import { admitCaller, askPlugin, createLedger, dirtyPaths, lineDiff, locateText, readAdmit, readImages, sameOrigin, submission, undoEdits } from '../core/vite-ask.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'fli-vite-ask-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -111,6 +111,29 @@ describe('editPrompt', () => {
     const p = editPrompt({ picks: [{ loc: '/app/site/a.mesa:3:1', html: '<h1>A</h1>' }], followUp: true })
     expect(p).not.toContain('Change:')
     expect(p).toContain('- source: /app/site/a.mesa:3:1')
+  })
+
+})
+
+describe('readImages', () => {
+
+  test('none is none, and a good list comes back as type and data only', () => {
+    expect(readImages(undefined)).toEqual([])
+    expect(readImages([{ type: 'image/png', data: 'iVBORw0KGgo=', thumb: 'x' }])).toEqual([{ type: 'image/png', data: 'iVBORw0KGgo=' }])
+  })
+
+  test('what the API would refuse is refused here, by name', () => {
+    expect(readImages('x').error).toBe('images is a list')
+    expect(readImages(Array(6).fill({ type: 'image/png', data: 'AA==' })).error).toContain('at most 5')
+    expect(readImages([{ type: 'image/svg+xml', data: 'AA==' }]).error).toContain('image/svg+xml')
+    expect(readImages([{ type: 'image/png', data: 'data:image/png;base64,AA==' }]).error).toContain('not base64')
+    expect(readImages([{ type: 'image/png', data: 'A'.repeat(5 * 1024 * 1024 + 4) }]).error).toContain('over 5MB')
+  })
+
+  test('the prompt says images follow, and says nothing when there are none', () => {
+    expect(editPrompt({ instruction: 'x', followUp: true, images: 2 })).toContain('I pasted 2 images with this; they come after this text.')
+    expect(editPrompt({ instruction: 'x', followUp: true, images: 1 })).toContain('I pasted an image with this; it comes after this text.')
+    expect(editPrompt({ instruction: 'x', followUp: true })).not.toContain('pasted')
   })
 
 })
@@ -617,6 +640,35 @@ describe('the routes — admission and Submit, over HTTP against a real repo', (
     await post('/__fjs/ask/text', { loc: 'Page.mesa:2:1', tag: 'p', old: 'Other', new: 'Another' })
     expect(await post('/__fjs/ask/submit')).toMatchObject({ status: 200, created: false, files: ['web/Page.mesa'] })
     expect(git(origin, 'rev-parse', 'wb/trial')).toBe(git(work, 'rev-parse', 'HEAD'))
+  })
+
+  test('an ask\'s images reach claude on stdin, past the plain body limit, and a bad one starts nothing', async () => {
+    const seenAt = join(dir, 'claude-seen.json')
+    const bin = join(dir, 'claude-images')
+    writeFileSync(bin, `#!/usr/bin/env node
+const fs = require('fs')
+fs.writeFileSync(${JSON.stringify(seenAt)}, JSON.stringify({ argv: process.argv.slice(2), input: fs.readFileSync(0, 'utf8') }))
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }) + '\\n')
+`)
+    chmodSync(bin, 0o755)
+    const post = await serve({ admit: null, bin })
+    expect(await post('/__fjs/ask', { instruction: 'like this', images: [{ type: 'image/bmp', data: 'AA==' }] })).toMatchObject({ status: 400 })
+    expect(existsSync(seenAt)).toBe(false)
+
+    const big = 'A'.repeat(400 * 1024)
+    const at = servers.at(-1).address().port
+    const res = await fetch(`http://localhost:${at}/__fjs/ask`, {
+      method: 'POST',
+      headers: { origin: `http://localhost:${at}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ instruction: 'like this', images: [{ type: 'image/png', data: big }] }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.text()).split('\n').filter(Boolean).map(l => JSON.parse(l).type)).toEqual(['run', 'result'])
+    const seen = JSON.parse(readFileSync(seenAt, 'utf8'))
+    expect(seen.argv).toContain('--input-format')
+    const content = JSON.parse(seen.input).message.content
+    expect(content[0].text).toContain('I pasted an image with this')
+    expect(content[1]).toEqual({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: big } })
   })
 
   test('an undone change is nobody\'s to submit', async () => {

@@ -2237,8 +2237,8 @@ check('the picker is the service\'s own vocabulary',
   await evaluate(`document.querySelectorAll('#widget-kinds button').length`), 9)
 
 const pick = label => evaluate(`
-  [...document.querySelectorAll('#widget-kinds button')]
-    .find(b => b.textContent.includes(${JSON.stringify(label)})).click()`)
+  [...document.querySelectorAll('#widget-kinds > *')]
+    .find(c => c.textContent.includes(${JSON.stringify(label)})).querySelector('button').click()`)
 
 await pick('Server fleet')
 await sleep(500)

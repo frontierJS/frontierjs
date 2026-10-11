@@ -215,6 +215,21 @@ describe('a write naming a @guarded column', () => {
     expect(JSON.stringify(res.body)).toMatch(/@guarded/)
   })
 
+  // A service that names no model is named for its URL, and `hooks` is no
+  // model: the guarded set was asked of that name and came back empty, so the
+  // key was stripped with a 201 again (maidtech 7d, Account.settings).
+  test('and so on a service that names no model, resolved from its plural name', async () => {
+    const db  = await createClient({ db: ':memory:', schema: GUARDED, encryptionKey: 'a'.repeat(64) } as never)
+    const app = createApp({ db: db as never, config: { port: 0, services: { dir: '/nonexistent' } } })
+    app.services.register(createService({ name: 'hooks' } as never))
+
+    const res = await request(app).post('/hooks').send({ name: 'a', token: 'x' })
+
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toMatch(/token/)
+    expect(JSON.stringify(res.body)).toMatch(/@guarded/)
+  })
+
   test('and so is a @secret, which is a guarded column too', async () => {
     const { app } = await hookApp()
 

@@ -161,15 +161,16 @@ function runInspector(root = '/app') {
   new Function('window', 'document', 'fetch', 'console',
     inspectClientSource({ root }))(window, document, fetch, console)
 
-  const element = (loc) => ({
+  // A list of locations is a chain, innermost first: each is the next one's child.
+  const element = (loc, parentElement = null) => ({
     nodeType: 1,
     hasAttribute: (n) => n === 'data-fjs-loc',
     getAttribute: (n) => (n === 'data-fjs-loc' ? loc : null),
-    parentElement: null,
+    parentElement,
     getBoundingClientRect: () => ({ top: 0, left: 0, width: 0, height: 0 })
   })
   const altClick = (loc, { shiftKey = false } = {}) => {
-    const el = element(loc)
+    const el = [loc].flat().reduceRight((parent, l) => element(l, parent), null)
     const ev = { type: 'click', altKey: true, shiftKey, preventDefault: () => {}, stopPropagation: () => {}, composedPath: () => [el] }
     for (const fn of listeners.get('mousemove')) fn({ ...ev, type: 'mousemove' })
     for (const fn of listeners.get('click')) fn(ev)
@@ -198,11 +199,39 @@ describe('the inspector only ever asks the editor for a file under the root', ()
     expect(i.fetched).toEqual([])
   })
 
+  test('an absolute path to a compiled source is refused, not joined onto the root', () => {
+    const i = runInspector()
+    i.altClick('/home/me/packages/ui/src/Button.mesa:3:1')
+    expect(i.fetched).toEqual([])
+  })
+
   test('a location naming something that is not a compiled source is refused', () => {
     const i = runInspector()
     i.altClick('src/secrets.env:1:1')
     i.altClick('src/App.mesa')
     expect(i.fetched).toEqual([])
+  })
+
+  test("a package's component under the pointer gives way to the app's element around it", () => {
+    const i = runInspector()
+    i.altClick(['/home/me/packages/ui/src/Button.mesa:3:1', 'src/pages/Home.mesa:12:3'])
+    i.altClick(['node_modules/@frontierjs/ui/src/Button.mesa:3:1', 'src/pages/Home.mesa:14:5'])
+    expect(i.fetched).toEqual([
+      '/__open-in-editor?file=' + encodeURIComponent('/app/src/pages/Home.mesa:12:3'),
+      '/__open-in-editor?file=' + encodeURIComponent('/app/src/pages/Home.mesa:14:5'),
+    ])
+  })
+
+  test("the app's own element inside a package's component is still the one picked", () => {
+    const i = runInspector()
+    i.altClick(['src/pages/Home.mesa:13:7', 'node_modules/@frontierjs/ui/src/Card.mesa:2:1', 'src/pages/Home.mesa:12:3'])
+    expect(i.fetched).toEqual(['/__open-in-editor?file=' + encodeURIComponent('/app/src/pages/Home.mesa:13:7')])
+  })
+
+  test("with no app element around it, an unscoped package's file still opens", () => {
+    const i = runInspector()
+    i.altClick('node_modules/some-kit/src/Shell.mesa:4:2')
+    expect(i.fetched).toEqual(['/__open-in-editor?file=' + encodeURIComponent('/app/node_modules/some-kit/src/Shell.mesa:4:2')])
   })
 
   test('`open` is not on the global — a page script would need no gesture', () => {

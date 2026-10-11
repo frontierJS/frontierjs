@@ -463,6 +463,12 @@ ${idFieldLine(o.res)}${watch}
 
   $.onDestroy(() => { unwatch?.(); row.release?.() })
 
+  // What a person calls this row: the column the model names it by
+  // (\`@@label\`, or a conventional \`name\`/\`title\`), once the row is here. The
+  // id until then, and where the model names no column — a uuid in the
+  // heading is the id a person cannot read back.
+  const nameOf = (rec) => (rec && ${o.res}.labelSource !== 'fallback' && rec[${o.res}.labelField]) || null
+
   // What the FORM cannot show, which is most of what a person opens a record
   // to read: a computed total, a generated name, a system timestamp, the
   // version. A form shows what is WRITABLE, so all of that is missing from one
@@ -471,7 +477,7 @@ ${idFieldLine(o.res)}${watch}
   const { columns: facts } = ${o.res}.summary()
 ${moveScript(o, 'failed')}${kids.script}
   async function remove() {
-    if (!confirm('Delete ' + id + '?')) return
+    if (!confirm('Delete ' + (nameOf(record) ?? id) + '?')) return
     failed   = null
     deleting = true
     try {
@@ -485,7 +491,7 @@ ${moveScript(o, 'failed')}${kids.script}
 ${SC}
 
 <div class="stack">
-<SectionHeader title={'${o.heading} ' + id} level={1}>
+<SectionHeader title={nameOf(record) ?? '${o.heading} ' + id} level={1}>
   {#snippet action()}
     <Button variant="ghost" href="${o.basePath}">${o.backLabel}</Button>
   {/snippet}
