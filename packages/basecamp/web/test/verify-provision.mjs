@@ -1268,7 +1268,7 @@ try {
   const { createStatic }        = await import('@frontierjs/outpost/static')
   const { createStaticServer }  = await import('@frontierjs/outpost/serve')
   const { createDocker }        = await import('@frontierjs/outpost/docker')
-  const STATIC_DIR = join(SCRATCH, 'outpost-static'), STATIC_PORT = 7181
+  const STATIC_DIR = join(SCRATCH, 'outpost-static'), STATIC_PORT = await portFor(import.meta.url, 'be', { service: 7 })
   const routes = new Map()
   const outpost = createOutpostServer({ serverId, secret: credential, version: '0.1.0', staticPort: STATIC_PORT }, {
     statics: createStatic({ staticDir: STATIC_DIR }),

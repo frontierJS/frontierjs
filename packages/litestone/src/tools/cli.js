@@ -270,6 +270,7 @@ const HELP = `
 // under it, for every head that names the command (`migrate` has five) — so
 // there is one table and a flag added beside its command is discoverable at
 // once. Matching runs on the text with colors stripped, since `c` may be on.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
 const ANSI_RE = /\x1b\[[0-9;]*m/g
 const HELP_ALIAS = { audit: 'doctor' }
 

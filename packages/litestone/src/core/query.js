@@ -1831,7 +1831,9 @@ export function parseSelectArg(select, modelName, shapes, include, computedFns, 
   const columnMap      = shape.columnMap
   const tableFns       = computedFns?.[modelName] ?? null
 
+  /** @type {Record<string, any>} */
   const dbFields        = {}    // user-requested DB column names
+  /** @type {Record<string, any>} */
   const relationSelects = {}    // relation name → true | { select }
   const requestedFields = new Set()
   const requestedFrom   = new Set()  // @from fields explicitly selected
@@ -1942,7 +1944,7 @@ export function parseSelectArg(select, modelName, shapes, include, computedFns, 
   // whose JOIN brings a second table with an `id` of its own.
   const dbCols = needsAllDbCols ? null : Object.keys(dbFields).map(c => columnMap[c] ?? c)
 
-  const sqlCols = needsAllDbCols
+  const sqlCols = dbCols === null
     ? '*'
     : dbCols.length > 0
       ? dbCols.map(c => `"${c}"`).join(', ')
@@ -2393,6 +2395,7 @@ export function cursorOrderSql(fields, params) {
  */
 /** @param {Record<string, any>} row @param {CursorField[]} fields */
 export function extractCursorValues(row, fields) {
+  /** @type {Record<string, any>} */
   const values = {}
   for (const f of fields) {
     if (!f.near) { values[f.col] = row[f.col]; continue }

@@ -1730,7 +1730,7 @@ const _toldAuthor = new WeakMap<object, Set<string>>()
  * the schema's seams (`FJS-2082`). Once per service, method and shape, so a
  * caller varying the key cannot write the log at request rate.
  */
-function tellAuthor(ctx: ServiceContext, what: string, escape: string): void {
+function tellAuthor(ctx: ServiceContext, what: string, remedy: string): void {
   const client = ctx.locals.db as object | undefined
   const id     = `${ctx.service}.${String(ctx.method)}|${what}`
   if (client) {
@@ -1740,7 +1740,7 @@ function tellAuthor(ctx: ServiceContext, what: string, escape: string): void {
     told.add(id)
   }
   console.warn(
-    `[Junction] service '${ctx.service}': ${String(ctx.method)} refused a key that ${what} does not declare. ${escape}`,
+    `[Junction] service '${ctx.service}': ${String(ctx.method)} refused a key that ${what} does not declare. ${remedy}`,
   )
 }
 

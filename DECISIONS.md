@@ -13477,6 +13477,23 @@ Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A
 
 The paper's recommendation, taken as written: the hostname reading exists only to give each app its own origin.
 
+### <a id="fjs-d675"></a>2026-10-08 · `FJS-D675` — `CHANGES.md` is retired. History is git; a lesson goes where it is read. Three markdown files at a package root are the standard, and `fli done` no longer asks for a change-log heading.
+
+Asked in [`IDEAS/changes-retirement.md`](IDEAS/changes-retirement.md) § Open questions; **A** on all four. The paper's case, measured 2026-09-26: 23 files, 3.4 MB, grown 20–70 entries a day by the `changes-entry` gate, and each entry a copy of the diff, a test count, an `ISSUES.md` narrative and a `DECISIONS.md` argument. Only the lessons had no other home.
+
+**Archived, not deleted.** The 24 files moved to `docs/changes-archive/<package>.md`. They are history-tier, like `docs/handoff-archive/`: they are never cited as behavior, `doc-audit` leaves their dead names alone, and nothing new is written there. This departs from the paper's *delete in the same commit as the extraction*. The archive is how the extraction runs package by package without a half-mined file sitting at a package root. A package's archive file is deleted once its lessons are filed.
+
+- **Q1** — `fli done` asks nothing in its place. The diff is the record.
+- **Q2** — a cli, toolbelt or config lesson goes in that package's own `CLAUDE.md`. A css lesson goes in `ui-hazards`.
+- **Q3** — the developer half of release notes is git plus `fli changelog`.
+- **Q4** — the long narratives on closed rows in `ISSUES.md` and `DECISIONS.md` get their own later pass.
+
+**Amends** Invariant 17 (three files at a package root, `AGENTS.md` a permitted fourth), `PHILOSOPHY.md` § VII (the Register tier is `DECISIONS.md` and `ISSUES.md`, and history is git) and [`FJS-D163`](#fjs-d163)'s count. `frontierjs-vscode/CHANGELOG.md` is for the marketplace and stays.
+
+**Silence.** A `CHANGES.md` that comes back at a package root is a `package-root-md` warning, because it is no longer in `STANDARD`. A live lesson dropped during extraction has no guard (`none`). The only guard is the per-entry pass, which reads the current source before it files anything.
+
+*Lives in:* `packages/cli/core/done.js`, `packages/cli/core/checks.js` (`package-root-md`), `packages/cli/core/doc-audit.js` (`HISTORY`), `docs/changes-archive/`.
+
 ### <a id="fjs-d658"></a>2026-10-08 · `FJS-D658` — How `analytics:` reaches a static page — The build writes the vendor's own tag into every prerendered page's `<head>`, and the island entry resolves the provider so `track()` reaches it. A custom provider object is refused on that target.
 
 Asked in chat while closing `FJS-2058`, which found `FJS-D608`'s *wire `sierra/analytics` into site-kit* had nothing to land on: a static page never loads `virtual:sierra`, the only place `initAnalytics` runs. **A** was picked over **B** (a small analytics module on every static page — `track()` everywhere, but a page with no island stops shipping zero JavaScript), **C** (refuse `analytics:` on `static` until `FJS-1539` gives the head a mechanism) and **D** (site-kit writes the tag, a second owner beside `sierra/analytics`, which `FJS-D608` ruled against).
@@ -13595,6 +13612,16 @@ Asked in [`IDEAS/shipped/zx-exit.md`](IDEAS/shipped/zx-exit.md) § Open question
 
 The paper's recommendation, taken as written: the engines field already says it, every test and CI invocation already runs `fli` under bun, and junction and litestone's client are bun-only, so an app's `fli` cannot run where its API cannot. `FJS-D222` does not bind: it rules that a HARNESS runs under node, and `fli` is not one — `fli ci` only forwards to `scripts/ci.mjs`, which stays node, and `fli check` is a package the harness spawns, which D222 permits (*a package runs under what it needs*). The one node-only argument, `IDEAS/bun-natives.md`'s *fli is node*, was a premise and not a ruling.
 
+### <a id="fjs-d598"></a>2026-10-05 · `FJS-D598` — `fli deploy`'s edge is Caddy, the same host service a fleet machine runs (`FJS-D564`), with routes written into Outpost's `ingress` server through the admin API. nginx is gone from ring 0. The deploy target is an ssh destination, and an alias in `~/.ssh/config` is a whole one.
+
+Asked by the owner while planning how to put Basecamp on a remote server from a laptop: keep `_steps-setup/05-nginx`, or swap it for Caddy to match the fleet. **Caddy all the way** was picked. **The reason is a collision, not tidiness.** Ring 0 put nginx on :80/:443, and enrollment puts Caddy there. So the box Basecamp is installed on could never also be enrolled as a fleet machine.
+
+**What it is.** `deploy:setup` installs Caddy as the `caddy-api` unit (`--resume`, no Caddyfile), with the install line `enrollment.ts` uses. `05-caddy` reads Caddy's whole config and merges this app's routes in (`core/edge.js` § `applyEdge`). It writes the result back with `If-Match`, so a write Outpost made in between is a 412 and a re-read, not a lost route. Route ids start `fli-` and never meet Outpost's `fjs-`. A hostname another route names is refused, as `ingress.js` already refuses one. Certificates are Caddy's, so `deploy.<side>.ssl` is refused by name and `06-ssl` is deleted. A web release is the symlink swap alone, because Caddy reads the root per request. The pause guard is the first handler of every route: a `file` matcher on `.fli/paused`, serving the page with `status_code: 503`, and found by its `@id`. Each route writes its own access log, which Caddy rolls. Because the redirect is Caddy's own and precedes every route, a plain-http caller of a paused app gets a 301 and then the 503.
+
+**The second half, the same day.** `--server` is a namespace-wide flag on `deploy:`. It takes an alias or `user@host` and replaces every server and user the block names, per target and per side (`_module.md` § `deployConfFor`, the one reader). `user` has no default. With none stated, ssh is handed the bare name, so the alias's User, Port, IdentityFile and ProxyJump apply. Before this, `deploy@` was prefixed and silently overrode the alias's User. The scaffold's `your-server.com` is refused, because it is a real domain.
+
+**Adjudication**: *preservation vs. evolution*. nginx goes, with no alias and no flag to keep it. **§ V's ninth question**: *fli's routes load in a real Caddy beside Outpost's, a stale write is refused, and a paused app answers 503 while the Outpost app beside it answers 200* — `pauseEdgeCycle` in CI's `deploy` phase. Measured: dropping `status_code` reds it at *a paused app answers 200*. **Not enforced**: the two copies of the Caddy install line (`01-check-deps.md`, `providers/compute/enrollment.ts`) agree only by a pointer comment. **Late**: the nine were answered after the code was written, and say so.
+
 ### <a id="fjs-d589"></a>2026-10-05 · `FJS-D589` — The committed workspace pages hold the structure only. The three registers and the file counts are on `fli ws:atlas --live`, which is never committed.
 
 Asked while reading a red `snapshots` phase in `fli gui`. **Structure only** was picked over **keeping both pages as they were** and over **committing the report and building the deck on demand**. The two pages are one model read two ways (`FJS-D223`), so a stale model staled both, and what staled it was nearly always a register: filing one row in `ISSUES.md` moved the open count, a severity table and the plate heat, and a new file anywhere moved a tracked-file count. Both pages were red on every branch, and the change `--check` exists to surface (a new command, drive, CI phase, snapshot or package) arrived under a diff of counts nobody read. Committing one page would halve that noise and keep its cause.
@@ -13610,16 +13637,6 @@ No adjudication beyond § IV *preservation vs. evolution*: nobody reads a commit
 Asked in `FJS-1614`, the push that follows a machine leaving `online`. **Keep** was picked over **delete the record**. Deleting turns *the machine is down* into *the name does not exist*, which resolvers cache as a negative answer, so the hostname stays dark after the machine returns, until a push runs and the negative TTL lapses. Keeping costs nothing, since traffic to a dead machine fails either way, and the hostname answers again the moment the machine does. This is Route 53's rule: when every health-checked record fails, it answers them all rather than none.
 
 No adjudication in tension: keeping dominates. A record naming a dead machine is already the outage, and an absent record is the outage plus a slower recovery. **§ V's ninth question**: *an App with no online machine is red on `/dns/` and its record is still there.* `edge.test.ts` asserts both: the push refuses as not-yet and writes nothing, and `records` answers the App in `stale` with `down: true`. **Enforced.** Where it lives: `push` and `records` in `packages/basecamp/api/src/services/edge/edge.service.ts`.
-
-### <a id="fjs-d598"></a>2026-10-05 · `FJS-D598` — `fli deploy`'s edge is Caddy, the same host service a fleet machine runs (`FJS-D564`), with routes written into Outpost's `ingress` server through the admin API. nginx is gone from ring 0. The deploy target is an ssh destination, and an alias in `~/.ssh/config` is a whole one.
-
-Asked by the owner while planning how to put Basecamp on a remote server from a laptop: keep `_steps-setup/05-nginx`, or swap it for Caddy to match the fleet. **Caddy all the way** was picked. **The reason is a collision, not tidiness.** Ring 0 put nginx on :80/:443, and enrollment puts Caddy there. So the box Basecamp is installed on could never also be enrolled as a fleet machine.
-
-**What it is.** `deploy:setup` installs Caddy as the `caddy-api` unit (`--resume`, no Caddyfile), with the install line `enrollment.ts` uses. `05-caddy` reads Caddy's whole config and merges this app's routes in (`core/edge.js` § `applyEdge`). It writes the result back with `If-Match`, so a write Outpost made in between is a 412 and a re-read, not a lost route. Route ids start `fli-` and never meet Outpost's `fjs-`. A hostname another route names is refused, as `ingress.js` already refuses one. Certificates are Caddy's, so `deploy.<side>.ssl` is refused by name and `06-ssl` is deleted. A web release is the symlink swap alone, because Caddy reads the root per request. The pause guard is the first handler of every route: a `file` matcher on `.fli/paused`, serving the page with `status_code: 503`, and found by its `@id`. Each route writes its own access log, which Caddy rolls. Because the redirect is Caddy's own and precedes every route, a plain-http caller of a paused app gets a 301 and then the 503.
-
-**The second half, the same day.** `--server` is a namespace-wide flag on `deploy:`. It takes an alias or `user@host` and replaces every server and user the block names, per target and per side (`_module.md` § `deployConfFor`, the one reader). `user` has no default. With none stated, ssh is handed the bare name, so the alias's User, Port, IdentityFile and ProxyJump apply. Before this, `deploy@` was prefixed and silently overrode the alias's User. The scaffold's `your-server.com` is refused, because it is a real domain.
-
-**Adjudication**: *preservation vs. evolution*. nginx goes, with no alias and no flag to keep it. **§ V's ninth question**: *fli's routes load in a real Caddy beside Outpost's, a stale write is refused, and a paused app answers 503 while the Outpost app beside it answers 200* — `pauseEdgeCycle` in CI's `deploy` phase. Measured: dropping `status_code` reds it at *a paused app answers 200*. **Not enforced**: the two copies of the Caddy install line (`01-check-deps.md`, `providers/compute/enrollment.ts`) agree only by a pointer comment. **Late**: the nine were answered after the code was written, and say so.
 
 ### <a id="fjs-d565"></a>2026-09-30 · `FJS-D565` — Once Caddy fronts a machine, a container's published port binds to `127.0.0.1`. That change goes in with the first route push and not before it.
 
@@ -15003,23 +15020,6 @@ keeps *Where to write what* and loses the step-by-step half — deleting the fil
 outright would have taken a working reference with it, and executing a table
 that maps intentions onto directories is not a thing a probe can do.
 
-
-### <a id="fjs-d675"></a>2026-10-08 · `FJS-D675` — `CHANGES.md` is retired. History is git; a lesson goes where it is read. Three markdown files at a package root are the standard, and `fli done` no longer asks for a change-log heading.
-
-Asked in [`IDEAS/changes-retirement.md`](IDEAS/changes-retirement.md) § Open questions; **A** on all four. The paper's case, measured 2026-09-26: 23 files, 3.4 MB, grown 20–70 entries a day by the `changes-entry` gate, and each entry a copy of the diff, a test count, an `ISSUES.md` narrative and a `DECISIONS.md` argument. Only the lessons had no other home.
-
-**Archived, not deleted.** The 24 files moved to `docs/changes-archive/<package>.md`. They are history-tier, like `docs/handoff-archive/`: they are never cited as behavior, `doc-audit` leaves their dead names alone, and nothing new is written there. This departs from the paper's *delete in the same commit as the extraction*. The archive is how the extraction runs package by package without a half-mined file sitting at a package root. A package's archive file is deleted once its lessons are filed.
-
-- **Q1** — `fli done` asks nothing in its place. The diff is the record.
-- **Q2** — a cli, toolbelt or config lesson goes in that package's own `CLAUDE.md`. A css lesson goes in `ui-hazards`.
-- **Q3** — the developer half of release notes is git plus `fli changelog`.
-- **Q4** — the long narratives on closed rows in `ISSUES.md` and `DECISIONS.md` get their own later pass.
-
-**Amends** Invariant 17 (three files at a package root, `AGENTS.md` a permitted fourth), `PHILOSOPHY.md` § VII (the Register tier is `DECISIONS.md` and `ISSUES.md`, and history is git) and [`FJS-D163`](#fjs-d163)'s count. `frontierjs-vscode/CHANGELOG.md` is for the marketplace and stays.
-
-**Silence.** A `CHANGES.md` that comes back at a package root is a `package-root-md` warning, because it is no longer in `STANDARD`. A live lesson dropped during extraction has no guard (`none`). The only guard is the per-entry pass, which reads the current source before it files anything.
-
-*Lives in:* `packages/cli/core/done.js`, `packages/cli/core/checks.js` (`package-root-md`), `packages/cli/core/doc-audit.js` (`HISTORY`), `docs/changes-archive/`.
 
 ### <a id="fjs-d163"></a>2026-08-30 · `FJS-D163` — `AGENTS.md` is a permitted fifth file at a package root and is not a required one. It is `CLAUDE.md`'s question asked about the other audience, and that audience has a tarball rather than a tree.
 

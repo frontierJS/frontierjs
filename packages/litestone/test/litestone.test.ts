@@ -13544,7 +13544,7 @@ describe('Seeder.once()', () => {
     const { db } = await makeTestClient(FACTORY_SCHEMA)
     const { Seeder: S } = await import('../src/seeder.js')
     await new S().forget(db, 'never-ran')
-    const table = (db.$db ?? db.$rawDbs?.main).query(`SELECT 1 FROM sqlite_master WHERE name = '_litestone_seeds'`).get()
+    const table = (db.$db ?? db.$rawDbs.main).query(`SELECT 1 FROM sqlite_master WHERE name = '_litestone_seeds'`).get()
     expect(table).toBeNull()
     db.$close()
   })

@@ -67,7 +67,7 @@ describe("audit 1.5 — a fn name is looked up on an object with a prototype", (
   // A ref walks the context with bracket access, so `$.trigger.constructor`
   // answers the Object constructor and a template renders it as source text.
   test.failing("a ref path reads own properties only", () => {
-    const got = r.resolve({ type: "ref", path: "$.trigger.constructor" }, { ...ctx, trigger: { a: 1 } } as never)
+    const got = r.resolve({ type: "ref", path: "$.trigger.constructor" }, { ...(ctx as object), trigger: { a: 1 } } as never)
     expect(got).toBeUndefined()
   })
 })
@@ -94,7 +94,7 @@ describe("audit 1.5 — service.call names what the host has", () => {
   // by the first run as a NotFound the node records as failed.
   test.failing("a service the app does not have is refused at author time", () => {
     const result = typed.compile(flowWith("s", "service.call", { service: lit("laeds"), method: lit("find") }))
-    expect(codes(result)).toEqual(["UNKNOWN_SERVICE"])
+    expect(codes(result) as string[]).toEqual(["UNKNOWN_SERVICE"])
   })
 
   test("the observed shape: an unknown service compiles", () => {

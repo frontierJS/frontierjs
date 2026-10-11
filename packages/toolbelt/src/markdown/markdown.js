@@ -61,6 +61,7 @@ const escText = (s) => {
 const SAFE_SCHEMES = new Set(['http', 'https', 'mailto'])
 export function safeUrl(url) {
   if (typeof url !== 'string') return null
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
   const bare = url.replace(/[\u0000-\u0020\u007f-\u009f]/g, '')
   const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(bare)
   if (scheme && !SAFE_SCHEMES.has(scheme[1].toLowerCase())) return null
@@ -239,11 +240,11 @@ function readLink(src, at) {
   const rest = src.slice(i + 2)
   const m = /^[ \t\n]*(?:<([^<>\n]*)>|((?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))*))(?:[ \t\n]+(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'))?[ \t\n]*\)/.exec(rest)
   if (!m) return null
-  const unescape = (s) => s?.replace(/\\([!-/:-@[-`{-~])/g, '$1')
+  const unescapeMd = (s) => s?.replace(/\\([!-/:-@[-`{-~])/g, '$1')
   return {
     text,
-    url: unescape(m[1] ?? m[2] ?? ''),
-    title: unescape(m[3] ?? m[4] ?? ''),
+    url: unescapeMd(m[1] ?? m[2] ?? ''),
+    title: unescapeMd(m[3] ?? m[4] ?? ''),
     end: i + 2 + m[0].length,
   }
 }
@@ -431,6 +432,7 @@ function table(lines, i, opts, out) {
  */
 export function markdown(src, opts = {}) {
   if (src == null || src === '') return ''
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern removes or refuses
   const lines = String(src).replace(/\r\n?/g, '\n').replace(/\u0000/g, '\ufffd').split('\n')
   return blocks(lines, opts)
 }
