@@ -76,6 +76,56 @@ export async function run(t) {
   await t.eventually(`${labels}.join(',')`, 'Customers',
     'and the SUB line — the two fields a label-only search would miss')
 
+  /* ── a search the palette does not re-rank (FJS-1318) ────────────────── */
+
+  // A server answers on text the row does not show — a description, a comment
+  // — and ranks by its own measure. Ranking that answer again against the same
+  // words drew *No results* for a hit the server made, and re-ordered the rest.
+  await t.mount('palette-modes', { source: 'server' })
+  await t.type('throttling')
+  await t.eventually(`${labels}.join(',')`, 'Rate-limit the search endpoint',
+    'a search hit is drawn though the typed word is in none of its fields')
+  t.is(await t.evaluate(`return document.querySelector('#searches').textContent;`), '1',
+    'and the search is asked once for the words, not once per keystroke')
+
+  await t.mount('palette-modes', { source: 'server' })
+  await t.type('zeta')
+  await t.eventually(`${labels}.join(',')`, 'Zeta rollout,Alpha rollout',
+    'in the order the search answered, not re-scored by the palette')
+
+  // The static commands are still the palette's to rank: a search source adds
+  // rows, it does not take the commands away.
+  await t.mount('palette-modes', { source: 'server' })
+  await t.type('order')
+  await t.eventually(`${labels}.join(',')`, 'New order,Refund an order,Customers',
+    'items are still ranked against the words alongside a search that found nothing')
+  await t.eventually(`document.querySelector('#searches').textContent`, '1', 'once the search has been asked')
+
+  await t.clickAt('.fjs-cp-clear')
+  await t.eventually(`${rows}.length`, 5, 'and an empty box asks nothing and shows every item')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 300)); return true;`)
+  t.is(await t.evaluate(`return document.querySelector('#searches').textContent;`), '1',
+    'no search is asked for an empty box')
+
+  // An answer that lands after the words moved on is for words no longer in
+  // the box. Drawn, it lists rows nothing typed asked for.
+  await t.mount('palette-modes', { source: 'server' })
+  await t.type('slow')
+  await t.eventually(`document.querySelector('#searches').textContent`, '1', 'a slow search is in flight')
+  await t.type(' order')
+  await t.eventually(`document.querySelector('#aborts').textContent`, '1',
+    'and the words moving on abort its signal')
+  await t.evaluate(`await new Promise(r => setTimeout(r, 900)); return true;`)
+  t.ok(!(await t.evaluate(`return ${labels}.includes('A stale answer');`)),
+    'so its late answer is never drawn')
+
+  // A refusal that drew nothing would read as *No results* — a wrong answer
+  // that looks like a right one.
+  await t.mount('palette-modes', { source: 'failing' })
+  await t.type('throttling')
+  await t.eventually(`document.querySelector('.fjs-cp-searcherror')?.textContent.includes('search is down')`, true,
+    'a search that fails says so, rather than reading as no results')
+
   /* ── the cursor ───────────────────────────────────────────────────────── */
 
   await t.mount('palette-modes')

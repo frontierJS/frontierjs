@@ -17,6 +17,10 @@ title: Workbench
   // checkout's own `fli done`), a reviewer's reply, and the diff, whose line
   // comments ride along with the next message.
   //
+  // The Run tab starts what the checkout declares -- `fli dev` per app and its
+  // package.json scripts (api core/workbench-run.ts) -- and leaves it running
+  // on the API's machine; what is up comes on the same poll.
+  //
   // A BRANCH is a pin forked from another (api core/workbench-branch.ts): a
   // worktree of its own, drawn right after its parent, with Land and Archive
   // where the parent has Fork.
@@ -79,7 +83,10 @@ title: Workbench
       loaded = true
       afterDraw(place)
     }
-    await Promise.all(pins.map(p => refreshTranscript(p.id)))
+    await Promise.all([
+      ...pins.map(p => refreshTranscript(p.id)),
+      ...pins.filter(p => !p.missing && !runnables[p.id]).map(p => loadRunnables(p.id)),
+    ])
   }
 
   async function refreshTranscript(id, rev = status[id]?.rev ?? '') {
@@ -126,8 +133,14 @@ title: Workbench
       // The chat first: a card that says done before its answer is drawn reads
       // as a run that finished with nothing to say.
       await Promise.all(answer.status.map(s => refreshTranscript(s.id, s.rev)))
+      const was = status
       status = next
       retitle()
+      // A log is reread while its server writes, and once more as it ends.
+      for (const [key, open] of Object.entries(logOpen)) {
+        const [id, row] = key.split(' ')
+        if (open && shows(id, 'run') && (runOf(id, row)?.running || was[id]?.runs?.find(r => r.id === row)?.running)) refreshLog(id, row)
+      }
       // A diff is not re-read while a run is still moving the tree under it.
       for (const s of answer.status)
         if (shows(s.id, 'diff') && s.state !== 'working' && diffRev[s.id] !== s.rev) loadDiff(s.id)
@@ -359,6 +372,8 @@ title: Workbench
   function tabsOf(p) {
     const out = [{ key: 'chat', label: 'Chat' }]
     if (!p.missing) out.push({ key: 'diff', label: diffs[p.id] ? `Diff · ${diffs[p.id].total}` : 'Diff' })
+    if (!p.missing) out.push({ key: 'run', tone: serving(p.id).length ? 'success' : '',
+                               label: serving(p.id).length ? `Run · ${serving(p.id).length} up` : 'Run' })
     const c = status[p.id]?.checks
     if (c) out.push({ key: 'checks', tone: CHECKS_TONE[c.state],
                       label: checksLabel(c) + (c.drives ? ` · ${plural(c.drives, 'drive')} to run` : '') })
@@ -385,6 +400,7 @@ title: Workbench
   function setTab(p, key) {
     tabs = { ...tabs, [p.id]: key }
     if (key === 'diff')  loadDiff(p.id)
+    if (key === 'run')   loadRunnables(p.id)
     if (key === 'chat')  scrollToEnd(p.id)
   }
 
@@ -626,6 +642,91 @@ title: Workbench
     return [`My comments on the diff:\n\n${lines.join('\n')}`, draft].filter(Boolean).join('\n\n')
   }
 
+  // ─── the Run tab ─────────────────────────────────────────────────────
+  // The rows are read when the pins are and again when the tab opens, since a
+  // chat may have added a script. A row is named by id; the API looks up the
+  // command.
+
+  let runnables = {}
+  let logs      = {}
+  let logOpen   = {}
+  let starting  = {}
+
+  const rowKey  = (id, row) => `${id} ${row}`
+  const runOf   = (id, row) => status[id]?.runs?.find(r => r.id === row)
+  const RUN_GROUPS = [{ of: 'app', heading: 'Apps' }, { of: 'script', heading: 'Scripts' }]
+  const rowsOf  = (id, of) => (runnables[id] ?? []).filter(r => r.kind === of)
+  const appsOf  = (id) => rowsOf(id, 'app')
+  const serving = (id) => (status[id]?.runs ?? []).filter(r => r.running)
+  const servingApps = (id) => serving(id).filter(r => r.id.startsWith('app:'))
+
+  async function loadRunnables(id) {
+    try { runnables = { ...runnables, [id]: (await workbench.service.invoke('runnables', id)).rows } } catch {}
+  }
+
+  async function refreshLog(id, row) {
+    try {
+      const out = await workbench.service.invoke('output', id, { row })
+      logs = { ...logs, [rowKey(id, row)]: out.lines }
+      afterDraw(() => {
+        const pre = document.querySelector(`[data-log="${CSS.escape(rowKey(id, row))}"]`)
+        if (pre) pre.scrollTop = pre.scrollHeight
+      })
+    } catch {}
+  }
+
+  function toggleLog(id, row, open) {
+    logOpen = { ...logOpen, [rowKey(id, row)]: open }
+    if (open) refreshLog(id, row)
+  }
+
+  async function startRow(p, row) {
+    const key = rowKey(p.id, row.id)
+    starting = { ...starting, [key]: true }
+    const out = await act('run', p, { row: row.id })
+    starting = { ...starting, [key]: false }
+    if (!out) return
+    // Drawn as running now rather than at the next poll, with its log open.
+    const runs = (status[p.id]?.runs ?? []).filter(r => r.id !== row.id)
+    status = { ...status, [p.id]: { ...status[p.id], runs: [...runs, { id: row.id, name: row.name, running: true, stopped: false, exit: null, ports: [] }] } }
+    logs = { ...logs, [key]: [] }
+    toggleLog(p.id, row.id, true)
+  }
+
+  // A one-app checkout starts from the card; one holding several asks which.
+  function startApp(p) {
+    const apps = appsOf(p.id)
+    if (apps.length === 1) startRow(p, apps[0])
+    else setTab(p, 'run')
+  }
+
+  // The desktop shell's webview ignores target=_blank, so the link hands the
+  // URL to the system browser itself; in a browser the default still runs.
+  function openPort(e, url) {
+    const tauri = window.__TAURI__
+    if (!tauri) return
+    e.preventDefault()
+    if (tauri.opener?.openUrl) tauri.opener.openUrl(url)
+    else tauri.core?.invoke('plugin:opener|open_url', { url })
+  }
+
+  async function haltRow(p, row) {
+    const out = await act('halt', p, { row: row.id })
+    if (!out) return
+    const runs = status[p.id]?.runs ?? []
+    status = { ...status, [p.id]: { ...status[p.id], runs: out.stopped
+      ? runs.map(r => r.id === row.id ? { ...r, stopped: true } : r)
+      : runs.filter(r => r.id !== row.id) } }
+    if (!out.stopped) logOpen = { ...logOpen, [rowKey(p.id, row.id)]: false }
+  }
+
+  function ended(r) {
+    if (r.stopped)     return { tone: 'text-muted',   text: 'stopped' }
+    if (r.exit === 0)  return { tone: 'text-success', text: '✓ exited 0' }
+    if (r.exit != null) return { tone: 'text-danger', text: `✗ exited ${r.exit}` }
+    return { tone: 'text-muted', text: 'ended' }
+  }
+
   // ─── folding ─────────────────────────────────────────────────────────
   // The card's mode folds a side; a click on one message flips it against
   // the mode, and changing the mode forgets the flips.
@@ -811,6 +912,17 @@ title: Workbench
                 {#if p.git.ahead}<Pill tone="info">↑{p.git.ahead}</Pill>{/if}
                 {#if p.git.lastCommitAt}<span class="text-muted">{ago(p.git.lastCommitAt)}</span>{/if}
               {/if}
+              {#each servingApps(p.id) as r (r.id)}
+                {#each r.ports as s}
+                  <a class="text-success" href={`http://localhost:${s.port}`} target="_blank" rel="noopener"
+                     title={`${r.name}'s ${s.label}, started from the Run tab`}>{s.label} :{s.port} ↗</a>
+                {/each}
+                {#if !r.ports.length}<span class="text-info">{r.name} starting…</span>{/if}
+              {/each}
+              {#if !p.missing && appsOf(p.id).length && !servingApps(p.id).length}
+                <Button size="xs" variant="ghost" class="workbench-start-app" onclick={() => startApp(p)}
+                        title={appsOf(p.id).length === 1 ? `fli dev in ${p.name}, left running on this machine` : 'Choose which app to start'}>▶ Start app</Button>
+              {/if}
               <span class="text-muted workbench-now" aria-live="polite">
                 {doing(p.id)}
                 {#if totalOf(p)}
@@ -951,6 +1063,56 @@ title: Workbench
                 {:else}
                   <p class="text-muted">Reading the tree…</p>
                 {/if}
+              </div>
+
+            {:else if tabOf(p) === 'run'}
+              <div class="workbench-panel stack text-sm workbench-run" id={`workbench-run-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-run-${p.id}`}>
+                <p class="text-muted">Started in this checkout and left running on the API's machine. A new message does not stop one; {p.from ? 'Archive does' : 'Unpin does'}.</p>
+                {#if !runnables[p.id]}
+                  <p class="text-muted">Reading the checkout…</p>
+                {:else if !runnables[p.id].length}
+                  <p class="text-muted">Nothing to run — no app here and no package.json scripts.</p>
+                {/if}
+                {#each RUN_GROUPS as group (group.of)}
+                  {#if rowsOf(p.id, group.of).length}
+                    <h3 class="text-sm">{group.heading}</h3>
+                    {#each rowsOf(p.id, group.of) as row (row.id)}
+                      <div class="workbench-runrow" data-row={row.id}>
+                        <div class="cluster">
+                          <strong>{row.name}</strong>
+                          <code title={row.script ?? row.start}>{row.start}</code>
+                          {#if row.dir !== '.'}<span class="text-muted">in {row.dir}</span>{/if}
+                          <span class="cluster workbench-runrow-end">
+                            {#if runOf(p.id, row.id)?.running}
+                              {#each runOf(p.id, row.id).ports as s}
+                                <a href={`http://localhost:${s.port}`} target="_blank" rel="noopener" onclick={(e) => openPort(e, `http://localhost:${s.port}`)}>{s.label} :{s.port} ↗</a>
+                              {/each}
+                              <Badge tone="info">{runOf(p.id, row.id).stopped ? 'stopping…' : 'running'}</Badge>
+                              <Button size="xs" variant="outlined" tone="danger" onclick={() => haltRow(p, row)}>Stop</Button>
+                            {:else}
+                              {#if runOf(p.id, row.id)}
+                                <span class={ended(runOf(p.id, row.id)).tone}>{ended(runOf(p.id, row.id)).text}</span>
+                              {/if}
+                              <Button size="xs" variant={row.kind === 'app' ? 'primary' : 'outlined'} onclick={() => startRow(p, row)}
+                                      disabled={starting[rowKey(p.id, row.id)]}>{row.kind === 'app' ? '▶ Start' : 'Run'}</Button>
+                              {#if runOf(p.id, row.id)}
+                                <Button size="xs" variant="ghost" aria-label={`Forget ${row.name}'s last run`} title="Forget this run and its output"
+                                        onclick={() => haltRow(p, row)}>×</Button>
+                              {/if}
+                            {/if}
+                          </span>
+                        </div>
+                        {#if runOf(p.id, row.id)}
+                          <details class="workbench-runlog" open={logOpen[rowKey(p.id, row.id)] ? true : null}
+                                   on:toggle={(e) => { if (e.target.open !== !!logOpen[rowKey(p.id, row.id)]) toggleLog(p.id, row.id, e.target.open) }}>
+                            <summary class="text-muted">Output</summary>
+                            <pre data-log={rowKey(p.id, row.id)}>{(logs[rowKey(p.id, row.id)] ?? []).join('\n')}</pre>
+                          </details>
+                        {/if}
+                      </div>
+                    {/each}
+                  {/if}
+                {/each}
               </div>
 
             {:else if tabOf(p) === 'checks'}
@@ -1328,6 +1490,19 @@ title: Workbench
   .workbench-notch:hover,
   .workbench-notch[aria-current='true'] { background: var(--tone-ink); block-size: 6px; }
   .workbench-now { overflow-wrap: anywhere; }
+
+  .workbench-runrow { padding-block: var(--space-2xs); border-block-end: var(--border-width) solid var(--tint-rule); }
+  .workbench-runrow code { overflow-wrap: anywhere; }
+  .workbench-runrow-end { margin-inline-start: auto; }
+  .workbench-runlog > summary { cursor: pointer; }
+  .workbench-runlog pre {
+    max-block-size: 40vh;
+    overflow: auto;
+    margin: var(--space-xs) 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: var(--text-xs);
+  }
 
   .workbench-drive { margin-block-start: var(--space-xs); }
   .workbench-drive code { display: block; overflow-wrap: anywhere; }

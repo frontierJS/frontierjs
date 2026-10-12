@@ -17,6 +17,7 @@ import { TYPES } from './types.js'
 const CONTRACT = `\`\`\`json
 {
   "summary": "one sentence: what the app is for",
+  "currency": "USD",
   "actors": [
     { "name": "Recruiter", "archetype": "coordinator", "who": "the person in the prompt this is" }
   ],
@@ -49,7 +50,9 @@ const CONTRACT = `\`\`\`json
         ]
       },
       "access": { "via": "job" },
-      "patterns": ["approval"]
+      "patterns": ["approval"],
+      "fts": ["name"],
+      "softDelete": true
     }
   ],
   "open": ["a question the prompt does not answer, asked instead of guessed"]
@@ -89,6 +92,10 @@ export function brief() {
   out.push('  - `shared` — the reason every signed-in person reads every row (reference data an administrator keeps, or a timetable an instructor posts). It opens the read only: the writes still follow the entity\'s actor links, and an administrator holds any write no link does. Use it rarely: it is the shape that exposes one tenant\'s rows to another.')
   out.push('  - `system` — `true` when only the application writes the rows (a log, an inbound webhook).')
   out.push('- `patterns` — the catalog patterns that explain why this entity exists or moves. `patterns: ["audit"]` also turns on the audit trail for its rows.')
+  out.push('- `fts` — the fields a person searches this entity by, which makes `search()` legal on it. Text a person typed; never a secret.')
+  out.push('- `softDelete` — `true` when removing a row puts it in a trash it can be restored from, rather than deleting it.')
+  out.push('- `extensible` — the entity of this answer whose rows declare fields each tenant adds to this one with no deploy (custom fields). The declaring entity has a required `model` text field (which entity a field is on), a required `key` text field and a required `type` enum, and its access is answered like any other\'s. This entity gains a `customFields` column holding the values.')
+  out.push('- `currency` (on the answer, not an entity) — the ISO 4217 code every `money` field is in, `USD` when absent. A list (`["EUR", "USD"]`) when each row with money names its own: the entity gains a `currency` column limited to the list, and the first is the default.')
   out.push('- `open` — every question the prompt leaves open. A thing you would have to guess is a question here, never an element of the answer.')
   out.push('')
 

@@ -6,7 +6,7 @@
 // answers in stream-json, so every one of those is exercised as a process.
 
 import { describe, test, expect, afterAll } from 'bun:test'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -652,6 +652,108 @@ describe('branches', () => {
     expect(wb.land(c.id)).toEqual({ landed: ['kept.txt'] })
     expect(await wb.archive(c.id)).toEqual({ archived: 'wb/branch-2' })
     expect(wb.unpin(parent.pin.id)).toBeNull()
+  })
+
+})
+
+describe('the Run tab', () => {
+
+  // A checkout that is also an app, carrying its own fli: a stand-in that
+  // prints what it was asked and where, then keeps serving like `fli dev`.
+  function runnableRepo(name: string, { fli = true } = {}) {
+    const dir = repo(name)
+    mkdirSync(join(dir, 'db'), { recursive: true })
+    writeFileSync(join(dir, 'db', 'schema.lite'), 'model Note {\n  id Int @id\n}\n')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, scripts: {
+      hello: 'echo hello from $npm_lifecycle_event',
+      serve: 'echo serving && sleep 30',
+      env:   'echo "fe=${FLI_PORT_FE:-} port=${PORT:-}"',
+    } }))
+    if (fli) {
+      mkdirSync(join(dir, 'node_modules', '@frontierjs', 'cli', 'bin'), { recursive: true })
+      writeFileSync(join(dir, 'node_modules', '@frontierjs', 'cli', 'bin', 'fli.js'),
+        `console.log('fli ' + process.argv.slice(2).join(' ') + ' in ' + process.cwd()); setInterval(() => {}, 1000)\n`)
+    }
+    return dir
+  }
+
+  async function pinned(wb: ReturnType<typeof createWorkbench>, dir: string) {
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    return r.pin.id
+  }
+
+  const runOf = async (wb: ReturnType<typeof createWorkbench>, id: string, row: string) =>
+    (await wb.status(wb.getPin(id)!)).runs.find(r => r.id === row)
+
+  test('the inventory is fli dev for the app, then each script once — never a command', async () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-run-list') })
+    const id = await pinned(wb, runnableRepo('run-list'))
+    const rows = (await wb.runnables(id))!.rows
+    expect(rows.map(r => r.id)).toEqual(['app:.', 'task:env', 'task:hello', 'task:serve'])
+    expect(rows[0]).toMatchObject({ kind: 'app', name: 'run-list', start: 'fli dev' })
+    expect(rows.every(r => !('argv' in r))).toBe(true)
+    expect(await wb.run(id, 'rm -rf /')).toEqual({ refused: expect.stringContaining('nothing to run') })
+  })
+
+  test('a script runs detached into its own log, which outlives it', async () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-run-script') })
+    const id = await pinned(wb, runnableRepo('run-script'))
+    expect(await wb.run(id, 'task:hello')).toEqual({ started: expect.any(String) })
+    await until(async () => (await runOf(wb, id, 'task:hello'))?.running === false)
+    expect(await runOf(wb, id, 'task:hello')).toMatchObject({ name: 'hello', exit: 0, stopped: false, ports: [] })
+    const out = wb.output(id, 'task:hello')!
+    expect(out.lines).toContain('hello from hello')
+    expect(out.lines.at(-1)).toBe('— exited with 0 —')
+  })
+
+  test("a server is refused a second start, stopped as a group, then forgotten", async () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-run-stop') })
+    const id = await pinned(wb, runnableRepo('run-stop'))
+    await wb.run(id, 'task:serve')
+    await until(async () => wb.output(id, 'task:serve')!.lines.includes('serving'))
+    const { pid } = wb.getPin(id)!.runs['task:serve']
+    expect(await wb.run(id, 'task:serve')).toEqual({ refused: expect.stringContaining('already running') })
+
+    expect(wb.halt(id, 'task:serve')).toEqual({ stopped: true })
+    await until(async () => (await runOf(wb, id, 'task:serve'))?.running === false)
+    // bun run is a launcher: the sleep under it is what would keep serving.
+    await until(async () => spawnSync('pgrep', ['-g', String(pid)], { encoding: 'utf8' }).stdout.trim() === '')
+    expect(await runOf(wb, id, 'task:serve')).toMatchObject({ stopped: true })
+
+    expect(wb.halt(id, 'task:serve')).toEqual({ stopped: false })
+    expect(wb.getPin(id)!.runs).toEqual({})
+    expect(wb.output(id, 'task:serve')).toBeNull()
+    expect(wb.halt(id, 'task:serve')).toEqual({ refused: expect.stringContaining('nothing called') })
+  })
+
+  test("a run gets neither this API's PORT nor the ports fli dev handed it", async () => {
+    process.env.FLI_PORT_FE = '8020'
+    process.env.PORT = '8120'
+    try {
+      const wb = createWorkbench({ dir: join(tmp, 'wb-run-env'), env: { PORT: '8120' } })
+      const id = await pinned(wb, runnableRepo('run-env'))
+      await wb.run(id, 'task:env')
+      await until(async () => (await runOf(wb, id, 'task:env'))?.running === false)
+      expect(wb.output(id, 'task:env')!.lines).toContain('fe= port=')
+    } finally { delete process.env.FLI_PORT_FE; delete process.env.PORT }
+  })
+
+  test("fli dev is the checkout's own fli, and a checkout without one is told to install", async () => {
+    const wb = createWorkbench({ dir: join(tmp, 'wb-run-fli') })
+    const dir = runnableRepo('run-fli')
+    const id = await pinned(wb, dir)
+    await wb.run(id, 'app:.')
+    await until(async () => wb.output(id, 'app:.')!.lines.some(l => l.startsWith('fli dev')))
+    expect(wb.output(id, 'app:.')!.lines).toContain(`fli dev in ${dir}`)
+
+    // Unpinning takes the server with it: its folder is no longer anyone's.
+    const { pid } = wb.getPin(id)!.runs['app:.']
+    expect(wb.unpin(id)).toBeNull()
+    await until(async () => { try { process.kill(pid!, 0); return false } catch { return true } })
+
+    const bare = await pinned(wb, runnableRepo('run-nofli', { fli: false }))
+    expect(await wb.run(bare, 'app:.')).toEqual({ refused: expect.stringContaining('bun install') })
   })
 
 })

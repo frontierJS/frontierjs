@@ -1252,6 +1252,41 @@ try {
     !spawnSync('ls', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim())], { encoding: 'utf8' }).stdout.includes('try')
       && /wb\/try/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout))
 
+  // ─── The Run tab ────────────────────────────────────────────────────────
+  // What the checkout declares, started from the card: alpha's own `fli dev`
+  // (its node_modules is this package's, so the real cli, holding its session
+  // under the scratch HOME) and a package.json script. Written now and removed
+  // after, so the preview below cuts the tree it always has.
+  console.log('\n  the Run tab — the checkout\'s app and scripts')
+  writeFileSync(join(ALPHA, 'package.json'), JSON.stringify({ name: 'alpha', scripts: {
+    dev: 'echo alpha dev up && sleep 60', greet: 'echo hello from alpha',
+  } }))
+  await tab(card, 'run')
+  await until(`${card}.querySelector('.workbench-run')?.textContent ?? ''`, t => /greet/.test(t), 'the Run tab listed no scripts')
+  check('the Run tab lists the app and each script by what it runs',
+    await evaluate(`(() => { const t = ${card}.querySelector('.workbench-run').textContent
+      return /fli dev/.test(t) && /bun run greet/.test(t) && /bun run dev/.test(t) })()`))
+
+  await evaluate(`${button(`${card}.querySelector('[data-row="task:greet"]')`, 'Run')}.click()`)
+  const greeted = await until(`${card}.querySelector('[data-row="task:greet"]')?.textContent ?? ''`, t => /exited 0/.test(t) && /hello from alpha/.test(t),
+    'the script never ran to its end with its output shown')
+  check('a script runs in the checkout and its output and exit show on its row', /✓ exited 0/.test(greeted), greeted.replace(/\s+/g, ' '))
+
+  await evaluate(`${card}.querySelector('.workbench-start-app').click()`)
+  const served = await until(`[...${card}.querySelectorAll('.workbench-meta a')].map(a => a.textContent + ' ' + a.href).join(' ')`, t => /web :\d+/.test(t),
+    'Start app put no port on the card', 30_000)
+  check('Start app is the checkout\'s fli dev, and the card links the port it claimed',
+    /localhost:\d+/.test(served) && !(await evaluate(`!!${card}.querySelector('.workbench-start-app')`)), served)
+  await until(`${card}.querySelector('[data-row="app:."]')?.textContent ?? ''`, t => /alpha dev up/.test(t), 'fli dev never ran the app\'s dev script')
+  check('the tab says Run · 1 up while it serves', /Run · 1 up/.test(await evaluate(`${card}.querySelector('[data-tab=run]').textContent`)))
+
+  await evaluate(`${button(`${card}.querySelector('[data-row="app:."]')`, 'Stop')}.click()`)
+  await until(`${card}.querySelector('[data-row="app:."]')?.textContent ?? ''`, t => /stopped/.test(t) && !/running/.test(t), 'Stop left the app running')
+  check('Stop ends fli dev and the card offers Start app again',
+    await evaluate(`!!${card}.querySelector('.workbench-start-app') && !${card}.querySelector('.workbench-meta a')`))
+  spawnSync('rm', [join(ALPHA, 'package.json')])
+  await tab(card, 'chat')
+
   // ─── A preview: Open ───────────────────────────────────────────────────
   // A branch forked FOR A CLIENT is an Environment of its own, its hostname
   // routed to the branch's web port on the machine holding the worktree. The

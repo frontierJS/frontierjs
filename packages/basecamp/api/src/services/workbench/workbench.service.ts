@@ -11,6 +11,8 @@
 //   GET  /workbench               status      every pin's run status — the grid's poll, no git
 //   GET  /workbench/:id           transcript  one chat, folded from its log, with its checks and review
 //   GET  /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
+//   GET  /workbench/:id           runnables   `fli dev` per app and every package.json script (`core/workbench-run.ts`)
+//   GET  /workbench/:id           output      { row } — the tail of what a started row wrote
 //   POST /workbench               pin         { path }
 //   POST /workbench/:id           send        { prompt } — queued behind a run in progress
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
@@ -24,6 +26,8 @@
 //                                             a preview is RETIRED first — off the machine, its Environment removed
 //   POST /workbench/:id           stop · fresh · seen · unpin
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
+//   POST /workbench/:id           run         { row } — started detached by row id, never by command
+//   POST /workbench/:id           halt        { row } — stopped, its process group with it; on one already stopped, forgotten
 //
 // A pin is no workspace's, but a preview's settings name a project and a
 // machine that are: both are read in the CALLER's workspace when set and again
@@ -42,8 +46,8 @@ import { openPreview, freezePreview, thawPreview, retirePreview, type Opened, ty
 import { db, ws }                  from '../../core/resource.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
-const READS  = ['pins', 'status', 'transcript', 'diff']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen', 'check', 'review', 'fork', 'freeze', 'thaw', 'land', 'archive']
+const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen', 'check', 'review', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
 
 export function createWorkbenchService(app: BasecampApp) {
   // Read per call: services are built inside createApp, before app.ts claims it.
@@ -121,6 +125,32 @@ export function createWorkbenchService(app: BasecampApp) {
     async diff() {
       const p = pinned()
       return wb().diff(p.id)
+    },
+
+    async runnables() {
+      const p = pinned()
+      return wb().runnables(p.id)
+    },
+
+    async output() {
+      const p = pinned()
+      const out = wb().output(p.id, body().row)
+      if (!out) throw new NotFound(`Nothing called '${body().row}' was started in ${p.name}`)
+      return out
+    },
+
+    async run() {
+      const p = pinned()
+      const r = await wb().run(p.id, body().row)
+      if ('refused' in r) throw new Conflict(r.refused)
+      return r
+    },
+
+    async halt() {
+      const p = pinned()
+      const r = wb().halt(p.id, body().row)
+      if ('refused' in r) throw new NotFound(r.refused)
+      return r
     },
 
     async pin() {

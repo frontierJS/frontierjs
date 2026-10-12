@@ -121,7 +121,11 @@ needs a `$: commandPalette.open` line to update. It matches each typed word on
 its own, against `label`, `sub` and `group`. A palette that holds rows as well
 as commands — bookmarks, customers — passes `searchGroups={false}`, or every
 row matches its group's heading, and `minimumScore` (0–1) to drop rows that
-match only thinly.
+match only thinly. A server search is `search={(query, signal) => Promise<Item[]>}`:
+the palette waits for a pause in typing, aborts a search the words moved past,
+and draws the answer as given, ahead of the ranked `items` — never `onquery`
+replacing `items`, which ranks the server's hits again and drops any it made on
+text the row does not show.
 
 ---
 

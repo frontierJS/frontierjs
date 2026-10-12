@@ -25,9 +25,11 @@
 // `not stated` is refused into `open` (doctrine § 8): flagging a guess is not
 // permission to ship it.
 //
-// Plain ESM. One import, the inflection the three resolvers share.
+// Plain ESM. Two imports: the inflection the three resolvers share, and the
+// ISO 4217 table `@money` reads its scale from.
 
 import { modelName, camel } from '@frontierjs/toolbelt/inflect'
+import { isKnownCurrency } from '@frontierjs/toolbelt/units'
 import { ACTORS, ENTITY, PATTERN } from './catalog.js'
 import { TYPES } from './types.js'
 
@@ -58,6 +60,15 @@ const MOVE_RESERVED = ['create', 'read', 'update', 'delete', 'find', 'findMany',
 // the lifecycle the doctrine says to declare (§ 5).
 const STATE_NAMES = ['status', 'state', 'stage', 'phase']
 
+// The types a full-text index reads: stored as the text a person typed. A
+// secret is ciphertext and a tag list is JSON, so neither matches a word.
+const SEARCHABLE = ['text', 'longtext', 'markdown', 'email', 'url', 'phone', 'slug']
+
+// The columns each of an answer's switches writes on an entity.
+const SOFT_DELETE = 'deletedAt'
+const CUSTOM = 'customFields'
+const CURRENCY = 'currency'
+
 const IDENT = /^[a-z][a-zA-Z0-9]*$/
 const an = (name) => `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
 const VALUE = /^[a-z][a-z0-9_]*$/
@@ -77,7 +88,7 @@ function jsonDefault(v) {
  * table for the model, so the prompt and the grader are one list.
  */
 export const RULES = {
-  shape:       'The answer is `{ summary, actors, entities, open }` and every entity carries name, rung and why.',
+  shape:       'The answer is `{ summary, currency, actors, entities, open }` and every entity carries name, rung and why.',
   name:        'An entity name is PascalCase singular, unique, and never one the scaffold declares (User, Notification, and auth\'s own).',
   catalog:     '`from` names a catalog entry that is not reserved, and `kind`/`kinds` are kinds that entry lists.',
   rung:        'The rung agrees with `from`: catalog means the entry\'s own name, variant a different name or a kind, novel and property have no `from`, and a novel entity is not named like a catalog entry.',
@@ -92,6 +103,9 @@ export const RULES = {
   members:     'A `members` entity has a required link back to the container and a link to User.',
   pattern:     'A cited pattern is one the catalog lists.',
   rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field.',
+  currency:    '`currency` is one ISO 4217 code, or a list of them when each row with money names its own; the first is the default.',
+  fts:         '`fts` lists fields of the entity a person types text into: text, longtext, markdown, email, url, phone or slug.',
+  extensible:  '`extensible` names the entity of this answer whose rows declare the fields: required `model` and `key` text fields and a required `type` enum, and not extensible itself.',
 }
 
 /** @typedef {{ rule: string, at: string, message: string }} Finding */
@@ -127,6 +141,11 @@ export function checkAnswer(answer) {
   }
   if (answer.actors != null && !Array.isArray(answer.actors)) refuse('shape', 'actors', '`actors` is a list.')
   if (answer.open != null && !Array.isArray(answer.open)) refuse('shape', 'open', '`open` is a list of questions.')
+  // One currency for every amount, or the list a row picks from.
+  const codes = answer.currency == null ? ['USD'] : Array.isArray(answer.currency) ? answer.currency : [answer.currency]
+  if (!codes.length || codes.some(c => typeof c !== 'string' || c !== c.toUpperCase() || !isKnownCurrency(c))) refuse('currency', 'currency', `\`currency\` is an ISO 4217 code such as USD, EUR or JPY, or a list of them; ${JSON.stringify(answer.currency)} is not.`)
+  else if (new Set(codes).size !== codes.length) refuse('currency', 'currency', '`currency` lists a code twice.')
+  const perRow = Array.isArray(answer.currency) && codes.length > 1
   for (const [i, a] of (Array.isArray(answer.actors) ? answer.actors : []).entries()) {
     if (!a?.name || !ACTORS[a?.archetype]) refuse('shape', `actors[${i}]`, `An actor is { name, archetype, who }, and archetype is one of ${Object.keys(ACTORS).join(', ')}.`)
   }
@@ -244,6 +263,19 @@ export function checkAnswer(answer) {
       life = readLifecycle(e.lifecycle, `${at}.lifecycle`, refuse)
     }
 
+    // ── what it keeps: a trash, a search index, fields a tenant declares ──
+    if (e.softDelete != null && typeof e.softDelete !== 'boolean') refuse('shape', at, '`softDelete` is true when a removed row goes to a trash it can be restored from.')
+    const fts = e.fts == null ? [] : e.fts
+    if (!Array.isArray(fts)) refuse('fts', at, '`fts` is a list of field names.')
+    else for (const n of fts) {
+      const f = fields.find(x => x.name === n)
+      if (!f) refuse('fts', at, `\`fts: ${n}\` is not a field of ${e.name}.`)
+      else if (!SEARCHABLE.includes(f.type)) refuse('fts', at, `\`fts: ${n}\` is ${f.type}; a search reads ${SEARCHABLE.join(', ')}.`)
+    }
+    if (Array.isArray(fts) && new Set(fts).size !== fts.length) refuse('fts', at, '`fts` lists a field twice.')
+    if (e.extensible != null && (typeof e.extensible !== 'string' || !names.has(e.extensible))) refuse('extensible', at, `\`extensible\` names the entity of this answer that declares ${e.name}'s fields.`)
+    const money = fields.some(f => f.type === 'money') && perRow
+
     // ── collisions ──
     const columns = new Map()
     const claim = (name, what) => {
@@ -255,6 +287,9 @@ export function checkAnswer(answer) {
     if (life) claim(life.field, 'the lifecycle column')
     for (const f of fields) claim(f.name, 'a field')
     for (const l of links) { claim(l.name, 'a link'); claim(`${l.name}Id`, `the key of link \`${l.name}\``) }
+    if (e.softDelete === true) claim(SOFT_DELETE, 'when a row was removed to the trash')
+    if (typeof e.extensible === 'string') claim(CUSTOM, 'the fields a tenant declares')
+    if (money) claim(CURRENCY, 'the currency each amount is in')
     // The old name leaves the schema. A column of that name still on the entity
     // would make the rename a second column, and migrate create refuses it.
     for (const r of renames) if (columns.has(r.from)) refuse('rename', `${at}.${r.to}`, `\`was: ${r.from}\` is still ${columns.get(r.from)} of ${e.name}, so the schema would hold both and this is not a rename.`)
@@ -263,12 +298,26 @@ export function checkAnswer(answer) {
       name: e.name, from: base && !base.reserved ? base.name : null, kinds, rung: e.rung,
       why: e.why, cost: e.cost, escape: e.escape, risk: e.risk,
       fields, links, lifecycle: life, access: e.access ?? {}, patterns: e.patterns ?? [],
+      softDelete: e.softDelete === true, fts: Array.isArray(fts) ? fts : [],
+      extensible: typeof e.extensible === 'string' ? e.extensible : null, currency: money ? CURRENCY : null,
       renames, members: null, container: null,
     })
   }
 
   // ── access, which reads across entities ──
   const byName = new Map(models.map(m => [m.name, m]))
+
+  // The declaring entity is found by litestone's convention, so its columns
+  // are checked here rather than left to a parse error the model cannot read.
+  for (const m of models) {
+    if (!m.extensible) continue
+    const d = byName.get(m.extensible)
+    if (!d) continue
+    const has = (n, types) => d.fields.some(f => f.name === n && f.required && types.includes(f.type))
+    if (d === m) refuse('extensible', m.name, `${m.name} cannot declare its own fields; name another entity.`)
+    else if (d.extensible) refuse('extensible', m.name, `${d.name} declares ${m.name}'s fields, so it is not extensible itself.`)
+    else if (!has('model', ['text']) || !has('key', ['text']) || !has('type', ['enum'])) refuse('extensible', m.name, `${d.name} declares fields, so it has a required \`model\` text field (the entity a field is on), a required \`key\` text field and a required \`type\` enum.`)
+  }
   for (const m of models) {
     const a = m.access
     const at = m.name
@@ -346,6 +395,7 @@ export function checkAnswer(answer) {
   const ok = refusals.length === 0
   const plan = ok ? {
     summary: typeof answer.summary === 'string' ? answer.summary : '',
+    currency: codes,
     actors: Array.isArray(answer.actors) ? answer.actors : [],
     open: Array.isArray(answer.open) ? answer.open.filter(q => typeof q === 'string') : [],
     models,
@@ -364,6 +414,7 @@ export function checkAnswer(answer) {
  *   lifecycle: import('./catalog.js').Lifecycle|null,
  *   access: { via?: string, members?: string, public?: string[], publicWhen?: Record<string, any>, shared?: string, system?: boolean, why?: string },
  *   patterns: string[],
+ *   softDelete: boolean, fts: string[], extensible: string|null, currency: string|null,
  *   renames: Operation[],
  *   members: { model: string, link: string, user: string }|null,
  *   container: { model: string, link: string, user: string }|null,
@@ -371,7 +422,7 @@ export function checkAnswer(answer) {
  * A row-keeping operation `litestone migrate create` takes (`FJS-D603`). Only
  * `rename` is written so far; `backfill` and `split` join this union.
  * @typedef {{ op: 'rename', model: string, from: string, to: string }} Operation
- * @typedef {{ summary: string, actors: any[], open: string[], models: Model[], operations: Operation[], findings: Finding[] }} Plan
+ * @typedef {{ summary: string, currency: string[], actors: any[], open: string[], models: Model[], operations: Operation[], findings: Finding[] }} Plan
  */
 
 function readLifecycle(raw, at, refuse) {

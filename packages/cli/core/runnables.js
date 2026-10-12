@@ -385,13 +385,18 @@ function suites(root) {
 // surface and `verify:live` a drive, and the claim is tested on the COMMAND
 // rather than the name, because a surface is named for the surface (`API`) and
 // not for the script that starts it (`api`).
-function tasks(root, claimed) {
+//
+// Exported for basecamp's workbench, which lists a pinned checkout's scripts
+// without the snapshot walk `runnables()` pays — seconds over an app whose
+// `db/` holds a production copy.
+export function tasks(root, claimed = new Set()) {
   const out = []
   // The workspace and its APPS, not every package. A package's scripts are its
   // own business and are reached through its suite; an app's scripts ARE its
   // control surface, which is what this page is — and 144 rows in one group is
-  // an inventory nobody reads.
-  for (const dir of [root, ...findApps(root)]) {
+  // an inventory nobody reads. A Set, because a scaffolded app IS its root and
+  // would list every script twice under one id.
+  for (const dir of new Set([root, ...findApps(root)])) {
     const rel = where(root, dir)
     const pkg = readJson(join(dir, 'package.json'))
     for (const [name, run] of Object.entries(pkg?.scripts ?? {})) {

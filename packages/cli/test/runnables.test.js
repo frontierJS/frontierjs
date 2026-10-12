@@ -18,7 +18,7 @@ import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
 
-import { runnables, probeState, KINDS, appDirs, driveRows, readCommands, readPage } from '../core/runnables.js'
+import { runnables, probeState, KINDS, appDirs, driveRows, readCommands, readPage, tasks } from '../core/runnables.js'
 import { WORK_FILE } from '../core/repo-work.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
@@ -147,6 +147,18 @@ describe('drives, suites and tasks', () => {
     expect(kind('suite').some(r => r.dir === '.')).toBe(false)
     expect(byId('task:ci').start).toBe('bun run ci')
     expect(byId('task:test')).toBeTruthy()
+  })
+
+  test('an app that IS its root lists each script once', () => {
+    // A scaffolded app: the seed is at the root, so the root is both the
+    // workspace and an app, and each script came back twice under one id.
+    const app = mkdtempSync(join(tmpdir(), 'fli-runnables-app-'))
+    try {
+      mkdirSync(join(app, 'db'))
+      writeFileSync(join(app, 'db', 'schema.lite'), 'model Order {\n  id Int @id\n}\n')
+      writeFileSync(join(app, 'package.json'), JSON.stringify({ scripts: { 'db:seed': 'bun run db/seed.ts', lint: 'biome check .' } }))
+      expect(tasks(app).map(r => r.id)).toEqual(['task:db:seed', 'task:lint'])
+    } finally { rmSync(app, { recursive: true, force: true }) }
   })
 })
 

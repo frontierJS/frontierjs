@@ -20,7 +20,8 @@ src/catalog.js   THE ORIGIN. 32 entities with typed fields, usual links and
                  5 modifiers. Lifted from mockup/oracle.jsx, where the same
                  collapses were stated as data and again in prompt text
 src/types.js     the words an answer types a field with, and the column each
-                 one is. `date` is `String @date`, `money` is `Int @money(USD)`
+                 one is. `date` is `String @date`, `money` is `Int @money(<the
+                 answer's currency>)`
 src/answer.js    checkAnswer(answer) → { ok, refusals, findings, plan }. RULES
                  is the list of what it refuses, and brief.js renders it
 src/emit.js      emit(answer, { scaffold }) → { ok, text, models, … }. Grades
@@ -59,6 +60,12 @@ mockup/          the old React recognizer. Not a workspace member, not ported,
   did not declare; `brief()` shows them as *usual links*.
 - **`User` and `Notification` are reserved** — every scaffolded app declares
   both. The emitter never edits `User` and gives a link to it no back-relation.
+- **An answer's switches are litestone words under their own names.**
+  `softDelete`, `fts` and `extensible` on an entity, `currency` on the answer.
+  Each writes its column (`deletedAt`, `customFields`, `currency`), so a field
+  of that name is refused as a collision. Custom fields declared under the
+  same `via` parent as their entity are that parent's (`scope:`); otherwise a
+  key is the whole installation's.
 - **`inferred` is a word check.** It refuses `why`/`cost`/`escape` that say
   *inferred* or *not stated*, which also catches a sentence documenting an
   omission; the rule text tells a model to put omissions in `open`.

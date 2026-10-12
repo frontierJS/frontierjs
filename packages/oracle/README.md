@@ -28,12 +28,21 @@ Two of the entities, `User` and `Notification`, are reserved: every scaffolded a
 
 ## The answer, and what refuses one
 
-An answer names entities. Each one says which catalog entry it collapses to, which rung of the ladder it stopped at (catalog, variant, property or novel), and why. It adds typed fields, links, a lifecycle, and how a row is reached. Questions the prompt leaves open go in `open` and stay out of the schema. `RULES` holds the thirteen checks, among them:
+An answer names entities. Each one says which catalog entry it collapses to, which rung of the ladder it stopped at (catalog, variant, property or novel), and why. It adds typed fields, links, a lifecycle, and how a row is reached. Questions the prompt leaves open go in `open` and stay out of the schema. `RULES` holds the checks, among them:
 
 - **Every row has somebody.** An entity is refused unless the answer names who reaches a row: an actor link to `User`, `via` a required parent, a membership, or `public`/`shared` with a reason.
 - **Somebody creates it.** An entity nobody can create is refused, as is one nobody can reach.
 - **An inference is a question.** A `why` that says *inferred* or *not stated* belongs in `open`.
 - **More than two states is a lifecycle.** A `status` enum with three values is refused until it declares its moves.
+
+## What a record keeps
+
+Four switches turn on a litestone word each, under its own name:
+
+- **`softDelete: true`** on an entity gives it a trash. `remove()` stamps `deletedAt` and `restore()` brings the row back.
+- **`fts: [fields]`** makes `search()` legal over the text a person typed.
+- **`extensible: "Entity"`** names the entity whose rows declare custom fields; the values live in `customFields`. Under the same `via` parent the declarations are that parent's, so each company keeps its own.
+- **`currency`** on the answer is the ISO 4217 code every `money` field is in, USD when absent. A list lets each row name its own, limited to the list.
 
 ## Access is derived, never written
 

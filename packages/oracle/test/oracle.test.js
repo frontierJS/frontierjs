@@ -332,6 +332,9 @@ describe('checkAnswer refuses', () => {
     members:   a => { a.entities[1].links.shift() },
     pattern:   a => { a.entities[4].patterns = ['approvals'] },
     rename:    a => { a.entities[2].fields[1].was = 'title' },
+    currency:  a => { a.currency = 'usd' },
+    fts:       a => { a.entities[5].fts = ['rating'] },
+    extensible: a => { a.entities[3].extensible = 'Job' },
   }
 
   test('every rule has a case here', () => {
@@ -419,6 +422,119 @@ describe('checkAnswer refuses', () => {
 // A rename reaches the database as a RENAME only if something says it was one,
 // and the schema cannot (`FJS-D603`). The answer's word is `was`; the emitter
 // hands back the document `litestone migrate create --operations` reads.
+// What a record keeps beyond its columns (Charter's "What it keeps" step,
+// 2026-10-11): a trash, a search index, fields each tenant declares, and the
+// currency its amounts are in. Each is a litestone word under its own name.
+const KEEPS = {
+  currency: ['EUR', 'USD'],
+  entities: [
+    {
+      name: 'Estimate', rung: 'novel', why: 'an estimate a person keeps',
+      fields: [{ name: 'title', type: 'text', required: true }, { name: 'body', type: 'longtext' }, { name: 'price', type: 'money' }],
+      links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
+      fts: ['title', 'body'], softDelete: true, extensible: 'EstimateField',
+    },
+    {
+      name: 'EstimateField', rung: 'novel', why: 'a field a person adds to every estimate',
+      fields: [
+        { name: 'model', type: 'text', required: true },
+        { name: 'key', type: 'text', required: true },
+        { name: 'type', type: 'enum', values: ['text', 'number'], required: true },
+      ],
+      links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
+    },
+  ],
+}
+
+describe('what a record keeps', () => {
+  test('emits a trash, a search index, declared fields and a currency per row, and parses', () => {
+    const out = emit(KEEPS, { scaffold: SCAFFOLD })
+    expect(out.refusals).toEqual([])
+    expect(parses(out.text)).toBe(true)
+    for (const line of ['@@softDelete', '@@fts([title, body])', '@@extensible(customFields, declaredBy: EstimateField)', '@money(field: currency)', `@check("currency IN ('EUR', 'USD')")`]) expect(out.text).toContain(line)
+  })
+
+  test('one currency is every amount\'s, and none is USD', () => {
+    const one = clone(KEEPS)
+    one.currency = 'JPY'
+    const out = emit(one, { scaffold: SCAFFOLD })
+    expect(out.text).toContain('@money(JPY)')
+    expect(out.text).not.toContain('currency  String')
+    delete one.currency
+    expect(emit(one, { scaffold: SCAFFOLD }).text).toContain('@money(USD)')
+  })
+
+  test('refuses a search over what a person does not type, and a declarer without its columns', () => {
+    const a = clone(KEEPS)
+    a.entities[0].fts = ['price']
+    a.entities[1].fields.pop()
+    const rules = checkAnswer(a).refusals.map(r => r.rule)
+    expect(rules).toEqual(['fts', 'extensible'])
+  })
+
+  test('a column the switch writes collides with a field of the same name', () => {
+    const a = clone(KEEPS)
+    a.entities[0].fields.push({ name: 'deletedAt', type: 'datetime' })
+    expect(checkAnswer(a).refusals.map(r => r.rule)).toEqual(['field'])
+  })
+
+  test('on a real client: removed rows restore, search finds, a currency outside the list is refused', async () => {
+    const env = await createTestEnv({ schema: emit(KEEPS, { scaffold: SCAFFOLD }).text })
+    try {
+      const user = await env.system.user.create({ data: { email: 'a@example.com' } })
+      const db = env.actingAs(user)
+      const est = await db.estimate.create({ data: { title: 'Gutter quote', body: 'two storeys, north side', price: 12000 } })
+      expect(est.currency).toBe('EUR')
+      expect((await db.estimate.search('storeys')).map(n => n.id)).toEqual([est.id])
+      await db.estimate.remove({ where: { id: est.id } })
+      expect(await db.estimate.findMany({})).toEqual([])
+      await db.estimate.restore({ where: { id: est.id } })
+      expect((await db.estimate.findMany({})).map(n => n.id)).toEqual([est.id])
+      await expect(db.estimate.create({ data: { title: 'x', currency: 'GBP' } })).rejects.toThrow()
+      await db.estimateField.create({ data: { model: 'Estimate', key: 'storeys', type: 'number' } })
+      expect((await db.estimate.$declaredFields()).map(f => f.key)).toEqual(['storeys'])
+      const kept = await db.estimate.update({ where: { id: est.id }, data: { customFields: { storeys: 2 } } })
+      expect(kept.customFields).toEqual({ storeys: 2 })
+    } finally {
+      env.close()
+    }
+  })
+
+  test('declarations under a company are that company\'s: two declare the same key, and neither reads the other\'s', async () => {
+    const a = clone(hiring)
+    a.entities.push({
+      name: 'CandidateField', rung: 'novel', why: 'a field a company adds to its candidates',
+      fields: [
+        { name: 'model', type: 'text', required: true },
+        { name: 'key', type: 'text', required: true },
+        { name: 'type', type: 'enum', values: ['text', 'number'], required: true },
+      ],
+      links: [{ name: 'company', to: 'Company', required: true }],
+      access: { via: 'company' },
+    })
+    a.entities[3].extensible = 'CandidateField'
+    const out = emit(a, { scaffold: SCAFFOLD })
+    expect(out.refusals).toEqual([])
+    expect(out.text).toContain('@@extensible(customFields, declaredBy: CandidateField, scope: companyId)')
+    expect(out.text).toContain('@@unique([companyId, key])')
+    const env = await createTestEnv({ schema: out.text })
+    try {
+      const world = async (email) => {
+        const user = await env.system.user.create({ data: { email } })
+        const company = await env.system.company.create({ data: { name: email } })
+        await env.system.membership.create({ data: { companyId: company.id, userId: user.id } })
+        await env.actingAs(user).candidateField.create({ data: { model: 'Candidate', key: 'tier', type: 'text', companyId: company.id } })
+        return user
+      }
+      const one = await world('a@example.com')
+      const two = await world('b@example.com')
+      for (const u of [one, two]) expect((await env.actingAs(u).candidateField.findMany({})).length).toBe(1)
+    } finally {
+      env.close()
+    }
+  })
+})
+
 describe('a renamed field', () => {
   const project = (field) => ({
     summary: 'projects',

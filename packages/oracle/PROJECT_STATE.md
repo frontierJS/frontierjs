@@ -13,7 +13,7 @@ _Verified 2026-10-10 by running the code._
 
 | | |
 | --- | --- |
-| Tests | **48 passing, 0 failing** (`bun run test`). Every catalog entry and every per-kind lifecycle is emitted and parsed by litestone. One refusing case per rule. The hiring fixture runs on a real client, and a second tenant reads none of six models |
+| Tests | **57 passing, 0 failing** (`bun run test`). Every catalog entry and every per-kind lifecycle is emitted and parsed by litestone. One refusing case per rule. The hiring fixture runs on a real client, and a second tenant reads none of six models |
 | Typecheck | clean, no baseline (`bun run typecheck`) |
 | The whole catalog as one app | parses, `fli advise` exits 0, `fli db:migrate` applies, the API boots (`@secret` included), and every model seeds. `fli check` reported only `transition-methods`, fixed in the tree as `FJS-1778` |
 | Corpus | 21 product prompts (Charter Phase 2, `claude-opus-5-5`). **One emitted schema failed to parse in the whole run**: a membership with an optional person under a plain `@@unique`. It is fixed, with a test. All 21 apps settled, booted, and seeded every model. 17 passed the access drive, and the 6 models it read across tenants were declared `public` or `shared` |
@@ -37,10 +37,10 @@ Planned 2026-10-10. **Access defects come before features**, because getting acc
 4. **What an answer cannot say yet.** Each coins a word, so run `decision-rules` first.
    - `FJS-2550`: the one-business team shape, where every signed-in staff member writes.
    - `FJS-2551`: a visitor without an account has no actor archetype.
-   - **Soft delete.** A vault's trash had to be dropped, because a `deletedAt` field without `@@softDelete` is inert and advise says so.
 5. **The edit path.** Oracle edits exist only in the prototype: `fjs-prototypes/charter/builder/edit.ts` re-answers and calls `emit(json, { scaffold })`. Its M11 rerun applied 7 of 9 edits on populated apps and lost 0 rows. The 2 it did not apply are renames.
    - `FJS-1787`, after `FJS-D683`: renames, backfills and rows carried into a new model.
    - Then move that route into the framework and join it to `fli intent` (`packages/cli/core/intent.js`). Nothing outside this package imports oracle today.
+   - **Done 2026-10-11:** an answer now says `softDelete`, `fts` and `extensible` on an entity and `currency` on the answer. Each emits its litestone word, has a refusing rule, and runs on a real client in `test/oracle.test.js`. The corpus run has not been repeated with them.
 6. **Last.**
    - **Shapes as `@@trait`.** Recurring column groups (interval, weekday window, tree) are written out by hand, and the catalog has no shape level yet.
    - **Behavior.** Only the `audit` pattern becomes a declaration (`@@trail(audit)`). The other patterns emit as comments, and hooks, jobs and notifications are not generated.

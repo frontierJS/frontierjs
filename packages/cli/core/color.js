@@ -88,6 +88,14 @@ export const chalk = Object.assign(template, styles, {
     const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
     return (s) => (enabled ? paint(`38;2;${r};${g};${b}`, 39, s) : String(s))
   },
+  // An OSC 8 hyperlink — the text stays what is printed, the url is where a
+  // click goes. Off wherever color is, so a pipe never sees the escape.
+  link: (text, url) => (enabled ? `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\` : String(text)),
+  // A click on `file:line`. VS Code's terminal opens a file:// link at line 1,
+  // and its own scheme is the one that lands on the line.
+  fileLink: (text, path, line) => chalk.link(text, process.env.TERM_PROGRAM === 'vscode'
+    ? `vscode://file${path}${line ? `:${line}` : ''}`
+    : `file://${path}`),
 })
 
 // fli's own color — its name in the banner, and `code` in help prose.

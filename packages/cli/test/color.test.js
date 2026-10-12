@@ -60,3 +60,14 @@ test('an unclosed span throws where it is written', () => {
   expect(r.status).not.toBe(0)
   expect(r.stderr).toContain('{bold is never closed')
 })
+
+// VS Code's terminal opens a file:// link at line 1, so the line rides only on
+// its own scheme; a pipe must never see the escape.
+test('fileLink lands on the line in VS Code, and is plain text in a pipe', () => {
+  const link = (env) => spawnSync(process.execPath, ['-e',
+    `const { chalk } = await import(${JSON.stringify(COLOR)}); process.stdout.write(chalk.fileLink('I.md:7', '/r/I.md', 7))`],
+  { encoding: 'utf8', env: { ...process.env, NO_COLOR: '', ...env } }).stdout
+  expect(link({ FORCE_COLOR: '1', TERM_PROGRAM: 'vscode' })).toBe('\x1b]8;;vscode://file/r/I.md:7\x1b\\I.md:7\x1b]8;;\x1b\\')
+  expect(link({ FORCE_COLOR: '1', TERM_PROGRAM: 'kitty' })).toBe('\x1b]8;;file:///r/I.md\x1b\\I.md:7\x1b]8;;\x1b\\')
+  expect(link({ FORCE_COLOR: '0' })).toBe('I.md:7')
+})

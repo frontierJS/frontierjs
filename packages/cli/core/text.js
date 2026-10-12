@@ -19,7 +19,8 @@ export const lines = (rows, { indent = 0, style } = {}) => {
 // caller rather than taught here.
 export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
-const SGR   = /\x1b\[[0-9;]*m/g
+// A color code, or either end of an OSC 8 link — none of them takes a column.
+const SGR   = /\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\/g
 const RESET = '\x1b[0m'
 
 // An emoji takes two columns, and counting it as one put the break one past
@@ -43,7 +44,10 @@ export function wrap(text, width) {
   const rows = []
   let row = '', count = 0, open = ''
   let cut = -1, cutOpen = '', cutCount = 0
-  for (const [tok] of s.matchAll(/\x1b\[[0-9;]*m|[\s\S]/gu)) {
+  for (const [tok] of s.matchAll(/\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\|[\s\S]/gu)) {
+    // A link end is not a style, and carrying it into `open` would reopen it
+    // on every row after the break.
+    if (tok.startsWith('\x1b]')) { row += tok; continue }
     if (tok[0] === '\x1b' && tok.length > 1) {
       row += tok
       open = /^\x1b\[0?m$/.test(tok) ? '' : open + tok

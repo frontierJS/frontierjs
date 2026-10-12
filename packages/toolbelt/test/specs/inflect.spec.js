@@ -101,6 +101,26 @@ test('inflect: a singular that ends in s is left alone', function () {
   })
 })
 
+test('inflect: a plural in -as loses its s; a singular in -as is on the list', function () {
+  /*
+   * The `-as` guard kept `areas`, `ideas` and `schemas` plural, so junction's
+   * `serviceAreas` service derived the model `serviceAreas`, which no schema
+   * holds — a 500 on every verb a hook did not answer first (`FJS-2682`). The
+   * singulars ending in `-as` are few and named; the plurals are not.
+   */
+  ;[['areas', 'area'], ['ideas', 'idea'], ['schemas', 'schema'], ['formulas', 'formula'],
+    ['visas', 'visa'], ['serviceAreas', 'serviceArea'], ['service_areas', 'service_area'],
+    ['Areas', 'Area'], ['pizzas', 'pizza'],
+  ].forEach(function ([many, one]) {
+    assert.equal(singularize(many), one, 'singularize(' + many + ')')
+    assert.equal(singularize(pluralize(one)), one, one + ' did not survive the round trip')
+  })
+  assert.equal(modelName('service_areas'), 'ServiceArea')
+  ;['gas', 'bias', 'alias', 'atlas', 'canvas', 'pancreas', 'Canvas', 'UserAlias'].forEach(function (w) {
+    assert.equal(singularize(w), w, 'singularize(' + w + ') moved')
+  })
+})
+
 test('inflect: a singular the -ses list names is left alone', function () {
   /*
    * `lens` singularized to `len`, so `fli check` refused the `Lens.mesa` that

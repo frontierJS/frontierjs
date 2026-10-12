@@ -71,6 +71,8 @@ export function emit(answer, { scaffold = '' } = {}) {
 /** @param {import('./answer.js').Plan} plan */
 function emitPlan(plan) {
   const backs = backFields(plan.models)
+  const currency = plan.currency
+  const declares = declarers(plan.models)
   const access = accessTable(plan.models, backs)
   const out = []
 
@@ -95,7 +97,7 @@ function emitPlan(plan) {
 
   for (const m of plan.models) {
     out.push('')
-    out.push(...emitModel(m, backs.get(m.name) ?? [], access.get(m.name)))
+    out.push(...emitModel(m, backs.get(m.name) ?? [], access.get(m.name), currency, declares))
   }
   return `${out.join('\n')}\n`
 }
@@ -136,15 +138,45 @@ function backFields(models) {
 function columnNames(m) {
   return ['id', 'createdAt', 'updatedAt',
     ...(m.kinds.length > 1 ? ['kind'] : []),
+    ...(m.softDelete ? ['deletedAt'] : []), ...(m.extensible ? ['customFields'] : []), ...(m.currency ? [m.currency] : []),
     ...(m.lifecycle ? [m.lifecycle.field] : []),
     ...m.fields.map(f => f.name),
     ...m.links.flatMap(l => [l.name, `${l.name}Id`])]
 }
 
+// ─── declared fields ──────────────────────────────────────────────────────────
+//
+// An entity's custom fields are another entity's rows. Where both hang `via`
+// the same link to the same parent — the company a tenant's records live
+// under — the declarations are that parent's, so two companies each declare a
+// `tier` and neither sees the other's. Otherwise a key is the installation's.
+
+function declarers(models) {
+  const byName = new Map(models.map(m => [m.name, m]))
+  /** @type {Map<string, { scope: string|null }>} */
+  const out = new Map()
+  for (const m of models) {
+    if (!m.extensible) continue
+    const d = byName.get(m.extensible)
+    const parent = (x) => x.access.via ? `${x.access.via}:${x.links.find(l => l.name === x.access.via).to}` : null
+    const shared = parent(m) && parent(m) === parent(d)
+    // Every entity a declarer serves must agree, or one of them reads the
+    // other's keys; disagreeing falls back to the installation-wide key.
+    const scope = shared ? `${m.access.via}Id` : null
+    const was = out.get(d.name)
+    out.set(d.name, { scope: was && was.scope !== scope ? null : scope })
+  }
+  return out
+}
+
 // ─── one model ────────────────────────────────────────────────────────────────
 
-/** @param {import('./answer.js').Model} m */
-function emitModel(m, backs, access) {
+/**
+ * @param {import('./answer.js').Model} m
+ * @param {string[]} currency  the answer's codes; a row with money picks one when there are several
+ * @param {Map<string, { scope: string|null }>} declares  each declaring entity, and the parent its keys are unique under
+ */
+function emitModel(m, backs, access, currency, declares) {
   const out = []
   const enums = []
   /** @type {[string, string, string][]} */
@@ -166,7 +198,7 @@ function emitModel(m, backs, access) {
     const enumName = `${m.name}${pascal(f.name)}`
     if (f.type === 'enum') enums.push(enumBlock(enumName, f.values))
     const row = TYPES[f.type]
-    const { type, attrs } = row.lite(f, enumName)
+    const { type, attrs } = row.lite(f, enumName, m.currency ? { field: m.currency } : currency[0])
     const optional = !f.required && !row.array && !row.alwaysSet && f.default == null
     const extra = [...attrs]
     if (f.unique) extra.push('@unique')
@@ -200,10 +232,18 @@ function emitModel(m, backs, access) {
     rows.push([m.lifecycle.field, name, `@default(${m.lifecycle.initial})`])
   }
 
+  // The currency a row's amounts are in, from the answer's list: the first
+  // is the default, and the database refuses one the answer did not name.
+  if (m.currency) rows.push([m.currency, 'String', `@default("${currency[0]}") @check("${m.currency} IN (${currency.map(c => `'${c}'`).join(', ')})")`])
+  // Fields a tenant adds with no deploy; the declarations are another entity's rows.
+  if (m.extensible) rows.push(['customFields', 'Json', '@default("{}")'])
+
   for (const b of backs) rows.push([b.name, `${b.source}[]`, b.relation ? `@relation("${b.relation}")` : ''])
 
   rows.push(['createdAt', 'DateTime', '@default(now())'])
   rows.push(['updatedAt', 'DateTime', '@default(now()) @updatedAt'])
+  // remove() stamps it and restore() clears it; every read skips a stamped row.
+  if (m.softDelete) rows.push(['deletedAt', 'DateTime?', ''])
 
   const w0 = Math.max(...rows.map(r => r[0].length))
   const w1 = Math.max(...rows.map(r => r[1].length))
@@ -225,6 +265,15 @@ function emitModel(m, backs, access) {
       : `@@relator([${m.container.link}Id, ${m.container.user}Id], once)`)
   }
   if (m.patterns.includes('audit')) attrs.push('@@trail(audit)')
+  if (m.softDelete) attrs.push('@@softDelete')
+  if (m.fts.length) attrs.push(`@@fts([${m.fts.join(', ')}])`)
+  if (m.extensible) {
+    const scope = declares.get(m.extensible).scope
+    attrs.push(`@@extensible(customFields, declaredBy: ${m.extensible}${scope ? `, scope: ${scope}` : ''})`)
+  }
+  // A key is declared once per entity, or once per parent when the
+  // declarations hang under the tenant's container.
+  if (declares.has(m.name)) attrs.push(`@@unique([${declares.get(m.name).scope ?? 'model'}, key])`)
 
   attrs.push(`@@gate("${access.gate.join('.')}")`)
   if (m.lifecycle) attrs.push(transitions(m.lifecycle))

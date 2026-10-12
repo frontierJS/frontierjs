@@ -22,6 +22,7 @@ flags:
 ```js
 const { findRows }         = await import(resolve(global.fliRoot, 'core/find.js'))
 const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
+const { plural }           = await import(resolve(global.fliRoot, 'core/text.js'))
 
 const root  = findRegisterRoot(process.cwd()) ?? $.paths.root
 const limit = Math.max(1, Number(flag.limit) || 20)
@@ -30,30 +31,57 @@ const out = findRows({ root, terms: arg.terms, limit })
 
 echo('')
 if (!out.ok) {
-  echo(`  ✗ ${out.reason}`)
+  echo(chalk`  {red ✗} ${out.reason}`)
   echo('')
   process.exitCode = 1
   return
 }
 
+const terms = [arg.terms].flat().join(' ')
 if (!out.total) {
-  echo(`  no row or ruling holds all of: ${arg.terms}`)
+  echo(chalk`  {dim no row or ruling holds all of} {bold ${terms}}`)
   echo('')
   return
 }
 
-const clip = (s, n) => s.length > n ? `${s.slice(0, n - 1)}…` : s
+// A status no table names here prints unstyled rather than failing the row.
+const STATUS = {
+  'open':           chalk.green,
+  'stale?':         chalk.yellow,
+  'needs a ruling': chalk.magenta,
+  'ruling':         chalk.blue,
+}
+const SEVERITY = { S1: s => chalk`{bold.red ${s}}`, S2: chalk.yellow, S4: chalk.gray }
+const paint = (table, s) => (table[s] ?? String)(s)
+
+// The terminal wraps an overlong title back to column 0, under the id column.
+const width = Math.max(40, (process.stdout.columns || 124) - 13)
+const clip  = (s, n) => s.length > n ? `${s.slice(0, n - 1)}…` : s
+
+echo(chalk`  {bold ${plural(out.total, 'hit')}} {dim for} ${terms}`)
+echo('')
+
 let bodyOnly = false
 for (const h of out.hits) {
   if (h.where === 'body' && !bodyOnly) {
     bodyOnly = true
-    echo('  ── only in the body ──')
+    echo(chalk.dim('  ── only in the body ──'))
   }
-  const state = [h.status, h.severity].filter(Boolean).join(' · ')
-  echo(`  ${h.id.padEnd(10)} ${state.padEnd(16)} ${h.file}:${h.line}`)
-  echo(`             ${clip([h.area, h.title].filter(Boolean).join(' — '), 110)}`)
+  // A severity of `decision` repeats what *needs a ruling* already says.
+  const severity = h.severity === 'decision' ? null : h.severity
+  const state    = [h.status, severity].filter(Boolean)
+  const pad      = ' '.repeat(Math.max(1, 17 - state.join(' · ').length))
+  const settled  = !(h.status in STATUS)
+
+  const area  = h.area ? clip(h.area, width) : ''
+  const title = clip(h.title ?? '', Math.max(10, width - (area ? area.length + 3 : 0)))
+  const head  = chalk`{bold ${h.id.padEnd(10)}} ${[paint(STATUS, h.status), severity && paint(SEVERITY, severity)].filter(Boolean).join(chalk.dim(' · '))}${pad}${chalk.dim(chalk.fileLink(`${h.file}:${h.line}`, resolve(root, h.file), h.line))}`
+  const body  = area ? chalk`{cyan ${area}} {dim —} ${title}` : title
+
+  echo(settled ? chalk.dim(`  ${head}`) : `  ${head}`)
+  echo(settled ? chalk.dim(`             ${body}`) : `             ${body}`)
 }
-if (out.total > out.hits.length) echo(`  … ${out.total - out.hits.length} more — add a term`)
+if (out.total > out.hits.length) echo(chalk.dim(`  … ${out.total - out.hits.length} more — add a term`))
 echo('')
 ```
 

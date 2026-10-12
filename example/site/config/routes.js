@@ -87,11 +87,29 @@ export const components = {
 }
 
 
+function __sierraDevStatic(routeId) {
+  let answered = null
+  return Promise.resolve({
+    async load({ params, url }) {
+      const q = new URLSearchParams({ route: routeId, url, params: JSON.stringify(params ?? {}) })
+      const res = await fetch('/__sierra/static-data?' + q)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? ('static-data ' + res.status))
+      answered = body
+      return body.data
+    },
+    head: () => answered?.head ?? null,
+  })
+}
+
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
 
-
+  'root': () => __sierraDevStatic('root'),
+  'catalog': () => __sierraDevStatic('catalog'),
+  'pricing': () => __sierraDevStatic('pricing'),
+  'products.[slug]': () => __sierraDevStatic('products.[slug]'),
 }
 
 // Layout factory map — keyed by file path (same as node.layout in the tree).

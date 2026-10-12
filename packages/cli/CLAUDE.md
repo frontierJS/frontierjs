@@ -55,7 +55,8 @@ core/
                 `{bold.cyan x}`, which reads markup only from the literal parts.
                 A new command prints that way — README § Printing a line. An
                 inner close reopens the outer style, since dim and bold share
-                one close code
+                one close code. `chalk.fileLink(text, path, line)` is a
+                clickable `file:line` (OSC 8), off wherever color is
   text.js       `echo.lines` — a block of output rows; false and null rows
                 dropped. `plural(n, word)`
   dev-run.js    `fli dev`'s surfaces as one labeled stream — each its own process
@@ -81,7 +82,9 @@ core/
                 (`pages:` — file and flags) and reads its own default output
                 name back from (`metadata.pages`), so the row and the file
                 cannot disagree; `readPage(root, row)` serves one by ROW, never
-                by path, for `fli gui` and basecamp's /pages/.
+                by path, for `fli gui` and basecamp's /pages/. `tasks(root)`
+                is exported alone for the workbench's Run tab, which cannot pay
+                the snapshot walk
                 Derived from files that would break something else if they were
                 wrong; `repo-map.js` reads the same readers. `probeState` is the
                 one answer to which of them are up, and it has FOUR — `unknown`

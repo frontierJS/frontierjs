@@ -1,17 +1,18 @@
 // ─── types.js — the words an answer types a field with, and the column each is ─
 //
 // An answer never writes a `.lite` type. It says `money`, and this table says
-// that money is `Int @money(USD)`, because a model reaching for a type from
+// that money is `Int @money(USD)` (or the answer's own currency), because a model reaching for a type from
 // memory reaches for `Decimal` or `Float`, and the language refuses the first
 // and the second is wrong for money in every language. Every row here was
 // parsed and graded by `fli advise` and `fli check` (test/emit.test.js).
 //
-// `lite(field)` answers the column's type and its attributes, not counting
-// `?`, `@unique`, `@system` and `@default`, which the emitter adds the same way
-// for every type.
+// `lite(field, enumName, money)` answers the column's type and its attributes,
+// not counting `?`, `@unique`, `@system` and `@default`, which the emitter adds
+// the same way for every type. `money` is the answer's currency: a code, or
+// `{ field }` when each row names its own in that column.
 
 /**
- * @typedef {{ desc: string, lite: (f: import('./catalog.js').Field, enumName: string) => { type: string, attrs: string[] }, array?: boolean, alwaysSet?: boolean }} TypeRow
+ * @typedef {{ desc: string, lite: (f: import('./catalog.js').Field, enumName: string, money?: string|{ field: string }) => { type: string, attrs: string[] }, array?: boolean, alwaysSet?: boolean }} TypeRow
  */
 
 /** @type {Record<string, TypeRow>} */
@@ -27,7 +28,7 @@ export const TYPES = {
   int:      { desc: 'a whole number that may be negative',               lite: () => ({ type: 'Int', attrs: [] }) },
   count:    { desc: 'a whole number, zero or more — a quantity, minutes', lite: () => ({ type: 'Int', attrs: ['@gte(0)'] }) },
   number:   { desc: 'a measurement with a fraction — a coordinate, a weight', lite: () => ({ type: 'Float', attrs: [] }) },
-  money:    { desc: 'an amount of money',                                lite: () => ({ type: 'Int', attrs: ['@money(USD)'] }) },
+  money:    { desc: 'an amount of money, in the answer\'s `currency`',  lite: (f, e, money = 'USD') => ({ type: 'Int', attrs: [typeof money === 'string' ? `@money(${money})` : `@money(field: ${money.field})`] }) },
   percent:  { desc: 'a whole percentage, 0 to 100',                      lite: () => ({ type: 'Int', attrs: ['@gte(0)', '@lte(100)'] }) },
   bool:     { desc: 'yes or no — always set, false unless defaulted',    lite: () => ({ type: 'Boolean', attrs: [] }), alwaysSet: true },
   datetime: { desc: 'a moment — when something happened or will',       lite: () => ({ type: 'DateTime', attrs: [] }) },

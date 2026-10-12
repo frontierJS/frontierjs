@@ -16,6 +16,8 @@
 //                             `exit` line
 //   logs/<id>.review.ndjson   every reviewer run, the same shape
 //   logs/<id>.checks.json     the latest checks report, replaced whole
+//   logs/<id>.run.<row>.log   what a dev server or script started from the Run
+//                             tab wrote, from its latest start
 //   trees/<parent id>/<slug>  a BRANCH's linked worktree — outside the repo, or
 //                             fli check, the typecheck globs and the packages/*
 //                             glob would each find a second copy of every package
@@ -37,6 +39,10 @@
 // ask panel's Submit hold it to `web/`, and its web port is claimed at the cut
 // so the route Open sends names the port `fli dev` will bind there. The rows
 // are `core/preview.ts`'s, written by the service as the caller.
+//
+// The Run tab starts what the checkout declares — `fli dev` per app, and its
+// package.json scripts (`core/workbench-run.ts`) — detached, each with a log
+// of its own and its pid on the pin, like a run. Unpin and Archive stop them.
 //
 // When a run ends with nothing queued behind it, two follow-ups may start:
 // the CHECKS — the checkout's own `fli done` (`core/workbench-check.ts`), only
@@ -69,6 +75,7 @@ import { resolveRoot }                 from './local-git.ts'
 import { readDiff }                    from './workbench-diff.ts'
 import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
 import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './preview.ts'
+import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
 
 export type Pin = {
   id:       string
@@ -106,6 +113,8 @@ export type Pin = {
   preview:  PreviewSettings | null
   /** On a preview branch: its web port from the cut, and what Open made. */
   opened:   ({ port: number } & Partial<Omit<Opened, 'port'>>) | null
+  /** What the Run tab started here, by row id (`core/workbench-run.ts`). */
+  runs:     Record<string, RunRecord>
 }
 
 export type Item =
@@ -146,6 +155,8 @@ export type PinStatus = {
   spent:   Spent
   checks:  { state: ChecksState, at: string, changed: number, unfinished: number, drives: number } | null
   review:  { state: RunState, cost: number | null } | null
+  /** Each dev server or script the Run tab started, and the ports an app holds. */
+  runs:    Array<{ id: string, name: string, running: boolean, exit: number | null, stopped: boolean, ports: Served[] }>
 }
 
 type Folded = {
@@ -256,6 +267,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   const logFile    = (id: string) => join(root, 'logs', `${id}.ndjson`)
   const reviewFile = (id: string) => join(root, 'logs', `${id}.review.ndjson`)
   const checksFile = (id: string) => join(root, 'logs', `${id}.checks.json`)
+  const runFile    = (id: string, row: string) => join(root, 'logs', `${id}.run.${createHash('sha1').update(row).digest('hex').slice(0, 10)}.log`)
   const folds    = new Map<string, Folded>()
   const queues   = new Map<string, string[]>()
 
@@ -264,7 +276,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   function readPins(): Pin[] {
     let pins: Array<Partial<Pin>>
     try { pins = JSON.parse(readFileSync(pinsFile, 'utf8')).pins ?? [] } catch { return [] }
-    return pins.map(p => ({ review: false, reviewPid: null, from: null, base: null, branch: null, forkOf: null, carried: null, copy: DEFAULT_COPY, setup: null, preview: null, opened: null, ...p }) as Pin)
+    return pins.map(p => ({ review: false, reviewPid: null, from: null, base: null, branch: null, forkOf: null, carried: null, copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, ...p }) as Pin)
   }
 
   // Through a rename, so a crash mid-write cannot leave half a file that reads
@@ -309,7 +321,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       budget: DEFAULT_BUDGET, hooks: false, review: false,
       pinnedAt: new Date().toISOString(), seenAt: null, pid: null, reviewPid: null,
       from: null, base: null, branch: null, forkOf: null, carried: null,
-      copy: DEFAULT_COPY, setup: null, preview: null, opened: null,
+      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {},
     }
     writePins([...pins, next])
     return { pin: next }
@@ -327,6 +339,8 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   function forget(id: string) {
     stop(id)
+    const p = getPin(id)
+    if (p) for (const row of Object.keys(p.runs)) { halt(id, row); rmSync(runFile(id, row), { force: true }) }
     writePins(readPins().filter(p => p.id !== id))
     for (const file of [logFile(id), reviewFile(id), checksFile(id)]) {
       rmSync(file, { force: true })
@@ -642,6 +656,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
         drives:     checks.report?.drives.length ?? 0,
       },
       review: review && { state: review.state, cost: review.fold.run.cost },
+      runs:   await runsOf(p),
     }
   }
 
@@ -731,6 +746,106 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       if (!stopped) await followUp(p.id, f.run.state)
     })
     updatePin(p.id, { pid: child.pid ?? null })
+  }
+
+  // ─── the Run tab ──────────────────────────────────────────────────────
+  // A dev server or a script, started from the inventory by row id. It is
+  // not a chat run: Stop on the chat leaves it up, and a new message does not
+  // touch it. Unpin and Archive stop it, since the folder it serves goes.
+
+  /** Without this API's own variables and the ports `fli dev` handed it: a
+   *  server that read `FLI_PORT_BE` would bind this API's port. */
+  function runEnv() {
+    const out = childEnv()
+    for (const key of Object.keys(out)) if (key.startsWith('FLI_PORT_')) delete out[key]
+    return { ...out, NO_COLOR: '1' }
+  }
+
+  async function runnables(id: string) {
+    const p = getPin(id)
+    if (!p) return null
+    const rows = await inventory(p.path, p.name)
+    return { id, rows: rows.map(({ argv: _argv, ...r }) => r) }
+  }
+
+  async function run(id: string, rowId: unknown): Promise<{ started: string } | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    const row = (await inventory(p.path, p.name)).find(r => r.id === rowId)
+    if (!row) return { refused: `${p.name} has nothing to run called '${rowId}'` }
+    const had = p.runs[row.id]
+    if (had && alive(had.pid)) return { refused: `${row.name} is already running (pid ${had.pid}) — stop it first` }
+    const argv = resolveArgv(p.path, row)
+    if ('refused' in argv) return argv
+
+    mkdirSync(join(root, 'logs'), { recursive: true })
+    const file = runFile(id, row.id)
+    const at   = new Date().toISOString()
+    writeFileSync(file, `$ ${row.start}${row.dir === '.' ? '' : `   (in ${row.dir})`}\n`)
+    const fd = openSync(file, 'a')
+    let child
+    try {
+      // Its own group, so Stop reaches what a launcher started; unref'd, so a
+      // restart of this API leaves it serving.
+      child = spawn(argv[0], argv.slice(1), { cwd: join(p.path, row.dir), detached: true, env: runEnv(), stdio: ['ignore', fd, fd] })
+    } finally { closeSync(fd) }
+    child.unref()
+    // Only onto this start's record: an unpin, an archive or a second start
+    // since has removed or replaced it, and its log with it.
+    let over = false
+    const ended = (line: string, exit: RunRecord['exit']) => {
+      if (over) return
+      over = true
+      const now = getPin(id)
+      const cur = now?.runs[row.id]
+      if (cur?.at !== at) return
+      appendFileSync(file, line)
+      updatePin(id, { runs: { ...now!.runs, [row.id]: { ...cur, pid: null, exit } } })
+    }
+    child.on('error', e => ended(`${e.message}\n`, { code: null, signal: null }))
+    child.on('exit', (code, signal) => ended(`\n— exited${signal ? ` on ${signal}` : ` with ${code}`} —\n`, { code, signal }))
+    updatePin(id, { runs: { ...p.runs, [row.id]: {
+      name: row.name, dir: row.dir, start: row.start, pid: child.pid ?? null, at, exit: null, stopped: false,
+    } } })
+    return { started: at }
+  }
+
+  /** Stop what the Run tab started; on one already stopped, forget it. */
+  function halt(id: string, rowId: unknown): { stopped: boolean } | { refused: string } {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const r = p.runs[String(rowId)]
+    if (!r) return { refused: `nothing called '${rowId}' was started here` }
+    if (alive(r.pid)) {
+      killGroup(r.pid)
+      updatePin(id, { runs: { ...p.runs, [String(rowId)]: { ...r, stopped: true } } })
+      return { stopped: true }
+    }
+    const { [String(rowId)]: _gone, ...rest } = p.runs
+    updatePin(id, { runs: rest })
+    rmSync(runFile(id, String(rowId)), { force: true })
+    return { stopped: false }
+  }
+
+  function output(id: string, rowId: unknown) {
+    const p = getPin(id)
+    const r = p?.runs[String(rowId)]
+    if (!p || !r) return null
+    return { id: String(rowId), running: alive(r.pid), lines: tail(runFile(id, String(rowId))) }
+  }
+
+  async function runsOf(p: Pin): Promise<PinStatus['runs']> {
+    return Promise.all(Object.entries(p.runs).map(async ([id, r]) => {
+      const running = alive(r.pid)
+      return {
+        id, name: r.name, running, stopped: r.stopped,
+        // A run that ended while this API was down left no code behind.
+        exit: running ? null : r.exit?.code ?? null,
+        ports: running && id.startsWith('app:') ? await servedBy(join(p.path, r.dir), portsLock).catch(() => []) : [],
+      }
+    }))
   }
 
   // ─── follow-ups ───────────────────────────────────────────────────────
@@ -846,5 +961,6 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
     send, stop, fresh, seen, check, review, fork, land, archive, archiveRefusal, recordOpened,
+    runnables, run, halt, output,
   }
 }

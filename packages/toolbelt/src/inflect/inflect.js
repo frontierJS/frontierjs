@@ -83,7 +83,7 @@ export const IRREGULAR = {
 const SES_BARE_S = new Set([
   'status', 'bus', 'gas', 'lens', 'plus', 'bias', 'atlas', 'canvas', 'iris',
   'virus', 'campus', 'alias', 'census', 'focus', 'bonus', 'corpus', 'sinus',
-  'apparatus', 'surplus', 'census', 'chassis', 'axis',
+  'apparatus', 'surplus', 'census', 'chassis', 'axis', 'pancreas', 'christmas',
 ])
 
 /*
@@ -266,7 +266,12 @@ function rules(word) {
   // most of it, and `lens` is the entry they cannot: `pens` has its ending, so
   // it became `len` and `fli check` refused the `Lens.mesa` a generator wrote.
   if (SES_BARE_S.has(word.toLowerCase())) return word
-  if (/s$/i.test(word) && !/(?:ss|us|is|as)$/i.test(word)) return word.slice(0, -1)
+  // `-as` is NOT a singular's ending the way `-us` and `-is` are: the singulars
+  // (`gas`, `bias`, `alias`, `atlas`, `canvas`) are a closed list, asked
+  // just above, while `areas`, `ideas`, `schemas`, `formulas` and `visas` are
+  // plurals. Guarding the ending kept every one of those plural, so a service
+  // named `serviceAreas` resolved to no model (FJS-2682).
+  if (/s$/i.test(word) && !/(?:ss|us|is)$/i.test(word)) return word.slice(0, -1)
   return word
 }
 

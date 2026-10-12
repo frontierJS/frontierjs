@@ -7,8 +7,8 @@
   // reordered palette, an empty one, a palette that stays open after a
   // command, or a list long enough that it has to scroll.
   //
-  // A function cannot travel as a JSON prop, so `emptyText` is chosen by a
-  // boolean and built here.
+  // A function cannot travel as a JSON prop, so `emptyText` and `search` are
+  // chosen here by a plain prop and built in the fixture.
   import CommandPalette from '../../../components/overlay/CommandPalette.mesa'
 
   export let set           = 'default'   // which item list — default · none · long
@@ -19,6 +19,7 @@
   export let maxWidth      = 580
   export let maxHeight     = '62vh'
   export let searchGroups  = true
+  export let source        = 'none'      // the `search` the palette is handed — none · server · failing
 
   let open   = true
   let ran    = ''
@@ -46,6 +47,30 @@
 
   const items     = ({ default: MIXED, none: [], long: LONG })[set] ?? MIXED
   const emptyText = useEmptyText ? (q) => `nothing here for “${q}”` : undefined
+
+  // A stand-in for a full-text search: it matches words the rows it returns do
+  // NOT show, and answers in its own order — the two things the palette must
+  // not undo. `throttling` is a word in an issue's description, as in linear's
+  // measured case; `zeta` answers rows already ordered Zeta-before-Alpha;
+  // `slow` answers late enough for the words to move past it.
+  let searches = 0
+  let aborts   = 0
+  const SERVER = {
+    throttling: [{ id: 'eng-3', group: 'Issues', label: 'Rate-limit the search endpoint', sub: 'ENG-3', action: hit('eng-3') }],
+    slow:       [{ id: 'late', group: 'Issues', label: 'A stale answer', action: hit('late') }],
+    zeta:       [
+      { id: 'z', group: 'Issues', label: 'Zeta rollout', action: hit('z') },
+      { id: 'a', group: 'Issues', label: 'Alpha rollout', action: hit('a') },
+    ],
+  }
+  const search = ({
+    server: (q, signal) => {
+      searches++
+      signal.addEventListener('abort', () => { aborts++ })
+      return new Promise(r => setTimeout(() => r(SERVER[q.trim()] ?? []), q.trim() === 'slow' ? 600 : 30))
+    },
+    failing: () => Promise.reject(new Error('search is down')),
+  })[source]
 </script>
 
 {#if open}
@@ -58,6 +83,7 @@
     maxWidth={maxWidth}
     maxHeight={maxHeight}
     searchGroups={searchGroups}
+    search={search}
     data-fixture="modes"
     onclose={() => { open = false; closes++ }}
     onquery={(q) => { asked = q }}
@@ -67,4 +93,6 @@
 <output id="ran">{ran}</output>
 <output id="runs">{runs}</output>
 <output id="closes">{closes}</output>
+<output id="searches">{searches}</output>
+<output id="aborts">{aborts}</output>
 <output id="asked">{asked ?? 'unreported'}</output>

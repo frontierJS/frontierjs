@@ -1374,6 +1374,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d915"></a>2026-10-11 · `FJS-D915` — Does an OAuth sign-in owe the TOTP code — Yes: OAuth is a first factor like a password and a magic link. `oauthResolve`'s three sign-in branches end at `firstFactorProven(user, { provider })`; on a challenge the callback sets the `login_challenge` cookie and redirects through `oauthFailure` with a new `OAUTH_ERRORS` code, `code_required`, and the page finishes through `completeSignIn`. One error code, no new route.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions, on [`FJS-2541`](ISSUES.md#fjs-2541). **B** was picked over **A** (the provider counts as both factors; nothing to build, and a stolen provider account walks past a factor its owner turned on), **C** (a per-provider `secondFactor: 'ours' | 'theirs'` trusting the OIDC `amr` claim; GitHub sends none, so for most providers C is B plus an option).
+
+The paper's recommendation, taken as written: turning on TOTP is the person saying *my account needs the code*, and `FJS-D888` already held the mailbox to it. Strictness follows what a mistake destroys (§ IV), here the account. A newly registered account has no factor, so `oauth.registered` is unchanged. C can be added beside B if a provider's own MFA ever needs to count. **What fails when it stops holding:** an auth row asserting an OAuth sign-in on a `totp` account answers a challenge and no session, and a `verify:oauth` step that finishes one through the page. Both are owed by the build.
+
 ### <a id="fjs-d888"></a>2026-10-10 · `FJS-D888` — Magic-link sign-in: what a mailbox proves — It is a FIRST factor. An unknown address gets its account at the click, through `onRegister`; an account with a second factor owes its code after the click, as after a password; an account whose only way in is an OAuth provider is refused. The mail carries a link and a six-digit code, either one spends it.
 
 Asked in chat on [`FJS-2537`](ISSUES.md#fjs-2537). Four questions, each answered with the recommended option except the last, where the owner chose to add the code over shipping the link alone.

@@ -34,3 +34,9 @@ test('wrap ignores escape codes in the width and reopens an open style', () => {
 test('an emoji counts two columns', () => {
   expect(visibleLength('🚀 x')).toBe(4)
 })
+
+test('an OSC 8 link takes no columns and opens no style across a break', () => {
+  const link = '\x1b]8;;file:///a\x1b\\abc\x1b]8;;\x1b\\'
+  expect(visibleLength(`x ${link}`)).toBe(5)
+  expect(wrap(`aaa ${link} bbb`, 7)).toEqual([`aaa ${link}`, 'bbb'])
+})

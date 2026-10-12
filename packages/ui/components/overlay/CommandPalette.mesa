@@ -35,10 +35,18 @@
   //     />
   //   {/if}
   //
-  // A list that depends on the words — a server search, a row whose label IS
-  // the words — follows `onquery` and hands back new `items`. Reading the box
-  // off the DOM instead misses the ✕, which empties it without an `input`
-  // event, and breaks on any rename of the palette's classes.
+  // A server search is `search={(query, signal) => Promise<Item[]>}`. Its
+  // answer is drawn as given, ahead of the ranked `items`: the server matched
+  // on text the row may not show (a description, a comment) and ordered by its
+  // own measure, so ranking it again against the words dropped those hits and
+  // re-sorted the rest (`FJS-1318`). The palette waits for a pause in typing,
+  // aborts the `signal` of a search the words have moved past, and says so
+  // when one fails. A hit's `id` must not repeat an item's.
+  //
+  // A list built from the words some other way — a row whose label IS the
+  // words — follows `onquery` and hands back new `items`, which ARE ranked.
+  // Reading the box off the DOM instead misses the ✕, which empties it
+  // without an `input` event, and breaks on any rename of the palette's classes.
 
   import { uid } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
@@ -51,6 +59,7 @@
   export let onquery      = undefined  // Observer: (query: string) => void, untrimmed, on every change
   export let minimumScore = 0          // a word scoring at or below this matches nothing (0–1)
   export let searchGroups = true       // whether a group's heading matches its rows
+  export let search       = undefined  // (query: string, signal: AbortSignal) => Promise<Item[]>, drawn unranked
 
   // export var — snapshot at mount, layout never changes after open
   export var maxHeight     = '62vh'
@@ -62,6 +71,11 @@
   let idx   = 0
   let inputEl
   let listEl
+  let hits        = []      // the search's answer for the current words
+  let searching   = false
+  let searchError = null
+  var _timer      = null
+  var _asking     = null    // the AbortController of the search in flight
 
   // Focus never leaves the search box, so `aria-selected` moving down the list
   // says nothing on its own — the input has to NAME the row Enter would run,
@@ -70,7 +84,32 @@
   const rowId  = (item) => `${listId}-${item.id}`
 
   // Focus search input immediately on mount
-  $.onMount(() => inputEl?.focus())
+  $.onMount(() => {
+    inputEl?.focus()
+    return () => { clearTimeout(_timer); _asking?.abort() }
+  })
+
+  // Every change of words drops the last answer: hits for words no longer in
+  // the box are rows the search never made for these ones.
+  function ask(words) {
+    clearTimeout(_timer)
+    _asking?.abort()
+    _asking = null
+    hits = []
+    searchError = null
+    searching = !!(search && words.trim())
+    if (!searching) return
+    _timer = setTimeout(() => {
+      const mine = _asking = new AbortController()
+      Promise.resolve()
+        .then(() => search(words, mine.signal))
+        .then(
+          (rows) => { if (!mine.signal.aborted) { hits = Array.isArray(rows) ? rows : []; idx = 0 } },
+          (err)  => { if (!mine.signal.aborted) searchError = err },
+        )
+        .finally(() => { if (!mine.signal.aborted) searching = false })
+    }, 200)
+  }
 
   // ── Derived chain ────────────────────────────────────────────────────────
   // Each const auto-derives when its dependencies change (Rule 2).
@@ -89,7 +128,7 @@
     ? rank(items, query, { keys, words: true, minimumScore })
     : null
 
-  const filtered = ranked ? ranked.map(r => r.item) : items
+  const filtered = [...hits, ...(ranked ? ranked.map(r => r.item) : items)]
 
   // Per-FIELD ranges, so the label is marked with the label's match and the sub
   // line with its own. One flat range list would mark whichever field happened
@@ -116,7 +155,7 @@
   // ── Watchers ─────────────────────────────────────────────────────────────
 
   // Reset cursor to top when query changes
-  $: query, () => { idx = 0; onquery?.(query) }
+  $: query, () => { idx = 0; ask(query); onquery?.(query) }
 
   // Scroll active row into view whenever idx moves
   $: idx, () => {
@@ -265,12 +304,19 @@
         role="listbox"
         aria-label="Commands"
       >
+        {#if searchError}
+          <div class="danger fjs-cp-searcherror" role="status">
+            Search failed — {searchError?.message ?? String(searchError)}
+          </div>
+        {/if}
         {#if flat.length === 0}
           <!-- Empty state -->
           <div class="fjs-cp-empty">
             <span class="fjs-cp-emptyicon" aria-hidden="true">⌕</span>
             <span>
-              {#if emptyText}
+              {#if searching}
+                Searching…
+              {:else if emptyText}
                 {emptyText(query)}
               {:else if query}
                 No results for "{query}"
@@ -500,6 +546,16 @@
     font-size:      var(--text-sm);
   }
   .fjs-cp-emptyicon { font-size: var(--text-3xl); opacity: 0.4; }
+
+  .fjs-cp-searcherror {
+    margin:        var(--space-2xs) var(--space-lg);
+    padding:       var(--space-sm) var(--space-xl);
+    background:    var(--tint-surface);
+    border:        var(--border-width) solid var(--tint-rule);
+    border-radius: var(--btn-radius);
+    color:         var(--tint-ink);
+    font-size:     var(--text-xs);
+  }
 
   /* ── Group header ────────────────────────────────────────────────────── */
 

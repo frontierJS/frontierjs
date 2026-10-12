@@ -101,8 +101,9 @@ card, **Land** and **Archive** on a branch's; a branch's diff panel reads agains
 `base` (`readDiff` takes a base instead of HEAD). A parent's total includes its
 branches; the header's today already sums every pin.
 
-**Out:** best-of-N (`workbench.md` #12, which builds on this), push/PR, a Run button
-that starts a branch's dev server, automatic cleanup.
+**Out:** best-of-N (`workbench.md` #12, which builds on this), push/PR, automatic
+cleanup. ~~A Run button that starts a branch's dev server~~ — built as the card's
+Run tab, for every pin rather than only a branch (`core/workbench-run.ts`).
 
 ## Slices
 

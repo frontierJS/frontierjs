@@ -135,8 +135,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           where the pin asks, a read-only reviewer; each is stamped with when it
           started and hidden once a newer message is sent. core/workbench-diff.ts
           is the diff panel — the TREE against HEAD, so another session's edits
-          show there too. core/workbench-branch.ts is a BRANCH: Fork snapshots
-          the parent's tree through a temporary index (its real index and HEAD
+          show there too. core/workbench-run.ts is the Run tab: `fli dev` per app
+          and every package.json script, read off fli's `findApps`/`tasks` and
+          started by ROW ID, detached, its pid on the pin and its output in its
+          own log — never `children.js`, whose in-memory table a `bun --watch`
+          restart would lose with the server still up. The checkout's OWN fli,
+          and no FLI_PORT_* or PORT of this API's; Unpin and Archive stop it.
+          core/workbench-branch.ts is a BRANCH: Fork snapshots the parent's tree through a temporary index (its real index and HEAD
           are only read), cuts wb/<slug> into a worktree under WORKBENCH_DIR/trees
           and pins it, then sets it up before it answers — the parent's copy
           list (gitignored globs, default **/.env) copied across and

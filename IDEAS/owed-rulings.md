@@ -18,7 +18,7 @@ not here.
 
 ## Open questions
 
-- **FJS-D915 — Does an OAuth sign-in owe the TOTP code, as a password and a magic link do since `FJS-D888`?** `FJS-2541`: `oauthResolve` returns `issueSession(...)` from all three of its sign-in branches (`packages/auth/auth.ts` ~1365, ~1434, ~1465) and never reads `liveTotp`, so an account with a confirmed `totp` credential is one provider click from a session. `login()` and `verifyMagicLink` both end at `firstFactorProven()`, which issues the challenge. Nothing rules either way, and the TOTP settings screen tells nobody that the code covers two of the three ways in. The callback can already carry a challenge: OAuth requires `cookieAuth`, and `POST /auth/login/challenge` already reads its ticket from the `login_challenge` cookie in that mode.
+- ~~**FJS-D915 — Does an OAuth sign-in owe the TOTP code, as a password and a magic link do since `FJS-D888`?**~~ **Answered 2026-10-11 (`FJS-D915`): B — OAuth is a first factor; the three branches end at `firstFactorProven`, a challenge redirects with `code_required`.** `FJS-2541`: `oauthResolve` returns `issueSession(...)` from all three of its sign-in branches (`packages/auth/auth.ts` ~1365, ~1434, ~1465) and never reads `liveTotp`, so an account with a confirmed `totp` credential is one provider click from a session. `login()` and `verifyMagicLink` both end at `firstFactorProven()`, which issues the challenge. Nothing rules either way, and the TOTP settings screen tells nobody that the code covers two of the three ways in. The callback can already carry a challenge: OAuth requires `cookieAuth`, and `POST /auth/login/challenge` already reads its ticket from the `login_challenge` cookie in that mode.
   - **A** — the provider counts as both factors: `oauthResolve` stays as it is, and auth's `CLAUDE.md` and the TOTP docs say the code guards a password and a mailed link, not a provider sign-in. Nothing to build. The price is a stolen Google account that walks past a factor its owner turned on.
   - **B** — OAuth is a first factor like the other two: the three branches end at `firstFactorProven(user, { provider })`. On a challenge the callback sets the `login_challenge` cookie and redirects through `oauthFailure` with a new `OAUTH_ERRORS` code (`code_required`), and the page that reads `session.oauthMessage` finishes it through `completeSignIn`, as a password sign-in does. One error code and no new route. A newly registered account has no factor, so `oauth.registered` is unchanged. Owes the artefact nothing has today: an auth row asserting an OAuth sign-in on a `totp` account answers a challenge and no session, and a `verify:oauth` step that finishes one through the page.
   - **C** — a per-provider option, `oauth.providers[name].secondFactor: 'ours' | 'theirs'`, where `theirs` trusts the provider's own MFA through the OIDC `amr` claim. It honors a provider that already asked for a second factor, at the cost of a new option. GitHub sends no `amr`, so for most providers C would behave exactly like B.
@@ -355,32 +355,6 @@ not here.
   - **C** — the plugin ships a schema fragment, as `@frontierjs/auth` does (`schema.ts`): a `CallAudit` model the app imports. Zero declaration for the app; the table is not the app's to shape, so a workspace column or a feed filter needs an escape hatch — an option, then a second option.
   - **Recommend A** — Invariant 4 says one owner per translation and `@@trail` already owns *record that something happened, redacted*; B and C each add a second audit table to answer a column question A answers with `meta` and a query. If basecamp's feed needs typed columns, that is a litestone ask (`$audit` taking declared extra columns), which every `$audit` caller then gets.
 
-## Shapes — from the 2026-10-06 cross-schema review (not yet filed; `fli file --sev decision` each before building on it)
-
-Source: *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt) and `packages/litestone/references/` as of 2026-10-06. Each is a question a reference file answered provisionally in its own prose; the file says which way it leaned.
-
-- **The catalog word for the container people belong to.** Nine instances, four words (`Workspace`, `Account`, `Site`, `Organization`) and none of them Oracle's; `references/Organization.lite` takes `Organization` as the catalog word with the app's word as `@@label`.
-  - **A** — `Organization`, as written: matches Oracle, trigger.dev, documenso; no FrontierJS app uses it.
-  - **B** — `Workspace`: what basecamp, linear and notion say, and the word `tenancy { claim workspaceId }` already carries in two prototypes.
-  - **C** — no catalog word: the shape is `Member`'s relator and the container is always the app's noun.
-  - **Recommend A** — a catalog word that no app uses is the point: it names the shape without claiming the label, which is what `@@label` is for.
-
-- **Whether the polymorphic subject's spelling is settled.** `references/README.md` chose `subjectType`/`subjectId`; eleven copies of the notifications fragment now say `contextType`/`contextId`, and every new app votes that way by scaffold.
-  - **A** — settled as `subject*`; the fragment renames when a migration is cheap (pre-alpha: now).
-  - **B** — settled as `context*`; AuditEvent and the README move to it.
-  - **C** — leave both and have `fli check` grade only the enum-on-the-type-column half.
-  - **Recommend A, now** — the evolution policy says a rename is a rename; the only cost is one fragment and one drift baseline, and it stops growing by one app a week.
-
-- **Whether a trait may ship a `claim`.** `Grant` is unusable without `claim xId` + `@@allow(…, id == auth().xId)`, both the host's today because a trait cannot name the host's key.
-  - **A** — no; a trait is columns and model attributes, the claim is a schema-level fact, the README says so and `grant.lite` in auth would ship the claim beside the trait.
-  - **B** — yes, with a parameter: `@@trait(Grant, claim: bookingId)` expands the policy.
-  - **Recommend A** — B is a language feature for one trait; the auth fragment is the shape `user.lite` already has.
-
-- **Whether `Decision` is a trait or an attribute on the transition.** `references/Decision.lite` says it wants to be `approve: requested -> approved @stamps(decidedAt, decidedById)`.
-  - **A** — trait now, attribute later; a host that spreads the trait renames nothing when the attribute arrives.
-  - **B** — the attribute now, no trait: the stamp is owned by the edge that writes it, which is the one-owner invariant.
-  - **Recommend A** — B is right and is litestone work with a catalog entry, a hook, and `x-transitions` to carry it; the trait costs nothing while that waits.
-
 - **FJS-D812 — Where does a commitment hook run relative to a `@seals` move — before it, beside it as data, or refused at boot?** `fireCommitment` (`junction/src/plugins/commitments/index.ts`) runs the hook after the move inside its transaction (`FJS-D368`), so on `finalize: draft -> finalized @seals @system` the hook holds a sealed row. Probed 2026-10-09 on a bare client: a hook writing an `@immutable` column throws `SealedDocumentError`, and a hook that looks up the period's draft finds none, creates a second, and the fire answers `'fired'` with two September invoices. Boot, `fli check` and `fli advise` say nothing.
   - **A** — reorder the one hook: it runs BEFORE the move in the same transaction, handed the row at its from-state. The move's from-state WHERE is still the lock, so a racing fire rolls its hook back with its refused move. Amends `FJS-D368`'s order; `renewPeriod` (example) reads nothing the move wrote and is unaffected.
   - **B** — two keyed tiers, `before` and `after`, so a hook that needs the moved row keeps it. A second spelling of one hook, for a case no current hook has.
@@ -561,3 +535,29 @@ Source: *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt) and
   - **B** — No declaration: a custom method's answer is announced as-is and never re-read when its id/shape does not match the service's model (skip the re-read for any custom method, keep it for CRUD verbs). Nothing to learn, but the broadcast is then graded against the wrong model's policy, so the announcement must also be withheld from channels unless `$.dispatch` states a payload — the same silent loss as today.
   - **C** — Refuse to guess, by name: a custom method whose answer has more keys than the service's model, or whose declared output type is another model, throws at boot/first call naming `answers:`-or-`$.dispatch`. No new option, but it makes a legitimate method a hard failure.
   - **Recommend A** — the grading rule (`FJS-D175`) already says the DECLARED model is the accessor, and a method that answers another model's row is declaring one more fact about itself; naming it keeps the check, the re-read and the grade on one accessor instead of three guesses.
+
+## Shapes — from the 2026-10-06 cross-schema review (not yet filed; `fli file --sev decision` each before building on it)
+
+Source: *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt) and `packages/litestone/references/` as of 2026-10-06. Each is a question a reference file answered provisionally in its own prose; the file says which way it leaned.
+
+- **The catalog word for the container people belong to.** Nine instances, four words (`Workspace`, `Account`, `Site`, `Organization`) and none of them Oracle's; `references/Organization.lite` takes `Organization` as the catalog word with the app's word as `@@label`.
+  - **A** — `Organization`, as written: matches Oracle, trigger.dev, documenso; no FrontierJS app uses it.
+  - **B** — `Workspace`: what basecamp, linear and notion say, and the word `tenancy { claim workspaceId }` already carries in two prototypes.
+  - **C** — no catalog word: the shape is `Member`'s relator and the container is always the app's noun.
+  - **Recommend A** — a catalog word that no app uses is the point: it names the shape without claiming the label, which is what `@@label` is for.
+
+- **Whether the polymorphic subject's spelling is settled.** `references/README.md` chose `subjectType`/`subjectId`; eleven copies of the notifications fragment now say `contextType`/`contextId`, and every new app votes that way by scaffold.
+  - **A** — settled as `subject*`; the fragment renames when a migration is cheap (pre-alpha: now).
+  - **B** — settled as `context*`; AuditEvent and the README move to it.
+  - **C** — leave both and have `fli check` grade only the enum-on-the-type-column half.
+  - **Recommend A, now** — the evolution policy says a rename is a rename; the only cost is one fragment and one drift baseline, and it stops growing by one app a week.
+
+- **Whether a trait may ship a `claim`.** `Grant` is unusable without `claim xId` + `@@allow(…, id == auth().xId)`, both the host's today because a trait cannot name the host's key.
+  - **A** — no; a trait is columns and model attributes, the claim is a schema-level fact, the README says so and `grant.lite` in auth would ship the claim beside the trait.
+  - **B** — yes, with a parameter: `@@trait(Grant, claim: bookingId)` expands the policy.
+  - **Recommend A** — B is a language feature for one trait; the auth fragment is the shape `user.lite` already has.
+
+- **Whether `Decision` is a trait or an attribute on the transition.** `references/Decision.lite` says it wants to be `approve: requested -> approved @stamps(decidedAt, decidedById)`.
+  - **A** — trait now, attribute later; a host that spreads the trait renames nothing when the attribute arrives.
+  - **B** — the attribute now, no trait: the stamp is owned by the edge that writes it, which is the one-owner invariant.
+  - **Recommend A** — B is right and is litestone work with a catalog entry, a hook, and `x-transitions` to carry it; the trait costs nothing while that waits.
