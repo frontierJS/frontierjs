@@ -19,6 +19,8 @@ const PORT = 7503
 let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }
 
+// a studio already on the port would answer for the one started below, over a different db
+if (await fetch(`http://127.0.0.1:${PORT}/`).then(() => true, () => false)) { console.log(`port ${PORT} already answers`); process.exit(1) }
 const studio = spawn('bun', [`${R}/packages/litestone/src/tools/cli.js`, 'studio', `--port=${PORT}`],
   { cwd: CWD, env: { ...process.env, ENCRYPTION_KEY: 'a'.repeat(64) }, stdio: ['ignore','pipe','pipe'] })
 let slog = ''; studio.stdout.on('data', d => slog += d); studio.stderr.on('data', d => slog += d)
@@ -48,7 +50,7 @@ try {
   const m = await evaluate(`(() => {
     const list = document.getElementById('tableList')
     const bar  = document.querySelector('.sidebar')
-    const tools = [...document.querySelectorAll('.sidebar-label')].find(e => e.textContent.trim() === 'Tools')
+    const tools = document.getElementById('toolsLabel')
     const lite  = document.getElementById('navLite')
     const r = e => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom } }
     return {

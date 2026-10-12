@@ -38,10 +38,10 @@ export type { FieldError, FieldErrorBuilder }      from './src/core/field-errors
 // ─── Services ─────────────────────────────────────────────────────────────
 export { createService, createBaseService, ServiceRegistry, callService, setServiceCache,
          SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
-         READ_ONLY_METHODS, resolveMethodPolicy, serviceMethodNames,
+         READ_ONLY_METHODS, resolveMethodSelection, serviceMethodNames,
          methodEntryName, collectMethodInputs, collectMethodOutputs, serviceAccessor,
          isMethodAllowed, allowedMethodNames } from './src/core/service.ts'
-export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodPolicy, MethodEntry, MethodDeclaration, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
+export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodSelection,MethodEntry, MethodDeclaration, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
 // ─── Sorting ──────────────────────────────────────────────────────────────
 // The one reading of `orderBy` (Bridge index). `autoSort` VALIDATES a request's

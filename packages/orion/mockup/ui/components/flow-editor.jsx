@@ -2184,7 +2184,7 @@ export const FlowEditor = ({ flowId, onBack }) => {
                     ["type",     "string", "One of the node types"],
                     ["config",   "Record<string, Expression>", "Node configuration"],
                     ["meta.name","string?","Display name"],
-                    ["retry",    "RetryPolicy?", "maxAttempts, backoff, delayMs"],
+                    ["retry",    "RetryOptions?", "maxAttempts, backoff, delayMs"],
                     ["timeout",  "number?","Ms before timeout"],
                     ["x, y",     "number?","Canvas position (optional)"],
                   ].map(([k,t,d]) => (

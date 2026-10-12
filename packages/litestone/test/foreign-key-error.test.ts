@@ -249,3 +249,50 @@ describe('a value the column cannot hold (FJS-1609, FJS-D521)', () => {
     }
   })
 })
+
+// FJS-1938: two relations sharing a first column. The composite one is the
+// refusal, and a Crew that is there must not be named as the missing parent.
+describe('a composite key sharing its first column with a single-column one', () => {
+  const COMPOSITE = `
+    model Crew {
+      id   Int         @id @default(autoincrement())
+      days CrewDaily[]
+      users UserDaily[]
+    }
+
+    model CrewDaily {
+      id     Int    @id @default(autoincrement())
+      crewId Int
+      crew   Crew   @relation(fields: [crewId], references: [id])
+      day    String
+      users  UserDaily[]
+      @@unique([crewId, day])
+    }
+
+    model UserDaily {
+      id      Int        @id @default(autoincrement())
+      crewId  Int
+      crew    Crew?      @relation(fields: [crewId], references: [id])
+      day     String
+      crewDay CrewDaily? @relation(fields: [crewId, day], references: [crewId, day])
+    }
+  `
+
+  test('the refusal names the relation whose fields match, and its target', async () => {
+    const c: any = await createClient({ db: ':memory:', schema: COMPOSITE })
+    await c.crew.create({ data: {} })
+    const err = await c.userDaily.create({ data: { crewId: 1, day: '2026-10-08' } }).catch((e: any) => e)
+    expect(err).toBeInstanceOf(ForeignKeyError)
+    expect(err.relation).toBe('crewDay')
+    expect(err.target).toBe('CrewDaily')
+    expect(err.field).toEqual(['crewId', 'day'])
+  })
+
+  test('a missing Crew is still the single-column relation', async () => {
+    const c: any = await createClient({ db: ':memory:', schema: COMPOSITE })
+    const err = await c.userDaily.create({ data: { crewId: 9, day: '2026-10-08' } }).catch((e: any) => e)
+    expect(err).toBeInstanceOf(ForeignKeyError)
+    expect(err.relation).toBe('crew')
+    expect(err.target).toBe('Crew')
+  })
+})

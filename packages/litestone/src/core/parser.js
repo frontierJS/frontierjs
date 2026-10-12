@@ -4295,13 +4295,25 @@ function expandTenancy(schema) {
   // sometimes exactly right (a plan table, a country list) and sometimes the
   // column somebody forgot. One line naming all of them beats N warnings nobody
   // reads, and `@@tenant(none)` is the way to say the first out loud.
-  for (const p of pending) if (!p.done) missing.push(p.model.name)
+  const shipped = []
+  for (const p of pending) {
+    if (p.done) continue
+    missing.push(p.model.name)
+    if (p.model.shippedBy) shipped.push(p.model.name)
+  }
 
+  // A model a package ships is not the app's to edit, so `mark each
+  // @@tenant(none)` sends the app to a file it does not own. `extend` is the
+  // spelling that reaches it.
   if (missing.length)
     warnings.push(
       `tenancy: ${missing.length} model(s) declare no '${t.column}', hold no relation to a model that does, ` +
       `and are NOT scoped to a tenant — ${missing.join(', ')}. Add the column, relate them to a scoped model, ` +
-      `or mark each @@tenant(none) to say it spans tenants on purpose.`
+      `or mark each @@tenant(none) to say it spans tenants on purpose.` +
+      (shipped.length
+        ? ` ${shipped.join(', ')} ${shipped.length === 1 ? 'comes' : 'come'} from an import, so write ` +
+          `${shipped.map(n => `extend model ${n} { @@tenant(none) }`).join(' · ')} in your schema.`
+        : '')
     )
 
   // ── a unique that is not per tenant ──────────────────────────────────────

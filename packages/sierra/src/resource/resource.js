@@ -847,19 +847,19 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // Another app's rows are never this device's: the queue, the list cache and
   // the local tables all belong to this page's app, and a held write would
   // drain into it.
-  const syncPolicy = app ? null : (schema?.['x-sync'] ?? null)
+  const syncMode = app ? null : (schema?.['x-sync'] ?? null)
 
   // `read` says the rows are HELD here and never written here (`FJS-D488`), so
   // it keeps the device read path and holds no write: a write to such a model
   // goes live and fails the way a model with no `@@sync` fails, because a queue
   // entry for it would replay a write nobody declared could happen offline.
-  const writePolicy = syncPolicy === 'read' ? null : syncPolicy
+  const holdMode = syncMode === 'read' ? null : syncMode
 
   // The queue is built by the DECLARATION rather than the first write, because
   // building it is what arms its drain — and a device reopened after an outage
   // makes no write, so what the last session held sat unsent until somebody
   // happened to make one (FJS-1277).
-  if (writePolicy) pendingQueue()
+  if (holdMode) pendingQueue()
 
   // How this model's key is made when the CALLER makes it — `{ field, kind }`,
   // or null where only the server can key it. Crossed only for a model that
@@ -1273,10 +1273,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // raw client, because the bytes of a row THIS device created arriving
       // late are not a second writer. It still carries a version on a
       // `@version` model, read at drain, since the boundary refuses one without.)
-      if (writePolicy === 'append' && APPEND_REFUSES.has(method))
+      if (holdMode === 'append' && APPEND_REFUSES.has(method))
         throw _appendOnly(model, method)
 
-      const files = writePolicy && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
+      const files = holdMode && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
       const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)
       const attachable = !Object.keys(files).length || rowId != null
 
@@ -1289,14 +1289,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // Only a write against an EXISTING row has one — a create was made
       // against nothing — and only `field` reads it, since litestone refuses a
       // base on every other policy by name.
-      const heldBase = writePolicy === 'field' && ctx.id != null
+      const heldBase = holdMode === 'field' && ctx.id != null
         ? _read.get(ctx.id) ?? null
         : null
 
-      const held = writePolicy && !NEVER_QUEUED.has(method) && attachable
+      const held = holdMode && !NEVER_QUEUED.has(method) && attachable
         ? await pendingQueue().add({
             service: serviceName, model, method, id: ctx.id,
-            data: _heldData(_withoutFiles(ctx.data, files), writePolicy, versionOf),
+            data: _heldData(_withoutFiles(ctx.data, files), holdMode, versionOf),
             ...(heldBase ? { base: heldBase } : {}),
             callHeaders: client.callHeaders(),
           })
@@ -1570,7 +1570,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // Only a model that declared `@@sync` is kept on the device at all: putting
     // rows a gate let this caller read onto disk outlives the session, so it is
     // the app's word rather than the framework's default (`list-cache.js`).
-    const key = syncPolicy ? listKey(serviceName, query ?? {}, directives ?? null) : null
+    const key = syncMode ? listKey(serviceName, query ?? {}, directives ?? null) : null
     try {
       const rows = await junctionResource.load(query ?? {}, directives)
       if (stamp === _loadIssued) {
@@ -2964,7 +2964,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       `[Sierra] ${serviceName}: offlineQuery is ignored on a resource over another app.\n` +
       `  What a device holds belongs to the app this page is, and nothing is warmed here.`)
   } else if (offlineQuery) {
-    if (!syncPolicy) {
+    if (!syncMode) {
       // Warned rather than thrown, which is what the other refusals in this
       // file do — a throw in a `<script module>` is a white screen. The
       // declaration is a contradiction either way: nothing is written to the

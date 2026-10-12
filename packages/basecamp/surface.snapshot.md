@@ -14,6 +14,26 @@ a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 48 services · 41 routes · 17 plugins · prefix (none)
 ```
 
+## Custom methods whose body writes as the app
+
+A body whose source names `asSystem()` writes with no caller: the Data boundary
+sees the app, so the level below is the whole of the access. This reads source
+text, so a body that elevates through a helper is not listed.
+
+| Method | Who may call it |
+| --- | --- |
+| `api-keys.owners` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `apps.place` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `apps.unplace` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `edge.syncStep` | anyone, a stranger included — declared `gate: 0` |
+| `infra.onboarding` | standing 2 or above — declared `gate: 2` |
+| `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.issueEnrollment` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.heartbeat` | anyone, a stranger included — declared `gate: 0` |
+| `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded |
+
 ## Custom methods whose caller's standing is not graded
 
 A custom method with no `gate:` in `methods:` takes the model's read gate as a
@@ -35,7 +55,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (93)
+### A service hook runs in front of the body (92)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -76,7 +96,6 @@ name, and is as unread as the body.
 | `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `deployments.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -136,6 +155,15 @@ name, and is as unread as the body.
 | `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 | `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
 | `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
+
+### No body — a derived `@@transitions` move (1)
+
+Served on the caller's client, so only the Data boundary stands behind it: the
+gate, the row policy and the move's own level.
+
+| Method | Who may call it |
+| --- | --- |
+| `deployments.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded |
 
 ## App hooks
 
@@ -227,7 +255,7 @@ name when it declares none.
   - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
   - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole`
   - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
-  - `owners` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole`
+  - `owners` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole`; body writes as the app
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -252,8 +280,8 @@ name when it declares none.
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `fromBlueprint` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
-  - `place` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
-  - `unplace` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `place` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`; body writes as the app
+  - `unplace` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`; body writes as the app
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -435,7 +463,7 @@ name when it declares none.
 - **custom methods** — `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; no body, a derived move
   - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
@@ -489,7 +517,7 @@ name when it declares none.
   - `zones` — standing 2 or above — declared `gate: 2`
   - `records` — standing 2 or above — declared `gate: 2`
   - `sync` — standing 5 or above — declared `gate: 5`
-  - `syncStep` — anyone, a stranger included — declared `gate: 0`
+  - `syncStep` — anyone, a stranger included — declared `gate: 0`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -678,7 +706,7 @@ name when it declares none.
 - **custom methods** — `graph`, `onboarding`, `launch`, `summary`
 - **who may call** —
   - `graph` — standing 2 or above — declared `gate: 2`
-  - `onboarding` — standing 2 or above — declared `gate: 2`
+  - `onboarding` — standing 2 or above — declared `gate: 2`; body writes as the app
   - `launch` — standing 2 or above — declared `gate: 2`
   - `summary` — standing 2 or above — declared `gate: 2`
 
@@ -1019,21 +1047,21 @@ name when it declares none.
   - `feed` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `sync` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `logEvent` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
-  - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `reboot` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `catalog` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `providers` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `provision` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `provision` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`; body writes as the app
   - `provisionStep` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `destroy` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `destroyStep` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `reconcile` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
-  - `issueEnrollment` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `issueEnrollment` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`; body writes as the app
   - `localSshHosts` — standing 5 or above — declared `gate: 5`
   - `localSshProbe` — standing 5 or above — declared `gate: 5`
-  - `heartbeat` — anyone, a stranger included — declared `gate: 0`
+  - `heartbeat` — anyone, a stranger included — declared `gate: 0`; body writes as the app
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -1185,8 +1213,8 @@ name when it declares none.
   - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
   - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
   - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
-  - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
-  - `transferOwnership` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
+  - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`; body writes as the app
+  - `transferOwnership` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`; body writes as the app
 
 | Phase | Method | Chain |
 | --- | --- | --- |

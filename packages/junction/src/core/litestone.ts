@@ -600,7 +600,7 @@ export function declaredMoveMethods(
 }
 
 function moveMethod(accessor: string, modelName: string, move: string, serviceName: string, idField: string) {
-  return async function declaredMove(ctx: ServiceContext): Promise<unknown> {
+  return markDeclaredMove(async function declaredMove(ctx: ServiceContext): Promise<unknown> {
     if (ctx.id == null || ctx.id === '')
       throw new BadRequest(`${serviceName}.${move} moves one ${modelName} — call it with that row's id`)
     const db = ctx.locals?.db as Record<string, {
@@ -624,7 +624,21 @@ function moveMethod(accessor: string, modelName: string, move: string, serviceNa
     const visible = await table.findFirst({ where: { [idField]: ctx.id } })
     if (visible == null) throw new NotFound(`${modelName} with ${idField}=${ctx.id} not found`)
     throw new Forbidden(`${serviceName}.${move}: this ${modelName} is not one you may move`)
-  }
+  })
+}
+
+// A symbol, not the function's name: an author may write a method called
+// `declaredMove`, and a written method wins over the derived one by name.
+const DECLARED_MOVE = Symbol.for('junction.declaredMove')
+
+function markDeclaredMove<F extends object>(fn: F): F {
+  Object.defineProperty(fn, DECLARED_MOVE, { value: true })
+  return fn
+}
+
+/** Is this the method `declaredMoveMethods` derived, rather than one an author wrote? */
+export function isDeclaredMove(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as unknown as Record<symbol, unknown>)[DECLARED_MOVE] === true
 }
 
 export interface LitestoneServiceOptions {

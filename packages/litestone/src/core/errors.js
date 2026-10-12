@@ -181,11 +181,13 @@ export class TransitionGateError extends Error {
  */
 export class TransitionSystemError extends Error {
   constructor(model, field, transitionName) {
+    // `message` is the 403 body; the author's remedy rides on `hint`, server-side.
     super(`Transition '${transitionName}' on ${model}.${field} is @system — the application makes this move, ` +
-          `not its caller. Name the column on the write to make it and keep the gate, the row policies and ` +
-          `the audit actor:\n\n` +
-          `    db.${model.charAt(0).toLowerCase() + model.slice(1)}.transition(id, '${transitionName}', { system: true })\n\n` +
-          `asSystem() makes it too, and drops all three with it.`)
+          `not its caller.`)
+    this.hint       = `Name the column on the write to make it and keep the gate, the row policies and ` +
+                      `the audit actor:\n\n` +
+                      `    db.${model.charAt(0).toLowerCase() + model.slice(1)}.transition(id, '${transitionName}', { system: true })\n\n` +
+                      `asSystem() makes it too, and drops all three with it.`
     this.name       = 'TransitionSystemError'
     this.model      = model
     this.field      = field

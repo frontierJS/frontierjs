@@ -419,6 +419,22 @@ export async function cmdStudio(cfg) {
     } catch { return _liveParse.parsed }
   }
 
+  // The submitted text with the file's own imports inlined. A bare `parse` of a
+  // schema that imports a fragment and extends its model fails on the extend,
+  // so validate and save refused every schema built on an imported model.
+  function parseDraft(source) {
+    const root = resolve(cfg.schema)
+    try {
+      return parse(inlineImports(source, root, {
+        resolveChild: (parent, spec) => resolveImportSpecifier(spec, parent).path,
+        read:         (p) => { try { return readFileSync(p, 'utf8') } catch { return null } },
+        seen:         new Set([root]),
+        missing:      [],
+        shipped:      new Map(),
+      }))
+    } catch (e) { return { valid: false, errors: [e.message], warnings: [] } }
+  }
+
   function getAllMigrationStatus() {
     const result = {}
     for (const db of parseResult.schema.databases) {
@@ -1822,7 +1838,7 @@ export async function cmdStudio(cfg) {
         if (path === '/api/schema-validate') {
           const { source } = body
           if (typeof source !== 'string') return json({ error: 'source required' }, 400)
-          const result = parse(source)
+          const result = parseDraft(source)
           return json({ valid: result.valid, errors: result.errors, warnings: result.warnings ?? [] })
         }
 
@@ -1830,7 +1846,7 @@ export async function cmdStudio(cfg) {
         if (path === '/api/schema-source') {
           const { source } = body
           if (typeof source !== 'string') return json({ error: 'source required' }, 400)
-          const result = parse(source)
+          const result = parseDraft(source)
           if (!result.valid) return json({ valid: false, errors: result.errors, warnings: result.warnings ?? [] })
           // Valid — write to disk
           const absPath = resolve(cfg.schema)
@@ -1881,8 +1897,8 @@ export async function cmdStudio(cfg) {
             next.splice(at, 0, `${indent}${attr}`)
             const updated  = next.join('\n')
 
-            const parsed = parse(updated)
-            if (!parsed.valid) return json({ error: `Would not parse: ${parsed.errors?.[0]?.message ?? 'unknown'}` }, 400)
+            const parsed = parseDraft(updated)
+            if (!parsed.valid) return json({ error: `Would not parse: ${parsed.errors?.[0]?.message ?? parsed.errors?.[0] ?? 'unknown'}` }, 400)
             writeFileSync(absPath, updated, 'utf8')
             return json({
               ok: true, added: attr, model: modelName, line: at + 1, path: absPath,

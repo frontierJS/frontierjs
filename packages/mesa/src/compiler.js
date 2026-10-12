@@ -7840,22 +7840,33 @@ function _checkUnreadDerived(ctx) {
   for (const v of Object.values(vars ?? {})) {
     if (v.kind !== 'const' || !v.isDerived || v.isProp || v.isAsync || v.isContextConsume) continue
     if (!v.initNode || exported.has(v.name) || !callsEagerly(v.initNode)) continue
-    const word = new RegExp(`(^|[^\\w$.]|\\.\\.\\.)${v.name.replace(/\$/g, '\\$')}(?![\\w$])`)
-    if (word.test(markup)) continue
-    const readElsewhere = body.some((node) => {
-      const decl = node.type === 'ExportNamedDeclaration' ? node.declaration : node
-      if (decl?.type === 'VariableDeclaration')
-        return decl.declarations.some((d) => d.init !== v.initNode && readsName(d, v.name, beyondTeardown))
-      return readsName(node, v.name, beyondTeardown)
-    })
-    if (readElsewhere) continue
-    const inTeardown = body.some((node) => node !== v.initNode && readsName(node, v.name, () => true) &&
-      !(node.type === 'VariableDeclaration' && node.declarations.some((d) => d.init === v.initNode)))
+    // A destructuring pattern's synthetic var is read through the names it
+    // binds; the author wrote those and never wrote the temp.
+    const synthetic = v.name.startsWith('$$pattern_')
+    const names = synthetic
+      ? Object.values(vars).filter((b) => b !== v && new RegExp(`${v.name.replace(/\$/g, '\\$')}(?![\\w$])`).test(b.initRaw ?? '')).map((b) => b.name)
+      : [v.name]
+    const shown = synthetic ? names.join(', ') : v.name
+    if (!names.length) continue
+    const readIn = (name, test) => {
+      const word = new RegExp(`(^|[^\\w$.]|\\.\\.\\.)${name.replace(/\$/g, '\\$')}(?![\\w$])`)
+      if (word.test(markup)) return 'markup'
+      const readElsewhere = body.some((node) => {
+        const decl = node.type === 'ExportNamedDeclaration' ? node.declaration : node
+        if (decl?.type === 'VariableDeclaration')
+          return decl.declarations.some((d) => d.init !== v.initNode && readsName(d, name, test))
+        return readsName(node, name, test)
+      })
+      return readElsewhere ? 'body' : ''
+    }
+    if (names.some((n) => readIn(n, beyondTeardown))) continue
+    const inTeardown = names.some((n) => body.some((node) => node !== v.initNode && readsName(node, n, () => true) &&
+      !(node.type === 'VariableDeclaration' && node.declarations.some((d) => d.init === v.initNode))))
     ctx.analysis.warnings.push(
-      `'${v.name}' never runs: a 'const' that reads reactive state is computed when it is read, and ` +
-      (inTeardown ? `'${v.name}' is read only in teardown, so its initializer runs there if at all. `
-                  : `nothing reads '${v.name}'. `) +
-      `For work that starts at mount, write 'var ${v.name} = …'` +
+      `'${shown}' never runs: a 'const' that reads reactive state is computed when it is read, and ` +
+      (inTeardown ? `'${shown}' ${names.length > 1 ? 'are' : 'is'} read only in teardown, so its initializer runs there if at all. `
+                  : `nothing reads '${shown}'. `) +
+      (synthetic ? `For work that starts at mount, write 'var' where it says 'const'` : `For work that starts at mount, write 'var ${v.name} = …'`) +
       (inTeardown ? '.' : `; for a value nobody needs, delete it.`)
     )
   }

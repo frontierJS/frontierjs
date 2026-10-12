@@ -392,6 +392,34 @@ describe('foreign-key-without-index', () => {
       }`, ID)
     expect(f.map(x => x.field)).toEqual(['userId'])
   })
+
+  // FJS-1939: a composite foreign key is ONE key. Reading it a column at a time
+  // asks for an index on `day` alone, which no query through the relation uses.
+  const CREW = `model Crew { id Int @id  day String  @@unique([id, day]) }\n`
+  const DAILY = (extra: string) => CREW + `
+    model Daily {
+      id     Int @id
+      crewId Int
+      day    String
+      crew   Crew @relation(fields: [crewId, day], references: [id, day])
+      ${extra}
+    }`
+
+  test('silent where an index leads with the composite key, in any column order', () => {
+    expect(findings(DAILY('@@index([crewId, day])'), ID)).toEqual([])
+    expect(findings(DAILY('@@index([day, crewId])'), ID)).toEqual([])
+    expect(findings(DAILY('@@index([crewId, day, id])'), ID)).toEqual([])
+    expect(findings(DAILY('@@unique([crewId, day])'), ID)).toEqual([])
+  })
+
+  test('fires once for the key when the leading columns are not all of it', () => {
+    const none = findings(DAILY(''), ID)
+    expect(none.map(x => x.model)).toEqual(['Daily'])
+    expect(none[0].message).toContain('@@index([crewId, day])')
+    expect(findings(DAILY('@@index([crewId])'), ID)).toHaveLength(1)
+    expect(findings(DAILY('@@index([crewId, id, day])'), ID)).toHaveLength(1)
+    expect(findings(DAILY('@@index([day])'), ID)).toHaveLength(1)
+  })
 })
 
 describe('transition-to-a-state-nothing-reaches', () => {

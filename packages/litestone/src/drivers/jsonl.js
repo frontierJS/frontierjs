@@ -72,7 +72,7 @@ function parseLinesInto(out, content) {
 // database lives in this directory too, and `new Database()` on a path whose
 // directory does not exist is `SQLITE_CANTOPEN`, which arrives as *the audit
 // write failed* rather than as *the directory is missing*.
-function ensureFile(filePath) {
+function ensureFile(filePath, relative = false) {
   if (existsSync(filePath)) return
   const dir = dirname(filePath)
   // Same signal as a minted SQLite directory: a jsonl/trail database whose
@@ -81,7 +81,7 @@ function ensureFile(filePath) {
   // this repo for two days under the `*.db*` ignore rule (`FJS-449`).
   const minted = !existsSync(dir)
   mkdirSync(dir, { recursive: true })
-  if (minted) noteMintedDirectory(dir, filePath)
+  if (minted && relative) noteMintedDirectory(dir, filePath)
   appendFileSync(filePath, '', 'utf8')
 }
 
@@ -101,11 +101,11 @@ function ensureFile(filePath) {
 // row after the first sweep would vanish. One path stat per write answers both
 // questions — is this still our file, and how long is it — and replaces the
 // `existsSync` pair and the open/close an `appendFileSync` cost on every row.
-function makeAppender(filePath) {
+function makeAppender(filePath, relative) {
   let fd = null, ino = null
   function reopen() {
     if (fd !== null) { try { closeSync(fd) } catch {} }
-    ensureFile(filePath)
+    ensureFile(filePath, relative)
     fd  = openSync(filePath, 'a')
     ino = fstatSync(fd).ino
   }
@@ -251,7 +251,7 @@ function resolveDefault(field, stamp) {
 
 // ─── Table factory ────────────────────────────────────────────────────────────
 
-export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null, now = Date.now, busyTimeout = null, stamp = () => new Date()) {
+export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null, now = Date.now, busyTimeout = null, stamp = () => new Date(), relative = false) {
   // Run compaction immediately if retention or maxSize is configured.
   // This happens once when createClient() opens — before any queries are served.
   if (retention || maxSize) {
@@ -280,7 +280,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
   // ── Companion index.db ────────────────────────────────────────────────────
 
   let _indexDb = null
-  const appender = makeAppender(filePath)
+  const appender = makeAppender(filePath, relative)
 
   // The index file, and whether the handle we hold still points at it.
   //
@@ -316,7 +316,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // The sidecar lives beside the file, and a read can be the first thing to
     // reach it: `new Database()` in a directory nothing has written yet is
     // SQLITE_CANTOPEN.
-    ensureFile(filePath)
+    ensureFile(filePath, relative)
     _indexDb = openIndexDb(indexPath, busyTimeout)
     ensureIndexTable(_indexDb, model, shape, filePath)
     return _indexDb
@@ -536,7 +536,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // index row naming that offset is written under the same one, so the two
     // commit together or not at all (`FJS-665`). Unindexed there is no offset
     // and nothing to guard.
-    if (hasIndex) ensureFile(filePath)         // before the lock — the index lives here too
+    if (hasIndex) ensureFile(filePath, relative)         // before the lock — the index lives here too
     const write = () => {
       const { offset, bytes, mtimeMs } = appender.append(JSON.stringify(record) + '\n')
       absorbIntoCache(record, offset, bytes, mtimeMs)
@@ -572,7 +572,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // One lock for the batch, and it IS the transaction the index rows were
     // already written in — `withWriteLock` replaced that BEGIN/COMMIT — so the
     // batch costs the same lock it always did and gains a correct offset.
-    if (hasIndex) ensureFile(filePath)         // before the lock — the index lives here too
+    if (hasIndex) ensureFile(filePath, relative)         // before the lock — the index lives here too
     const write = () => {
       const { offset, mtimeMs } = appender.append(lines.join(''))
       let pos = offset

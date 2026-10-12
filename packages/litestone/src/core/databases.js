@@ -10,7 +10,7 @@
 
 import { openDatabase, currentEngine } from './engine.js'
 import { applyWal, applyBusyTimeout, applyIncrementalVacuum, applyPageSize, busyTimeoutFor } from './pragmas.js'
-import { resolve, dirname, envVar, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname } from '#host'
+import { resolve, dirname, envVar, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname, isAbsolute } from '#host'
 import { noteMintedDirectory } from './db-path.js'
 import { ClientClosedError } from './errors.js'
 
@@ -365,21 +365,40 @@ function resolveDbPath(pathDef, override, anchor = null) {
                      : anchor            ? resolve(anchor, v)
                      : resolve(v)
 
+  return against(statedDbPath(pathDef))
+}
+
+// What the declaration says, before anything resolves it.
+/**
+ * @param {DatabaseBlock['path']} pathDef
+ * @returns {string}
+ */
+function statedDbPath(pathDef) {
   if (pathDef.kind === 'env') {
     const val = envVar(pathDef.var) ?? pathDef.default
     if (!val) throw new Error(`database path: env var '${pathDef.var}' is not set and has no default`)
-    return against(val)
+    return val
   }
-  return against(pathDef.value)
+  return pathDef.value
 }
+
+// Whether the stated path leaves its directory to the working directory. The
+// minted-directory warning is about that and nothing else (`FJS-449`): an
+// absolute path names its directory, so creating it is the caller's own doing.
+/**
+ * @param {string | undefined} stated
+ */
+const isRelativeStated = (stated) => !!stated && stated !== ':memory:' && !isAbsolute(stated)
 
 // Open a SQLite database pair (write + read) with standard Litestone pragmas.
 /**
  * @param {string} absPath
  * @param {unknown} busyTimeout
+ * @param {boolean} [shrinks]
+ * @param {boolean} [relative] the stated path was relative
  * @returns {{ rawWriteDb: RawDb | null, rawReadDb: RawDb, writeDb: DbHandle | null, readDb: DbHandle }}
  */
-function openSqliteConnections(absPath, busyTimeout, shrinks) {
+function openSqliteConnections(absPath, busyTimeout, shrinks, relative = false) {
   // SQLite can create a DB file but not its parent directory. If the configured
   // path points into a directory that doesn't exist yet, pre-create it so the
   // first `litestone repl`/`studio`/`createClient` call doesn't fail with a
@@ -389,7 +408,7 @@ function openSqliteConnections(absPath, busyTimeout, shrinks) {
       const dir = dirname(absPath)
       if (dir && dir !== '.' && !existsSync(dir)) {
         mkdirSync(dir, { recursive: true })
-        noteMintedDirectory(dir, absPath)
+        if (relative) noteMintedDirectory(dir, absPath)
       }
     } catch { /* fall through — let the Database() call surface the real error */ }
   }
@@ -566,10 +585,10 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
    * @param {string} name
    * @param {boolean} wantsWrite
    */
-  function connectionsFor(absPath, name, wantsWrite, shrinks) {
+  function connectionsFor(absPath, name, wantsWrite, shrinks, relative = false) {
     const shared = absPath === ':memory:' ? null : opened.get(absPath)
     if (shared) return shared
-    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name), shrinks)
+    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name), shrinks, relative)
     if (!wantsWrite) {
       conns.rawWriteDb?.close()
       conns.rawWriteDb = null
@@ -582,6 +601,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
   for (const db of schema.databases) {
     const access  = accessConfig[db.name] ?? 'readwrite'
     const absPath = pathFor(db)
+    const relative = isRelativeStated(dbOverrides[db.name]?.path || statedDbPath(db.path))
 
     if (db.driver === 'jsonl' || db.driver === 'trail') {
       // In-memory mode: use a unique tmpdir so test runs don't pollute the filesystem.
@@ -590,7 +610,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
       if (inMemory) {
         resolvedPath = mkdtempSync(join(tmpdir(), `litestone-${db.name}-`)) + '/'
       }
-      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, retention: db.retention, maxSize: db.maxSize, trailModel: db.trailModel, busyTimeout: busyTimeoutFor(busyTimeout, db.name), rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
+      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, relative, retention: db.retention, maxSize: db.maxSize, trailModel: db.trailModel, busyTimeout: busyTimeoutFor(busyTimeout, db.name), rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
       continue
     }
 
@@ -602,7 +622,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
     }
 
     const wantsWrite = absPath === ':memory:' ? access === 'readwrite' : writable.has(absPath)
-    const conns = connectionsFor(absPath, db.name, wantsWrite, !!db.retention)
+    const conns = connectionsFor(absPath, db.name, wantsWrite, !!db.retention, relative)
 
     if (access === 'readonly') {
       registry[db.name] = { driver: 'sqlite', access: 'readonly', absPath, retention: db.retention, trailModel: db.trailModel, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb(db.name, 'readonly'), readDb: conns.readDb }
@@ -620,7 +640,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
       registry.main = { driver: 'sqlite', access: false, absPath, retention: null, rawWriteDb: null, rawReadDb: null, writeDb: makeThrowingDb('main', false), readDb: makeThrowingDb('main', false) }
     } else {
       const wantsWrite = absPath === ':memory:' ? access === 'readwrite' : writable.has(absPath)
-      const conns = connectionsFor(absPath, 'main', wantsWrite)
+      const conns = connectionsFor(absPath, 'main', wantsWrite, false, isRelativeStated(dbPath))
       registry.main = access === 'readonly'
         ? { driver: 'sqlite', access: 'readonly', absPath, retention: null, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb('main', 'readonly'), readDb: conns.readDb }
         : { driver: 'sqlite', access: 'readwrite', absPath, retention: null, ...conns }

@@ -14,6 +14,19 @@ a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 46 services · 51 routes · 15 plugins · prefix /api
 ```
 
+## Custom methods whose body writes as the app
+
+A body whose source names `asSystem()` writes with no caller: the Data boundary
+sees the app, so the level below is the whole of the access. This reads source
+text, so a body that elevates through a helper is not listed.
+
+| Method | Who may call it |
+| --- | --- |
+| `payRuns.calculate` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `payRuns.calculateNow` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `payRuns.revert` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `payRuns.pay` | **any signed-in caller** — floor, read gate 5; standing not graded |
+
 ## Custom methods whose caller's standing is not graded
 
 A custom method with no `gate:` in `methods:` takes the model's read gate as a
@@ -69,6 +82,13 @@ name, and is as unread as the body.
 | `subscriptions.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
 | `subscriptions.resume` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
 | `subscriptions.changePlan` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+
+### No body — a derived `@@transitions` move (0)
+
+Served on the caller's client, so only the Data boundary stands behind it: the
+gate, the row policy and the move's own level.
+
+None.
 
 ## App hooks
 
@@ -558,10 +578,10 @@ name when it declares none.
 - **custom methods** — `calculate`, `calculateNow`, `revert`, `pay`
 - **also answers to** — `pay-runs`
 - **who may call** —
-  - `calculate` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
-  - `calculateNow` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
-  - `revert` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
-  - `pay` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+  - `calculate` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`; body writes as the app
+  - `calculateNow` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`; body writes as the app
+  - `revert` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`; body writes as the app
+  - `pay` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`; body writes as the app
 - **broadcasts on** — `pay-runs`
 - **transactional** — `calculateNow`, `revert`, `pay`
 

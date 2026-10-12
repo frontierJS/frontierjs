@@ -452,30 +452,35 @@ export const RULES = [
     run(schema) {
       const out = []
       for (const model of schema.models ?? []) {
-        // Covered means "an index whose FIRST column is this one" — a composite
-        // is usable for a prefix and useless for anything else, which is the
-        // same rule SQLite applies.
+        // Covered means "an index whose LEADING columns are the key's" — a
+        // composite is usable for a prefix and useless for anything else, which
+        // is the same rule SQLite applies. A composite key is one key: the
+        // lookup binds every column, so the prefix is the whole set, in any order.
         // A PARTIAL unique is deliberately not on this list: it indexes only the
         // rows its predicate admits, so a foreign-key lookup over the others is
         // still a scan.
-        const covered = new Set()
-        for (const a of model.attributes ?? [])
-          if ((a.kind === 'index' || a.kind === 'uniqueIndex') && a.fields?.length) covered.add(a.fields[0])
+        const indexes = (model.attributes ?? [])
+          .filter(a => (a.kind === 'index' || a.kind === 'uniqueIndex') && a.fields?.length)
+          .map(a => a.fields)
 
         for (const f of model.fields ?? []) {
           const rel = (f.attributes ?? []).find(a => a.kind === 'relation')
           if (!rel?.fields?.length) continue
-          for (const col of rel.fields) {
-            const scalar = (model.fields ?? []).find(x => x.name === col)
-            if (!scalar) continue
-            if (has(scalar, 'id') || has(scalar, 'unique') || covered.has(col)) continue
-            out.push({
-              model: model.name, field: col,
-              message: `${model.name}.${col} is the foreign key for ${f.name} and nothing indexes it. ` +
-                `Add @@index([${col}]) — or a composite starting with it, if there is a filter that ` +
-                `always accompanies it.`,
-            })
-          }
+          const cols    = rel.fields
+          const scalars = cols.map(col => (model.fields ?? []).find(x => x.name === col))
+          if (scalars.some(s => !s)) continue
+          // `@@id([a, b])` desugars to `@id` on each field, so all-`@id` is the tuple itself;
+          // a lone `@unique` covers only a single-column key.
+          if (scalars.every(s => has(s, 'id')) || (cols.length === 1 && has(scalars[0], 'unique'))) continue
+          if (indexes.some(ix => ix.length >= cols.length && cols.every(c => ix.slice(0, cols.length).includes(c)))) continue
+          const list = cols.join(', ')
+          out.push({
+            model: model.name, field: list,
+            message: `${model.name}.${list} ${cols.length > 1 ? 'together are' : 'is'} the foreign key for ${f.name} ` +
+              `and nothing indexes ${cols.length > 1 ? 'them' : 'it'}. ` +
+              `Add @@index([${list}]) — or a composite starting with ${cols.length > 1 ? 'those columns' : 'it'}, ` +
+              `if there is a filter that always accompanies ${cols.length > 1 ? 'them' : 'it'}.`,
+          })
         }
       }
       return out

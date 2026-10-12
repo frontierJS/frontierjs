@@ -321,3 +321,66 @@ describe('shutdown says what it is doing (FJS-693)', () => {
     await app.stop()
   })
 })
+
+// ─── FJS-1875 · the guards the FJS-693 fixes shipped without ───────────────
+
+describe('stop() and the crash path (FJS-1875)', () => {
+
+  test('stop() sets app.draining and the transport flag before anything closes', async () => {
+    // The 503 test above writes the flag by hand; nothing there fails if
+    // `stop()` stops writing it. Read from a plugin's shutdown, which runs
+    // after the transport has stopped, so the flag has to have been set first.
+    const seen: { app?: boolean; at?: string } = {}
+    const app = createApp({ config: { port: 0, services: { dir: '/nonexistent' } } })
+    app.configure({
+      name: 'witness', register() {},
+      shutdown(a: typeof app) { seen.app = a.draining },
+    })
+    let eventDraining: boolean | undefined
+    app.events.on('app:shutdown', () => { eventDraining = app.draining })
+    await app.start()
+    expect(app.draining).toBe(false)
+
+    await app.stop()
+    expect(seen.app).toBe(true)
+    expect(eventDraining).toBe(true)
+  })
+
+  test('a crash handler exits 1 at shutdown.timeout, not after the slower plugin step', async () => {
+    // The plugin hangs for 600ms and the crash deadline is 60ms. Without the
+    // deadline the exit waits for the plugin's own budget; with it, the process
+    // exits while stop() is still running.
+    const before = process.listeners('unhandledRejection')
+    const app = createApp({
+      config: {
+        port: 0, services: { dir: '/nonexistent' },
+        shutdown: { timeout: 60, pluginTimeout: 600 },
+      },
+    })
+    app.configure({ name: 'hangs', register() {}, shutdown() { return new Promise<void>(() => {}) } })
+    await app.start()
+    const handler = process.listeners('unhandledRejection').find(l => !before.includes(l))!
+    expect(handler).toBeDefined()
+
+    const realExit = process.exit
+    const codes: Array<number | undefined> = []
+    process.exit = ((code?: number) => { codes.push(code) }) as typeof process.exit
+    const realError = console.error
+    console.error = () => {}
+    try {
+      const t = Date.now()
+      handler(new Error('boom'), Promise.resolve())
+      while (!codes.length && Date.now() - t < 2_000) await Bun.sleep(5)
+      const waited = Date.now() - t
+
+      expect(codes).toEqual([1])
+      expect(waited).toBeLessThan(400)
+    } finally {
+      process.exit = realExit
+      console.error = realError
+    }
+    // Let the stop() the handler started finish, so its listeners detach.
+    await Bun.sleep(700)
+    expect(process.listeners('unhandledRejection')).toEqual(before)
+  })
+})

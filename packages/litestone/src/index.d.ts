@@ -487,7 +487,7 @@ export interface WhereBase {
 }
 
 export interface CursorResult<T> {
-  rows:       T[]
+  items:      T[]
   nextCursor: string | null
   hasMore:    boolean
 }
@@ -516,6 +516,8 @@ export interface TableClient<
   count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<number>
   exists(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<boolean>
   findManyCursor(args?: { where?: TWhere; limit?: number; cursor?: string; orderBy?: TOrderBy | TOrderBy[] }): Promise<CursorResult<TRow>>
+  /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key (a `select` dropped one). Throws where the ordering is not total. */
+  cursorFor(row: Partial<TRow> | null | undefined, orderBy: TOrderBy | TOrderBy[]): string | null
   search(query: string, args?: { where?: TWhere; limit?: number; offset?: number; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow[]>
   create(args: { data: TCreate; include?: Record<string, boolean>; select?: Record<string, boolean> | false; system?: SystemNames<TRow> }): Promise<TRow | null>
   createMany(args: { data: TCreate[]; announce?: AnnounceMode; system?: SystemNames<TRow> }): Promise<{ count: number }>
@@ -1035,6 +1037,8 @@ export declare class AccessDeniedError extends Error {
   operation: string | undefined
   required:  number | undefined
   got:       number | undefined
+  /** The author's remedy, when there is one; never part of `message`, which a caller reads. */
+  hint?:     string
 }
 
 

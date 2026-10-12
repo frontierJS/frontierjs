@@ -702,16 +702,16 @@ export function roomMatcher(rooms: Record<string, string>, tenanted = false): (n
 }
 
 /** What the manager needs to know about presence. Resolved by `channels()`. */
-export interface PresencePolicy {
+export interface PresenceOptions {
   /** Is presence tracked for this channel at all? */
   enabled: (channelId: string) => boolean
   /** How long join/leave events are batched before one diff goes out. */
   flushMs: number
 }
 
-export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?: ChannelClaimsFn, rooms?: RoomPolicy) {
+export function createChannelManager(presenceOptions?: PresenceOptions, claimsFor?: ChannelClaimsFn, rooms?: RoomPolicy) {
 
-  const _presencePolicy: PresencePolicy = presencePolicy ?? { enabled: () => false, flushMs: 50 }
+  const _presenceOptions: PresenceOptions = presenceOptions ?? { enabled: () => false, flushMs: 50 }
 
   const channels    = new Map<string, Channel>()
   const connections = new Map<string, Connection>()
@@ -770,7 +770,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
     broadcast:  (channelId, excludeConnId, event, data) =>
       broadcastToPresence(channelId, excludeConnId, event, data),
     sendToConn,
-    flushMs:    _presencePolicy.flushMs,
+    flushMs:    _presenceOptions.flushMs,
   })
   const _presenceFor     = _presence.presenceFor
   const presenceMembers = _presence.members
@@ -979,7 +979,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       // do not use — and paid quadratically: 500 signed-in connections over two
       // channels produced 251 500 frames, 89.5MB of egress and 172MB of heap,
       // which makes an ordinary post-deploy reconnect fatal (`FJS-703`).
-      if (!ch.__presenceWrapped && _presencePolicy.enabled(name)) {
+      if (!ch.__presenceWrapped && _presenceOptions.enabled(name)) {
         ch.__presenceWrapped = true
 
         const originalJoin  = ch.join.bind(ch)
