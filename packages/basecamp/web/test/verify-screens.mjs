@@ -290,6 +290,30 @@ try {
   check('an aliased tag is marked as the same image', /same image as/.test(tagText),
     tagText.slice(0, 160))
 
+  // ─── Dependencies ──────────────────────────────────────────────────────
+  // The seed is one project's push, already checked, with one package per
+  // verdict — so the order, the advisory and the range note are each a row.
+  console.log('\n  /dependencies/ — the mirror and its verdicts')
+  await goto('/dependencies/')
+  await until(`document.querySelectorAll('#dependencies-list tbody tr').length`, n => n === 5,
+    'the package table never rendered five rows')
+
+  const depsFresh = await text('#dependencies-freshness')
+  check('the header carries both clocks', /pushed .+ · checked /.test((depsFresh ?? '').replace(/\s+/g, ' ')), depsFresh)
+
+  const order = await evaluate(`[...document.querySelectorAll('#dependencies-list tbody tr')].map(r => r.dataset.package)`)
+  check('worst first — the advisory leads, current is last', order[0] === 'lodash' && order[4] === 'zod', order)
+
+  const depRow = (name) => evaluate(`document.querySelector('#dependencies-list tr[data-package="${name}"]')?.textContent ?? ''`)
+  check('the advisory is named on its row', (await depRow('lodash')).includes('GHSA-p6mc-m468-83gw'))
+  check('a range that cannot reach latest says so', (await depRow('typescript')).includes('range excludes it'))
+  check('a patch a reinstall reaches does not', !(await depRow('vite')).includes('range excludes'))
+
+  await click('#dependencies-tiles [data-status="vulnerable"]')
+  await until(`document.querySelectorAll('#dependencies-list tbody tr').length`, n => n === 1,
+    'the vulnerable tile did not narrow the table to one row')
+  ok('a status tile narrows the table')
+
   // ─── Servers ───────────────────────────────────────────────────────────
   // Nothing else types into this box — `verify` filters by status and role
   // only — and a refused key renders as an error over an empty list, which

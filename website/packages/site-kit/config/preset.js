@@ -10,8 +10,8 @@
 //     shell:   { html, entry },                                   // the dev document and its entry
 //   })
 //
-// `settings` is the site's settings module whole — a preset may read named
-// exports beside the default. A site that names a preset it cannot load would
+// `settings` is content/settings/site.md's front-matter (config/content.js),
+// the site's data rather than its Sierra config. A site that names a preset it cannot load would
 // build without its blocks and layouts, every page wrong, so each way of
 // failing to load one stops the build by name.
 

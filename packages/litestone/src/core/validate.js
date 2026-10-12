@@ -567,6 +567,9 @@ export function validateJsonPatch(patch, typeName, typeMap, strict, path, rootMo
  * of formats in the generator would be a second definition of every rule here,
  * drifting the moment one of them is tuned.
  */
+// The rules about an array column's list rather than its elements.
+const ITEM_COUNT_RULES = new Set(['minItems', 'maxItems', 'uniqueItems'])
+
 export function validateField(fieldName, value, attributes) {
   const errors = []
 
@@ -742,8 +745,22 @@ export function validate(data, model, computedFns, typeMap, enums = null) {
       }
     }
 
-    const fieldErrors = validateField(field.name, value, field.attributes)
-    errors.push(...fieldErrors)
+    // A rule on an array column grades each ELEMENT, as it does on an array
+    // inside a typed document above: `@email` on `String[]` asked of the whole
+    // list graded `String(list)` — one address passed, and any two were
+    // refused, their joined text holding two @. Only the item-count rules are
+    // about the list itself.
+    if (field.type.array && Array.isArray(value)) {
+      errors.push(...validateField(field.name, value, field.attributes.filter(a => ITEM_COUNT_RULES.has(a.kind))))
+      const perElement = field.attributes.filter(a => !ITEM_COUNT_RULES.has(a.kind))
+      value.forEach((el, i) => {
+        for (const err of validateField(field.name, el, perElement))
+          errors.push({ path: [field.name, i], message: err.message })
+      })
+    } else {
+      const fieldErrors = validateField(field.name, value, field.attributes)
+      errors.push(...fieldErrors)
+    }
 
     // Typed JSON: if this is a Json field with @type(T), validate the value
     // against the type's shape. Skips if no typeMap was passed.

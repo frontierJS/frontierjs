@@ -10963,6 +10963,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d671"></a>2026-10-12 · `FJS-D671` — Where does a list's selection live: a standalone set primitive the screen composes, a Table-owned column, or a resource-owned set — A standalone signal-backed primitive in `@frontierjs/ui` (a `.js` module beside `dnd.js`): `createSelection(keyOf)` with `has(row)`, `toggle(row)`, `clear()`, `set(rows)`, `count`, and `stateOf(rows)` returning `none | some | all`; plus `Checkbox` `indeterminate` and a `<BulkBar {selection}>` that shows the count and a slot for the actions. The screen draws the header box through `header(col)` and the row box in its own snippet. No change to `Table`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`Table` owns it: `selectable` and `bind:selected` draw a leading select column, the header tri-state box, and hand the row snippet a `selected` flag. Fewest lines in a screen, but the table must draw a cell inside a `<tr>` the caller wrote, which breaks the contract `row` has today), **C** (the resource owns it: `resource.selection` in sierra's `createResource`, so the set survives paging, filtering and live-store updates and names ids rather than rows. Right for ELA's inbox, but it makes UI-kit selection depend on sierra, and a list not backed by a resource has nowhere to put one).
+
+The paper's recommendation, taken as written: it is the smallest piece that deletes the hand-rolled Set, bar and `.indeterminate` effect, it adds no coupling, and C can wrap it later (a resource handing out a `createSelection` keyed by primary key) without changing it. The sighting rules C out as the first piece anyway: ELA's inbox selects messages AND tickets in one column (`FJS-2003`), two resources, so a resource-owned set cannot hold that one selection, while `keyOf` can key it by kind and id.
+
 ### <a id="fjs-d895"></a>2026-10-10 · `FJS-D895` — A pointer or wheel gesture has no terminal lowering, and a component states nothing about the surfaces it reaches: the refusal is the statement.
 
 Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) slices 29 and 30, where `/automations/flows/:flowId/` stopped at FlowCanvas's `on:pointerdown`. The owner picked **A** (the canvas stays off the terminal) over **B** (a terminal form of a flow, the nodes and links as text) and **C** (lower pointer and wheel to the terminal's mouse reports). C draws nothing to drag, since an svg paints its label or nothing. The route stays refused, and `fli dev:tui --list` naming `on:pointerdown` is the reason a reader needs.
@@ -12538,6 +12544,12 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d918"></a>2026-10-12 · `FJS-D918` — What may a word after a divider (`====|.duo.reverse`, `===|.featured`) name — Checked: a css look word (a Layout helper, a tone, treatment or density, `align-*`), placed where Block places it, or a class the site's built stylesheets define; any other word stops `site-kit build` naming the file, the divider and the word.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (typed only: css look words plus one segment name the site stylesheet keys on, as a block's `name`; every client's divider lines and stylesheet are rewritten), **C** (free, as ksite had it).
+
+The paper's recommendation, taken as written: it answers `FJS-D823`'s reason rather than its spelling: the string is checked, against what the site actually ships, so a typo fails and a client's content ports unchanged. B makes every client pay a rewrite for the same guarantee, and C reopens the hole `FJS-D823` closed.
+
 ### <a id="fjs-d878"></a>2026-10-10 · `FJS-D878` — When does `Label` badge "(Optional)" — Only when `required === false`. `undefined` is unspecified and badges nothing.
 
 Asked in [`FJS-1974`](ISSUES.md#fjs-1974). The prop's own doc already said `undefined` meant unspecified; the code read `!required`, so every kit control used outside a `<Form>` — a filter row, an editor's sliders, a chat box — was badged optional by a caller who had said nothing. Three stressors hit it (ela, charter, darkroom), and `Slider` takes no `required`, so its caller could not quiet the badge at all. Generated forms do not change: a `<Form>` resolves `rule.required` to a boolean, which `form-tail.spec.mjs` holds both ways round.
@@ -13154,6 +13166,24 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d921"></a>2026-10-12 · `FJS-D921` — Where owner editing and preview deploys live — A module of `packages/basecamp`, the app that already holds the Cloudflare account, the DNS writes and the release record.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (a new FJS app for site editing alone), **C** (inside each site: an admin route and a host function that writes to git).
+
+The paper's recommendation, taken as written: the credentials, the DNS and the deploy record are already there, and C puts auth and writes on the edge, which this file exists to keep dumb.
+
+### <a id="fjs-d920"></a>2026-10-12 · `FJS-D920` — Who owns the host files and the adapters — Sierra owns `_redirects`, `_headers`, the function bundle and each adapter; site-kit is a pass-through that presets the static-site defaults, layered site-kit, then preset, then site, as `config/vite.js` does.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (site-kit owns all of it and Sierra stays unaware of hosts), **C** (`fli` owns the adapters, as a deploy concern, and Sierra the files).
+
+The paper's recommendation, taken as written: Sierra already writes `_redirects` and `404.html` and already owns `serveSite`, so the adapter sits beside the files it reads. A Sierra `site/` surface in an app gets the same adapter without site-kit. The pass-through is what makes a markdown site state nothing, and it is the layering site-kit already does for Vite.
+
+### <a id="fjs-d919"></a>2026-10-12 · `FJS-D919` — Where a host function lives, and what it is — A file under a functions directory, answering its own path as on Pages; `export default (request, env) => Response`; `env` strings only; Sierra bundles the directory to one entry every adapter mounts.
+
+Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (no host functions: anything dynamic is a route on an FJS `api/`, which puts a running server behind every marketing site), **C** (functions named in settings as module paths, which separates the URL from the file that answers it).
+
+The paper's recommendation, taken as written: the web's own signature means no adapter rewrites a function, the Pages path convention moves ksite's functions with their URLs, and dropping bindings from `env` is the line that keeps site code off Cloudflare.
 
 ### <a id="fjs-d860"></a>2026-10-10 · `FJS-D860` — What grades an example in a package's hand-written docs — The package's own suite runs every fence: a ```lite block is parsed and built, a ```js/```ts block runs as a module under the nearest preceding ```lite of its file, and three words on the info string are the whole contract — `fragment` (runs nothing), `throws` (passes only by throwing), `failing` (pinned to a filed defect, `test.failing`'s way). The `prisma` fence is gone: litestone's language is fenced ```lite.
 

@@ -43,6 +43,18 @@ what they mean in any app.
   shell }` (FJS-D648). It resolves from the site, and every way of failing to
   load one stops the build by name, because a site built without its preset
   ships every page without its blocks.
+- `config/dialect.js` — `siteDialect()`, the Markdown dialect every site
+  compiles under, ahead of a preset's own passes, and a post-build check.
+  `config/dividers.js` (remark) turns `====` into a Band and `===` into an
+  `<article>`, as markup rather than a `<Block>` tag, because Sierra binds a
+  tag by scanning the source before a remark plugin runs. `config/prose.js`
+  (rehype) emits kickers, `<mark>` and tel:/mailto: links. A divider word
+  that is not a css look word is the site's class; the check stops the build
+  when no stylesheet in the output defines it (`FJS-D918`). It runs as a
+  Sierra config plugin's `closeBundle`, which Sierra calls once the pages are
+  written; `vite dev` never checks.
+- `src/block-look.js` — the one owner of what a look word may be and where its
+  class lands, imported by both `Block.mesa` and `config/dividers.js`.
 - `config/shell.js` — `siteShell({ html, entry })`, the kit's own pair or a
   preset's `shell`. Serves `index.html` for a site whose root has none: a dev
   middleware for HTML requests, and a `load` of the root's `index.html` id in the
@@ -70,6 +82,9 @@ what they mean in any app.
   otherwise writes its temp module inside mesa's own package, where
   `@frontierjs/css` does not resolve.
 - `test/preset.mjs` — a named preset is loaded, or `siteKit()` refuses by name.
+- `test/dialect.mjs` — the dialect through Mesa's `compileMd`, and the check
+  called by hand. `test/words-build.mjs` runs `site-kit build` on a site it
+  writes under `test/`, which is the only proof Sierra calls the check.
 
 ## Proving a change
 

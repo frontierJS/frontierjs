@@ -84,6 +84,7 @@ the package has no root entry.
 |---|---|
 | a list of rows, sortable | `@frontierjs/ui/components/display/Table.mesa`, each value through `@frontierjs/ui/components/display/Cell.mesa` |
 | filters over a list's query | `@frontierjs/ui/components/display/FilterBar.mesa` |
+| rows a person ticks to act on together — bulk delete, resend, complete | `createSelection` from `@frontierjs/ui/selection`, a header box through `@frontierjs/ui/components/forms/Checkbox.mesa`'s `indeterminate`, and `@frontierjs/ui/components/display/BulkBar.mesa` for the count and the actions — § Selecting rows |
 | page numbers | `@frontierjs/ui/components/display/Pagination.mesa` |
 | a count, or a badge floated over an icon · a status or plan label · a removable token · a status dot | `@frontierjs/ui/components/display/Badge.mesa` · `@frontierjs/ui/components/display/Pill.mesa` · `@frontierjs/ui/components/display/Tag.mesa` · `@frontierjs/ui/components/display/Dot.mesa` |
 | a figure · a figure as a tile or link | `@frontierjs/ui/components/display/Stat.mesa` · `@frontierjs/ui/components/display/StatCard.mesa` |
@@ -231,6 +232,78 @@ is the `$orderBy` directive; `onsort(next)` reports a sort, `bind:orderBy` owns 
 A `footer(rows)` snippet is the table's `<tfoot>` — its own `<tr>`s, for a
 totals line. `<Cell timeZone="America/Chicago">` shows an instant in that zone
 rather than the viewer's; a `@unit` column reads `7.5 h` on its own.
+
+### Selecting rows
+
+A selection is a set of KEYS the screen owns, not a mode of `<Table>`: the
+table draws the header box through its `header(col)` snippet and the row box
+in your `row` snippet.
+
+```mesa
+<script>
+  import Table    from '@frontierjs/ui/components/display/Table.mesa'
+  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import BulkBar  from '@frontierjs/ui/components/display/BulkBar.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import { createSelection } from '@frontierjs/ui/selection'
+  import { surveys } from '@/resources/Survey.mesa'
+
+  const list = surveys.list()
+  const picked = createSelection()              // keyed by row.id
+  $: list.rows, (rows) => picked.retain(rows)   // a deleted row stops counting
+  const columns = [{ name: 'pick', label: 'Select', hideLabel: true }, ...surveys.columns().columns]
+  const all = picked.stateOf(list.rows)
+
+  async function resend() {
+    for (const id of picked.keys) await surveys.service.invoke('resend', id)
+    picked.clear()
+  }
+</script>
+
+<BulkBar selection={picked}>
+  <Button size="sm" onclick={resend}>Resend</Button>
+</BulkBar>
+
+<Table {columns} rows={list.rows} rowKey="id">
+  {#snippet header(col)}
+    {#if col.name === 'pick'}
+      <Checkbox label="" aria-label="Select every row shown" checked={all === 'all'}
+                indeterminate={all === 'some'} onchange={(on) => picked.set(list.rows, on)} />
+    {/if}
+  {/snippet}
+  {#snippet row(s)}
+    <tr>
+      <td><Checkbox label="" aria-label={'Select ' + s.title} checked={picked.has(s)} onchange={() => picked.toggle(s)} /></td>
+      ...
+    </tr>
+  {/snippet}
+</Table>
+```
+
+| Verb | Does |
+|---|---|
+| `createSelection(keyOf?)` | `keyOf(row)` is the identity, `row.id` when omitted. Two kinds of row in one list need a key that names the kind — `(r) => r.kind + ':' + r.id` — or message 7 and ticket 7 are one key |
+| `has(row)` · `toggle(row)` | one row's box |
+| `set(rows, on = true)` | ticks every one of `rows`, or with `false` unticks them; rows not given keep their state |
+| `stateOf(rows)` | `'none'`, `'some'` or `'all'` over `rows` only — the page, or one group for a per-group header box. An empty list is `'none'` |
+| `clear()` · `retain(rows)` | untick everything · untick every key not among `rows` |
+| `count` · `keys` | how many keys are held · the keys, in the order ticked |
+
+**A key outlives its row's visibility.** A search, a filter, a collapsed group
+or a page turn unticks nothing, so `count` and `keys` can name rows not on
+screen — and the bulk action acts on `keys`, which is what the bar's number
+says it will touch. The header box judges only the rows it is handed. A list
+whose rows can go for good (a delete, somebody else's write) calls `retain` on
+them, or the bar counts rows that no longer exist.
+
+**The header handler is `onchange={(on) => s.set(rows, on)}` and nothing
+else**: the browser ticks a mixed box on a press, so a part-ticked header
+ticks the rest and a full one unticks the rows it governs.
+
+**`<BulkBar>` renders nothing at 0**, so place it unconditionally. Its children
+are the actions and it adds Clear after them. Every read subscribes, so a
+template needs no `$:` to follow a selection, and the verbs are closures:
+`rows.filter(picked.has)` is the ticked rows on screen.
 
 ## Attributes, `class` and snippets
 

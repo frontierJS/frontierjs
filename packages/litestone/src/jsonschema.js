@@ -1149,8 +1149,17 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
     typeSchema = typeToJsonSchema(type, schema, enumDefs, inlineEnums, fileDef)
   }
 
-  // Apply validators from attributes
-  applyValidators(typeSchema, attributes)
+  // Apply validators from attributes. On an array column a value rule is
+  // about each ELEMENT, so it goes on `items` — `@email` on `String[]` put
+  // `format: 'email'` on the array, and a realm reading the field graded the
+  // list as one address (the Data boundary grades each element, validate.js).
+  // Only the item-count rules are about the list.
+  if (type?.array && typeSchema.type === 'array' && typeSchema.items && !typeSchema.items.$ref) {
+    applyValidators(typeSchema, attributes.filter(a => ITEM_COUNT_KINDS.has(a.kind)))
+    applyValidators(typeSchema.items, attributes.filter(a => !ITEM_COUNT_KINDS.has(a.kind)))
+  } else {
+    applyValidators(typeSchema, attributes)
+  }
 
   // Apply @default as JSON Schema default (skip auth() — runtime-only)
   const defaultAttr = attributes.find(a => a.kind === 'default')
@@ -1240,6 +1249,9 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false, fileDef =
 }
 
 // ─── Validator → JSON Schema keyword mappings ─────────────────────────────────
+
+// The rules about an array column's list rather than its elements.
+const ITEM_COUNT_KINDS = new Set(['minItems', 'maxItems', 'uniqueItems'])
 
 function applyValidators(schema, attributes) {
   // Not a validator: the value a validator below is asked about. A realm that

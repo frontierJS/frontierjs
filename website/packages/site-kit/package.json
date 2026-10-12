@@ -9,18 +9,20 @@
   },
   "exports": {
     "./vite": "./config/vite.js",
+    "./collection": "./src/collection.js",
     "./blocks/*.mesa": "./src/blocks/*.mesa",
     "./blocks/*": "./src/blocks/*.mesa",
     "./layouts/*.mesa": "./src/layouts/*.mesa",
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test": "node test/blocks.mjs && node test/preset.mjs"
+    "test": "node test/blocks.mjs && node test/preset.mjs && node test/content.mjs && node test/dialect.mjs && node test/words-build.mjs && node test/content-build.mjs"
   },
   "peerDependencies": {
     "@frontierjs/css": "*",
     "@frontierjs/mesa": "*",
     "@frontierjs/sierra": "*",
+    "@frontierjs/toolbelt": "*",
     "vite": "^8.3.2"
   },
   "devDependencies": {

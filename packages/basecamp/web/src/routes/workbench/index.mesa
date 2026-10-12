@@ -736,16 +736,6 @@ title: Workbench
     else setTab(p, 'run')
   }
 
-  // The desktop shell's webview ignores target=_blank, so the link hands the
-  // URL to the system browser itself; in a browser the default still runs.
-  function openPort(e, url) {
-    const tauri = window.__TAURI__
-    if (!tauri) return
-    e.preventDefault()
-    if (tauri.opener?.openUrl) tauri.opener.openUrl(url)
-    else tauri.core?.invoke('plugin:opener|open_url', { url })
-  }
-
   async function haltRow(p, row) {
     const out = await act('halt', p, { row: row.id })
     if (!out) return
@@ -1121,7 +1111,7 @@ title: Workbench
                           <span class="cluster workbench-runrow-end">
                             {#if runOf(p.id, row.id)?.running}
                               {#each runOf(p.id, row.id).ports as s}
-                                <a href={`http://localhost:${s.port}`} target="_blank" rel="noopener" onclick={(e) => openPort(e, `http://localhost:${s.port}`)}>{s.label} :{s.port} ↗</a>
+                                <a href={`http://localhost:${s.port}`} target="_blank" rel="noopener">{s.label} :{s.port} ↗</a>
                               {/each}
                               <Badge tone="info">{runOf(p.id, row.id).stopped ? 'stopping…' : 'running'}</Badge>
                               <Button size="xs" variant="outlined" tone="danger" onclick={() => haltRow(p, row)}>Stop</Button>

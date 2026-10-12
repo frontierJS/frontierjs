@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-48 services · 41 routes · 17 plugins · prefix (none)
+49 services · 41 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -427,6 +427,26 @@ name when it declares none.
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
+| before | `update` | `autoValidate` |
+
+### `dependencies` · model `Dependency`
+
+- **methods** — `find`, `get`, `report`, `ingest`, `check`
+- **custom methods** — `report`, `ingest`, `check`
+- **who may call** —
+  - `report` — standing 2 or above — declared `gate: 2`
+  - `ingest` — standing 4 or above — declared `gate: 4`
+  - `check` — standing 4 or above — declared `gate: 4`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
 ### `deployments` · model `Deployment`

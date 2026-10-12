@@ -362,6 +362,10 @@ core/
                 and AGENTS.md: `AGENT_DOCS` is the packages whose TARBALL carries one,
                 held to `exports.snapshot.md` in both directions, so a package that
                 starts shipping one is a red test until it is listed here
+  deps.js       the third-party packages a root declares and `bun.lock` installed —
+                `ws:deps`'s snapshot and the body of its push to basecamp's
+                `/dependencies/`. The latest version and advisories are never
+                in it: they change with no commit
   crud-templates.js     what a GENERATED CRUD page IS — shared by `make:scaffold`
                         and `admin:generate`. Built on @frontierjs/ui
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`

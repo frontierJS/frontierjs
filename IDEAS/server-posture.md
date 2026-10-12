@@ -6,8 +6,12 @@ dated: 2026-10-05
 
 # Idea — Server posture: Basecamp grades the machine, not only the app on it
 
-**Status: IDEA.** Probed against the tree 2026-10-05 (`VERIFYING.md`). Do not cite
-this file as behavior.
+**Status: IDEA.** Probed against the tree 2026-10-05, the Security route and
+Basecamp's own host 2026-10-12 (`VERIFYING.md`). Do not cite this file as behavior.
+Filed: [`FJS-2712`](../ISSUES.md#fjs-2712) (harden at install) ·
+[`FJS-2713`](../ISSUES.md#fjs-2713) (readings, grader, screens) ·
+[`FJS-2714`](../ISSUES.md#fjs-2714) (Basecamp's own host) ·
+[`FJS-2715`](../ISSUES.md#fjs-2715) (a vulnerable dependency notifies nobody).
 
 Prompted by the owner: *creating an app is no big deal; it is once it is live —
 updates to the server, db pushes, backups — that it gets tricky.* This record is
@@ -48,12 +52,9 @@ carries `outpost_version` and nothing about the OS.
   `ProtectSystem`, no `NoNewPrivileges`. Docker access is root-equivalent anyway,
   so the gain is in narrowing what a compromised Outpost can write, not in the user.
   [`FJS-1761`](../ISSUES.md#fjs-1761).
-- **The install is unpinned**: `get.docker.com | sh` and `bun.sh/install` run
-  whatever those servers return that day, and `bunx` resolves the Outpost at each
-  restart. [`FJS-1762`](../ISSUES_ARCHIVE.md#fjs-1762).
-- **Nothing installs or checks time sync**, and both sides refuse a signed
-  request past 300 seconds of skew. The refusal names the skew, but the operator
-  sees a machine that stopped answering. [`FJS-1763`](../ISSUES_ARCHIVE.md#fjs-1763).
+- ~~**The install is unpinned**~~ — closed, [`FJS-1762`](../ISSUES_ARCHIVE.md#fjs-1762).
+- ~~**Nothing installs or checks time sync**~~ — closed: the install sets up
+  `chrony`, [`FJS-1763`](../ISSUES_ARCHIVE.md#fjs-1763). `time.synced` still grades it.
 
 ---
 
@@ -68,6 +69,7 @@ carries `outpost_version` and nothing about the OS.
 | Lynis | agentless, a hardening index | a cheap second opinion run on demand |
 | [Wazuh SCA](https://documentation.wazuh.com/current/user-manual/capabilities/index.html), osquery + Fleet | agent reports, server grades | **the split Outpost/Basecamp already have** |
 | docker-bench-security, Trivy | Docker CIS checks; image CVEs | containers are surface too; later phase |
+| [Vigil](https://github.com/VigilOSS/Vigil) (Apache-2.0, read 2026-10-12) | AI pentest harness: specialist agents in a Kali container, each finding verified by a second agent | **an attacker's view, not a posture check** — run by hand, under authorization, against Basecamp's own surface. Never a dependency: it needs a cyber-cleared model and a person approving each exploit |
 
 ---
 
@@ -163,6 +165,68 @@ and never from the box's own readings.
   finding into an outage (*ergonomics vs. strictness*: strictness follows what the
   mistake destroys).
 
+### Where it is seen — the Security route
+
+A Posture tab on one server page answers *is this box sound*. Nothing answers
+*which of my boxes is not*. **`/security/`** does, and it covers a workspace's machines
+and its code together, because an operator asking whether they are exposed means both:
+
+- **Machines, worst first** — one row per server: failing controls, `unknown`
+  controls, and the age of the last report. A report older than twice its interval
+  reads **stale**, never clean. Findings from the outside probe sort above
+  everything the box reported about itself, because they are the strongest evidence.
+  A row opens the server's Posture tab, where *Check now*, *Harden* and the patch run
+  live. This screen reads; acting stays on the server page, at the gate the action
+  already has.
+- **Code** — the `vulnerable` count from `Dependency`, linking to `/dependencies/`
+  filtered to it. The advisories are already there. What is missing is the push:
+  a dependency turning vulnerable sends no notification
+  ([`FJS-2715`](../ISSUES.md#fjs-2715)). The fix is a `dependency_vulnerable`
+  notification kind, sent when an installed version first gains an advisory and
+  not again each day.
+
+The route reads `ServerPosture` and `Dependency` at the caller's level. Both are
+workspace-scoped, so the tenancy block keeps a workspace to its own rows without
+the screen doing anything.
+
+### Basecamp's own host
+
+**The box most worth grading is the one this design never reaches.** Ring 0
+(`fli deploy`) installs Basecamp, and no Outpost runs there, so nothing ever
+reads that box ([`FJS-2714`](../ISSUES.md#fjs-2714)). It is also the box with
+`ENCRYPTION_KEY`, every workspace's `Secret` rows and the command key for the whole
+fleet. The API runs in a container, which cannot see the host's `sshd -T` or its
+nftables ruleset, so the readings must come from outside the container.
+
+**The same readings, run in a report-only mode.** `fli deploy` installs the Outpost
+on the host with its command listener **off**: `report.js` posts `posture` to the
+API over loopback on its clock and nothing listens. That is one implementation of
+the readings and no second command port on the control plane. The rows are
+`ServerPosture` with **`serverId` null**: a null means *the installation's own host*,
+which only the hub reads. That is `AuditEvent`'s null-workspace reading
+(`FJS-D141`) applied to the same kind of row.
+
+**Some controls only the host has:** `hub.backup-recent` (the newest `Backup`
+row, graded on age, in process) · `hub.db-mode` and `hub.env-mode` (the database
+volume and the file holding `ENCRYPTION_KEY` are not world-readable, from the
+reading). A setting that already refuses itself under production is not graded
+again: `localMachineRefusal`, devtools with no gate, and a missing `ENCRYPTION_KEY`
+each stop the boot, so a control for them could never fail.
+
+**The outside probe needs a vantage that is not on the box.** Basecamp probing its
+own public address goes out and comes straight back to the same machine, so it
+proves nothing. An enrolled fleet Outpost probes the host instead. With no fleet
+machine, `net.reachable-unexpected` is `unknown` and the screen says why.
+
+**The host is graded and never acted on through ring 2.** *Harden* and the patch run
+are refused on it: draining the plane drains the thing running the drain, and
+*the plane never upgrades itself through ring 2* (`IDEAS/deploy-plane.md`). Its fixes go
+through ring 0. The screen shows the `fli deploy` command to run.
+
+**`/hub/security/`** shows the host's controls under the same grading and states as
+`/security/`, behind `isSystemAdmin` like every other `/hub/` screen. Whether that is
+a second route or a section of `/security/` is Q6.
+
 ### Harden at install, each step paired with a control
 
 Added to `installScript()`:
@@ -236,24 +300,29 @@ Adjudications in tension: *ergonomics vs. strictness* (warn, not refuse; above),
 and *batteries vs. smallness*. The Outpost grows a read-only inspector method and
 two routes, which stays severable inside the one file that already runs commands.
 
-**Tier:** Assessment. Becomes rulings for Q1–Q4 before phase 3.
+**Tier:** Assessment. Becomes rulings for Q1–Q4 before phase 4, and Q6–Q7 before phase 1.
 
 ---
 
 ## Phases
 
-1. **Readings + grader + a Posture tab on the server page**, read-only.
-   *Proves:* a fresh DigitalOcean box enrolled today shows `net.firewall-default-deny`
-   and `ssh.password-off` failing (or `ssh.password-off` passing, if the image
-   already ships it that way — that is worth knowing too).
-2. **The outside probe + cloud firewall read.** *Proves:* an app deployed with no
-   hostname is reported reachable on its port from outside.
-3. **Harden at install + the Harden action**, with the pairing test. *Proves:* the
+1. **Readings + grader + a Posture tab on the server page + `/security/`**, read-only,
+   with the `dependency_vulnerable` notification. *Proves:* a fresh DigitalOcean box
+   enrolled today shows `net.firewall-default-deny` and `ssh.password-off` failing (or
+   `ssh.password-off` passing, if the image already ships it that way — that is worth
+   knowing too), and it sorts to the top of `/security/`.
+2. **Basecamp's own host**: report-only Outpost from `fli deploy`, the `hub.*`
+   controls, and `/hub/security/`. *Proves:* the `bun run image:up` stack shows its
+   host's readings, and `hub.backup-recent` fails on a stack with no backup.
+3. **The outside probe + cloud firewall read.** *Proves:* an app deployed with no
+   hostname is reported reachable on its port from outside, and the host is probed
+   from a fleet Outpost rather than from itself.
+4. **Harden at install + the Harden action**, with the pairing test. *Proves:* the
    phase-1 box after Harden grades clean, and the outside probe agrees.
-4. **The patch run.** *Proves:* a box with `reboot-required` is drained, upgraded,
+5. **The patch run.** *Proves:* a box with `reboot-required` is drained, upgraded,
    rebooted, back online, undrained, and the run row lists the packages.
-5. **Second opinions, on demand:** Lynis index, docker-bench, Trivy over the images
-   in use.
+6. **Second opinions, on demand:** Lynis index, docker-bench, Trivy over the images
+   in use, and an authorized Vigil engagement against Basecamp itself.
 
 ## Open questions (owner)
 
@@ -312,6 +381,28 @@ two routes, which stays severable inside the one file that already runs commands
     The versions belong in `enrollment.ts`, where the install script is and where
     the two pinned today already live, not in the Outpost's `config.js`. C makes
     every security patch a code change.
+
+- **Q6 — One Security route, or one per tier?**
+  - **A** — One `/security/`: the workspace's machines and code, plus a section for
+    Basecamp's own host that renders for `isSystemAdmin` alone.
+  - **B** — Two routes on the existing tier split: `/security/` for a workspace's
+    machines and code, `/hub/security/` for the installation's host and its `hub.*`
+    controls.
+  - **Recommend B** — every installation-level screen is under `/hub/` behind one
+    guard, and the host's rows are hub-read at the Data boundary. A puts two
+    audiences on one page, and a workspace admin who is not a system admin would get a
+    section that is present for one person and absent for the next. A matches the ask
+    word for word. B is two routes for the same reason the hub is a tier.
+- **Q7 — How does the host's readings leave the box?**
+  - **A** — The Outpost, installed by `fli deploy` with its command listener off,
+    reporting over loopback.
+  - **B** — A full Outpost, enrolled as an ordinary server row with a hub flag.
+  - **C** — Bind-mount `/etc`, `/proc` and `docker.sock` into the API container and
+    read in process.
+  - **Recommend A** — one implementation of the readings and nothing listening. B puts
+    a signed command port on the box that holds the fleet's command key, and a server
+    row invites the deploy and drain this record refuses on the host. C gives the
+    control plane's own container root on its host to read a config file.
 
 ## See also
 

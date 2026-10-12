@@ -27,6 +27,7 @@ it re-resolved when it runs. Survives a restart.
 | `alert-evaluate` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `cleanup:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
+| `dependency-check` | `sync` | `15 6 * * *` | — | 3 | 60000, 600000 | 300000ms |
 | `deployment:run` | `deployments` | on dispatch | — | 1 | default | **none** |
 | `domain:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
@@ -39,7 +40,7 @@ it re-resolved when it runs. Survives a restart.
 | `server:provision` | `fleet` | on dispatch | — | 1 | default | **none** |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-14 handler(s), 5 of them on a clock.
+15 handler(s), 6 of them on a clock.
 
 **12 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

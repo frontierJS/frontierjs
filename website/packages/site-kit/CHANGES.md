@@ -1,5 +1,18 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-12 — the Markdown dialect is site-kit's (`FJS-D918`, `FJS-D614`)
+
+Every site now compiles under site-kit's dialect, which runs ahead of a preset's own Markdown passes.
+
+- `====` opens a Band: `<section class="band …">` holding a `.container`, up to the next `====`. Text before the first `====` is a Band of its own, and `====|block` returns to plain flow.
+- `===` starts an `<article>` inside the current Band, or inside the whole file when the page has no `====`.
+- The words after `|` are classes (`====|.duo.split.muted`). A css look word goes where Block puts it: a Layout helper on the container, and a tone, treatment, density or `align-*` on the Band. Two words on one axis stop the build. Any other word is the site's own class, and `site-kit build` stops, naming the file, the divider and the word, when no stylesheet in the output defines it. `vite dev` does not check.
+- A paragraph in capitals is `<p class="kicker">`, including one right before a heading. `==text==` is `<mark>`. A phone number or an email address in prose becomes a `tel:` or `mailto:` link, but not inside a link or code.
+
+Position emits no class, so `segment-N`, `article-N` and the `article` class are gone. `src/block-look.js` holds what each look word may be and where its class lands, and both `Block.mesa` and the divider plugin read it.
+
+`@kobami/ksite` gave up its copy. `remark-articles.js` is deleted, and `rehype-content.js` keeps only ksite's `heading` and `link` classes. Its four routes are identical to the pixel against the build before the change, at 390, 768, 960, 1024, 1280 and 1536 px, from the workspace and from a tarball install of both packages. Dev renders the same bands with no console error of its own. `check:site` output is unchanged.
+
 ## 2026-10-09 — `layout: Block` is site-kit's (`FJS-D654`, `FJS-D823`)
 
 `src/layouts/Block.mesa` moved here from `@kobami/ksite`, under its own name. A top-level block is css's Band, `<section class="band">` holding a `.container`; a nested one is an `<article>`; one with a `url` is an `<a>`; a stated `tag` is that element, or none with `tag={false}`. Its look is six typed keys: `template` (a Layout helper), `tone`, `treatment`, `density`, `align` and `background`. The allowed values are read from `@frontierjs/css/vocabulary.json`, so a value css does not ship stops the build naming the key and its choices. `classes:` stops it as well, naming the block's class as the place for a look the keys cannot state.

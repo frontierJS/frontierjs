@@ -261,6 +261,24 @@ test('form: a file input\'s button is the package\'s, not the UA\'s', function (
   );
 });
 
+test('form: a long label wraps beside its checkbox and never squeezes it', function () {
+  /*
+   * Found by ela's public survey page (Phase Q, Q3): the service area
+   * "Final Details (cleaning pavement, closing fence gate, etc.)" wrapped
+   * in a two-column grid, and .field-check — inline-flex — shrank the
+   * 16px box to make room for the text. The same goes for a switch.
+   */
+  var narrow = '<div style="inline-size: 120px">';
+  var cb = el(narrow + '<label class="field-check"><input type="checkbox"><span>Final Details (cleaning pavement, closing fence gate, etc.)</span></label></div>', 'input');
+  var box = cb.getBoundingClientRect();
+  assert.ok(box.width >= 16 && Math.abs(box.width - box.height) < 1, 'the checkbox was squeezed to ' + box.width + 'x' + box.height);
+  cleanup();
+
+  var sw = el(narrow + '<label class="field-check"><input class="switch" type="checkbox" role="switch"><span>Text me when the crew is on the way, every visit</span></label></div>', '.switch');
+  var track = sw.getBoundingClientRect();
+  assert.ok(track.width > track.height * 1.4, 'the switch was squeezed to ' + track.width + 'x' + track.height);
+});
+
 test('form: a plain checkbox in a .field-check is still checkbox-sized', function () {
   var cb = el('<label class="field-check"><input type="checkbox"><span>On</span></label>', 'input');
   var box = cb.getBoundingClientRect();

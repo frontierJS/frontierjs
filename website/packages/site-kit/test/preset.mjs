@@ -28,7 +28,8 @@ const write = (path, text) => {
 function site(name, preset, pkg) {
   const root = join(TMP, name)
   write(join(root, 'content/routes/index.md'), '# Home\n')
-  write(join(root, 'content/settings/site.js'), `export const company = 'Acme'\nexport default { preset: ${JSON.stringify(preset)} }\n`)
+  write(join(root, 'content/settings/site.js'), `export default { preset: ${JSON.stringify(preset)} }\n`)
+  write(join(root, 'content/settings/site.md'), '---\ncompany: Acme\n---\n')
   for (const [file, text] of Object.entries(pkg ?? {})) write(join(root, 'node_modules/demo-preset', file), text)
   return root
 }
@@ -57,7 +58,7 @@ try {
     })
     const config = await siteKit({ root })
     const names = config.plugins.flat().map((p) => p?.name)
-    check('a preset is handed the settings module, named exports included', names.includes('demo:Acme'), names.join(', '))
+    check("a preset is handed the site's settings, site.md's front-matter", names.includes('demo:Acme'), names.join(', '))
     const shell = config.plugins.flat().find((p) => p?.name === 'site-kit:shell')
     check('the preset entry answers /@site-kit/main.js', shell?.resolveId('/@site-kit/main.js')?.endsWith('demo-preset/main.js'))
   }

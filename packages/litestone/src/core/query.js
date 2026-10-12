@@ -444,20 +444,46 @@ export function likePattern(op, operand) {
 // phrase the person quoted stays one, and a quote left open only separates.
 // `prefix` widens the last word for a box searched as it is typed, unless that
 // word ends in punctuation: `"c++"*` tokenizes to `c*`, which is every c-word.
+//
+// Under `tokenize: trigram` an index entry is three characters, so a word of
+// one or two has nothing to look up and MATCH answers no rows for it: `jo`,
+// `Li`, a state code, what a person types first (FJS-2332). Trigram MATCH is
+// substring search, so the same question is a GLOB over the indexed columns,
+// which FTS5 answers on a trigram table by a scan; such a word comes back in
+// `scan` rather than in `match`.
 const FTS_WORD = /"([^"]*)"|[^\s"]+/g
-/** @param {string} text @param {{ prefix?: boolean }} [opts] @returns {string | null} null when no word is left */
-export function ftsWords(text, { prefix = false } = {}) {
-  const words = []
+const TRIGRAM  = 3
+/**
+ * @param {string} text @param {{ prefix?: boolean, trigram?: boolean }} [opts]
+ * @returns {{ match: string | null, scan: string[] } | null} null when no word is left
+ */
+export function ftsWords(text, { prefix = false, trigram = false } = {}) {
+  const words = [], scan = []
   let open = false
   for (const m of text.matchAll(FTS_WORD)) {
     const word = m[1] === undefined ? m[0] : m[1].trim()
     if (!word) continue
+    if (trigram && [...word].length < TRIGRAM) { scan.push(substringGlob(word)); open = false; continue }
     words.push('"' + word + '"')   // an FTS5 phrase, which the regex left no quote inside
     open = m[1] === undefined && /[\p{L}\p{N}]$/u.test(word)
   }
-  if (!words.length) return null
+  if (!words.length && !scan.length) return null
   if (prefix && open) words[words.length - 1] += '*'
-  return words.join(' ')
+  return { match: words.length ? words.join(' ') : null, scan }
+}
+
+// GLOB rather than LIKE because LIKE folds only ASCII case and the tokenizer
+// folds all of it, so `Ö` would miss `ö`. Each letter is a class of its cases
+// and each metacharacter a class of one, so nothing typed is a wildcard.
+const GLOB_META = new Set(['*', '?', '['])
+/** @param {string} word */
+function substringGlob(word) {
+  let out = '*'
+  for (const ch of word) {
+    const cases = [...new Set([ch, ch.toLowerCase(), ch.toUpperCase()])].filter(c => [...c].length === 1)
+    out += cases.length > 1 ? `[${cases.join('')}]` : GLOB_META.has(ch) ? `[${ch}]` : ch
+  }
+  return out + '*'
 }
 
 // A column whose stored text is not the value cannot answer one, and the way it

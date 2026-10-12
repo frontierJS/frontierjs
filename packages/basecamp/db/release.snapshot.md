@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-60 model(s) · 39 enum(s) · 2 database(s)
+62 model(s) · 40 enum(s) · 2 database(s)
 audit → trail · main → sqlite
 ```
 
@@ -32,6 +32,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` · `Variable.create` · `Variable.delete` · `Variable.update` |
 | `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
+| `DependencyKind` | `dependency` · `dev` · `optional` · `peer` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
 | `FlagType` | `boolean` · `variant` |
@@ -549,6 +550,67 @@ table `dashboard_widget` · db `main` · gate `2.4.4.4`
 @@deny('update', !check(app, tenancy))
 @@deny('update', !check(dashboard, tenancy))
 @@deny('update', !check(server, tenancy))
+```
+
+### `Dependency`
+
+table `dependency` · db `main` · gate `2.4.4.4`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `advisories` | `Json` | no | `'{}'` | @system |
+| `checkedAt` | `DateTime` | yes | — | @system |
+| `checkError` | `String` | yes | — | @system |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deprecated` | `String` | yes | — | @system |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `latest` | `String` | yes | — | @system |
+| `name` | `String` | no | — | **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `uses` | `DependencyUse[]` | — | — | relation |
+| `workspace` | `Workspace` | — | — | relation |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(name, workspaceId)
+@@index(workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+```
+
+### `DependencyUse`
+
+table `dependency_use` · db `main` · gate `2.4.4.4`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `declared` | `String` | no | — | **required on write** |
+| `dependency` | `Dependency` | — | — | relation |
+| `dependencyId` | `String` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `installed` | `String` | yes | — | — |
+| `kind` | `DependencyKind` | no | — | **required on write** |
+| `member` | `String` | no | — | **required on write** |
+| `memberPath` | `String` | no | `''` | — |
+| `observedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `project` | `Project` | — | — | relation |
+| `projectId` | `String` | no | — | **required on write** |
+| `published` | `Boolean` | no | `0` | — |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(dependencyId, kind, member, projectId)
+@@index(dependencyId)
+@@index(projectId)
+@@index(workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `Deployment`
@@ -1272,6 +1334,7 @@ table `project` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
+| `dependencyUses` | `DependencyUse[]` | — | — | relation |
 | `description` | `String` | yes | — | — |
 | `environments` | `Environment[]` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |

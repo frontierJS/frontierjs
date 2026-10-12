@@ -39,6 +39,7 @@ const PROPS = {
   'display/Bar':         { value: 40 },
   'display/Chart':       { rows: [{ m: 'Jan', v: 3 }], x: 'm', y: 'v' },
   'display/Breadcrumbs': { items: [{ label: 'Home', href: '/' }, { label: 'Orders' }] },
+  'display/BulkBar':     { selection: { count: 2 } },   // a selection's one read here; at 0 it renders nothing
   'display/Kbd':         { keys: ['⌘', 'K'] },
   'display/Pagination':  { total: 100, page: 2, perPage: 10 },
   'display/Sparkline':   { data: [1, 4, 2, 8, 5] },

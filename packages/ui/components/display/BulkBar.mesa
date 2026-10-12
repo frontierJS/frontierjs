@@ -1,0 +1,35 @@
+<script>
+  // BulkBar.mesa
+  // The strip over a list that says how many rows are ticked and holds what
+  // can be done to all of them at once (FJS-D671). `selection` is a
+  // `createSelection()` from `@frontierjs/ui/selection`; the actions are the
+  // children, and Clear is always the last one.
+  //
+  // It renders NOTHING while the selection is empty, so a screen places it
+  // unconditionally. The count is `selection.count`, every key held, rows
+  // scrolled, filtered or paged out of view included, which is what an action
+  // reading `selection.keys` will touch.
+  //
+  // Usage:
+  //   <BulkBar selection={picked}>
+  //     <Button size="sm" onclick={() => resend(picked.keys)}>Resend</Button>
+  //   </BulkBar>
+  //
+  // A `.bar`, not a `.toolbar`: a toolbar promises arrow-key movement between
+  // its controls, and this one leaves every button its own tab stop.
+
+  import Button from '../forms/Button.mesa'
+
+  export let selection
+  export let size = 'sm'   // the Clear button's, to match the actions beside it
+</script>
+
+{#if selection.count}
+  <div class="bar" {class} {...$attributes}>
+    <span class="text-sm" role="status" data-bulk-count><strong>{selection.count}</strong> selected</span>
+    <div class="cluster">
+      <slot />
+      <Button {size} variant="ghost" data-bulk-clear onclick={() => selection.clear()}>Clear</Button>
+    </div>
+  </div>
+{/if}

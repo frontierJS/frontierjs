@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-60 models · 1 view · 61 gated · 0 unrestricted
-46 with row policies · 17 with protected fields · 31 declared moves · 13 @system · 0 @seals
+62 models · 1 view · 63 gated · 0 unrestricted
+48 with row policies · 18 with protected fields · 31 declared moves · 13 @system · 0 @seals
 ```
 
 ## Gates
@@ -37,6 +37,8 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Dashboard` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DashboardWidget` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `Dependency` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `DependencyUse` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `Deployment` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DeploymentStep` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `DiskUsage` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -201,6 +203,22 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **delete** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
+
+### `Dependency`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `DependencyUse`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Deployment`
 
@@ -516,6 +534,11 @@ rather than refusing the row.
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
+| `Dependency` | `latest` | `@system` |
+| `Dependency` | `deprecated` | `@system` |
+| `Dependency` | `advisories` | `@system` |
+| `Dependency` | `checkedAt` | `@system` |
+| `Dependency` | `checkError` | `@system` |
 | `Flow` | `currentVersion` | `@allow('write', status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
 | `Invitation` | `token` | `@guarded` |

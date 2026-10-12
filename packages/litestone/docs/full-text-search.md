@@ -116,6 +116,15 @@ the start of a word. A last word ending in punctuation is kept whole, since
 `tokenize: trigram` a word already matches anywhere inside one, so `prefix`
 changes nothing there.
 
+A trigram index holds three-character pieces, so it has nothing to look up for a
+word of one or two — `jo`, `Li`, a state code, what a person types first. Such a
+word is found by a scan of the indexed columns instead, with the same answer a
+substring match gives: case folded beyond ASCII, a `%`, `_`, `*` or `?` taken as
+the character itself (`FJS-2332`). Beside a longer word it is one more required
+word and the results still rank; a text of only short words has no BM25 to rank
+by, so `_rank` is `null`, rows come back in table order, and `highlight` marks
+nothing.
+
 `raw: true` hands the text to FTS5 as written — phrases, `foo*`, `AND`/`OR`/`NOT`,
 `NEAR`, column filters. It is for text your code writes, never for what a person
 typed: a syntax error is thrown as one, and its message names the term.
@@ -166,7 +175,7 @@ Litestone will not create the virtual table or triggers — it only exposes `sea
 
 ## Notes
 
-- FTS5 is always case-insensitive for ASCII; `@@fts([…], tokenize: porter)` picks the tokenizer — `unicode61` (the default), `ascii`, `porter` or `trigram`. A trigram index matches nothing for a term under three characters (`FJS-2332`)
+- FTS5 is always case-insensitive for ASCII; `@@fts([…], tokenize: porter)` picks the tokenizer — `unicode61` (the default), `ascii`, `porter` or `trigram`.
 - Soft-deleted rows are excluded from search results automatically
 - Row-level policies apply to search results — filtered in SQL, not JS
 - FTS index is updated synchronously via triggers on every write

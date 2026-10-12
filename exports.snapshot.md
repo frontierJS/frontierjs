@@ -411,7 +411,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `package.json` `stores/` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `package.json` `selection.js` `stores/` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -420,11 +420,13 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls.js` | `controls.js` | yes |
 | exports | `./dnd.js` | `dnd.js` | yes |
 | exports | `./dnd` | `dnd.js` | yes |
+| exports | `./selection.js` | `selection.js` | yes |
+| exports | `./selection` | `selection.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 79 files |
-| exports | `./components/*` | `components/*.mesa` | 79 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 80 files |
+| exports | `./components/*` | `components/*.mesa` | 80 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

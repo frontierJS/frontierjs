@@ -80,6 +80,18 @@ if (serveOnly) {
        *  screen goes on answering in the zone it was mounted in. The teardown
        *  clears it, so a spec cannot leak a zone into the next one. */
       timezone: (id) => browser.cmd('Emulation.setTimezoneOverride', { timezoneId: id ?? '' }),
+      /** One accessibility property of the element `sel` names, as Chrome's
+       *  tree reports it — `axProp('[data-all]', 'checked')` is `'mixed'` for
+       *  an indeterminate box. A native control's state is mapped by the
+       *  browser, so what a screen reader is told is not in the DOM. */
+      axProp: async (sel, name) => {
+        const { root } = await browser.cmd('DOM.getDocument', { depth: 0 })
+        const { nodeId } = await browser.cmd('DOM.querySelector', { nodeId: root.nodeId, selector: sel })
+        if (!nodeId) throw new Error('axProp: no element for ' + sel)
+        const { nodes } = await browser.cmd('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false })
+        const prop = nodes[0]?.properties?.find((p) => p.name === name)
+        return prop ? prop.value.value : null
+      },
       /** Press at `from`, move in `steps` to `to`, and release unless
        *  `release: false` — both a selector (its center) or `{x, y}`.
        *

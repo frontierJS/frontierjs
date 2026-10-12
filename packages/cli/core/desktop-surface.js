@@ -381,7 +381,11 @@ export function desktopMainRs({ productName = 'app' } = {}) {
 //
 // A release build reads neither variable and registers no command, so a
 // shipped app cannot be scripted or repointed from its environment.
+//
+// A webview with no new-window handler drops every target=_blank link without
+// a sound, so each one goes to the system browser instead.
 
+use tauri::webview::NewWindowResponse;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(debug_assertions)]
@@ -418,6 +422,28 @@ fn dev_url() -> Option<tauri::Url> {
     }
 }
 
+// Only http(s): anything else would hand the OS opener a file or a scheme
+// handler the page chose.
+fn open_in_browser(url: &tauri::Url) {
+    if !matches!(url.scheme(), "http" | "https") {
+        return;
+    }
+    let (cmd, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
+        ("open", &[])
+    } else if cfg!(windows) {
+        ("rundll32", &["url.dll,FileProtocolHandler"])
+    } else {
+        ("xdg-open", &[])
+    };
+    match std::process::Command::new(cmd).args(args).arg(url.as_str()).spawn() {
+        // Reaped on its own thread, or every click leaves a zombie behind.
+        Ok(mut child) => {
+            std::thread::spawn(move || child.wait());
+        }
+        Err(e) => eprintln!("{cmd} could not open {url}: {e}"),
+    }
+}
+
 fn main() {
     let probe = probe_script();
     let page = match dev_url() {
@@ -437,7 +463,11 @@ fn main() {
         .setup(move |app| {
             let mut window = WebviewWindowBuilder::new(app, "main", page)
                 .title(${JSON.stringify(productName)})
-                .inner_size(1280.0, 900.0);
+                .inner_size(1280.0, 900.0)
+                .on_new_window(|url, _| {
+                    open_in_browser(&url);
+                    NewWindowResponse::Deny
+                });
             if let Some(script) = &probe {
                 window = window.initialization_script(script);
             }

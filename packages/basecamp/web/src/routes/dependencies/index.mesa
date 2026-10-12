@@ -1,0 +1,209 @@
+---
+title: Dependencies
+---
+<script>
+  // The third-party packages a project's codebase depends on, each with the
+  // version installed, the latest the registry has, and whether it needs an
+  // update — graded on the server (`dependencies.report`), so this screen
+  // decides nothing about a version.
+  //
+  // A MIRROR with two clocks, and the header carries both: when the codebase
+  // last pushed, and the OLDEST registry answer. An empty list means *no
+  // dependencies* or *never pushed*, and only the first clock can tell those
+  // apart.
+  import { session } from '../../session.js'
+  import { ago }     from '../../datetime.js'
+  import { dependencies } from '../../resources/Dependency.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Switch     from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: session.workspaceId
+
+  let report    = null
+  let projectId = ''
+  let error     = null
+  let notice    = null
+  let loading   = true
+  let checking  = false
+  let search    = ''
+  let status    = ''
+  // The framework's own packages by default: in the framework's repo the apps
+  // beside it (example, basecamp, the website) declare most of the names.
+  let publishedOnly = true
+
+  // The status vocabulary is the server's; this is only how each one reads.
+  const STATUS = [
+    { key: 'vulnerable', label: 'Vulnerable',  tone: 'danger',  sub: 'an advisory names the installed version' },
+    { key: 'deprecated', label: 'Deprecated',  tone: 'warning', sub: 'the registry says stop using it' },
+    { key: 'major',      label: 'Major behind', tone: 'warning', sub: 'an upgrade that can break' },
+    { key: 'minor',      label: 'Minor behind', tone: 'info',    sub: 'new features, same contract' },
+    { key: 'patch',      label: 'Patch behind', tone: 'info',    sub: 'fixes only' },
+    { key: 'unknown',    label: 'Unknown',     tone: 'muted',   sub: 'no comparable version' },
+    { key: 'unchecked',  label: 'Unchecked',   tone: 'muted',   sub: 'no registry answer yet' },
+    { key: 'current',    label: 'Current',     tone: 'success', sub: 'on latest' },
+  ]
+  const STATUS_OF = Object.fromEntries(STATUS.map(s => [s.key, s]))
+
+  async function load() {
+    error = null; loading = true
+    try {
+      report = await dependencies.service.invoke('report', null, projectId ? { project: projectId } : {})
+      if (report.project) projectId = report.project.id
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function checkNow() {
+    checking = true; error = null; notice = null
+    try {
+      await dependencies.service.invoke('check', null, {})
+      notice = 'Asked the registry again. The answers land in a minute or so — reload to see them.'
+    } catch (e) {
+      error = e.message
+    } finally {
+      checking = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => { projectId = ''; load() }
+
+  $: scoped = (report?.packages ?? []).filter(p => !publishedOnly || p.published)
+  $: shown  = scoped.filter(p =>
+    (!status || p.status === status) &&
+    (!search || p.name.toLowerCase().includes(search.toLowerCase())))
+  const countOf = (key) => scoped.filter(p => p.status === key).length
+
+  // Who declares it, folded to one line per member: a package three apps
+  // declare is three lines, and the kind only when it is not a plain dependency.
+  const declaredBy = (p) => p.uses
+    .filter(u => !publishedOnly || u.published)
+    .map(u => `${u.member}${u.kind === 'dependency' ? '' : ` (${u.kind})`} ${u.declared}`)
+
+  const COLUMNS = [
+    { name: 'name',      label: 'Package' },
+    { name: 'installed', label: 'Installed' },
+    { name: 'latest',    label: 'Latest' },
+    { name: 'status',    label: 'Status' },
+    { name: 'by',        label: 'Declared by' },
+  ]
+</script>
+
+<div class="section-header">
+  <h1>Dependencies</h1>
+  <span class="cluster">
+    {#if report?.project}
+      <span class="text-sm text-muted" id="dependencies-freshness">
+        pushed {ago(report.project.pushedAt)} ·
+        {report.checkedAt ? `checked ${ago(report.checkedAt)}` : 'not all checked yet'}
+      </span>
+    {/if}
+    <Button variant="outlined" disabled={checking || !report?.project} onclick={checkNow}>
+      {checking ? 'Asking…' : 'Check now'}
+    </Button>
+  </span>
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+{#if notice}
+  <article class="alert info" id="screen-notice">
+    <div class="alert-content">{notice}</div>
+  </article>
+{/if}
+
+{#if loading && !report}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !report?.projects?.length}
+  <EmptyState title="Nothing pushed yet">
+    A codebase sends its own dependency list, so this works wherever Basecamp runs. From the
+    repository's root, with an API key for this workspace:
+    <pre><code>BASECAMP_URL=… BASECAMP_API_KEY=… fli ws:deps --push --slug &lt;slug&gt; --create</code></pre>
+  </EmptyState>
+{:else}
+  <div class="cluster">
+    {#if report.projects.length > 1}
+      <label class="visually-hidden" for="dependencies-project">Project</label>
+      <Select id="dependencies-project" value={projectId} placeholder="Pick a project…"
+              options={report.projects.map(p => ({ value: p.id, label: `${p.name} · ${p.uses} declarations` }))}
+              onchange={(e) => { projectId = e.target.value; status = ''; load() }} />
+    {:else}
+      <h2 class="h4">{report.projects[0].name}</h2>
+    {/if}
+    <Switch id="dependencies-published" label="Published packages only" checked={publishedOnly}
+            onchange={(checked) => publishedOnly = checked} />
+  </div>
+
+  {#if report.project}
+    <div class="tiles" style="--tile-min: 10rem" id="dependencies-tiles">
+      {#each STATUS.filter(s => countOf(s.key)) as s (s.key)}
+        <StatCard label={s.label} value={countOf(s.key)} sub={s.sub} tone={s.tone}
+                  data-status={s.key} aria-pressed={status === s.key}
+                  onclick={() => status = status === s.key ? '' : s.key} />
+      {/each}
+    </div>
+
+    <div class="cluster">
+      <label class="visually-hidden" for="dependencies-search">Search packages</label>
+      <Input id="dependencies-search" placeholder="Search packages…" value={search}
+             oninput={(e) => search = e.target.value} />
+      <span class="text-sm text-muted">{shown.length} of {scoped.length} packages</span>
+      {#if status}
+        <Button variant="ghost" onclick={() => status = ''}>Show every status</Button>
+      {/if}
+    </div>
+
+    {#if !shown.length}
+      <EmptyState title="No package matches">Clear the search or the status to see the rest.</EmptyState>
+    {:else}
+      <Table columns={COLUMNS} rows={shown} striped hover={false} id="dependencies-list">
+        {#snippet row(p)}
+          <tr data-package={p.name}>
+            <td><code>{p.name}</code></td>
+            <td class="text-sm">
+              {#each p.installed as v}<code>{v}</code> {/each}
+              {#if !p.installed.length}<span class="text-muted">not installed</span>{/if}
+            </td>
+            <td class="text-sm">
+              {#if p.latest}<code>{p.latest}</code>{:else}<span class="text-muted">—</span>{/if}
+            </td>
+            <td>
+              <Pill tone={STATUS_OF[p.status]?.tone ?? 'muted'}>{STATUS_OF[p.status]?.label ?? p.status}</Pill>
+              {#if p.bump && p.bump !== 'current' && !p.inRange}
+                <!-- A reinstall will not reach latest; a manifest has to change. -->
+                <span class="text-sm text-muted">range excludes it</span>
+              {/if}
+              {#each p.advisories as a}
+                <div class="text-sm">
+                  <a href={`https://osv.dev/vulnerability/${a.id}`} target="_blank" rel="noreferrer">{a.id}</a>
+                  {a.severity ? `· ${a.severity.toLowerCase()}` : ''} {a.summary ? `· ${a.summary}` : ''}
+                </div>
+              {/each}
+              {#if p.deprecated}<div class="text-sm text-muted">{p.deprecated}</div>{/if}
+              {#if p.checkError}<div class="text-sm text-muted">{p.checkError}</div>{/if}
+            </td>
+            <td class="text-sm text-muted">
+              {#each declaredBy(p) as line}<div>{line}</div>{/each}
+            </td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+  {:else}
+    <p class="text-sm text-muted">Pick a project to see its packages.</p>
+  {/if}
+{/if}

@@ -344,6 +344,10 @@ enum BackupKind        { manual scheduled }
 // screen nudges towards the second one.
 enum BackupDestination { local s3 }
 
+// Which manifest field declared a dependency — `dependencies`, `devDependencies`,
+// `peerDependencies`, `optionalDependencies`.
+enum DependencyKind { dependency dev peer optional }
+
 // What a person may be told about, and how. Seven kinds and two transports —
 // `NotificationPreference` is one row per (person, kind), so a transport is a
 // column rather than a third key: adding a third transport is a column, where
@@ -1322,6 +1326,9 @@ model Project {
   deletedAt   DateTime?
 
   environments Environment[]
+  // A mirror the next push rebuilds, so archiving the project removes it
+  // rather than keeping rows nothing can restore a reason for.
+  dependencyUses DependencyUse[] @hardDelete
 
   @@gate("2.4.4.5")
   // Scoped by the tenancy block at the top of this file. Every path that
@@ -2524,6 +2531,89 @@ model RegistryImage {
   @@unique([workspaceId, repository, tag])
   @@index([workspaceId])
   @@index([workspaceId, repository])
+}
+
+// ============================================================
+// DEPENDENCIES
+// ============================================================
+// The third-party packages a codebase depends on: what its manifests declare
+// and its lockfile installed, pushed by `fli ws:deps --push`, and what the npm
+// registry and OSV say about each name, written by the `dependency-check` job.
+//
+// MIRRORED, like `RegistryImage`. A Basecamp deployed somewhere has no checkout
+// to read, so the codebase pushes its own facts and `observedAt` says when.
+//
+// Two models because the halves have two writers and two scopes. A declaration
+// belongs to one Project and is the push's to claim. What a registry says about
+// a name is the same fact for every project in the workspace, so it is looked
+// up once per name, and only the job writes it.
+
+// One package name, as a registry knows it.
+model Dependency {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // The registry name, scope included. 214 is npm's own limit.
+  name        String    @trim @length(1, 214) @immutable
+
+  // Every column below is the registry's answer at `checkedAt`, and @system: a
+  // push names a package and nothing more, so no manifest can claim one current.
+  latest      String?   @system
+  // npm's deprecation message on `latest`; null when it is not deprecated.
+  deprecated  String?   @system
+  // Advisories per INSTALLED version — `{ "4.17.15": [{ id, summary, severity }] }`.
+  // Keyed by version because an advisory is about a version and two projects
+  // can install two of them.
+  advisories  Json      @default("{}") @system
+  checkedAt   DateTime? @system
+  // Why the last check could not answer. A failed check keeps the previous
+  // answer, so this is what says it is old.
+  checkError  String?   @system
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  uses        DependencyUse[]
+
+  // A viewer reads; a developer's push creates the name. The registry columns
+  // are @system whatever the level.
+  @@gate("2.4.4.4")
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+// One declaration of a Dependency by one member of a project's codebase.
+model DependencyUse {
+  id           String         @id @default(uuid())
+  workspaceId  String
+  projectId    String         @immutable
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dependencyId String         @immutable
+  dependency   Dependency     @relation(fields: [dependencyId], references: [id], onDelete: Cascade)
+
+  // The member declaring it: its package name, and its path from the root
+  // ('' is the root itself).
+  member       String         @trim @length(1, 214)
+  memberPath   String         @trim @length(0, 300) @default("")
+  // The member is published. In the framework's repo this is what separates
+  // the framework's own dependencies from the apps that live beside it.
+  published    Boolean        @default(false)
+
+  kind         DependencyKind
+  // The range the manifest wrote, verbatim.
+  declared     String         @trim @length(1, 200)
+  // What the lockfile resolved; null when nothing installed it.
+  installed    String?        @trim @length(0, 100)
+
+  // The push that last reported this declaration.
+  observedAt   DateTime       @default(now())
+
+  @@gate("2.4.4.4")
+  @@unique([projectId, member, dependencyId, kind])
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([dependencyId])
 }
 
 // ============================================================

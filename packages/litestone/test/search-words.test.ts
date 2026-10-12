@@ -101,16 +101,102 @@ describe('search() refuses by name', () => {
 })
 
 describe('ftsWords', () => {
+  const match = (text: string, opts?: object) => ftsWords(text, opts)?.match
   it('quotes each word, keeps a typed phrase, drops a lone quote', () => {
-    expect(ftsWords('mini-redis c++')).toBe('"mini-redis" "c++"')
-    expect(ftsWords('"new york" pizza')).toBe('"new york" "pizza"')
-    expect(ftsWords('Ruth "Ames')).toBe('"Ruth" "Ames"')
+    expect(match('mini-redis c++')).toBe('"mini-redis" "c++"')
+    expect(match('"new york" pizza')).toBe('"new york" "pizza"')
+    expect(match('Ruth "Ames')).toBe('"Ruth" "Ames"')
     expect(ftsWords(' " ')).toBeNull()
   })
 
   it('prefix marks only an open last word', () => {
-    expect(ftsWords('mini re', { prefix: true })).toBe('"mini" "re"*')
-    expect(ftsWords('c++', { prefix: true })).toBe('"c++"')
-    expect(ftsWords('"mini re"', { prefix: true })).toBe('"mini re"')
+    expect(match('mini re', { prefix: true })).toBe('"mini" "re"*')
+    expect(match('c++', { prefix: true })).toBe('"c++"')
+    expect(match('"mini re"', { prefix: true })).toBe('"mini re"')
+  })
+
+  it('under trigram a word under three characters is a scan, and its letters a case class each', () => {
+    expect(ftsWords('jo smith', { trigram: true })).toEqual({ match: '"smith"', scan: ['*[jJ][oO]*'] })
+    expect(ftsWords('Ö', { trigram: true })).toEqual({ match: null, scan: ['*[Öö]*'] })
+    expect(ftsWords('*? [', { trigram: true })).toEqual({ match: null, scan: ['*[*][?]*', '*[[]*'] })
+    expect(ftsWords('jo', { trigram: false })).toEqual({ match: '"jo"', scan: [] })
+  })
+
+  it('under trigram prefix does not move to the word before a short last word', () => {
+    expect(match('smith jo', { trigram: true, prefix: true })).toBe('"smith"')
+  })
+})
+
+// FJS-2332 — under `tokenize: trigram` an index entry is three characters, so
+// `jo`, `Li` or a state code matched nothing and answered an empty list, 200,
+// where the LIKE the index replaced found hundreds. A short word is now a GLOB
+// over every indexed column. The email column is @map'd because the GLOB names
+// the index's columns, and those are column names, not field names.
+describe('search() under trigram, a word shorter than three characters', () => {
+  let db: any
+  beforeAll(async () => {
+    db = await createClient({ db: ':memory:', schema: `
+      model Contact {
+        id        Int       @id @default(autoincrement())
+        name      String
+        email     String    @map("email_address")
+        deletedAt DateTime?
+        @@softDelete
+        @@fts([name, email], tokenize: trigram)
+      }
+    ` })
+    await db.contact.createMany({ data: [
+      { name: 'Jo Smith',   email: 'jo@x.com'  },
+      { name: 'John Li',    email: 'jl@y.org'  },
+      { name: 'Anne Ng',    email: 'a_n@z.com' },
+      { name: 'Bob Stars',  email: 'b*b@q.com' },
+      { name: 'Émile Jöns', email: 'e@x.com'   },
+      { name: 'Joan Gone',  email: 'jg@x.com'  },
+    ] })
+    await db.contact.remove({ where: { name: 'Joan Gone' } })
+  })
+  afterAll(() => db.$close())
+
+  const names = async (q: string, opts?: object) =>
+    (await db.contact.search(q, { limit: 50, ...opts })).map((r: any) => r.name).sort()
+
+  it('finds what a substring search finds, in any indexed column', async () => {
+    expect(await names('jo')).toEqual(['Jo Smith', 'John Li'])
+    expect(await names('Li')).toEqual(['John Li'])
+    expect(await names('ng')).toEqual(['Anne Ng'])
+    expect(await names('jl')).toEqual(['John Li'])        // the @map'd column alone
+  })
+
+  it('a soft-deleted row is not found', async () => {
+    expect(await names('jg')).toEqual([])
+    expect(await names('jg', { withDeleted: true })).toEqual(['Joan Gone'])
+  })
+
+  it('folds case beyond ASCII, as the tokenizer does', async () => {
+    expect(await names('JÖ')).toEqual(['Émile Jöns'])
+    expect(await names('é')).toEqual(['Émile Jöns'])
+  })
+
+  it('a wildcard typed is a character to find', async () => {
+    expect(await names('_')).toEqual(['Anne Ng'])
+    expect(await names('*')).toEqual(['Bob Stars'])
+    expect(await names('?')).toEqual([])
+  })
+
+  it('is required alongside the longer words, which still rank', async () => {
+    expect(await names('jo smith')).toEqual(['Jo Smith'])
+    expect(await names('li john')).toEqual(['John Li'])
+    const [hit] = await db.contact.search('smith jo')
+    expect(typeof hit._rank).toBe('number')
+  })
+
+  it('alone it has no rank, and pages in row order without repeating a row', async () => {
+    const all = await db.contact.search('o', { limit: 50 })
+    expect(all.map((r: any) => r._rank)).toEqual(all.map(() => null))
+    expect(all.map((r: any) => r.name)).toEqual(['Jo Smith', 'John Li', 'Anne Ng', 'Bob Stars', 'Émile Jöns'])   // every .com and .org
+    const paged = []
+    for (let offset = 0; offset < all.length; offset++)
+      paged.push(...(await db.contact.search('o', { limit: 1, offset })).map((r: any) => r.name))
+    expect(paged).toEqual(all.map((r: any) => r.name))
   })
 })

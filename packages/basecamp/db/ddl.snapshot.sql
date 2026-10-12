@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 60 models · 2 databases
+-- 62 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -708,6 +708,22 @@ CREATE TABLE IF NOT EXISTS "registry_image" (
 CREATE INDEX IF NOT EXISTS "idx_registry_image_workspaceId" ON "registry_image" ("workspaceId");
 CREATE INDEX IF NOT EXISTS "idx_registry_image_workspaceId_repository" ON "registry_image" ("workspaceId", "repository");
 
+CREATE TABLE IF NOT EXISTS "dependency" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "latest" TEXT,
+  "deprecated" TEXT,
+  "advisories" TEXT NOT NULL DEFAULT '{}',
+  "checkedAt" TEXT,
+  "checkError" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("workspaceId", "name"),
+  FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_dependency_workspaceId" ON "dependency" ("workspaceId");
+
 CREATE TABLE IF NOT EXISTS "run_step" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "runId" TEXT NOT NULL,
@@ -886,6 +902,27 @@ CREATE TABLE IF NOT EXISTS "alert_event" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_alert_event_ruleId" ON "alert_event" ("ruleId");
 CREATE INDEX IF NOT EXISTS "idx_alert_event_status" ON "alert_event" ("status");
+
+CREATE TABLE IF NOT EXISTS "dependency_use" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "projectId" TEXT NOT NULL,
+  "dependencyId" TEXT NOT NULL,
+  "member" TEXT NOT NULL,
+  "memberPath" TEXT NOT NULL DEFAULT '',
+  "published" INTEGER NOT NULL DEFAULT 0,
+  "kind" TEXT NOT NULL,
+  "declared" TEXT NOT NULL,
+  "installed" TEXT,
+  "observedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('dependency', 'dev', 'peer', 'optional')),
+  UNIQUE ("projectId", "member", "dependencyId", "kind"),
+  FOREIGN KEY ("projectId") REFERENCES "project" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("dependencyId") REFERENCES "dependency" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_dependency_use_workspaceId" ON "dependency_use" ("workspaceId");
+CREATE INDEX IF NOT EXISTS "idx_dependency_use_projectId" ON "dependency_use" ("projectId");
+CREATE INDEX IF NOT EXISTS "idx_dependency_use_dependencyId" ON "dependency_use" ("dependencyId");
 
 CREATE TABLE IF NOT EXISTS "app" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

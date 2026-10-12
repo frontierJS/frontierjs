@@ -222,6 +222,15 @@ describe('what dev:desktop reads', () => {
     expect(fn.indexOf('FJS_DESKTOP_URL')).toBeGreaterThan(guard)
   })
 
+  // A webview with no new-window handler drops a target=_blank click silently,
+  // which is every outward link on a page the shell wraps.
+  test('the shell hands a new-window request to the system browser, http(s) only', () => {
+    const rs = desktopMainRs()
+    expect(rs).toMatch(/\.on_new_window\(\|url, _\| \{\s*open_in_browser\(&url\);\s*NewWindowResponse::Deny/)
+    const fn = rs.match(/fn open_in_browser\([\s\S]*?\n}\n/)?.[0] ?? ''
+    expect(fn).toContain('matches!(url.scheme(), "http" | "https")')
+  })
+
   test('the screens\' dev server is the wrapped surface\'s row, script and port', () => {
     const root = appRoot('dev-row', {
       'web/config/vite.config.js': 'export default {}\n',

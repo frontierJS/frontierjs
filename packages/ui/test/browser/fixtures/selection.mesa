@@ -1,0 +1,58 @@
+<script>
+  // selection.mesa — one createSelection over two kinds of row in two groups,
+  // the shape of ELA's inbox column (FJS-2003): a message 7 and a ticket 7,
+  // a whole-list header box, a header box per group, and a BulkBar whose one
+  // action publishes the keys it was handed and clears.
+  //
+  // `[data-held]` is a box held mixed by a caller that ignores the press.
+  // `hideB` takes group b off screen, so a spec can show a key outliving its
+  // row's visibility. The selection is on `window` so a spec reads the live
+  // object rather than a rendering of it.
+  import { createSelection } from '@frontierjs/ui/selection'
+  import Checkbox from '../../../components/forms/Checkbox.mesa'
+  import BulkBar  from '../../../components/display/BulkBar.mesa'
+
+  const rows = [
+    { kind: 'message', id: 7, g: 'a' },
+    { kind: 'task',    id: 7, g: 'a' },
+    { kind: 'message', id: 8, g: 'b' },
+    { kind: 'task',    id: 9, g: 'b' },
+  ]
+  const keyOf = (r) => r.kind + ':' + r.id
+  const picked = createSelection(keyOf)
+  window.__picked = picked
+
+  let hideB = false
+  let acted = ''
+  const shown  = hideB ? rows.filter(r => r.g !== 'b') : rows
+  const groups = ['a', 'b'].filter(g => !hideB || g !== 'b')
+  const inGroup = (g) => rows.filter(r => r.g === g)
+</script>
+
+<Checkbox label="All" data-all
+          checked={picked.stateOf(shown) === 'all'}
+          indeterminate={picked.stateOf(shown) === 'some'}
+          onchange={(on) => picked.set(shown, on)} />
+
+{#each groups as g (g)}
+  <section data-group={g}>
+    <Checkbox label={'Group ' + g} data-group-all={g}
+              checked={picked.stateOf(inGroup(g)) === 'all'}
+              indeterminate={picked.stateOf(inGroup(g)) === 'some'}
+              onchange={(on) => picked.set(inGroup(g), on)} />
+    {#each inGroup(g) as r (keyOf(r))}
+      <Checkbox label={r.kind + ' ' + r.id} data-row={keyOf(r)} checked={picked.has(r)} onchange={() => picked.toggle(r)} />
+    {/each}
+  </section>
+{/each}
+
+<button type="button" id="hide-b" on:click={() => { hideB = !hideB }}>Hide b</button>
+
+<BulkBar selection={picked} data-bar>
+  <button type="button" class="btn" data-act on:click={() => { acted = picked.keys.join(','); picked.clear() }}>Act</button>
+</BulkBar>
+
+<output id="acted">{acted}</output>
+
+<!-- A mixed box whose caller does not act on a press: it must stay mixed. -->
+<Checkbox label="Held" data-held indeterminate={true} />

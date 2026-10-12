@@ -222,6 +222,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           decides everything a token cannot (`FJS-032`)
           core/mailer.ts is the one answer to whether this app can mail at all;
           no provider is a supported state and every caller says so
+          core/dependencies.ts is the dependency verdict (`statusOf`, pure)
+          and the npm/OSV lookup over two keyless conduit targets.
+          services/dependencies/ takes `fli ws:deps --push` (`ingest`, the
+          whole truth for one Project) and jobs/dependency-check writes the
+          `@system` registry columns — a mirror, so a hosted Basecamp needs
+          no checkout
           core/account-mail.ts delivers auth's two links — password reset and
           email verification — to SPA screens; with no mailer it logs the link
           outside production, and it never throws (a failure would tell a

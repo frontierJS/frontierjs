@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-100 definitions · 60 models · 1 view · 39 enums · 0 other
+103 definitions · 62 models · 1 view · 40 enums · 0 other
 ```
 
 ## Definitions
@@ -81,6 +81,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Blueprint` | model |
 | `BlueprintParam` | model |
 | `RegistryImage` | model |
+| `Dependency` | model |
+| `DependencyUse` | model |
 | `Backup` | model |
 | `HubConfig` | model |
 | `Notification` | model |
@@ -122,6 +124,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ParamGenerator` | enum |
 | `BackupKind` | enum |
 | `BackupDestination` | enum |
+| `DependencyKind` | enum |
 | `NotificationContext` | enum |
 | `NotificationKind` | enum |
 | `Capability` | enum |
@@ -167,6 +170,7 @@ validates, and a select that silently drops an option.
 - `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
 - `BackupKind` — `manual`, `scheduled`
 - `BackupDestination` — `local`, `s3`
+- `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`
 - `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `member_joined`, `job_failed`, `weekly_digest`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
@@ -730,6 +734,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `environments` — hasMany `Environment`
+- relation `dependencyUses` — hasMany `DependencyUse`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1326,6 +1331,47 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `observedAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `repository`, `tag`, `digest` · not accepted — `id`
+
+### `Dependency`
+
+- gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
+- relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
+- relation `uses` — hasMany `DependencyUse`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 214` `x-transforms` | — |
+| `latest` | `string`? | — | — | `x-litestone-kind` | — |
+| `deprecated` | `string`? | — | — | `x-litestone-kind` | — |
+| `advisories` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `checkedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `checkError` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `name` · not accepted — `id`
+
+### `DependencyUse`
+
+- gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
+- relation `project` — belongsTo `Project` via `projectId` · on delete Cascade
+- relation `dependency` — belongsTo `Dependency` via `dependencyId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `projectId` | `string` | yes | — | — | — |
+| `dependencyId` | `string` | yes | — | — | — |
+| `member` | `string` | yes | — | `minLength: 1` `maxLength: 214` `x-transforms` | — |
+| `memberPath` | `string` = `""` | — | — | `minLength: 0` `maxLength: 300` `x-transforms` | — |
+| `published` | `boolean` = `false` | — | — | — | — |
+| `kind` | `DependencyKind` | yes | — | — | — |
+| `declared` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `installed` | `string`? | — | — | `minLength: 0` `maxLength: 100` `x-transforms` | — |
+| `observedAt` | `string` | — | — | `format: "date-time"` | — |
+
+**On create**: required — `projectId`, `dependencyId`, `member`, `kind`, `declared` · not accepted — `id`
 
 ### `Backup`
 

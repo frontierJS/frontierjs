@@ -98,6 +98,8 @@ export type BackupKind = 'manual' | 'scheduled'
 
 export type BackupDestination = 'local' | 's3'
 
+export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
+
 export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace'
 
 export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'member_joined' | 'job_failed' | 'weekly_digest'
@@ -3969,6 +3971,128 @@ export type RegistryImageOrderBy =
   | { [K in keyof Omit<RegistryImage, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<RegistryImage, never>]?: OrderDir }>
 
+// ─── Dependency ──────────────────────────────────────────────────
+
+export interface Dependency {
+  id: string
+  workspaceId: string
+  name: string
+  latest?: string | null
+  deprecated?: string | null
+  advisories: unknown
+  checkedAt?: string | null
+  checkError?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DependencyCreate {
+  id?: string
+  workspaceId: string
+  name: string
+  latest?: string | null
+  deprecated?: string | null
+  advisories?: unknown
+  checkedAt?: string | null
+  checkError?: string | null
+}
+
+export interface DependencyUpdate {
+  id?: string
+  workspaceId?: string
+  name?: string
+  latest?: string | null
+  deprecated?: string | null
+  advisories?: unknown
+  checkedAt?: string | null
+  checkError?: string | null
+}
+
+export interface DependencyWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  latest?: string | WhereOp<string> | null
+  deprecated?: string | WhereOp<string> | null
+  advisories?: unknown | WhereOp<unknown> | null
+  checkedAt?: string | WhereOp<string> | null
+  checkError?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  AND?: DependencyWhere[]
+  OR?:  DependencyWhere[]
+  NOT?: DependencyWhere
+}
+
+export type DependencyOrderBy =
+  | { [K in keyof Omit<Dependency, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Dependency, never>]?: OrderDir }>
+
+// ─── DependencyUse ───────────────────────────────────────────────
+
+export interface DependencyUse {
+  id: string
+  workspaceId: string
+  projectId: string
+  dependencyId: string
+  member: string
+  memberPath: string
+  published: boolean
+  kind: DependencyKind
+  declared: string
+  installed?: string | null
+  observedAt: string
+}
+
+export interface DependencyUseCreate {
+  id?: string
+  workspaceId: string
+  projectId: string
+  dependencyId: string
+  member: string
+  memberPath?: string
+  published?: boolean
+  kind: DependencyKind
+  declared: string
+  installed?: string | null
+  observedAt?: string
+}
+
+export interface DependencyUseUpdate {
+  id?: string
+  workspaceId?: string
+  projectId?: string
+  dependencyId?: string
+  member?: string
+  memberPath?: string
+  published?: boolean
+  kind?: DependencyKind
+  declared?: string
+  installed?: string | null
+  observedAt?: string
+}
+
+export interface DependencyUseWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  projectId?: string | WhereOp<string> | null
+  dependencyId?: string | WhereOp<string> | null
+  member?: string | WhereOp<string> | null
+  memberPath?: string | WhereOp<string> | null
+  published?: boolean | WhereOp<boolean> | null
+  kind?: DependencyKind | WhereOp<DependencyKind> | null
+  declared?: string | WhereOp<string> | null
+  installed?: string | WhereOp<string> | null
+  observedAt?: string | WhereOp<string> | null
+  AND?: DependencyUseWhere[]
+  OR?:  DependencyUseWhere[]
+  NOT?: DependencyUseWhere
+}
+
+export type DependencyUseOrderBy =
+  | { [K in keyof Omit<DependencyUse, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<DependencyUse, never>]?: OrderDir }>
+
 // ─── Backup ──────────────────────────────────────────────────────
 
 export interface Backup {
@@ -4324,6 +4448,8 @@ export interface ServiceTypes {
   blueprints: Blueprint
   blueprintParams: BlueprintParam
   registryImages: RegistryImage
+  dependencies: Dependency
+  dependencyUses: DependencyUse
   backups: Backup
   hubConfigs: HubConfig
   notifications: Notification
@@ -4446,7 +4572,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$ping' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
@@ -4503,6 +4629,8 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere>
   readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere>
   readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere>
+  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere>
+  readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere>
   readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere>
   readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere>
   readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere>
@@ -4557,6 +4685,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly $attached:   string[]
   readonly $rawDbs:     Record<string, unknown>
   readonly $walStatus:  Record<string, unknown>
+  $ping(): true
   /** Is a transaction open on this connection right now? */
   readonly $inTransaction: boolean
   /** The clock this client reads and writes: the now option, else the wall clock. A deadline is minted from it. */

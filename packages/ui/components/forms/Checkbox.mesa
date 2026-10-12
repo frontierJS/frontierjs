@@ -7,6 +7,12 @@
   // `accent-color` from the tone means no custom-drawn box to maintain.
   //
   // For a toggle-switch aesthetic, use Switch.mesa.
+  //
+  // `indeterminate` is the header box over rows some of which are ticked
+  // (`createSelection().stateOf(rows) === 'some'`). It is a DOM PROPERTY with
+  // no attribute (Mesa writes the property), and the browser then reports
+  // the box as mixed to assistive tech on its own. `aria-checked` is not
+  // allowed on a native checkbox and is not written.
 
   import { tone as toTone, cx, uid, ruleLabel, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
@@ -23,6 +29,7 @@
   export let tone        = ''
   export let error       = ''
   export let onchange    = undefined
+  export let indeterminate = false
 
   export var id = ''
   const checkId = id || uid('check')
@@ -47,8 +54,13 @@
   const t = displayError ? 'danger' : toTone(tone)
 
   function handleChange(e) {
-    checked = e.target.checked
+    const box = e.target
+    checked = box.checked
     onchange?.(checked)
+    // A press clears the browser's own flag. A caller whose state did not
+    // move hands the same prop back, which writes nothing, and the box would
+    // read as unmixed over rows that are still part-ticked.
+    $.tick().then(() => { box.indeterminate = Boolean(indeterminate) })
   }
 </script>
 
@@ -68,6 +80,7 @@
       disabled={resolvedDisabled}
       required={resolvedRequired}
       {@attach nativeValidationGuard}
+      indeterminate={indeterminate}
       aria-describedby={description ? descId : null}
       aria-invalid={displayError ? 'true' : null}
       on:change={handleChange}

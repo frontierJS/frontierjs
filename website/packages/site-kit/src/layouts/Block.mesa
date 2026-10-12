@@ -17,16 +17,7 @@
   keyed on the block's `name`.
 -->
 <script module>
-  import vocabulary from '@frontierjs/css/vocabulary.json' with { type: 'json' }
-
-  // Every Layout helper but Container, which the Band already holds.
-  const AXES = {
-    template:  vocabulary.terms.filter((t) => t.tier === 'Layout' && t.class !== 'container').map((t) => t.class),
-    tone:      vocabulary.notATerm.tone,
-    treatment: vocabulary.notATerm.treatment,
-    density:   vocabulary.notATerm.density,
-    align:     ['start', 'center', 'end'],
-  }
+  import { badLook, bandClasses, cellClasses } from '../block-look.js'
 
   const kebab = (s) => s?.match(/[A-Z]{2,}(?=[A-Z][a-z]+[0-9]*|\b)|[A-Z]?[a-z]+[0-9]*|[A-Z]|[0-9]+/g)
     ?.map((x) => x.toLowerCase()).join('-')
@@ -35,13 +26,9 @@
     throw new Error(`[site-kit] Block${name ? ` "${name}"` : ''}: ${message}`)
   }
 
-  function checkAxes(name, values) {
-    for (const [key, value] of Object.entries(values)) {
-      if (value === undefined || value === null || value === '') continue
-      if (!AXES[key].includes(value)) {
-        refuse(name, `${key}: "${value}" is not one of ${AXES[key].join(', ')}`)
-      }
-    }
+  function checkAxes(name, look) {
+    const bad = badLook(look)
+    if (bad) refuse(name, `${bad.key}: "${bad.value}" is not one of ${bad.allowed.join(', ')}`)
   }
 </script>
 
@@ -67,12 +54,9 @@
   const kind = kebab(name)
   const element = tag !== undefined ? tag : url ? 'a' : nested ? 'article' : 'section'
   const band = element === 'section' && tag === undefined
-  const skin = [tone, treatment, density, align && `align-${align}`]
-  const own = band
-    ? ['band', kind, ...skin]
-    : [kind, template, ...skin]
-  const blockClass = own.filter(Boolean).join(' ')
-  const innerClass = ['container', template].filter(Boolean).join(' ')
+  const look = { kind, template, tone, treatment, density, align }
+  const { outer, inner: innerClass } = bandClasses(look)
+  const blockClass = band ? outer : cellClasses(look)
 </script>
 
 {#if element}

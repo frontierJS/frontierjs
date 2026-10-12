@@ -21,7 +21,7 @@ components/
               FileUpload · FileField · GeoField · MoneyInput · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
-              Json · Markdown · …
+              Json · Markdown · BulkBar · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item)
   overlay/    Modal · Drawer · Popover · Tooltip · DropdownMenu(+Item/Label/
               Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
@@ -30,6 +30,9 @@ components/
 stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
 dnd.js        dndzone — drag and drop between flow lists, an {@attach}
+selection.js  createSelection — the ticked KEYS of a list, signal-backed; the
+              screen composes it with Checkbox `indeterminate` and BulkBar,
+              and Table stays out of it (FJS-D671)
 utils.js      shared helpers
 test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
 test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,

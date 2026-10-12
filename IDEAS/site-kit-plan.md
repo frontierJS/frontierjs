@@ -63,6 +63,12 @@ and the sixth is the name that seam is spelled with.
   - **C** — `theme: '@kobami/ksite'`, as Jekyll and Hugo spell it.
   - **Recommend A** — *familiarity vs. precision*: UnoCSS, Docusaurus and Babel all use preset for a package the consumer names that adds a bundle of contributions to a host tool, and the word fits whole. B gives every site two engines: `FJS-D604` made site-kit the engine and shrank ksite to the template it carries, and `ARCHITECT.md` already refuses *engine* for a Rig. C is the closest ecosystem match, but `theme:` is already the switcher's key in this same file and `@frontierjs/css`'s word for a class on `<html>`. `extends` is not an option: it is tsconfig's word for merging two configs of the same shape, which this is not.
 
+- ~~**What may a word after a divider (`====|.duo.reverse`, `===|.featured`) name?**~~ **Answered 2026-10-12 (`FJS-D918`): A — checked: a css look word (a Layout helper, a tone, treatment or density, `align-*`), placed where Block places it, or a class the site's built stylesheets define; any other word stops `site-kit build` naming the file, the divider and the word.** `FJS-D823` refused `classes:` on a Block because nothing checks a free string, and a divider's words are one. A ksite client's pages are mostly its own words (Luminous Heart: `duo` 12, `centered-prose` 17, `count-3`), styled by its own stylesheet.
+  - **A** — checked: a css look word (a Layout helper, a tone, treatment or density, `align-*`), placed where Block places it, or a class the site's built stylesheets define; any other word stops `site-kit build` naming the file, the divider and the word.
+  - **B** — typed only: css look words plus one segment name the site stylesheet keys on, as a block's `name`; every client's divider lines and stylesheet are rewritten.
+  - **C** — free, as ksite had it.
+  - **Recommend A** — it answers `FJS-D823`'s reason rather than its spelling: the string is checked, against what the site actually ships, so a typo fails and a client's content ports unchanged. B makes every client pay a rewrite for the same guarantee, and C reopens the hole `FJS-D823` closed.
+
 `site-kit-structure.md` § Open questions holds the page-shape questions, which
 gate Phase 3.
 
@@ -120,6 +126,18 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
    six widths, in build and dev, from the workspace and a tarball install, but
    for one heading's antialiasing on `/services/` (ksite's Port ledger).
 2. The markdown dialect: `===`, and the use-site classes FJS-1502 unblocked.
+   **Done 2026-10-12.** site-kit owns `====` (a Band), `===` (an article),
+   `====|block`, the words after `|` (`FJS-D918`: a css look word, or a
+   class the built stylesheets define, else the build stops by name),
+   kickers (`p.kicker`), `==mark==` and phone and email links. Position emits
+   no class (`FJS-D614`), so `segment-N`, `article-N` and ksite's
+   `span.preheading` and `mark.accent` are gone. ksite gave up its copy and
+   keeps only its heading and link classes. Graded by an exact pixel diff:
+   identical on ksite's four routes at six widths, from the workspace and a
+   tarball install, and dev renders the same bands with no console error.
+   Luminous Heart is the first client with `====`; its port (Phase 4) rekeys
+   its stylesheet and drops six divider words its theme never defines, which
+   the check will refuse.
 3. Collections, and menus and settings back to `.md`, which FJS-D549 unblocked.
 4. The head: what `config/site-scripts.js` rewrites after the build moves into
    Sierra as FJS-1539's fix.

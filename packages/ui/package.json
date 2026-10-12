@@ -9,6 +9,8 @@
     "./controls.js": "./controls.js",
     "./dnd.js": "./dnd.js",
     "./dnd": "./dnd.js",
+    "./selection.js": "./selection.js",
+    "./selection": "./selection.js",
     "./controls": "./controls.js",
     "./stores/*.js": "./stores/*.js",
     "./stores/*": "./stores/*.js",
@@ -16,7 +18,7 @@
     "./components/*": "./components/*.mesa"
   },
   "scripts": {
-    "test": "node test/compile-all.mjs && node test/render.mjs && node test/attributes.mjs && node test/form.mjs && node test/agents-md.mjs && node test/docs-form-wiring.mjs && node test/dnd-configure.mjs && node test/browser/run.mjs",
+    "test": "node test/compile-all.mjs && node test/render.mjs && node test/attributes.mjs && node test/form.mjs && node test/agents-md.mjs && node test/docs-form-wiring.mjs && node test/dnd-configure.mjs && node test/selection.mjs && node test/browser/run.mjs",
     "test:browser": "node test/browser/run.mjs",
     "serve": "node test/browser/server.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
@@ -42,6 +44,7 @@
     "stores",
     "controls.js",
     "dnd.js",
+    "selection.js",
     "utils.js",
     "README.md",
     "LICENSE"

@@ -35,6 +35,7 @@ import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
+import { dependencyTargets }  from './core/dependencies.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
@@ -289,15 +290,20 @@ export async function buildBasecampApp(
   const mail = mailProvider()
 
   app.configure(conduit({
-    targets: mail ? [{
-      id:            MAIL_TARGET,
-      kind:          'provider',
-      protocol:      'http',
-      address:       mail.address,
-      auth:          { type: 'bearer', ref: mail.ref },
-      registered_at: Date.now(),
-      last_seen_at:  null,
-    }] : [],
+    targets: [
+      ...(mail ? [{
+        id:            MAIL_TARGET,
+        kind:          'provider' as const,
+        protocol:      'http' as const,
+        address:       mail.address,
+        auth:          { type: 'bearer' as const, ref: mail.ref },
+        registered_at: Date.now(),
+        last_seen_at:  null,
+      }] : []),
+      // The npm registry and OSV, which the dependency check reads. Public and
+      // keyless, so they are declared whatever else is configured.
+      ...dependencyTargets(),
+    ],
     store:       createSQLiteStore(rawDb),
     timeout_ms:  10_000,
     retry_limit: 3,

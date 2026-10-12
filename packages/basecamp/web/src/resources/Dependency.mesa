@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Dependency.mesa — the Resource layer.
+  //
+  // The service is `dependencies` and the model `Dependency`, which the
+  // inflector resolves on its own; the screen reads `report`, which joins each
+  // package to the project's declarations and grades it on the server.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const dependencies = createResource('dependencies', { model: 'Dependency' })
+</script>

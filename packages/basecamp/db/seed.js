@@ -822,6 +822,12 @@ export class BasecampSeeder extends Seeder {
         // reports double the disk, and that is the number somebody uses to
         // decide what to delete.
         await seedRegistry(sys, ws.id, index)
+
+        // ── The dependency mirror ─────────────────────────────────────
+        // One project's push and the registry's answer to it, so every
+        // verdict the screen draws has a row: an advisory, a deprecation, a
+        // range that excludes latest, a patch a reinstall reaches, current.
+        if (index === 0) await seedDependencies(sys, ws.id, projects[0].id)
       }
 
       // ── The installation ──────────────────────────────────────────
@@ -955,6 +961,31 @@ async function seedRegistry(sys, workspaceId, index) {
   }
 }
 
+/** A codebase's push, already checked — one package per verdict. */
+async function seedDependencies(sys, workspaceId, projectId) {
+  const checkedAt  = new Date(Date.now() - 3_600_000).toISOString()
+  const observedAt = new Date(Date.now() - 7_200_000).toISOString()
+  const rows = [
+    { name: 'lodash',     latest: '4.17.21', installed: '4.17.15', declared: '^4.17.0', member: 'dashboard-api',
+      advisories: { '4.17.15': [{ id: 'GHSA-p6mc-m468-83gw', summary: 'Prototype Pollution in lodash', severity: 'HIGH', aliases: ['CVE-2020-8203'] }] } },
+    { name: 'request',    latest: '2.88.2',  installed: '2.88.2',  declared: '^2.88.0', member: 'dashboard-api',
+      deprecated: 'request has been deprecated, see https://github.com/request/request/issues/3142' },
+    { name: 'typescript', latest: '7.0.2',   installed: '5.9.3',   declared: '^5.9.3',  member: 'dashboard-web', kind: 'dev' },
+    { name: 'vite',       latest: '8.3.4',   installed: '8.3.2',   declared: '^8.3.2',  member: 'dashboard-web', kind: 'dev' },
+    { name: 'zod',        latest: '4.1.0',   installed: '4.1.0',   declared: '^4.1.0',  member: 'dashboard-api' },
+  ]
+  for (const r of rows) {
+    const dep = await sys.dependency.create({ data: {
+      workspaceId, name: r.name, latest: r.latest, deprecated: r.deprecated ?? null,
+      advisories: r.advisories ?? {}, checkedAt,
+    } })
+    await sys.dependencyUse.create({ data: {
+      workspaceId, projectId, dependencyId: dep.id, member: r.member, memberPath: r.member.replace('dashboard-', ''),
+      published: true, kind: r.kind ?? 'dependency', declared: r.declared, installed: r.installed, observedAt,
+    } })
+  }
+}
+
 // The six steps the deploy job actually runs (api/src/jobs/
 // deployment-run.job.ts), so a seeded deployment and a real one look the same.
 const STEPS = ['prepare', 'build', 'push', 'configure', 'release', 'verify']
@@ -1050,7 +1081,7 @@ if (import.meta.main) {
       'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
       'alertEvent', 'alertRuleChannel', 'alertRule', 'notificationChannel',
       'apiKey', 'secret', 'serverNetwork', 'network', 'volume', 'serverEvent',
-      'registryImage',
+      'registryImage', 'dependencyUse', 'dependency',
       'server', 'workspaceMember', 'workspace', 'session',
       // Ahead of `user`, which they cascade from — listed anyway, because a
       // cascade is a property of the schema and this list is what says what
@@ -1097,7 +1128,7 @@ if (import.meta.main) {
                        'alertRuleChannel', 'dashboard', 'dashboardWidget',
                        'recipe', 'recipeRun', 'diskUsage', 'cleanupRun',
                        'blueprint', 'blueprintParam', 'registryImage',
-                       'backup', 'hubConfig', 'notificationPreference',
+                       'dependency', 'dependencyUse', 'backup', 'hubConfig', 'notificationPreference',
                        'auditEvent']) {
     counts[model] = await sys[model].count()
   }

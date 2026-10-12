@@ -15,6 +15,8 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
+import { readSettings, siteContent, writeSettingsModule } from './content.js'
+import { siteDialect } from './dialect.js'
 import { loadPreset } from './preset.js'
 import { siteShell } from './shell.js'
 
@@ -32,12 +34,19 @@ export async function siteKit({ root, port, host = false }) {
   const content = resolve(root, 'content')
   if (!existsSync(content)) throw new Error(`site-kit: no content/ in ${root}`)
 
-  const settingsPath = resolve(content, 'settings/site.js')
-  const settingsModule = existsSync(settingsPath) ? await import(pathToFileURL(settingsPath).href) : {}
-  const { preset: presetName, ...settings } = settingsModule.default ?? {}
+  // site.js is the site's Sierra config, which the browser imports whole;
+  // site.md is its settings, the data its pages and its preset read.
+  const configPath = resolve(content, 'settings/site.js')
+  const configModule = existsSync(configPath) ? await import(pathToFileURL(configPath).href) : {}
+  const { preset: presetName, ...siteConfig } = configModule.default ?? {}
+  const settings = readSettings(root)
+  const keys = Object.keys(settings)
   const preset = presetName
-    ? await loadPreset(presetName, { root, content, settings: settingsModule })
+    ? await loadPreset(presetName, { root, content, settings })
     : {}
+  const dialect = siteDialect()
+  const mesa = { ...preset.sierra?.mesa, ...siteConfig.mesa }
+  const autoImport = siteConfig.autoImport ?? preset.sierra?.autoImport
 
   const base = createSierraViteConfig({
     target:    'static',
@@ -56,23 +65,37 @@ export async function siteKit({ root, port, host = false }) {
     // both define (FJS-501).
     document: {},
     ...preset.sierra,
-    ...settings,
+    ...siteConfig,
     // Neither a preset nor a site moves these. Every site-kit site keeps its
     // pages in content/routes (FJS-D606). The browser's half of the config is
-    // the site's settings file, imported whole (FJS-1544): a preset that
+    // content/settings/site.js, imported whole (FJS-1544): a preset that
     // named its own would hide the site's `theme` from the switcher. Without
-    // a settings file it is an empty module, never Sierra's guess at
+    // that file it is an empty module, never Sierra's guess at
     // config/sierra.config.js (FJS-1709).
     routesDir: 'content/routes',
+    // Every key in site.md is a bare name in a page, beside whatever the
+    // preset or the site auto-imports; Sierra refuses a name two modules bind.
+    autoImport: keys.length
+      ? { ...autoImport, modules: { [writeSettingsModule(root, settings)]: keys, ...autoImport?.modules } }
+      : autoImport,
+    // The kit's dialect runs first, so a preset's passes see a page already
+    // split into bands and articles. The check runs before a preset's
+    // post-build steps rewrite the output.
+    mesa: {
+      ...mesa,
+      remarkPlugins: [...dialect.remarkPlugins, ...(mesa.remarkPlugins ?? [])],
+      rehypePlugins: [...dialect.rehypePlugins, ...(mesa.rehypePlugins ?? [])],
+    },
+    plugins: [dialect.check, ...(preset.sierra?.plugins ?? [])],
     // What `layout:` can name: the kit's own (Block), then the preset's, then
     // the site's content/layouts. A later directory wins a name, so a preset
     // or a site replaces a kit layout without copying the rest.
     markdownLayouts: [
       resolve(KIT, 'src/layouts'),
       ...(preset.sierra?.markdownLayouts ?? []),
-      ...(settings.markdownLayouts ?? (existsSync(resolve(content, 'layouts')) ? ['content/layouts'] : [])),
+      ...(siteConfig.markdownLayouts ?? (existsSync(resolve(content, 'layouts')) ? ['content/layouts'] : [])),
     ],
-    _configPath: existsSync(settingsPath) ? settingsPath : resolve(KIT, 'config/no-settings.js'),
+    _configPath: existsSync(configPath) ? configPath : resolve(KIT, 'config/no-settings.js'),
   })
 
   return {
@@ -83,6 +106,7 @@ export async function siteKit({ root, port, host = false }) {
     plugins: [
       ...(base.plugins ?? []),
       ...(preset.plugins ?? []),
+      siteContent({ root, content, keys }),
       siteShell({
         html:  preset.shell?.html ?? resolve(KIT, 'index.html'),
         entry: preset.shell?.entry ?? resolve(KIT, 'src/main.js'),

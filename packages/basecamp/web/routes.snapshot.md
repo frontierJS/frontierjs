@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-59 routes · 3 layouts · target spa · trailing slash always
+60 routes · 3 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -38,6 +38,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/cloud-spend/` | `src/routes/cloud-spend/index.mesa` | `src/routes/_module.mesa` | — |
 | `/dashboards/` | `src/routes/dashboards/index.mesa` | `src/routes/_module.mesa` | — |
 | `/dashboards/:id/` | `src/routes/dashboards/[id]/index.mesa` | `src/routes/_module.mesa` | `id` |
+| `/dependencies/` | `src/routes/dependencies/index.mesa` | `src/routes/_module.mesa` | — |
 | `/deployments/` | `src/routes/deployments/index.mesa` | `src/routes/_module.mesa` | — |
 | `/deployments/:id/` | `src/routes/deployments/[id]/index.mesa` | `src/routes/_module.mesa` | `id` |
 | `/dns/` | `src/routes/dns/index.mesa` | `src/routes/_module.mesa` | — |
@@ -105,6 +106,7 @@ this section exists to show.
 - `/cloud-spend/` — siteName: `Basecamp` · title: `Cloud spend`
 - `/dashboards/` — siteName: `Basecamp` · title: `Dashboards`
 - `/dashboards/:id/` — siteName: `Basecamp` · title: `Dashboard`
+- `/dependencies/` — siteName: `Basecamp` · title: `Dependencies`
 - `/deployments/` — siteName: `Basecamp` · title: `Deployments`
 - `/deployments/:id/` — siteName: `Basecamp` · title: `Deployment`
 - `/dns/` — siteName: `Basecamp` · title: `DNS & edge`
@@ -154,6 +156,6 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 49 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/git-activity/local/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/notifications/`, `/observability/`, `/onboarding/`, `/pages/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registers/`, `/registry/`, `/reset-password/`, `/secrets/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/trash/`, `/verify-email/`, `/volumes/`, `/workbench/`
+- `src/routes/_module.mesa` — 50 routes: `/`, `/activity/`, `/alerts/`, `/api-keys/`, `/apps/`, `/apps/:id/`, `/blueprints/`, `/channels/`, `/cleanup/`, `/cloud-spend/`, `/dashboards/`, `/dashboards/:id/`, `/dependencies/`, `/deployments/`, `/deployments/:id/`, `/dns/`, `/environments/:id/`, `/flags/`, `/git-activity/`, `/git-activity/local/`, `/infra-graph/`, `/invite/:token/`, `/jobs/`, `/jobs/:id/`, `/login/`, `/networks/`, `/notifications/`, `/observability/`, `/onboarding/`, `/pages/`, `/portal/`, `/portal/:id/`, `/projects/`, `/projects/:id/`, `/projects/create/`, `/recipes/`, `/registers/`, `/registry/`, `/reset-password/`, `/secrets/`, `/servers/`, `/servers/:id/`, `/servers/import/`, `/servers/provision/`, `/settings/`, `/setup/`, `/trash/`, `/verify-email/`, `/volumes/`, `/workbench/`
 - `src/routes/admin/_module.mesa` — 4 routes: `/admin/`, `/admin/adapters/`, `/admin/audit/`, `/admin/workspace/`
 - `src/routes/hub/_module.mesa` — 6 routes: `/hub/`, `/hub/backups/`, `/hub/flags/`, `/hub/settings/`, `/hub/users/`, `/hub/workspaces/`

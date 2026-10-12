@@ -8565,8 +8565,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //
     // Options:
     //   query      the words to find — every one required, a "quoted phrase"
-    //              kept whole; never FTS5 syntax (`ftsWords`, FJS-1440)
-    //   prefix     the last word also matches as the start of a word
+    //              kept whole; never FTS5 syntax (`ftsWords`, FJS-1440). Under
+    //              trigram a word under three characters is found by a scan,
+    //              unranked: a text of only such words has `_rank` null and
+    //              comes back in row order (FJS-2332)
+    //   prefix    the last word also matches as the start of a word
     //   raw        `query` is an FTS5 query, passed to MATCH as written
     //   limit      max rows to return (default 20)
     //   offset     skip rows (default 0)
@@ -8630,8 +8633,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
       // Nothing left to find once the punctuation is gone — a lone `"` — answers
       // no rows; FTS5 would refuse the empty MATCH as a syntax error.
-      const match = raw ? query : ftsWords(query, { prefix })
-      if (match == null) return []
+      const trigram = shape.model.attributes.find(a => a.kind === 'fts')?.tokenize === 'trigram'
+      const words   = raw ? { match: query, scan: [] } : ftsWords(query, { prefix, trigram })
+      if (words == null) return []
 
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, { where, limit, offset }, ctx)
 
@@ -8670,9 +8674,6 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         ftsParams.push(open, close, ellip, tokens)
       }
 
-      ftsSql += ` FROM "${ftsTable}" WHERE "${ftsTable}" MATCH ?`
-      ftsParams.push(match)  // MATCH ? comes before the filter's params, as here
-
       // The index mirrors the table, so soft-deleted, template and where-excluded
       // rows are in it and would otherwise spend slots the LIMIT below then
       // throws away — a search asking for 20 answering 13, with nothing to say
@@ -8695,13 +8696,34 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           : searchPolicy.sql
         filterParams.push(...searchPolicy.params)
       }
-      // Correlated on the hit's rowid, so the filter runs once per MATCH. As
-      // `rowid IN (SELECT rowid FROM t WHERE …)` SQLite built the list of every
-      // readable row and re-read it under the FTS scan: 300-800 ms for a
-      // two-hop policy over 12k rows that matched one or eight (FJS-1692).
-      if (filterSql && filterSql !== '1=1') {
-        ftsSql += ` AND EXISTS (SELECT 1 FROM "${tableName}" WHERE "${tableName}".rowid = "${ftsTable}".rowid AND (${filterSql}))`
-        ftsParams.push(...filterParams)
+      const filtered = !!filterSql && filterSql !== '1=1'
+
+      // A word too short for a trigram is a GLOB over every indexed column
+      // (`ftsWords`), required like any other word. The content table holds the
+      // same columns under the same names, so a GLOB reads either.
+      const globsOver  = (/** @type {string} */ table) => words.scan.map(() =>
+        '(' + ftsFields.map(f => `${quoteIdent(table)}.${quoteIdent(col(f))} GLOB ?`).join(' OR ') + ')')
+      const globParams = words.scan.flatMap(glob => ftsFields.map(() => glob))
+
+      if (words.match != null) {
+        ftsSql += ` FROM "${ftsTable}" WHERE ` + [`"${ftsTable}" MATCH ?`, ...globsOver(ftsTable)].join(' AND ')
+        ftsParams.push(words.match, ...globParams)
+        // Correlated on the hit's rowid, so the filter runs once per MATCH. As
+        // `rowid IN (SELECT rowid FROM t WHERE …)` SQLite built the list of every
+        // readable row and re-read it under the FTS scan: 300-800 ms for a
+        // two-hop policy over 12k rows that matched one or eight (FJS-1692).
+        if (filtered) {
+          ftsSql += ` AND EXISTS (SELECT 1 FROM "${tableName}" WHERE "${tableName}".rowid = "${ftsTable}".rowid AND (${filterSql}))`
+          ftsParams.push(...filterParams)
+        }
+      } else {
+        // With no MATCH the GLOB is a scan, and the opposite holds: driven from
+        // the index, every one of 113k entries ran the correlated filter to keep
+        // an account's 4k (420 ms); driven from the table, the filter's own index
+        // goes first (80 ms).
+        const narrow = [...globsOver(tableName), ...(filtered ? [`(${filterSql})`] : [])].join(' AND ')
+        ftsSql += ` FROM ${quoteIdent(ftsTable)} WHERE rowid IN (SELECT rowid FROM ${quoteIdent(tableName)} WHERE ${narrow})`
+        ftsParams.push(...globParams, ...(filtered ? filterParams : []))
       }
 
       // A caller's order is applied in step 2, so this pass has to hand it the
@@ -8709,7 +8731,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // the page, which is a different query and looks like a working one.
       const ordered = orderBy != null
 
-      ftsSql += ` ORDER BY rank`
+      // Without a MATCH there is no BM25 and every rank is NULL, so the rowid is
+      // what keeps a page from repeating or skipping a row.
+      ftsSql += words.match != null ? ` ORDER BY rank` : ` ORDER BY rowid`
 
       if (!ordered) {
         ftsSql += pageSql(limit, offset || null)
