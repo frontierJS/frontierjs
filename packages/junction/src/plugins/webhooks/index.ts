@@ -38,7 +38,7 @@ import type { Database } from 'bun:sqlite'
 import { signRequest }         from '@frontierjs/toolbelt/signature'
 import { sessionGateLevel }    from '../../core/litestone.ts'
 import { assertPublicUrl }                   from '../../core/public-url.ts'
-import type { PublicUrlPolicy } from '../../core/public-url.ts'
+import type { PublicUrlOptions } from '../../core/public-url.ts'
 import { shapeForSubscriber, sayUnowned } from './payload.ts'
 import type { ShapeResult }    from './payload.ts'
 
@@ -377,7 +377,7 @@ export interface WebhookDeliveryResult {
 async function attemptDelivery(
   registration: WebhookRegistration,
   delivery:     WebhookDelivery,
-  targets:      PublicUrlPolicy = {},
+  targets:      PublicUrlOptions = {},
 ): Promise<WebhookDeliveryResult> {
 
   // Re-graded per attempt, not only at registration: a name that resolved to a
@@ -504,7 +504,7 @@ export interface WebhookOptions {
   // Where a registration may point. Default: https, resolving to a public
   // address — see `core/public-url.ts`. A test with a receiver on localhost turns both
   // off and says so in one place.
-  targets?: PublicUrlPolicy
+  targets?: PublicUrlOptions
 
   // The gate level a caller needs to manage registrations over HTTP. Default
   // ADMINISTRATOR(5): a registration is a standing grant to receive this app's

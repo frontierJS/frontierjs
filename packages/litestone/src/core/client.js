@@ -661,7 +661,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (!keys.has(fk.id)) keys.set(fk.id, [])
         keys.get(fk.id).push(fk)
       }
-      for (const cols of keys.values()) {
+      // A single-column key first: when its parent is missing, so is the
+      // composite parent that shares the column, and the single one is the cause.
+      for (const cols of [...keys.values()].sort((a, b) => a.length - b.length)) {
         const fields = cols.map(c => _fieldOf(c.from))
         const values = fields.map(f => row?.[f])
         if (values.some(v => v == null)) continue
@@ -669,8 +671,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
           `SELECT 1 FROM "${cols[0].table}" WHERE ${cols.map(c => `"${c.to}" = ?`).join(' AND ')} LIMIT 1`
         ).get(...values)
         if (hit) continue
-        const [relation, rel] = Object.entries(shape.relations)
-          .find(([, r]) => r.kind === 'belongsTo' && r.foreignKey === fields[0]) ?? []
+        // The relation map keeps a key's first column only, so two relations
+        // sharing one (`crew` and `crewDay`) are told apart by the declared list.
+        const declared = shape.model.fields.find(f => {
+          const fk = f.attributes?.find(a => a.kind === 'relation' && a.fields)?.fields
+          const list = Array.isArray(fk) ? fk : [fk]
+          return list.length === fields.length && list.every((n, i) => n === fields[i])
+        })
+        const [relation, rel] = declared && shape.relations[declared.name]?.kind === 'belongsTo'
+          ? [declared.name, shape.relations[declared.name]]
+          : Object.entries(shape.relations)
+            .find(([, r]) => r.kind === 'belongsTo' && r.foreignKey === fields[0]) ?? []
         return parentRefusal(relation, fields, values, rel?.targetModel ?? cols[0].table)
       }
     } catch { return err }
@@ -3182,14 +3193,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // `stamped` for @guarded's reason — a @system column with a generated
     // default is written by the application in the most literal sense.
     const denied  = Object.keys(data).filter(k => _systemWriteKeys.has(k) && !allowed.has(k) && !stamped?.has(k))
-    if (denied.length) throw new AccessDeniedError(
+    if (!denied.length) return
+    // `message` crosses junction's boundary as the 403 body to a caller who can
+    // do neither remedy; the author's remedy rides on `hint`, which stays server-side.
+    const err = new AccessDeniedError(
       `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @system — ` +
-      `readable by anyone, written by the application rather than by its caller. Name the column on the call ` +
-      `to write it and keep every other rule:\n\n` +
-      `    db.${modelName.charAt(0).toLowerCase() + modelName.slice(1)}.update({ where, data, system: [${denied.map(f => `'${f}'`).join(', ')}] })\n\n` +
-      `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`,
+      `written by the application rather than by its caller.`,
       { model: modelName, operation: 'write' }
     )
+    err.hint =
+      `Name the column on the call to write it and keep every other rule:\n\n` +
+      `    db.${modelName.charAt(0).toLowerCase() + modelName.slice(1)}.update({ where, data, system: [${denied.map(f => `'${f}'`).join(', ')}] })\n\n` +
+      `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`
+    throw err
   }
 
   // ── system: [...], what a call may name ─────────────────────────────────
@@ -10549,7 +10565,7 @@ function makeLockPrimitive(rawWriteDb) {
     const conn   = dbRegistry[dbName] ?? dbRegistry.main
     if (conn.driver === 'jsonl' || conn.driver === 'trail') {
       const filePath = jsonlFilePath(conn.absPath, model.name)
-      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now, conn.busyTimeout, stampClock)
+      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now, conn.busyTimeout, stampClock, conn.relative)
       jsonlTableCache[model.name] = table
       jsonlTables.push(table)
     }

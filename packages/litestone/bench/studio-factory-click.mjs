@@ -7,7 +7,7 @@
 // Asserting the endpoint alone would miss the wiring — the first run of this
 // listed the requested row among its own parents.
 import { spawn } from 'node:child_process'
-import { mkdtempSync, cpSync } from 'node:fs'
+import { mkdtempSync, cpSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +17,11 @@ let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }
 const work = mkdtempSync(join(tmpdir(), 'factory-click-'))
 cpSync(`${R}/packages/basecamp/db`, work, { recursive: true })
+// the schema imports @frontierjs/* packages, which resolve only with a node_modules above the copy
+symlinkSync(`${R}/packages/basecamp/node_modules`, join(work, 'node_modules'))
 
+// a studio already on the port would answer for the one started below, over a different db
+if (await fetch(`http://127.0.0.1:${PORT}/`).then(() => true, () => false)) { console.log(`port ${PORT} already answers`); process.exit(1) }
 const studio = spawn('bun', [`${R}/packages/litestone/src/tools/cli.js`, 'studio', `--port=${PORT}`],
   { cwd: work, env: { ...process.env, ENCRYPTION_KEY: 'a'.repeat(64) }, stdio: 'ignore' })
 const browser = await openChrome({ windowSize: '1500,900' })
@@ -32,13 +36,13 @@ try {
 
   await ev(`selectTable('App')`)
   await waitFor(async () => (await ev(`document.querySelectorAll('#dataGrid tr').length`)) > 0)
-  const btn = await ev(`(() => { const b = document.getElementById('btnRandomRow'); return { shown: b.style.display !== 'none', text: b.textContent.trim() } })()`)
+  const btn = await ev(`(() => { const b = document.getElementById('btnRandomRow'); return { shown: !b.hidden, text: b.textContent.trim() } })()`)
   ok('button is visible on a normal table', btn?.shown === true, JSON.stringify(btn))
   ok('button is labeled', /Random/.test(btn?.text ?? ''), btn?.text)
 
   const before = await ev(`document.getElementById('pageInfo').textContent`)
   await ev(`document.getElementById('btnRandomRow').click()`)
-  const toast = await waitFor(async () => { const v = await ev(`(() => { const t = document.getElementById('toast'); return t.classList.contains('show') ? t.textContent : null })()`); return v })
+  const toast = await waitFor(async () => { const v = await ev(`(() => { const t = document.getElementById('toast'); return !t.hidden ? t.textContent : null })()`); return v })
   ok('a toast reported the write', !!toast, String(toast))
   ok('toast names the parents it also made', /also/.test(toast ?? ''), String(toast))
   ok('the row is not listed as its own parent',
@@ -56,7 +60,7 @@ try {
   const pinBtn = await waitFor(async () => await ev(`(() => { const b = [...document.querySelectorAll('#rowDrawer button')].find(x => /Pin/.test(x.textContent)); return b ? b.textContent.trim() : null })()`))
   ok('the drawer offers a pin', /📌 Pin/.test(pinBtn ?? ''), String(pinBtn))
   await ev(`[...document.querySelectorAll('#rowDrawer button')].find(x => /Pin/.test(x.textContent)).click()`)
-  const chip = await waitFor(async () => await ev(`(() => { const c = document.querySelector('#pinBar .pin-chip'); return c ? c.textContent.replace(/\\s+/g,' ').trim() : null })()`))
+  const chip = await waitFor(async () => await ev(`(() => { const c = document.querySelector('#pinBar .pill'); return c ? c.textContent.replace(/\\s+/g,' ').trim() : null })()`))
   ok('a chip shows the active pin', /📌 Account/.test(chip ?? ''), String(chip))
   ok('the button now reads Pinned', /Pinned/.test(await ev(`[...document.querySelectorAll('#rowDrawer button')].find(x => /Pin/.test(x.textContent)).textContent`) ?? ''))
   await ev(`closeRowDetail()`)
@@ -65,15 +69,15 @@ try {
   await ev(`selectTable('Deployment')`)
   await waitFor(async () => (await ev(`document.getElementById('pageInfo').textContent`)) !== '—')
   await ev(`document.getElementById('btnRandomRow').click()`)
-  const pinToast = await waitFor(async () => await ev(`(() => { const t = document.getElementById('toast'); return t.classList.contains('show') && t.classList.contains('ok') ? t.textContent : null })()`))
+  const pinToast = await waitFor(async () => await ev(`(() => { const t = document.getElementById('toast'); return !t.hidden && t.classList.contains('success') ? t.textContent : null })()`))
   ok('generated against the pin', /^Created 1 Deployment/.test(pinToast ?? ''), String(pinToast))
   ok('no account among the parents', !/account/i.test(pinToast ?? ''), String(pinToast))
   console.log('     pinned run:', String(pinToast))
   const accAfter = await ev(`(async () => (await api('/table', { table: 'account', pageSize: 1 })).total)()`)
   ok('account count unchanged', accAfter === accBefore, `${accBefore} → ${accAfter}`)
 
-  await ev(`document.querySelector('#pinBar .pin-x').click()`)
-  ok('unpin clears the chip', (await ev(`document.querySelectorAll('#pinBar .pin-chip').length`)) === 0)
+  await ev(`document.querySelector('#pinBar .pill-close').click()`)
+  ok('unpin clears the chip', (await ev(`document.querySelectorAll('#pinBar .pill').length`)) === 0)
 
   // ── refusal → the toast offers a retry, and the retry works ──────────────
   // Pick a principal the gate will refuse, then drive the offer the way a user
@@ -81,14 +85,14 @@ try {
   await ev(`(() => { _authUsers[999] = { id: 999999, email: 'nobody@x.com' }; setAuth(_authUsers[999]) })()`)
   await new Promise(r => setTimeout(r, 900))
   await ev(`document.getElementById('btnRandomRow').click()`)
-  const refusal = await waitFor(async () => await ev(`(() => { const t = document.getElementById('toast'); return t.classList.contains('show') && t.classList.contains('err') ? t.textContent : null })()`))
+  const refusal = await waitFor(async () => await ev(`(() => { const t = document.getElementById('toast'); return !t.hidden && t.classList.contains('danger') ? t.textContent : null })()`))
   ok('refusal is shown, not swallowed', /requires .* access/i.test(refusal ?? ''), String(refusal))
-  const offer = await ev(`(() => { const b = document.querySelector('#toast .toast-action'); return b ? b.textContent.trim() : null })()`)
+  const offer = await ev(`(() => { const b = document.querySelector('#toast button'); return b ? b.textContent.trim() : null })()`)
   ok('the toast offers the retry', offer === 'Retry as system', String(offer))
   console.log('     refusal:', String(refusal).slice(0, 90))
 
-  await ev(`document.querySelector('#toast .toast-action').click()`)
-  const done = await waitFor(async () => await ev(`(() => { const t = document.getElementById('toast'); return t.classList.contains('show') && t.classList.contains('ok') ? t.textContent : null })()`))
+  await ev(`document.querySelector('#toast button').click()`)
+  const done = await waitFor(async () => await ev(`(() => { const t = document.getElementById('toast'); return !t.hidden && t.classList.contains('success') ? t.textContent : null })()`))
   ok('the retry created the row', /^Created 1 /.test(done ?? ''), String(done))
   ok('and says it bypassed the gate', /\(as system\)/.test(done ?? ''), String(done))
   console.log('     retry:', String(done))
@@ -97,8 +101,8 @@ try {
 
   await ev(`selectTable('AuditTrail')`)
   await new Promise(r => setTimeout(r, 700))
-  const hidden = await ev(`document.getElementById('btnRandomRow').style.display`)
-  ok('hidden on an append-only table', hidden === 'none', hidden)
+  const hidden = await ev(`document.getElementById('btnRandomRow').hidden`)
+  ok('hidden on an append-only table', hidden === true, String(hidden))
 } finally { studio.kill('SIGKILL'); await browser.close() }
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')
 process.exit(fails ? 1 : 0)

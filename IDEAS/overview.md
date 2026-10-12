@@ -724,6 +724,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `command-views.md` — a command's output written as a Mesa view, rendered once as terminal text
 - `content-collections.md` — Content collections: words that are not rows
 - `controlled-language.md` — a controlled language: the vocabulary, given verbs and sentence shapes, as the thing an app is described in
+- `cross-model-search.md` — ⌘K across models, derived from `x-search`/`x-label-field` as a palette source; owed at the third copy
 - `current-tenant.md` — Sierra keeps the current tenant beside the session
 - `declared-interaction.md` — Four facts about a call that still live in hand-written client glue
 - `declared-method-contract.md` — A custom method's contract declared in the seed, its body left in TypeScript

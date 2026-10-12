@@ -122,7 +122,29 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
   // ── Custom methods nobody grades ──
   const loose = surface.services.flatMap(svc =>
     Object.entries(svc.methodGrades).filter(([, g]) => ungraded(g))
-      .map(([m, g]) => ({ svc: svc.name, m, g, hooks: hooksInFront(svc, m) })))
+      .map(([m, g]) => ({ svc: svc.name, m, g, hooks: hooksInFront(svc, m), body: svc.methodBodies[m] })))
+
+  // ── Custom methods whose body writes as the app ──
+  // Every grade, because the declared ones are the case the floor list cannot
+  // show: a `gate: 0` is a decision and reads as one, and what it decided is
+  // that a stranger reaches a body that writes with nobody's standing.
+  const elevated = surface.services.flatMap(svc =>
+    Object.entries(svc.methodGrades).filter(([m]) => svc.methodBodies[m] === 'elevated')
+      .map(([m, g]) => ({ svc: svc.name, m, g })))
+  out.push('## Custom methods whose body writes as the app')
+  out.push('')
+  out.push('A body whose source names `asSystem()` writes with no caller: the Data boundary')
+  out.push('sees the app, so the level below is the whole of the access. This reads source')
+  out.push('text, so a body that elevates through a helper is not listed.')
+  out.push('')
+  if (elevated.length) {
+    out.push('| Method | Who may call it |')
+    out.push('| --- | --- |')
+    for (const { svc, m, g } of elevated) out.push(`| \`${svc}.${m}\` | ${gradeSentence(g)} |`)
+  } else {
+    out.push('None.')
+  }
+  out.push('')
   out.push('## Custom methods whose caller\'s standing is not graded')
   out.push('')
   out.push('A custom method with no `gate:` in `methods:` takes the model\'s read gate as a')
@@ -136,8 +158,9 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
     out.push('None — every custom method declares its level or is open by a read gate of 0.')
     out.push('')
   } else {
-    const bare   = loose.filter(r => !r.hooks.length)
-    const hooked = loose.filter(r =>  r.hooks.length)
+    const derived = loose.filter(r => r.body === 'derived')
+    const bare    = loose.filter(r => r.body !== 'derived' && !r.hooks.length)
+    const hooked  = loose.filter(r => r.body !== 'derived' &&  r.hooks.length)
 
     out.push(`### Nothing in front of the body but the floor (${bare.length})`)
     out.push('')
@@ -164,6 +187,20 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
       out.push('| --- | --- | --- |')
       for (const { svc, m, g, hooks } of hooked)
         out.push(`| \`${svc}.${m}\` | ${gradeSentence(g)} | ${chain(hooks)} |`)
+    } else {
+      out.push('None.')
+    }
+    out.push('')
+
+    out.push(`### No body — a derived \`@@transitions\` move (${derived.length})`)
+    out.push('')
+    out.push('Served on the caller\'s client, so only the Data boundary stands behind it: the')
+    out.push('gate, the row policy and the move\'s own level.')
+    out.push('')
+    if (derived.length) {
+      out.push('| Method | Who may call it |')
+      out.push('| --- | --- |')
+      for (const { svc, m, g } of derived) out.push(`| \`${svc}.${m}\` | ${gradeSentence(g)} |`)
     } else {
       out.push('None.')
     }
@@ -213,7 +250,9 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
       out.push('- **who may call** —')
       for (const [method, g] of grades) {
         const hooks = ungraded(g) ? hooksInFront(svc, method) : []
-        out.push(`  - \`${method}\` — ${gradeSentence(g)}` + (hooks.length ? `; then ${chain(hooks)}` : ''))
+        const body  = svc.methodBodies[method]
+        out.push(`  - \`${method}\` — ${gradeSentence(g)}` + (hooks.length ? `; then ${chain(hooks)}` : '') +
+                 (body === 'elevated' ? '; body writes as the app' : body === 'derived' ? '; no body, a derived move' : ''))
       }
     }
     if (svc.channel.length)       out.push(`- **broadcasts on** — ${svc.channel.map(c => `\`${c}\``).join(', ')}`)

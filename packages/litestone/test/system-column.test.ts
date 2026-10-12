@@ -92,14 +92,19 @@ describe('the write is refused, by name', () => {
       .rejects.toThrow(/@system/)
   })
 
-  it('and the message says how to write it', async () => {
+  // FJS-1937: `message` crosses junction's boundary as the 403 body, so it names
+  // the column and nothing a caller cannot act on; the remedy is the server-side `hint`.
+  it('the message names the column and the hint says how to write it', async () => {
     const db = await client()
     try {
       await db.$setAuth(USER).order.create({ data: { reference: 'C', trackingCode: 'X' } })
       throw new Error('should have refused')
     } catch (err: any) {
-      expect(err.message).toContain(`system: ['trackingCode']`)
-      expect(err.message).toContain('asSystem()')
+      expect(err.message).toContain('"trackingCode"')
+      expect(err.message).not.toContain('asSystem')
+      expect(err.message).not.toContain('system: [')
+      expect(err.hint).toContain(`system: ['trackingCode']`)
+      expect(err.hint).toContain('asSystem()')
     }
   })
 

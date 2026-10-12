@@ -1,4 +1,4 @@
-import type { NodeDefinition, RetryPolicy } from "../types"
+import type { NodeDefinition, RetryOptions } from "../types"
 import type { ResolutionContext } from "../expression"
 import type { IExecutionCache } from "../cache"
 import type { SyncHttpResponse } from "../runtime/context"
@@ -237,7 +237,7 @@ function timeoutReject(ms: number): Promise<never> {
   return new Promise((_, reject) => setTimeout(() => reject(new TimeoutError(ms)), ms))
 }
 
-function computeDelay(retry: RetryPolicy, attempt: number): number {
+function computeDelay(retry: RetryOptions, attempt: number): number {
   return retry.backoff === "exponential"
     ? Math.pow(2, attempt - 2) * retry.delayMs
     : retry.delayMs

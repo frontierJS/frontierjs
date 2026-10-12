@@ -356,3 +356,61 @@ describe('a refused call is answered by its id (FJS-1882)', () => {
     c.close()
   })
 })
+
+// ─── FJS-1875 · Bun's own ceiling ──────────────────────────────────────────
+//
+// `maxPayloadLength` is the one limit the runtime enforces. The refusal tests
+// above sit under it, so none of them fails if it stops reaching `Bun.serve`.
+// Here `maxFrameBytes` is raised ABOVE it, so only the runtime's ceiling can
+// refuse the frame.
+describe('maxPayloadLength reaches the runtime (FJS-1875)', () => {
+  it('a frame over it is dropped by the runtime, and one under it is answered', async () => {
+    const small = createApp({
+      config: {
+        port: 0,
+        services: { dir: '/nonexistent' },
+        http: {
+          ...defaultConfig.http,
+          drainTimeout: 250,
+          ws: { maxPayloadLength: 4096, maxFrameBytes: 1024 * 1024 },
+        },
+      },
+    })
+    small.services.register(createService({
+      name: 'probe', methods: ['find'], async find() { return [] },
+    }))
+    small.configure(channels())
+    await small.start()
+    const port = (small as any).http.port as number
+    try {
+      const open = async () => {
+        const ws = new WebSocket(`ws://localhost:${port}/ws`)
+        const frames: any[] = []
+        let closed: { code: number; reason: string } | null = null
+        ws.onmessage = (e: any) => { try { frames.push(JSON.parse(String(e.data))) } catch {} }
+        ws.onclose = (e: any) => { closed = { code: e.code, reason: e.reason } }
+        const until = async (pred: () => boolean, ms = 2500) => {
+          const end = Date.now() + ms
+          while (Date.now() < end) { if (pred()) return true; await Bun.sleep(10) }
+          return false
+        }
+        await until(() => frames.some(f => f?.type === 'connected'))
+        return { ws, frames, until, closed: () => closed }
+      }
+
+      const ok = await open()
+      ok.ws.send(JSON.stringify({ type: 'service_call', id: '1', service: 'probe', method: 'find', pad: 'x'.repeat(1024) }))
+      expect(await ok.until(() => ok.frames.some(f => f?.type === 'service_result'))).toBe(true)
+      expect(ok.closed()).toBeNull()
+      ok.ws.close()
+
+      const big = await open()
+      big.ws.send(JSON.stringify({ type: 'service_call', id: '2', service: 'probe', method: 'find', pad: 'x'.repeat(8192) }))
+      expect(await big.until(() => big.closed() !== null)).toBe(true)
+      expect(big.frames.some(f => f?.type === 'service_result')).toBe(false)
+      expect(big.closed()!.reason).not.toBe('frame_too_large')
+    } finally {
+      await small.stop()
+    }
+  })
+})

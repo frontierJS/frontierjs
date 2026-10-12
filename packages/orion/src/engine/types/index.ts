@@ -68,20 +68,20 @@ export interface NodeDefinition {
   id:            string
   type:          string
   config:        Record<string, Expression>
-  retry?:        RetryPolicy
+  retry?:        RetryOptions
   timeout?:      number
-  cache?:        CachePolicy
+  cache?:        CacheOptions
   outputSchema?: JSONSchema    // instance-level override for dynamic output shapes
   meta?:         NodeMeta      // UI/docs only — runtime ignores entirely
 }
 
-export interface RetryPolicy {
+export interface RetryOptions {
   maxAttempts: number
   backoff:     "fixed" | "exponential"
   delayMs:     number
 }
 
-export interface CachePolicy {
+export interface CacheOptions {
   ttlMs: number
   key:   Expression
 }

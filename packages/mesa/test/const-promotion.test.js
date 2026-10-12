@@ -288,6 +288,45 @@ ${markup}`)
     }
   })
 
+  // FJS-2607: a pattern over a call is bound to a compiler temp, and the temp
+  // is read through the names the author wrote.
+  it('is quiet for a destructured call whose names are read', async () => {
+    for (const pat of ['[a, b]', '{ a, b }']) {
+      const w = await warnings(`<script>
+  import { pair } from './x.js'
+  export let v
+  const ${pat} = pair(v)
+</script>
+<p>{a}</p>`)
+      expect(w, pat).toEqual([])
+    }
+  })
+
+  it('names the author\'s bindings, never the temp, when none is read', async () => {
+    const w = await warnings(`<script>
+  import { pair } from './x.js'
+  export let v
+  const [a, b] = pair(v)
+</script>
+<p>{v}</p>`)
+    expect(w).toHaveLength(1)
+    expect(w[0]).toMatch(/^'a, b' never runs/)
+    expect(w[0]).not.toMatch(/\$\$pattern/)
+  })
+
+  it('names the bindings read only in teardown', async () => {
+    const w = await warnings(`<script>
+  import { pair } from './x.js'
+  export let v
+  const { off, other } = pair(v)
+  $.onDestroy(() => off())
+</script>
+<p>{v}</p>`)
+    expect(w).toHaveLength(1)
+    expect(w[0]).toMatch(/read only in teardown/)
+    expect(w[0]).not.toMatch(/\$\$pattern/)
+  })
+
   it('the var it points at runs at mount, and its callback writes a let', async () => {
     let listener = null
     const svc = { on: (cb) => { listener = cb; return () => {} } }

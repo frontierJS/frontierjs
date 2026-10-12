@@ -20,7 +20,7 @@
 import { lookup } from 'node:dns/promises'
 import { isIP }   from 'node:net'
 
-export interface PublicUrlPolicy {
+export interface PublicUrlOptions {
   // A plaintext destination. Off by default: a webhook delivery carries an
   // HMAC over the body, which authenticates it and hides nothing.
   allowHttp?:    boolean
@@ -118,7 +118,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, host: string): Promise<T> {
  * answers the parsed URL. Run it before every request, and on every redirect
  * hop with the redirect's own URL.
  */
-export async function assertPublicUrl(raw: string | URL, policy: PublicUrlPolicy = {}): Promise<URL> {
+export async function assertPublicUrl(raw: string | URL, policy: PublicUrlOptions = {}): Promise<URL> {
   let url: URL
   try { url = new URL(raw) }
   catch { throw new PublicUrlError(`not a URL: ${JSON.stringify(String(raw))}`) }

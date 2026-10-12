@@ -16,12 +16,21 @@
 // re-exporting it, because two import paths to one function is the thing the
 // arrangement is trying to stop.
 
-import { describePrincipalRealm, customMethodGrade, gateLevels, isCrudGatedMethod, TENANT_REGISTRY } from './litestone.ts'
+import { describePrincipalRealm, customMethodGrade, gateLevels, isCrudGatedMethod, isDeclaredMove, TENANT_REGISTRY } from './litestone.ts'
 import type { PrincipalRealm, CustomMethodGrade }                                 from './litestone.ts'
 import type { App }                      from './app.ts'
 import type { HookMap }                  from './hooks.ts'
 
 // ─── the surface ──────────────────────────────────────────────────────────────
+
+/**
+ * `derived` is a `@@transitions` move no author wrote: only the Data boundary
+ * stands behind it. `elevated` is a body whose source names `asSystem`, so what
+ * it writes is the app's and not the caller's. `scoped` names neither — a body
+ * that reaches `asSystem` through a helper reads as `scoped`, since the source
+ * text is all this reads.
+ */
+export type MethodBody = 'derived' | 'elevated' | 'scoped'
 
 export interface SurfaceService {
   name:          string
@@ -42,6 +51,8 @@ export interface SurfaceService {
    * Keyed by method, CRUD verbs excluded — those are graded by operation.
    */
   methodGrades:  Record<string, CustomMethodGrade>
+  /** What stands behind each method the service answers, read off the function itself. */
+  methodBodies:  Record<string, MethodBody>
   channel:       string[]
   transactional: string[]
   softDelete:    string | null
@@ -90,6 +101,7 @@ export function describeSurface(app: App): Surface {
       inputs:        d.inputs ?? {},
       outputs:       d.outputs ?? {},
       methodGrades:  gradeCustomMethods(d, client),
+      methodBodies:  bodiesOf(svc, d.methods),
       channel,
       transactional: d.transactional,
       softDelete:    d.softDelete,
@@ -109,6 +121,18 @@ export function describeSurface(app: App): Surface {
     services,
     routes:   buildRoutes(app),
   }
+}
+
+function bodiesOf(svc: object, methods: string[]): Record<string, MethodBody> {
+  const out: Record<string, MethodBody> = {}
+  for (const m of methods) {
+    const fn = (svc as Record<string, unknown>)[m]
+    if (typeof fn !== 'function') continue
+    out[m] = isDeclaredMove(fn) ? 'derived'
+           : /\basSystem\b/.test(Function.prototype.toString.call(fn)) ? 'elevated'
+           : 'scoped'
+  }
+  return out
 }
 
 /**

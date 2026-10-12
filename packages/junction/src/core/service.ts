@@ -327,7 +327,7 @@ export interface Service {
    * `createService` to resolve, and the loader spreads one into the other.
    * `_methods` below is the resolved form and the one to read.
    */
-  methods?: MethodPolicy
+  methods?: MethodSelection
 
   /**
    * The resolved method allow-list, or null when none was declared.
@@ -1111,7 +1111,7 @@ export interface BaseServiceOptions {
    * service written with this factory answered every verb and the only symptom
    * was a write that worked.
    */
-  methods?:  MethodPolicy
+  methods?:  MethodSelection
   /**
    * Per-method levels, already read off a `methods:` list.
    *
@@ -1301,7 +1301,7 @@ export type CustomMethodMap = Record<string, CustomMethodFn>
  * `report` receives a KEY and one sentence. The key is what the finding is
  * ABOUT — this service and that name — because two graders read the one
  * `methods:` list and a name refused here is then also missing from the table
- * `resolveMethodPolicy` grades against, so the author saw their one typo
+ * `resolveMethodSelection` grades against, so the author saw their one typo
  * described twice in two vocabularies. First finding per key wins, and this
  * one runs first because it has the more specific reading. `start()`'s
  * `check-authoring` phase refuses with all of them together — an app has a config, N service
@@ -1312,7 +1312,7 @@ export type CustomMethodMap = Record<string, CustomMethodFn>
 export function collectCustomMethods(
   source:      object,
   serviceName: string,
-  declared?:   MethodPolicy,
+  declared?:   MethodSelection,
   report?:     (key: string, finding: string) => void,
 ): CustomMethodMap {
   const src = source as Record<string, unknown>
@@ -1675,7 +1675,7 @@ export interface MethodDeclaration {
 }
 
 export type MethodEntry  = string | MethodDeclaration
-export type MethodPolicy = MethodEntry[] | 'readOnly'
+export type MethodSelection = MethodEntry[] | 'readOnly'
 
 /**
  * The method name an entry declares.
@@ -1706,7 +1706,7 @@ export function methodEntryName(entry: MethodEntry, serviceName: string): string
  * anything, which is the one kind of typo that must not be guessed at.
  */
 export function collectMethodGates(
-  declared:    MethodPolicy | undefined,
+  declared:    MethodSelection | undefined,
   serviceName: string,
 ): Record<string, number> {
   const out: Record<string, number> = {}
@@ -1728,7 +1728,7 @@ export function collectMethodGates(
 
 /** The `claims:` each `methods:` entry declares, keyed by method name. */
 export function collectMethodClaims(
-  declared:    MethodPolicy | undefined,
+  declared:    MethodSelection | undefined,
   serviceName: string,
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {}
@@ -1754,7 +1754,7 @@ export function collectMethodClaims(
 
 /** The custom methods a `methods:` list declares `read: true`. */
 export function collectReadMethods(
-  declared:    MethodPolicy | undefined,
+  declared:    MethodSelection | undefined,
   serviceName: string,
 ): string[] {
   const out: string[] = []
@@ -1796,7 +1796,7 @@ export interface ScopeDeclaration { wide?: ServiceScope; methods: Record<string,
 
 /** Read a service's `scope:` and its entries' `scope:`, refusing a malformed one where it is written. */
 export function collectMethodScopes(
-  declared:    MethodPolicy | undefined,
+  declared:    MethodSelection | undefined,
   wide:        ServiceScope | undefined,
   serviceName: string,
 ): ScopeDeclaration {
@@ -1892,7 +1892,7 @@ function refuseModelCrudGates(gates: Record<string, number>, model: unknown, ser
  * method's input is a merge conflict, not an intention.
  */
 export function collectMethodInputs(
-  declared:    MethodPolicy | undefined,
+  declared:    MethodSelection | undefined,
   serviceName: string,
 ): Record<string, string> {
   return collectTypeNames(declared, serviceName, 'input')
@@ -1900,14 +1900,14 @@ export function collectMethodInputs(
 
 /** The `output:` declarations in a `methods:` list, keyed by method name. */
 export function collectMethodOutputs(
-  declared:    MethodPolicy | undefined,
+  declared:    MethodSelection | undefined,
   serviceName: string,
 ): Record<string, string> {
   return collectTypeNames(declared, serviceName, 'output')
 }
 
 function collectTypeNames(
-  declared:    MethodPolicy | undefined,
+  declared:    MethodSelection | undefined,
   serviceName: string,
   key:         'input' | 'output',
 ): Record<string, string> {
@@ -1956,8 +1956,8 @@ function collectTypeNames(
  * key is what stops one typo being described twice. Without a sink it still
  * throws, which is what a direct caller of this exported function gets.
  */
-export function resolveMethodPolicy(
-  policy:      MethodPolicy | undefined,
+export function resolveMethodSelection(
+  policy:      MethodSelection | undefined,
   available:   readonly string[],
   serviceName: string,
   report?:     (key: string, finding: string) => void,
@@ -2506,7 +2506,7 @@ export interface ServiceDefinition {
    * could forge a row into an append-only audit trail. Opt-out safety, no
    * warning; this is the opt-in.
    */
-  methods?:   MethodPolicy
+  methods?:   MethodSelection
 
   /**
    * The API-key scope every method of this service requires (`FJS-D916`).
@@ -2969,7 +2969,7 @@ export function createService(def: ServiceDefinition): Service {
   // matters because by then `def` also carries CRUD, the bypass twins and
   // `_meta`, and the scan would have to be right about all of them again.
   // One sink for both graders — `collectCustomMethods` for a name that cannot
-  // be a method, `resolveMethodPolicy` for one this service cannot answer.
+  // be a method, `resolveMethodSelection` for one this service cannot answer.
   //
   // A FUNCTION because it runs twice. The moves a model's `@@transitions`
   // declares are methods of this service too (`FJS-1255`), and the schema that
@@ -3013,7 +3013,7 @@ export function createService(def: ServiceDefinition): Service {
 
     // Resolve the method policy AFTER the custom methods are on, because an allow-list
     // may name one and the unknown-name check has to be able to see it.
-    ;(service as Service)._methods = resolveMethodPolicy(
+    ;(service as Service)._methods = resolveMethodSelection(
       def.methods,
       serviceMethodNames(service),
       serviceName,

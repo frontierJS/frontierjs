@@ -165,6 +165,9 @@ key by name (FJS-1310's fix, measured). Verses are listed in book order and
 lemmas as their own group, 1–8 ms median over HTTP. What the second caller adds
 is the easy case linear lacked: the corpus has no row policies, so `search()`
 through `$.db` is the whole of it. **The spanning verb is still not owed.**
+What the third copy should be priced against is `cross-model-search.md`: a
+palette source derived from `x-search` and `x-label-field`, with no new schema
+word.
 
 **linear is on `@@fts` too (2026-10-04).** Its `$raw` + bm25 two-step was
 the FJS-1289 workaround and outlived the fix; ⌘K is now three graded

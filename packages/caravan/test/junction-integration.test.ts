@@ -606,3 +606,28 @@ describe('CARAVAN_CONFIG_KEYS', () => {
     expect(await boot(`{ pollInterval: 1000 }`)).toBeNull()
   })
 })
+
+// ─── Readiness ───────────────────────────────────────────────
+
+describe('the jobs readiness check (FJS-1875)', () => {
+  it('fails once a running job outlives twice the longest declared timeout, and passes before', async () => {
+    const app = await bootApp({ queues: { solo: { concurrency: 1 } }, drainTimeout: 100 })
+    const q = jobsOf(app)
+    // One bounded job declares the limit (2 x 30ms); the stuck one declares none.
+    q.handle('bounded', async () => {}, { timeout: 30 })
+    q.handle('stuck', () => new Promise<void>(() => {}), { queue: 'solo' })
+
+    const check = app._readiness.get('jobs')!
+    expect(typeof check).toBe('function')
+    expect(await check()).toBe(true)
+
+    await q.dispatch('stuck', {}, { queue: 'solo' })
+    expect(await until(() => q.stats().total.running === 1, 3_000)).toBe(true)
+    // Running but young: busy is not stuck.
+    expect(await check()).toBe(true)
+
+    expect(await until(() => (q.stats().total.oldestRunningMs ?? 0) > 70, 3_000)).toBe(true)
+    expect(await check()).toBe(false)
+    await app.stop()
+  }, 15_000)
+})
