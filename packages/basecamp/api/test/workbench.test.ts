@@ -100,7 +100,7 @@ describe('runs', () => {
 
     const s = await wb.status(wb.getPin(id)!)
     expect(s).toMatchObject({ state: 'done', cost: 0.12, turns: 3, unread: true, tool: null })
-    expect(wb.getPin(id)!.session).toBe(SESSION)
+    expect(wb.getPin(id)!.chats[0].session).toBe(SESSION)
 
     const t = await wb.transcript(id)
     expect(t!.items.map(i => i.kind)).toEqual(['you', 'tool', 'text', 'result'])
@@ -181,22 +181,70 @@ describe('runs', () => {
     expect((await wb.status(wb.getPin(r.pin.id)!)).state).toBe('error')
   })
 
-  test('a new chat clears the session and the transcript, and a new API process reads the same log', async () => {
-    const { bin } = fakeClaude()
+  test('a new chat is shown beside the old one, which keeps its transcript, and a new API process reads both', async () => {
+    const { bin, seen } = fakeClaude()
     const dir = join(tmp, 'wb-fresh')
     const wb = createWorkbench({ dir, bin })
     const r = wb.pin(repo('eta'))
     if (!('pin' in r)) throw new Error(r.refused)
-    const id = r.pin.id
+    const id    = r.pin.id
+    const first = r.pin.chat
     await wb.send(id, 'first')
     await until(async () => !wb.getPin(id)!.pid && (await wb.status(wb.getPin(id)!)).state === 'done')
 
     const restarted = createWorkbench({ dir, bin })
     expect((await restarted.transcript(id))!.items).toHaveLength(4)
 
-    expect(wb.fresh(id)).toMatchObject({ session: null })
+    const p = (await wb.fresh(id))!
+    expect(p.chats).toHaveLength(2)
+    expect(p.chat).not.toBe(first)
+    expect(p.chats[1]).toMatchObject({ session: null, forkOf: null })
+    // A second New chat on the empty one opens no third.
+    expect((await wb.fresh(id))!.chats).toHaveLength(2)
+
     expect((await wb.transcript(id))!.items).toEqual([])
+    expect((await wb.transcript(id, first))!.items).toHaveLength(4)
+    expect(await wb.transcript(id, 'nope')).toBeNull()
     expect((await createWorkbench({ dir, bin }).transcript(id))!.items).toEqual([])
+
+    const s = await wb.status(wb.getPin(id)!)
+    expect(s.chat).toBe(p.chat)
+    expect(s.chats.map(c => [c.title, c.state])).toEqual([['first', 'done'], [null, 'idle']])
+
+    // The new chat starts a session; the old one, shown again, resumes its own.
+    await wb.send(id, 'second')
+    await until(async () => seen().length === 2 && !wb.getPin(id)!.pid)
+    expect(seen()[1].argv).not.toContain('--resume')
+    expect(wb.select(id, first)).toMatchObject({ chat: first })
+    expect(wb.select(id, 'nope')).toEqual({ refused: expect.stringContaining("no chat 'nope'") })
+    await wb.send(id, 'third')
+    await until(async () => seen().length === 3 && !wb.getPin(id)!.pid)
+    expect(seen()[2].argv.slice(-2)).toEqual(['--resume', SESSION])
+  })
+
+  test('one run at a time in a checkout: another chat is refused, the running one queues', async () => {
+    const { bin, seen } = fakeClaude({ sleep: 400 })
+    const wb = createWorkbench({ dir: join(tmp, 'wb-one-run'), bin })
+    const r = wb.pin(repo('theta'))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id    = r.pin.id
+    const first = r.pin.chat
+
+    await wb.send(id, 'long one')
+    await until(async () => (await wb.status(wb.getPin(id)!)).state === 'working' && !!wb.getPin(id)!.pid)
+    const other = (await wb.fresh(id))!.chat
+    expect(await wb.send(id, 'meanwhile')).toEqual({ refused: expect.stringContaining('one run at a time') })
+    expect(await wb.send(id, 'after', first)).toEqual({ queued: 1 })
+    expect(await wb.close(id, first)).toEqual({ refused: expect.stringContaining('working') })
+
+    const s = await wb.status(wb.getPin(id)!)
+    expect(s).toMatchObject({ state: 'working', chat: other, running: first })
+    expect(s.chats.map(c => c.state)).toEqual(['working', 'idle'])
+
+    // The fake writes what it saw only once it has started.
+    await until(async () => !wb.getPin(id)!.pid && (await wb.status(wb.getPin(id)!)).state === 'done' && seen().length === 2)
+    expect((await wb.transcript(id, first))!.items.filter(i => i.kind === 'you').map(i => i.kind === 'you' && i.text)).toEqual(['long one', 'after'])
+    expect(await wb.send(id, 'now')).toEqual({ queued: 0 })
   })
 
 })
@@ -220,8 +268,13 @@ describe('running cost', () => {
     expect(s.spent.total).toBeCloseTo(0.24)
     expect(s.spent.today).toBeCloseTo(0.24)
 
-    wb.fresh(id)
+    await wb.fresh(id)
     expect((await wb.status(wb.getPin(id)!)).spent.total).toBeCloseTo(0.24)
+    // Closing the chat that spent it keeps it in the total.
+    const p = wb.getPin(id)!
+    expect(await wb.close(id, p.chats[0].id)).toMatchObject({ chats: [{ id: p.chat }] })
+    expect((await wb.status(wb.getPin(id)!)).spent.total).toBeCloseTo(0.24)
+    expect(await wb.close(id, p.chat)).toEqual({ refused: expect.stringContaining('one chat') })
   })
 
 })
@@ -409,7 +462,7 @@ describe('branches', () => {
     const headBefore  = git('rev-parse', 'HEAD').trim()
 
     const b = await forked(wb, parent.pin.id)
-    expect(b).toMatchObject({ from: parent.pin.id, branch: 'wb/branch-1', name: 'fork · branch-1', forkOf: null })
+    expect(b).toMatchObject({ from: parent.pin.id, branch: 'wb/branch-1', name: 'fork · branch-1', chats: [{ forkOf: null }] })
     expect(b.path.startsWith(join(wbDir, 'trees', parent.pin.id))).toBe(true)
     expect(readFileSync(join(b.path, 'a.txt'), 'utf8')).toBe('one\nTWO\nthree\n')
     expect(readFileSync(join(b.path, 'wip.txt'), 'utf8')).toBe('half done\n')
@@ -506,12 +559,12 @@ describe('branches', () => {
     if (!('pin' in parent)) throw new Error(parent.refused)
     wb.configure(parent.pin.id, { budget: 3 })
     await wb.send(parent.pin.id, 'first')
-    await until(async () => !wb.getPin(parent.pin.id)!.pid && !!wb.getPin(parent.pin.id)!.session)
+    await until(async () => !wb.getPin(parent.pin.id)!.pid && !!wb.getPin(parent.pin.id)!.chats[0].session)
 
     const b = await forked(wb, parent.pin.id)
-    expect(b).toMatchObject({ forkOf: SESSION, session: null, budget: 3 })
+    expect(b).toMatchObject({ chats: [{ forkOf: SESSION, session: null }], budget: 3 })
     await wb.send(b.id, 'in the branch')
-    await until(async () => !wb.getPin(b.id)!.pid && !!wb.getPin(b.id)!.session)
+    await until(async () => !wb.getPin(b.id)!.pid && !!wb.getPin(b.id)!.chats[0].session)
     await wb.send(b.id, 'again')
     await until(async () => seen().length === 3 && !wb.getPin(b.id)!.pid)
 
@@ -522,8 +575,8 @@ describe('branches', () => {
     expect(second.argv).not.toContain('--fork-session')
 
     // A new chat in a branch forks nothing.
-    wb.fresh(b.id)
-    expect(wb.getPin(b.id)).toMatchObject({ session: null, forkOf: null })
+    const p = (await wb.fresh(b.id))!
+    expect(p.chats.find(c => c.id === p.chat)).toMatchObject({ session: null, forkOf: null })
   })
 
   test('land: the branch\'s work, committed or not, into the parent\'s tree uncommitted; a second land carries only what came after', async () => {

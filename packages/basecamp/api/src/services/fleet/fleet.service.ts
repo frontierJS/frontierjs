@@ -30,10 +30,12 @@ import { createService } from '@frontierjs/junction'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db } from '../../core/resource.ts'
 import type { BasecampApp } from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createFleetService(_app: BasecampApp) {
   return createService({
     name:    'fleet',
+    scope:   keyScope('fleet'),
     model:   'fleetByProvider',
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
     methods: 'readOnly',

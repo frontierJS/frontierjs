@@ -24,6 +24,7 @@ import { AccessDeniedError, LEVELS } from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db } from '../../core/resource.ts'
 import type { BasecampApp } from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** Per kind. A workspace that deleted more than this of one kind sees the newest. */
 const PER_KIND = 100
@@ -93,6 +94,7 @@ async function deletedOf(k: Kind): Promise<Row[]> {
 export function createTrashService(app: BasecampApp) {
   return createService({
     name: 'trash',
+    scope: keyScope('trash'),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // READER: what a member may see is decided per kind by that model's own

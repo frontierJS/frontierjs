@@ -16,6 +16,7 @@ import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, na
 import { retireAppsIn }         from '../apps/apps.service.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createEnvironmentsService(app: BasecampApp) {
 
@@ -32,6 +33,7 @@ export function createEnvironmentsService(app: BasecampApp) {
 
   return createService({
     name:  'environments',
+    scope: keyScope('environments'),
     model: 'Environment',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

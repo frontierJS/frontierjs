@@ -37,6 +37,7 @@ import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource } from '../../core/app-source.ts'
 import { runtimeOf } from '../../core/runtime.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 const _WITH_ENV = { environment: true }
 
@@ -214,6 +215,7 @@ export function createAppsService(app: BasecampApp) {
 
   return createService({
     name:  'apps',
+    scope: keyScope('apps'),
     model: 'App',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

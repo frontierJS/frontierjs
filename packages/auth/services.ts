@@ -135,24 +135,6 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
   }
 
   /**
-   * The caller acting on somebody ELSE's account — `people` and
-   * `account-recovery`. An unscoped key passes, because an agent reaches
-   * `/mcp` with one and reading people is what an admin agent is for; its
-   * writes are `refuseDelegated`'s. A scoped key is refused, since no scope an
-   * app declares names these services. `FJS-D615` ruled the caller's OWN
-   * credentials and not these.
-   */
-  function operatorOf(ctx: ServiceContext): SessionContext {
-    const user = identify(ctx)
-    if (user.scopes?.length) {
-      throw new Forbidden(
-        `An API key with scopes (${user.scopes.join(', ')}) cannot manage accounts — sign in to do it.`
-      )
-    }
-    return user
-  }
-
-  /**
    * A scope list a key can be minted with, or a 400 naming the bad entry.
    *
    * A scope is stored space-joined and read back split, so a blank entry
@@ -237,7 +219,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
    * anybody standing at or above them.
    */
   async function aim(ctx: ServiceContext, what?: string): Promise<{ operator: SessionContext; person: SessionContext }> {
-    const operator = operatorOf(ctx)
+    const operator = identify(ctx)
     if (what) refuseDelegated(ctx, operator, what)
     const userId = String(ctx.id ?? '')
     if (!userId || userId === 'me' || userId === operator.userId) {
@@ -275,16 +257,21 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // Without `methods` the base service answers every CRUD verb it was not
     // given, and on a service with no model that is a 500 rather than a
     // refusal. It also throws at construction on a name not defined below.
-    methods: signedIn(
-      'get', 'changePassword', 'requestEmailChange',
-      // The second factor. On `account` rather than a service of its own for the
-      // reason `changePassword` is here: it is a credential this account
-      // authenticates with, not a collection the account owns — which is what
-      // `sessions` and `api-keys` are. A fourth service would also be a fourth
-      // configurable name, a fourth collision check and a fourth thing to
-      // document, for one fact about one account.
-      'totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes',
-    ),
+    methods: [
+      // A key may always ask who holds it, whatever its scopes: the answer is
+      // the session it already presented (`FJS-D916`).
+      { method: 'get', gate: LEVELS.VISITOR, scope: false },
+      ...signedIn(
+        'changePassword', 'requestEmailChange',
+        // The second factor. On `account` rather than a service of its own for the
+        // reason `changePassword` is here: it is a credential this account
+        // authenticates with, not a collection the account owns — which is what
+        // `sessions` and `api-keys` are. A fourth service would also be a fourth
+        // configurable name, a fourth collision check and a fourth thing to
+        // document, for one fact about one account.
+        'totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes',
+      ),
+    ],
 
     // GET /account/me — the SessionContext the server built, not a User row.
     // A UI needs what the request will be graded as, which is the session; the
@@ -549,7 +536,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     methods: signedIn('resetTotp'),
 
     async resetTotp(ctx: ServiceContext) {
-      const operator = operatorOf(ctx)
+      const operator = identify(ctx)
       // An episode resolves as the subject, so the operator would be graded as
       // somebody else — and a reset outlives the episode that made it.
       refuseDelegated(ctx, operator, "reset somebody's second factor")
@@ -650,7 +637,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     // POST /people — no id: the person does not exist yet.
     async invite(ctx: ServiceContext) {
-      const operator = operatorOf(ctx)
+      const operator = identify(ctx)
       refuseDelegated(ctx, operator, 'invite somebody')
       const { email, name } = (ctx.data ?? {}) as { email?: unknown; name?: unknown }
       if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequest('email must be an address')

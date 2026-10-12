@@ -41,6 +41,7 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, ws, actor }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
 import type { ServerEventKind } from '../../../../db/schema.d.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
 // snake_case, like the heartbeat payload and unlike every other call into this
@@ -128,6 +129,7 @@ export function createVolumesService(app: BasecampApp) {
 
   return createService({
     name:  'volumes',
+    scope: keyScope('volumes'),
     model: 'Volume',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

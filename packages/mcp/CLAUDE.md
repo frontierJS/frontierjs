@@ -50,10 +50,13 @@ grades a CRUD verb too, as junction enforces it (`FJS-D408`). `@system` is not a
 input: it says whose decision a move is, and the method lifting it keeps the gate
 (`FJS-D150`).
 
-**`narrow` is the one input an APP supplies, and it only removes** (`FJS-D407`).
-It is for an axis a standing is not — an API key's scopes. A rule that IS a level
-belongs in `@@gate` or a declared `gate:`, where the boundary enforces it as well;
-put in `narrow`, it is a second origin nothing at the boundary agrees with.
+**A key's declared scopes withhold a tool through junction's `scopeRefusal`**, the
+reading the call is refused by (`FJS-D916`), so a key is never offered a verb it
+would be refused. **`narrow` is the one input an APP supplies, and it only
+removes** (`FJS-D407`) — for a rule beyond a level and a scope, like basecamp's
+`NOT_FOR_AGENTS`. A rule that IS a level belongs in `@@gate` or a declared
+`gate:`, and one that is a scope in `scope:`, where the boundary enforces it as
+well; put in `narrow`, it is a second origin nothing at the boundary agrees with.
 
 It reads a NARROWED view of the generated schema on purpose — `ModelDef` declares
 two keywords. Taking the whole `$def` would leave the projection free to start

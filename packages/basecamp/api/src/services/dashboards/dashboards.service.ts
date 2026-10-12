@@ -32,6 +32,7 @@ import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, a
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
 import { PORTAL_SERVICE_IDS } from '../portal/portal.service.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 interface WidgetInput {
   widgetId?: string
@@ -183,6 +184,7 @@ export function createDashboardsService(app: BasecampApp) {
 
   return createService({
     name:  'dashboards',
+    scope: keyScope('dashboards'),
     model: 'Dashboard',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

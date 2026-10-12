@@ -39,6 +39,7 @@ import { db, ws, actor, slugify, findScoped, getScoped, assertSlugFree, removeSc
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import recipeRun from '../../jobs/recipe-run.job.ts'
 import { announce } from '../../channels.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** How many runs a screen is handed at once. A fleet run writes one row per
  *  machine, so a recipe on fifty servers is fifty rows from a single click. */
@@ -97,6 +98,7 @@ export function createRecipesService(app: BasecampApp) {
 
   return createService({
     name:  'recipes',
+    scope: keyScope('recipes'),
     model: 'Recipe',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

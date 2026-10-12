@@ -11,9 +11,9 @@
 // directory — `WORKBENCH_DIR`, default ~/.config/basecamp/workbench:
 //
 //   pins.json                 the pinned checkouts, in pin order
-//   logs/<id>.ndjson          every run in that checkout, appended — a `prompt`
-//                             line written here, claude's stream-json, then an
-//                             `exit` line
+//   logs/<id>.<chat>.ndjson   every run in one chat of that checkout, appended —
+//                             a `prompt` line written here, claude's stream-json,
+//                             then an `exit` line
 //   logs/<id>.review.ndjson   every reviewer run, the same shape
 //   logs/<id>.checks.json     the latest checks report, replaced whole
 //   logs/<id>.run.<row>.log   what a dev server or script started from the Run
@@ -21,6 +21,11 @@
 //   trees/<parent id>/<slug>  a BRANCH's linked worktree — outside the repo, or
 //                             fli check, the typecheck globs and the packages/*
 //                             glob would each find a second copy of every package
+//
+// A checkout holds several CHATS, each its own Claude Code session and log, and
+// one of them is the one the screen shows. They share one tree, so only one
+// runs at a time: a message to another chat while one is working is refused,
+// and Fork is the way to run two at once.
 //
 // A branch is a pin like any other, plus where it came from: Fork snapshots the
 // parent's tree (`core/workbench-branch.ts`), cuts `wb/<slug>` from it into a
@@ -63,7 +68,7 @@
 // INCREMENTALLY: the bytes since the last read, folded into a cached state.
 
 import { spawn }                       from 'node:child_process'
-import { createHash }                  from 'node:crypto'
+import { createHash, randomBytes }     from 'node:crypto'
 import {
   appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync,
   readSync, renameSync, rmSync, statSync, writeFileSync,
@@ -77,12 +82,26 @@ import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles,
 import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './preview.ts'
 import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
 
+export type Chat = {
+  id:      string
+  /** The Claude Code session the next message resumes; null starts a new one. */
+  session: string | null
+  /** The session this chat's first message forks; spent once `session` is set. */
+  forkOf:  string | null
+}
+
 export type Pin = {
   id:       string
   path:     string
   name:     string
-  /** The Claude Code session the next message resumes; null starts a new one. */
-  session:  string | null
+  /** In the order they were opened; never empty. */
+  chats:    Chat[]
+  /** The chat the screen shows and a message goes to unless it names another. */
+  chat:     string
+  /** The chat `pid` is running in. */
+  runChat:  string | null
+  /** Cost by day of the chats closed here, so the card's total keeps them. */
+  closedByDay: Record<string, number>
   budget:   number
   /** Run the checkout's own Claude Code hooks. Off: a Stop hook that blocks
    *  spends the run's turns on the hook instead of the request. */
@@ -99,8 +118,6 @@ export type Pin = {
   base:     string | null
   /** `wb/<slug>`, the git branch the worktree has checked out. */
   branch:   string | null
-  /** The session a branch's first message forks; spent once `session` is set. */
-  forkOf:   string | null
   /** What the snapshot held beyond the parent's HEAD — files a run there had
    *  not committed, which a concurrent session may have been halfway through. */
   carried:  { total: number, files: string[] } | null
@@ -139,8 +156,18 @@ export type ChecksFile = {
 
 export type Spent = { total: number, today: number }
 
+export type ChatStatus = {
+  id:      string
+  /** The chat's first message, cut to a line; null before it has one. */
+  title:   string | null
+  state:   RunState
+  unread:  boolean
+  session: string | null
+}
+
 export type PinStatus = {
   id:      string
+  /** The latest run's, in whichever chat it was. */
   state:   RunState
   /** What the run is doing now — the last tool call, cleared by text. */
   tool:    string | null
@@ -150,7 +177,10 @@ export type PinStatus = {
   queued:  number
   /** Moves whenever the transcript would: a screen refetches when it does. */
   rev:     string
-  session: string | null
+  /** The chat shown, and the one working when a run is. */
+  chat:    string
+  running: string | null
+  chats:   ChatStatus[]
   /** Every run and review in this checkout, and those started today. */
   spent:   Spent
   checks:  { state: ChecksState, at: string, changed: number, unfinished: number, drives: number } | null
@@ -163,9 +193,11 @@ type Folded = {
   offset:  number
   partial: string
   items:   Item[]
+  /** Kept apart from `items`, which drops the oldest past MAX_ITEMS. */
+  title:   string | null
   session: string | null
   run:     { state: RunState, tool: string | null, cost: number | null, turns: number | null, at: string | null }
-  /** Cost by the local day each run started, kept across a new chat. */
+  /** Cost by the local day each run started. */
   byDay:   Record<string, number>
 }
 
@@ -184,7 +216,7 @@ const MAX_COPY = 20
 const INSTALL_MS = 10 * 60_000
 
 const freshFold = (): Folded => ({
-  offset: 0, partial: '', items: [], session: null,
+  offset: 0, partial: '', items: [], title: null, session: null,
   run: { state: 'idle', tool: null, cost: null, turns: null, at: null }, byDay: {},
 })
 
@@ -195,10 +227,10 @@ export function dayOf(at: string | number | Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function spentOf(f: Folded, today: string): Spent {
+function spentOf(byDay: Record<string, number>, today: string): Spent {
   return {
-    total: Object.values(f.byDay).reduce((n, c) => n + c, 0),
-    today: f.byDay[today] ?? 0,
+    total: Object.values(byDay).reduce((n, c) => n + c, 0),
+    today: byDay[today] ?? 0,
   }
 }
 
@@ -223,6 +255,14 @@ function killGroup(pid: number | null | undefined) {
 }
 
 export const pinId = (path: string): string => createHash('sha1').update(path).digest('hex').slice(0, 12)
+
+const newChat = (forkOf: string | null = null): Chat => ({ id: randomBytes(4).toString('hex'), session: null, forkOf })
+
+const TITLE_MAX = 60
+const titleOf = (text: string): string => {
+  const line = text.trim().split('\n')[0].trim()
+  return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line
+}
 
 function alive(pid: number | null): boolean {
   if (!pid) return false
@@ -264,7 +304,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 } = {}) {
   const root     = dir || join(homedir(), '.config', 'basecamp', 'workbench')
   const pinsFile = join(root, 'pins.json')
-  const logFile    = (id: string) => join(root, 'logs', `${id}.ndjson`)
+  const logFile    = (id: string, chat: string) => join(root, 'logs', `${id}.${chat}.ndjson`)
   const reviewFile = (id: string) => join(root, 'logs', `${id}.review.ndjson`)
   const checksFile = (id: string) => join(root, 'logs', `${id}.checks.json`)
   const runFile    = (id: string, row: string) => join(root, 'logs', `${id}.run.${createHash('sha1').update(row).digest('hex').slice(0, 10)}.log`)
@@ -276,7 +316,11 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   function readPins(): Pin[] {
     let pins: Array<Partial<Pin>>
     try { pins = JSON.parse(readFileSync(pinsFile, 'utf8')).pins ?? [] } catch { return [] }
-    return pins.map(p => ({ review: false, reviewPid: null, from: null, base: null, branch: null, forkOf: null, carried: null, copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, ...p }) as Pin)
+    return pins.map(p => ({
+      chats: [{ id: '1', session: null, forkOf: null }], chat: '1', runChat: null, closedByDay: {},
+      review: false, reviewPid: null, from: null, base: null, branch: null, carried: null,
+      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, ...p,
+    }) as Pin)
   }
 
   // Through a rename, so a crash mid-write cannot leave half a file that reads
@@ -301,6 +345,18 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return readPins().find(p => p.id === id) ?? null
   }
 
+  /** The chat named, or the one shown when none is; null for a name that is not one. */
+  function chatIn(p: Pin, chat?: unknown): Chat | null {
+    const want = chat == null || chat === '' ? p.chat : String(chat)
+    return p.chats.find(c => c.id === want) ?? (want === p.chat ? p.chats[0] ?? null : null)
+  }
+
+  function updateChat(id: string, chat: string, patch: Partial<Chat>): Pin {
+    const p = getPin(id)
+    if (!p) throw new Error(`no pinned checkout '${id}'`)
+    return updatePin(id, { chats: p.chats.map(c => c.id === chat ? { ...c, ...patch } : c) })
+  }
+
   /** A pin outlives its folder: a rename or a delete leaves it naming nothing,
    *  and a run there would fail on spawn rather than say why. */
   function goneRefusal(p: Pin): { refused: string } | null {
@@ -316,11 +372,13 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const id   = pinId(where.root)
     const had  = pins.find(p => p.id === id)
     if (had) return { pin: had }
+    const first = newChat()
     const next: Pin = {
-      id, path: where.root, name: basename(where.root), session: null,
+      id, path: where.root, name: basename(where.root),
+      chats: [first], chat: first.id, runChat: null, closedByDay: {},
       budget: DEFAULT_BUDGET, hooks: false, review: false,
       pinnedAt: new Date().toISOString(), seenAt: null, pid: null, reviewPid: null,
-      from: null, base: null, branch: null, forkOf: null, carried: null,
+      from: null, base: null, branch: null, carried: null,
       copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {},
     }
     writePins([...pins, next])
@@ -342,7 +400,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const p = getPin(id)
     if (p) for (const row of Object.keys(p.runs)) { halt(id, row); rmSync(runFile(id, row), { force: true }) }
     writePins(readPins().filter(p => p.id !== id))
-    for (const file of [logFile(id), reviewFile(id), checksFile(id)]) {
+    for (const file of [...(p?.chats ?? []).map(c => logFile(id, c.id)), reviewFile(id), checksFile(id)]) {
       rmSync(file, { force: true })
       folds.delete(file)
     }
@@ -361,7 +419,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   /**
    * A branch of a pinned checkout: its tree as the operator sees it, uncommitted
    * and untracked files included, in a worktree of its own, pinned beside it.
-   * Where the parent has a chat the branch's first message forks it.
+   * Where the parent's shown chat has a session the branch's first message forks it.
    */
   async function fork(id: string, input: { slug?: unknown, preview?: unknown } = {}): Promise<{ pin: Pin } | { refused: string }> {
     const parent = getPin(id)
@@ -390,7 +448,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     if ('refused' in pinned) return pinned
     const b = updatePin(pinned.pin.id, {
       name: `${parent.name} · ${slug}`, from: parent.id, base: cut.base, branch: named.branch,
-      forkOf: parent.session, carried: cut.carried,
+      chats: pinned.pin.chats.map(c => ({ ...c, forkOf: chatIn(parent)?.session ?? null })), carried: cut.carried,
       budget: parent.budget, hooks: parent.hooks, review: parent.review,
     })
     const setup = await setUp(parent, b)
@@ -417,11 +475,11 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     mkdirSync(join(root, 'logs'), { recursive: true })
     let copied: string[] = []
     try { copied = await copyIgnored(parent.path, b.path, parent.copy) }
-    catch (e) { appendFileSync(logFile(b.id), `copying the parent's ignored files failed: ${(e as Error).message}\n`) }
+    catch (e) { appendFileSync(logFile(b.id, b.chat), `copying the parent's ignored files failed: ${(e as Error).message}\n`) }
     if (!['bun.lock', 'bun.lockb'].some(f => existsSync(join(b.path, f)))) return { copied, install: 'none' }
     const out = await installIn(b.path)
     if (out.ok) return { copied, install: 'ran' }
-    appendFileSync(logFile(b.id), `bun install failed in the branch (${out.why}):\n${out.tail}\n`)
+    appendFileSync(logFile(b.id, b.chat), `bun install failed in the branch (${out.why}):\n${out.tail}\n`)
     return { copied, install: 'failed' }
   }
 
@@ -543,10 +601,10 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       push(f, { kind: 'error', text: line.slice(0, 2000) })
       return
     }
-    if (event.type === 'new') { Object.assign(f, freshFold(), { offset: f.offset, partial: f.partial, byDay: f.byDay }); return }
     if (event.type === 'prompt') {
       const at = String(event.at ?? '')
       push(f, { kind: 'you', text: String(event.text ?? ''), at })
+      f.title ??= titleOf(String(event.text ?? ''))
       f.run = { state: 'working', tool: null, cost: null, turns: null, at }
       return
     }
@@ -630,25 +688,47 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return { fold: r, state: settled(r.run.state, p.reviewPid) }
   }
 
+  type ChatFold = { chat: Chat, fold: Folded, state: RunState, mtime: number }
+
+  /** Every chat's log folded, and the one holding the latest run — which,
+   *  one run at a time, is the one a run in progress is in. */
+  async function chatsOf(p: Pin): Promise<{ all: ChatFold[], latest: ChatFold }> {
+    const all = await Promise.all(p.chats.map(async chat => {
+      const file = logFile(p.id, chat.id)
+      const f = await fold(file)
+      let mtime = 0
+      try { mtime = statSync(file).mtimeMs } catch {}
+      return { chat, fold: f, mtime, state: settled(f.run.state, chat.id === p.runChat ? p.pid : null) }
+    }))
+    const at = (c: ChatFold) => c.fold.run.at ? Date.parse(c.fold.run.at) : -Infinity
+    const latest = all.reduce((a, b) => at(b) > at(a) ? b : a)
+    return { all, latest }
+  }
+
   async function status(p: Pin): Promise<PinStatus> {
-    const f = await fold(logFile(p.id))
-    const state = settled(f.run.state, p.pid)
-    let mtime = 0
-    try { mtime = statSync(logFile(p.id)).mtimeMs } catch {}
-    const ended  = state === 'done' || state === 'error'
+    const { all, latest } = await chatsOf(p)
+    const shown  = all.find(c => c.chat.id === p.chat) ?? all[0]
+    const f      = latest.fold
+    const state  = latest.state
+    const unread = (c: ChatFold) => (c.state === 'done' || c.state === 'error') && (!p.seenAt || c.mtime > Date.parse(p.seenAt))
     const review = await currentReview(p, f)
     const checks = currentChecks(p.id, f)
     const today  = dayOf(Date.now())
-    const own    = spentOf(f, today)
-    const rev    = spentOf(await fold(reviewFile(p.id)), today)
+    const own    = [...all.map(c => spentOf(c.fold.byDay, today)), spentOf(p.closedByDay, today)]
+    const rev    = spentOf((await fold(reviewFile(p.id))).byDay, today)
     return {
       id: p.id, state, tool: state === 'working' ? f.run.tool : null,
       cost: f.run.cost, turns: f.run.turns,
-      unread: ended && (!p.seenAt || mtime > Date.parse(p.seenAt)),
+      unread: all.some(unread),
       queued: queues.get(p.id)?.length ?? 0,
-      rev:    [f.offset, review?.fold.offset ?? 0, checks ? `${checks.state}@${checks.at}` : ''].join('.'),
-      session: p.session,
-      spent:  { total: own.total + rev.total, today: own.today + rev.today },
+      rev:    [shown.chat.id, shown.fold.offset, review?.fold.offset ?? 0, checks ? `${checks.state}@${checks.at}` : ''].join('.'),
+      chat:    shown.chat.id,
+      running: alive(p.pid) ? p.runChat : null,
+      chats:   all.map(c => ({ id: c.chat.id, title: c.fold.title, state: c.state, unread: unread(c), session: c.chat.session })),
+      spent:  {
+        total: own.reduce((n, s) => n + s.total, 0) + rev.total,
+        today: own.reduce((n, s) => n + s.today, 0) + rev.today,
+      },
       checks: checks && {
         state: checks.state, at: checks.at,
         changed:    checks.report?.changed ?? 0,
@@ -664,17 +744,21 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return Promise.all(readPins().map(status))
   }
 
-  async function transcript(id: string) {
+  /** One chat — the one shown unless another is named — with the checkout's
+   *  checks and review. */
+  async function transcript(id: string, chat?: unknown) {
     const p = getPin(id)
-    if (!p) return null
-    const f = await fold(logFile(id))
+    const c = p && chatIn(p, chat)
+    if (!p || !c) return null
+    const f = await fold(logFile(id, c.id))
+    const { latest } = await chatsOf(p)
     const { resumeCommand } = await loadAskClaude()
-    const review = await currentReview(p, f)
+    const review = await currentReview(p, latest.fold)
     // The review's own prompt is the rules; what is worth reading is the reply.
     const from = review ? review.fold.items.findLastIndex(i => i.kind === 'you') + 1 : 0
     return {
-      id, items: f.items, resume: p.session ? resumeCommand(p.path, p.session) : null,
-      checks: currentChecks(id, f),
+      id, chat: c.id, items: f.items, resume: c.session ? resumeCommand(p.path, c.session) : null,
+      checks: currentChecks(id, latest.fold),
       review: review && { state: review.state, items: review.fold.items.slice(from) },
     }
   }
@@ -727,25 +811,30 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return child
   }
 
-  async function start(p: Pin, prompt: string) {
+  async function start(p: Pin, chat: Chat, prompt: string) {
     const { askArgv } = await loadAskClaude()
     cancelFollowUps(p)
-    const forking = !p.session && !!p.forkOf
-    const argv    = askArgv({ session: p.session ?? p.forkOf, fork: forking, work: { budget: p.budget, hooks: p.hooks } })
-    const child = launch(logFile(p.id), p.path, argv, prompt, async (code, signal) => {
+    const forking = !chat.session && !!chat.forkOf
+    const argv    = askArgv({ session: chat.session ?? chat.forkOf, fork: forking, work: { budget: p.budget, hooks: p.hooks } })
+    const file    = logFile(p.id, chat.id)
+    const child = launch(file, p.path, argv, prompt, async (code, signal) => {
       const still = getPin(p.id)
       if (!still) return
       const stopped = stopping.delete(p.id)
-      appendLine(logFile(p.id), { type: 'exit', code, signal, stopped, at: new Date().toISOString() })
+      appendLine(file, { type: 'exit', code, signal, stopped, at: new Date().toISOString() })
       // The session id is read off the log rather than caught off the stream,
       // so a run that outlived an API restart still leaves its id behind.
-      const f = await fold(logFile(p.id))
-      updatePin(p.id, { pid: null, session: f.session ?? still.session })
+      const f = await fold(file)
+      const now = updatePin(p.id, {
+        pid: null, runChat: null,
+        chats: still.chats.map(c => c.id === chat.id ? { ...c, session: f.session ?? c.session } : c),
+      })
       const next = queues.get(p.id)?.shift()
-      if (next !== undefined) { await start(getPin(p.id)!, next); return }
+      const same = chatIn(now, chat.id)
+      if (next !== undefined && same) { await start(now, same, next); return }
       if (!stopped) await followUp(p.id, f.run.state)
     })
-    updatePin(p.id, { pid: child.pid ?? null })
+    updatePin(p.id, { pid: child.pid ?? null, runChat: chat.id })
   }
 
   // ─── the Run tab ──────────────────────────────────────────────────────
@@ -900,7 +989,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     const gone = goneRefusal(p)
     if (gone) return gone
     const { askArgv, reviewPrompt } = await loadAskClaude()
-    const request = (await fold(logFile(id))).items.findLast(i => i.kind === 'you')
+    const request = (await chatsOf(p)).latest.fold.items.findLast(i => i.kind === 'you')
     const child = launch(reviewFile(id), p.path, askArgv(), reviewPrompt({ request: request?.kind === 'you' ? request.text : '' }), (code, signal) => {
       if (!getPin(id)) return
       appendLine(reviewFile(id), { type: 'exit', code, signal, stopped: reviewStopping.delete(id), at: new Date().toISOString() })
@@ -913,21 +1002,25 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   const stopping       = new Set<string>()
   const reviewStopping = new Set<string>()
 
-  /** Send a message. A checkout already working queues it behind the run. */
-  async function send(id: string, prompt: string): Promise<{ queued: number } | { refused: string }> {
+  /** Send a message to a chat, the one shown unless another is named. The
+   *  chat already working queues it behind the run; any other is refused. */
+  async function send(id: string, prompt: string, chat?: unknown): Promise<{ queued: number } | { refused: string }> {
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
+    const c = chatIn(p, chat)
+    if (!c) return { refused: `${p.name} has no chat '${chat}'` }
     const text = prompt.trim()
     if (!text) return { refused: 'say something' }
     const gone = goneRefusal(p)
     if (gone) return gone
     if (alive(p.pid)) {
+      if (p.runChat !== c.id) return { refused: `another chat in ${p.name} is working — one run at a time in a checkout; Fork for a second` }
       const q = queues.get(id) ?? []
       q.push(text)
       queues.set(id, q)
       return { queued: q.length }
     }
-    await start(p, text)
+    await start(p, c, text)
     return { queued: 0 }
   }
 
@@ -945,13 +1038,45 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return running || following
   }
 
-  /** A new chat: the next message starts a session instead of resuming one. */
-  function fresh(id: string) {
+  /** A new chat, shown. One shown with nothing in it yet is kept rather than
+   *  joined by another, and forks nothing. A run elsewhere keeps going. */
+  async function fresh(id: string): Promise<Pin | null> {
     const p = getPin(id)
     if (!p) return null
-    if (alive(p.pid)) return { refused: 'stop the run before starting a new chat' }
-    appendLine(logFile(id), { type: 'new' })
-    return updatePin(id, { session: null, forkOf: null })
+    const shown = chatIn(p)
+    if (shown && !shown.session && !(await fold(logFile(id, shown.id))).items.length)
+      return updateChat(id, shown.id, { forkOf: null })
+    const next = newChat()
+    return updatePin(id, { chats: [...p.chats, next], chat: next.id })
+  }
+
+  /** Show another chat. */
+  function select(id: string, chat: unknown): Pin | { refused: string } {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const c = chatIn(p, chat)
+    if (!c || chat == null || chat === '') return { refused: `${p.name} has no chat '${chat}'` }
+    return updatePin(id, { chat: c.id })
+  }
+
+  /** Forget a chat here — Claude Code keeps its session — keeping what it cost.
+   *  The one shown passes to its neighbour; the last one stays. */
+  async function close(id: string, chat: unknown): Promise<Pin | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const c = chat == null || chat === '' ? null : chatIn(p, chat)
+    if (!c) return { refused: `${p.name} has no chat '${chat}'` }
+    if (p.chats.length === 1) return { refused: `${p.name} has one chat — New chat starts another` }
+    if (alive(p.pid) && p.runChat === c.id) return { refused: 'that chat is working; stop it before closing it' }
+    const file = logFile(id, c.id)
+    const closedByDay = { ...p.closedByDay }
+    for (const [day, cost] of Object.entries((await fold(file)).byDay)) closedByDay[day] = (closedByDay[day] ?? 0) + cost
+    rmSync(file, { force: true })
+    folds.delete(file)
+    const at    = p.chats.findIndex(x => x.id === c.id)
+    const chats = p.chats.filter(x => x.id !== c.id)
+    const shown = p.chat === c.id ? chats[Math.max(0, at - 1)].id : p.chat
+    return updatePin(id, { chats, chat: shown, closedByDay })
   }
 
   function seen(id: string) {
@@ -960,7 +1085,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
-    send, stop, fresh, seen, check, review, fork, land, archive, archiveRefusal, recordOpened,
+    send, stop, fresh, select, close, seen, check, review, fork, land, archive, archiveRefusal, recordOpened,
     runnables, run, halt, output,
   }
 }

@@ -18,10 +18,12 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
 import { resolveRoot, listLocalRepos } from '../../core/local-git.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createGitService(app: BasecampApp) {
   return createService({
     name: 'git',
+    scope: keyScope('git'),
     reservedQuery: [...WORKSPACE_QUERY, 'root', 'depth'],
 
     // `methods:` rather than the scan: a service with no model otherwise

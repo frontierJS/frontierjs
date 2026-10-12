@@ -21,7 +21,7 @@
 import { createService, BadRequest, Forbidden, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
-import { scopeVocabulary } from './scopes.ts'
+import { scopeVocabulary, WHOLE_KEY } from './scopes.ts'
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { IAuth } from '@frontierjs/junction'
@@ -169,6 +169,12 @@ export function createApiKeysService(app: BasecampApp) {
     const bad   = scopes.filter(s => !known.has(s))
     if (bad.length) throw new BadRequest(`unknown scope: ${bad.join(', ')}`)
 
+    // A whole key is one minted with no scopes, which junction holds to none;
+    // `admin` beside a scope would read as narrowing and grant everything.
+    if (scopes.includes(WHOLE_KEY) && scopes.length > 1)
+      throw new BadRequest(`'${WHOLE_KEY}' is every scope, so it is issued alone`)
+    data.scopes = scopes.includes(WHOLE_KEY) ? [] : scopes
+
     if (typeof data.name !== 'string' || !data.name.trim())
       throw new BadRequest('name is required')
 
@@ -182,7 +188,7 @@ export function createApiKeysService(app: BasecampApp) {
     // travels on $.locals to the response and stops there.
     const { key, id } = await authOrRefuse().createApiKey(data.userId as string, {
       name:      data.name,
-      scopes,
+      scopes:    data.scopes as string[],
       expiresAt: data.expiresAt ? new Date(data.expiresAt as string) : undefined,
     })
 

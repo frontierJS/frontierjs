@@ -36,6 +36,7 @@ import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, ch
   from '../../core/resource.ts'
 import { KINDS, deliverToChannel, testMessage } from '../../core/delivery.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createChannelsService(app: BasecampApp) {
 
@@ -86,6 +87,7 @@ export function createChannelsService(app: BasecampApp) {
 
   return createService({
     name:  'channels',
+    scope: keyScope('channels'),
     model: 'NotificationChannel',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

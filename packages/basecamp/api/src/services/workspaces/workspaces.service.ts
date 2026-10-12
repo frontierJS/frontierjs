@@ -23,6 +23,7 @@ import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 // five names is what keeps a role added tomorrow from being accepted by an API
 // that cannot grade it.
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createWorkspacesService(app: BasecampApp) {
 
@@ -113,6 +114,7 @@ export function createWorkspacesService(app: BasecampApp) {
 
   return createService({
     name:  'workspaces',
+    scope: keyScope('workspaces'),
     model: 'Workspace',
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 

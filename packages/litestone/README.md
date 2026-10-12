@@ -1079,7 +1079,7 @@ db.user.aggregate({ where, _count, _sum, _avg, _min, _max })
 db.user.groupBy({ by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max })
 db.user.groupBy({ by, interval: { createdAt: 'month' }, fillGaps: true, _count, _sum })
 db.user.query({ ...args })                                    // unified dispatcher — see below
-db.user.search('query', { where, limit, offset, highlight, snippet })  // requires @@fts
+db.user.search('words', { prefix, raw, where, limit, highlight, snippet }) // @@fts; words, not FTS5 syntax
 db.user.findManyCursor({ where, limit, cursor, orderBy })              // O(log n) pagination
 db.user.findMany({ where, recursive: true })                           // CTE tree (self-referential)
 db.user.findMany({ where, recursive: { direction: 'ancestors', nested: true, maxDepth: 3 } })

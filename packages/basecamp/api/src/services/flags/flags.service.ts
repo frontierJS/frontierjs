@@ -29,6 +29,7 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /**
  * What a flag is set to in one environment.
@@ -244,6 +245,7 @@ export function createFlagsService(app: BasecampApp) {
 
   return createService({
     name:  'flags',
+    scope: keyScope('flags'),
     model: 'FeatureFlag',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

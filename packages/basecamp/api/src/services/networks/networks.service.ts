@@ -18,6 +18,7 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, assertSlugFree, ws }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 // A /8 through /30. Deliberately shape-only: whether the range overlaps another
 // network is the provider's judgement, not ours, and guessing it here would be
@@ -45,6 +46,7 @@ export function createNetworksService(app: BasecampApp) {
 
   return createService({
     name:  'networks',
+    scope: keyScope('networks'),
     model: 'Network',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

@@ -13,6 +13,7 @@ import { syncSchedule, unscheduleJob, nextRunAt } from './job-schedule.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import jobRun from '../../jobs/job-run.job.ts'
 import { announce } from '../../channels.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** Five fields: min hour dom month dow. */
 function isValidCron(expr: string): boolean {
@@ -63,6 +64,7 @@ export function createJobsService(app: BasecampApp) {
 
   return createService({
     name:  'jobs',
+    scope: keyScope('jobs'),
     model: 'Job',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

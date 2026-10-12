@@ -3151,7 +3151,7 @@ describe('client — FTS search', () => {
   })
 
   test('prefix search', async () => {
-    const r = await db.message.search('dat*')
+    const r = await db.message.search('dat', { prefix: true })
     expect(r.length).toBeGreaterThan(0)
   })
 
@@ -26621,7 +26621,7 @@ describe('every read applies the filter, the policy and the gate', () => {
   test('the list reads answer one row, not three', async () => {
     expect((await user.post.findMany()).length).toBe(1)
     expect((await user.post.findManyCursor({ limit: 10, orderBy: { id: 'asc' } })).items.map((r: any) => r.title)).toEqual(['alpha mine'])
-    expect((await user.post.search('alpha OR beta OR gamma')).map((r: any) => r.title)).toEqual(['alpha mine'])
+    expect((await user.post.search('alpha OR beta OR gamma', { raw: true })).map((r: any) => r.title)).toEqual(['alpha mine'])
     expect((await user.post.query({})).length).toBe(1)
     const both = await user.post.findManyAndCount({})
     expect([both.rows.length, both.total]).toEqual([1, 1])

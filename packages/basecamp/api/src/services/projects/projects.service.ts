@@ -15,10 +15,12 @@ import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, na
   from '../../core/resource.ts'
 import { retireAppsIn }         from '../apps/apps.service.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createProjectsService(app: BasecampApp) {
   return createService({
     name:  'projects',
+    scope: keyScope('projects'),
     model: 'Project',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

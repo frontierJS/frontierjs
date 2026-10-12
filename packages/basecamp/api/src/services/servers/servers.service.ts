@@ -62,6 +62,7 @@ const OUTPOST_PORT = 8180
 import type { BasecampApp }      from '../../basecamp.types.ts'
 import type { TargetDescriptor } from '@frontierjs/conduit'
 import type { ProviderKind, ServerEventKind } from '../../../../db/schema.d.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -140,6 +141,7 @@ export function createServersService(app: BasecampApp) {
 
   return createService({
     name:  'servers',
+    scope: keyScope('servers'),
     model: 'Server',   // ← schema-derived validation; see note at the bottom
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

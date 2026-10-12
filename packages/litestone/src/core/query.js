@@ -437,6 +437,29 @@ export function likePattern(op, operand) {
   return op === 'contains' ? `%${text}%` : op === 'startsWith' ? `${text}%` : `%${text}`
 }
 
+// `search()`'s text is WORDS to find, not an FTS5 query, for the reason above.
+// Handed to MATCH raw, `mini-redis` is a column filter, `c++` and `(512)` are
+// syntax, and the 500 that answers names a word the person typed (FJS-1440).
+// Each word becomes a quoted phrase, FTS5's literal, and all are required; a
+// phrase the person quoted stays one, and a quote left open only separates.
+// `prefix` widens the last word for a box searched as it is typed, unless that
+// word ends in punctuation: `"c++"*` tokenizes to `c*`, which is every c-word.
+const FTS_WORD = /"([^"]*)"|[^\s"]+/g
+/** @param {string} text @param {{ prefix?: boolean }} [opts] @returns {string | null} null when no word is left */
+export function ftsWords(text, { prefix = false } = {}) {
+  const words = []
+  let open = false
+  for (const m of text.matchAll(FTS_WORD)) {
+    const word = m[1] === undefined ? m[0] : m[1].trim()
+    if (!word) continue
+    words.push('"' + word + '"')   // an FTS5 phrase, which the regex left no quote inside
+    open = m[1] === undefined && /[\p{L}\p{N}]$/u.test(word)
+  }
+  if (!words.length) return null
+  if (prefix && open) words[words.length - 1] += '*'
+  return words.join(' ')
+}
+
 // A column whose stored text is not the value cannot answer one, and the way it
 // fails is a plausible answer rather than an error: on an array column `contains`
 // substring-matches the stored JSON, so `contains: '['` matches every row and

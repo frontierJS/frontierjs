@@ -1374,6 +1374,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d916"></a>2026-10-12 · `FJS-D916` — A key's scopes are refused by junction, against a scope each service DECLARES; a method naming none refuses a scoped key, and mcp's tool list reads the same answer
+
+An API key issued with scopes carried its issuer's whole standing everywhere but auth's own services (`FJS-2116`): no method could say what scope it needed, so nothing refused the rest. Three apps met it three ways — basecamp a 200-line hook and vocabulary, portal a plugin hooking auth's services, sstime a `bearerClaim` grant for a counterparty that is not a stranger. **The names stay the app's** (`FJS-D407`); **the refusal is junction's**, in `callService` beside the method policy, so one owner grades every wire caller (Invariant 4).
+
+- **Declared on the service.** `scope: 'clock'` covers every method; `scope: { read, write }` splits on `isReadMethod`, the line idempotency and the announcement already draw. A `methods:` entry's `scope:` overrides, and `scope: false` admits any key — auth's `account.get`, so a key can still ask who holds it.
+- **Fail closed.** A key with a non-empty `scopes` reaches a method only when the method names a scope it holds; one naming none is a 403. A key with no scopes is held to none, so a whole key is a key issued empty — basecamp's `admin` is the picker's word for that and is never stored.
+- **Graded at the edge.** An `internal` call is the app's own code inside a call already admitted and is not graded again; `mcp`, `http` and `websocket` are.
+- **mcp derives.** The tool list withholds what `scopeRefusal` would refuse, so a key is never offered a verb it would be refused. `narrow` stays for a rule the app holds beyond scopes (basecamp's `NOT_FOR_AGENTS`).
+- **Read, not resolved.** `requiredScope(svc, method)` computes at call time, since a move method joins the table when the app serves its schema.
+
+Folds in auth's scoped-key refusal at `people`/`account-recovery` (`FJS-1446`'s second half); `caller()`'s *a key never manages credentials* (`FJS-D615`) is a different rule and stays. Refused: a derived `<service>:<read|write>` vocabulary in junction (one app's names baked in, which `FJS-D407` refused for mcp), and fail-open for an undeclared method (today's hole with a smaller door). Not Invariant 6's ground: a scope grades the credential, not a row, and is declared where `gate:` and `claims:` on a method are (`FJS-D408`, `FJS-D514`) rather than in a hook. Graded on § V after the build, named as late: *paved road vs. the workaround* (three apps, one workaround) and *ergonomics vs. strictness* (a leaked key costs its issuer's whole standing) decide it; a scope declared too broad is the app's judgment and nothing reports it. Picked by the owner in session. Proved by `packages/junction/test/method-scopes.test.ts` and `packages/mcp/test/plugin.test.ts` § *a scoped key is offered what its scopes reach*.
+
 ### <a id="fjs-d915"></a>2026-10-11 · `FJS-D915` — Does an OAuth sign-in owe the TOTP code — Yes: OAuth is a first factor like a password and a magic link. `oauthResolve`'s three sign-in branches end at `firstFactorProven(user, { provider })`; on a challenge the callback sets the `login_challenge` cookie and redirects through `oauthFailure` with a new `OAUTH_ERRORS` code, `code_required`, and the page finishes through `completeSignIn`. One error code, no new route.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions, on [`FJS-2541`](ISSUES.md#fjs-2541). **B** was picked over **A** (the provider counts as both factors; nothing to build, and a stolen provider account walks past a factor its owner turned on), **C** (a per-provider `secondFactor: 'ours' | 'theirs'` trusting the OIDC `amr` claim; GitHub sends none, so for most providers C is B plus an option).
@@ -3721,6 +3733,16 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d917"></a>2026-10-12 · `FJS-D917` — What `search()`'s text means — the words a person typed, every one required; FTS5's own syntax is `raw: true`, and a box searched as it is typed says `prefix: true`
+
+`search(text)` handed `text` to FTS5's `MATCH` unchanged, so the ordinary text of a search box was query language (`FJS-1440`): `mini-redis` a column filter, `c++`, `(512) 555-1234`, `.net` and an email address syntax errors, each a 500 over `$search` whose message named a word of the search. Four apps wrote the same quoting by hand to get past it (portal, remnant, linear, ela), which is *paved road vs. the workaround* measuring the road, so the road changes.
+
+- **Words by default.** Each word becomes a quoted phrase, FTS5's literal, and all are required. A `"phrase"` the person typed stays one; a quote left open only separates. A text with no word left answers `[]` rather than FTS5's syntax error. This is `contains` a second time: its operand is text, not a LIKE pattern, with `$raw` for a pattern (`likePattern` and `ftsWords` sit together in `query.js`).
+- **`raw: true` is the engine's language**, for text the code writes (ela's `{phone phoneDigits} : …` column filters). No directive reaches it. `$search` over HTTP and sierra's offline `local-db` pass through the default, so the person's text is words wherever it is searched.
+- **`prefix: true` widens the last word**, which is what linear's palette and remnant's lemma lookup wrote as `toMatch(q) + '*'`. A last word ending in punctuation stays whole, because `"c++"*` tokenizes to `c*`, every c-word. It is an option and not the default because a submitted search (portal, remnant's verses) would widen `love` to `lovely`; under `tokenize: trigram` it changes nothing. `raw` with `prefix` is refused by name.
+
+Refused: quoting in junction's `$search` alone. The owner of the translation is the one place that hands text to `MATCH` (Invariant 4); quoting at the transport would leave every server-side `search()` caller with its own copy, which is where the four copies came from. A short term under trigram (`FJS-2332`) is not answered here. Pinned by `packages/litestone/test/search-words.test.ts` (the measured corpus under all three tokenizers, each term asserted to FIND its row) and `packages/junction/test/real-litestone-client.test.ts` § *what a person types is words over HTTP*, which answers 500 with the default reverted.
 
 ### <a id="fjs-d568"></a>2026-10-10 · `FJS-D568` — How does a sealing model freeze a column from a LATER move than the seal — a move-scoped argument on `@immutable`, a second attribute, or no language change — `@immutable(after: <move>)`: the existing word with a scope. The column is writable until the named move's target, frozen from there and from every state reachable from it (`sealedStates`' own closure, generalized in `core/seal.js` to take a move name). Bare `@immutable` keeps its two meanings (create on a plain model, the seal on a sealing one). No new noun; one more argument form for the same word, and `db:explain @immutable` (FJS-1482) must describe all three.
 

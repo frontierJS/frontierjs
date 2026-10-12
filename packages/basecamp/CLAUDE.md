@@ -124,8 +124,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           always handed `-F` with the file that was listed, because ssh finds ~
           through passwd and Bun through $HOME; git is always handed
           `core.fsmonitor=false`, because a status runs that command
-          core/workbench.ts is a Claude Code chat per PINNED checkout
-          (`workbench` service, /workbench/), behind the same refusal: each
+          core/workbench.ts is Claude Code chats per PINNED checkout — tabs
+          under the message box, one running at a time since they share the
+          tree (`workbench` service, /workbench/), behind the same refusal: each
           message is a detached `claude -p` with permissions bypassed, writing
           its own log under WORKBENCH_DIR (~/.config/basecamp/workbench), so a
           `bun --watch` restart neither kills a run nor loses its status. Not in

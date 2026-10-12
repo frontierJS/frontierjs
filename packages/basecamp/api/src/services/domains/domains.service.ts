@@ -27,6 +27,7 @@ import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, ch
   from '../../core/resource.ts'
 import domainDns from '../../jobs/domain-dns.job.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 const DAY = 86_400_000
 
@@ -90,6 +91,7 @@ export function createDomainsService(app: BasecampApp) {
 
   return createService({
     name:  'domains',
+    scope: keyScope('domains'),
     model: 'Domain',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

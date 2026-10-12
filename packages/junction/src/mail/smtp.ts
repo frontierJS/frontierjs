@@ -591,6 +591,23 @@ export function assertContentId(cid: string): string {
   return cid
 }
 
+/**
+ * The whole message as the text SMTP would send after DATA: its headers, its
+ * Message-ID (stated, or minted on the From's domain) and its MIME body.
+ *
+ * For a transport that takes a finished message rather than a conversation —
+ * Microsoft Graph's `sendMail` with a MIME body, SES's `SendRawEmail` — so a
+ * mailer over one is graded by the same guards and writes the same parts
+ * (text and HTML as alternatives, Reply-To, the caller's headers) as this
+ * file's own. `bcc` is in no header, as here; such a transport takes the blind
+ * recipients beside the message, never inside it.
+ */
+export function toMime(msg: SmtpMessage): { raw: string; messageId: string } {
+  assertMessageAddresses(msg)
+  const { header, id } = messageIdOf(msg)
+  return { raw: buildMimeMessage(header ? { ...msg, headers: { ...msg.headers, [header]: id } } : msg), messageId: id }
+}
+
 /** Base64, in the 76-column lines a MIME body part is folded to. */
 function base64Lines(content: ArrayBuffer | Uint8Array | string): string {
   const b64 = typeof content === 'string'

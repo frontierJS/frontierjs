@@ -15,6 +15,7 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, re
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createVariablesService(app: BasecampApp) {
 
@@ -58,6 +59,7 @@ export function createVariablesService(app: BasecampApp) {
 
   return createService({
     name:  'variables',
+    scope: keyScope('variables'),
     model: 'Variable',
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,

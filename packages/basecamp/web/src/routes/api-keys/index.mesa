@@ -230,7 +230,7 @@ title: API keys
       <CopyButton text={minted.token} label="Copy" />
     </div>
     <p class="text-sm text-muted">
-      {minted.name} · {(minted.scopes ?? []).join(', ')} ·
+      {minted.name} · {(minted.scopes ?? []).join(', ') || 'everything'} ·
       {minted.expiresAt ? `expires ${day(minted.expiresAt)}` : 'no expiry'}
     </p>
     <Button id="minted-done" onclick={() => minted = null}>Done — I have saved it</Button>
@@ -309,6 +309,8 @@ title: API keys
         <td>
           <div class="cluster">
             {#each (k.scopes ?? []) as s}<Pill>{s}</Pill>{/each}
+            <!-- A key issued whole is minted with no scopes, which no service refuses. -->
+            {#if !(k.scopes ?? []).length}<Pill>everything</Pill>{/if}
           </div>
         </td>
         <td class="text-sm text-muted">

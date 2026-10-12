@@ -21,6 +21,7 @@ import { createService, BadRequest, Unauthorized, $ } from '@frontierjs/junction
 import { db }                                         from '../../core/resource.ts'
 import type { BasecampApp }                           from '../../basecamp.types.ts'
 import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES, notificationKind } from './kinds.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** The caller, or a refusal. The Data boundary would refuse a stranger anyway —
  *  `@@gate("1")` is VISITOR — but it refuses with a level, and somebody who is
@@ -34,6 +35,7 @@ function me(): string {
 export function createNotificationPreferencesService(_app: BasecampApp) {
   return createService({
     name:  'notification-preferences',
+    scope: keyScope('notification-preferences'),
     model: 'NotificationPreference',
 
     // No `channel:`. `workspaceChannel` is the only channel this app has and

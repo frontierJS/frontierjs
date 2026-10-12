@@ -24,6 +24,7 @@ import { createService, Unauthorized, $ } from '@frontierjs/junction'
 import type { ServiceContext }            from '@frontierjs/junction'
 import { db }                             from '../../core/resource.ts'
 import type { BasecampApp }               from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** The Data boundary would answer a stranger with an empty list — read is
  *  open and the policy scopes it — which reads as *you have no notifications*
@@ -37,6 +38,7 @@ function signedIn(_ctx?: ServiceContext): void {
 export function createNotificationsService(_app: BasecampApp) {
   return createService({
     name:    'notifications',
+    scope:   keyScope('notifications'),
     model:   'Notification',
     methods: ['find', 'get', 'patch', 'readAll'],
 

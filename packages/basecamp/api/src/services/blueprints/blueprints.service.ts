@@ -34,6 +34,7 @@ import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/ju
 import { requireSystemAdmin, getPagination } from '../../core/hooks.ts'
 import { db, slugify }                       from '../../core/resource.ts'
 import type { BasecampApp }                  from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /**
  * A blueprint always travels with the form it implies, IN ORDER.
@@ -49,6 +50,7 @@ const WITH_PARAMS = { params: { orderBy: [{ position: 'asc' }, { key: 'asc' }] }
 export function createBlueprintsService(_app: BasecampApp) {
   return createService({
     name:  'blueprints',
+    scope: keyScope('blueprints'),
     model: 'Blueprint',
 
     // No `channel:`. A catalog change is the hub editing one shared row, not

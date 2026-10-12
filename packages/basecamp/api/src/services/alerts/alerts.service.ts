@@ -18,6 +18,7 @@ import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { MAX_SNOOZE_MINUTES } from '../../core/alerting.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createAlertsService(app: BasecampApp) {
 
@@ -77,6 +78,7 @@ export function createAlertsService(app: BasecampApp) {
 
   return createService({
     name:  'alerts',
+    scope: keyScope('alerts'),
     model: 'AlertRule',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

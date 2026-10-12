@@ -23,6 +23,7 @@
 import { createService, NotFound, Unauthorized, $ } from '@frontierjs/junction'
 import type { ServiceContext }                       from '@frontierjs/junction'
 import type { BasecampApp }                          from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** `me` is the address, and the caller's own id is accepted as its second
  *  spelling. Any other id is a 404, not a 403: whether it exists is not this
@@ -41,6 +42,7 @@ function ownRow(ctx: ServiceContext): void {
 export function createUsersService(_app: BasecampApp) {
   return createService({
     name:    'users',
+    scope:   keyScope('users'),
     model:   'User',
     methods: ['get', 'patch'],
     hooks: {

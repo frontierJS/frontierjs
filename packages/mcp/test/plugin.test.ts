@@ -44,6 +44,7 @@ beforeAll(async () => {
     users: [
       { id: 'staff',   isAdmin: true },   // ADMINISTRATOR — 5
       { id: 'shopper' },                  // USER — 4
+      { id: 'reader',  isAdmin: true, scopes: ['orders:read'] },   // staff's standing, a key's reach
     ],
   })
 
@@ -65,6 +66,7 @@ beforeAll(async () => {
     pay:    move('pay'),
     refund: move('refund'),
     methods: ['find', 'get', 'create', 'patch', 'remove', 'pay', 'refund'],
+    scope:   { read: 'orders:read', write: 'orders:write' },
   }))
   // `mint` is FJS-1221's shape: a system write, returned as it came back.
   type Creds = { asSystem(): { credential: { create(a: unknown): Promise<unknown> } } }
@@ -303,6 +305,21 @@ describe('narrow withholds what a standing cannot say (FJS-D407)', () => {
       const r = await rpc('tools/list', {}, 'staff')
       expect((r.body as { result?: unknown }).result).toBeUndefined()
     } finally { narrowBy = null }
+  })
+})
+
+// ─── a key's declared scopes ─────────────────────────────────────────────────
+
+describe('a scoped key is offered what its scopes reach, with no narrow (FJS-D916)', () => {
+
+  test('the list is the reads of the one service its scope names, and the call refuses the rest', async () => {
+    const names = (await list('reader')).map(t => t.name).sort()
+    expect(names).toEqual(['orders_find', 'orders_get'])
+    // Staff stands where reader stands and is held to nothing.
+    expect((await list('staff')).map(t => t.name)).toContain('orders_refund')
+    expect((await callTool('orders_refund', { id: 51 }, 'reader')).text).toMatch(/not found/i)
+    const got = (await callTool('orders_get', { id: 51 }, 'reader')).body as { result?: { isError?: boolean } }
+    expect(got.result?.isError).toBeFalsy()
   })
 })
 

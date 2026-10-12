@@ -9,12 +9,12 @@
 //
 //   GET  /workbench               pins        the pins, each with its git state and run status
 //   GET  /workbench               status      every pin's run status — the grid's poll, no git
-//   GET  /workbench/:id           transcript  one chat, folded from its log, with its checks and review
+//   GET  /workbench/:id           transcript  { chat? } — one chat, the shown one by default, folded from its log, with the checkout's checks and review
 //   GET  /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
 //   GET  /workbench/:id           runnables   `fli dev` per app and every package.json script (`core/workbench-run.ts`)
 //   GET  /workbench/:id           output      { row } — the tail of what a started row wrote
 //   POST /workbench               pin         { path }
-//   POST /workbench/:id           send        { prompt } — queued behind a run in progress
+//   POST /workbench/:id           send        { prompt, chat? } — queued behind a run in the same chat, refused while another chat runs
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
 //   POST /workbench/:id           fork        { slug?, preview? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run;
@@ -24,7 +24,10 @@
 //   POST /workbench/:id           land        a branch's work into its parent's tree, uncommitted
 //   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept;
 //                                             a preview is RETIRED first — off the machine, its Environment removed
-//   POST /workbench/:id           stop · fresh · seen · unpin
+//   POST /workbench/:id           fresh       a new chat, shown — or the shown one, when it is still empty
+//   POST /workbench/:id           select      { chat } — the chat shown
+//   POST /workbench/:id           close       { chat } — forgotten here, what it cost kept; Claude Code keeps the session
+//   POST /workbench/:id           stop · seen · unpin
 //   POST /workbench/:id           configure   { name?, budget?, hooks?, review?, copy?, preview? }
 //   POST /workbench/:id           run         { row } — started detached by row id, never by command
 //   POST /workbench/:id           halt        { row } — stopped, its process group with it; on one already stopped, forgotten
@@ -47,7 +50,7 @@ import { db, ws }                  from '../../core/resource.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen', 'check', 'review', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
 
 export function createWorkbenchService(app: BasecampApp) {
   // Read per call: services are built inside createApp, before app.ts claims it.
@@ -119,7 +122,9 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async transcript() {
       const p = pinned()
-      return wb().transcript(p.id)
+      const t = await wb().transcript(p.id, body().chat)
+      if (!t) throw new NotFound(`${p.name} has no chat '${body().chat}'`)
+      return t
     },
 
     async diff() {
@@ -236,7 +241,7 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async send() {
       const p = pinned()
-      const r = await wb().send(p.id, String(body().prompt ?? ''))
+      const r = await wb().send(p.id, String(body().prompt ?? ''), body().chat)
       if ('refused' in r) throw new BadRequest(r.refused)
       return r
     },
@@ -262,8 +267,20 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async fresh() {
       const p = pinned()
-      const r = wb().fresh(p.id)
-      if (r && 'refused' in r) throw new Conflict(r.refused as string)
+      return wb().fresh(p.id)
+    },
+
+    async select() {
+      const p = pinned()
+      const r = wb().select(p.id, body().chat)
+      if ('refused' in r) throw new NotFound(r.refused)
+      return r
+    },
+
+    async close() {
+      const p = pinned()
+      const r = await wb().close(p.id, body().chat)
+      if ('refused' in r) throw new Conflict(r.refused)
       return r
     },
 

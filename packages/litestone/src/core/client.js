@@ -19,7 +19,7 @@ import {
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
-  aggregatableKeysFor, LIKE_SQL, likePattern, inList,
+  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, inList,
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
@@ -8564,8 +8564,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // Full-text search via FTS5. Only available on models with @@fts([...]).
     //
     // Options:
-    //   query      FTS5 query string — supports phrase "exact match", prefix foo*,
-    //              boolean AND/OR/NOT, column filters col:term
+    //   query      the words to find — every one required, a "quoted phrase"
+    //              kept whole; never FTS5 syntax (`ftsWords`, FJS-1440)
+    //   prefix     the last word also matches as the start of a word
+    //   raw        `query` is an FTS5 query, passed to MATCH as written
     //   limit      max rows to return (default 20)
     //   offset     skip rows (default 0)
     //   where      additional filter on base table (applied after FTS match)
@@ -8597,6 +8599,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // path is untouched and stays the default.
 
     async search(query, {
+      raw         = false,
+      prefix      = false,
       limit       = 20,
       offset      = 0,
       where,
@@ -8618,6 +8622,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         throw new CapabilityNotDeclaredError(modelName, 'search()', '@@fts',
           `Add @@fts([field1, field2]) to ${modelName} to make it searchable.`)
       }
+      if (typeof query !== 'string') {
+        throw new TypeError(`${modelName}.search(query) takes the words to find as a string, got ${query === null ? 'null' : typeof query}`)
+      }
+      if (raw && prefix) {
+        throw new Error(`${modelName}.search(): prefix widens the last WORD, and a raw query is FTS5's own syntax — write its * instead`)
+      }
+      // Nothing left to find once the punctuation is gone — a lone `"` — answers
+      // no rows; FTS5 would refuse the empty MATCH as a syntax error.
+      const match = raw ? query : ftsWords(query, { prefix })
+      if (match == null) return []
 
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, { where, limit, offset }, ctx)
 
@@ -8657,7 +8671,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
 
       ftsSql += ` FROM "${ftsTable}" WHERE "${ftsTable}" MATCH ?`
-      ftsParams.push(query)  // MATCH ? comes before the filter's params, as here
+      ftsParams.push(match)  // MATCH ? comes before the filter's params, as here
 
       // The index mirrors the table, so soft-deleted, template and where-excluded
       // rows are in it and would otherwise spend slots the LIMIT below then

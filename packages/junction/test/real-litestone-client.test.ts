@@ -15,11 +15,12 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createService, createBaseService } from '../src/core/service.ts'
-import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks } from '../src/core/litestone.ts'
+import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks, withLitestoneDb } from '../src/core/litestone.ts'
 import { toFrameworkError } from '../src/core/errors.ts'
 import { splitParams } from '@frontierjs/toolbelt/directives'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 import { createApp, createStubAuth } from '../index.ts'
+import { createTestApp, request } from '../src/testing/index.ts'
 
 type AnyClient = Record<string, never> & {
   asSystem(): Record<string, { create(a: unknown): Promise<unknown> }>
@@ -301,6 +302,35 @@ describe('$search answers the list envelope', () => {
         service: 'docs', directives: { search: 'widget', orderBy: { body: 'asc' } },
       })) as { data: { id: number }[] }
     expect(ok.data.map(r => r.id)).toEqual([3, 1, 2])
+  })
+
+  // FJS-1440. `$search` reached FTS5's MATCH as written, so the ordinary text
+  // of a search box was query syntax: each of these answered a 500 whose
+  // message named a word of the search. Over HTTP, because the 500 and its
+  // logged message were the defect, and against rows each term must FIND.
+  test('what a person types is words over HTTP, never FTS5 syntax', async () => {
+    const db = await createClient({
+      db: ':memory:',
+      schema: `model Box {
+        id   Int    @id
+        name String
+        @@fts([name], tokenize: trigram)
+      }`,
+    }) as unknown as Record<string, { createMany(a: unknown): Promise<unknown> }>
+    const names = ['mini-redis', 'c++ guide', 'someone@gmail.com', 'rust: the book', '(512) 555-1234', "o'brien"]
+    await db.box!.createMany({ data: names.map((name, id) => ({ id, name })) })
+    const app = await createTestApp({
+      services: [() => createService({ name: 'boxes', model: 'Box' })],
+      hooks:    { around: { all: [withLitestoneDb(db as never)] } } as never,
+    })
+    for (const [typed, want] of [
+      ['mini-redis', 'mini-redis'], ['c++', 'c++ guide'], ['gmail.com', 'someone@gmail.com'],
+      ['rust:', 'rust: the book'], ['(512) 555-1234', '(512) 555-1234'], ["o'brien", "o'brien"],
+    ]) {
+      const res = await request(app).get('/boxes').query({ $search: typed })
+      expect(res.status, typed).toBe(200)
+      expect((res.body as { data: { name: string }[] }).data.map(r => r.name), typed).toEqual([want])
+    }
   })
 
   test('a model with no @@fts refuses with a 400, not a 500', async () => {

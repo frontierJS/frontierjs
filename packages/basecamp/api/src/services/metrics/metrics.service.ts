@@ -35,6 +35,7 @@ import { createService, $, BadRequest } from '@frontierjs/junction'
 import { isStale }                      from '@frontierjs/junction'
 import { LEVELS }                     from '@frontierjs/litestone'
 import type { BasecampApp }             from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 const HOUR = 3_600_000
 /** What `metricsPlugin` keeps at raw resolution. Anything older has an hour row
@@ -51,6 +52,7 @@ export function createMetricsService(app: BasecampApp) {
 
   return createService({
     name: 'metrics-store',
+    scope: keyScope('metrics-store'),
     // `methods:` is a LIST of names and not the implementations — without it a
     // base service answers every CRUD verb it was never given, which on a
     // service with no model is a 500 rather than a refusal (infra.service.ts

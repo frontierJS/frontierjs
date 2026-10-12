@@ -4,8 +4,9 @@
 //
 // Separate from the service because these run at APP level — before any
 // service hook, on every request — while the service only serves /api-keys.
-// Same file so that granting a scope and checking one cannot drift: the string
-// the screen shows in a checkbox is the string the guard tests for.
+// Same file so that declaring a scope and granting one cannot drift: the
+// string the screen shows in a checkbox is read off the declarations junction
+// refuses by.
 
 import { Forbidden, $ } from '@frontierjs/junction'
 import type { Hook, ServiceContext } from '@frontierjs/junction'
@@ -13,13 +14,11 @@ import type { BasecampApp } from '../../basecamp.types.ts'
 import { resolveWorkspaceId } from '../../core/hooks.ts'
 
 // ─── The vocabulary ──────────────────────────────────────────────────────
-// A scope is `<service>:<read|write>`, and the resource half IS the service
-// name — not a mapping table beside it. A table is a second list to keep in
-// step, and the failure of it drifting is a scope that reads as if it grants
-// something and grants nothing.
-//
-// So it is derived from the registry at call time, which also means a service
-// added tomorrow is scopeable tomorrow without an edit here.
+// A scope is `<service>:<read|write>`, declared on each workspace service by
+// `keyScope` and refused by junction at the call (`FJS-D916`). What a key may
+// be issued is read back off those declarations, so a scope the picker shows
+// is one a service names, and a service declaring none is offered to no
+// scoped key.
 
 /** Services a key may never reach, whatever it was issued with. */
 const OFF_LIMITS = new Set([
@@ -49,64 +48,56 @@ const OFF_LIMITS = new Set([
  */
 const NOT_FOR_AGENTS = new Set(['workbench', 'pages', 'registers'])
 
-const READ_METHODS = new Set(['find', 'get'])
+/** The scope a workspace service declares: read for `find`, `get` and a declared read, write for the rest. */
+export const keyScope = (service: string) => ({ read: `${service}:read`, write: `${service}:write` })
 
-export interface Scope { id: string; group: string; label: string }
+/** The picker's word for a key issued whole: minted with no scopes, so held to none. */
+export const WHOLE_KEY = 'admin'
 
 /** Typed once. asSystem() answers `unknown`, so every accessor off it would
  *  otherwise be its own diagnostic — the class Invariant 14 is counting. */
 const sysOf = (app: BasecampApp): any => app.db.asSystem()
 
-export function scopeVocabulary(app: BasecampApp): Scope[] {
-  const services = app.services.list().filter(n => !OFF_LIMITS.has(n)).sort()
-  return [
-    ...services.flatMap(name => [
-      { id: `${name}:read`,  group: name, label: `Read ${name}` },
-      { id: `${name}:write`, group: name, label: `Create, change and act on ${name}` },
-    ]),
-    { id: 'admin', group: 'admin', label: 'Everything, including services added later' },
-  ]
-}
+export interface Scope { id: string; group: string; label: string }
 
-/**
- * The scope a call needs. One definition, used to grant and to explain — the
- * screen names the same string the guard tests.
- *
- * A custom method counts as a write. Reads are `find` and `get` only, which is
- * the same line Junction draws for announcing on a channel and the audit hook
- * draws for what to record: three places, one rule.
- */
-export function scopeFor(service: string, method: string): string {
-  return `${service}:${READ_METHODS.has(method) ? 'read' : 'write'}`
+export function scopeVocabulary(app: BasecampApp): Scope[] {
+  const declared = new Map<string, string>()
+  for (const name of app.services.list()) {
+    if (OFF_LIMITS.has(name)) continue
+    const scopes = (app.services.get(name) as { describe?(): { scopes: Record<string, string | false> } } | undefined)
+      ?.describe?.().scopes ?? {}
+    for (const id of Object.values(scopes)) if (id) declared.set(id, name)
+  }
+  return [
+    ...[...declared].sort(([a], [b]) => a.localeCompare(b)).map(([id, group]) => ({
+      id, group,
+      label: id.endsWith(':read') ? `Read ${group}` : `Create, change and act on ${group}`,
+    })),
+    { id: WHOLE_KEY, group: 'admin', label: 'Everything, including services added later' },
+  ]
 }
 
 /** The principal fields a key's standing is read off. */
 interface KeyPrincipal { authMethod?: string; scopes?: string[]; credentialId?: string }
 
 /**
- * Whether a caller's scopes reach `service.method`. A session is not a key and
- * is held to nothing here.
- *
- * The one reading of *what a key may do*: the guard refuses a call by it and
- * the agent surface withholds a tool by it, so a key is never offered a verb it
- * would be refused — nor refused one it was offered.
+ * Whether a key may reach `service` at all. A session is not a key and is held
+ * to nothing here; a key's scopes are junction's to grade, at the call and in
+ * the agent's tool list alike.
  */
-export function keyAllows(user: KeyPrincipal | null | undefined, service: string, method: string): boolean {
-  if (user?.authMethod !== 'apiKey') return true
-  if (OFF_LIMITS.has(service)) return false
-  const held = user.scopes ?? []
-  return held.includes('admin') || held.includes(scopeFor(service, method))
+export function keyAllows(user: KeyPrincipal | null | undefined, service: string): boolean {
+  return user?.authMethod !== 'apiKey' || !OFF_LIMITS.has(service)
 }
 
 /**
- * `mcpPlugin({ narrow })`: a key's tool list is its scopes', not its bot's
- * role's (`FJS-1349`, `FJS-D407`), and no caller's list holds a service in
- * `NOT_FOR_AGENTS`. The record checks — revoked, another workspace — stay the
- * guard's, at the call.
+ * `mcpPlugin({ narrow })`: no caller's list holds a service in
+ * `NOT_FOR_AGENTS`, and no key's holds one in `OFF_LIMITS`. A key's scopes
+ * withhold the rest in mcp itself (`FJS-D916`); the record checks — revoked,
+ * another workspace — stay the guard's, at the call.
  */
 export function narrowForAgent(tool: { service: string; method: string }, principal: unknown): boolean {
   if (NOT_FOR_AGENTS.has(tool.service)) return false
-  return keyAllows(principal as KeyPrincipal | null, tool.service, tool.method)
+  return keyAllows(principal as KeyPrincipal | null, tool.service)
 }
 
 // ─── agentGuard ──────────────────────────────────────────────────────────
@@ -156,9 +147,6 @@ export function apiKeyGuard(app: BasecampApp): Hook {
     const workspaceId = resolveWorkspaceId(ctx)
     if (workspaceId && workspaceId !== key.workspaceId)
       throw new Forbidden('This API key belongs to a different workspace')
-
-    if (!keyAllows(user, $.service, $.method))
-      throw new Forbidden(`This API key needs the '${scopeFor($.service, $.method)}' scope`)
 
     // For the usage hook, so it does not repeat the lookup.
     $.locals.apiKeyId = key.id

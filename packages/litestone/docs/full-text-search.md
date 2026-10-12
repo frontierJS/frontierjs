@@ -91,25 +91,46 @@ soft delete would then fire two of them: FTS5 answers a repeated delete of one
 docid with `database disk image is malformed`, and only sometimes — above one
 indexed row it corrupts without a word. One filter, in one place.
 
-## FTS5 query syntax
+## What the text means
+
+`search(text)` takes the words a person typed, never FTS5's query language. Each
+word must match, a `"quoted phrase"` matches as one, and punctuation is part of
+the word — `mini-redis`, `c++`, `(512) 555-1234` and `o'brien` find their rows
+rather than reaching FTS5 as a column filter or an operator (`FJS-1440`). A text
+with no word left in it, `''` or a lone `"`, answers no rows.
+
+```js
+await db.message.create({ data: { id: 1, userId: 1, title: 'important', body: 'hello world, see c++' } })
+await db.message.create({ data: { id: 2, userId: 1, body: 'goodbye' } })
+
+const both    = await db.message.search('hello world')      // every word required
+const phrase  = await db.message.search('"world see"')      // one phrase
+const literal = await db.message.search('c++')              // a word, not syntax
+const typing  = await db.message.search('hel', { prefix: true })  // the last word as a prefix
+if (both.length !== 1 || phrase.length !== 1 || literal.length !== 1 || typing.length !== 1) throw new Error('words changed')
+```
+
+`prefix: true` is for a box searched as it is typed: the last word also matches
+the start of a word. A last word ending in punctuation is kept whole, since
+`c++` as a prefix tokenizes to `c` and would match every c-word. Under
+`tokenize: trigram` a word already matches anywhere inside one, so `prefix`
+changes nothing there.
+
+`raw: true` hands the text to FTS5 as written — phrases, `foo*`, `AND`/`OR`/`NOT`,
+`NEAR`, column filters. It is for text your code writes, never for what a person
+typed: a syntax error is thrown as one, and its message names the term.
 
 ```js
 await db.message.create({ data: { id: 1, userId: 1, title: 'important', body: 'hello world' } })
+await db.message.create({ data: { id: 2, userId: 1, body: 'goodbye' } })
 
-// Phrase search
-await db.message.search('"hello world"')
-
-// Prefix search
-await db.message.search('hel*')
-
-// Boolean operators
-await db.message.search('hello AND world')
-await db.message.search('hello OR goodbye')
-await db.message.search('hello NOT spam')
-
-// Column-specific search (when multiple columns in @@fts)
-await db.message.search('body: hello title: important')
+const either = await db.message.search('hello OR goodbye', { raw: true })
+const titled = await db.message.search('title: important', { raw: true })
+if (either.length !== 2 || titled.length !== 1) throw new Error('raw changed')
 ```
+
+The `$search` directive over HTTP is always words; nothing a caller sends reaches
+the raw form.
 
 ## Maintaining the index
 

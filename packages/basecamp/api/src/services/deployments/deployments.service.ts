@@ -21,6 +21,7 @@ import { announce } from '../../channels.ts'
 import { isInline, isGit, imageOf, inlineFilesFor } from '../../core/app-source.ts'
 import { snapshotVariables } from '../../core/variables.ts'
 import { runtimeOf } from '../../core/runtime.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
 // current environment and a deployment records the one it went to, and those
@@ -117,6 +118,7 @@ export function createDeploymentsService(app: BasecampApp) {
 
   return createService({
     name:  'deployments',
+    scope: keyScope('deployments'),
     model: 'Deployment',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

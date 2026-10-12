@@ -25,6 +25,7 @@ import { edgeAccounts, edgeHealth } from '../edge/edge.service.ts'
 import { edgeProviders }           from '../../providers/edge/index.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export type ServiceStatus = 'healthy' | 'degraded' | 'unreachable' | 'unconfigured'
 
@@ -155,6 +156,7 @@ function isUsableId(id: unknown): id is string {
 export function createPortalService(app: BasecampApp) {
   return createService({
     name: 'portal',
+    scope: keyScope('portal'),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
     methods: [
       { method: 'find', gate: LEVELS.READER },

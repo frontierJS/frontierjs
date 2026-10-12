@@ -58,6 +58,10 @@ import { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertCont
 // (`FJS-904`). One owner for the rule, in `smtp.ts`; this is the door to it.
 export { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId } from './smtp.ts'
 
+// The message as one RFC 5322 text, for a mailer whose transport takes a whole
+// message (Graph's sendMail, SES's SendRawEmail) rather than an SMTP session.
+export { toMime } from './smtp.ts'
+
 export function createMessage(subject: string, html?: string): MailBuilder {
   return new MailBuilder(subject, html)
 }

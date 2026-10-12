@@ -3309,11 +3309,10 @@ describe('the workbench', () => {
 
   test('and is never listed to one, nor reachable by any key', () => {
     const owns = { authMethod: 'session' }
-    const key  = { authMethod: 'apiKey', scopes: ['admin', 'workbench:write', 'workbench:read'] }
+    const key  = { authMethod: 'apiKey', scopes: [] }
     expect(narrowForAgent({ service: 'workbench', method: 'send' }, owns)).toBe(false)
     expect(narrowForAgent({ service: 'servers',   method: 'find' }, owns)).toBe(true)
-    expect(keyAllows(key, 'workbench', 'send')).toBe(false)
-    expect(keyAllows(key, 'workbench', 'pins')).toBe(false)
+    expect(keyAllows(key, 'workbench')).toBe(false)
   })
 })
 
@@ -3336,10 +3335,9 @@ describe('pages', () => {
     for (const method of ['list', 'view', 'output', 'start', 'stop'])
       await expect(env.as(owner).service('pages').call(method, 'page:repo-rings.html', undefined, { transport: 'mcp' }))
         .rejects.toThrow(/not offered to an agent/)
-    const key = { authMethod: 'apiKey', scopes: ['admin', 'pages:write', 'pages:read'] }
+    const key = { authMethod: 'apiKey', scopes: [] }
     expect(narrowForAgent({ service: 'pages', method: 'start' }, { authMethod: 'session' })).toBe(false)
-    expect(keyAllows(key, 'pages', 'start')).toBe(false)
-    expect(keyAllows(key, 'pages', 'list')).toBe(false)
+    expect(keyAllows(key, 'pages')).toBe(false)
   })
 })
 
@@ -3362,9 +3360,8 @@ describe('registers', () => {
     for (const method of ['overview', 'record', 'discuss', 'decide'])
       await expect(env.as(owner).service('registers').call(method, 'FJS-1', { text: 'FJS-1' }, { transport: 'mcp' }))
         .rejects.toThrow(/not offered to an agent/)
-    const key = { authMethod: 'apiKey', scopes: ['admin', 'registers:write', 'registers:read'] }
+    const key = { authMethod: 'apiKey', scopes: [] }
     expect(narrowForAgent({ service: 'registers', method: 'discuss' }, { authMethod: 'session' })).toBe(false)
-    expect(keyAllows(key, 'registers', 'discuss')).toBe(false)
-    expect(keyAllows(key, 'registers', 'overview')).toBe(false)
+    expect(keyAllows(key, 'registers')).toBe(false)
   })
 })

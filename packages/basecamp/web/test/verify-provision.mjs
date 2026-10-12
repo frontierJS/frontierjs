@@ -1121,6 +1121,34 @@ try {
   // The dialogs are answered in the page -- a native one blocks the drive.
   const answer = (fn, value) => evaluate(`window.${fn} = () => ${JSON.stringify(value)}`)
   const button = (sel, label) => `[...${sel}.querySelectorAll('button')].find(b => b.textContent.trim() === '${label}')`
+
+  // A second chat: New chat opens a tab under the message box and shows it
+  // empty. The two share alpha's tree, so while one works the other's box is
+  // held rather than queued; Close takes the tab and the first chat is as it was.
+  const logText = `${card}.querySelector('.workbench-log').textContent`
+  const chatTabs = `[...${card}.querySelectorAll('.workbench-chat-open')].map(b => (b.getAttribute('aria-current') ? '*' : '') + b.querySelector('.workbench-chat-title').textContent.trim()).join(' | ')`
+  await evaluate(`${button(card, 'New chat')}.click()`)
+  const twoTabs = await until(chatTabs, t => t.split(' | ').length === 2, 'New chat drew no strip of tabs')
+  check('New chat opens a second tab, shown, with an empty log',
+    /^add a readme \| \*New chat$/.test(twoTabs) && !(await evaluate(`${logText}.trim()`)), twoTabs)
+  await evaluate(`(() => { const t = ${card}.querySelector('.workbench-composer textarea')
+    t.value = 'a second chat'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await evaluate(`${card}.querySelector('.workbench-composer button[type=submit]').click()`)
+  await until(`${card}.dataset.state`, s => s === 'working', 'the second chat never started')
+  await evaluate(`${card}.querySelector('.workbench-chat-open').click()`)
+  await until(`${card}.querySelector('.workbench-composer textarea').placeholder`, t => /Another chat here is working/.test(t),
+    'the first chat\'s box offered to send while the second worked')
+  check('while one chat works the other\'s box cannot send — one run at a time in a checkout',
+    await evaluate(`${card}.querySelector('.workbench-composer button[type=submit]').disabled`)
+      && /slow one/.test(await evaluate(logText)) && !/a second chat/.test(await evaluate(logText)))
+  await until(`${card}.dataset.state`, s => s === 'done', 'the second chat never finished', 15_000)
+  const titled = await until(chatTabs, t => /a second chat$/.test(t), 'the second tab never took its first message as its title')
+  check('a tab is titled by its first message', /^\*add a readme \| a second chat$/.test(titled), titled)
+  await answer('confirm', true)
+  await evaluate(`${card}.querySelectorAll('.workbench-chat-tab')[1].querySelector('.workbench-chat-close').click()`)
+  await until(`!!${card}.querySelector('.workbench-chats')`, v => !v, 'Close left the strip of tabs')
+  check('Close takes the tab, and one chat draws no strip', /slow one/.test(await evaluate(logText)))
+
   await answer('prompt', 'try')
   await evaluate(`${button(card, 'Fork')}.click()`)
   await until(`document.querySelectorAll('#workbench-grid article[data-state]').length`, n => n === 2, 'Fork drew no second card')
@@ -1230,8 +1258,9 @@ try {
   check('a message runs in the branch, not in alpha',
     /in the branch/.test(spawnSync('cat', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim(), 'try', 'claude-was-here.txt')], { encoding: 'utf8' }).stdout)
       && !/in the branch/.test(spawnSync('cat', [join(ALPHA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout))
-  await until(`${card}.textContent`, t => /\$1\.26 total/.test(t), 'the parent\'s total never took in the branch')
-  check('the parent\'s total takes in its branch', true)
+  // Three finished runs and a review at $0.42 each — the closed chat's run still counted.
+  await until(`${card}.textContent`, t => /\$1\.68 total/.test(t), 'the parent\'s total never took in the branch')
+  check('the parent\'s total takes in its branch and keeps a closed chat', true)
   check('a parent with a branch cannot be unpinned', await evaluate(`${button(card, 'Unpin')}.disabled`))
 
   await tab(branch, 'diff')

@@ -96,7 +96,7 @@ export function createRegistersService(app: BasecampApp) {
         const forked = await wb.fork(target.id, { slug })
         if ('refused' in forked) throw new Conflict(forked.refused)
         // A branch resumes its parent's chat; a discussion starts its own.
-        wb.fresh(forked.pin.id)
+        await wb.fresh(forked.pin.id)
         target = forked.pin
       }
 

@@ -28,6 +28,7 @@ import { requireSystemAdmin, getPagination }                from '../../core/hoo
 import { db, actor }                                        from '../../core/resource.ts'
 import backupRun                                            from '../../jobs/backup-run.job.ts'
 import type { BasecampApp }                                 from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** Terminal states — anything else is still in flight. */
 const SETTLED = ['success', 'failed', 'timeout']
@@ -35,6 +36,7 @@ const SETTLED = ['success', 'failed', 'timeout']
 export function createBackupsService(app: BasecampApp) {
   return createService({
     name:  'backups',
+    scope: keyScope('backups'),
     model: 'Backup',
 
     methods: ['find', 'get', 'create', 'remove'],

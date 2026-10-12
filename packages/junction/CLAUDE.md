@@ -27,6 +27,10 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 - **The gate wraps every hook an app wrote** —
   `around(gateAuth) → before → validated → method → after` (`FJS-403`,
   `test/hook-ordering.test.ts`).
+- **A key issued with scopes reaches only a method whose declared `scope:` it
+  holds**, refused in `callService` on every wire call and read by mcp's tool
+  list through `scopeRefusal`; a method naming none refuses it (`FJS-D916`,
+  `test/method-scopes.test.ts`).
 - **A custom method takes the model's read gate as a floor**, and a `gate:` on a
   CRUD verb is graded only over no model (`FJS-826`, `FJS-D408`,
   `test/custom-method-gate.test.ts`). **An omitted `model:` resolves from the

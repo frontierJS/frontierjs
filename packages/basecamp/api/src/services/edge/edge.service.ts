@@ -44,6 +44,7 @@ import type { EdgeConnector, EdgeRecord, EdgeZone } from '../../providers/edge/i
 import type { AccountSend }      from '../../providers/compute/index.ts'
 import type { BasecampApp }       from '../../basecamp.types.ts'
 import type { ProviderKind }      from '../../../../db/schema.d.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export interface EdgeAccount {
   id:           string
@@ -238,6 +239,7 @@ export function createEdgeService(app: BasecampApp) {
 
   return createService({
     name: 'edge',
+    scope: keyScope('edge'),
     reservedQuery: [...WORKSPACE_QUERY, 'accountId', 'zoneId'],
 
     // `methods:` rather than the scan, for infra.service.ts's reason: a service

@@ -17,6 +17,10 @@ title: Workbench
   // checkout's own `fli done`), a reviewer's reply, and the diff, whose line
   // comments ride along with the next message.
   //
+  // A checkout holds several CHATS and shows one; the strip under the message
+  // box switches between them. They share the checkout's tree, so one runs at
+  // a time and the others wait -- Fork is how two run at once.
+  //
   // The Run tab starts what the checkout declares -- `fli dev` per app and its
   // package.json scripts (api core/workbench-run.ts) -- and leaves it running
   // on the API's machine; what is up comes on the same poll.
@@ -444,9 +448,9 @@ title: Workbench
     tabs     = { ...tabs, [p.id]: 'chat' }
     document.getElementById(`workbench-draft-${p.id}`)?.style.removeProperty('block-size')
     scrollToEnd(p.id)
-    if (await act('send', p, { prompt })) {
+    if (await act('send', p, { prompt, chat: status[p.id]?.chat })) {
       lastState[p.id] = 'working'
-      status = { ...status, [p.id]: { ...status[p.id], state: 'working' } }
+      status = { ...status, [p.id]: { ...status[p.id], state: 'working', running: status[p.id]?.chat } }
     }
     askNotifications()
   }
@@ -470,6 +474,32 @@ title: Workbench
     status = { ...status, [p.id]: { ...status[p.id], unread: false } }
     retitle()
     await act('seen', p)
+  }
+
+  // ─── chats ───────────────────────────────────────────────────────────
+
+  const chatsOf   = (id) => status[id]?.chats ?? []
+  const shownOf   = (id) => chatsOf(id).find(c => c.id === status[id]?.chat)
+  const chatTitle = (c) => c.title ?? 'New chat'
+  // Nothing sent and nothing resumed: New chat would open its twin.
+  const blank     = (id) => !shownOf(id)?.title && !shownOf(id)?.session
+  // The checkout is working in a chat other than the one shown, so a message
+  // here would be refused rather than queued.
+  const elsewhere = (id) => status[id]?.state === 'working' && !!status[id]?.running && status[id].running !== status[id].chat
+
+  async function selectChat(p, chat) {
+    if (chat === status[p.id]?.chat) return
+    if (!await act('select', p, { chat })) return
+    status = { ...status, [p.id]: { ...status[p.id], chat } }
+    flips  = { ...flips, [p.id]: {} }
+    fetchedAt[p.id] = -1
+    await refreshTranscript(p.id)
+    scrollToEnd(p.id)
+  }
+
+  async function closeChat(p, c) {
+    if (c.title && !confirm(`Close "${c.title}"? Its transcript here goes; Claude Code keeps the session, and its cost stays in the total.`)) return
+    if (await act('close', p, { chat: c.id })) { fetchedAt[p.id] = -1; await loadPins() }
   }
 
   // ─── branches ────────────────────────────────────────────────────────
@@ -534,9 +564,15 @@ title: Workbench
   async function stop(p)   { await act('stop', p) }
   async function check(p)  { if (await act('check', p)) fetchedAt[p.id] = -1 }
   async function review(p) { if (await act('review', p)) fetchedAt[p.id] = -1 }
-  async function fresh(p)  { if (await act('fresh', p)) { fetchedAt[p.id] = -1; await loadPins() } }
+  async function fresh(p)  {
+    if (!await act('fresh', p)) return
+    fetchedAt[p.id] = -1
+    tabs = { ...tabs, [p.id]: 'chat' }
+    await loadPins()
+    document.getElementById(`workbench-draft-${p.id}`)?.focus()
+  }
   async function unpin(p)  {
-    if (!confirm(`Unpin ${p.name}? Its chat here is forgotten; Claude Code keeps the session.`)) return
+    if (!confirm(`Unpin ${p.name}? Its chats here are forgotten; Claude Code keeps the sessions.`)) return
     if (await act('unpin', p)) await loadPins()
   }
   async function configure(p, form) {
@@ -886,7 +922,7 @@ title: Workbench
 
             {#if p.from}
               <div class="text-sm text-muted workbench-from">
-                ↳ branch of <strong>{parentOf(p)?.name ?? 'a checkout no longer pinned'}</strong>{p.forkOf && !p.session ? ' — the first message forks its chat' : ''}
+                ↳ branch of <strong>{parentOf(p)?.name ?? 'a checkout no longer pinned'}</strong>{p.chats?.some(c => c.id === p.chat && c.forkOf && !c.session) ? ' — the first message forks its chat' : ''}
                 {#if p.carried?.total}
                   <details class="workbench-carried">
                     <summary>carried {plural(p.carried.total, 'uncommitted file')}</summary>
@@ -1189,18 +1225,21 @@ title: Workbench
             <form class="stack workbench-composer" on:submit={(e) => send(p, e)}>
               <label class="visually-hidden" for={`workbench-draft-${p.id}`}>Message to Claude in {p.name}</label>
               <textarea class="field" rows="3" id={`workbench-draft-${p.id}`}
-                        placeholder={status[p.id]?.state === 'working' ? 'Queue a follow-up…' : 'Ask Claude to do something… (Ctrl+Enter)'}
+                        placeholder={elsewhere(p.id) ? 'Another chat here is working — one run at a time in a checkout'
+                          : status[p.id]?.state === 'working' ? 'Queue a follow-up…' : 'Ask Claude to do something… (Ctrl+Enter)'}
                         value={drafts[p.id] ?? ''}
                         on:input={(e) => { drafts = { ...drafts, [p.id]: e.target.value }; fit(e.target) }}
                         on:keydown={(e) => keydown(p, e)}></textarea>
               <div class="cluster">
-                <Button type="submit" disabled={!composed(p.id)}>
-                  {status[p.id]?.state === 'working' ? 'Queue' : 'Send'}
+                <Button type="submit" disabled={!composed(p.id) || elsewhere(p.id)}>
+                  {status[p.id]?.state === 'working' && !elsewhere(p.id) ? 'Queue' : 'Send'}
                 </Button>
-                {#if status[p.id]?.state === 'working'}
+                {#if status[p.id]?.state === 'working' && !elsewhere(p.id)}
                   <Button variant="outlined" tone="danger" onclick={() => stop(p)}>Stop</Button>
-                {:else}
-                  <Button variant="ghost" onclick={() => fresh(p)} disabled={!p.session}>New chat</Button>
+                {/if}
+                <Button variant="ghost" onclick={() => fresh(p)} disabled={blank(p.id)}
+                        title="Another chat in this checkout, in a tab below this one">New chat</Button>
+                {#if status[p.id]?.state !== 'working'}
                   {#if p.checkable}
                     <Button variant="ghost" onclick={() => check(p)}
                             disabled={status[p.id]?.checks?.state === 'running'}>Check</Button>
@@ -1221,6 +1260,24 @@ title: Workbench
                 {/if}
               </div>
             </form>
+            {#if chatsOf(p.id).length > 1}
+              <div class="text-sm workbench-chats" role="group" aria-label={`Chats in ${p.name}`}>
+                {#each chatsOf(p.id) as c (c.id)}
+                  <span class="workbench-chat-tab" data-chat={c.id}>
+                    <button type="button" class="workbench-chat-open" on:click={() => selectChat(p, c.id)}
+                            aria-current={c.id === status[p.id]?.chat ? 'true' : null}
+                            title={c.title ?? 'Nothing sent here yet'}>
+                      <Dot tone={c.unread ? 'success' : TONE[c.state]} pulse={c.state === 'working'} label={LABEL[c.state]} />
+                      <span class="workbench-chat-title">{chatTitle(c)}</span>
+                    </button>
+                    {#if c.state !== 'working'}
+                      <button type="button" class="workbench-chat-close" aria-label={`Close ${chatTitle(c)}`}
+                              title="Close — Claude Code keeps the session" on:click={() => closeChat(p, c)}>×</button>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {/if}
             {/if}
           </article>
       {/each}
@@ -1359,6 +1416,50 @@ title: Workbench
   }
   .workbench-chat-panel { display: flex; flex-direction: column; gap: var(--space-xs); overflow: hidden; }
   .workbench-composer textarea { resize: vertical; inline-size: 100%; max-block-size: 30vh; }
+
+  /* Under the message box, like a spreadsheet's sheets: every chat sends
+     from the one box, into the one tree. */
+  .workbench-chats {
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--space-xs);
+    overflow-x: auto;
+    border-block-start: var(--border-width) solid var(--tint-rule);
+  }
+  .workbench-chat-tab {
+    display: flex;
+    align-items: center;
+    flex: 0 1 12rem;
+    min-inline-size: 5rem;
+    border: var(--border-width) solid transparent;
+    border-block-start: 0;
+    border-radius: 0 0 var(--card-radius) var(--card-radius);
+  }
+  .workbench-chat-tab:has([aria-current='true']) { border-color: var(--tint-rule); background: var(--surface-sunken); }
+  .workbench-chat-open {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-xs);
+    min-inline-size: 0;
+    padding: var(--space-xs) var(--space-sm);
+    border: 0;
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-chat-open[aria-current='true'] { color: inherit; }
+  .workbench-chat-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .workbench-chat-close {
+    padding: 0 var(--space-xs);
+    border: 0;
+    background: none;
+    color: var(--ink-mute);
+    font: inherit;
+    cursor: pointer;
+  }
+  .workbench-chat-close:hover { color: inherit; }
 
   .workbench-chat {
     flex: 1;

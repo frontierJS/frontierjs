@@ -33,6 +33,7 @@ import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
 import { isSnoozed } from '../../core/alerting.ts'
 import type { BasecampApp } from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** The ceiling on any one kind of node. A fleet past this is a graph nobody
  *  can read anyway, and the answer says it was cut rather than looking whole. */
@@ -62,6 +63,7 @@ type Edge = {
 export function createInfraService(app: BasecampApp) {
   return createService({
     name: 'infra',
+    scope: keyScope('infra'),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // `methods:` and not the scan: without it the base service answers every

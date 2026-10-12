@@ -52,6 +52,7 @@ import { getPagination }           from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { slugify } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 // ─── Vocabularies ─────────────────────────────────────────────────────────
 // The words are declared in db/schema.lite, where the column gets its CHECK.
@@ -124,6 +125,7 @@ export function createHubService(app: BasecampApp) {
 
   return createService({
     name: 'hub',
+    scope: keyScope('hub'),
 
     // `methods:` matters more here than anywhere else in this app: without it
     // the base service answers every CRUD verb it was not given, and on a

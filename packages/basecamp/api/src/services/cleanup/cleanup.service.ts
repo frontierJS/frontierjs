@@ -42,6 +42,7 @@ import type { DiskReport } from './disk-report.ts'
 import cleanupRun from '../../jobs/cleanup-run.job.ts'
 import { announce } from '../../channels.ts'
 import type { ServerEventKind } from '../../../../db/schema.d.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createCleanupService(app: BasecampApp) {
 
@@ -173,6 +174,7 @@ export function createCleanupService(app: BasecampApp) {
 
   return createService({
     name:  'cleanup',
+    scope: keyScope('cleanup'),
     model: 'CleanupRun',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

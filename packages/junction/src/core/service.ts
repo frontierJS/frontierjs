@@ -19,7 +19,7 @@ import {
   type HookMap,
   type ResolvedPipeline
 } from './hooks.ts'
-import { NotFound, BadRequest, MethodNotAllowed, Unprocessable, toFrameworkError } from './errors.ts'
+import { NotFound, BadRequest, Forbidden, MethodNotAllowed, Unprocessable, toFrameworkError } from './errors.ts'
 import { createMemoryCache, type ICache }         from '../cache/index.ts'
 import { wrapResult, isServiceResult, resultData, refuseStream } from './envelope.ts'
 // NOTE: service.ts ⇄ litestone.ts is an intentional, safe ESM cycle:
@@ -261,6 +261,8 @@ export interface ServiceDescription {
   methodClaims: Record<string, string[]>
   /** The custom methods declared `read: true`, whose answer is never kept or announced (`FJS-D505`). */
   readMethods: string[]
+  /** The scope each method requires of a key issued with scopes; a method absent refuses one (`FJS-D916`). */
+  scopes: Record<string, string | false>
   /** The merged hook declaration — what ran, not how it was resolved. */
   hooks:      HookMap
   /**
@@ -356,6 +358,8 @@ export interface Service {
   _methodClaims?: Record<string, string[]>
   /** The custom methods DECLARED `read: true` in `methods:`. Read through `isReadMethod`. */
   _readMethods?: string[]
+  /** The `scope:` declarations, as written. Read through `requiredScope`. */
+  _scope?: ScopeDeclaration
 
   find:     (ctx: ServiceContext) => Promise<unknown>
   get:      (ctx: ServiceContext) => Promise<unknown>
@@ -647,6 +651,17 @@ async function _callService(
   // For custom methods, check the service has it registered
   if (isCustom && !customMethodFn(service, method as string)) {
     throw new NotFound(`Method '${method}' not found on service '${service.name}'`)
+  }
+
+  // ── Scopes ───────────────────────────────────────────────────────────
+  // Before the pipeline, as the method policy is: what a credential may ask
+  // for is settled by the credential, and a hook run for a call that cannot
+  // proceed still runs its side effects. An internal call is the app's own
+  // code acting inside a call already admitted, so the scope was graded at
+  // the edge it came through.
+  if (ctx.transport && ctx.transport !== 'internal') {
+    const refused = scopeRefusal(service, method as string, ctx.auth?.user)
+    if (refused) throw new Forbidden(refused)
   }
 
   // ── Idempotency-Key ──────────────────────────────────────────────────
@@ -1232,6 +1247,7 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
   // custom method and routed over HTTP as one.
   'channel',
   'methods',
+  'scope',
   'transactional',
   'reservedQuery',
 ])
@@ -1639,6 +1655,13 @@ export interface MethodDeclaration {
    */
   claims?: string[]
   /**
+   * The API-key scope this method requires, overriding the service's `scope:`
+   * (`FJS-D916`). A key issued with scopes reaches only the methods naming one
+   * it holds; `false` admits any key, for a method that grants nothing, such as
+   * one that tells a key who holds it.
+   */
+  scope?: string | false
+  /**
    * The method answers without writing a record, so its answer is kept and
    * announced as `find`'s is: never (`FJS-D505`). Without it a custom method is
    * a write, and a search whose answer echoes its query had that query kept
@@ -1753,6 +1776,86 @@ export function collectReadMethods(
     if (entry.read) out.push(name)
   }
   return out
+}
+
+// ─── Scopes ───────────────────────────────────────────────────────────────
+// A key's scopes are a second axis beside its level (`FJS-D407`): what the
+// credential may ask for, whatever its issuer may do. The names are the app's;
+// which method needs which is declared on the service, and the refusal is
+// `scopeRefusal`'s alone, so the call and every list an agent is offered read
+// one answer (`FJS-D916`).
+
+export type ServiceScope = string | { read: string; write: string }
+
+function isScopeName(v: unknown): v is string {
+  return typeof v === 'string' && v.trim() !== '' && v === v.trim()
+}
+
+/** A service's scope declaration: its `scope:`, and each `methods:` entry's own. */
+export interface ScopeDeclaration { wide?: ServiceScope; methods: Record<string, string | false> }
+
+/** Read a service's `scope:` and its entries' `scope:`, refusing a malformed one where it is written. */
+export function collectMethodScopes(
+  declared:    MethodPolicy | undefined,
+  wide:        ServiceScope | undefined,
+  serviceName: string,
+): ScopeDeclaration {
+  if (wide !== undefined && !isScopeName(wide) &&
+      !(wide && typeof wide === 'object' && isScopeName(wide.read) && isScopeName(wide.write)))
+    throw new TypeError(
+      `[Junction] service '${serviceName}': scope ${JSON.stringify(wide)} is not a scope name ` +
+      `or { read, write } naming two.`)
+
+  const methods: Record<string, string | false> = {}
+  if (Array.isArray(declared)) for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.scope === undefined) continue
+    const name = methodEntryName(entry, serviceName)
+    if (entry.scope !== false && !isScopeName(entry.scope))
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares scope ${JSON.stringify(entry.scope)}, ` +
+        `which is not a scope name or false.`)
+    methods[name] = entry.scope
+  }
+  return { ...(wide !== undefined ? { wide } : {}), methods }
+}
+
+/**
+ * The scope a method requires of a scoped key, or undefined when it states none.
+ *
+ * Read at call time rather than resolved at build: a move method is added when
+ * the app serves its schema, and a split `{ read, write }` takes the read line
+ * from `isReadMethod`, which is the line idempotency and the announcement draw.
+ */
+export function requiredScope(svc: object, method: string): string | false | undefined {
+  const decl = (svc as Service)._scope
+  if (!decl) return undefined
+  const own = method === DECLARED_FIELDS ? decl.methods[method] ?? decl.methods.find : decl.methods[method]
+  if (own !== undefined) return own
+  const wide = decl.wide
+  if (wide === undefined) return undefined
+  return typeof wide === 'string' ? wide : isReadMethod(svc as Service, method) ? wide.read : wide.write
+}
+
+/**
+ * Why a key's scopes refuse this call, or null when they do not.
+ *
+ * A principal with no scopes is held to none: a session, a guest, a key issued
+ * whole. A scoped key reaches a method only when the method states a scope the
+ * key holds, or states `false`.
+ */
+export function scopeRefusal(
+  svc:     object,
+  method:  string,
+  user:    { scopes?: string[] } | null | undefined,
+): string | null {
+  const held = user?.scopes
+  if (!held?.length) return null
+  const need = requiredScope(svc, method)
+  if (need === false) return null
+  const name = (svc as Service).name
+  if (need === undefined)
+    return `${name}.${method} states no scope, so a key issued with scopes (${held.join(', ')}) cannot call it`
+  return held.includes(need) ? null : `${name}.${method} needs the '${need}' scope`
 }
 
 /**
@@ -2406,6 +2509,20 @@ export interface ServiceDefinition {
   methods?:   MethodPolicy
 
   /**
+   * The API-key scope every method of this service requires (`FJS-D916`).
+   *
+   *   scope: 'clock'                                  every method
+   *   scope: { read: 'clock:read', write: 'clock:write' }   split as `isReadMethod` splits
+   *
+   * A key issued with scopes is refused, 403, at any method whose scope it does
+   * not hold, and at any method that states none: an unscoped key would
+   * otherwise carry its issuer's whole standing past every service nobody
+   * thought to narrow. A `methods:` entry's own `scope:` overrides this. The
+   * names are the app's; a key issued with no scopes is held to none of them.
+   */
+  scope?:     ServiceScope
+
+  /**
    * Broadcast this service's mutations to a WebSocket channel.
    *
    *   channel: 'posts'                              a channel name
@@ -2823,6 +2940,9 @@ export function createService(def: ServiceDefinition): Service {
         methodGates:   { ...(service._methodGates ?? {}) },
         methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
         readMethods:   [...(service._readMethods ?? [])],
+        scopes:        Object.fromEntries(allowedMethodNames(service)
+          .map(m => [m, requiredScope(service, m)] as const)
+          .filter((e): e is readonly [string, string | false] => e[1] !== undefined)),
         channel:    describeChannel(service.channel as ChannelDeclaration | undefined),
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
@@ -2946,6 +3066,7 @@ export function createService(def: ServiceDefinition): Service {
   ;(service as Service)._methodGates = declaredGates
   ;(service as Service)._methodClaims = declaredClaims
   ;(service as Service)._readMethods = declaredReads
+  ;(service as Service)._scope = collectMethodScopes(def.methods, def.scope, defName ?? '(unnamed)')
   resolveTable({})
 
   Object.defineProperty(service, SERVE_MOVES, {

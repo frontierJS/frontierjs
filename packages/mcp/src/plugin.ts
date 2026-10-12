@@ -35,7 +35,7 @@
  */
 
 import { McpServer, WebStandardStreamableHTTPServerTransport, fromJsonSchema } from '@modelcontextprotocol/server'
-import { CALL_OPTIONS_AT, LEVELS, principalGateLevel, toDataPrincipal, toFrameworkError, withholdProtected } from '@frontierjs/junction'
+import { CALL_OPTIONS_AT, LEVELS, principalGateLevel, scopeRefusal, toDataPrincipal, toFrameworkError, withholdProtected } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
@@ -67,9 +67,9 @@ export interface McpOptions {
    * anything else withholds it (`FJS-D407`).
    *
    * For an axis a standing is not: an API key's scopes, a plan's features.
-   * The projection grades a LEVEL, and a rule an app holds in its own hook is
-   * invisible to it, so a key issued `servers:read` is offered every write its
-   * role allows. It can only REMOVE — a tool it withholds is not registered and
+   * The projection grades a LEVEL and a key's declared scopes (`FJS-D916`); a
+   * rule an app holds in its own hook is invisible to both, so this is where
+   * it withholds what that rule would refuse. It can only REMOVE — a tool it withholds is not registered and
    * cannot be called here, a tool it allows was already graded — so a wrong
    * answer costs an affordance and never a grant. A throw fails the list,
    * since a list after a broken guard is wrong in an unknown direction.
@@ -206,8 +206,11 @@ async function answer(
   const correlationId = (app as { correlationId?: () => string | null }).correlationId?.() ?? null
   const awaiting      = asksToAwait(ctx)
 
-  const graded = dispatchable(projectTools(shapes, views, level)).tools
-  const tools  = opts.narrow ? await narrowTo(graded, user, opts.narrow) : graded
+  // A key's scopes withhold what the call would refuse, from junction's own
+  // reading of them (`FJS-D916`); `narrow` is for a rule the app holds beyond it.
+  const scoped = dispatchable(projectTools(shapes, views, level)).tools
+    .filter(t => scopeRefusal(app.services.get(t.service) ?? {}, t.method, user as { scopes?: string[] } | null) === null)
+  const tools  = opts.narrow ? await narrowTo(scoped, user, opts.narrow) : scoped
 
   const server = new McpServer({
     name:    opts.name ?? 'frontierjs',

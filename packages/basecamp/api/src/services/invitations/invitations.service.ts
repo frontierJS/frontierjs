@@ -43,6 +43,7 @@ import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** How long a link is good for. Long enough to survive a weekend, short enough
  *  that a forwarded mail from six months ago is not a way in. */
@@ -159,6 +160,7 @@ export function createInvitationsService(app: BasecampApp) {
 
   return createService({
     name:  'invitations',
+    scope: keyScope('invitations'),
     model: 'Invitation',
 
     // The workspace channel, except for `accept` — whose result carries a

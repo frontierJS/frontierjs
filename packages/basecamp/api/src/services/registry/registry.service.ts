@@ -30,10 +30,12 @@ import { createService, $ }                                       from '@frontie
 import { sessionScope, getPagination, WORKSPACE_QUERY }           from '../../core/hooks.ts'
 import { db, findScoped, getScoped }                              from '../../core/resource.ts'
 import type { BasecampApp }                                       from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createRegistryService(app: BasecampApp) {
   return createService({
     name:  'registry',
+    scope: keyScope('registry'),
     model: 'RegistryImage',
     reservedQuery: WORKSPACE_QUERY,
 

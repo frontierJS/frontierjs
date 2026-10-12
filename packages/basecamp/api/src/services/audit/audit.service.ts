@@ -33,10 +33,12 @@ import { createService, findWindow, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 export function createAuditService(app: BasecampApp) {
   return createService({
     name:    'audit',
+    scope:   keyScope('audit'),
     model:   'AuditEvent',
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
     methods: 'readOnly',

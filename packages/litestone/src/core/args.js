@@ -868,7 +868,7 @@ const ARG_NAMES = {
   aggregate:         new Set(AGG_ARGS),
   groupBy:           new Set([...AGG_ARGS, 'by', 'having', 'orderBy', 'limit', 'offset', 'fillGaps', 'interval', 'timeZone', 'weekStart']),
   findManyCursor:    new Set(['cursor', 'limit', 'where', 'select', 'include', 'orderBy', ...VIEW_FLAGS]),
-  search:            new Set(['limit', 'offset', 'where', 'orderBy', 'select', 'include', 'highlight', 'snippet', 'withRank', ...VIEW_FLAGS]),
+  search:            new Set(['raw', 'prefix', 'limit', 'offset', 'where', 'orderBy', 'select', 'include', 'highlight', 'snippet', 'withRank', ...VIEW_FLAGS]),
   create:            new Set(['data', 'include', 'select', 'scopedBy', 'system']),
   update:            new Set(['where', 'data', 'include', 'select', 'scopedBy', 'system', '_bypassVersion', '_move', 'base', ...VIEW_FLAGS]),
   updateMany:        new Set(['where', 'data', 'system', 'announce', ...VIEW_FLAGS]),

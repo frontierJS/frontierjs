@@ -27,6 +27,7 @@ import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD
   from '../../providers/compute/accounts.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ProviderKind }   from '../../../../db/schema.d.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 const KINDS = ['ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'generic']
 
@@ -73,6 +74,7 @@ export function createSecretsService(app: BasecampApp) {
 
   return createService({
     name:  'secrets',
+    scope: keyScope('secrets'),
     model: 'Secret',
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,

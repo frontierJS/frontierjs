@@ -26,6 +26,7 @@ import { createService, BadRequest, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin }         from '../../core/hooks.ts'
 import { db }                         from '../../core/resource.ts'
 import type { BasecampApp }           from '../../basecamp.types.ts'
+import { keyScope } from '../api-keys/scopes.ts'
 
 /** The primary key, which is a constant. `HubConfig.id` defaults to it, so this
  *  is the same string the schema writes and not a second opinion about it. */
@@ -47,6 +48,7 @@ const WRITABLE = [
 export function createHubConfigService(_app: BasecampApp) {
   return createService({
     name:  'hub-config',
+    scope: keyScope('hub-config'),
     model: 'HubConfig',
 
     methods: ['current', 'save'],
