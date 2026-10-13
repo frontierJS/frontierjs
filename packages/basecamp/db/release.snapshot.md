@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-62 model(s) · 40 enum(s) · 2 database(s)
+63 model(s) · 40 enum(s) · 2 database(s)
 audit → trail · main → sqlite
 ```
 
@@ -44,12 +44,12 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
 | `MetricType` | `counter` · `gauge` · `histogram` |
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Server` · `Workspace` |
-| `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `server_unreachable` · `weekly_digest` |
+| `NotificationKind` | `alert_firing` · `alert_resolved` · `dependency_vulnerable` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `posture_failed` · `server_unreachable` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
-| `ServerEventKind` | `came_online` · `cleanup_failed` · `cleanup_queued` · `cleanup_ran` · `created` · `destroy_finished` · `destroy_requested` · `drain_cancelled` · `drain_started` · `enrollment_issued` · `provision_created` · `provision_ready` · `provision_requested` · `provision_timeout` · `reboot_requested` · `recipe_failed` · `recipe_ran` · `removed` · `status_sync_ignored` · `status_synced` · `sync_failed` · `sync_no_account` · `sync_requested` · `sync_unrecognized` · `sync_unsupported` · `unreachable` · `volume_removed` · `volumes_pruned` |
+| `ServerEventKind` | `came_online` · `cleanup_failed` · `cleanup_queued` · `cleanup_ran` · `created` · `destroy_finished` · `destroy_requested` · `drain_cancelled` · `drain_started` · `enrollment_issued` · `posture_failed` · `posture_restored` · `provision_created` · `provision_ready` · `provision_requested` · `provision_timeout` · `reboot_requested` · `recipe_failed` · `recipe_ran` · `removed` · `status_sync_ignored` · `status_synced` · `sync_failed` · `sync_no_account` · `sync_requested` · `sync_unrecognized` · `sync_unsupported` · `unreachable` · `volume_removed` · `volumes_pruned` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
 | `ServerStatus` | `destroyed` · `destroying` · `draining` · `installing` · `online` · `pending` · `provisioning` · `stopped` · `unreachable` |
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
@@ -226,6 +226,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `domains` | `Domain[]` | — | — | relation |
 | `environment` | `Environment` | — | — | relation |
 | `environmentId` | `String` | no | — | **required on write** |
+| `exposesPort` | `Boolean` | no | `0` | — |
 | `healthCheck` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isPublic` | `Boolean` | no | `0` | — |
@@ -1673,6 +1674,31 @@ table `server_network` · db `main` · gate `2.5`
 @@deny('read', !check(network, tenancy))
 @@deny('read', !check(server, tenancy))
 @@deny('update', !check(network, tenancy))
+@@deny('update', !check(server, tenancy))
+```
+
+### `ServerPosture`
+
+table `server_posture` · db `main` · gate `2.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `at` | `DateTime` | no | — | **required on write** |
+| `controls` | `Json` | no | `'[]'` | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `failing` | `Int` | no | `0` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `readings` | `Json` | no | `'{}'` | — |
+| `server` | `Server` | — | — | relation |
+| `serverId` | `String` | no | — | **required on write** |
+| `unknown` | `Int` | no | `0` | — |
+
+```
+@@index(serverId, at)
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(server, tenancy))
 @@deny('update', !check(server, tenancy))
 ```
 

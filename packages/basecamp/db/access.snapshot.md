@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-62 models · 1 view · 63 gated · 0 unrestricted
-48 with row policies · 18 with protected fields · 31 declared moves · 13 @system · 0 @seals
+63 models · 1 view · 64 gated · 0 unrestricted
+49 with row policies · 18 with protected fields · 31 declared moves · 13 @system · 0 @seals
 ```
 
 ## Gates
@@ -76,6 +76,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Server` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ServerEvent` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `ServerNetwork` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `ServerPosture` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `User` | 1 VISITOR | 8 SYSTEM | 1 VISITOR | 5 ADMINISTRATOR |
 | `Variable` | 2 READER | 4 USER | 4 USER | 4 USER |
@@ -480,6 +481,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `!check(network, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(network, tenancy)` — "Outside your workspaceId"
+
+### `ServerPosture`
+
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `User`
 
