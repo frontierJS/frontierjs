@@ -368,9 +368,12 @@
       return
     }
 
+    // A closed list has nothing to pick, so Enter is the form's: opening the
+    // list here left a form whose last field is a picker unsubmittable by
+    // keyboard. Combobox follows the same rule.
     if (e.key === 'Enter') {
+      if (!open) return
       e.preventDefault()
-      if (!open) { open = true; return }
       const target = filtered[activeIndex]
       if (target) {
         selectedValues.has(target.value) ? remove(target.value) : add(target)

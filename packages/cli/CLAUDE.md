@@ -361,6 +361,10 @@ core/
                 and the COUNT is not — a role rule that stops matching drops a
                 file from a listing somebody is reading to decide what to commit,
                 and a dropped row reads as a clean file
+  git-history.js  commits per day as a column chart, time across — behind
+                `fli ghist`. Pure: `git log --shortstat` text in, rows out. Every
+                day in range is a bucket, zero or not, or the x axis stops being
+                time; week buckets start Monday
   doctor.js     can this MACHINE run fli — binaries, the two env files, and the
                 env vars a namespace declares. The sibling of `checks.js` and
                 deliberately not merged with it: a missing `sqlite3` is not an

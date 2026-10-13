@@ -142,8 +142,8 @@ export function buildSealMap(schema, relationMap, tableFor) {
         parentTable: tableFor(name),
         column:      seal.field,
         states:      [...seal.states],
-        foreignKey:    rel.foreignKey,     // on the child
-        referencedKey: rel.referencedKey,  // on the parent
+        foreignKeys:    rel.foreignKeys,     // on the child
+        referencedKeys: rel.referencedKeys,  // on the parent, index-aligned
       })
     }
   }

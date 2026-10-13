@@ -28,7 +28,7 @@
 
 import { AccessDeniedError }   from './plugin.js'
 import { modelToTableName, sqlType, columnMapFor, isStoredField } from './ddl.js'
-import { sqlFragment, inList } from './query.js'
+import { sqlFragment, inList, pairsOn } from './query.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
 import { NOW_SQL, rawClause }  from './query.js'
@@ -257,12 +257,23 @@ function noColumn(f) {
   return kind ? '@' + kind : 'not a stored column'
 }
 
+// The column a belongsTo relation's NAME stands for in a comparison
+// (`owner == auth()`). A composite key has no one column, and comparing its
+// first would grade the row by whichever row shares it (`FJS-2790`), so it is
+// refused by name; a path (`owner.id`) or the column itself says which.
+function relationColumn(rel, name, modelName) {
+  if (rel?.kind !== 'belongsTo') return name
+  if (rel.foreignKeys.length === 1) return rel.foreignKeys[0]
+  throw new Error(
+    `${modelName}: '${name}' relates over (${rel.foreignKeys.join(', ')}), so it is not one value to compare — ` +
+    `name the column, or the related row's field as '${name}.<field>'`)
+}
+
 function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = null, schema = null) {
   const known = (name) => {
     const rel = relationMap?.[model.name]?.[name]
-    if (rel) return true
-    const col = rel?.kind === 'belongsTo' ? rel.foreignKey : name
-    return model.fields.some(f => f.name === col)
+    if (rel) { relationColumn(rel, name, model.name); return true }
+    return model.fields.some(f => f.name === name)
   }
 
   // A path's target field, or null when there is no schema to reach it through.
@@ -390,8 +401,7 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
 
     const say = (msg) => { throw new Error(`${model.name}: ${msg} — in @@allow/@@deny '${policyExprToString(n)}'`) }
     const fieldNamed = (name) => {
-      const rel = relationMap?.[model.name]?.[name]
-      const col = rel?.kind === 'belongsTo' ? rel.foreignKey : name
+      const col = relationColumn(relationMap?.[model.name]?.[name], name, model.name)
       return model.fields.find(f => f.name === col) ?? null
     }
 
@@ -1299,8 +1309,7 @@ function encodedCompare(node, params, ctx, modelName) {
   const fieldNode = left.type === 'field' ? left : right.type === 'field' ? right : null
   if (!fieldNode) return null
 
-  const rel = relationsOf(ctx, modelName)[fieldNode.name]
-  const col = rel?.kind === 'belongsTo' ? rel.foreignKey : fieldNode.name
+  const col = relationColumn(relationsOf(ctx, modelName)[fieldNode.name], fieldNode.name, modelName)
   const enc = comparisonEncoderFor(shapeOf(ctx, modelName).fieldPolicy[col])
   if (!enc) return null
 
@@ -1349,8 +1358,7 @@ function scalarOperand(node, ctx, modelName) {
 // the answer is that model's own map rather than the one we started from.
 const _policyColumnMaps = new WeakMap()
 function fieldColumnName(ctx, modelName, name) {
-  const rel = relationsOf(ctx, modelName)[name]
-  return rel?.kind === 'belongsTo' ? rel.foreignKey : name
+  return relationColumn(relationsOf(ctx, modelName)[name], name, modelName)
 }
 
 function policyColumn(schema, modelName, field) {
@@ -1395,11 +1403,11 @@ function pathSql(node, ctx, modelName) {
   const selfTable   = selfDef   ? modelToTableName(selfDef, false)   : modelName
   const targetTable = targetDef ? modelToTableName(targetDef, false) : rel.targetModel
   const col         = policyColumn(schema, rel.targetModel, node.name)
-  const fk          = policyColumn(schema, modelName, rel.foreignKey)
-  const refKey      = policyColumn(schema, rel.targetModel, rel.referencedKey)
-
+  // Every pair of the key: joined on the first alone, a composite relation
+  // reads whichever row shares it (`FJS-2790`).
   return `(SELECT "${targetTable}"."${col}" FROM "${targetTable}" ` +
-         `WHERE "${targetTable}"."${refKey}" = "${selfTable}"."${fk}")`
+         `WHERE ${pairsOn(rel.foreignKeys, `"${selfTable}".`, rel.referencedKeys, `"${targetTable}".`,
+           f => policyColumn(schema, modelName, f), r => policyColumn(schema, rel.targetModel, r))})`
 }
 
 // Does ANY row of a to-many relation satisfy the condition (`FJS-D566`) — a
@@ -1425,13 +1433,14 @@ function someSql(node, params, ctx, modelName, op, visited, bound = false) {
   const targetDef   = schema?.models?.find(m => m.name === rel.targetModel)
   const selfTable   = selfDef   ? modelToTableName(selfDef, false)   : modelName
   const targetTable = targetDef ? modelToTableName(targetDef, false) : rel.targetModel
-  const fk          = policyColumn(schema, rel.targetModel, rel.foreignKey)
-  const parent      = bound ? '?' : `"${selfTable}"."${policyColumn(schema, modelName, rel.referencedKey)}"`
+  const corr        = rel.foreignKeys.map((f, i) =>
+    `"__some"."${policyColumn(schema, rel.targetModel, f)}" = ` +
+    (bound ? '?' : `"${selfTable}"."${policyColumn(schema, modelName, rel.referencedKeys[i])}"`)).join(' AND ')
   const live        = shapeOf(ctx, rel.targetModel).softDelete
     ? ` AND "__some"."${policyColumn(schema, rel.targetModel, 'deletedAt')}" IS NULL` : ''
   const cond = compileSql(node.where, params, ctx, rel.targetModel, op, visited)
 
-  return `EXISTS (SELECT 1 FROM "${targetTable}" AS "__some" WHERE "__some"."${fk}" = ${parent}${live} AND (${cond}))`
+  return `EXISTS (SELECT 1 FROM "${targetTable}" AS "__some" WHERE ${corr}${live} AND (${cond}))`
 }
 
 function compileSql(node, params, ctx, modelName, op, visited) {
@@ -1516,8 +1525,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
         }
         // the list is an array COLUMN on the row
         if (right.type === 'field') {
-          const rel = relationsOf(ctx, modelName)[right.name]
-          const col = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
+          const col = relationColumn(relationsOf(ctx, modelName)[right.name], right.name, modelName)
           params.push(scalarOperand(left, ctx, modelName))
           // json_each over the stored document, the same SQL `where: { col: { has } }`
           // compiles to — one definition of what membership means in SQLite.
@@ -1532,8 +1540,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
         const list = Array.isArray(items) ? items : items == null ? [] : [items]
         if (!list.length) return '0'
         const L = left.type === 'field'
-          ? `"${relationsOf(ctx, modelName)[left.name]?.kind === 'belongsTo'
-              ? relationsOf(ctx, modelName)[left.name].foreignKey : left.name}"`
+          ? `"${relationColumn(relationsOf(ctx, modelName)[left.name], left.name, modelName)}"`
           : compileSql(left, params, ctx, modelName, op, visited)
         // `pathSql` is reached through the line above, which is what keeps the
         // parameter ORDER right: the subquery binds nothing, so the list's
@@ -1565,13 +1572,11 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       // The JS evaluator below compares with `===` and always got this right,
       // so create ALLOWED a row that read then hid.
       if (left.type === 'field' && right.type === 'literal' && right.value === null) {
-        const rel = relationsOf(ctx, modelName)[left.name]
-        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : left.name
+        const fk  = relationColumn(relationsOf(ctx, modelName)[left.name], left.name, modelName)
         return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       }
       if (right.type === 'field' && left.type === 'literal' && left.value === null) {
-        const rel = relationsOf(ctx, modelName)[right.name]
-        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
+        const fk  = relationColumn(relationsOf(ctx, modelName)[right.name], right.name, modelName)
         return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       }
       // Same sentence one hop away. A subquery answers NULL for an absent
@@ -1590,14 +1595,12 @@ function compileSql(node, params, ctx, modelName, op, visited) {
 
       // field == auth()  →  resolve FK if it's a belongsTo relation
       if (left.type === 'field' && right.type === 'auth' && right.field === null) {
-        const rel = relationsOf(ctx, modelName)[left.name]
-        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : left.name
+        const fk  = relationColumn(relationsOf(ctx, modelName)[left.name], left.name, modelName)
         params.push(ctx.auth?.id ?? null)
         return `"${fk}" ${sqlOp(node.op)} ?`
       }
       if (right.type === 'field' && left.type === 'auth' && left.field === null) {
-        const rel = relationsOf(ctx, modelName)[right.name]
-        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
+        const fk  = relationColumn(relationsOf(ctx, modelName)[right.name], right.name, modelName)
         params.push(ctx.auth?.id ?? null)
         return `"${fk}" ${sqlOp(node.op)} ?`
       }
@@ -1638,7 +1641,9 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       // `evalCheck` allowed the same row on write. Two implementations of one
       // rule, disagreeing, and `verifyRowPolicies` skips a `check()` policy by
       // name, so the net that grades the other rules could not see this one.
-      return `("${selfTable}"."${rel.foreignKey}" IS NULL OR EXISTS (SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = "${selfTable}"."${rel.foreignKey}" AND (${subSql})))`
+      // A composite key with any column NULL references nothing (MATCH SIMPLE).
+      const absent = rel.foreignKeys.map(f => `"${selfTable}"."${f}" IS NULL`).join(' OR ')
+      return `(${absent} OR EXISTS (SELECT 1 FROM "${targetTable}" WHERE ${pairsOn(rel.foreignKeys, `"${selfTable}".`, rel.referencedKeys, `"${targetTable}".`)} AND (${subSql})))`
     }
 
     default:
@@ -1660,7 +1665,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
 // target's own filter is what `buildFilterSql` already builds for the WHERE, and
 // bun:sqlite is synchronous — the same SQL, run uncorrelated:
 //
-//   SELECT 1 FROM "<target>" WHERE "<referencedKey>" = ? AND (<target policy>) LIMIT 1
+//   SELECT 1 FROM "<target>" WHERE "<referencedKeys…>" = ? AND (<target policy>) LIMIT 1
 //
 // Reads go through `ctx.readDb`, which routes to the write connection while a
 // transaction is open — a create inside one has to see rows that transaction
@@ -1678,8 +1683,8 @@ function evalCheck(node, ctx, data, modelName, op) {
   if (!rel || rel.kind !== 'belongsTo')
     throw new Error(`check(${node.field}): only to-one (belongsTo) relations are supported in policy expressions`)
 
-  const fk = data?.[rel.foreignKey]
-  if (fk == null) return true
+  const key = rel.foreignKeys.map(f => data?.[f])
+  if (key.some(v => v == null)) return true
 
   const schema = ctx.schema
   const db     = ctx.readDb
@@ -1699,8 +1704,9 @@ function evalCheck(node, ctx, data, modelName, op) {
   // finds none (FJS-1712).
   if (ctx._hiddenParents?.has(node.field)) return false
 
-  const sql = `SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = ? AND (${subSql}) LIMIT 1`
-  const hit = db.query(sql).get(fk, ...params)
+  const keyed = rel.referencedKeys.map(r => `"${targetTable}"."${r}" = ?`).join(' AND ')
+  const sql = `SELECT 1 FROM "${targetTable}" WHERE ${keyed} AND (${subSql}) LIMIT 1`
+  const hit = db.query(sql).get(...key, ...params)
   if (ctx.policyDebug === 'verbose')
     plog(ctx, checkOp, modelName, `\x1b[2mcheck(${node.field}) → ${hit ? 'allowed' : 'denied'}\x1b[0m`, `(${sql})`)
   return !!hit
@@ -1725,8 +1731,8 @@ function evalPath(node, ctx, data, modelName) {
   const rel = relationsOf(ctx, modelName)[node.rel]
   if (!rel || rel.kind !== 'belongsTo') return null
 
-  const fk = data?.[rel.foreignKey]
-  if (fk == null) return null
+  const key = rel.foreignKeys.map(f => data?.[f])
+  if (key.some(v => v == null)) return null
   // The lookup below reads past the parent's own rules, so a parent the caller
   // cannot read is absent here, or the rule answers by its column (FJS-1712).
   if (ctx._hiddenParents?.has(node.rel)) return null
@@ -1738,10 +1744,10 @@ function evalPath(node, ctx, data, modelName) {
   const targetDef = schema.models?.find(m => m.name === rel.targetModel)
   if (!targetDef) return null
   const targetTable = modelToTableName(targetDef, false)
-  const col    = policyColumn(schema, rel.targetModel, node.name)
-  const refKey = policyColumn(schema, rel.targetModel, rel.referencedKey)
+  const col   = policyColumn(schema, rel.targetModel, node.name)
+  const keyed = rel.referencedKeys.map(r => `"${policyColumn(schema, rel.targetModel, r)}" = ?`).join(' AND ')
 
-  const row = db.query(`SELECT "${col}" AS v FROM "${targetTable}" WHERE "${refKey}" = ? LIMIT 1`).get(fk)
+  const row = db.query(`SELECT "${col}" AS v FROM "${targetTable}" WHERE ${keyed} LIMIT 1`).get(...key)
   return row?.v ?? null
 }
 
@@ -1759,14 +1765,14 @@ function evalSome(node, ctx, data, modelName, op) {
   if (!rel || rel.kind !== 'hasMany')
     throw new Error(`${modelName}.${node.rel}.some(…): only a to-many (hasMany) relation is tested with some()`)
 
-  const key = data?.[rel.referencedKey]
-  if (key == null) return false
+  const key = rel.referencedKeys.map(r => data?.[r])
+  if (key.some(v => v == null)) return false
 
   const schema = ctx.schema
   const db     = ctx.readDb
   if (!schema || !db?.query) return null
 
-  const params = [key]
+  const params = [...key]
   const sql    = `SELECT ${someSql(node, params, ctx, modelName, op, new Set([modelName]), true)} AS hit`
   const hit    = db.query(sql).get(...params)?.hit
   if (ctx.policyDebug === 'verbose')
@@ -1812,10 +1818,7 @@ export function evalJs(node, ctx, data, modelName, op = null) {
     // A `belongsTo` field names the RELATION and the value is on the foreign
     // key. Nothing below the graph has a relation map, so this is the one thing
     // litestone has to say about how to read its own rows.
-    columnOf: (name) => {
-      const rel = relationsOf(ctx, modelName)[name]
-      return rel?.kind === 'belongsTo' ? rel.foreignKey : name
-    },
+    columnOf: (name) => relationColumn(relationsOf(ctx, modelName)[name], name, modelName),
     affinityOf:   (n) => affinityOf(n, ctx, modelName),
     // The three nodes that read ANOTHER MODEL. Each opens a database, which is
     // why none could move and why all three are injected here.
@@ -1855,8 +1858,7 @@ function affinityOf(node, ctx, modelName) {
     return affinityOf({ type: 'field', name: node.name }, ctx, rel.targetModel)
   }
   if (node?.type !== 'field') return null
-  const rel = relationsOf(ctx, modelName)[node.name]
-  const col = rel?.kind === 'belongsTo' ? rel.foreignKey : node.name
+  const col = relationColumn(relationsOf(ctx, modelName)[node.name], node.name, modelName)
   // A client builds the map once; a caller evaluating a policy outside one —
   // `testing.js` imports this function — falls back to the scan rather than to
   // no affinity, or the two entry points would answer differently.

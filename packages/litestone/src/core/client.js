@@ -19,7 +19,7 @@ import {
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
-  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, inList, blobKeyClauses,
+  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, inList, keyIn, tupleOf, tuplesOf, pairsOn, blobKeyClauses,
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
@@ -331,6 +331,9 @@ function rowsChanged(db) {
 // `ownerId @default(auth().id)` under `ownerId == auth().id` refuses every
 // create omitting the column (FJS-1402); a stamp fills only an absent key, so
 // what the caller sent is still graded as sent.
+// A key named in an error: its value for one column, the list for a composite.
+const oneOrAll = (vals) => vals.length === 1 ? vals[0] : vals
+
 function authStamped(row, modelName, ctx) {
   const shape = ctx.shapes[modelName]
   return stampFromAuth(applyAuthDefaults(row, shape.authDefaults, ctx.auth), shape.createdBy, ctx.auth)
@@ -672,17 +675,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
           `SELECT 1 FROM "${cols[0].table}" WHERE ${cols.map(c => `"${c.to}" = ?`).join(' AND ')} LIMIT 1`
         ).get(...values)
         if (hit) continue
-        // The relation map keeps a key's first column only, so two relations
-        // sharing one (`crew` and `crewDay`) are told apart by the declared list.
-        const declared = shape.model.fields.find(f => {
-          const fk = f.attributes?.find(a => a.kind === 'relation' && a.fields)?.fields
-          const list = Array.isArray(fk) ? fk : [fk]
-          return list.length === fields.length && list.every((n, i) => n === fields[i])
-        })
-        const [relation, rel] = declared && shape.relations[declared.name]?.kind === 'belongsTo'
-          ? [declared.name, shape.relations[declared.name]]
-          : Object.entries(shape.relations)
-            .find(([, r]) => r.kind === 'belongsTo' && r.foreignKey === fields[0]) ?? []
+        // Two relations may share a leading column (`crew` and `crewDay`), so
+        // the whole list is what names one.
+        const [relation, rel] = Object.entries(shape.relations)
+          .find(([, r]) => r.kind === 'belongsTo' &&
+            r.foreignKeys.length === fields.length && r.foreignKeys.every((n, i) => n === fields[i])) ?? []
         return parentRefusal(relation, fields, values, rel?.targetModel ?? cols[0].table)
       }
     } catch { return err }
@@ -745,7 +742,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   function parentRows(sink, references, values) {
     // biome-ignore lint/suspicious/noDoubleEquals: a key arrives as text or a number depending on the caller; SQLite compares them by affinity
-    return sink.rowsWhere(references[0], [values[0]]).filter(r => references.every((f, j) => r[f] == values[j]))
+    return sink.rowsWhere(references, [values])
   }
 
   function requireParentGrants(target, fields, references, values) {
@@ -875,9 +872,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
             if (rel.kind !== 'hasMany' || rel.onDelete === 'SetNull' || rel.onDelete === 'SetDefault') continue
             const sink = ctx.cascadeSinkFor?.(rel.targetModel)
             if (!sink) continue
-            const keys = [...new Set(parentRows.map(r => r[rel.referencedKey]).filter(v => v != null))]
+            const keys = tuplesOf(parentRows, rel.referencedKeys)
             if (!keys.length) continue
-            const found = sink.rowsWhere(rel.foreignKey, keys)
+            const found = sink.rowsWhere(rel.foreignKeys, keys)
               .filter(r => !seen.has(`${rel.targetModel}\0${r[sink.idField]}`))
             if (!found.length) continue
             if (rel.onDelete !== 'Cascade') {
@@ -912,11 +909,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // A `@hardDelete` child removed by a soft delete's cascade. The refusing row
   // sits under the CHILD, so the walk starts from the child rows.
-  function refusedChildDelete(err, childModel, childTable, foreignKey, parentPKs) {
+  function refusedChildDelete(err, childModel, childTable, foreignKeys, keys) {
     if (!isForeignKeyFailure(err) || err instanceof ForeignKeyError) return err
     let rows
     const binds = []
-    try { rows = writeDb.query(`SELECT * FROM "${childTable}" WHERE ${inList(`"${foreignKey}"`, parentPKs, binds)}`).all(...binds) }
+    try { rows = writeDb.query(`SELECT * FROM "${childTable}" WHERE ${keyIn(foreignKeys.map(f => `"${f}"`), keys, binds)}`).all(...binds) }
     catch { return err }
     return asRestrictedDelete(err, rows, childModel)
   }
@@ -1379,11 +1376,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const rel = _modelRels[relName]
     _allowedWriteKeys.add(relName)
     // Only add FK columns for belongsTo relations — those are the ones whose
-    // FK lives on THIS table. hasMany / m2m carry foreignKey metadata too,
+    // FK lives on THIS table. hasMany / m2m carry foreignKeys too,
     // but the column is on the OTHER table and would falsely accept typos
     // like `users: { create: ... }` paired with a stray `accountId` on the
     // parent (which has no such column).
-    if (rel?.kind === 'belongsTo' && rel.foreignKey) _allowedWriteKeys.add(rel.foreignKey)
+    if (rel?.kind === 'belongsTo') for (const fk of rel.foreignKeys) _allowedWriteKeys.add(fk)
   }
   // Always allow id even if not declared (legacy/edge-case schemas)
   _allowedWriteKeys.add('id')
@@ -1415,48 +1412,73 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return _cascadeTargetsCache
   }
 
-  // Runs `step(target, parentPKs)` for every edge out of every model the
-  // cascade reaches, starting at this model's `rootPKs`. `step` returns the
-  // child keys it reached, or nothing for a leaf. A worklist rather than one
-  // pass over the targets, because an edge back into a model already reached
-  // (Page → Page, a child two parents share) has new rows to follow each time
-  // it lands; one pass stopped a self-relation one level down (`FJS-1723`).
-  // A key is followed once per model, which is what ends a cycle in the data.
-  function walkCascade(rootPKs, step) {
+  // The columns the cascade reads off a row of `model`: every key a child of
+  // it references, which may be more than one column and more than one key.
+  // Empty for a leaf.
+  function cascadeKeysOf(model) {
+    const cols = new Set()
+    for (const t of _cascadeTargets()) if (t.parentModel === model) for (const c of t.referencedKeys) cols.add(c)
+    return [...cols]
+  }
+
+  // Runs `step(target, keys)` for every edge out of every model the cascade
+  // reaches, starting at this model's `rootRows`; `keys` are the parents'
+  // values of the columns the edge's children reference, one array a parent.
+  // `step` returns the child rows it reached, carrying `cascadeKeysOf` the
+  // child, or nothing for a leaf. A worklist rather than one pass over the
+  // targets, because an edge back into a model already reached (Page → Page, a
+  // child two parents share) has new rows to follow each time it lands; one
+  // pass stopped a self-relation one level down (`FJS-1723`). A row is
+  // followed once per model, which is what ends a cycle in the data.
+  function walkCascade(rootRows, step) {
     const targets = _cascadeTargets()
-    const reached = new Map([[modelName, new Set(rootPKs)]])
-    const queue   = [[modelName, rootPKs]]
+    const rootKey = cascadeKeysOf(modelName)
+    const reached = new Map([[modelName, new Set(rootRows.map(r => tupleOf(r, rootKey)))]])
+    const queue   = [[modelName, rootRows]]
     while (queue.length) {
-      const [parent, parentPKs] = queue.shift()
+      const [parent, parentRows] = queue.shift()
       for (const target of targets) {
         if (target.parentModel !== parent) continue
-        const childPKs = step(target, parentPKs)
-        if (!childPKs?.length) continue
+        const keys = tuplesOf(parentRows, target.referencedKeys)
+        if (!keys.length) continue
+        const childRows = step(target, keys)
+        if (!childRows?.length) continue
         if (!reached.has(target.childModel)) reached.set(target.childModel, new Set())
         const seen  = reached.get(target.childModel)
-        const fresh = childPKs.filter(pk => !seen.has(pk) && seen.add(pk))
+        const idCols = cascadeKeysOf(target.childModel)
+        const fresh = childRows.filter(r => {
+          const k = tupleOf(r, idCols)
+          return k != null && !seen.has(k) && seen.add(k)
+        })
         if (fresh.length) queue.push([target.childModel, fresh])
       }
     }
   }
 
+  // The child rows a cascade step reads back to go on walking: the keys its
+  // own children reference, and only when something hangs off it.
+  function cascadeChildRows(childModel, childTable, keyClause, binds) {
+    if (!_cascadeParents.has(childModel)) return null
+    const cols = cascadeKeysOf(childModel).map(c => `"${c}"`).join(', ')
+    return readDb.query(`SELECT ${cols} FROM "${childTable}" WHERE ${keyClause}`).all(...binds)
+  }
+
   // The soft-delete cascade remove() and removeMany() share. A @hardDelete
   // child is DELETEd and goes no further; a soft one is stamped with the
   // root's `ts`, and its keys are read back only when something hangs off it.
-  function cascadeSoftRemove(rootPKs, ts, doomed) {
-    walkCascade(rootPKs, ({ childModel, childTable, foreignKey, referencedKey, hardDelete }, parentPKs) => {
+  function cascadeSoftRemove(rootRows, ts, doomed) {
+    walkCascade(rootRows, ({ childModel, childTable, foreignKeys, hardDelete }, keys) => {
       const binds = []
-      const keyIn = inList(`"${foreignKey}"`, parentPKs, binds)
+      const under = keyIn(foreignKeys.map(f => `"${f}"`), keys, binds)
       if (hardDelete) {
-        const heard = hardChildDoomed(childModel, foreignKey, parentPKs)
+        const heard = hardChildDoomed(childModel, foreignKeys, keys)
         if (heard) doomed.push(...heard)
-        try { writeDb.run(`DELETE FROM "${childTable}" WHERE ${keyIn}`, ...binds) }
-        catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
+        try { writeDb.run(`DELETE FROM "${childTable}" WHERE ${under}`, ...binds) }
+        catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKeys, keys) }
         return null
       }
-      writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE ${keyIn} AND "deletedAt" IS NULL`, ts, ...binds)
-      if (!_cascadeParents.has(childModel)) return null
-      return readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE ${keyIn}`).all(...binds).map(r => r[referencedKey])
+      writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE ${under} AND "deletedAt" IS NULL`, ts, ...binds)
+      return cascadeChildRows(childModel, childTable, under, binds)
     })
   }
 
@@ -1721,8 +1743,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     _sealParents.forEach((p, i) => {
       const a = `_seal${i}`
       parts.push(
-        `NOT EXISTS (SELECT 1 FROM "${p.parentTable}" "${a}" WHERE "${a}"."${p.referencedKey}" = ` +
-        `"${tableName}"."${p.foreignKey}" AND "${a}"."${p.column}" IN (${p.states.map(() => '?').join(', ')}))`)
+        `NOT EXISTS (SELECT 1 FROM "${p.parentTable}" "${a}" WHERE ${pairsOn(p.foreignKeys, `"${tableName}".`, p.referencedKeys, `"${a}".`)} ` +
+        `AND "${a}"."${p.column}" IN (${p.states.map(() => '?').join(', ')}))`)
       params.push(...p.states.map(_ecp))
     })
     const guard = parts.join(' AND ')
@@ -1738,7 +1760,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // that falls out rather than being special-cased.
   const _sealInsertSql = _sealParents.length
     ? _sealParents.map(p =>
-        `NOT EXISTS (SELECT 1 FROM "${p.parentTable}" WHERE "${p.referencedKey}" = ? AND ` +
+        `NOT EXISTS (SELECT 1 FROM "${p.parentTable}" WHERE ${p.referencedKeys.map(r => `"${r}" = ?`).join(' AND ')} AND ` +
         `"${p.column}" IN (${p.states.map(() => '?').join(', ')}))`).join(' AND ')
     : null
 
@@ -1747,9 +1769,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const params = []
     const named  = []
     for (const p of _sealParents) {
-      const fk = row?.[p.foreignKey] ?? null
-      params.push(fk, ...p.states.map(_ecp))
-      if (fk != null) named.push({ ...p, id: fk })
+      const key = p.foreignKeys.map(f => row?.[f] ?? null)
+      params.push(...key, ...p.states.map(_ecp))
+      if (key.every(v => v != null)) named.push({ ...p, key })
     }
     return { sql: _sealInsertSql, params, parents: named }
   }
@@ -1760,11 +1782,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function sealRefusal(parents, operation) {
     for (const p of parents ?? []) {
       const row = readDb.query(
-        `SELECT "${p.column}" AS s FROM "${p.parentTable}" WHERE "${p.referencedKey}" = ? LIMIT 1`).get(p.id)
+        `SELECT "${p.column}" AS s FROM "${p.parentTable}" WHERE ${p.referencedKeys.map(r => `"${r}" = ?`).join(' AND ')} LIMIT 1`).get(...p.key)
       if (row && p.states.some(s => _ecp(s) === row.s))
         return new SealedDocumentError(modelName, {
-          parent: p.parentModel, parentId: p.id, state: row.s,
-          relation: p.relation, operation, idField: p.referencedKey,
+          parent: p.parentModel, parentId: oneOrAll(p.key), state: row.s,
+          relation: p.relation, operation, idField: oneOrAll(p.referencedKeys),
         })
     }
     return null
@@ -1782,15 +1804,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // table, where no qualification could have helped.
       const ph  = p.states.map(() => '?').join(', ')
       const sql =
-        `SELECT "${p.foreignKey}" AS fk, ` +
-        `(SELECT "_p"."${p.column}" FROM "${p.parentTable}" "_p" WHERE "_p"."${p.referencedKey}" = "${tableName}"."${p.foreignKey}") AS s ` +
+        `SELECT ${p.foreignKeys.map((f, i) => `"${f}" AS fk${i}`).join(', ')}, ` +
+        `(SELECT "_p"."${p.column}" FROM "${p.parentTable}" "_p" WHERE ${pairsOn(p.foreignKeys, `"${tableName}".`, p.referencedKeys, '"_p".')}) AS s ` +
         `FROM "${tableName}" WHERE ${whereSql || '1=1'} AND EXISTS (SELECT 1 FROM "${p.parentTable}" "_q" ` +
-        `WHERE "_q"."${p.referencedKey}" = "${tableName}"."${p.foreignKey}" AND "_q"."${p.column}" IN (${ph})) LIMIT 1`
+        `WHERE ${pairsOn(p.foreignKeys, `"${tableName}".`, p.referencedKeys, '"_q".')} AND "_q"."${p.column}" IN (${ph})) LIMIT 1`
       const row = readDb.query(sql).get(...whereParams, ...p.states.map(_ecp))
       if (row)
         return new SealedDocumentError(modelName, {
-          parent: p.parentModel, parentId: row.fk, state: row.s,
-          relation: p.relation, operation, idField: p.referencedKey,
+          parent: p.parentModel, parentId: oneOrAll(p.foreignKeys.map((_, i) => row[`fk${i}`])), state: row.s,
+          relation: p.relation, operation, idField: oneOrAll(p.referencedKeys),
         })
     }
     return null
@@ -2076,9 +2098,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
       for (const a of ctx.shapes[m]?.model.attributes ?? []) {
         const ref = a.generated === 'tenancy' && a.expr?.type === 'not' && a.expr.expr?.type === 'check' ? a.expr.expr : null
         const rel = ref && ctx.shapes[m].relations?.[ref.field]
-        if (!rel?.foreignKey || seen.has(rel.targetModel)) continue
+        if (rel?.kind !== 'belongsTo' || seen.has(rel.targetModel)) continue
         const rest = walk(rel.targetModel, new Set([...seen, rel.targetModel]))
-        if (rest) return [{ field: ref.field, fk: rel.foreignKey, target: rel.targetModel, ref: rel.referencedKey ?? 'id' }, ...rest]
+        if (rest) return [{ field: ref.field, fks: rel.foreignKeys, target: rel.targetModel, refs: rel.referencedKeys }, ...rest]
       }
       return null
     }
@@ -2091,23 +2113,26 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const distinct = (vs) => [...new Set(vs.filter(v => v != null))]
     const column = ctx.schema.tenancy.column
     if (!path.length) return distinct(rows.map(r => r?.[column]))
-    let values = distinct(rows.map(r => r?.[path[0].fk]))
+    // Each hop carries a key of one or more columns, as tuples (`FJS-2790`).
+    let keys = tuplesOf(rows, path[0].fks)
     try {
-      for (let i = 0; i < path.length && values.length; i++) {
+      for (let i = 0; i < path.length && keys.length; i++) {
         const hop  = path[i]
         const tmap = ctx.shapes[hop.target]?.columnMap ?? {}
-        const out  = i + 1 < path.length ? path[i + 1].fk : column
-        const sql  = `SELECT DISTINCT ${ident(tmap[out] ?? out).sql} AS v FROM ${ident(_modelToTable(hop.target)).sql} ` +
-          `WHERE ${ident(tmap[hop.ref] ?? hop.ref).sql} IN `
+        const out  = i + 1 < path.length ? path[i + 1].fks : [column]
+        const as   = out.map((_, k) => `v${k}`)
+        const sel  = out.map((c, k) => `${ident(tmap[c] ?? c).sql} AS v${k}`).join(', ')
+        const refs = hop.refs.map(c => ident(tmap[c] ?? c).sql)
         const next = []
-        for (let j = 0; j < values.length; j += 500) {
-          const chunk = values.slice(j, j + 500)
-          for (const r of readDb.query(sql + `(${chunk.map(() => '?').join(', ')})`).all(...chunk)) next.push(r.v)
+        for (let j = 0; j < keys.length; j += 500) {
+          const binds = []
+          const sql = `SELECT DISTINCT ${sel} FROM ${ident(_modelToTable(hop.target)).sql} WHERE ${keyIn(refs, keys.slice(j, j + 500), binds)}`
+          next.push(...readDb.query(sql).all(...binds))
         }
-        values = distinct(next)
+        keys = tuplesOf(next, as)
       }
     } catch { return null }   // a parent in another database: the tenant stays unnamed
-    return values
+    return distinct(keys.map(k => k[0]))
   }
 
   /**
@@ -2392,12 +2417,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
   ctx.registerCascadeSink?.(modelName, {
     idField,
     hears: !!(plugins?.hearsDeletes || plugins?.hearsWrites) || tableHasLogWork,
-    rowsWhere(fk, keys) {
+    // `fks` are this table's key columns and `keys` arrays aligned with them.
+    rowsWhere(fks, keys) {
       const out = []
+      const cols = fks.map(f => `"${col(f)}"`)
       for (let i = 0; i < keys.length; i += 500) {
         const chunk = keys.slice(i, i + 500)
         const binds = []
-        out.push(...readDb.query(`SELECT * FROM "${tableName}" WHERE ${inList(`"${col(fk)}"`, chunk, binds)}`).all(...binds))
+        out.push(...readDb.query(`SELECT * FROM "${tableName}" WHERE ${keyIn(cols, chunk, binds)}`).all(...binds))
       }
       return readAll(out)
     },
@@ -2411,11 +2438,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     cascadeRemoved: doomed => cascadeRemoved(doomed),
     cascadeHeard: () => cascadeHeard(),
     // `onDelete: SetNull` is an UPDATE SQLite makes inside the same DELETE: the
-    // row stays and its key column is cleared (FJS-1505). One line a row, since
-    // each row's before and after are its own.
-    async nulled(rows, fk) {
+    // row stays and its key columns are cleared, every one of a composite key
+    // (FJS-1505). One line a row, since each row's before and after are its own.
+    async nulled(rows, fks) {
       for (const before of rows) {
-        const after = { ...before, [fk]: null }
+        const after = { ...before, ...Object.fromEntries(fks.map(f => [f, null])) }
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', after, ctx)
         if (tableHasLogWork) emitLogs('update', [after], { before, after })
       }
@@ -2461,14 +2488,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
           if (rel.kind !== 'hasMany' || (rel.onDelete !== 'Cascade' && !clears)) continue
           const sink = ctx.cascadeSinkFor(rel.targetModel)
           if (!sink) continue
-          const keys = [...new Set(parentRows.map(r => r[rel.referencedKey]).filter(v => v != null))]
+          const keys = tuplesOf(parentRows, rel.referencedKeys)
           if (!keys.length) continue
           if (clears) {
-            if (sink.hears) nulled.push([sink, sink.rowsWhere(rel.foreignKey, keys), rel.foreignKey, rel.targetModel])
+            if (sink.hears) nulled.push([sink, sink.rowsWhere(rel.foreignKeys, keys), rel.foreignKeys, rel.targetModel])
             continue
           }
           // A self-relation or a diamond reaches a row twice; SQLite removes it once.
-          const found = sink.rowsWhere(rel.foreignKey, keys).filter(r => {
+          const found = sink.rowsWhere(rel.foreignKeys, keys).filter(r => {
             const k = `${rel.targetModel}\0${r[sink.idField]}`
             if (seen.has(k)) return false
             seen.add(k)
@@ -2496,10 +2523,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // The rows a soft cascade's @hardDelete child loses, and what those cascade
   // to, as cascadeDoomed answers them. Run BEFORE the child's DELETE.
-  function hardChildDoomed(childModel, foreignKey, keys) {
+  function hardChildDoomed(childModel, foreignKeys, keys) {
     const sink = ctx.cascadeSinkFor?.(childModel)
     if (!sink || !(sink.hears || cascadeHeard(childModel))) return null
-    const rows = sink.rowsWhere(foreignKey, keys)
+    const rows = sink.rowsWhere(foreignKeys, keys)
     return rows.length ? [[sink, rows], ...(cascadeDoomed(rows, childModel) ?? [])] : null
   }
 
@@ -3978,14 +4005,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const rel = ctx.shapes[owner].relations[relName]
     if (!rel) return undefined   // not a relation → normal column
 
-    const parentRefKey = rel.referencedKey ?? (rel.kind === 'manyToMany' ? rel.selfPk : null) ?? 'id'
     // The parent side is the OWNER's column; everything aliased `t` is the
     // target's, so the two take different maps.
     const omap = ctx.shapes[owner].columnMap
     const oc   = owner === modelName ? col : (nm) => omap?.[nm] ?? nm
     const tmap = ctx.shapes[rel.targetModel].columnMap
     const tc   = tmap && Object.keys(tmap).length ? (nm) => tmap[nm] ?? nm : (nm) => nm
-    const parentCol = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"${oc(rel.kind === 'belongsTo' ? rel.foreignKey : parentRefKey)}"`
+    const ownQual = tableAlias ? `${tableAlias}.` : `"${tableName}".`
     const t = depth ? `t${depth}` : 't'
     const j = depth ? `j${depth}` : 'j'
     const targetTable = _modelToTable(rel.targetModel)
@@ -4014,11 +4040,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Correlated FROM+WHERE that ties the target back to this parent row.
     let corr
     if (rel.kind === 'hasMany') {
-      corr = `FROM "${targetTable}" ${t} WHERE ${t}."${tc(rel.foreignKey)}" = ${parentCol}${targetSoft}`
+      corr = `FROM "${targetTable}" ${t} WHERE ${pairsOn(rel.foreignKeys, `${t}.`, rel.referencedKeys, ownQual, tc, oc)}${targetSoft}`
     } else if (rel.kind === 'manyToMany') {
-      corr = `FROM "${rel.joinTable}" ${j} INNER JOIN "${targetTable}" ${t} ON ${t}."${tc(rel.targetPk ?? 'id')}" = ${j}."${rel.targetKey}" WHERE ${j}."${rel.selfKey}" = ${parentCol}${targetSoft}`
+      corr = `FROM "${rel.joinTable}" ${j} INNER JOIN "${targetTable}" ${t} ON ${t}."${tc(rel.targetPk ?? 'id')}" = ${j}."${rel.targetKey}" WHERE ${j}."${rel.selfKey}" = ${ownQual}"${oc(rel.selfPk ?? 'id')}"${targetSoft}`
     } else { // belongsTo
-      corr = `FROM "${targetTable}" ${t} WHERE ${t}."${tc(parentRefKey)}" = ${parentCol}${targetSoft}`
+      corr = `FROM "${targetTable}" ${t} WHERE ${pairsOn(rel.foreignKeys, ownQual, rel.referencedKeys, `${t}.`, oc, tc)}${targetSoft}`
     }
 
     const clauses = []
@@ -5223,24 +5249,31 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const tbl = ctx.tables?.[modelToAccessor(rel.targetModel)]
       if (!tbl) continue
 
+      const { foreignKeys: fks, referencedKeys: refs } = rel
+      // Every column of the key comes from the parent, so a composite one
+      // cannot keep a leading column the payload named and point elsewhere.
+      const keyFrom = (target) => { for (let i = 0; i < fks.length; i++) extra[fks[i]] = target[refs[i]] }
+      const grantsOf = (target) => requireParentGrants(rel.targetModel, fks, refs, refs.map(r => target[r]))
       if (ops.connect) {
         const target = await tbl.findFirst({ where: ops.connect })
         // The same answer the foreign key itself gets, hidden or missing.
         if (!target) {
-          const byKey = Object.keys(ops.connect).length === 1 && rel.referencedKey in ops.connect
-          throw parentRefusal(fieldName, [rel.foreignKey], [byKey ? ops.connect[rel.referencedKey] : ops.connect], rel.targetModel)
+          const named = Object.keys(ops.connect)
+          const byKey = named.length === refs.length && refs.every(r => r in ops.connect)
+          throw byKey
+            ? parentRefusal(fieldName, fks, refs.map(r => ops.connect[r]), rel.targetModel)
+            : parentRefusal(fieldName, fks.length === 1 ? fks : [fieldName], [ops.connect], rel.targetModel)
         }
-        requireParentGrants(rel.targetModel, [rel.foreignKey], [rel.referencedKey], [target[rel.referencedKey]])
-        extra[rel.foreignKey] = target[rel.referencedKey]
+        grantsOf(target)
+        keyFrom(target)
       } else if (ops.create) {
-        const target = await tbl.create({ data: ops.create })
-        extra[rel.foreignKey] = target[rel.referencedKey]
+        keyFrom(await tbl.create({ data: ops.create }))
       } else if (ops.connectOrCreate) {
         const { where: coWhere, create: coCreate } = ops.connectOrCreate
         let target = await tbl.findFirst({ where: coWhere })
-        if (target) requireParentGrants(rel.targetModel, [rel.foreignKey], [rel.referencedKey], [target[rel.referencedKey]])
+        if (target) grantsOf(target)
         else target = await tbl.create({ data: coCreate })
-        extra[rel.foreignKey] = target[rel.referencedKey]
+        keyFrom(target)
       }
     }
     return extra
@@ -5369,7 +5402,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
       // ── Standard hasMany ops ───────────────────────────────────────────────
       if (rel.kind !== 'hasMany') continue
-      const fk = { [rel.foreignKey]: parentPk }
+      // Every column of the child's key comes from this row: a composite one
+      // filled from the primary key alone points at nothing, or at a sibling.
+      const fk = Object.fromEntries(rel.foreignKeys.map((f, i) => {
+        const ref = rel.referencedKeys[i]
+        return [f, parentRow?.[ref] ?? (ref === idField ? parentPk : undefined)]
+      }))
+      // A disconnect clears what may be cleared. A column the key shares with
+      // the row's scope stays, and a key with no nullable column is refused by
+      // name as required.
+      const childFields = ctx.shapes[rel.targetModel].model.fields
+      const clearable = rel.foreignKeys.filter(f => childFields.find(x => x.name === f)?.type.optional)
+      const cleared = Object.fromEntries((clearable.length ? clearable : rel.foreignKeys).map(f => [f, null]))
 
       if (ops.create) {
         const rows = Array.isArray(ops.create) ? ops.create : [ops.create]
@@ -5381,7 +5425,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
       if (ops.disconnect) {
         const wheres = Array.isArray(ops.disconnect) ? ops.disconnect : [ops.disconnect]
-        for (const where of wheres) await tbl.update({ where, data: { [rel.foreignKey]: null } })
+        for (const where of wheres) await tbl.update({ where, data: cleared })
       }
       if (ops.delete) {
         const wheres = Array.isArray(ops.delete) ? ops.delete : [ops.delete]
@@ -5603,13 +5647,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // count and the trail. They are read through the stamp's own filter,
     // policy included: a row the policy refused keeps its children
     // (`FJS-1728`).
-    let rootPKs = null
+    let rootRows = null
     if (plan.softCascade && softDeleteCascade && _cascadeTargets().length > 0) {
       const live = sqlFragment(`${ident(col('deletedAt')).sql} IS NULL`)
       const w    = where ? sqlJoin([sqlFragment('('), where, sqlFragment(') AND '), live], '') : live
       const q    = sqlJoin([KW.select, T, KW.where, w], '')
-      const rootPKCol = _cascadeTargets()[0].referencedKey
-      rootPKs = readDb.query(q.sql).all(...q.params).map(r => r[rootPKCol])
+      rootRows = readDb.query(q.sql).all(...q.params)
     }
     // The parents these rows name now — a where names rows only the database
     // knows, and only before the statement runs.
@@ -5670,7 +5713,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       else if (rows) for (const r of rows) noteCardinality(read(r))
       else noteCardinalityBySql(wSql, wBinds)
     }
-    if (rootPKs?.length) { doomed = []; cascadeSoftRemove(rootPKs, plan.softCascade.ts, doomed) }
+    if (rootRows?.length) { doomed = []; cascadeSoftRemove(rootRows, plan.softCascade.ts, doomed) }
     return { rows, count, row, image, doomed, affected, duration: _nt ? performance.now() - t0 : 0 }
   }
 
@@ -6675,8 +6718,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
           : { direction: 'descendants', ...args.recursive }
 
         const selfRels = shape.selfRelations
-        if (!selfRels?.length)
+        if (!selfRels?.length) {
+          const composite = Object.entries(shape.relations)
+            .find(([, r]) => r.kind === 'belongsTo' && r.targetModel === modelName && r.foreignKeys.length > 1)
+          if (composite)
+            throw new Error(`findMany({ recursive }) — '${modelName}.${composite[0]}' relates over (${composite[1].foreignKeys.join(', ')}), and a tree walk follows a single column`)
           throw new Error(`findMany({ recursive }) — model '${tableName}' has no self-referential relation`)
+        }
 
         // The CTE names four columns of its own; a model column of the same
         // name would resolve to the CTE inside the walk and answer nonsense.
@@ -8395,10 +8443,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // missing from the rows returned, logged and announced.
       const byStamp = new Map()
       if (softDeleteCascade && _cascadeTargets().length > 0) {
-        const rootPKCol = _cascadeTargets()[0].referencedKey
         for (const r of readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).all(...params)) {
           const stamp = r[col('deletedAt')]
-          byStamp.set(stamp, [...(byStamp.get(stamp) ?? []), r[rootPKCol]])
+          byStamp.set(stamp, [...(byStamp.get(stamp) ?? []), r])
         }
       }
 
@@ -8410,17 +8457,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       for (const r of restored) { noteCardinality(read(r)); noteExclusion(read(r)) }
       fireQuery({ operation: 'restore', args: { where }, sql: _rsSql, params, duration: _nt ? performance.now() - _rsT0 : 0, rowCount: restored.length })
 
-      for (const [stamp, rootPKs] of byStamp) {
-        walkCascade(rootPKs, ({ childModel, childTable, foreignKey, referencedKey, hardDelete }, parentPKs) => {
+      for (const [stamp, rootRows] of byStamp) {
+        walkCascade(rootRows, ({ childModel, childTable, foreignKeys, hardDelete }, keys) => {
           if (hardDelete) return null  // hard-deleted children are gone — cannot restore
           const binds = []
-          const keyIn = inList(`"${foreignKey}"`, parentPKs, binds)
+          const under = `${keyIn(foreignKeys.map(f => `"${f}"`), keys, binds)} AND "deletedAt" = ?`
+          binds.push(stamp)
           // Read before the write: after it, the stamp that names them is gone.
-          const childPKs = _cascadeParents.has(childModel)
-            ? readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE ${keyIn} AND "deletedAt" = ?`).all(...binds, stamp).map(r => r[referencedKey])
-            : null
-          writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE ${keyIn} AND "deletedAt" = ?`, ...binds, stamp)
-          return childPKs
+          const childRows = cascadeChildRows(childModel, childTable, under, binds)
+          writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE ${under}`, ...binds)
+          return childRows
         })
       }
       })

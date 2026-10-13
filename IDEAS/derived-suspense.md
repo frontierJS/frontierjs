@@ -223,7 +223,7 @@ Open, and the reason this is a note rather than a proposal:
 
 ## Open questions
 
-- **What does an await with no boundary around it do?** Today the region renders
+- ~~**What does an await with no boundary around it do?**~~ **Answered 2026-10-13 (`FJS-D957`): B — the await holds its nearest ancestor boundary, else the component, until it settles (Svelte).** Today the region renders
   with `undefined` and fills in later, silently.
   - **A** — keep that, and make derived placement purely additive.
   - **B** — the await holds its nearest ancestor boundary, else the component,
@@ -247,7 +247,7 @@ Open, and the reason this is a note rather than a proposal:
   - **Recommend A** — and read it as evidence for B in the first question. Once the
     fallback has to be authored, placing the snippet is placing the boundary in all
     but name, and the derivation saves one wrapper element.
-- **Does an update that changes several async values tear?** Today each value
+- ~~**Does an update that changes several async values tear?**~~ **Answered 2026-10-13 (`FJS-D958`): B — synchronized: every region reading a value the update re-awaits keeps its old content until all of them settle, then commits once (Svelte).** Today each value
   commits as it lands.
   - **A** — per-value commit.
   - **B** — synchronized: every region reading a value the update re-awaits keeps
@@ -255,14 +255,14 @@ Open, and the reason this is a note rather than a proposal:
   - **Recommend B** — as its own item ahead of any placement work. It is the tearing
     fix and it holds whoever places the boundary. It costs a batch in the runtime's
     scheduler, which is internal and adds no user-facing noun.
-- **Does a child component's await or throw reach its parent's boundary?** Today
+- ~~**Does a child component's await or throw reach its parent's boundary?**~~ **Answered 2026-10-13 (`FJS-D959`): B — the nearest ancestor boundary at runtime, across component edges (Svelte).** Today
   `$async` is component-local.
   - **A** — component-local.
   - **B** — the nearest ancestor boundary at runtime, across component edges (Svelte).
   - **Recommend B** — it is what makes one hand-placed boundary per page region
     enough, which is most of what derivation promised. `captureContext()` already
     carries context across the edge.
-- **Where does a failure go?** With no `failed` snippet in scope the error is
+- ~~**Where does a failure go?**~~ **Answered 2026-10-13 (`FJS-D956`): B — a failure bubbles to the nearest boundary that has `failed`, else to the component root and the console, and `failed` receives `reset`.** With no `failed` snippet in scope the error is
   swallowed (`VISION.md` §12.6), which is a wrong answer nothing reports.
   - **A** — `failed` placed with `pending`.
   - **B** — a failure bubbles to the nearest boundary that has `failed`, else to the

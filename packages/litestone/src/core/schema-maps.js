@@ -214,10 +214,14 @@ export function buildSelfRelationMap(schema) {
       if (field.type.name !== model.name) continue
       const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
       if (!rel) continue  // hasMany side — skip, we want the belongsTo (FK) side
+      const { foreignKeys, referencedKeys } = relationKeys(rel, model)
+      // A tree walk follows one column. A composite self-relation is not one
+      // here, and a recursive read over it is refused by name (`FJS-2790`).
+      if (foreignKeys.length > 1) continue
       selfRels.push({
         relationField:   field.name,
-        fkField:         Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields,
-        referencedField: Array.isArray(rel.references) ? rel.references[0] : rel.references,
+        fkField:         foreignKeys[0],
+        referencedField: referencedKeys[0],
       })
     }
     if (selfRels.length) map[model.name] = selfRels
@@ -1071,7 +1075,7 @@ export function buildSoftDeleteCascadeMap(schema) {
 
 // Walk the hasMany edges of the relation graph (`shapes[m].relations`) to collect all child tables
 // that also have soft delete. Returns an array of
-// { childModel, childTable, parentModel, parentTable, foreignKey, referencedKey, hardDelete }
+// { childModel, childTable, parentModel, parentTable, foreignKeys, referencedKeys, hardDelete }
 // in BFS order.
 //
 // `shapes` is keyed by PascalCase model name (e.g. "User"), and rel.targetModel
@@ -1108,9 +1112,8 @@ export function getCascadeTargets(modelName, shapes, modelToTable) {
         childTable:    modelToTable(child),
         parentModel:   parent,
         parentTable:   modelToTable(parent),
-        // Back-compat aliases — older call sites might still destructure these.
-        foreignKey:    rel.foreignKey,
-        referencedKey: rel.referencedKey,
+        foreignKeys:    rel.foreignKeys,
+        referencedKeys: rel.referencedKeys,
         hardDelete:    rel.hardDelete ?? false,
       })
       // Only recurse into soft-delete children — hard-delete children are terminal
@@ -1121,6 +1124,24 @@ export function getCascadeTargets(modelName, shapes, modelToTable) {
   return targets
 }
 
+// ─── Relation keys, as pairs ──────────────────────────────────────────────────
+//
+// A relation's key is a LIST of index-aligned pairs: `foreignKeys[i]` on the
+// row holding the FK references `referencedKeys[i]` on the other. A relation
+// over `(scheduleId, personId)` joined on its first pair alone answers every
+// row sharing a scheduleId — an include returns a sibling's children and a
+// policy path grades a row by some other row, with no error (`FJS-2790`).
+// Every consumer joins on all of them — `pairsOn`, `keyIn` and `tupleOf` in
+// query.js are the shared spellings.
+
+export function relationKeys(rel, targetModel) {
+  const foreignKeys = Array.isArray(rel.fields) ? rel.fields : [rel.fields]
+  const declared    = rel.references == null ? null
+    : Array.isArray(rel.references) ? rel.references : [rel.references]
+  const ids = targetModel?.fields.filter(f => f.attributes.some(a => a.kind === 'id')).map(f => f.name) ?? []
+  return { foreignKeys, referencedKeys: declared ?? (ids.length ? ids : ['id']) }
+}
+
 export function buildRelationMap(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -1129,13 +1150,14 @@ export function buildRelationMap(schema) {
       if (field.type.kind !== 'relation') continue
       const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
       if (!rel) continue
+      const target = field.type.name
+      const { foreignKeys, referencedKeys } = relationKeys(rel, schema.models.find(m => m.name === target))
       map[model.name][field.name] = {
         kind:          'belongsTo',
-        targetModel:   field.type.name,
-        foreignKey:    Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields,
-        referencedKey: Array.isArray(rel.references) ? rel.references[0] : rel.references,
+        targetModel:   target,
+        foreignKeys,
+        referencedKeys,
       }
-      const target = field.type.name
       if (!map[target]) map[target] = {}
       // Find the parent's hasMany back-ref field — its name is what users use
       // in include/orderBy/select. Under PascalCase singular models, the field
@@ -1173,8 +1195,8 @@ export function buildRelationMap(schema) {
           // relation kind would mean auditing every site that branches on kind.
           toOne:         backrefToOne,
           targetModel:   model.name,
-          foreignKey:    Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields,
-          referencedKey: Array.isArray(rel.references) ? rel.references[0] : rel.references,
+          foreignKeys,
+          referencedKeys,
           hardDelete,
           keep,
           sealed,
@@ -1403,7 +1425,7 @@ export function buildCoFkMap(schema, relationMap) {
     const parentBT = {}
     for (const rel of Object.values(parentRels)) {
       if (rel.kind !== 'belongsTo') continue
-      parentBT[rel.foreignKey] = { target: rel.targetModel, references: rel.referencedKey }
+      parentBT[rel.foreignKeys.join(',')] = { target: rel.targetModel, references: rel.referencedKeys.join(',') }
     }
     if (!Object.keys(parentBT).length) continue
 
@@ -1415,11 +1437,11 @@ export function buildCoFkMap(schema, relationMap) {
       const overlaps = []
       for (const rel of Object.values(childRels)) {
         if (rel.kind !== 'belongsTo') continue
-        const p = parentBT[rel.foreignKey]
+        const p = parentBT[rel.foreignKeys.join(',')]
         if (!p) continue
         if (p.target !== rel.targetModel) continue
-        if (p.references !== rel.referencedKey) continue
-        overlaps.push(rel.foreignKey)
+        if (p.references !== rel.referencedKeys.join(',')) continue
+        overlaps.push(...rel.foreignKeys)
       }
       if (overlaps.length) {
         if (!map[parentModel.name]) map[parentModel.name] = {}

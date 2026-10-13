@@ -87,9 +87,9 @@ A2UI when the IR has a second backend to amortize against.
 
 1. **The plugin serves `resources/read` for `ui://<app>/<Resource>`**, built
    from the resource file by a Sierra build loop of the widget build's shape
-   (§ *The plan*, 2.1) and stored
-   beside the tool manifest, keyed by `x-fjs-build` like the terminal client's
-   command cache. A tool that returns a row of model `X` names the `ui://`
+   (§ *The plan*, 2.1), written to `api/dist/mcp/` so the API image carries
+   it, and read at boot from the `ui.root` the plugin is told (`FJS-D955`).
+   A tool that returns a row of model `X` names the `ui://`
    resource for `X` in `_meta`. No new file in the app: the file is the one
    Invariant 18 already requires.
 2. **A relay adapter for the MCP Apps host**: `client.forward(call)` becomes a
@@ -187,8 +187,8 @@ owed to `mesa-ir.md`, not here.
     discovery* (§ IV): the doctrine's word is *target* and the tree now holds
     three markup ones built without a ruling; A fixes the doctrine's reading,
     not the tree.
-- **Where the built views live, and what the plugin option and the Sierra
-  command are called** (steps 0.2 and 2.4). Probed 2026-10-13. The API image
+- ~~**Where the built views live, and what the plugin option and the Sierra command are called**~~ **Answered 2026-10-13 (`FJS-D955`): A — `api/dist/mcp/<Model>.html`, written by `sierra mcp` run from `web/` with `--out <absolute dir>` and refused without it; `fli mcp:build` supplies `$.paths.api/dist/mcp`, because fli is the one thing that knows the app's layout and a relative default crossing a surface is the derived path Invariant 3 forbids. The plugin is told once, as `static` is told its `root`: `mcpPlugin({ ui: { root } })` — `ui` is the extension's own key (`capabilities.extensions['io.modelcontextprotocol/ui']`, `_meta.ui`) and leaves room for `csp` and `permissions` beside `root`. Absent, the plugin registers text-only tools. Declared and missing at boot, it REFUSES to start, naming the directory and `fli mcp:build`: that amends 1.5's *never a boot failure* to per-file (a model with no view is no pointer; a surface with no directory is a deploy defect). The image carries API and views from one commit, so 1.5's `x-fjs-build` key is unneeded — agreement by construction, not by check.**
+  Steps 0.2 and 2.4. Probed 2026-10-13. The API image
   `fli make:deploy` writes COPYs `api/` and `db/` and its `.dockerignore` drops
   `web/`, so nothing under `web/dist/` exists where `mcpPlugin()` boots in
   production. `vite build` empties the SPA's own `dist/`
@@ -298,11 +298,11 @@ Done when: each step cites the ruling or the probe's result.
   Settled 2026-10-13 by `FJS-D38` itself, option A in § *Open questions*: the
   line defers a compiler backend, and a markup wrapper over the DOM backend is
   not one. No new ruling; the plan runs from 0.2.
-- [ ] 0.2 Where the built views live and what the plugin option is called.
-  An option, so `decision-rules`; the same ruling names the Sierra command
-  (2.4) and amends 1.5. Asked in § *Open questions* (*Where the built views
-  live*), options A–C, recommend A: `api/dist/mcp/`, `sierra mcp --out`,
-  `fli mcp:build`, `mcpPlugin({ ui: { root } })`.
+- [x] 0.2 Where the built views live and what the plugin option is called.
+  Ruled 2026-10-13, `FJS-D955`, option A in § *Open questions*:
+  `api/dist/mcp/<Model>.html`, written by `sierra mcp --out <absolute dir>`
+  run from `web/`, the dir supplied by `fli mcp:build`; the plugin is told
+  `mcpPlugin({ ui: { root } })`. The same ruling names 2.4 and amends 1.5.
 - [ ] 0.3 `toolName` — `<service>_<method>`, owned by `projection.ts` — must be
   ONE spelling on both sides of the iframe. Move to `@frontierjs/toolbelt`
   (a pure function, `FJS-D26`); `@frontierjs/mcp` and Sierra both import it.
@@ -340,9 +340,12 @@ a standing withheld from the model's tools is refused the view.
   envelope (`kind`/`data`/`total`). Confirm `plugin.ts` does; if the answer is
   text only, this is the one envelope owner to extend (Invariant 4), so the
   client's existing unwrap serves the iframe unchanged.
-- [ ] 1.5 Bundle source: the plugin reads `<views>/<Model>.html` at boot, keyed by
-  `x-fjs-build` the way the terminal client's command cache is. A missing file
-  means no pointer for that model, never a boot failure.
+- [ ] 1.5 Bundle source: the plugin reads `<ui.root>/<Model>.html` at boot
+  (`FJS-D955`). No `x-fjs-build` key: the image carries the API and its views
+  from one commit. A missing FILE means no pointer for that model and nothing
+  said; a declared `ui.root` that is not a directory refuses the boot, naming
+  it and `fli mcp:build`, because the mistake it hides is the whole surface
+  gone in production. `ui` absent means text-only tools, by design.
 
 ### Phase 2 — The build half, in Sierra
 
@@ -365,8 +368,11 @@ file with no markup half emits the model's default form.
   `<html>`, since Sierra owns the switch (Bridge index). Mapping
   `hostContext.styles.variables` onto `@frontierjs/css` tokens is later work,
   named in Phase 5.
-- [ ] 2.4 The command: a `sierra <name>` beside `sierra widgets` and `sierra
-  site`, wrapped by an `fli mcp:*` command; the name is 0.2's ruling.
+- [ ] 2.4 The command: `sierra mcp --out <absolute dir>` beside `sierra widgets`
+  and `sierra site`, run from `web/` and refused without `--out` or with a
+  relative one; `fli mcp:build` wraps it and supplies `$.paths.api/dist/mcp`
+  (`FJS-D955`). No `sierra.config.js` key for the output: fli is the one
+  origin of the app's layout.
 
 ### Phase 3 — The client half, a relay adapter
 

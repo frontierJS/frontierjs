@@ -1,0 +1,30 @@
+<script>
+  // picker-enter-submits.mesa — each picker inside a form that counts its
+  // submits.
+  //
+  // Enter is the picker's key while its list is open and the form's once it
+  // is closed (`FJS-2789`). Plain <form>s rather than the kit's <Form>, so a
+  // count is the browser's implicit submission and nothing else.
+  import Combobox from '../../../components/forms/Combobox.mesa'
+  import MultiSelect from '../../../components/forms/MultiSelect.mesa'
+
+  const OPTIONS = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Bravo' }]
+  let value   = null
+  let submits = 0
+  let values      = []
+  let multiSubmits = 0
+</script>
+
+<form id="f" on:submit|preventDefault={() => submits += 1}>
+  <Combobox name="pick" options={OPTIONS} bind:value />
+  <button type="submit">save</button>
+</form>
+<output id="value">{String(value)}</output>
+<output id="submits">{submits}</output>
+
+<form id="m" on:submit|preventDefault={() => multiSubmits += 1}>
+  <MultiSelect name="picks" options={OPTIONS} multiple bind:value={values} />
+  <button type="submit">save</button>
+</form>
+<output id="values">{(values ?? []).join(',')}</output>
+<output id="multi-submits">{multiSubmits}</output>

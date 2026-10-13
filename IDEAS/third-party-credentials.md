@@ -354,7 +354,7 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
 
 **The login half**
 
-- Route or service for *linking* a second provider to a caller who is already signed
+- ~~**Route or service for *linking* a second provider to a caller who is already signed**~~ **Answered 2026-10-13 (`FJS-D960`): B — a service starts it: `connections.connect(provider)` records the caller on the `OauthFlow` row and returns the authorize URL, and the existing callback route finishes by attaching to that caller instead of issuing a session.**
   in? It establishes no session, so `FJS-D20` says service — but it shares the whole
   redirect flow with the half that does.
   - **A** — the route pair: `GET /auth/oauth/{provider}` attaches to the signed-in caller when a session cookie is present.

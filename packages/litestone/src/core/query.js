@@ -109,6 +109,53 @@ export function inList(lhs, values, params, { not = false, affinity = true } = {
   return `${lhs} ${op} (SELECT ${affinity ? 'CAST(value AS TEXT)' : 'value'} FROM json_each(?))`
 }
 
+// ─── Relation keys of more than one column ───────────────────────────────────
+//
+// A relation's key is index-aligned pairs (`FJS-2790`), and these join, match
+// and group on every pair. Joined on the first alone, a key of
+// `(scheduleId, personId)` answers every row sharing a scheduleId.
+
+// `fk = ref AND …` for each pair. Each qualifier is the prefix written before a
+// quoted column — `t.`, `"orders".` or `''` — and each `col` maps a field name
+// to its column, for a caller under `@map`.
+export function pairsOn(fkCols, fkQual, refCols, refQual, fkCol = c => c, refCol = c => c) {
+  return fkCols.map((fk, i) => `${fkQual}"${fkCol(fk)}" = ${refQual}"${refCol(refCols[i])}"`).join(' AND ')
+}
+
+// One value per row for a key that may span columns, for a Map or a Set. A key
+// with a NULL in it references nothing — SQLite's MATCH SIMPLE — and answers null.
+export function tupleOf(row, cols) {
+  if (cols.length === 1) return row?.[cols[0]] ?? null
+  const vals = cols.map(c => row?.[c])
+  return vals.some(v => v == null) ? null : JSON.stringify(vals)
+}
+
+// The distinct non-null keys of `rows` over `cols`, each an array of values.
+export function tuplesOf(rows, cols) {
+  const out = new Map()
+  for (const r of rows) {
+    const k = tupleOf(r, cols)
+    if (k != null && !out.has(k)) out.set(k, cols.map(c => r[c]))
+  }
+  return [...out.values()]
+}
+
+// `inList` over a key of one or more columns: `cols` are quoted SQL names with
+// any qualifier, `tuples` arrays index-aligned with them. A composite key is a
+// row value, which SQLite compares pair by pair.
+export function keyIn(cols, tuples, params) {
+  if (cols.length === 1) return inList(cols[0], tuples.map(t => t[0]), params)
+  if (!tuples.length) return '0 = 1'
+  const lhs = `(${cols.join(', ')})`
+  if (tuples.length > IN_INLINE && tuples.every(t => t.every(jsonCarries))) {
+    params.push(JSON.stringify(tuples.map(t => t.map(v => typeof v === 'bigint' ? v.toString() : v))))
+    return `${lhs} IN (SELECT ${cols.map((_, i) => `CAST(json_extract(value, '$[${i}]') AS TEXT)`).join(', ')} FROM json_each(?))`
+  }
+  for (const t of tuples) params.push(...t)
+  const row = `(${cols.map(() => '?').join(', ')})`
+  return `${lhs} IN (VALUES ${tuples.map(() => row).join(', ')})`
+}
+
 // ─── sql tagged template ──────────────────────────────────────────────────────
 //
 // Safe parameterized raw SQL for use inside where: { $raw: sql`...` }.
@@ -1793,7 +1840,7 @@ function _buildAggregateOrder(relName, spec, aggKeys, modelName, shapes, orderPa
         subquery = `(SELECT COUNT(*) FROM "${rel.joinTable}" WHERE "${rel.selfKey}" = t."${rel.selfPk ?? 'id'}")`
       } else {
         // hasMany
-        subquery = `(SELECT COUNT(*) FROM "${targetTable}" WHERE "${rel.foreignKey}" = t."${rel.referencedKey}")`
+        subquery = `(SELECT COUNT(*) FROM "${targetTable}" WHERE ${pairsOn(rel.foreignKeys, '', rel.referencedKeys, 't.')})`
       }
       orderParts.push(`${subquery} ${dir}`)
 
@@ -1809,7 +1856,7 @@ function _buildAggregateOrder(relName, spec, aggKeys, modelName, shapes, orderPa
       for (const [field, dir] of Object.entries(dirOrSpec)) {
         const d = dir.toUpperCase()
         if (d !== 'ASC' && d !== 'DESC') throw new Error(`orderBy ${aggKey} direction must be 'asc' or 'desc', got: ${dir}`)
-        const subquery = `(SELECT ${fn}("${field}") FROM "${targetTable}" WHERE "${rel.foreignKey}" = t."${rel.referencedKey}")`
+        const subquery = `(SELECT ${fn}("${field}") FROM "${targetTable}" WHERE ${pairsOn(rel.foreignKeys, '', rel.referencedKeys, 't.')})`
         orderParts.push(`${subquery} ${d}`)
       }
     }
@@ -1843,7 +1890,7 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, shapes, j
   if (!seenAliases.has(joinAlias)) {
     seenAliases.add(joinAlias)
     const targetTable = modelToTable(rel.targetModel)
-    const joinSql = `LEFT JOIN "${targetTable}" ${joinAlias} ON ${joinAlias}."${rel.referencedKey}" = ${currentAlias}."${rel.foreignKey}"`
+    const joinSql = `LEFT JOIN "${targetTable}" ${joinAlias} ON ${pairsOn(rel.foreignKeys, `${currentAlias}.`, rel.referencedKeys, `${joinAlias}.`)}`
     joinClauses.push(joinSql)
   }
 
@@ -1981,22 +2028,15 @@ export function parseSelectArg(select, modelName, shapes, include, computedFns, 
       const rel = tableRels[relName]
       if (!rel) continue
 
-      if (rel.kind === 'belongsTo') {
-        // Need the FK column on this table to join to the target
-        if (!dbFields[rel.foreignKey]) {
-          dbFields[rel.foreignKey] = true
-          if (!requestedFields.has(rel.foreignKey)) {
-            injectedFKs.add(rel.foreignKey)
-          }
-        }
-      } else {
-        // hasMany — need the referenced key on this table (usually 'id')
-        if (!dbFields[rel.referencedKey]) {
-          dbFields[rel.referencedKey] = true
-          if (!requestedFields.has(rel.referencedKey)) {
-            injectedFKs.add(rel.referencedKey)
-          }
-        }
+      // belongsTo joins on the FK columns on this table; hasMany on the columns
+      // the child references here; m2m on this side's key.
+      const cols = rel.kind === 'belongsTo' ? rel.foreignKeys
+        : rel.kind === 'manyToMany' ? [rel.selfPk ?? 'id']
+        : rel.referencedKeys
+      for (const col of cols) {
+        if (dbFields[col]) continue
+        dbFields[col] = true
+        if (!requestedFields.has(col)) injectedFKs.add(col)
       }
     }
   }

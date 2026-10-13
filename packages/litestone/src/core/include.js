@@ -3,7 +3,7 @@
 // the paths that assemble their own SQL.
 
 import { modelToTableName } from './ddl.js'
-import { coerceBooleans, deserializeRow, buildWhere, parseSelectArg, quoteIdent, inList } from './query.js'
+import { coerceBooleans, deserializeRow, buildWhere, parseSelectArg, quoteIdent, inList, keyIn, tupleOf, tuplesOf } from './query.js'
 import { ValidationError } from './validate.js'
 import { buildPolicyFilter } from './policy.js'
 import { CapabilityNotDeclaredError } from './errors.js'
@@ -71,18 +71,6 @@ export function fromSelectExpr(fromFields, aliased = false) {
 // `depth` bounds a chain of references — A.last → B, B.last → A is a cycle, and
 // a cycle here is an infinite fetch rather than a wrong answer.
 /**
- * `T`'s key columns matched against `refs`, one tuple per ref. A composite key
- * stays a row-value list, which `inList`'s JSON form cannot carry.
- * @param {string} T @param {string[]} cols @param {unknown[][]} refs @param {unknown[]} params
- */
-function keyIn(T, cols, refs, params) {
-  if (cols.length === 1) return inList(`${T}."${cols[0]}"`, refs.map(r => r[0]), params)
-  for (const r of refs) params.push(...r)
-  const one = `(${cols.map(() => '?').join(', ')})`
-  return `(${cols.map(c => `${T}."${c}"`).join(', ')}) IN (${refs.map(() => one).join(', ')})`
-}
-
-/**
  * @param {DbHandle} readDb
  * @param {Row[]} rows
  * @param {FromFields | null | undefined} fromFields
@@ -134,7 +122,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
       /** @type {unknown[]} */
       const keyBinds = []
       const parts = [
-        keyIn(T, fkCols, refs, keyBinds),
+        keyIn(fkCols.map(c => `${T}."${c}"`), refs, keyBinds),
         ...(extra ?? []).map(part => part.replaceAll('%T%', T)),
         ...(policy ? [`(${policy.sql})`] : []),
       ]
@@ -230,7 +218,7 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
     /** @type {unknown[]} */
     const keyBinds = []
     const parts = [
-      keyIn(T, fkCols, refs, keyBinds),
+      keyIn(fkCols.map(c => `${T}."${c}"`), refs, keyBinds),
       ...(extra ?? []).map(part => part.replaceAll('%T%', T)),
       `(${policy.sql})`,
     ]
@@ -450,17 +438,25 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,
           [...selfBinds, ...cntBinds, ...whereParams, ...(countPolicy?.params ?? [])])
       } else {
+        // Grouped by every column of the key, and matched back by the parent's
+        // own referenced columns, which need not be its id.
         const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
-        const [fkIn, fkBinds] = pkIn(`"${rel.foreignKey}"`)
-        sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE ${fkIn}${sdExtra}${htExtra}${effExtra}${whereExtra}${polExtra} GROUP BY "${rel.foreignKey}"`
+        const fks   = rel.foreignKeys.map(f => `"${f}"`)
+        const fkBinds = []
+        const fkIn  = keyIn(fks, tuplesOf(rows, rel.referencedKeys), fkBinds)
+        sql = `SELECT ${fks.map((f, i) => `${f} as __k${i}`).join(', ')}, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" ` +
+          `WHERE ${fkIn}${sdExtra}${htExtra}${effExtra}${whereExtra}${polExtra} GROUP BY ${fks.join(', ')}`
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,
           [...fkBinds, ...cntBinds, ...whereParams, ...(countPolicy?.params ?? [])])
+        const kCols = fks.map((_, i) => `__k${i}`)
+        for (const r of results) r.__pk = tupleOf(r, kCols)
       }
 
       const counts = new Map(results.map(r => [r.__pk, r.__n]))
+      const ownKey = rel.kind === 'manyToMany' ? [idField] : rel.referencedKeys
       for (const row of rows) {
         if (!row._count) row._count = {}
-        row._count[alias] = counts.get(row[idField]) ?? 0
+        row._count[alias] = counts.get(tupleOf(row, ownKey)) ?? 0
       }
     }
   }
@@ -648,7 +644,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     })()
 
     if (rel.kind === 'belongsTo') {
-      const fkValues = [...new Set(rows.map(r => r[rel.foreignKey]).filter(v => v != null))]
+      const fkValues = tuplesOf(rows, rel.foreignKeys)
       if (!fkValues.length) { rows.forEach(r => r[relName] = null); continue }
 
       const parsedNested = nestedSelect
@@ -656,17 +652,19 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
-      if (parsedNested && sqlCols !== '*' && !sqlCols.includes(`"${tcol(rel.referencedKey)}"`)) {
-        sqlCols = `"${tcol(rel.referencedKey)}", ${sqlCols}`
-        parsedNested.injectedFKs.add(rel.referencedKey)
-      }
+      if (parsedNested && sqlCols !== '*')
+        for (const ref of rel.referencedKeys) {
+          if (sqlCols.includes(`"${tcol(ref)}"`)) continue
+          sqlCols = `"${tcol(ref)}", ${sqlCols}`
+          parsedNested.injectedFKs.add(ref)
+        }
       sqlCols = withFromCols(sqlCols, targetFrom, parsedNested)
 
       // Build WHERE with soft delete filter for target table
       /** @type {unknown[]} */
       const sdParams = []
       let sdWhere = ''
-      const keyMatch = inList(`"${tcol(rel.referencedKey)}"`, fkValues, sdParams)
+      const keyMatch = keyIn(rel.referencedKeys.map(r => `"${tcol(r)}"`), fkValues, sdParams)
       if (targetSoftDelete && nestedMode !== 'withDeleted') {
         sdWhere = `"${tcol('deletedAt')}" IS ${nestedMode === 'onlyDeleted' ? 'NOT NULL' : 'NULL'} AND ${keyMatch}`
       } else {
@@ -691,9 +689,9 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (Object.keys(mergedInclude).length)
         resolveIncludes(readDb, related, mergedInclude, rel.targetModel, ctx)
 
-      const byKey = new Map(related.map(r => [r[rel.referencedKey], r]))
+      const byKey = new Map(related.map(r => [tupleOf(r, rel.referencedKeys), r]))
       for (const row of rows) {
-        const raw = byKey.get(row[rel.foreignKey]) ?? null
+        const raw = byKey.get(tupleOf(row, rel.foreignKeys)) ?? null
         row[relName] = raw && parsedNested
           ? Object.fromEntries(Object.entries(raw).filter(([k]) => parsedNested.requestedFields.has(k) && !parsedNested.injectedFKs.has(k)))
           : raw
@@ -702,7 +700,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     } else if (rel.kind === 'manyToMany') {
       // Implicit m2m — JOIN through the join table.
       // Select j.selfKey alongside t.* so we can group in one pass — no second query.
-      const pkField  = rel.referencedKey ?? rel.selfPk ?? 'id'
+      const pkField  = rel.selfPk ?? 'id'
       const pkValues = [...new Set(rows.map(r => r[pkField]).filter(v => v != null))]
       if (!pkValues.length) { rows.forEach(r => r[relName] = rel.toOne ? null : []); continue }
 
@@ -783,7 +781,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       }
 
     } else {
-      const pkValues = [...new Set(rows.map(r => r[rel.referencedKey]).filter(v => v != null))]
+      const pkValues = tuplesOf(rows, rel.referencedKeys)
       if (!pkValues.length) { rows.forEach(r => r[relName] = rel.toOne ? null : []); continue }
 
       const parsedNested = nestedSelect
@@ -791,15 +789,17 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
-      if (parsedNested && sqlCols !== '*' && !sqlCols.includes(`"${tcol(rel.foreignKey)}"`)) {
-        sqlCols = `"${tcol(rel.foreignKey)}", ${sqlCols}`
-        parsedNested.injectedFKs.add(rel.foreignKey)
-      }
+      if (parsedNested && sqlCols !== '*')
+        for (const fk of rel.foreignKeys) {
+          if (sqlCols.includes(`"${tcol(fk)}"`)) continue
+          sqlCols = `"${tcol(fk)}", ${sqlCols}`
+          parsedNested.injectedFKs.add(fk)
+        }
       sqlCols = withFromCols(sqlCols, targetFrom, parsedNested)
 
       /** @type {unknown[]} */
       const keyBinds = []
-      const keyMatch = inList(`"${tcol(rel.foreignKey)}"`, pkValues, keyBinds)
+      const keyMatch = keyIn(rel.foreignKeys.map(f => `"${tcol(f)}"`), pkValues, keyBinds)
       let sdWhere
       if (targetSoftDelete && nestedMode !== 'withDeleted') {
         const sdClause = nestedMode === 'onlyDeleted'
@@ -829,13 +829,13 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       /** @type {Map<unknown, Row[]>} */
       const grouped = new Map()
       for (const r of related) {
-        const k = r[rel.foreignKey]
+        const k = tupleOf(r, rel.foreignKeys)
         if (!grouped.has(k)) grouped.set(k, [])
         grouped.get(k)?.push(r)
       }
 
       for (const row of rows) {
-        const group = grouped.get(row[rel.referencedKey]) ?? []
+        const group = grouped.get(tupleOf(row, rel.referencedKeys)) ?? []
         const shaped = parsedNested
           ? group.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => parsedNested.requestedFields.has(k) && !parsedNested.injectedFKs.has(k))))
           : group
