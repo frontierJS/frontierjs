@@ -65,7 +65,12 @@ what they mean in any app.
   preset's root, served in dev and emitted in the build beneath the site's
   `content/public/`, which wins a path both have. Found, never a preset key.
   The dev middleware runs ahead of Vite's own public one, so it checks the
-  site's file itself; the build skips a path Vite copies from the site.
+  site's file itself; the build skips a path Vite copies from the site. A
+  preset's `public/_redirects` or `_headers` is refused: Sierra writes both.
+- `config/redirects.js` — `siteRedirects()`: emits `content/settings/_redirects`
+  (where every ksite client keeps its campaign links) as `_redirects`, which
+  Sierra's post-build merges with the routes' `redirect:` rules (`FJS-D961`).
+  Refuses `content/public/_redirects`, which Vite would copy to the same path.
 - `config/dialect.js` — `siteDialect()`, the Markdown dialect every site
   compiles under, ahead of a preset's own passes, and a post-build check.
   `config/dividers.js` (remark) turns `====` into a Band and `===` into an
@@ -126,7 +131,8 @@ what they mean in any app.
 - `test/content.mjs` — `collection()`, the settings module and its refusals.
   `test/content-build.mjs` is a real `site-kit build` that binds a setting
   bare, lists a collection and reads a nested menu, through the prerender,
-  and ships a preset's `public/` beneath the site's.
+  and ships a preset's `public/` beneath the site's, and serves
+  `content/settings/_redirects` beside a route's `redirect:` through serveSite.
 - `test/dialect.mjs` — the dialect through Mesa's `compileMd`, and the check
   called by hand. `test/words-build.mjs` runs `site-kit build` on a site it
   writes under `test/`, which is the only proof Sierra calls the check.

@@ -14,6 +14,7 @@
  * about SQL (Invariant 8), for the same reason.
  */
 
+import { stripVTControlCharacters } from 'node:util'
 import { validRelativePath } from './static.js'
 
 /** A digest is `sha256:` and 64 hex characters. Anything else is not an
@@ -496,6 +497,7 @@ const POSTURE = {
   kernelRunning:   ['uname', '-r'],
   // The status column, because `-W` also lists every kernel removed with its
   // config left behind (`rc`), which outnumber the installed ones by fifty.
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: dpkg-query's own format language, not a JavaScript placeholder
   kernelInstalled: ['dpkg-query', '-W', '-f', '${db:Status-Abbrev} ${Package}\n', 'linux-image-[0-9]*'],
   rebootRequired:  ['stat', '-c', '%Y', '/var/run/reboot-required'],
   rebootPkgs:      ['cat', '/var/run/reboot-required.pkgs'],
@@ -708,7 +710,7 @@ function unitFromJson(r) {
 
 function unitFromText(r) {
   if (!ok(r)) return null
-  const m = /Overall exposure level for \S+:\s*([\d.]+)\s+([A-Z]+)/.exec(r.stdout.replace(/\x1b\[[\d;]*m/g, ''))
+  const m = /Overall exposure level for \S+:\s*([\d.]+)\s+([A-Z]+)/.exec(stripVTControlCharacters(r.stdout))
   return m ? { exposure: Number(m[1]), predicate: m[2] } : null
 }
 

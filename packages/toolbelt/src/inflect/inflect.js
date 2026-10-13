@@ -434,6 +434,30 @@ export function slug(value, { sep = '-', max } = {}) {
   return out
 }
 
+/**
+ * The name a method goes by on an MCP host: `orders` + `refund` → `orders_refund`.
+ *
+ * `^[a-zA-Z0-9_-]{1,128}$` is the whole rule and a dot fails it, so the
+ * separator this framework uses everywhere else cannot be used here. Anything
+ * else outside the set is replaced rather than deleted, so two names that
+ * differed only by an illegal character still differ — and if a replacement or
+ * the length cap does make two names meet, that is the CALLER's refusal:
+ * `@frontierjs/mcp`'s `projectTools` withholds both rather than letting one
+ * silently win.
+ *
+ * It is here rather than in the package that speaks the protocol because the
+ * name is read on BOTH sides of an app's view iframe — the projection states
+ * it and the built view calls it back — and a second spelling in the client is
+ * the drift `FJS-D197` exists to refuse.
+ *
+ * @param {string} service
+ * @param {string} method
+ * @returns {string}
+ */
+export function toolName(service, method) {
+  return `${service}_${method}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128)
+}
+
 /* ── Reader ────────────────────────────────────────────────────────── */
 
 // The third axis, and the only one that answers to somebody else. NUMBER and

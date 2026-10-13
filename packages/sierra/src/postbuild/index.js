@@ -6,7 +6,7 @@
  * Always runs:
  *   1. move404       — 404/index.html → 404.html (Cloudflare/Netlify)
  *   2. writeRobots   — a default robots.txt, unless the public dir gave one
- *   3. redirects     — generate _redirects from the route table
+ *   3. redirects     — the route table's rules merged into the app's own _redirects
  *   4. sitemap       — generate sitemap.xml from indexed routes
  *
  * Conditional:

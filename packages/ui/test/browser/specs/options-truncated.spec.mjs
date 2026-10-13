@@ -74,9 +74,13 @@ export async function run(t) {
   // offer nothing. It is here because the query went to the server.
   await t.eventually(`document.querySelector('#searches').textContent.includes('tag:zu')`, 'true',
     'typing sends the query to the server, not to the rows in hand')
+  // `tag` is an open set, so what was typed is offered too, as the last row
+  // (`FJS-2799`); the rows before it are the server's.
   await t.eventually(`
-    [...document.querySelectorAll('#big [role=option]')].map(o => o.textContent.trim()).join(',')
+    [...document.querySelectorAll('#big [role=option]:not([data-new])')].map(o => o.textContent.trim()).join(',')
   `, 'zulu', 'and the server’s answer is what is offered')
+  await t.eventually(`document.querySelector('#big [role=option][data-new]')?.textContent.trim()`, 'Use “zu”',
+    'with the typed words after it, the set being open')
 
   // Having searched, the count describes the SEARCH — one row, and one row is
   // all there is, so the note goes quiet rather than claiming 400 again.

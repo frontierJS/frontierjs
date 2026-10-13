@@ -164,7 +164,7 @@ const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
 const CERT       = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-posture-cert-'))).cert
 
-let env: any, ws: any, owner: any, machine: any, other: any, SECRET: string
+let env: any, ws: any, owner: any, machine: any, SECRET: string
 
 beforeAll(async () => {
   env = await createTestEnv({
@@ -182,7 +182,7 @@ beforeAll(async () => {
   } })
   owner   = session({ userId: o.id, workspaceId: ws.id })
   machine = await sys.server.create({ data: { workspaceId: ws.id, name: 'drifted-01', slug: `d-${uniq()}`, status: 'pending' } })
-  other   = await sys.server.create({ data: { workspaceId: ws.id, name: 'quiet-02',   slug: `q-${uniq()}`, status: 'pending' } })
+  await sys.server.create({ data: { workspaceId: ws.id, name: 'quiet-02',   slug: `q-${uniq()}`, status: 'pending' } })
 
   const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
   const token = mintEnrollToken().token

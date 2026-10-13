@@ -10,14 +10,14 @@ left out. The latest version and any advisory are NOT here: they change with
 no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.
 
 ```
-44 package(s) · 22 runtime · 22 dev only · 90 declaration(s) · 29 member(s) · 0 finding(s)
+45 package(s) · 23 runtime · 22 dev only · 91 declaration(s) · 29 member(s) · 0 finding(s)
 ```
 
 ## Findings
 
 None — one installed copy and one range per package, and every declaration installed.
 
-## Runtime (22)
+## Runtime (23)
 
 Installed by anyone who installs the declaring package — a dependency, a peer
 or an optional one. A package also declared as dev somewhere is here, with
@@ -27,6 +27,7 @@ that declaration listed beside the others.
 | --- | --- | --- |
 | `@biomejs/biome` | `2.5.8` | @frontierjs/config (peer) `>=2.2.0`<br>frontierjs (dev) `2.5.8` |
 | `@modelcontextprotocol/client` | `2.0.0` | @frontierjs/basecamp (dev) `^2.0.0`<br>@frontierjs/example (dev) `^2.0.0`<br>@frontierjs/mcp `^2.0.0` |
+| `@modelcontextprotocol/ext-apps` | `2.0.3` | @frontierjs/mcp `^2.0.3` |
 | `@modelcontextprotocol/server` | `2.0.0` | @frontierjs/mcp `^2.0.0` |
 | `@opentui/core` | `0.5.17` | @frontierjs/mesa (dev) `0.5.17`<br>@frontierjs/mesa (peer) `0.5.17` |
 | `@sqlite.org/sqlite-wasm` | `3.53.4-build1` | @frontierjs/example `^3.53.4-build1`<br>@frontierjs/litestone (dev) `^3.53.4-build1` |

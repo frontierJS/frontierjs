@@ -20,7 +20,8 @@ import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { parse } from '@frontierjs/litestone/parser'
 import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
-import { projectTools, schemaViews, toolName } from '../src/projection.ts'
+import { projectTools, schemaViews } from '../src/projection.ts'
+import { toolName } from '@frontierjs/toolbelt/inflect'
 import type { ServiceShape } from '../src/projection.ts'
 
 // ─── the fixture, parsed ──────────────────────────────────────────────────────
@@ -544,7 +545,6 @@ describe('a tool name is one an MCP client will take', () => {
     for (const t of [...p.tools, ...p.withheld]) {
       expect(legal.test(t.name), t.name).toBe(true)
     }
-    expect(toolName('orders', 'refund')).toBe('orders_refund')
   })
 
   test('the structured halves survive, so nothing has to parse the name back apart', () => {

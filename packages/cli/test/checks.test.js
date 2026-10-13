@@ -593,6 +593,19 @@ describe('a <Table> column names its field (FJS-1081)', () => {
     expect(only(root, 'table-column-key').findings).toEqual([])
   })
 
+  test('a `{ key, label }` lookup beside a Table is not a column', () => {
+    // basecamp's dependencies screen: a status legend read as `s.key`, next to
+    // a Table whose own columns are correct. Renaming it broke the legend.
+    const root = tree('tck-legend', { 'web/src/routes/a.mesa':
+      "<script>\n  import Table from '@frontierjs/ui/components/display/Table.mesa'\n" +
+      "  const STATUS = [{ key: 'major', label: 'Major behind' }]\n" +
+      "  const COLUMNS = [{ name: 'ref', label: 'Reference' }]\n" +
+      "</script>\n<Table columns={COLUMNS} rows={[]} onSort={(c) => c} />\n" +
+      "<Table columns={[{ key: 'x', label: 'X' }]} rows={[]} />\n" })
+    const { findings } = only(root, 'table-column-key')
+    expect(findings.map(f => f.line)).toEqual([7])
+  })
+
   test('a `key` in a file that renders no Table is not judged', () => {
     // Advice that is wrong is worse than none: a keyed each, a KeyboardEvent
     // and a lookup table all spell it `key` and none of them is a column.

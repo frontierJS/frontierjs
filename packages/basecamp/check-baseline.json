@@ -20,6 +20,7 @@
     "test-port-literal:api/test/verify-dns.mjs": "7129 is the App.port of an nginx container the drive records and never starts.",
     "test-port-literal:api/test/reachability.test.ts": "baseUrl on a HubConfig row; the sweep under test reads heartbeats and never connects to it.",
     "test-port-literal:api/test/edge.test.ts": "8443 is a Domain.port patched on a row; nothing binds it.",
-    "test-port-literal:api/test/rollback.test.ts": "8080 is the App.port snapshotted into a Release and compared back; nothing binds it."
+    "test-port-literal:api/test/rollback.test.ts": "8080 is the App.port snapshotted into a Release and compared back; nothing binds it.",
+    "test-port-literal:api/test/posture.test.ts": "8180 and 8090 are a fleet machine's listening sockets and a container's published port in a posture report the pure grader reads; nothing binds or reaches either."
   }
 }

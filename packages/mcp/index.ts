@@ -7,7 +7,7 @@
 export { mcpPlugin }      from './src/plugin.ts'
 export type { McpOptions } from './src/plugin.ts'
 
-export { projectTools, resolveModel, schemaViews, toolName } from './src/projection.ts'
+export { projectTools, resolveModel, schemaViews } from './src/projection.ts'
 export type {
   Projection, Tool, Withheld, Verdict,
   ToolInput, InputSource, SchemaViews,

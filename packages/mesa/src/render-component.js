@@ -60,7 +60,6 @@ import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
 import { initRenderer, renderToHTML, escapeHTML } from './render.js'
-import { inlineCSS }     from './css-inliner.js'
 
 // ── Module-level renderer init guard ─────────────────────────────────────────
 let _rendererReady = false
@@ -1131,7 +1130,10 @@ export async function renderComponent(source, options = {}) {
   const allCSS = [css, unocss_css].filter(Boolean).join('\n')
 
   // 4. Apply CSS strategy per target
+  // Only the inlining targets load the inliner: it needs css-tree, an optional
+  // peer a prerendered site never installs.
   if (target === 'email') {
+    const { inlineCSS } = await import('./css-inliner.js')
     const inlined = inlineCSS(html, allCSS, {
       preserveMediaQueries,
       removeStyleTags: true,
@@ -1160,6 +1162,7 @@ export async function renderComponent(source, options = {}) {
       bgcolor:      namedExports.bgcolor  ?? '#f4f4f4',
     })
   } else if (target === 'fragment') {
+    const { inlineCSS } = await import('./css-inliner.js')
     html = inlineCSS(html, allCSS, {
       preserveMediaQueries,
       removeStyleTags:  true,

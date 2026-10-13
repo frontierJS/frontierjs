@@ -382,6 +382,19 @@ export function scaffoldSiteSurface({
 }
 
 /**
+ * What the app installs for the prerender. Mesa's `renderToHTML` runs on
+ * happy-dom and declares it an optional peer so a browser-only app never
+ * installs it, which makes it this app's to name: without it `build:site`
+ * fails in `closeBundle`, after the bundle is written. The range is mesa's own
+ * peer range, kept equal by test/app-config.test.js. Merged by the caller.
+ */
+export function siteDevDeps() {
+  return {
+    'happy-dom': '^20.11.6',
+  }
+}
+
+/**
  * The scripts an app with this surface runs. Merged into package.json by the
  * caller, because `fli new` writes that file once and `make:site` edits one
  * that exists.

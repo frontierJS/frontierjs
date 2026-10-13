@@ -27,6 +27,7 @@
   "dependencies": {
     "@frontierjs/toolbelt": "^0.1.0",
     "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
     "@modelcontextprotocol/server": "^2.0.0"
   },
   "devDependencies": {

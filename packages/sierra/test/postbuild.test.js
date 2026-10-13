@@ -478,6 +478,42 @@ describe('generateRedirects', () => {
     const result = await generateRedirects([], outDir)
     expect(result).toBeNull()
   })
+
+  // The app's own _redirects reaches the output before this runs, the way
+  // robots.txt does. Writing over it dropped every hand-written rule the moment
+  // one route declared `redirect:`, and nothing said so.
+  test("keeps the app's own rules and puts the routes' ahead of them", async () => {
+    const outDir = await setup('redirects-merge', {
+      '_redirects': '# campaigns\n/cbf-live/ /?utm_source=cbf\n/* /index.html 200\n',
+    })
+    const result = await generateRedirects([['/old/', '/new/']], outDir)
+    const content = await readFile(join(outDir, '_redirects'), 'utf8')
+    expect(content).toContain('/cbf-live/ /?utm_source=cbf')
+    expect(content).toContain('/* /index.html 200')
+    // A host takes the first match, so an exact route rule goes ahead of a splat.
+    expect(content.indexOf('/old/  /new/  301')).toBeGreaterThan(-1)
+    expect(content.indexOf('/old/  /new/  301')).toBeLessThan(content.indexOf('/* /index.html 200'))
+    expect(result).toContain('1 rule from routes')
+  })
+
+  test("leaves the app's file alone when no route redirects", async () => {
+    const outDir = await setup('redirects-app-only', { '_redirects': '/a/ /b/ 301\n' })
+    const result = await generateRedirects([], outDir)
+    expect(await readFile(join(outDir, '_redirects'), 'utf8')).toBe('/a/ /b/ 301\n')
+    expect(result).toContain("the app's")
+  })
+
+  test('refuses a route and a hand-written rule that send one path two places', async () => {
+    const outDir = await setup('redirects-conflict', { '_redirects': '/old /elsewhere/ 301\n' })
+    await expect(generateRedirects([['/old/', '/new/']], outDir)).rejects.toThrow(/\/old\/.*\/new\/.*\/elsewhere\//s)
+  })
+
+  test('writes a rule both declare once', async () => {
+    const outDir = await setup('redirects-same', { '_redirects': '/old/ /new/ 301\n' })
+    await generateRedirects([['/old/', '/new/']], outDir)
+    const content = await readFile(join(outDir, '_redirects'), 'utf8')
+    expect(content.match(/\/old\//g)).toHaveLength(1)
+  })
 })
 
 // ─── a real XML read ─────────────────────────────────────────────────────────

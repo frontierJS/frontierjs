@@ -1,5 +1,10 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-13 — a site's own redirects (`FJS-D961`)
+
+- **`content/settings/_redirects`** reaches the build again, where every legacy ksite client keeps its campaign links. Sierra merges it with every route's `redirect:` into `dist/_redirects`, the routes' rules first, and stops the build when one path is sent two places. Before, site-kit never read the file, and Sierra overwrote any `_redirects` in the output as soon as one route redirected.
+- **Refused by name:** `content/public/_redirects` (move it to `content/settings/`), and `_redirects` or `_headers` in a preset's `public/`, which Sierra writes.
+
 ## 2026-10-12 — a preset's `public/` ships with it
 
 - **`public/` at a preset's package root** is served in dev and emitted in the build beneath the site's `content/public/`. A file at the same path in the site's `public/` wins, so a client replaces one theme image without copying the rest. It is found, not configured: a preset returns no key for it.

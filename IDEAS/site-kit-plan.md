@@ -203,11 +203,15 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
      not ksite and names one decides what site-kit's emits (Phase 4).
    - **Held to `site-hosting.md`** (`FJS-D919`–`D921`: Sierra owns the host
      files, the function bundle and the adapters; site-kit presets them).
-     `presetPublic` refuses a preset's `_redirects` and `_headers` by name:
-     Sierra's postbuild writes both and overwrites a copied one in silence.
-     The check's `redirects` rule is not ported as ksite has it, because its
-     `redirects-file-replaced` warning restates a Sierra fact, which belongs
-     in Sierra once `site-hosting.md` step 1 lands. A preset's `functions/`
+     **Redirects: done (`FJS-D961`).** A site's own are
+     `content/settings/_redirects`, as every legacy client has them
+     (maid.tech's are live campaign links). site-kit emits the file, and
+     Sierra merges it with the routes' `redirect:` rules, routes first,
+     refusing one path sent two places. A `_redirects` in `content/public/`,
+     and a `_redirects` or `_headers` in a preset's `public/`, stop the build
+     by name. The check's `redirects` rule ports without ksite's
+     `redirects-file-replaced` warning, since the file is no longer replaced,
+     and reads `content/settings/_redirects`. A preset's `functions/`
      is found at the package root `loadPreset` returns, the way `public/` is,
      so Sierra's functions option takes directories in order (the site's
      first) rather than one. The `document`-in-dev ruling is the first case

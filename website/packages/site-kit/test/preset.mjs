@@ -98,6 +98,19 @@ try {
     site('unknown-key', 'demo-preset', { 'package.json': PKG({ './preset': './preset.js' }), 'preset.js': 'export default () => ({ routesDir: "pages" })' }),
     /returned 'routesDir'/)
   await refuses('a preset that is not a string stops the build', site('not-string', 42), /is a number; it is a package name/)
+  // Sierra writes both host files after the build emits, so a copy in either
+  // public/ ships or vanishes depending on what the routes declare.
+  await refuses("a preset's public/_redirects stops the build",
+    site('preset-redirects', 'demo-preset', {
+      'package.json': PKG({ './preset': './preset.js' }), 'preset.js': 'export default () => ({})', 'public/_redirects': '/a/ /b/\n',
+    }),
+    /the preset's public\/_redirects — Sierra writes _redirects/)
+  {
+    const root = site('public-redirects', 'demo-preset', { 'package.json': PKG({ './preset': './preset.js' }), 'preset.js': 'export default () => ({})' })
+    write(join(root, 'content/public/_redirects'), '/a/ /b/\n')
+    await refuses("a site's content/public/_redirects stops the build, naming content/settings/", root,
+      /content\/public\/_redirects — a site's redirects are content\/settings\/_redirects/)
+  }
 } finally {
   rmSync(TMP, { recursive: true, force: true })
 }

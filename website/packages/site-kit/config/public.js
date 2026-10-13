@@ -18,6 +18,8 @@ const TYPES = {
   '.txt': 'text/plain', '.xml': 'application/xml', '.pdf': 'application/pdf',
 }
 
+const HOST_FILES = ['_redirects', '_headers']
+
 function* files(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name)
@@ -38,6 +40,16 @@ const isFile = (path) => {
  */
 export function presetPublic({ dir, site }) {
   dir = resolve(dir)
+  // Sierra writes both into the output after this emits, so a preset's copy
+  // would ship or vanish depending on what the site's routes declare.
+  for (const name of HOST_FILES) {
+    if (existsSync(join(dir, name))) {
+      throw new Error(
+        `site-kit: the preset's public/${name} — Sierra writes ${name}, so a preset cannot ship one. ` +
+        "A redirect is a route's `redirect:` or the site's content/settings/_redirects."
+      )
+    }
+  }
   return {
     name: 'site-kit:preset-public',
 

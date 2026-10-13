@@ -59,7 +59,7 @@ refused rather than emitted; `publishes: N` in that route's own frontmatter is
 the override, so publishing gated data is something a reviewer can see.
 
 ```js
-const { scaffoldSiteSurface, siteScripts } =
+const { scaffoldSiteSurface, siteScripts, siteDevDeps } =
   await import(resolve(global.fliRoot, 'core/site-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
@@ -130,9 +130,18 @@ if (fresh) {
       pkg.scripts[key] = value
       added.push(key)
     }
-    if (added.length) {
+    // The prerender runs on these but mesa does not install them.
+    const tools = []
+    for (const [key, spec] of Object.entries(siteDevDeps())) {
+      if (pkg.dependencies?.[key] || pkg.devDependencies?.[key]) continue
+      pkg.devDependencies ??= {}
+      pkg.devDependencies[key] = spec
+      tools.push(key)
+    }
+    if (added.length || tools.length) {
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
-      log.success(`Added scripts: ${added.join(', ')}`)
+      if (added.length) log.success(`Added scripts: ${added.join(', ')}`)
+      if (tools.length) log.success(`Added devDependencies: ${tools.join(', ')} — run bun install before building.`)
     }
   }
 }

@@ -50,11 +50,11 @@ export function readVocabulary(root) {
   // Longest first, so a two-word term wins over the one word inside it. Case
   // matters: Run, Call, Page and Move are terms here and ordinary English
   // everywhere, and the capital is what says which one a sentence meant.
-  const words = rows.map(r => r.term).sort((a, b) => b.length - a.length).map(escape)
+  const words = rows.map(r => r.term).sort((a, b) => b.length - a.length).map(escapeRegex)
   return { terms, pattern: new RegExp(`\\b(${words.join('|')})(s|es)?\\b`, 'g') }
 }
 
-const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const escapeRegex = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** The whole prompt for one question. */
 export function tldrPrompt(question, vocab = null) {

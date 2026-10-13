@@ -26,7 +26,8 @@ Read 2026-10-12.
 - **Sierra already writes the host's files in the host's format.**
   `postbuild/redirects.js` emits `_redirects` (the Netlify format Cloudflare
   reads) from the route table, and a redirect route emits no page, so that
-  line is its only answer.
+  line is its only answer. It merges the app's own file after those rules,
+  which for a site-kit site is `content/settings/_redirects` (`FJS-D961`).
 - **The proof is already host-neutral.** `website/tests/verify.mjs` serves
   `dist/` with Sierra's `serveSite`, never with wrangler, and so does the
   `site/deploy/` container.

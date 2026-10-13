@@ -34,7 +34,10 @@
  * 403 — never an escalation.
  */
 
-import { McpServer, WebStandardStreamableHTTPServerTransport, fromJsonSchema } from '@modelcontextprotocol/server'
+import { CLIENT_CAPABILITIES_META_KEY, McpServer, WebStandardStreamableHTTPServerTransport, fromJsonSchema } from '@modelcontextprotocol/server'
+import { RESOURCE_MIME_TYPE, getUiCapability, registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { basename, isAbsolute, join } from 'node:path'
 import { CALL_OPTIONS_AT, LEVELS, principalGateLevel, scopeRefusal, toDataPrincipal, toFrameworkError, withholdProtected } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
@@ -78,6 +81,17 @@ export interface McpOptions {
    * where the boundary enforces it too; restating one here is a second origin.
    */
   narrow?: (tool: Tool, principal: unknown) => boolean | Promise<boolean>
+  /**
+   * The MCP App views this surface offers a host that renders them (`FJS-D955`).
+   *
+   * `root` is the directory `fli mcp:build` wrote — one `<Model>.html` per
+   * resource file, absolute, read once at boot. Absent, every tool is text-only.
+   * A model with no file is offered no view and nothing is said, since text is
+   * not wrong; a `root` that is relative or not a directory REFUSES the boot,
+   * because the mistake that hides is the whole surface gone in production
+   * with every tool still answering.
+   */
+  ui?: { root: string }
 }
 
 const DEFAULT_KEEP_ALIVE_MS = 5_000
@@ -87,9 +101,10 @@ const AWAIT_POLL_MS         = 500
 export function mcpPlugin(opts: McpOptions = {}): Plugin {
   const path = opts.path ?? '/mcp'
 
-  let views:  SchemaViews | null = null
-  let shapes: ServiceShape[]     = []
-  let trail:  string | null      = null
+  let views:     SchemaViews | null     = null
+  let shapes:    ServiceShape[]         = []
+  let trail:     string | null          = null
+  let documents: Map<string, string> | null = null
 
   return {
     name: 'mcp',
@@ -97,7 +112,7 @@ export function mcpPlugin(opts: McpOptions = {}): Plugin {
     register(app: App) {
       const handler = async (ctx: RouteCtx<typeof app>) => {
         if (!views) return ctx.json({ error: 'The MCP surface is not ready yet.' }, 503)
-        return answer(app, ctx, views, shapes, opts, trail)
+        return answer(app, ctx, views, shapes, opts, trail, documents)
       }
 
       // No `app.all`, so the verbs are listed. DELETE is the client ending a
@@ -119,10 +134,11 @@ export function mcpPlugin(opts: McpOptions = {}): Plugin {
     // — so a projection built in `register()` would be built over an empty
     // registry and answer an empty tool list with nothing failing.
     async boot(app: App) {
-      views  = await buildViews(app)
-      shapes = describeAll(app)
-      trail  = trailOf((app as { db?: unknown }).db)
-      if (views) disclose(app, projectTools(shapes, views, 8))
+      views     = await buildViews(app)
+      shapes    = describeAll(app)
+      trail     = trailOf((app as { db?: unknown }).db)
+      documents = opts.ui ? readDocuments(opts.ui.root) : null
+      if (views) disclose(app, projectTools(shapes, views, 8), documents)
     },
   }
 }
@@ -197,6 +213,7 @@ async function answer(
   shapes: ServiceShape[],
   opts:   McpOptions,
   trail:  string | null,
+  documents: Map<string, string> | null,
 ): Promise<Response> {
   const user  = ctx.user ?? null
   const level = await standingOf(app, user)
@@ -204,7 +221,7 @@ async function answer(
   // tool call's service calls run in — it is what Caravan stamped on every job
   // they dispatched, and what `--await` looks the jobs up by (`FJS-D406`).
   const correlationId = (app as { correlationId?: () => string | null }).correlationId?.() ?? null
-  const awaiting      = asksToAwait(ctx)
+  const { awaiting, renders } = readRequest(ctx)
 
   // A key's scopes withhold what the call would refuse, from junction's own
   // reading of them (`FJS-D916`); `narrow` is for a rule the app holds beyond it.
@@ -212,13 +229,19 @@ async function answer(
     .filter(t => scopeRefusal(app.services.get(t.service) ?? {}, t.method, user as { scopes?: string[] } | null) === null)
   const tools  = opts.narrow ? await narrowTo(scoped, user, opts.narrow) : scoped
 
-  const server = new McpServer({
-    name:    opts.name ?? 'frontierjs',
-    version: opts.version ?? '0.0.0',
-  })
+  const name   = opts.name ?? app.config.name
+  const server = new McpServer({ name, version: opts.version ?? '0.0.0' })
 
-  const call = { correlationId, awaitMs: opts.awaitMs ?? DEFAULT_AWAIT_MS, offered: tools, defs: views.full, trail }
-  for (const tool of tools) register(server, app, tool, user, call)
+  // One answer to *which models have a view here*, read by the resource list
+  // and by the tool stamp alike, so a pointer never names a view the same
+  // caller is not offered.
+  const viewed = documents && renders ? viewedModels(tools, documents) : new Set<string>()
+  const call   = { correlationId, awaitMs: opts.awaitMs ?? DEFAULT_AWAIT_MS, offered: tools, defs: views.full, trail, renders }
+  for (const tool of tools) {
+    const view = answersOneRow(tool) && viewed.has(tool.model as string) ? viewUri(name, tool.model as string) : null
+    register(server, app, tool, user, call, view)
+  }
+  if (documents) offerViews(server, name, viewed, documents)
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Stateless: the standing is re-read on every request, so there is nothing
@@ -348,6 +371,72 @@ function dispatchable(p: Projection): { tools: Tool[]; undispatchable: string[] 
   return { tools: ok, undispatchable: bad }
 }
 
+// ─── the views ────────────────────────────────────────────────────────────────
+
+/** The `ui://` URI a host fetches `model`'s view by — one spelling, used by the resource and the tools that point at it. */
+export function viewUri(server: string, model: string): string {
+  return `ui://${server}/${model}`
+}
+
+/**
+ * The documents `fli mcp:build` wrote under `root`, by model name.
+ *
+ * Read whole at boot: the image carries the API and its views from one commit,
+ * so a file cannot change under a running server and a read per request would
+ * buy nothing. Refused, not defaulted, when `root` is relative (a path resolved
+ * from the process's cwd is the derived layout Invariant 3 forbids) or not a
+ * directory (`FJS-D955`).
+ */
+function readDocuments(root: string): Map<string, string> {
+  if (!isAbsolute(root)) {
+    throw new Error(`mcp: ui.root must be absolute, got '${root}'. fli mcp:build supplies the app's own.`)
+  }
+  let isDir = false
+  try { isDir = statSync(root).isDirectory() } catch { /* answered below */ }
+  if (!isDir) {
+    throw new Error(`mcp: ui.root '${root}' is not a directory. Run fli mcp:build, or drop the ui option for text-only tools.`)
+  }
+  const out = new Map<string, string>()
+  for (const file of readdirSync(root)) {
+    if (!file.endsWith('.html')) continue
+    out.set(basename(file, '.html'), readFileSync(join(root, file), 'utf8'))
+  }
+  return out
+}
+
+/**
+ * The models this caller is shown a view for: each it holds a one-row tool
+ * for AND a document exists for — the projection's answer, read once, after
+ * `narrow` and the key's scopes. A model whose every one-row tool is withheld
+ * is not in the set, so a standing that cannot call the tool cannot load its
+ * screen, and no tool of its points at one.
+ */
+function viewedModels(tools: Tool[], documents: Map<string, string>): Set<string> {
+  return new Set(tools.filter(t => answersOneRow(t) && documents.has(t.model as string)).map(t => t.model as string))
+}
+
+/**
+ * Register one `ui://` resource per viewed model.
+ *
+ * `connectDomains` is empty: the view makes no HTTP of its own, every call is
+ * the host's `tools/call`. A caller offered no view is answered as a server
+ * with no resources — `initialize` declares none and `resources/list` is
+ * *method not found* — because the SDK installs the `resources/*` handlers
+ * with the first registration and nowhere else; declaring the capability
+ * without the handler would tell a host to call what then fails.
+ */
+function offerViews(server: McpServer, name: string, viewed: Set<string>, documents: Map<string, string>): void {
+  for (const model of viewed) {
+    const html = documents.get(model) as string
+    const uri  = viewUri(name, model)
+    registerAppResource(
+      server, model, uri,
+      { description: `One ${model}, as its form.`, _meta: { ui: { csp: { connectDomains: [] } } } },
+      async () => ({ contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: html }] }),
+    )
+  }
+}
+
 // ─── one tool ─────────────────────────────────────────────────────────────────
 
 interface CallScope {
@@ -358,33 +447,62 @@ interface CallScope {
   defs:          SchemaViews['full']
   /** The log model tool calls are recorded in, or null for none. */
   trail:         string | null
+  /** Whether the host behind this request renders an MCP App view, as `readRequest` read it. */
+  renders:       boolean
 }
 
-/** Whether this request is a `tools/call` asking to be held until its jobs finish. */
-function asksToAwait(ctx: RouteCtx<App>): boolean {
+/**
+ * What the request's own `_meta` says: whether a `tools/call` asks to be held
+ * until its jobs finish, and whether the host renders an MCP App view.
+ *
+ * The one read of the body, and the capability is read HERE rather than at
+ * `oninitialized` (the ext-apps helper's example): a `McpServer` here lives
+ * for one HTTP request, so the instance answering `tools/list` never saw
+ * `initialize`. The SDK's 2026-07-28 era carries the client's capabilities on
+ * every request for that reason; a 2025-era client carries them nowhere a
+ * stateless server can read. That silence is UNKNOWN, and unknown is
+ * permissive as `x-gate` is in the browser (Invariant 6) — a view is an
+ * affordance a host that does not speak the extension ignores, and reading
+ * silence as a refusal would make the surface text-only for every host on the
+ * older era. A host that declares its capabilities and names no view, or no
+ * mime type this server emits, is read as asked.
+ */
+function readRequest(ctx: RouteCtx<App>): { awaiting: boolean; renders: boolean } {
   try {
     const body = JSON.parse(ctx.rawBody ?? '') as { method?: string; params?: { _meta?: Record<string, unknown> } }
-    return body.method === 'tools/call' && body.params?._meta?.[AWAIT_META] === true
-  } catch { return false }
+    const meta = body.params?._meta
+    const declared = meta?.[CLIENT_CAPABILITIES_META_KEY] as Parameters<typeof getUiCapability>[0] | undefined
+    const ui = declared === undefined ? undefined : getUiCapability(declared)
+    return {
+      awaiting: body.method === 'tools/call' && meta?.[AWAIT_META] === true,
+      renders:  declared === undefined || (ui !== undefined && (ui.mimeTypes?.includes(RESOURCE_MIME_TYPE) ?? true)),
+    }
+  } catch { return { awaiting: false, renders: true } }
 }
 
-function register(server: McpServer, app: App, tool: Tool, user: unknown, call: CallScope): void {
-  server.registerTool(
-    tool.name,
-    {
-      description: describeTool(tool),
-      // `fromJsonSchema` installs its own default validator when none is passed,
-      // so the SDK grades the argument BEFORE this handler runs. That is a
-      // second engine over one schema and the two do not agree: `total: "2500"`
-      // is refused here and COERCED by the Data boundary, measured. It fails in
-      // the safe direction — the surface refuses what the app would have taken,
-      // which costs a turn and admits nothing — and the message names the field,
-      // so an agent corrects and retries. Passing a pass-through validator is
-      // the one-owner answer and is an open question, not an oversight.
-      ...(tool.input.schema ? { inputSchema: fromJsonSchema(tool.input.schema as never) } : {}),
-    },
-    async (args: unknown, ctx: HandlerCtx) => run(app, tool, args, user, call, ctx),
-  )
+/**
+ * Register one tool; `view` is the `ui://` URI its answer is shown in, or null
+ * for a text-only answer. A viewed tool goes through the extension's wrapper,
+ * which mirrors the pointer into the key older hosts read, and `visibility`
+ * stays the default: the verbs a view calls back (`patch`) are the model's,
+ * offered to the agent as well.
+ */
+function register(server: McpServer, app: App, tool: Tool, user: unknown, call: CallScope, view: string | null): void {
+  const config = {
+    description: describeTool(tool),
+    // `fromJsonSchema` installs its own default validator when none is passed,
+    // so the SDK grades the argument BEFORE this handler runs. That is a
+    // second engine over one schema and the two do not agree: `total: "2500"`
+    // is refused here and COERCED by the Data boundary, measured. It fails in
+    // the safe direction — the surface refuses what the app would have taken,
+    // which costs a turn and admits nothing — and the message names the field,
+    // so an agent corrects and retries. Passing a pass-through validator is
+    // the one-owner answer and is an open question, not an oversight.
+    ...(tool.input.schema ? { inputSchema: fromJsonSchema(tool.input.schema as never) } : {}),
+  }
+  const handler = async (args: unknown, ctx: HandlerCtx) => run(app, tool, args, user, call, ctx)
+  if (view === null) server.registerTool(tool.name, config, handler)
+  else registerAppTool(server, tool.name, { ...config, _meta: { ui: { resourceUri: view } } }, handler as never)
 }
 
 function describeTool(tool: Tool): string {
@@ -651,7 +769,7 @@ function invoke(
  *
  * At SYSTEM, because these are facts about the app and not about a caller.
  */
-function disclose(app: App, p: Projection): void {
+function disclose(app: App, p: Projection, documents: Map<string, string> | null): void {
   const log  = (app as { log?: { warn?: (m: string) => void } }).log
   const warn = (m: string) => (log?.warn ? log.warn(m) : console.warn(`[mcp] ${m}`))
 
@@ -669,4 +787,10 @@ function disclose(app: App, p: Projection): void {
   }
   const bad = dispatchable(p).undispatchable
   if (bad.length) warn(`mcp: no ServiceCaller signature for ${bad.join(', ')} — withheld.`)
+
+  // A view whose model no tool answers is a file nothing will ever point at —
+  // a renamed model, or a build older than the schema.
+  const answered = new Set(p.tools.filter(answersOneRow).map(t => t.model))
+  const stale    = [...documents?.keys() ?? []].filter(m => !answered.has(m))
+  if (stale.length) warn(`mcp: ${stale.map(m => `${m}.html`).join(', ')} name(s) no model a one-row tool answers — rebuild with fli mcp:build.`)
 }

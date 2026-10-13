@@ -60,6 +60,7 @@ the package has no root entry.
 | long text | `@frontierjs/ui/components/forms/Textarea.mesa` |
 | an enum, or a short list, as a native select | `@frontierjs/ui/components/forms/Select.mesa` |
 | one value from a long or searchable list, a foreign key | `@frontierjs/ui/components/forms/Combobox.mesa` |
+| one row from a list, or the typed words as a thing of their own — a line picker's custom line | the same, with `allowNew`: Enter takes the first match and the words are the last row, reached with ↓ or a click. `oncreate(text)` fires before `onchange` for the words, `newLabel(text)` words that row, and `onquery(words)` hands out the box on every change. Rows a server finds on text the label does not show (full-text) come through `search={(words, signal) => …}`, drawn as answered |
 | several values, tokens | `@frontierjs/ui/components/forms/MultiSelect.mesa` |
 | a boolean in a form · a setting | `@frontierjs/ui/components/forms/Checkbox.mesa` · `@frontierjs/ui/components/forms/Switch.mesa` |
 | one of a few options with descriptions | `@frontierjs/ui/components/forms/RadioGroup.mesa` |

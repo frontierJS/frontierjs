@@ -36,7 +36,7 @@
  */
 
 import { levelPasses, canAtLevel } from '@frontierjs/toolbelt/gate'
-import { modelName }               from '@frontierjs/toolbelt/inflect'
+import { modelName, toolName }     from '@frontierjs/toolbelt/inflect'
 import { DIRECTIVE_SCHEMAS }       from '@frontierjs/toolbelt/directives'
 // The one rule this module may not own a copy of. `gateAuthAround` asks
 // `customMethodGrade` what stands between a caller and a custom method, and a
@@ -191,19 +191,6 @@ export interface Projection {
    * and says nothing.
    */
   collisions: Array<{ name: string; methods: string[] }>
-}
-
-/**
- * The MCP name for one method.
- *
- * `^[a-zA-Z0-9_-]{1,128}$` is the whole rule and a dot fails it, so the
- * separator this framework uses everywhere else cannot be used here. Anything
- * else outside the set is replaced rather than deleted, so two names that
- * differed only by an illegal character still differ — and if a replacement or
- * the length cap does make two names meet, `projectTools` refuses both.
- */
-export function toolName(service: string, method: string): string {
-  return `${service}_${method}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128)
 }
 
 // CRUD verbs graded by the model's own gate. `aggregate` is a read and `restore`

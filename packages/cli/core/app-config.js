@@ -267,6 +267,7 @@ export const AGENT_DOCS = {
   '@frontierjs/ui':        { when: 'a screen with forms, tables or overlays', lookup: [] },
   '@frontierjs/css':       { when: 'a class list or a `<style>` block',
     lookup: [{ file: 'vocabulary.json', use: 'one term\'s prose; the term list itself is in the AGENTS.md' }] },
+  '@frontierjs/testing':   { when: 'a test — a factory, a session, the API under test', lookup: [] },
 }
 
 // A rule is written here only when a generic habit breaks it. `needs` is the

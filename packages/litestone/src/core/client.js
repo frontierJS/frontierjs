@@ -741,7 +741,6 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   function parentRows(sink, references, values) {
-    // biome-ignore lint/suspicious/noDoubleEquals: a key arrives as text or a number depending on the caller; SQLite compares them by affinity
     return sink.rowsWhere(references, [values])
   }
 

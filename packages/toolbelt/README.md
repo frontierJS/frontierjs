@@ -212,6 +212,7 @@ camel('HTTPStatus')              // 'httpStatus'      — a leading initialism l
 snake('ProductVariant')          // 'product_variant'
 slug("It's a C++ thing")         // 'its-a-c-thing'
 slug('add product variants', { sep: '_' })   // 'add_product_variants'
+toolName('orders', 'refund')     // 'orders_refund'   — the MCP spelling; a dot is illegal there
 ```
 
 **`modelName` is exported rather than left to the caller.** Six sites composed

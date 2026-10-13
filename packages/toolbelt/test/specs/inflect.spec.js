@@ -7,7 +7,7 @@
  * feeds in, and the failures named are the ones a copy actually had.
  */
 
-import { pluralize, singularize, IRREGULAR, words, pascal, camel, kebab, snake, modelName, slug, humanize } from '../../src/inflect/inflect.js'
+import { pluralize, singularize, IRREGULAR, words, pascal, camel, kebab, snake, modelName, slug, toolName, humanize } from '../../src/inflect/inflect.js'
 
 /* ── Regular rules ─────────────────────────────────────────────────── */
 
@@ -502,4 +502,28 @@ test('inflect: words() splits a run of capitals in linear time', function () {
   humanize('A'.repeat(40000))
   words('A'.repeat(40000) + 'b')
   assert.ok(performance.now() - start < 250, 'a 40000-capital run took ' + Math.round(performance.now() - start) + ' ms')
+})
+
+/* ── Tool name ─────────────────────────────────────────────────────── */
+
+test('inflect: toolName is the MCP spelling, and a dot cannot be in it', function () {
+  // `^[a-zA-Z0-9_-]{1,128}$` is the host's rule; one illegal name invalidates
+  // the WHOLE tool list rather than the one tool, so the spelling has to be
+  // legal where it is stated and never rewritten on the way out.
+  const legal = /^[a-zA-Z0-9_-]{1,128}$/
+  assert.equal(toolName('orders', 'refund'), 'orders_refund')
+  assert.equal(toolName('order.lines', 'find'), 'order_lines_find')
+  for (const [s, m] of [['orders', 'refund'], ['a.b', 'c'], ['x y', 'z'], ['é', 'get'], ['s'.repeat(200), 'm']]) {
+    assert.ok(legal.test(toolName(s, m)), 'illegal: ' + toolName(s, m))
+  }
+})
+
+test('inflect: an illegal character is replaced, never deleted', function () {
+  // Deleting it would make `a!b` and `ab` the same tool with nothing to refuse;
+  // replacing keeps them apart. Where a replacement DOES make two names meet,
+  // the caller refuses both (`projectTools` in @frontierjs/mcp) — this kit only
+  // promises the two still differ when they can.
+  assert.ok(toolName('a!b', 'get') !== toolName('ab', 'get'))
+  assert.equal(toolName('a!b', 'get'), 'a_b_get')
+  assert.equal(toolName('s'.repeat(200), 'm').length, 128)
 })

@@ -12,7 +12,14 @@
   //
   // Usage — allow new values:
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
-
+  //
+  // Usage — a picker that adds the typed text as its own thing:
+  //   <Combobox {options} allowNew newLabel={(t) => `Add “${t}” as a custom line`}
+  //             oncreate={addCustom} onchange={pick} />
+  //
+  // Usage — rows a server search answers (full-text, matched on text the
+  // label does not show):
+  //   <Combobox {options} search={(q, signal) => findOffers(q, signal)} onchange={pick} />
   import Field from '../forms/Field.mesa'
   import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote, optionsNote, lockedBy, RECENT_GROUP, REST_GROUP } from '../../utils.js'
 
@@ -50,6 +57,20 @@
   export let badge    = undefined
   export let help     = undefined
   export let onchange = undefined
+  // The words in the box are this control's own state, so a caller that builds
+  // rows from them read `oninput` off the input through `$attributes` — which
+  // misses the ✕ and a pick, both of which change the box without an `input`
+  // event (`FJS-2799`).
+  export let onquery  = undefined   // Observer: (query: string) => void, untrimmed, on every change
+  // Fired only for a value `allowNew` minted, and BEFORE onchange — the same
+  // order as MultiSelect, so a caller can tell typed text from a row whose
+  // value happens to be a string.
+  export let oncreate = undefined   // (text: string) => void
+  export let newLabel = (text) => `Use “${text}”`   // the row `allowNew` adds for what was typed
+  // Rows only a server can find: full-text search matches a description or a
+  // code the label never shows, so filtering its answer by label again dropped
+  // the hits that were the point of asking. Its rows are drawn as answered.
+  export let search   = undefined   // (query: string, signal: AbortSignal) => Promise<options>
 
   export var id = ''
   const inputId = id || uid('cb')
@@ -128,14 +149,27 @@
   _latch()
   $: (_count, _base), () => _latch()
 
-  const canSearchServer = !!(name && form?.optionsFor)
+  const canSearchServer = !!search || !!(name && form?.optionsFor)
+  var _asking = null         // the AbortController of a `search` in flight
 
   function askServer(text) {
     if (!canSearchServer) return
     clearTimeout(_timer)
+    _asking?.abort()
+    _asking = null
     const q = text.trim()
+    // An empty box is the caller's own list again, not a search for nothing.
+    if (search && !q) { ++_seq; _searched = null; return }
     _timer = setTimeout(() => {
       const mine = ++_seq
+      if (search) {
+        const ctl = _asking = new AbortController()
+        Promise.resolve()
+          .then(() => search(q, ctl.signal))
+          .then((rows) => { if (mine === _seq && !ctl.signal.aborted) _searched = Array.isArray(rows) ? rows : [] })
+          .catch(() => {})
+        return
+      }
       form.optionsFor(name, { search: q || undefined }).then(r => {
         if (mine !== _seq) return
         _searched = r?.options ?? []
@@ -143,6 +177,8 @@
       }).catch(() => {})
     }, 200)
   }
+
+  $.onMount(() => () => { clearTimeout(_timer); _asking?.abort() })
 
   const normOptions = _rows.map(normalize)
 
@@ -179,11 +215,26 @@
   })()
   const firstRecent = filtered.findIndex(o => o.recent)
 
+  // What was typed, as a row of its own at the END of the list. Enter takes
+  // the cursor's row, and the cursor starts on the first match — so with the
+  // typed text reachable only by Enter on an empty list, typing "mow" over
+  // "Mowing" could never keep "mow", and a caller that wanted both stated a
+  // made-up FIRST option, which turned Enter into "never the match"
+  // (`FJS-2799`). Last, it is one ↓ past the matches or a click. Not offered
+  // for text that already is a row's label, nor for the value the box shows.
+  const NEW     = Symbol('new')
+  const _text   = query.trim()
+  const offerNew = !!(allowNew && _text && _text !== labelFor(value)
+                      && !normOptions.some(o => o.label.toLowerCase() === _text.toLowerCase()))
+  const rows    = offerNew ? [...filtered, { value: NEW, label: newLabel(_text), created: true }] : filtered
+
   const resolvedHint = withNote(withNote(hint, optionsNote(stated(optionsError, _error))),
                                truncationNote(filtered.length, _count, { searchable: canSearchServer }))
 
-  // Reset active index when filter changes
-  $: query, () => { activeIdx = 0 }
+  // Back to the first row whenever the rows are new: the words changed, or a
+  // search answered after them.
+  $: query, () => { activeIdx = 0; onquery?.(query) }
+  $: _searched, () => { activeIdx = 0 }
 
   // Sync query label when value changes externally
   $: value, () => { query = labelFor(value) }
@@ -198,10 +249,21 @@
   $: normOptions, () => { if (!_typed) query = labelFor(value) }
 
   function select(opt) {
+    if (opt.created) return create(_text)
     value = opt.value
     query = opt.label
     open  = false
     _typed = false
+    onchange?.(value)
+  }
+
+  function create(text) {
+    if (!text) return
+    value = text
+    query = text
+    open  = false
+    _typed = false
+    oncreate?.(text)
     onchange?.(value)
   }
 
@@ -222,24 +284,20 @@
     if (!query) { value = null; onchange?.(null) }
     // Only once the list is known to be cut. A six-member enum stays instant
     // and issues nothing; a relation nobody can scroll to becomes reachable.
-    if (_searchAll) askServer(query)
+    // A stated `search` asks on every keystroke: the caller has said its list
+    // is not the whole of what can match.
+    if (_searchAll || search) askServer(query)
   }
 
   function handleKeydown(e) {
     if (e.key === 'Escape') { open = false; _typed = false; query = labelFor(value); return }
-    if (e.key === 'ArrowDown') { e.preventDefault(); open = true; activeIdx = Math.min(activeIdx + 1, filtered.length - 1); return }
+    if (e.key === 'ArrowDown') { e.preventDefault(); open = true; activeIdx = Math.min(activeIdx + 1, rows.length - 1); return }
     if (e.key === 'ArrowUp')   { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); return }
     // A closed list has nothing to pick, so Enter is the form's: refusing it
     // here left a form whose last field is a picker unsubmittable by keyboard.
     if (e.key === 'Enter' && open) {
       e.preventDefault()
-      if (filtered[activeIdx]) { select(filtered[activeIdx]); return }
-      if (allowNew && query.trim()) {
-        value = query.trim()
-        open  = false
-        _typed = false
-        onchange?.(value)
-      }
+      if (rows[activeIdx]) select(rows[activeIdx])
     }
   }
 
@@ -286,7 +344,7 @@
         aria-haspopup="listbox"
         aria-autocomplete="list"
         aria-controls={listId}
-        aria-activedescendant={open && filtered[activeIdx] ? rowId(activeIdx) : null}
+        aria-activedescendant={open && rows[activeIdx] ? rowId(activeIdx) : null}
         on:input={handleInput}
         on:focus={() => open = true}
         on:blur={handleBlur}
@@ -318,12 +376,10 @@
       <!-- .popover is the surface; .items.menu is the interactive list. -->
       <div class="popover fjs-combobox-panel" {@attach dropdownAnim}>
         <ul class="items menu" id={listId} role="listbox" aria-label="Options">
-          {#if filtered.length === 0}
-            <li class="item text-muted" aria-disabled="true">
-              {allowNew && query.trim() ? `Press Enter to use "${query.trim()}"` : 'No options'}
-            </li>
+          {#if rows.length === 0}
+            <li class="item text-muted" aria-disabled="true">No options</li>
           {:else}
-            {#each filtered as opt, i (opt.value)}
+            {#each rows as opt, i (opt.value)}
               {@const isActive   = i === activeIdx}
               {@const isSelected = opt.value === value}
               <!--
@@ -354,6 +410,7 @@
                 aria-selected={isSelected}
                 aria-disabled={opt.disabled || null}
                 data-active={isActive || null}
+                data-new={opt.created || null}
                 on:mousemove={() => { if (activeIdx !== i) activeIdx = i }}
                 on:click={() => select(opt)}
               >

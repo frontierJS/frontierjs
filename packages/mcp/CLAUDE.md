@@ -115,9 +115,15 @@ is not must never be added to make a list look complete.
   declarations without rows; opening a tenant would make listing tools CREATE a
   database file.
 - **A tool name may not contain a dot.** `^[a-zA-Z0-9_-]{1,128}$`, and a failure
-  invalidates the whole list rather than the one tool. `toolName` owns it, in the
-  PROJECTION rather than at the transport, so one spelling exists — and two
+  invalidates the whole list rather than the one tool. `toolName`
+  (`@frontierjs/toolbelt/inflect`) owns it, called in the PROJECTION rather than
+  at the transport, so one spelling exists — and two
   methods deriving one name are both withheld rather than one silently winning.
+- **The SDK installs the `resources/*` handlers with the FIRST `registerResource`
+  and nowhere public.** So a caller offered no view is a server with no
+  resources: `initialize` declares none and `resources/list` is `-32601`, per
+  caller, from one plugin. Declaring the capability by hand without a
+  registration tells a host to call what then fails — tried, dropped.
 - **The keep-alive has to be under the app's idle timeout.** The SDK's SSE
   interval defaults to 15s and Bun's idle timeout to 10s, so the stream dies five
   seconds before the frame that would have saved it. Measured both ways.

@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { serveSite } from '@frontierjs/sierra/site/serve'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE = join(ROOT, 'test', `.content-site-${process.pid}`)
@@ -81,6 +82,9 @@ try {
   write(join(SITE, 'content/public/shared.txt'), 'site')
   write(join(SITE, 'content/settings/site.js'),
     `export default { preset: 'demo-preset', document: { head: '<meta name="site-own" content="1">' } }\n`)
+  // A client's campaign links, as maid.tech's are written: no status, both slash forms.
+  write(join(SITE, 'content/settings/_redirects'), '/cbf-live/ /?utm_source=cbf\n/cbf-live /?utm_source=cbf\n')
+  write(join(SITE, 'content/routes/old-reviews.md'), ['---', 'redirect: /reviews/', '---', ''].join('\n'))
   write(join(SITE, 'content/routes/index.md'), ['---', 'render: static', 'layout: Steps', '---', '', 'Welcome to {company_name}.', ''].join('\n'))
   write(join(SITE, 'content/routes/reviews.md'),
     ['---', 'render: static', 'layout: Block', 'name: Testimonials', '---', '',
@@ -105,6 +109,24 @@ try {
     const read = (path) => { try { return readFileSync(join(SITE, 'dist', path), 'utf8') } catch { return null } }
     check("a preset's public/ file ships at its own path", read('theme/mark.svg') === '<svg>preset</svg>', read('theme/mark.svg'))
     check("a path in both public/ directories ships the site's file", read('shared.txt') === 'site', read('shared.txt'))
+    // The settings file and a route's `redirect:` meet in one dist/_redirects,
+    // and serveSite answers both, the way the host does.
+    const rules = read('_redirects') ?? ''
+    check("dist/_redirects holds the route's rule and the site's campaign links",
+      /\/old-reviews\/\s+\/reviews\/\s+301/.test(rules) && rules.includes('/cbf-live/ /?utm_source=cbf'), rules)
+    const origin = await serveSite({ dir: join(SITE, 'dist'), port: 0, host: '127.0.0.1' })
+    try {
+      const go = (path) => fetch(origin.url.replace(/\/$/, '') + path, { redirect: 'manual' })
+      const campaign = await go('/cbf-live')
+      check('a campaign link from content/settings/_redirects redirects',
+        campaign.status === 302 && campaign.headers.get('location') === '/?utm_source=cbf',
+        `${campaign.status} ${campaign.headers.get('location')}`)
+      const moved = await go('/old-reviews/')
+      check("a route's redirect: still redirects beside it",
+        moved.status === 301 && moved.headers.get('location') === '/reviews/', `${moved.status} ${moved.headers.get('location')}`)
+    } finally {
+      await origin.close()
+    }
     // A Band is 100vw, so a second one inside the first scrolled the page sideways (FJS-2716).
     const reviews = read('reviews/index.html') ?? read('reviews.html') ?? ''
     check('a Block in a Block layout\'s Markdown prerenders as an article, not a second Band',

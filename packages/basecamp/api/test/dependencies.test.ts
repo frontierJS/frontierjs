@@ -76,7 +76,7 @@ const REGISTRY: Record<string, any> = {
 const VULNS: Record<string, string[]> = { 'lodash@4.17.15': ['GHSA-p6mc-m468-83gw'] }
 const seen: string[] = []
 
-let upstream: any, env: any, ws: any, owner: any, developer: any, viewer: any, ownerUser: any
+let upstream: any, env: any, ws: any, developer: any, viewer: any, ownerUser: any
 
 beforeAll(async () => {
   upstream = Bun.serve({
@@ -118,7 +118,7 @@ beforeAll(async () => {
       workspaceId: ws.id, userId: u.id, role, capabilities: grantsFor(role), acceptedAt: new Date().toISOString(),
     } })
   const at = (u: any) => session({ userId: u.id, workspaceId: ws.id })
-  owner = at(o); developer = at(d); viewer = at(v)
+  developer = at(d); viewer = at(v)
 })
 
 afterAll(async () => {

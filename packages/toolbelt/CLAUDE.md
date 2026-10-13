@@ -25,7 +25,9 @@ src/inflect/         How a name is spelled — number, shape, and the reader.
                      One definition across litestone, junction and sierra, plus
                      `humanize` for the screen. The third axis is the one that
                      may change when a reader changes and the other two may
-                     not (`FJS-D236`)
+                     not (`FJS-D236`). `toolName` is the MCP spelling of a
+                     method, here because the projection AND the view a host
+                     loads in an iframe both say it (`FJS-D197`)
 src/cron/            what a five-field cron expression ADMITS — a Set per
                      field. Caravan and junction's `app.scheduler` each had a
                      parser and they were broken differently, so one expression

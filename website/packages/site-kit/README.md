@@ -48,6 +48,12 @@ the build by name. A `public/` directory at the preset's package root ships
 beneath the site's `content/public/`, so its fonts and images keep their URLs
 (`/theme/fonts/…`); a file the site's `public/` also has is the site's.
 
+A site's own redirects are `content/settings/_redirects`, one `FROM TO [STATUS]`
+per line, the format Cloudflare and Netlify read. The build merges them with
+every route's `redirect:` into `dist/_redirects`, and one path sent two places
+stops it. A `_redirects` in `content/public/`, or a `_redirects` or `_headers`
+in a preset's `public/`, stops the build by name (`FJS-D961`).
+
 Analytics is Sierra's `analytics` key in the same file — `analytics: {
 provider: 'plausible', domain: 'example.com' }` — and the build puts the
 vendor's tag in every page's `<head>`.

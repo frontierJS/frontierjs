@@ -1897,9 +1897,12 @@ const CHECKS = {
 
     const findings = []
     for (const path of users) {
-      const code = readCode(path)
+      const code  = readCode(path)
+      const spans = tableColumnSpans(code)
+      const inColumns = i => spans.some(([a, b]) => i >= a && i < b)
 
       for (const m of code.matchAll(DECLARED)) {
+        if (!inColumns(m.index)) continue
         findings.push({
           file: path, line: lineOf(code, m.index),
           // A whole fix: the property is renamed and nothing else moves, which
@@ -1914,6 +1917,7 @@ const CHECKS = {
       }
 
       for (const m of code.matchAll(MAPPED)) {
+        if (!inColumns(m.index)) continue
         findings.push({
           file: path, line: lineOf(code, m.index),
           // Deliberately no `edit`: collapsing `cols.map(c => ({…}))` to a
@@ -3772,6 +3776,44 @@ const CHECKS = {
 }
 
 // ─── reading source ───────────────────────────────────────────────────────────
+
+// The array literals a `<Table>` is handed as `columns` — `columns={X}`, the
+// `{columns}` shorthand, or an inline `columns={[…]}` — as [start, end) offsets.
+// A `{ key, label }` lookup table beside a Table (a status legend, a filter
+// chip list) is not a column list, and renaming its `key` breaks every
+// `s.key` that reads it.
+function tableColumnSpans(code) {
+  const names  = new Set()
+  const starts = []
+  for (const m of code.matchAll(/<Table\b(?:[^>]|=>)*?(?:\{\s*columns\s*\}|\bcolumns\s*=\s*\{\s*(\[|[A-Za-z_$][\w$]*))/g)) {
+    if (m[1] === '[') starts.push(m.index + m[0].length - 1)
+    else names.add(m[1] ?? 'columns')
+  }
+  for (const name of names) {
+    const decl = new RegExp(`\\b(?:const|let|var)\\s+${name.replace(/\$/g, '\\$')}\\s*=\\s*\\[`, 'g')
+    for (const m of code.matchAll(decl)) starts.push(m.index + m[0].length - 1)
+  }
+  return starts.map(start => [start, closingBracket(code, start)])
+}
+
+// The offset just past the `]` matching the `[` at `start`, skipping string
+// and template contents. Unbalanced runs to the end of the text.
+function closingBracket(code, start) {
+  let depth = 0
+  let quote = null
+  for (let i = start; i < code.length; i++) {
+    const c = code[i]
+    if (quote) {
+      if (c === '\\') i++
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') quote = c
+    else if (c === '[') depth++
+    else if (c === ']' && --depth === 0) return i + 1
+  }
+  return code.length
+}
 
 const SCRIPT_EXT = new Set(['.ts', '.js', '.mjs', '.mts', '.cjs', '.cts'])
 

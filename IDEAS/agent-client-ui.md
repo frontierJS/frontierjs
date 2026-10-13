@@ -303,20 +303,54 @@ Done when: each step cites the ruling or the probe's result.
   `api/dist/mcp/<Model>.html`, written by `sierra mcp --out <absolute dir>`
   run from `web/`, the dir supplied by `fli mcp:build`; the plugin is told
   `mcpPlugin({ ui: { root } })`. The same ruling names 2.4 and amends 1.5.
-- [ ] 0.3 `toolName` — `<service>_<method>`, owned by `projection.ts` — must be
+- [x] 0.3 `toolName` — `<service>_<method>`, owned by `projection.ts` — must be
   ONE spelling on both sides of the iframe. Move to `@frontierjs/toolbelt`
   (a pure function, `FJS-D26`); `@frontierjs/mcp` and Sierra both import it.
   A second spelling in the client is the drift `FJS-D197` exists to refuse.
-- [ ] 0.4 SDK compatibility probe. `plugin.ts` builds on
+  Done 2026-10-13: it is `@frontierjs/toolbelt/inflect`'s `toolName` — the
+  SHAPE axis already owns how a name is spelled for a consumer, so no new kit
+  and no new noun; `projection.ts` imports it and `@frontierjs/mcp` no longer
+  re-exports it. The nine passed; the one `none` is that nothing greps for a
+  hand copy beyond the two specs that assert the spelling.
+- [x] 0.4 SDK compatibility probe. `plugin.ts` builds on
   `@modelcontextprotocol/server@^2`'s `McpServer`; the extension's helpers
   (`@modelcontextprotocol/ext-apps/server`: `registerAppTool`,
   `registerAppResource`, `RESOURCE_MIME_TYPE`, `getUiCapability`) may target
   SDK v1. If they do not load, hand-register `resources/list` and
   `resources/read` through `McpServer.registerResource` — a few handlers. This
   decides 1.2's shape and is the largest unknown in the plan.
-- [ ] 0.5 Scope: one-row views only. `answersOneRow` (`src/breadcrumbs.ts`)
+  Probed 2026-10-13, `ext-apps@2.0.3` against `server@2.2.0` + `client@2.2.0`
+  over `InMemoryTransport`: **it loads and round-trips** — `registerAppTool`,
+  `registerAppResource`, `getUiCapability` and `RESOURCE_MIME_TYPE` all work,
+  `tools/list` carries `_meta.ui.resourceUri`, `resources/list` and
+  `resources/read` answer the `ui://` uri. Two things the probe found that the
+  plan did not know: the server half is 561 bytes and imports nothing — three
+  spec constants (`EXTENSION_ID`, the mime type, the legacy key) and two
+  wrappers over `registerTool`/`registerResource`, the tool one MIRRORING
+  `_meta.ui.resourceUri` into the deprecated `_meta['ui/resourceUri']` so a
+  host on either spelling sees it; and the package hard-peers `zod ^4.2`
+  (bun installs it, nothing on the server path loads it) while the browser
+  `App` class, which Phase 2's iframe would want, imports `client`, `core`
+  and `zod/v4` — a bundle question for 2.x, not for here. 1.2 keeps the
+  helpers' shape; the hand-register fallback is not needed.
+- [x] 0.5 Scope: one-row views only. `answersOneRow` (`src/breadcrumbs.ts`)
   already decides *this tool answers one row of model X*; reuse it, never a
   second rule. A list view over a `find` result is Phase 5 and unscheduled.
+  Confirmed 2026-10-13, probed rather than ruled: the rule is `model` set and
+  `kind: 'move'` or a CRUD verb in `get`/`create`/`patch`/`update`/`restore`,
+  it is the one such rule in `packages/mcp/src` (`projection.ts` has an
+  id-TAKING rule at `inputFor`, a different question), and it stays where it is
+  — both consumers are `plugin.ts`, one module away, and the function reads
+  nothing of the projection's. Two verbs it leaves out, each on purpose:
+  `upsert` is in `CRUD` but `dispatchable()` refuses it until Junction has a
+  signature for it, so admitting it names a tool that cannot run; `remove`
+  by id answers the row it stamped or deleted, and the breadcrumb rule already
+  chose that a removed row offers nothing next — a view follows the same
+  answer rather than opening a second one. 1.3 amends the function's JSDoc
+  when the second caller lands; a comment naming a caller that does not exist
+  yet is a sketch. Silence: `test/breadcrumbs.test.ts` § *what gets
+  breadcrumbs at all* pins the rule, and nothing fails a second one — `none`,
+  as 0.3 recorded.
 
 ### Phase 1 — The protocol half, inside `mcpPlugin()`
 
@@ -325,23 +359,127 @@ has one, listed from the same projection that lists the tools.
 Done when: `test/plugin.test.ts` reads a view over a real app on a real port, and
 a standing withheld from the model's tools is refused the view.
 
-- [ ] 1.1 Read `capabilities.extensions['io.modelcontextprotocol/ui']` at
+- [x] 1.1 Read `capabilities.extensions['io.modelcontextprotocol/ui']` at
   initialize. Absent: no `_meta.ui` on any tool, no resources, text as today —
   the silent downgrade § *The nine* item 8 already argues for.
-- [ ] 1.2 `resources/list` and `resources/read` for `ui://<app>/<Model>`, mime
-  `text/html;profile=mcp-app`. A model is listed iff some one-row tool of it is
+  Done 2026-10-13, and not as written — a hearing (§ IV *doctrine vs.
+  discovery*), because the step and the code disagreed. **The read as written
+  is impossible on this server.** `mcpPlugin` builds one `McpServer` per HTTP
+  request (stateless by design: the standing is re-read every time), so the
+  instance that answers `tools/list` never saw `initialize`; the ext-apps
+  helper's `oninitialized` example, which the step copied, is the stateful
+  shape. The SDK knows this: its 2026-07-28 era carries the client's
+  capabilities in EVERY request's `_meta` (`CLIENT_CAPABILITIES_META_KEY`,
+  "servers must not infer capabilities from prior requests"), and on the 2025
+  era "per-request instances that never saw an initialize hold nothing" — its
+  own words. Measured: `client@2.0.0` over the stateless transport sends no
+  `_meta` on `tools/list`, and `core@2.2.0` still defaults to `2025-11-25`, so
+  no host in the wild carries the envelope yet. Three readings of silence: **A**
+  the step's — absent is none — which is text-only for every host that exists
+  and a modern-era test client the only thing that could ever close Phase 1;
+  **B** read the envelope where the era carries it, and silence is UNKNOWN,
+  which is permissive as `x-gate` is in the browser (Invariant 6's own clause),
+  because a view is an affordance a host that does not speak the extension
+  ignores; **C** always stamp, read nothing, which differs from B only for a
+  modern host that declares its capabilities and names no view, and that host
+  then gets `ui://` entries it never asked for. **B landed.** *Ergonomics vs.
+  strictness* settles A against B: strictness follows what a mistake destroys,
+  and a stray `_meta` key destroys nothing where a dead surface loses the whole
+  feature. The six-months tiebreak settles C against B: when hosts move to the
+  2026 era C would be the thing someone adds the read to, and B is the spec's
+  own shape through the SDK's own constants. In `plugin.ts`: `asksToAwait`
+  became `readRequest`, the ONE parse of the body answering both facts, and
+  `CallScope.renders` carries the answer to 1.2 and 1.3. `@modelcontextprotocol/
+  ext-apps` is now a dependency (0.4's `getUiCapability`, `RESOURCE_MIME_TYPE`).
+  The nine, in order: origin — the key and the mime type are the SDK's exports,
+  no second spelling; concept — the dependency 1.2 already owed, no noun;
+  complexity — the read is the field's, capability negotiation in a stateless
+  server; predictability — silence is read as `x-gate` reads it, where A would
+  have made an affordance the one sibling that fails closed; derived — read
+  from the request, nothing restated; owner — the existing body read, grown,
+  rather than a second `JSON.parse` beside it; boundary — a host sees `_meta.ui`
+  or not and knows nothing of the rule, the type is ext-apps'
+  `McpUiClientCapabilities`; failure — a host misread gets text or a key it
+  ignores, both a turn and never a grant; silence — must stay true: *an
+  envelope naming no view gets no `_meta.ui`, and no envelope gets it*, pinned
+  by the 1.3 test as a pair over hand JSON-RPC, since nothing is observable
+  until the stamp lands. Tier: Assessment, here. No ruling: nothing in
+  `DECISIONS.md` is overridden and Invariant 6 is the citation.
+- [x] 1.2 `resources/list` and `resources/read` for `ui://<app>/<Model>`, mime
+  `text/html;profile=mcp-app`, through `registerAppResource` and
+  `registerAppTool` (0.4). A model is listed iff some one-row tool of it is
   offered at the caller's standing — the projection's answer, read once.
   `_meta.ui.csp.connectDomains` is `[]`: the view makes no HTTP, every call is
   the host's.
-- [ ] 1.3 Stamp `_meta.ui.resourceUri` on every tool `answersOneRow` admits.
+  Done 2026-10-13, and 1.5 with it: a resource needs bytes, and the bytes are
+  1.5's `<ui.root>/<Model>.html`, so the two steps are one change. In
+  `plugin.ts`: `mcpPlugin({ ui: { root } })` (`FJS-D955`), `readDocuments`
+  at boot, `offerViews` per request over the tool list AFTER `narrow` and the
+  key's scopes, `viewUri(server, model)` the one spelling 1.3 stamps on the
+  tool. `<app>` is the server's name, `opts.name ?? app.config.name` — the
+  option's doc said *the app's name* and the code said `frontierjs`; the code
+  now matches the doc. **One finding the step did not know:** the SDK installs
+  the `resources/*` handlers with the FIRST `registerResource` and nowhere
+  public, so a caller offered no view is a server with no resources —
+  `initialize` declares none and `resources/list` is `-32601`. Declaring the
+  capability without the handler was tried and dropped: it tells a host to
+  call what then fails. *Paved road vs. workaround* (§ IV): the SDK's own
+  installation over a private method or a disabled placeholder. The nine,
+  answered LATE (after green): origin — `viewUri` is the URI's one function,
+  the mime and extension id are ext-apps' exports, the model set is the tool
+  list's; concept — no noun, `ui.root` is the ruled key; complexity — a
+  directory listing at boot and one registration per one-row model, plus a
+  boot warning for a document naming no model; predictability — told a `root`
+  as `static` is, refused as `FJS-D955` says, and `-32601` is what every
+  resourceless `McpServer` answers; derived — the list is read off the
+  narrowed tool list, never declared, and the file set is read off disk;
+  owner — inside the per-request server beside `register()`, no second body
+  parse (`renders` from `readRequest`); boundary — a host sees a URI, a mime
+  and a csp, the app author passes one absolute directory; failure — relative
+  or missing root refuses the boot (the whole surface gone), a missing file is
+  silent (text is not wrong), a stale file warns at boot; silence — must stay
+  true: *a standing withheld a model's one-row tools is not offered its view,
+  and one offered it reads the file's bytes under the extension's mime* —
+  fails in `test/plugin.test.ts` § the views: the stranger/shopper pair, the
+  `narrow` test, the read pair, the envelope pair, and both boot refusals.
+  `verify:mcp` is unchanged (`example` passes no `ui` yet; 4.2 is that test).
+  Tier: Assessment; `FJS-D955` is the citation and nothing is overridden.
+- [x] 1.3 Stamp `_meta.ui.resourceUri` on every tool `answersOneRow` admits.
   `visibility` stays the default: the verbs a view calls back (`patch`) remain
   the model's too.
+  Done 2026-10-13. In `plugin.ts`: `viewedModels(tools, documents)` is the one
+  answer to *which models have a view for this caller* — one-row tool offered
+  AND document present — read by `offerViews` for the resource list and by
+  the tool loop for the stamp, so a pointer cannot name a view the same
+  caller is not listed. `register()` takes the `ui://` URI or null; a viewed
+  tool goes through `registerAppTool`, which mirrors the pointer into the
+  legacy `_meta['ui/resourceUri']` for older hosts, and a text tool is
+  registered as before. `answersOneRow`'s JSDoc names its three callers
+  (0.6). The nine, answered LATE (after green): origin — the viewed set is
+  one function and the URI is `viewUri`; concept — no noun, a `view`
+  parameter; complexity — one Set per request and one branch in `register`;
+  predictability — a viewed tool is registered as its resource is, through
+  the extension's wrapper, and `visibility` default means its siblings are
+  agent-callable alike; derived — the stamp is read off the same set as the
+  list, never declared twice; owner — the branch is INSIDE `register()`, the
+  one registration, not a second one beside it; boundary — a host reads
+  `_meta.ui.resourceUri` in either spelling and the app author passes
+  nothing new; failure — a model with no document stamps nothing and refuses
+  nothing, text is not wrong; silence — must stay true: *the set of URIs
+  stamped on a caller's tools equals the set of resources that caller is
+  listed* — fails in `test/plugin.test.ts` § the tool points at it: the
+  agreement test over staff and shopper, the three-verb stamp with both
+  spellings, the narrow and declared-no-ui pair. Adjudication: *paved road
+  vs. workaround* — the wrapper over a hand-written `_meta`. Tier:
+  Assessment; nothing in `DECISIONS.md` is overridden. `verify:mcp` is the
+  no-`ui` path only, as at 1.2; 4.2 is the drive over a built view.
 - [ ] 1.4 The tool answer carries the row in `structuredContent` as Junction's
   envelope (`kind`/`data`/`total`). Confirm `plugin.ts` does; if the answer is
   text only, this is the one envelope owner to extend (Invariant 4), so the
   client's existing unwrap serves the iframe unchanged.
-- [ ] 1.5 Bundle source: the plugin reads `<ui.root>/<Model>.html` at boot
-  (`FJS-D955`). No `x-fjs-build` key: the image carries the API and its views
+- [x] 1.5 Bundle source: the plugin reads `<ui.root>/<Model>.html` at boot
+  (`FJS-D955`). Done 2026-10-13 inside 1.2, every clause below as written; the
+  boot warning for a `<Model>.html` no one-row tool answers is the one addition. No `x-fjs-build` key: the image carries the API and its views
   from one commit. A missing FILE means no pointer for that model and nothing
   said; a declared `ui.root` that is not a directory refuses the boot, naming
   it and `fli mcp:build`, because the mistake it hides is the whole surface

@@ -15,7 +15,11 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { CLIENT_CAPABILITIES_META_KEY } from '@modelcontextprotocol/server'
+import { EXTENSION_ID, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
 import { createClient }  from '@frontierjs/litestone'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
@@ -23,6 +27,13 @@ import { mcpPlugin } from '../src/plugin.ts'
 import type { McpOptions } from '../src/plugin.ts'
 
 const SCHEMA = readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
+
+// What `fli mcp:build` would have written: a document per model that has a view.
+// Credential has one-row tools and no file, which is the silent half of 1.5.
+const VIEWS = mkdtempSync(join(tmpdir(), 'mcp-views-'))
+const ORDER_HTML = '<!doctype html><html><body><form data-model="Order"></form></body></html>'
+writeFileSync(join(VIEWS, 'Order.html'),    ORDER_HTML)
+writeFileSync(join(VIEWS, 'Customer.html'), '<!doctype html><html><body>Customer</body></html>')
 
 let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
 let base: string
@@ -83,7 +94,7 @@ beforeAll(async () => {
     hooks: { before: { find: [(c: { transport: string }) => { seenTransport = c.transport }] } },
   }))
 
-  app.configure(mcpPlugin({ name: 'shop', narrow: (t, u) => narrowBy ? narrowBy(t, u) : true }))
+  app.configure(mcpPlugin({ name: 'shop', ui: { root: VIEWS }, narrow: (t, u) => narrowBy ? narrowBy(t, u) : true }))
   await app.start()
   // `apiPrefix` defaults to empty, and `app.post` applies whatever it is — so
   // the path here is the plugin's own, with no prefix of this test's invention.
@@ -117,10 +128,10 @@ async function rpc(method: string, params: unknown, token?: string) {
   return { status: res.status, text, body }
 }
 
-const list = async (token?: string) => {
-  const r = await rpc('tools/list', {}, token)
-  return ((r.body as { result?: { tools?: Array<{ name: string; inputSchema?: unknown; description?: string }> } })
-    .result?.tools ?? [])
+type ListedTool = { name: string; inputSchema?: unknown; description?: string; _meta?: Record<string, unknown> & { ui?: { resourceUri?: string; visibility?: string[] } } }
+const list = async (token?: string, meta?: Record<string, unknown>) => {
+  const r = await rpc('tools/list', meta ? { _meta: meta } : {}, token)
+  return ((r.body as { result?: { tools?: ListedTool[] } }).result?.tools ?? [])
 }
 
 const callTool = (name: string, args: unknown, token?: string) =>
@@ -559,5 +570,144 @@ describe('GET /mcp/levels — what each level is offered, for an operator', () =
     // `refund` is @gate(5) on a model a USER updates: the move's own floor decides.
     expect(at(4, 'orders_refund').withheld).toMatchObject({ verdict: 'move-floor', needs: 5 })
     expect(at(5, 'orders_refund').offered).toMatchObject({ verdict: 'move-floor', needs: 5 })
+  })
+})
+
+// ─── the views (MCP Apps) ─────────────────────────────────────────────────────
+
+describe('a one-row tool\'s model is offered as a view, from the same list as the tools', () => {
+  type Listed = { uri: string; name: string; mimeType?: string; _meta?: { ui?: { csp?: { connectDomains?: string[] } } } }
+  const views = async (token?: string, meta?: Record<string, unknown>) => {
+    const r = await rpc('resources/list', meta ? { _meta: meta } : {}, token)
+    return { error: (r.body as { error?: unknown }).error, list: (r.body as { result?: { resources?: Listed[] } }).result?.resources }
+  }
+  const uris = async (token?: string) => ((await views(token)).list ?? []).map(v => v.uri)
+
+  test('staff are offered Order and Customer, with the extension\'s mime type and no network of its own', async () => {
+    const { list } = await views('staff')
+    expect(list!.map(v => v.uri)).toEqual(expect.arrayContaining(['ui://shop/Order', 'ui://shop/Customer']))
+    for (const v of list!) {
+      expect(v.mimeType).toBe(RESOURCE_MIME_TYPE)
+      expect(v._meta?.ui?.csp?.connectDomains).toEqual([])
+    }
+  })
+
+  test('a model with one-row tools and no document is offered no view, and nothing fails', async () => {
+    const staff = await list('staff')
+    expect(staff.map(t => t.name)).toContain('credentials_get')     // the tool is there…
+    expect(await uris('staff')).not.toContain('ui://shop/Credential') // …its screen is not
+  })
+
+  test('the pair: Order reads at 4, so a stranger is a server with no resources and a shopper is offered it', async () => {
+    // Not an empty list: the SDK installs the resources handlers with the first
+    // registration, so a caller offered none sees no capability and -32601.
+    const stranger = await views()
+    expect((stranger.error as { code?: number })?.code).toBe(-32601)
+    const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } })
+    const caps = (r: typeof init) => (r.body as { result?: { capabilities?: { resources?: unknown } } }).result?.capabilities?.resources
+    expect(caps(init)).toBeUndefined()
+    expect(caps(await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } }, 'staff'))).toBeDefined()
+    expect(await uris('shopper')).toContain('ui://shop/Order')
+  })
+
+  test('resources/read answers the document to a caller offered it, and refuses one who is not', async () => {
+    const staff = await rpc('resources/read', { uri: 'ui://shop/Order' }, 'staff')
+    const got   = (staff.body as { result?: { contents?: Array<{ uri: string; mimeType?: string; text?: string }> } }).result?.contents?.[0]
+    expect(got?.uri).toBe('ui://shop/Order')
+    expect(got?.mimeType).toBe(RESOURCE_MIME_TYPE)
+    expect(got?.text).toBe(ORDER_HTML)
+
+    const stranger = await rpc('resources/read', { uri: 'ui://shop/Order' })
+    expect((stranger.body as { error?: unknown }).error).toBeDefined()
+    expect(stranger.text).not.toContain('data-model')
+  })
+
+  test('a tool narrow withholds takes its view with it — the view follows the tool list, not the schema', async () => {
+    narrowBy = t => t.service !== 'orders'
+    try {
+      const staff = await uris('staff')
+      expect(staff).not.toContain('ui://shop/Order')
+      expect(staff).toContain('ui://shop/Customer')
+    } finally { narrowBy = null }
+  })
+
+  test('a host that declares its capabilities and names no view is offered none; one naming the mime type is', async () => {
+    // The 2026-07-28 era puts the client's capabilities on every request. A
+    // declared envelope without the extension is read as asked; silence (every
+    // test above) is unknown and permissive, as `x-gate` is in the browser.
+    const silent = await views('staff', { [CLIENT_CAPABILITIES_META_KEY]: {} })
+    expect(silent.error).toBeDefined()
+    expect(silent.list).toBeUndefined()
+
+    const speaking = await views('staff', { [CLIENT_CAPABILITIES_META_KEY]: { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } })
+    expect(speaking.error).toBeUndefined()
+    expect(speaking.list!.map(v => v.uri)).toContain('ui://shop/Order')
+  })
+
+  // ─── the tool points at it ──────────────────────────────────────────────────
+
+  const pointer = (t: ListedTool) => t._meta?.ui?.resourceUri
+  const stamped = async (token?: string, meta?: Record<string, unknown>) =>
+    Object.fromEntries((await list(token, meta)).filter(t => pointer(t)).map(t => [t.name, pointer(t)]))
+
+  test('every one-row tool of a viewed model carries its view, in both spellings; a find and a viewless model carry none', async () => {
+    const staff = await list('staff')
+    const by    = Object.fromEntries(staff.map(t => [t.name, t]))
+    for (const name of ['orders_get', 'orders_patch', 'orders_refund']) {
+      expect(pointer(by[name]), name).toBe('ui://shop/Order')
+      expect(by[name]._meta?.['ui/resourceUri'], name).toBe('ui://shop/Order')
+      expect(by[name]._meta?.ui?.visibility, name).toBeUndefined()
+    }
+    expect(pointer(by.orders_find)).toBeUndefined()
+    expect(by.orders_find._meta?.ui).toBeUndefined()
+    expect(pointer(by.credentials_get)).toBeUndefined()
+  })
+
+  test('the stamps and the resource list are one answer: no pointer names a view the caller is not offered, and every view is pointed at', async () => {
+    for (const token of ['staff', 'shopper']) {
+      const pointed = new Set(Object.values(await stamped(token)))
+      const offered = new Set(await uris(token))
+      expect(pointed, token).toEqual(offered)
+    }
+  })
+
+  test('a withheld tool loses its stamp with its view, and the pair over the host envelope: declared-no-ui is text-only', async () => {
+    narrowBy = t => t.service !== 'orders'
+    try {
+      const staff = await stamped('staff')
+      expect(staff.orders_get).toBeUndefined()
+      expect(staff.customers_get).toBe('ui://shop/Customer')
+    } finally { narrowBy = null }
+
+    const silent = await stamped('staff', { [CLIENT_CAPABILITIES_META_KEY]: {} })
+    expect(silent).toEqual({})
+    const speaking = await stamped('staff', { [CLIENT_CAPABILITIES_META_KEY]: { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } })
+    expect(speaking.orders_get).toBe('ui://shop/Order')
+  })
+})
+
+describe('a declared ui.root that cannot be read refuses the boot (FJS-D955)', () => {
+  const boot = async (root: string) => {
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
+    const own = createApp({
+      db, auth: createStubAuth({ users: [] }),
+      config:   { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      logLevel: 'silent',
+    }) as never as { configure(p: unknown): void; start(): Promise<void>; stop?(): Promise<void> }
+    own.configure(mcpPlugin({ ui: { root } }))
+    try { await own.start(); await own.stop?.(); return null }
+    catch (err) { return (err as Error).message }
+  }
+
+  test('a directory that is not there is named, with the command that writes it', async () => {
+    const missing = join(VIEWS, 'never-built')
+    const message = await boot(missing)
+    expect(message).toContain(missing)
+    expect(message).toContain('fli mcp:build')
+  })
+
+  test('a relative root is refused rather than resolved from the cwd', async () => {
+    const message = await boot('dist/mcp')
+    expect(message).toContain('absolute')
   })
 })

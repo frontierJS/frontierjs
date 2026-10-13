@@ -1,0 +1,53 @@
+<script>
+  // combobox-typed.mesa — a picker that adds what was typed as its own thing,
+  // beside the catalog it searches (`FJS-2799`).
+  //
+  // `#pick` is a quote editor's add row: Enter takes the first match, the
+  // typed text is the LAST row, and the caller reads the words through
+  // `onquery` rather than off the input. `#search` hands its words to a
+  // server whose rows match on text the label does not show, as full-text
+  // search does — "lawn" finds Mowing by its category.
+  import Combobox from '../../../components/forms/Combobox.mesa'
+
+  const CATALOG = [
+    { value: 1, label: 'Mowing' },
+    { value: 2, label: 'Mulch install' },
+    { value: 3, label: 'Aeration' },
+  ]
+
+  let picked  = 'none'
+  let created = 'none'
+  let words   = ''
+  let order   = []
+
+  const pick   = (v) => { picked = String(v); order = [...order, 'change'] }
+  const custom = (t) => { created = t; order = [...order, 'create'] }
+  const query  = (q) => { words = q }
+
+  // A category the label never shows: what a trigram index over name,
+  // description and category finds and a label filter drops.
+  const ROWS = [{ value: 1, label: 'Mowing', category: 'lawn' }, { value: 3, label: 'Aeration', category: 'lawn' }]
+  let asked = []
+  let found = 'none'
+  const search = (q, signal) => {
+    asked = [...asked, q]
+    return Promise.resolve(ROWS.filter(r => r.category.includes(q.toLowerCase()) || r.label.toLowerCase().includes(q.toLowerCase())))
+  }
+</script>
+
+<div id="pick">
+  <Combobox label="" aria-label="Add a line" options={CATALOG} value={null} clearable={true}
+            allowNew newLabel={(t) => 'Add “' + t + '” as a custom line'}
+            onchange={pick} oncreate={custom} onquery={query} />
+  <output id="picked">{picked}</output>
+  <output id="created">{created}</output>
+  <output id="words">{words}</output>
+  <output id="order">{order.join(',')}</output>
+</div>
+
+<div id="search">
+  <Combobox label="" aria-label="Find an offer" options={CATALOG} {search}
+            onchange={(v) => found = String(v)} />
+  <output id="asked">{asked.join('|')}</output>
+  <output id="found">{found}</output>
+</div>

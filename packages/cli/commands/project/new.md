@@ -140,7 +140,7 @@ const { scaffoldWidgetSurface, widgetScripts } =
 // The site/ surface, same rule: one owner, shared with `fli make:site`. It is a
 // peer of web/ and never a routesDir inside it — sharing a Vite root shares a
 // dist/, and `vite build` empties outDir, so building the SPA deletes the site.
-const { scaffoldSiteSurface, siteScripts } =
+const { scaffoldSiteSurface, siteScripts, siteDevDeps } =
   await import(resolve(global.fliRoot, 'core/site-surface.js'))
 
 // The extension surface, same rule: one owner, shared with `fli make:extension`.
@@ -227,6 +227,9 @@ function makePackageJson(spec) {
   if (useExtension) {
     // After the UI's vite on purpose: jetty's peer range is the narrower one.
     Object.assign(devDeps, extensionDevDeps())
+  }
+  if (useSite) {
+    Object.assign(devDeps, siteDevDeps())
   }
 
   // Scripts. Each surface contributes its own pair and `dev`/`build` run

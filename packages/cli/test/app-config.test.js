@@ -15,6 +15,7 @@ import {
 } from '../core/app-config.js'
 import { RULES }                             from '../core/checks.js'
 import { extensionDevDeps }                  from '../core/extension-surface.js'
+import { siteDevDeps }                       from '../core/site-surface.js'
 import { checkDocCommands, builtinCommands } from '../core/doc-commands.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -201,6 +202,26 @@ describe('an extension app names what jetty builds with', () => {
   test('both commands that add the surface write them', () => {
     for (const cmd of [['project', 'new.md'], ['make', 'extension.md']]) {
       expect(readFileSync(join(CLI, 'commands', ...cmd), 'utf8')).toContain('extensionDevDeps(')
+    }
+  })
+})
+
+describe('a site app names what the prerender runs on', () => {
+  // mesa's renderToHTML imports happy-dom as an optional peer, so nothing
+  // installs it unless the app does, and `build:site` then fails after the
+  // bundle is written.
+  test('the scaffold\'s devDependencies are mesa\'s peer ranges', () => {
+    const mesa = JSON.parse(readFileSync(join(CLI, '..', 'mesa', 'package.json'), 'utf8'))
+    for (const [name, range] of Object.entries(siteDevDeps())) {
+      expect(mesa.peerDependencies[name]).toBe(range)
+      expect(mesa.peerDependenciesMeta[name]?.optional).toBe(true)
+      expect(mesa.dependencies[name]).toBeUndefined()
+    }
+  })
+
+  test('both commands that add the surface write them', () => {
+    for (const cmd of [['project', 'new.md'], ['make', 'site.md']]) {
+      expect(readFileSync(join(CLI, 'commands', ...cmd), 'utf8')).toContain('siteDevDeps(')
     }
   })
 })

@@ -1250,7 +1250,7 @@ Runs automatically after `vite build`:
 | --- | --- |
 | `404/index.html` → `404.html` | always |
 | `robots.txt`: the public directory's, or a default naming `siteUrl`'s sitemap | always |
-| `_redirects` from routes with `redirect:` | always |
+| `_redirects`: routes with `redirect:` first, then the app's own `_redirects` from the public directory; one path sent two places stops the build | always |
 | `sitemap.xml` from `indexed` routes | always |
 | `llms.txt` | `llms` is `true` or `'auto'` |
 | per-page `index.md` | `markdownPages` |

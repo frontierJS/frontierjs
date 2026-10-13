@@ -20,6 +20,7 @@ import { siteDialect } from './dialect.js'
 import { siteImages } from './images.js'
 import { loadPreset } from './preset.js'
 import { presetPublic } from './public.js'
+import { siteRedirects } from './redirects.js'
 import { siteShell } from './shell.js'
 
 const KIT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -114,6 +115,7 @@ export async function siteKit({ root, port, host = false }) {
       ...(base.plugins ?? []),
       ...(preset.plugins ?? []),
       ...(presetPublicDir && existsSync(presetPublicDir) ? [presetPublic({ dir: presetPublicDir, site: publicDir })] : []),
+      siteRedirects({ content, publicDir }),
       siteContent({ root, content, keys }),
       siteShell({
         html:  preset.shell?.html ?? resolve(KIT, 'index.html'),

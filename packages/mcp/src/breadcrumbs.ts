@@ -54,7 +54,11 @@ type Defs = Record<string, { 'x-transitions'?: Record<string, Record<string, Mov
  */
 const ONE_ROW = new Set(['get', 'create', 'patch', 'update', 'restore'])
 
-/** Whether a call to `tool` answers a row breadcrumbs can be read off. */
+/**
+ * Whether a call to `tool` answers ONE row — the row breadcrumbs are read off,
+ * and the row a view is offered for (`plugin.ts`: the resource list, the
+ * tool's `_meta.ui.resourceUri`, and the boot warning for a stale document).
+ */
 export function answersOneRow(tool: Tool): boolean {
   return tool.model !== null && (tool.kind === 'move' || (tool.kind === 'crud' && ONE_ROW.has(tool.method)))
 }

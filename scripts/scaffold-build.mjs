@@ -223,7 +223,14 @@ const MAX_BUFFER = 64 * 1024 * 1024
 // Full-stack with auth: the shape `fli new` produces when it is not told
 // otherwise, and the one that pulls in sierra, mesa and css — the three
 // packages whose build-time behavior only differs once installed.
-const SCAFFOLD_ARGS = ['new', 'demo', '--yes', '--auth', '--source', 'npm', '--no-install', '--no-git']
+//
+// `--source local` although step 2 swaps every spec for a tarball anyway:
+// `--auth` runs `auth:install` inside `fli new`, and that installs whatever the
+// manifest names, reads `user.lite` out of it and pushes the schema with its
+// litestone. Under `--source npm` that is the REGISTRY's auth and litestone
+// grading a schema this tree's `fli new` wrote, so the phase failed on any
+// spelling the tree had changed and nobody had published yet.
+const SCAFFOLD_ARGS = ['new', 'demo', '--yes', '--auth', '--source', 'local', '--no-install', '--no-git']
 
 // Synchronous throughout — spawnSync and the sync fs calls — so ci.mjs can run
 // it as an ordinary phase without becoming async.
@@ -252,9 +259,8 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     log('  ✓ scaffolded')
 
     // ── 2 · pack the tree into the app, and install THAT ─────
-    // `include` because the scaffold was made with `--source npm`: its specs are
-    // published versions and resolve perfectly well, so nothing about the
-    // manifest says the tree wins. This phase has decided that it does.
+    // `include` names every @frontierjs dependency, so the swap does not hang
+    // on which spelling the scaffold's specs happen to use.
     //
     // `overrides` comes with it, and is not a detail: a tarball's OWN
     // @frontierjs deps are ordinary ranges and resolve from the registry, so
@@ -468,6 +474,11 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     for (const rel of ['site/config/sierra.config.js', 'site/config/vite.config.js', 'site/src/main.js', 'site/src/routes/index.mesa']) {
       if (!existsSync(join(app, rel))) return fail(`fli make:site exited 0 and wrote no ${rel}`, mkSite.output)
     }
+
+    // `make:site` adds the prerender's devDependencies and tells the user to
+    // install; skipping that here builds with whatever the first install left.
+    const si = run('bun', ['install', '--cache-dir', cacheDir], { cwd: app })
+    if (si.status !== 0) return fail('bun install failed after fli make:site', si.output)
 
     const sb = run('bun', [fli, 'site:build'], { cwd: app })
     if (sb.status !== 0) return fail('fli site:build failed on a freshly scaffolded app', sb.output)
