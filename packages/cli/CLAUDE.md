@@ -162,6 +162,8 @@ core/
   vite-ask.js   the browser's half: a dev-only Vite plugin serving the panel
                 (`vite-ask-client.js`) and `POST /__fjs/ask`, `/stop`, `/undo`,
                 which run `ask-claude.js` in EDIT mode scoped to the Vite root,
+                reading also each `@frontierjs/*` AGENTS.md (`findGuides`) and
+                the app's `db/` — never the app root, which holds `api/.env`,
                 and `/text`, a text edit with no model (`locateText`) that
                 falls back to an ask when the text is not there exactly once.
                 Sierra turns it on (`src/build/ask-plugin.js`); nothing here

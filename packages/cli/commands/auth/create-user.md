@@ -36,40 +36,43 @@ flags:
 <script>
 import { existsSync, writeFileSync, unlinkSync } from 'fs'
 import { resolve }                                from 'path'
-import { randomBytes }                            from 'crypto'
 
 // Inline Bun script that creates the user via the Litestone client.
 // Written to a temp file, executed, then removed.
 // This avoids needing a running server — auth operates directly on the db.
+// The input arrives as JSON in FLI_CREATE_USER — interpolating it into the
+// source let a quote in a password or name end the string literal.
 
-const makeScript = (schemaPath, encKey, email, password, name, role) => `
+const SCRIPT = `
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 
+const input = JSON.parse(process.env.FLI_CREATE_USER)
+
 const db = await createClient({
-  path:          '${schemaPath}',
+  path:          input.schemaPath,
   resolveFrom:   'schema',
-  encryptionKey: '${encKey}',
+  encryptionKey: process.env.ENCRYPTION_KEY,
   plugins:       [new GatePlugin({ getLevel: () => LEVELS.SYSTEM })]
 })
 
 const sys = db.asSystem()
 
-const existing = await sys.user.findFirst({ where: { email: '${email}' } })
+const existing = await sys.user.findFirst({ where: { email: input.email } })
 if (existing) {
-  console.error('ERROR: Email already registered: ${email}')
+  console.error('ERROR: Email already registered: ' + input.email)
   process.exit(1)
 }
 
 const user = await sys.user.create({
   data: {
-    email: '${email}',
-    name:  ${name ? `'${name}'` : 'null'},
-    role:  '${role}',
+    email:         input.email,
+    name:          input.name || null,
+    role:          input.role,
     emailVerified: true,
   }
 })
 
-const hash = await Bun.password.hash('${password}', { algorithm: 'bcrypt', cost: 12 })
+const hash = await Bun.password.hash(input.password, { algorithm: 'bcrypt', cost: 12 })
 
 await sys.credential.create({
   data: {
@@ -139,20 +142,22 @@ if (flag.dry) {
 const tmpPath = resolve($.paths.root, `.fli-auth-create-${Date.now()}.ts`)
 
 try {
-  const script = makeScript(
-    schemaPath.replace(/\\/g, '/'),
-    encKey,
-    arg.email,
-    password,
-    flag.name,
-    flag.role
-  )
-
-  writeFileSync(tmpPath, script, 'utf8')
+  writeFileSync(tmpPath, SCRIPT, 'utf8')
 
   const result = $.exec({
     command: `bun run "${tmpPath}"`,
-    stdio: ['ignore', 'pipe', 'inherit'],
+    cwd:     $.paths.root,
+    stdio:   ['ignore', 'pipe', 'inherit'],
+    env:     {
+      ...process.env,
+      FLI_CREATE_USER: JSON.stringify({
+        schemaPath,
+        email:    arg.email,
+        password,
+        name:     flag.name,
+        role:     flag.role,
+      }),
+    },
   })
 
   const output = (result?.stdout ?? result ?? '').toString().trim()

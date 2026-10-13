@@ -443,7 +443,7 @@ the surface already answered.
 
 **All Sierra code lives under `web/`** — `config/` and `src/` belong to the UI realm, not
 to the app root. `web/` is the Vite root: `index.html` and the dev server's working
-directory are there, and the dev server runs as `cd web && vite -c config/vite.config.js`.
+directory are there, and the dev server runs as `cd web && vite -c config/vite.config.js --configLoader native`.
 Sierra locates `sierra.config.js` by looking beside `vite.config.js` first, so the
 `config/` pair needs no extra wiring.
 

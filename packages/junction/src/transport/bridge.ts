@@ -4,7 +4,7 @@
 // Nothing below the bridge touches the service layer.
 
 import type { TransportContext } from './types.ts'
-import { toFrameworkError, FrameworkError, BadRequest, sanitizeError } from '../core/errors.ts'
+import { toFrameworkError, FrameworkError, BadRequest, sanitizeError, type ErrorMapperHost } from '../core/errors.ts'
 import { accessorCandidates } from '../core/litestone.ts'
 import { omitBy } from '@frontierjs/toolbelt/redact'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
@@ -380,7 +380,7 @@ export function withholdProtected(value: unknown, ctx?: Pick<ServiceContext, 'lo
 
 /** The body `errorResponse` writes -- for a wire that is not a `Response`. */
 export function errorBody(err: unknown, ctx?: ServiceContext): ReturnType<FrameworkError['toJSON']> {
-  return sanitizeError(toFrameworkError(err), boundaryOptions(ctx)).toJSON()
+  return sanitizeError(toFrameworkError(err, ctx?.app), boundaryOptions(ctx)).toJSON()
 }
 
 function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
@@ -534,8 +534,10 @@ export function jsonResponse(data: unknown, status = 200): Response {
   })
 }
 
-export function errorResponse(err: unknown, ctx?: ServiceContext): Response {
-  const fe     = sanitizeError(toFrameworkError(err), boundaryOptions(ctx))
+// `host` is for a failure before any service context exists (a bad query, a raw
+// route's throw), where the transport holds the app's mappers and no app.
+export function errorResponse(err: unknown, ctx?: ServiceContext, host?: ErrorMapperHost): Response {
+  const fe     = sanitizeError(toFrameworkError(err, host ?? ctx?.app), boundaryOptions(ctx))
   const status = fe.code ?? 500
 
   return new Response(JSON.stringify(fe.toJSON()), {

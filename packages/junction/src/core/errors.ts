@@ -67,7 +67,7 @@ export class Timeout          extends FrameworkError { constructor(m?: string, d
 // A thrown value is now recognized by, in order:
 //
 //   1. instanceof FrameworkError        — already precise, use it
-//   2. a registered ErrorMapper         — for errors you cannot modify
+//   2. an app's declared ErrorMapper     — for errors you cannot modify
 //   3. a numeric HTTP status on the error — status / statusCode / code
 //   4. err.name matching an error class — 'NotFound', 'ValidationError', …
 //   5. otherwise GeneralError (500)
@@ -77,35 +77,13 @@ export class Timeout          extends FrameworkError { constructor(m?: string, d
 
 /**
  * Maps a foreign error to a FrameworkError, or returns null to decline.
- * Register with registerErrorMapper().
+ * Declare with `createApp({ errorMappers })` or `app.errorMapper()`.
  */
 export type ErrorMapper = (err: unknown) => FrameworkError | null | undefined
 
-const _mappers: ErrorMapper[] = []
-
-/**
- * Teach the error boundary about errors it cannot recognize on its own —
- * typically a third-party library whose error classes you cannot modify.
- *
- * Mappers are consulted most-recently-registered first, and a mapper that
- * returns null/undefined declines and lets the next one try. A mapper that
- * throws is skipped: a broken mapper must not break error handling itself.
- *
- * If you own the error class, prefer giving it a numeric `status` — that needs
- * no registration and no dependency on Junction.
- *
- * @returns an unregister function
- *
- * @example
- * registerErrorMapper(err =>
- *   err instanceof StripeCardError ? new PaymentRequired(err.message) : null)
- */
-export function registerErrorMapper(mapper: ErrorMapper): () => void {
-  _mappers.push(mapper)
-  return () => {
-    const i = _mappers.indexOf(mapper)
-    if (i !== -1) _mappers.splice(i, 1)
-  }
+/** What `toFrameworkError` reads off an app: its declared mappers. */
+export interface ErrorMapperHost {
+  readonly errorMappers?: readonly ErrorMapper[]
 }
 
 // Error-class lookup by name. Covers packages that set `err.name` without
@@ -217,18 +195,22 @@ function adopt(fe: FrameworkError, original: unknown): FrameworkError {
 // tells the caller to retry something that will never work.
 //
 // Verified 2026-08-04 against `example/` — see its README, "Found by building
-// this". Do not paper over it with `registerErrorMapper()`: that exists for
+// this". Do not paper over it with an error mapper: that exists for
 // errors you cannot modify, and these are ours.
 
-// Converts any thrown value into a FrameworkError
-export function toFrameworkError(err: unknown): FrameworkError {
+// Converts any thrown value into a FrameworkError. Mappers are the APP's: a
+// mapper is consulted most-recently-declared first, so an app overrides a
+// library's mapping, and one that returns null/undefined declines. One that
+// throws is skipped -- a broken mapper must not break error handling itself.
+// With no app, only the built-in rules apply.
+export function toFrameworkError(err: unknown, app?: ErrorMapperHost | null): FrameworkError {
   if (err instanceof FrameworkError) return err
 
-  // Most-recently-registered wins — an app can override a library's mapping.
-  for (let i = _mappers.length - 1; i >= 0; i--) {
+  const mappers = app?.errorMappers ?? []
+  for (let i = mappers.length - 1; i >= 0; i--) {
     let mapped: FrameworkError | null | undefined
     try {
-      mapped = _mappers[i](err)
+      mapped = mappers[i](err)
     } catch {
       continue                       // a broken mapper declines, it does not throw
     }

@@ -13,6 +13,7 @@ import { schemaAnchor }                             from '../core/db-path.js'
 import { resolveTenancy }                           from '../core/tenancy.js'
 import { CATALOG, GROUPS, POSITIONS, positionsOf, docFor, synonymsFor, tierFor } from '../core/catalog.js'
 import { modelToAccessor, modelToTableName }        from '../core/ddl.js'
+import { csvCell }                                  from '@frontierjs/toolbelt/cells'
 import { authModelOf }                              from './principal.js'
 import { openSavedQueries, sidecarFor }           from './studio-queries.js'
 import { bold, dim, green, red, cyan, rel, header, flag, getFlag,
@@ -1007,11 +1008,6 @@ export async function cmdStudio(cfg) {
           const cols     = plan.columns.map(c => c.name)
           const withheld = plan.omitted.filter(o => o.reason === 'protected')
           const enc = new TextEncoder()
-          const csvCell = (v) => {
-            if (v == null) return ''
-            const s = typeof v === 'object' ? JSON.stringify(v) : String(v)
-            return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-          }
           const stream = new ReadableStream({
             async start(controller) {
               try {

@@ -14,20 +14,19 @@
 //   4. err.name matching an error class
 //   5. GeneralError (500)
 
-import { describe, it, expect, afterEach } from 'bun:test'
+import { describe, it, expect, beforeEach } from 'bun:test'
 import {
-  toFrameworkError, registerErrorMapper,BadRequest, Unauthorized, Forbidden, NotFound,
-  Conflict, PaymentRequired, GeneralError,
+  toFrameworkError, BadRequest, Unauthorized, Forbidden, NotFound,
+  Conflict, PaymentRequired, GeneralError, type ErrorMapper,
 } from '../src/core/errors.ts'
+import { createApp, type App } from '../src/core/app.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { createService } from '../src/core/service.ts'
 
-// Mappers are process-global; never leak one out of a test.
-const cleanups: Array<() => void> = []
-const useMapper = (fn: Parameters<typeof registerErrorMapper>[0]) => {
-  cleanups.push(registerErrorMapper(fn))
-}
-afterEach(() => { while (cleanups.length) cleanups.pop()!() })
+// Mappers belong to an app; each test declares them on its own.
+let mapped: App
+beforeEach(() => { mapped = createApp() })
+const useMapper = (fn: ErrorMapper) => mapped.errorMapper(fn)
 
 // ─── 1. FrameworkError passes through ─────────────────────────────────────
 
@@ -46,7 +45,7 @@ describe('registered mappers', () => {
   it('map an error the boundary could not otherwise recognize', () => {
     useMapper(e => e instanceof StripeCardError ? new PaymentRequired(e.message) : null)
 
-    const fe = toFrameworkError(new StripeCardError('card declined'))
+    const fe = toFrameworkError(new StripeCardError('card declined'), mapped)
 
     expect(fe).toBeInstanceOf(PaymentRequired)
     expect(fe.code).toBe(402)
@@ -55,14 +54,14 @@ describe('registered mappers', () => {
 
   it('returning null declines and lets the next rule apply', () => {
     useMapper(() => null)
-    expect(toFrameworkError(new StripeCardError('x')).code).toBe(500)
+    expect(toFrameworkError(new StripeCardError('x'), mapped).code).toBe(500)
   })
 
   it('the most recently registered mapper wins, so an app can override a library', () => {
     useMapper(e => e instanceof StripeCardError ? new PaymentRequired('lib') : null)
     useMapper(e => e instanceof StripeCardError ? new Forbidden('app') : null)
 
-    const fe = toFrameworkError(new StripeCardError('x'))
+    const fe = toFrameworkError(new StripeCardError('x'), mapped)
     expect(fe).toBeInstanceOf(Forbidden)
     expect(fe.message).toBe('app')
   })
@@ -73,18 +72,18 @@ describe('registered mappers', () => {
   it('a mapper that throws is skipped, not fatal', () => {
     useMapper(() => { throw new Error('mapper is broken') })
 
-    const fe = toFrameworkError(new StripeCardError('original'))
+    const fe = toFrameworkError(new StripeCardError('original'), mapped)
 
     expect(fe.code).toBe(500)
     expect(fe.message).toBe('original')
   })
 
   it('unregistering stops it applying', () => {
-    const off = registerErrorMapper(e => e instanceof StripeCardError ? new PaymentRequired('x') : null)
-    expect(toFrameworkError(new StripeCardError('x')).code).toBe(402)
+    const off = useMapper(e => e instanceof StripeCardError ? new PaymentRequired('x') : null)
+    expect(toFrameworkError(new StripeCardError('x'), mapped).code).toBe(402)
 
     off()
-    expect(toFrameworkError(new StripeCardError('x')).code).toBe(500)
+    expect(toFrameworkError(new StripeCardError('x'), mapped).code).toBe(500)
   })
 })
 
@@ -202,9 +201,8 @@ describe('the boundary applies to service calls, not just routes', () => {
 
   it('a registered mapper also applies over the wire', async () => {
     class Weird extends Error {}
-    useMapper(e => e instanceof Weird ? new Unauthorized('nope') : null)
-
     const app = await createTestApp()
+    app.errorMapper(e => e instanceof Weird ? new Unauthorized('nope') : null)
     app.services.register(createService({
       name: 'weird',
       async create() { throw new Weird('x') },

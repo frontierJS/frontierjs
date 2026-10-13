@@ -87,6 +87,26 @@ belongs to NetworkManager stays in NetworkManager.
   a second language and a second mental model, which is a large charge on the
   concept budget.
 
+**Note (2026-10-13): the most solid of the three is bootc, through Universal
+Blue's `image-template`** — Fedora Atomic underneath. Like § 1, this comes from
+outside the repo and was not checked against either project.
+
+- **The OS is one Containerfile.** CI builds the image, `bootc switch` installs
+  it, and Fedora and ublue own the kernel, bootloader and initramfs, as they do
+  for Bluefin, Aurora and Bazzite.
+- **An update is atomic, and a bad one reboots into the previous image.** On
+  Arch, a broken rolling update is repaired by hand, which is the low-level work
+  this idea set out to avoid.
+- **Starting from it may cost days, not the months the open question assumes**:
+  fork the template, then add packages and config.
+- **The cost:** Hyprland and Quickshell come from COPR repos and arrive after
+  Arch has them, and Hyprland moves fast. A stable compositor (niri, Sway) avoids
+  that cost. On a running machine `/usr` is read-only, so every system change is
+  an image rebuild.
+- **Ranking by solidity:** bootc, then Arch plus a script (fastest to tinker
+  with, no rollback), then NixOS (the most reproducible, but a second language).
+  The base is layer 1 alone, so steps 1–2 of § 5 can run on any of them.
+
 ---
 
 ## 4. The shell, and the Mesa → QML backend

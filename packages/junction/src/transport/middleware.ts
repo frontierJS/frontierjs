@@ -354,7 +354,7 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
       try {
         await next()
       } catch (err) {
-        thrown = toFrameworkError(err).code
+        thrown = toFrameworkError(err, app).code
         throw err
       } finally {
         const ms     = Date.now() - start

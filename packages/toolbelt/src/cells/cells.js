@@ -152,3 +152,29 @@ function readJson(t) {
   try { return ok(JSON.parse(t)) }
   catch { return fail('not JSON') }
 }
+
+// ─── Writing a cell ───────────────────────────────────────────────────────
+
+// Excel, Numbers and Sheets run a cell whose text starts with one of these as
+// a formula, and an extract carries text other people wrote (CWE-1236).
+const FORMULA_LEAD = /^[=+\-@\t\r]/
+
+/**
+ * One value as a CSV cell, the writer's half of `parseCell`.
+ *
+ * Text a spreadsheet would run as a formula gets a leading `'` (`FJS-D571`),
+ * unless the whole text reads as a number by `parseCell`'s own rule, so
+ * `-12.50` stays as written. A re-import reads the `'`; a reader that needs
+ * the exact text takes ndjson.
+ *
+ * @param {unknown} v
+ * @returns {string}
+ */
+export function csvCell(v) {
+  let s = v === null || v === undefined ? ''
+    : v instanceof Date                 ? v.toISOString()
+    : typeof v === 'object'             ? JSON.stringify(v)
+    : String(v)
+  if (FORMULA_LEAD.test(s) && !FLOAT.test(s)) s = `'${s}`
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}

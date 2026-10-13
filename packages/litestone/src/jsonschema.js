@@ -145,7 +145,7 @@ import { LEVELS } from '@frontierjs/toolbelt/gate'
 import { unitInfo } from '@frontierjs/toolbelt/units'
 import { contentTypeFor, isTextType } from '@frontierjs/toolbelt/mime'
 import { TIME_PATTERNS, transformNames, typeMemberDefault } from './core/validate.js'
-import { dependsOnClock, determinedColumns } from './core/policy.js'
+import { dependsOnClock, determinedColumns, writeClaims } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js'
 
@@ -631,16 +631,20 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // box, a person typed in it and the save button went green over a write
     // that never happened (`FJS-1071`).
     //
-    // The FLAG and not the expression. Carrying the predicate would let a
-    // control answer for the row in hand, and that is a second reader on the
-    // policy language and a decision of its own.
+    // The FLAG and not the expression: carrying the predicate would put a
+    // second reader on the policy language in the browser. What rides beside the
+    // bit is the CALLER-ONLY subset (`writeClaims`, `FJS-D578`), which the
+    // session answers without a row; a predicate outside it stays the bare bit.
     //
     // Emitted before the read block below, which `continue`s on a non-optional
     // field — `@allow('all', …)` is both halves on one column, and ordering it
     // the other way drops the write flag for exactly those.
     if (audience === 'client' &&
-        field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('write')))
+        field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('write'))) {
       fieldSchema['x-litestone-write-policy'] = true
+      const claims = writeClaims(field)
+      if (claims) fieldSchema['x-litestone-write-claims'] = claims
+    }
 
     // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))
@@ -656,11 +660,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
         // first — which is the difference between a rule that carries it and
         // one that silently does not.
         const wrote = adjusted['x-litestone-write-policy']
+        const claims = adjusted['x-litestone-write-claims']
         delete adjusted['x-litestone-write-policy']
+        delete adjusted['x-litestone-write-claims']
         properties[field.name] = {
           anyOf: [adjusted, { type: 'null' }],
           'x-litestone-read-policy': true,
           ...(wrote ? { 'x-litestone-write-policy': true } : {}),
+          ...(claims ? { 'x-litestone-write-claims': claims } : {}),
         }
         continue
       }

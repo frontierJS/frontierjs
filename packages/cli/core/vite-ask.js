@@ -44,7 +44,7 @@ import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
 import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, PANEL_EFFORTS, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
-import { askContext } from './ask-context.js'
+import { GUIDES, askContext, findAppRoot, findGuides } from './ask-context.js'
 import { previewScope } from './preview.js'
 
 const CLIENT_ID   = '/@frontierjs/cli/ask-client'
@@ -578,6 +578,11 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     const chips = readChips(body)
     if (chips.error) return reply(res, 400, { error: chips.error })
     const { picks, data } = askContext(root, readPicks(body.picks))
+    const guides = findGuides(root).map(g => ({ ...g, about: GUIDES[g.pkg] }))
+    // The schema, and never the rest of the app root: api/.env sits there, and
+    // on a shared dev server the person asking is not always the owner.
+    const app = findAppRoot(root)
+    const reads = [...guides.map(g => g.dir), ...(app ? [resolve(app, 'db')] : [])]
 
     const run = `${boot}.${++seq}`
     const ledger = createLedger(root)
@@ -591,10 +596,11 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     const out = runAsk({
       root, bin,
       edit:    root,
+      reads,
       session: body.session || null,
       effort:  body.effort || undefined,
       images,
-      prompt:  editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: !!body.session, images: images.length }),
+      prompt:  editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: !!body.session, images: images.length, guides }),
       onEvent: e => {
         if (e.type === 'read' || e.type === 'edit' || e.type === 'write') return ledger.see(e)
         if (e.type === 'session') session = e.id

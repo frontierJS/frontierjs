@@ -974,6 +974,38 @@ export function determinedColumns(model) {
   return out
 }
 
+// ─── What a field write policy asks of the CALLER alone ──────────────────────
+//
+// `@allow('write', auth().isStaff)` reads nothing on the row, so the browser can
+// answer it from the session it already holds. The subset is `auth().<claim>`
+// truthiness, `auth().<claim> == <literal>` (either side) and `&&`; anything
+// else -- a column, `||`, `!=`, bare `auth()` -- is not carried, and the client
+// treats an unstated answer as permissive. Allows are OR'd, so a field with
+// more than one write allow is not carried either: one claim set cannot say it.
+//
+// `{ isStaff: true }` means truthy; any other value means strictly equal.
+export function writeClaims(field) {
+  const allows = (field.attributes ?? []).filter(a => a.kind === 'fieldAllow' && a.operations?.includes('write'))
+  if (allows.length !== 1) return null
+
+  const out = {}
+  const need = (claim, value) => {
+    if (claim in out && out[claim] !== value) return false
+    out[claim] = value
+    return true
+  }
+  const walk = (expr) => {
+    if (expr?.type === 'and') return walk(expr.left) && walk(expr.right)
+    if (expr?.type === 'auth') return expr.field != null && need(expr.field, true)
+    if (expr?.type !== 'compare' || expr.op !== '==') return false
+    const [who, lit] = expr.left?.type === 'auth' ? [expr.left, expr.right] : [expr.right, expr.left]
+    if (who?.type !== 'auth' || who.field == null || lit?.type !== 'literal') return false
+    if (lit.value == null || typeof lit.value === 'object') return false
+    return need(who.field, lit.value)
+  }
+  return walk(allows[0].expr) ? out : null
+}
+
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 // ─── Which rules apply to this caller ────────────────────────────────────────

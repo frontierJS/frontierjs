@@ -317,7 +317,7 @@ export class Factory {
     const clone = this._clone()
     clone._relations = {
       ...this._relations,
-      [name]: { row: null, factory, fk: fk ?? `${name}Id`, pk, fresh: opts.fresh === true },
+      [name]: { row: null, factory, fk: fk ?? `${name}Id`, pk, fresh: opts.fresh === true, auto: opts.auto === true },
     }
     return clone
   }
@@ -427,7 +427,7 @@ export class Factory {
 
       const parent = this._factoryFor(field.type.name)
         .withParents({ ...opts, depth: depth - 1, _seen: seen })
-      clone = clone.withRelation(field.name, parent, fks, pks, { fresh })
+      clone = clone.withRelation(field.name, parent, fks, pks, { fresh, auto: true })
       for (const fk of fks) claimed.add(fk)
     }
     return clone
@@ -505,15 +505,30 @@ export class Factory {
     // so the later parent is built under that value: built on its own, it
     // carries an unrelated one and the composite key names no row. A relation
     // whose every column is fixed needs no parent at all.
+    //
+    // A relation withParents() wired is a default, so a hand-written definition
+    // that names its key columns owns them: the chain's values would replace rows
+    // the fixture seeded. A generated definition only holds placeholders there,
+    // and a column an explicit .for() wired is the caller's word over both.
+    // `probe` is that first build, reused for the first attempt below so the
+    // sequence and a seeded rng advance once.
     const fkOverrides = {}
     const unbuilt     = new Set()
+    const named       = new Set()
+    const explicit    = new Set()
+    const probe       = !this.definition?.generated && Object.values(this._relations).some(r => r.auto)
+      ? this.buildOne(resolvedOverrides)
+      : null
     for (const [name, rel] of Object.entries(this._relations)) {
       const pairs = _keyPairs(rel.fk, rel.pk)
       let parentRow = rel.fresh ? null : rel.row
       if (rel.factory) {
         const fixed = {}
         for (const [fk, pk] of pairs) {
+          const own = rel.auto && probe && probe[fk] !== undefined && !explicit.has(fk)
+          if (own) named.add(fk)
           if (resolvedOverrides[fk] !== undefined) fixed[pk] = resolvedOverrides[fk]
+          else if (own)                            fixed[pk] = probe[fk]
           else if (fk in fkOverrides)              fixed[pk] = fkOverrides[fk]
         }
         const under = Object.entries(fixed)
@@ -526,8 +541,12 @@ export class Factory {
           rel.row = parentRow
         }
       }
-      if (parentRow) for (const [fk, pk] of pairs) fkOverrides[fk] = parentRow[pk]
+      if (parentRow) for (const [fk, pk] of pairs) {
+        fkOverrides[fk] = parentRow[pk]
+        if (!rel.auto) explicit.add(fk)
+      }
     }
+    for (const fk of named) if (!explicit.has(fk)) delete fkOverrides[fk]
 
     // Generated values carry a short seq token, so a @unique column is unique by
     // construction — but the token pool is finite and the value catalog is small,
@@ -536,7 +555,9 @@ export class Factory {
     let row, moves
     const table = this._db[modelToAccessor(this.model)]
     for (let attempt = 0; ; attempt++) {
-      const data = this.buildOne({ ...fkOverrides, ...resolvedOverrides })
+      const data = attempt === 0 && probe
+        ? { ...probe, ...fkOverrides, ...resolvedOverrides }
+        : this.buildOne({ ...fkOverrides, ...resolvedOverrides })
       moves = _machineWalk(this._db.$schema ?? this._schema, this.model, data)
       try {
         row = await table.create({ data })

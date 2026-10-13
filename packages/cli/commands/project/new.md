@@ -245,7 +245,10 @@ function makePackageJson(spec) {
     devs.push('dev:api')
   }
   if (useWeb) {
-    scripts['dev:web']   = 'cd web && vite -c config/vite.config.js'
+    // `--configLoader native`: the default loader bundles the config and the
+    // whole sierra build tree it imports on every start, 190 ms before vite
+    // reads a byte of the app; the runtime imports the same files in 110.
+    scripts['dev:web']   = 'cd web && vite -c config/vite.config.js --configLoader native'
     scripts['build:web'] = 'cd web && vite build -c config/vite.config.js'
     devs.push('dev:web')
     builds.push('build:web')

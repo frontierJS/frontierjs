@@ -86,7 +86,9 @@ beforeAll(async () => {
     mint: async () => ($.db as unknown as Creds).asSystem().credential.create({
       data: { label: 'minted', value: 'hunter2-minted', privilege: 'privilege-minted' },
     }),
-    methods: ['find', 'get', 'create', { method: 'mint', gate: 5 }],
+    // `tally` answers a NUMBER: the one shape a tool answer cannot carry as an object.
+    tally: async (ctx: { dispatch: boolean }) => { ctx.dispatch = false; return 3 },
+    methods: ['find', 'get', 'create', { method: 'mint', gate: 5 }, { method: 'tally', gate: 5 }],
   }))
   app.services.register(createService({
     name: 'customers', model: 'Customer',
@@ -371,6 +373,33 @@ describe('a one-row answer carries its breadcrumbs', () => {
   })
 })
 
+// ─── the answer is structured ────────────────────────────────────────────────
+
+describe('the answer is structured: the object a view reads is the text an agent reads', () => {
+
+  const result = (r: { body: Record<string, never> }) =>
+    (r.body as { result?: { content?: Array<{ text: string }>; structuredContent?: Record<string, unknown> } }).result ?? {}
+
+  test('a get carries the row, and it is the first text block parsed', async () => {
+    const r = result(await callTool('orders_get', { id: 51 }, 'staff'))
+    expect(r.structuredContent?.reference).toBe('ORD-51')
+    expect(r.structuredContent).toEqual(JSON.parse(r.content![0].text))
+  })
+
+  test('a find carries the list envelope whole, kind and data, as the socket hands it', async () => {
+    const r = result(await callTool('orders_find', { query: { customerId: 50 } }, 'staff'))
+    expect(r.structuredContent?.kind).toBe('list')
+    expect((r.structuredContent?.data as Array<{ id: number }>).map(o => o.id)).toEqual([51])
+    expect(r.structuredContent).toEqual(JSON.parse(r.content![0].text))
+  })
+
+  test('a scalar answer rides in the text alone, and nothing fails', async () => {
+    const r = result(await callTool('credentials_tally', {}, 'staff'))
+    expect(r.content![0].text).toBe('3')
+    expect(r.structuredContent).toBeUndefined()
+  })
+})
+
 // ─── what a tool call actually does ───────────────────────────────────────────
 
 describe('a call goes through the service, as the caller', () => {
@@ -520,6 +549,7 @@ describe('a protected column reaches no tool RESULT (FJS-D473)', () => {
     // The control: an answer that was refused satisfies every absence below.
     expect(res.body.result?.isError ?? false).toBe(false)
     expect(res.text).toContain('minted')
+    // The whole body, so `structuredContent` is held to the same absence.
     expect(res.text).not.toContain('hunter2')
     expect(res.text).not.toContain('privilege-minted')
   })

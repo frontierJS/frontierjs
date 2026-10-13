@@ -137,6 +137,11 @@ const _CARRIED = [
   // for — the answer after the write, which is the only moment the flag alone
   // can be turned into a true sentence.
   'x-litestone-write-policy',
+  // `x-litestone-write-claims` is the one part of that predicate the session
+  // can answer without a row: `{ isStaff: true }` is `auth().isStaff`, and any
+  // other value is `auth().<claim> == value` (`FJS-D578`). Present only when
+  // the whole predicate is of that shape, so `refusedFor` may disable on it.
+  'x-litestone-write-claims',
   // `x-litestone-read-policy` is a field `@allow('read', …)`: whether this
   // column ARRIVES depends on the caller and the row, and when the policy
   // refuses the key is not null — it is ABSENT (measured: an admin reading a
@@ -2007,6 +2012,28 @@ export function sealedFor(rule, record) {
 }
 
 /**
+ * Does this column's field write policy refuse the session's user?
+ *
+ * Answers from `x-litestone-write-claims` alone: a policy that reads the row is
+ * the bare bit and is never refused here. **Unknown is permissive** -- no user,
+ * or a claim the user does not carry at all -- because the boundary enforces
+ * regardless (Invariant 6) and a box nobody can type in is the worse error.
+ * `true` in the claims means truthy; any other value means strictly equal.
+ *
+ * @param {object} rule  a field rule from buildFieldRules
+ * @param {object|null} user  the session's user
+ */
+export function refusedFor(rule, user) {
+  const claims = rule?.['x-litestone-write-claims']
+  if (!claims || !user || typeof user !== 'object') return false
+  for (const [claim, want] of Object.entries(claims)) {
+    if (!(claim in user)) continue
+    if (want === true ? !user[claim] : user[claim] !== want) return true
+  }
+  return false
+}
+
+/**
  * Is a blank refused on this column in this write mode?
  *
  * A patch to a column that is not nullable: there is no default to fall back
@@ -2100,7 +2127,9 @@ export function requiredFor(rule, record, mode) {
  * only be asked AFTER the write: before it, *may I write this* needs the
  * predicate and a row, which is a second reader on the policy language and a
  * decision of its own. So nothing here disables a control — a control switched
- * off by the flag is switched off for every caller the predicate admits.
+ * off by the flag is switched off for every caller the predicate admits. The
+ * caller-only subset is the exception and is answered BEFORE the write
+ * (`refusedFor`); a predicate outside it reaches this function.
  *
  * **Only flagged columns are compared**, which is what keeps this from
  * reporting every server-side transform as a refusal: `@lower`, `@trim` and

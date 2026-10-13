@@ -242,7 +242,7 @@ export async function renderErrorsSnapshot(): Promise<string> {
   out.push('## Litestone\'s errors, through this boundary')
   out.push('')
   out.push('The cross-package half, and the half that drifts. **If you own the error class,')
-  out.push('give it a `status`** — `registerErrorMapper()` is for errors you cannot modify.')
+  out.push('give it a `status`** — `app.errorMapper()` is for errors you cannot modify.')
   out.push('A row landing on 500 with a message about a conflict is a client told to retry')
   out.push('something that will never work, or not to retry something that would.')
   out.push('')

@@ -49,5 +49,8 @@ export default {
     authPrefix: '/auth',
 
     tokenKey: 'basecamp_token',
+
+    // Defined by vite.config.js; absent where this file is read outside a build.
+    cookieAuth: typeof __BASECAMP_COOKIE_AUTH__ !== 'undefined' && __BASECAMP_COOKIE_AUTH__,
   },
 }

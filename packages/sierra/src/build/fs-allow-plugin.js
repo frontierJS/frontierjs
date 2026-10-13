@@ -23,12 +23,36 @@
  * merges configs, so an app's own `fs.allow` still adds to this list.
  */
 
-import { existsSync, readdirSync, realpathSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import { searchForWorkspaceRoot } from 'vite'
 
 const SIERRA_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+
+/**
+ * Vite's own `searchForWorkspaceRoot`, without importing `vite` for it. A
+ * linked sierra resolves that import to ITS vite, the app's config loader
+ * already holds the app's, and the dev server runs two copies of vite in one
+ * process: rolldown's 18 MB native binding loaded twice, 150 ms of every
+ * start, and two versions of one package sharing one server.
+ *
+ * The nearest ancestor that is a workspace root (`workspaces` in its
+ * package.json, or a `pnpm-workspace.yaml`), else the nearest package root.
+ */
+function workspaceRoot(start) {
+  let packageRoot = null
+  for (let dir = start; ; dir = dirname(dir)) {
+    const manifest = resolve(dir, 'package.json')
+    if (existsSync(manifest)) {
+      packageRoot ??= dir
+      try {
+        if (JSON.parse(readFileSync(manifest, 'utf8')).workspaces) return dir
+      } catch { /* unreadable manifest is not a workspace root */ }
+    }
+    if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return dir
+    if (dirname(dir) === dir) return packageRoot ?? start
+  }
+}
 
 /** The real directory of every `@frontierjs/*` package, as the app would resolve it. */
 function linkedPackageDirs(root) {
@@ -54,7 +78,7 @@ export function fsAllowPlugin() {
     apply: 'serve',
     config(userConfig) {
       const root = resolve(userConfig.root ?? process.cwd())
-      const allow = [searchForWorkspaceRoot(root), realpathSync(SIERRA_DIR)]
+      const allow = [workspaceRoot(root), realpathSync(SIERRA_DIR)]
       for (const dir of linkedPackageDirs(root)) if (!allow.includes(dir)) allow.push(dir)
       return { server: { fs: { allow } } }
     },

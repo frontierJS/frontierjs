@@ -412,7 +412,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `drag.js` `package.json` `selection.js` `stores/` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `drag.js` `nav.js` `package.json` `selection.js` `stores/` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -423,6 +423,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./dnd` | `dnd.js` | yes |
 | exports | `./drag.js` | `drag.js` | yes |
 | exports | `./drag` | `drag.js` | yes |
+| exports | `./nav.js` | `nav.js` | yes |
+| exports | `./nav` | `nav.js` | yes |
 | exports | `./selection.js` | `selection.js` | yes |
 | exports | `./selection` | `selection.js` | yes |
 | exports | `./controls` | `controls.js` | yes |

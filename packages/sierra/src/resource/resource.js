@@ -138,7 +138,7 @@ import { defaultRegistry, serviceNameFor, resolveRef } from './schema-registry.j
 import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, declinedFields, requiredFor, blankRefused, withheldFields,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, refusedFor, declinedFields, requiredFor, blankRefused, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined,
 } from './field-rules.js'
@@ -2117,9 +2117,17 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * No record answers `[]`, deliberately: a create form is making a draft.
    */
   function sealedFields(record) {
-    if (!record) return []
+    // A column whose field write policy refuses THIS caller is frozen on a
+    // create as well as an edit, so it is asked before the record is
+    // (`FJS-1671`). The principal is the one this resource's app sees.
     const out = []
+    const user = app ? app.user : session.user
+    for (const [name, rule] of Object.entries(fields)) {
+      if (refusedFor(rule, user)) out.push(name)
+    }
+    if (!record) return out
     for (const [name, rule] of Object.entries(updateFields)) {
+      if (out.includes(name)) continue
       // The version column is `readOnly` and is the one that MUST travel, which
       // is the same exception `stripReadOnly`'s keep list exists for. A caller
       // deleting it from the payload turns every optimistic write into one the

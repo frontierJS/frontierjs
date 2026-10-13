@@ -22,7 +22,7 @@ import { resolveServicesDir, describeServicesDir, type ServicesDirResolution } f
 import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from './attachments.ts'
 import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
-import { NotFound, toFrameworkError } from './errors.ts'
+import { NotFound, toFrameworkError, type ErrorMapper } from './errors.ts'
 import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit } from '../transport/middleware.ts'
 import { defaultConfig, deepMerge, loadConfig, unknownKeys, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
@@ -333,9 +333,18 @@ export interface App {
   // ── Internal plugin/subsystem attachment points (typed, not casts) ──
   /** OpenAPI extra paths registered via addOpenApiPaths(). */
   _openapiExtraPaths?: Record<string, unknown>
-  /** Per-app service cache — created lazily by cache-declaring services,
-   *  destroyed by stop(). See resolveCache in core/service.ts. */
-  _serviceCache?: AppCache
+  /** This app's service cache -- created lazily by cache-declaring services,
+   *  or swapped in before the first cached call with
+   *  `app.claim('serviceCache', cache)` (`FJS-D580`). Destroyed by stop(). */
+  serviceCache?: AppCache
+
+  /** The error mappers this app declared, in declaration order; read by
+   *  `toFrameworkError(err, app)`. Add through `errorMapper()`. */
+  readonly errorMappers: readonly ErrorMapper[]
+
+  /** Declare an error mapper on this app (see `AppOptions.errorMappers`).
+   *  @returns an unregister function */
+  errorMapper: (mapper: ErrorMapper) => () => void
 
   // ── Service caller — Feathers-style internal service calls ────────
   //
@@ -678,6 +687,20 @@ export interface AppOptions {
    * per method.
    */
   credentials?: import('../auth/credentials.ts').CredentialVerifier[]
+
+  /**
+   * Teach THIS app's error boundary about errors it cannot recognize on its own
+   * -- typically a third-party library whose error classes you cannot modify
+   * (`FJS-D580`). A mapper returns a FrameworkError, or null to decline; the
+   * most recently declared is asked first, so an app overrides a library's
+   * mapping, and a mapper that throws is skipped. If you own the error class,
+   * give it a numeric `status` instead: that needs no declaration.
+   *
+   *   createApp({ errorMappers: [e => e instanceof CardError ? new PaymentRequired(e.message) : null] })
+   *
+   * A plugin adds its own with `app.errorMapper(fn)`.
+   */
+  errorMappers?: ErrorMapper[]
 
   /**
    * The principal the app's OWN background work runs as.
@@ -1029,7 +1052,10 @@ export function createApp(opts: AppOptions = {}): App {
   // "Litestone scoping".
   const db: unknown = opts.db
 
+  const errorMappers: ErrorMapper[] = [...(opts.errorMappers ?? [])]
+
   const http      = new HttpTransport({
+    errorMappers,
     port:        config.port,
     hostname:    config.hostname,
     maxBodySize: config.http.maxBodySize,
@@ -1064,7 +1090,7 @@ export function createApp(opts: AppOptions = {}): App {
       // The transport announces every throw before errorResponse maps it, so
       // a 404/409/429 a raw route means would log beside a real 500 with a
       // stack. A refusal is the caller's answer; only a 5xx is the app's error.
-      if ((toFrameworkError(err).code ?? 500) < 500) return
+      if ((toFrameworkError(err, app).code ?? 500) < 500) return
       // Through the app's logger, not console: in production the logger is
       // JSON and this was the one thing in the stream that was not, so the
       // errors were the lines a log query could not reach.
@@ -1532,6 +1558,16 @@ export function createApp(opts: AppOptions = {}): App {
       }
     },
 
+    errorMappers,
+
+    errorMapper(mapper: ErrorMapper): () => void {
+      errorMappers.push(mapper)
+      return () => {
+        const i = errorMappers.indexOf(mapper)
+        if (i !== -1) errorMappers.splice(i, 1)
+      }
+    },
+
     claim(name: string, value: unknown): void {
       const existing = (app as unknown as Record<string, unknown>)[name]
       if (existing !== undefined) {
@@ -1702,10 +1738,10 @@ export function createApp(opts: AppOptions = {}): App {
 
       // Destroy the per-app service cache (entries + GC timer). Created
       // lazily by cache-declaring services — see resolveCache in service.ts.
-      const svcCache = (app as unknown as { _serviceCache?: { destroy(): void } })._serviceCache
+      const svcCache = app.serviceCache as { destroy(): void } | undefined
       if (svcCache) {
         try { svcCache.destroy() } catch {}
-        ;(app as unknown as { _serviceCache?: unknown })._serviceCache = undefined
+        app.serviceCache = undefined
       }
 
       // Detach signal handlers so a stopped app can be garbage-collected

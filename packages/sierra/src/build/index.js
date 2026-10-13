@@ -193,6 +193,7 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
     target = 'spa',
     base = '/',
     outDir = 'dist/client',
+    routesDir = 'src/routes',
   } = config
 
   /** @type {import('vite').UserConfig} */
@@ -245,6 +246,13 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       open: false,
       hmr: {
         overlay: true,
+      },
+      // Every route sits behind a lazy import(), so a server that transforms
+      // only what the browser asks for compiles the whole first page on demand:
+      // 1.7 s on a cold `fli dev` against 0.4 s once warm. Warming the entry
+      // alone buys 300 ms; the routes and resources are the other second.
+      warmup: {
+        clientFiles: ['src/main.js', `${routesDir}/**/*.mesa`, 'src/resources/*.mesa'],
       },
     },
     build: {

@@ -298,6 +298,24 @@ describe('the two formats', () => {
     expect(lines[3]).toContain(',plain,')
   })
 
+  // FJS-1660 · FJS-D571: an extract is opened in a spreadsheet, which runs a
+  // cell starting with = + - @ as a formula over rows other people wrote.
+  test('CSV prefixes a quote to text a spreadsheet would run, and leaves numeric text alone', async () => {
+    const db = await client()
+    await db.asSystem().order.createMany({ data: [
+      { ref: '=HYPERLINK("https://x","Refund")', total: 1, ownerId: 'u', cardTok: 't' },
+      { ref: "=cmd|' /C calc'!A0",               total: 2, ownerId: 'u', cardTok: 't' },
+      { ref: '@SUM(A1)',                         total: 3, ownerId: 'u', cardTok: 't' },
+      { ref: '-12.50',                           total: 4, ownerId: 'u', cardTok: 't' },
+    ]})
+    const { lines, manifest } = await collect(db, 'Order', { system: true, format: 'csv' })
+    expect(lines[1]).toContain(`"'=HYPERLINK(""https://x"",""Refund"")"`)
+    expect(lines[2]).toContain(`,'=cmd|' /C calc'!A0,`)
+    expect(lines[3]).toContain(`,'@SUM(A1),`)
+    expect(lines[4]).toContain(',-12.50,')
+    expect(manifest.formulaGuard).toBe(true)
+  })
+
   test('a format the run overrides is used instead of the declared one', async () => {
     const db = await client(); await seed(db)
     const { lines } = await collect(db, 'Order', { system: true, format: 'csv' })

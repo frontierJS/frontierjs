@@ -1778,7 +1778,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 // The bridge's rule and the bridge's redaction, not a copy of either.
                 ctx.send({ type: 'service_result', id: callId, result: _withhold(unwrapResult(svcCtx.result), svcCtx) })
               } catch (err: unknown) {
-                const fe = _toErr(err)
+                const fe = _toErr(err, app)
                 status = fe.code
                 ctx.send({ type: 'service_error', id: callId, error: _errorBody(fe, svcCtx) })
               } finally {

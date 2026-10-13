@@ -31,6 +31,8 @@ stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
 dnd.js        dndzone — drag and drop between flow lists, an {@attach}
 drag.js       drag — one pointer drag, press to release or cancel, an {@attach}
+nav.js        the `src/nav.js` contract (typedefs) and sectionFor · visible ·
+              paletteItems; never decides CURRENT, which is Sierra's isActive
 selection.js  createSelection — the ticked KEYS of a list, signal-backed; the
               screen composes it with Checkbox `indeterminate` and BulkBar,
               and Table stays out of it (FJS-D671)

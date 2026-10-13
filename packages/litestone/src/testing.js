@@ -1936,6 +1936,9 @@ export async function reset(db) {
 
 export function factoryFrom(schema, modelName, db, registry = null) {
   const defFn = generateFactory(schema, modelName)
+  // A generated definition's key columns are placeholders the chain overwrites;
+  // a hand-written one names rows, and createOne() leaves those alone.
+  defFn.generated = true
   const f     = new Factory(db)
   f.model      = modelName
   f.definition = defFn

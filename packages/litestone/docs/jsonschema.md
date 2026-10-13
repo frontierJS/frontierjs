@@ -246,6 +246,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-determined` | model | `{ hostId: 'auth().id' }` — a column every create `@@allow` pins to the caller as a top-level `&&` conjunct (`hostId == auth().id`) | sierra drops it from a generated form and `required`, and fills it from the session at create (`FJS-D492`) |
 | `x-litestone-read-policy` | field | `true` when a field-level `@allow('read', …)` may hide it | sierra (`buildFieldRules` → `withheldFields`), `<Form>`, `<Field>` |
 | `x-litestone-write-policy` | field | `true` when a field-level `@allow('write', …)` may DROP the value written to it | sierra (`buildFieldRules` → `declinedFields`), `<Form>` |
+| `x-litestone-write-claims` | field | `{ isStaff: true }` — beside the write flag, when the whole predicate is `auth().<claim>` truthiness, `auth().<claim> == <literal>` and `&&` and the field has one write allow; `true` means truthy, any other value strictly equal. A predicate reading the row, `\|\|` or `!=` stays the bare flag | sierra (`buildFieldRules` → `refusedFor`) freezes the control for a session failing it (`FJS-D578`) |
 | `x-litestone-required-where` | field | the AST of `@required(where: …)` — the predicate deciding whether this column needs a value | sierra (`buildFieldRules` → `requiredFor`), `<Form>` |
 | `x-litestone-secret` | field | `true` — `audience: 'system'` only | nothing yet |
 | `x-litestone-guarded` | field | `true` — `audience: 'system'` only | nothing yet |

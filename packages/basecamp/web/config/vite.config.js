@@ -6,6 +6,7 @@ import { defineConfig } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
 import sierraConfig from './sierra.config.js'
 import { API_PATHS, WS_PATH } from './api-paths.js'
+import { ssoFromEnv } from '../../api/src/core/sso-env.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
@@ -52,6 +53,17 @@ proxy[WS_PATH] = { target: API, ws: true }
 
 export default defineConfig({
   ...sierra,
+
+  // The twin of `cookieAuth` on the API's auth plugin: on exactly when a
+  // sign-in provider is configured (`FJS-D670`). The browser cannot read the
+  // API's environment, so the build reads the same variables and bakes the
+  // answer in; sierra.config.js is evaluated in the page and holds no process.
+  // Left false while the API runs cookie sessions, a signed-in browser has no
+  // boot restore and no socket.
+  define: {
+    ...sierra.define,
+    __BASECAMP_COOKIE_AUTH__: JSON.stringify(ssoFromEnv(process.env).length > 0),
+  },
 
   // @frontierjs/ui is aliased to the WORKSPACE SOURCE, not to the copy under
   // node_modules. `bun install` resolves a workspace dep by COPYING it

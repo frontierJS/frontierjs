@@ -62,48 +62,28 @@ export type CacheDeclaration =
     }
 
 // Service cache resolution, in precedence order:
-//   1. setServiceCache() override — process-global, back-compat API for
-//      swapping in e.g. a SQLite-backed cache.
-//   2. Per-APP cache, lazily created and stored on ctx.app — each
-//      createApp() instance gets its own, and app.stop() destroys it
-//      (entries + GC timer). Previously a single module-level cache was
-//      shared by every app in the process and outlived all of them.
-//   3. Module-level fallback for bare callService() usage with no app
+//   1. The app's `serviceCache` -- claimed with `app.claim('serviceCache', c)`
+//      to swap in e.g. a SQLite-backed cache, else created lazily as a memory
+//      cache. app.stop() destroys it (entries + GC timer).
+//   2. A module-level fallback for bare callService() usage with no app
 //      (direct pipeline tests).
-// Kept as two separate slots: the explicit override must take precedence
-// over per-app caches, but the lazily-created fallback must NOT — otherwise
-// the first bare callService() in a process would permanently shadow every
-// app's own cache.
-let _overrideCache: ICache | null = null   // set via setServiceCache()
 let _fallbackCache: ICache | null = null   // lazy, for app-less contexts only
 
 const DEFAULT_CACHE_OPTS = { defaultTtl: '30 seconds', maxSize: 1000 }
 
 function resolveCache(ctx: ServiceContext): ICache {
-  if (_overrideCache) return _overrideCache
-
   // Only treat ctx.app as a cache host when it's a REAL app (has a service
-  // registry) — bridge.internal() stubs ctx.app with a fresh {} when no app
+  // registry) -- bridge.internal() stubs ctx.app with a fresh {} when no app
   // is passed (bare callService in tests), and hanging a cache off each
   // throwaway stub would mean a new empty cache per call (never a hit).
-  const app = ctx.app as { _serviceCache?: ICache; services?: unknown } | undefined | null
+  const app = ctx.app as { serviceCache?: ICache; services?: unknown } | undefined | null
   if (app && typeof app === 'object' && app.services !== undefined) {
-    if (!app._serviceCache) app._serviceCache = createMemoryCache(DEFAULT_CACHE_OPTS)
-    return app._serviceCache
+    if (!app.serviceCache) app.serviceCache = createMemoryCache(DEFAULT_CACHE_OPTS)
+    return app.serviceCache
   }
 
   if (!_fallbackCache) _fallbackCache = createMemoryCache(DEFAULT_CACHE_OPTS)
   return _fallbackCache
-}
-
-/**
- * Replace the default shared cache (e.g. with a SQLite-backed one).
- * Call before app.start() — typically inside a configure() plugin.
- * NOTE: this is a process-global override that takes precedence over the
- * per-app cache; prefer it only when one process runs one app.
- */
-export function setServiceCache(cache: ICache): void {
-  _overrideCache = cache
 }
 
 /**
@@ -811,7 +791,7 @@ async function _callService(
     // as `status: 'ok'`: the console whose whole job is what happened to this
     // call agreed with the app that nothing had gone wrong, and a 401 was
     // indistinguishable from a 200 in the feed.
-    const failed = ctx.error ?? (pipelineError ? toFrameworkError(pipelineError) : null)
+    const failed = ctx.error ?? (pipelineError ? toFrameworkError(pipelineError, ctx.app) : null)
     const event: TelemetryEvent = {
       telemetryId: ctx.telemetryId,
       service:     service.name,

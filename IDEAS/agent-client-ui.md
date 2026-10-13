@@ -473,10 +473,37 @@ a standing withheld from the model's tools is refused the view.
   vs. workaround* — the wrapper over a hand-written `_meta`. Tier:
   Assessment; nothing in `DECISIONS.md` is overridden. `verify:mcp` is the
   no-`ui` path only, as at 1.2; 4.2 is the drive over a built view.
-- [ ] 1.4 The tool answer carries the row in `structuredContent` as Junction's
+- [x] 1.4 The tool answer carries the row in `structuredContent` as Junction's
   envelope (`kind`/`data`/`total`). Confirm `plugin.ts` does; if the answer is
   text only, this is the one envelope owner to extend (Invariant 4), so the
   client's existing unwrap serves the iframe unchanged.
+  Done 2026-10-13. It was text only. `run()` now sets `structuredContent` to
+  `result` when it is an object — the value `app.service()` already handed it,
+  which is `unwrapResult(ctx.result)`, the same unwrap the socket's
+  `service_result` carries: a `find` keeps its `kind`/`data`/`total` envelope
+  and a `get` is the row. *Junction's envelope* above means that wire
+  convention, not a `{ kind, data }` around a single — the client's `get()`
+  never unwraps one, so a rebuilt envelope would have needed a new unwrap in
+  3.2, where `forward()` already resolves exactly this. A scalar or array
+  answer (a custom method's) rides in the text alone: the protocol types the
+  field as an object. The nine, answered BEFORE the edit: origin — one value,
+  `result`, read by the text block and the field, and the wire shape's owner
+  stays `envelope.ts`; concept — a protocol field, no noun; complexity — one
+  guard and one assignment; predictability — a relayed call resolves what a
+  socket frame resolves, per method; derived — the field is never shaped by
+  hand, it is the stringified value before stringifying; owner — no second
+  wrap beside the owner's unwrap; boundary — a host reads the field with no
+  knowledge of the text, and the app author passes nothing; failure — a
+  non-object answer stamps nothing and refuses nothing; silence — must stay
+  true: *where present, `structuredContent` equals `content[0].text` parsed,
+  and it is present on every CRUD `get` and `find`* — fails in
+  `test/plugin.test.ts` § the answer is structured (the get, the find with its
+  `kind`, the scalar `credentials_tally` carrying none), and the FJS-D473 test
+  greps the whole body, so the field is held to the same `@secret` absence.
+  Adjudication: *doctrine vs. discovery* — this step's wording against the
+  wire; the wire won and the wording is amended here, since 3.2 already said
+  the same. Tier: Assessment; nothing in `DECISIONS.md` is overridden.
+  `verify:mcp` is the no-`ui` path, as at 1.2 and 1.3.
 - [x] 1.5 Bundle source: the plugin reads `<ui.root>/<Model>.html` at boot
   (`FJS-D955`). Done 2026-10-13 inside 1.2, every clause below as written; the
   boot warning for a `<Model>.html` no one-row tool answers is the one addition. No `x-fjs-build` key: the image carries the API and its views

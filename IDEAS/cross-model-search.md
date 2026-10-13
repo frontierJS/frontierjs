@@ -253,6 +253,53 @@ twice. Scores are bm25, lower is better.
 
 Verdict: **build E.** The ruling is owed with it.
 
+## Plan
+
+### Phase 0 — Ruling and the fixture
+
+Goal: the decision is written and the leak test exists before any index does.
+Done when: `fli decisions` lists nothing for this paper and the new test fails for want of `$search`.
+
+- [ ] 0.1 `FJS-D##` in `DECISIONS.md`: `$search` spans models over one shared index; cites Q4's premise and the gate table above. Records `_search` is `trigram` whatever the models' own tokenizers, and the title weight 3 by column index.
+- [ ] 0.2 Litestone fixture under `packages/litestone/test/`: two `@@fts` models with a row policy, a caller who may read half, Q4's planted pair. Asserts: no hit the caller may not read; the limit is spent only on readable rows; a title outranks a body; a short-word-only query sorts last with `_rank` null.
+
+### Phase 1 — Data
+
+Goal: every `@@fts` model is in `_search`, kept current by triggers, and `db.$search` answers graded and ranked.
+Done when: 0.2 is green under `bun:sqlite` and under the sqlite-wasm drive.
+
+- [ ] 1.1 Parser: a `@@fts` model without `@@label` is refused with the fix in the message, in `@@label`'s own refusal voice.
+- [ ] 1.2 `ddl.js`: `_search(model UNINDEXED, rid UNINDEXED, title, body)` beside `createFts`, and per model the same three triggers (plus the soft-delete pair where declared).
+- [ ] 1.3 Differ: a model gaining or losing `@@fts`, or changing `@@label` or its `@@fts` list, adds or drops its triggers and rebuilds its rows in `_search`.
+- [ ] 1.4 `client.$search(q, { models, limit, offset, prefix })`: `MATCH` over `_search`, one `EXISTS` branch per model from `visibleWhere`, `bm25` weight 3 placed by column index, step-2 read keyed on `rid` for `id` and `sub`, `FJS-2332`'s scan fallback. A model outside `@@fts` or outside the schema is refused by name.
+- [ ] 1.5 `db:explain @@fts`, the catalog snapshot and `docs/traits.md` say `_search` exists and what `$search` returns.
+- [ ] 1.6 sqlite-wasm drive: the triggers fire and `$search` answers in the browser engine.
+
+### Phase 2 — API
+
+Goal: one round trip per keystroke, graded by the Data boundary.
+Done when: a junction test mounts the service with two of three models and the third is refused by name.
+
+- [ ] 2.1 `search` service, `find({ q, models })` → `$.db.$search`, mounted the way `account` is; the mount names the models the palette holds.
+- [ ] 2.2 `models` outside the mount list refused by name, in the same voice as 1.4.
+
+### Phase 3 — UI
+
+Goal: a palette is one call with a link map.
+Done when: `paletteSource` answers `CommandPalette`'s `search` with a default link and an override, under test.
+
+- [ ] 3.1 sierra `paletteSource(client, { models, link })` → `Item[]`: group is the model's label, title and `sub` from the hit, link defaults to `/<plural>/<id>` and the override map wins.
+- [ ] 3.2 `exports.snapshot.md` and sierra's `README.md` name it.
+
+### Phase 4 — Prove
+
+Goal: the two real palettes run on E and the copies are gone.
+Done when: `fli proves --from main` names drives that have run, and `fli done` lists nothing.
+
+- [ ] 4.1 linear: `search.service.ts` replaced by the mount and `paletteSource`; `comment` overrides to its issue; `Membership @@fts([displayName])` puts people in the index. `web/test/verify-search.mjs` green, and its timing row added to the Q4 table in `docs/plan-done.md`.
+- [ ] 4.2 maid.tech `SearchAll` port on E; the board-by-related-name source appended as the app's own entry. ELA's D152 bugs cannot recur (no per-kind `searching`, an empty term answers nothing).
+- [ ] 4.3 Per-model `search()` over `_search WHERE model = ?` priced: if it holds, a follow-up paper drops the per-model tables.
+
 ## When it is owed
 
 **The trigger is the maid.tech `SearchAll` port**, the third app to write the

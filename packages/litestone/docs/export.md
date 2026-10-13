@@ -89,6 +89,14 @@ leaves the machine — the same principal at a different blast radius.
 
 `--include-protected` keeps them, and the manifest records that it was asked for.
 
+## A CSV cell a spreadsheet would run gets a `'`
+
+A CSV extract is opened in a spreadsheet, which runs a cell starting with `=`,
+`+`, `-`, `@`, a tab or a CR as a formula, over text other people wrote. Such a
+cell is written with a leading `'` unless the whole text reads as a number
+(`-12.50` stays as written), and the manifest says `"formulaGuard": true`
+(`FJS-D571`). A re-import of the CSV reads the `'`; ndjson is the exact format.
+
 ## The manifest
 
 Every run writes `<dataset>.manifest.json` beside the data:

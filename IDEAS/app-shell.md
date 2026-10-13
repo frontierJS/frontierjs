@@ -121,7 +121,7 @@ passes (step 0.3), so it stays reactive in the app's component.
 
 **Three pure functions ship beside the contract** in `@frontierjs/ui/nav`:
 `sectionFor(sections, path)`, `visible(groups, session)` and
-`paletteItems(groups, go)`. The last one returns `CommandPalette`'s own item shape,
+`paletteItems(groups, session, go)`. The last one returns `CommandPalette`'s own item shape,
 `{ id, group, label, sub, action }`, so the palette's `Navigate` rows are derived
 and basecamp's `/security/` cannot go missing again. None of them decides whether
 an entry is current. That stays with Sierra's `isActive`, which the Shell gets as a
@@ -224,8 +224,15 @@ Goal: `@frontierjs/ui/nav` ships the typedef and the three functions.
 Done when: `bun run test` in `packages/ui` passes the new spec, and `fli check`
 grades `nav-href-routes` over every app it reads.
 
-- [ ] 1.1 `packages/ui/nav.js`: the typedef, `sectionFor`, `visible`, `paletteItems`;
-  an `exports` entry (`./nav`), as `./drag` has; `fli ws:exports`
+- [x] 1.1 `packages/ui/nav.js`: the typedef, `sectionFor`, `visible`, `paletteItems`;
+  an `exports` entry (`./nav`), as `./drag` has; `fli ws:exports`. **Built.** A
+  section matches at a segment boundary and compares paths without their trailing
+  slash, so `/leads-archive/` is not in `/leads/` and `trailingSlash: 'never'`'s
+  `/leads` is. `visible` drops a group left with no entries, so an empty label is
+  never drawn. `paletteItems` takes the session and runs `visible` itself, so ⌘K
+  cannot offer an entry the nav hides — a caller composing the two could forget,
+  and nothing would say so (`decision-rules` Q7, answered after the first draft);
+  every entry lands in one `Navigate` group, the name both palette apps use
 - [ ] 1.2 The spec: longest prefix wins, `/` matches only `/`, `exact`, `match`, a
   throwing `show` counts as true, the palette's item shape
 - [ ] 1.3 `fli check` rule `nav-href-routes` (warn): every `href` and `path` in

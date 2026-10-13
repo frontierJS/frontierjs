@@ -24,6 +24,9 @@
 // rather than accepted by whatever mode the account defaults to. The one
 // `Edit(<dir>/**)` rule covers Write too — measured, for each tool the call
 // inside the scope landed and the one beside it came back as a denial.
+// `reads` adds a `Read(<dir>/**)` rule per directory, which Grep and Glob obey
+// too; with no rule a Read outside the cwd is denied, and so are an app's
+// framework packages, installed at the app root above the Vite root.
 //
 // WORK is the opposite end, for Basecamp's workbench: a build session in a
 // checkout its operator pinned, every tool and every permission. Nothing above
@@ -89,7 +92,7 @@ export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'
 // fence — a change asked of one element is often one in the component it uses.
 export const EDIT_RULES = [
   'I picked one or more elements on a page running in a FrontierJS dev server and asked for a change to them. When I pick several, the one instruction covers all of them.',
-  'Make the change with the Edit tool. Use Write only to create a new file, such as a new section or component. You may change files under the app directory and nowhere else; a call outside it is denied, so say what you would change there instead.',
+  'Make the change with the Edit tool. Use Write only to create a new file, such as a new section or component. You may change files under the app directory and nowhere else; a call outside it is denied, so say what you would change there instead. You may also read the framework guides listed below and the app\'s db/ directory.',
   'The page hot-reloads when a file is saved, so I will see the result as soon as you edit. Make the smallest change that does what I asked, in the style of the file you are in.',
   'Another session may be editing this tree. Re-read a file before you edit it, and never rewrite more of it than the change needs.',
   'Reply in two or three short lines: what you changed and where (file:line).',
@@ -146,19 +149,27 @@ export const ASK_EFFORT = 'high'
 // from a glance.
 export const PANEL_EFFORTS = ['low', 'high', 'max']
 
+// Which framework guides a kind of change needs read first. Text needs none.
+export const KIND_GUIDES = {
+  style:    ['css', 'ui'],
+  layout:   ['css', 'ui', 'mesa'],
+  behavior: ['mesa', 'sierra', 'junction'],
+  data:     ['sierra', 'junction', 'litestone'],
+}
+
 // `fork` resumes `session` under a NEW id filed under the run's own directory,
 // which is what lets `claude --resume` from a workbench branch's folder find it;
 // a plain resume from there answers but stays filed under the old directory.
 // No `effort` leaves it to the account, which is what the workbench passes.
-export function askArgv({ session = null, edit = null, work = null, fork = false, images = false, effort = null, model = null } = {}) {
-  const argv = askFlags({ session, edit, work, fork })
+export function askArgv({ session = null, edit = null, reads = [], work = null, fork = false, images = false, effort = null, model = null } = {}) {
+  const argv = askFlags({ session, edit, reads, work, fork })
   if (effort) argv.push('--effort', effort)
   if (model)  argv.push('--model', model)
   if (images) argv.push('--input-format', 'stream-json')
   return argv
 }
 
-function askFlags({ session, edit, work, fork }) {
+function askFlags({ session, edit, reads, work, fork }) {
   if (work) {
     const argv = [
       '-p',
@@ -182,7 +193,7 @@ function askFlags({ session, edit, work, fork }) {
       '--permission-mode', 'dontAsk',
       '--strict-mcp-config',
       '--tools',           EDIT_TOOLS.join(','),
-      '--allowedTools',    `Edit(/${String(edit).replace(/\/+$/, '')}/**)`,
+      '--allowedTools',    `Edit(/${String(edit).replace(/\/+$/, '')}/**)`, ...reads.map(d => `Read(/${String(d).replace(/\/+$/, '')}/**)`),
       '--max-budget-usd',  String(ASK_BUDGET_USD),
     ]
     if (session) argv.push('--resume', session)
@@ -266,9 +277,12 @@ export function askPrompt({ question, output = '', context = {}, git = null, rul
  * `loops` around it, `inner` loops and `files` under it — and `data` is the
  * resources those files read, one line each.
  */
-export function editPrompt({ instruction, picks = [], page = null, followUp = false, kind = null, scope = null, data = [], images = 0 }) {
+export function editPrompt({ instruction, picks = [], page = null, followUp = false, kind = null, scope = null, data = [], images = 0, guides = [] }) {
   const parts = []
   if (!followUp) parts.push(EDIT_RULES)
+  if (!followUp && guides.length) parts.push(['The framework this app is built on, one guide per package — read the one a change touches before you make it, and follow it over the habits of other frameworks:', ...guides.map(g => `- ${g.file} — ${g.about}`)].join('\n'))
+  const first = guides.filter(g => KIND_GUIDES[kind]?.includes(g.pkg))
+  if (first.length) parts.push(`Before this change, read: ${first.map(g => g.file).join(', ')}`)
   const change = String(instruction ?? '').trim()
   if (change) parts.push(`Change: ${change}`)
   if (images > 0) parts.push(`I pasted ${images === 1 ? 'an image' : `${images} images`} with this; ${images === 1 ? 'it comes' : 'they come'} after this text.`)
@@ -353,13 +367,13 @@ export function readAskEvent(event) {
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, images = [], effort = ASK_EFFORT, model = null, bin = 'claude', onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, reads = [], images = [], effort = ASK_EFFORT, model = null, bin = 'claude', onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
   if (!EFFORTS.includes(effort))
     return { error: `no such effort: ${JSON.stringify(String(effort).slice(0, 40))} — one of ${EFFORTS.join(', ')}` }
 
-  const child = spawn(bin, askArgv({ session, edit, effort, model, images: images.length > 0 }), {
+  const child = spawn(bin, askArgv({ session, edit, reads, effort, model, images: images.length > 0 }), {
     cwd: root, detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   })

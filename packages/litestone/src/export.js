@@ -32,6 +32,7 @@
 // that applied is evidence, and it is the half that lets somebody tell an
 // incomplete export from a complete one a year later.
 
+import { csvCell }             from '@frontierjs/toolbelt/cells'
 import { isStoredField, modelToAccessor } from './core/ddl.js'
 import { policyExprToString }  from './core/policy.js'
 import { parseGateString }     from './plugins/gate.js'
@@ -113,20 +114,9 @@ export function columnPlan(decl, { includeProtected = false } = {}) {
 //
 // CSV is the one a spreadsheet opens and it is where that stops being free: a
 // wide integer written as a bare number is a rounded double the moment something
-// parses the file, so every value goes through the same `toText` and quoting is
-// by content rather than by type.
-
-function toText(v) {
-  if (v === null || v === undefined) return ''
-  if (v instanceof Date)             return v.toISOString()
-  if (typeof v === 'object')         return JSON.stringify(v)
-  return String(v)
-}
-
-function csvCell(v) {
-  const s = toText(v)
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
+// parses the file, so every value is written as text and quoting is by content
+// rather than by type. Text a spreadsheet would run as a formula is guarded
+// (`csvCell`, `FJS-D571`), so ndjson is the format a re-import reads exactly.
 
 function makeSerializer(format, columns) {
   if (format === 'ndjson') {
@@ -276,6 +266,7 @@ export async function runExport(db, name, opts = {}) {
     omitted,
     includeProtected,
     withDeleted,
+    formulaGuard: format === 'csv',
   }
 
   // One row per RUN, not per row read. An export is a read and reads are not

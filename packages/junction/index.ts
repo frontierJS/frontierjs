@@ -25,7 +25,7 @@ export {
   NotFound, MethodNotAllowed, Conflict, Gone, Unprocessable,
   TooManyRequests, GeneralError, NotImplemented, BadGateway,
   Unavailable, Timeout,
-  toFrameworkError, fromStatusCode, registerErrorMapper
+  toFrameworkError, fromStatusCode
 } from './src/core/errors.ts'
 export type { ErrorMapper } from './src/core/errors.ts'
 
@@ -36,7 +36,7 @@ export { fieldErrors, validateFields, fieldError } from './src/core/field-errors
 export type { FieldError, FieldErrorBuilder }      from './src/core/field-errors.ts'
 
 // ─── Services ─────────────────────────────────────────────────────────────
-export { createService, createBaseService, ServiceRegistry, callService, setServiceCache,
+export { createService, createBaseService, ServiceRegistry, callService,
          SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
          READ_ONLY_METHODS, resolveMethodSelection, serviceMethodNames,
          methodEntryName, collectMethodInputs, collectMethodOutputs, serviceAccessor,

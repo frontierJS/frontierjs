@@ -17,7 +17,7 @@ import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/crede
 // 'StaticOptions'". Bun transpiles fully so it never noticed.
 import type { StaticOptions }             from './static.ts'
 import { BAKED_CACHE_CONTROL, errorResponse } from './bridge.ts'
-import { TooManyRequests } from '../core/errors.ts'
+import { TooManyRequests, type ErrorMapper } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
@@ -153,6 +153,9 @@ export interface HttpTransportOptions {
   authCookie?:  string | null
   powered?:     string     // X-Powered-By header value
   onError?:     (err: unknown, ctx?: TransportContext) => void
+  /** The app's declared error mappers, read live: a failure before a service
+   *  context exists has the transport and no app to ask. */
+  errorMappers?: readonly ErrorMapper[]
   /**
    * How many proxies stand in front of this app, or which ones.
    *
@@ -835,7 +838,7 @@ export class HttpTransport {
       ctx = this._buildContext(req, url, query, headers, parsed, match.params, user, clientIP)
     } catch (err) {
       this._opts.onError?.(err)
-      return errorResponse(err)
+      return this._errorResponse(err)
     }
 
     // ── Track method stats ─────────────────────────────────────────
@@ -848,7 +851,7 @@ export class HttpTransport {
     } catch (err) {
       this._opts.onError?.(err, ctx)
       // Run error response through finalize so correlation ID still appears
-      return await this._finalizeWithHeaders(errorResponse(err), ctx, '')
+      return await this._finalizeWithHeaders(this._errorResponse(err), ctx, '')
     }
   }
 
@@ -1233,7 +1236,7 @@ export class HttpTransport {
     this.stats.request.websocket++
 
     let query: Record<string, unknown>
-    try { query = parseQuery(url.search) } catch (err) { return errorResponse(err) }   // over a limit: refused at the upgrade
+    try { query = parseQuery(url.search) } catch (err) { return this._errorResponse(err) }   // over a limit: refused at the upgrade
     const headers = Object.fromEntries(req.headers.entries())
 
     // Read once here and taken off the headers the socket keeps: those become
@@ -1287,7 +1290,7 @@ export class HttpTransport {
       try {
         const refused = matched.upgrade(req)
         if (refused instanceof Response) return refused
-      } catch (err) { return errorResponse(err) }
+      } catch (err) { return this._errorResponse(err) }
     }
 
     // Selected by name: Bun would otherwise echo the FIRST offer, and an app's
@@ -1605,6 +1608,10 @@ export class HttpTransport {
       JSON.stringify({ name: 'MethodNotAllowed', message: `${method} is not allowed here`, code: 405, allow }),
       { status: 405, headers: { 'content-type': 'application/json', allow } }
     )
+  }
+
+  private _errorResponse(err: unknown): Response {
+    return errorResponse(err, undefined, { errorMappers: this._opts.errorMappers })
   }
 
   private _trackMethod(method: string): void {

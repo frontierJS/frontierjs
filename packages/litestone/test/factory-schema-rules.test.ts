@@ -441,3 +441,48 @@ describe('an @derived field is left out of the generated row', () => {
     finally { env.close() }
   })
 })
+
+// FJS-2788: withParents() wired an Event override's chain and createOne() laid the
+// chain's key values over the definition's, so a definition naming seeded rows
+// lost them -- the cure verifyGateLadder's message names did not hold.
+describe('a hand-written definition names its own foreign keys', () => {
+  const SCHEMA = `
+    model Schedule { id String @id @default(uuid()); name String; days Day[]; events Event[] }
+    model Day { id String @id @default(uuid()); scheduleId String; label String
+      schedule Schedule @relation(fields: [scheduleId], references: [id]); events Event[]
+      @@unique([scheduleId, id]) }
+    model Event { id String @id @default(uuid()); scheduleId String; dayId String; title String
+      schedule Schedule @relation(fields: [scheduleId], references: [id])
+      day      Day      @relation(fields: [scheduleId, dayId], references: [scheduleId, id])
+      shifts Shift[] }
+    model Shift { id String @id @default(uuid()); eventId String; label String
+      event Event @relation(fields: [eventId], references: [id]) }`
+
+  test('the chain does not replace the keys the definition names', async () => {
+    const { Factory } = await import('../src/seeder.js')
+    const seeded: { schedule?: any, day?: any } = {}
+    const EventFactory = class extends Factory {
+      model = 'Event'
+      definition = (seq: number) => ({
+        scheduleId: seeded.schedule.id, dayId: seeded.day.id, title: `event ${seq}`,
+      })
+    }
+    const { factories, db } = await makeTestClient(SCHEMA, { autoFactories: true, factories: { event: EventFactory } })
+    seeded.schedule = await factories.schedule.createOne()
+    seeded.day      = await factories.day.createOne({ scheduleId: seeded.schedule.id })
+
+    const shift = await factories.shift.withParents().createOne()
+    const event = await db.event.findUnique({ where: { id: shift.eventId } })
+    expect(event.scheduleId).toBe(seeded.schedule.id)
+    expect(event.dayId).toBe(seeded.day.id)
+    expect(await db.schedule.count()).toBe(1)
+    expect(await db.day.count()).toBe(1)
+
+    // an explicit .for() is the caller's word and still beats the definition
+    const other = await factories.schedule.createOne()
+    const otherDay = await factories.day.createOne({ scheduleId: other.id })
+    const e2 = await factories.event.for('schedule', other, 'scheduleId').for('day', otherDay, ['scheduleId', 'dayId'], ['scheduleId', 'id']).createOne()
+    expect(e2.scheduleId).toBe(other.id)
+    expect(e2.dayId).toBe(otherDay.id)
+  })
+})

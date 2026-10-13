@@ -13,7 +13,7 @@
 // A file that cannot be read contributes nothing, never an error: this is
 // context for a prompt, and a missing line costs less than a refused ask.
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { appSchemaModels } from './app-schema.js'
@@ -68,6 +68,33 @@ export function findAppRoot(root) {
   for (let dir = root, i = 0; i < 3; i++, dir = dirname(dir))
     if (existsSync(join(dir, 'db', 'schema.lite'))) return dir
   return null
+}
+
+// The framework packages whose AGENTS.md an edit may need, and when. An app's
+// node_modules sits at the app root, outside the Vite root the session edits,
+// so without these the model styles by guessing from the file it is in.
+export const GUIDES = {
+  css:       'the styling language: what a thing is, then a tone and a treatment, never a color',
+  ui:        'the component kit (buttons, fields, cards) over @frontierjs/css',
+  mesa:      'the .mesa language: markup, script, signals and events',
+  sierra:    'routes, layouts, resources and forms',
+  junction:  'services and the client a resource calls',
+  litestone: 'db/schema.lite: models, fields, gates',
+}
+
+/** `[{ pkg, file, dir }]`, each guide's AGENTS.md as installed above `root`, symlinks resolved. */
+export function findGuides(root) {
+  const out = []
+  for (const pkg of Object.keys(GUIDES)) {
+    for (let dir = root, i = 0; i < 4; i++, dir = dirname(dir)) {
+      const file = join(dir, 'node_modules', '@frontierjs', pkg, 'AGENTS.md')
+      if (!existsSync(file)) continue
+      const real = realpathSync(file)
+      out.push({ pkg, file: real, dir: dirname(real) })
+      break
+    }
+  }
+  return out
 }
 
 /**

@@ -10,3 +10,6 @@ export function parseCell(
   kind: CellKind,
   opts?: { scale?: number; values?: readonly string[] },
 ): CellResult
+
+/** One value as a CSV cell; text a spreadsheet would run as a formula gets a leading `'`. */
+export function csvCell(v: unknown): string

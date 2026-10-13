@@ -50,7 +50,8 @@ accounts are in `docs/changes-archive/junction.md`.
 - **`toFrameworkError()` is THE error boundary** (`src/core/errors.ts`) — one
   point where a thrown value becomes a status. If you own an error class, give
   it a numeric `status`; that needs no registration and no dependency on
-  Junction. `registerErrorMapper(fn)` is for errors you cannot modify.
+  Junction. `createApp({ errorMappers })` / `app.errorMapper(fn)` is for errors
+  you cannot modify, and is the app's own (`FJS-D580`).
 - **Startup is ONE named phase list** — `runStartPhases(bindHost)` in
   `src/core/app.ts`. Add a phase to the list, never to one caller.
 - **`register` is `=> void`, not `=> Promise<void>`.** `configure()` runs it

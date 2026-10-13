@@ -214,7 +214,7 @@ export async function runPipeline(
       await runCore()
     } catch (err) {
       ctx.type  = 'error'
-      ctx.error = toFrameworkError(err)
+      ctx.error = toFrameworkError(err, ctx.app)
 
       if (pipeline.error.length) {
         try {

@@ -39,8 +39,9 @@
 //     rows is always an array (even for findFirst/findUnique).
 //
 //   async onAfterWrite(model, operation, result, ctx)
-//     After a write completes. operation is 'create'|'update'|'delete'.
-//     result is the written row (or null for many-ops).
+//     After a write commits. operation is 'create'|'update'|'delete'.
+//     result is the written row; createMany and updateMany call it once per
+//     row they wrote. Not inside the write's transaction (FJS-D588).
 //
 //   buildReadFilter(model, ctx)
 //     Called during buildSQL to inject extra WHERE conditions.

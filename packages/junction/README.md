@@ -1190,13 +1190,12 @@ createService({
 
 Cache keys include the authenticated user's ID when present — `GET /orders` for user A never serves user B's cached result. Public routes share a single cache entry per query.
 
-The underlying store is shared across all services. Override it at the app level with a SQLite-backed cache for persistence across restarts:
+The underlying store is the app's, shared across its services. Claim a SQLite-backed one before the first cached call for persistence across restarts:
 
 ```typescript
-import { setServiceCache } from '@frontierjs/junction'
 import { createSqliteCache } from '@frontierjs/junction/cache'
 
-setServiceCache(createSqliteCache({ path: './cache.db', defaultTtl: '1 minute' }))
+app.claim('serviceCache', createSqliteCache({ path: './cache.db', defaultTtl: '1 minute' }))
 ```
 
 ---

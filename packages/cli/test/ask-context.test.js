@@ -6,11 +6,11 @@
 // loc names the layout, and only the locs under it reach the route.
 
 import { describe, test, expect, afterAll } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { askContext, enclosingLoops, findAppRoot, resourceImports } from '../core/ask-context.js'
+import { askContext, enclosingLoops, findAppRoot, findGuides, resourceImports } from '../core/ask-context.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'fli-ask-context-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -73,6 +73,23 @@ describe('findAppRoot', () => {
     expect(findAppRoot(web)).toBe(dir)
     expect(findAppRoot(dir)).toBe(dir)
     expect(findAppRoot(tmpdir())).toBe(null)
+  })
+
+})
+
+describe('findGuides', () => {
+
+  test('each guide installed above the Vite root, through the workspace link, and none for a package not installed', () => {
+    put('pkgs/css/AGENTS.md', '# css\n')
+    put('pkgs/mesa/AGENTS.md', '# mesa\n')
+    put('pkgs/sierra/README.md', '# no guide\n')
+    mkdirSync(join(dir, 'node_modules', '@frontierjs'), { recursive: true })
+    for (const p of ['css', 'mesa', 'sierra']) symlinkSync(join(dir, 'pkgs', p), join(dir, 'node_modules', '@frontierjs', p))
+    const real = realpathSync(dir)
+    expect(findGuides(web)).toEqual([
+      { pkg: 'css',  file: join(real, 'pkgs/css/AGENTS.md'),  dir: join(real, 'pkgs/css') },
+      { pkg: 'mesa', file: join(real, 'pkgs/mesa/AGENTS.md'), dir: join(real, 'pkgs/mesa') },
+    ])
   })
 
 })

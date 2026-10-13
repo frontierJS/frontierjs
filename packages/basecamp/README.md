@@ -210,8 +210,15 @@ is the generated, checkable list of which model is which.
 
 ### Known gaps
 
-- **Auth is password-only.** No OAuth. Bearer tokens; `cookieAuth` exists in
-  `@frontierjs/auth` and this app has not turned it on.
+- **Team sign-in is opt-in, and turning it on changes the session mode**
+  (`FJS-D670`). Set `GITHUB_CLIENT_ID`/`_SECRET`, `GOOGLE_*` or `OIDC_*` (with
+  its three endpoint URLs) on the API and the login screen draws a button per
+  provider; set none and the app stays password plus TOTP over Bearer tokens.
+  Any provider switches the whole app to cookie sessions, because the callback
+  is a redirect, so the desktop shell on `tauri://localhost` can no longer
+  password-sign-in. The web build reads the same variables (`vite.config.js`),
+  so they are set for `bun run web` and the image build too, and the callback
+  URL to register with the provider is `APP_URL` + `/auth/oauth/<name>/callback`.
 - **Every provider is a stub.** Eight appliances until their env vars are set —
   Infisical, Unleash, Typesense, Zot, Forgejo, Grafana/Loki, NetBird, Nango — plus
   two hosted services reached with a token, `edge` and `cloudSpend`. Four screens

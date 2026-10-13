@@ -34,18 +34,20 @@ flags:
 import { existsSync, writeFileSync } from 'fs'
 import { resolve }                    from 'path'
 
-const makeScript = (schemaPath, encKey, role, limit, includeSessions) => `
+// The input arrives as JSON in FLI_LIST_USERS — interpolating it into the
+// source let a quote in --role end the string literal.
+const SCRIPT = `
 import { createClient } from '@frontierjs/litestone'
 
-const db  = await createClient({ path: '${schemaPath}', resolveFrom: 'schema', encryptionKey: '${encKey}' })
+const input = JSON.parse(process.env.FLI_LIST_USERS)
+
+const db  = await createClient({ path: input.schemaPath, resolveFrom: 'schema', encryptionKey: process.env.ENCRYPTION_KEY })
 const sys = db.asSystem()
 
-const where = ${role ? `{ role: '${role}' }` : '{}'}
-
 const users = await sys.user.findMany({
-  where,
+  where:   input.role ? { role: input.role } : {},
   orderBy: { createdAt: 'desc' },
-  limit: ${limit},
+  limit:   input.limit,
 })
 
 const result = []
@@ -60,12 +62,11 @@ for (const u of users) {
     createdAt:     u.createdAt,
   }
 
-  ${includeSessions ? `
-  const sessionCount = await sys.session.count({
-    where: { userId: u.id, expiresAt: { $gt: new Date() } }
-  })
-  entry.activeSessions = sessionCount
-  ` : ''}
+  if (input.sessions) {
+    entry.activeSessions = await sys.session.count({
+      where: { userId: u.id, expiresAt: { gt: new Date() } }
+    })
+  }
 
   result.push(entry)
 }
@@ -103,15 +104,22 @@ const { unlinkSync } = await import('fs')
 const tmpPath = resolve($.paths.root, `.fli-list-users-${Date.now()}.ts`)
 
 try {
-  writeFileSync(tmpPath, makeScript(
-    schemaPath.replace(/\\/g, '/'),
-    encKey,
-    flag.role,
-    flag.limit,
-    flag.sessions
-  ), 'utf8')
+  writeFileSync(tmpPath, SCRIPT, 'utf8')
 
-  const result = $.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
+  const result = $.exec({
+    command: `bun run "${tmpPath}"`,
+    cwd:     $.paths.root,
+    stdio:   ['ignore', 'pipe', 'inherit'],
+    env:     {
+      ...process.env,
+      FLI_LIST_USERS: JSON.stringify({
+        schemaPath,
+        role:     flag.role,
+        limit:    Number(flag.limit),
+        sessions: flag.sessions,
+      }),
+    },
+  })
   const output = (result?.stdout ?? result ?? '').toString().trim()
   const last   = output.split('\n').find(l => l.startsWith('['))
 

@@ -4,26 +4,6 @@ description: FJS native authentication — install, users, sessions, key rotatio
 ---
 
 <script>
-// ─── requireAuthInstalled ─────────────────────────────────────────────────────
-// Checks that auth:install has been run — schema.lite contains the auth models.
-// Call at the top of any auth command that requires the tables to exist.
-
-const requireAuthInstalled = ($) => {
-  const schemaPath = resolve($.paths.db, 'schema.lite')
-  if (!existsSync(schemaPath)) {
-    $.log.error('schema.lite not found — run fli auth:install first')
-    return false
-  }
-  const contents = fs.readFileSync(schemaPath, 'utf8')
-  const hasAuth = ['model users', 'model sessions', 'model credentials', 'model verifications']
-    .every(m => contents.includes(m))
-  if (!hasAuth) {
-    $.log.error('Auth models not found in schema.lite — run fli auth:install first')
-    return false
-  }
-  return true
-}
-
 // ─── requireEncryptionKey ─────────────────────────────────────────────────────
 // Checks ENCRYPTION_KEY is set in .env.
 
@@ -42,6 +22,7 @@ const requireEncryptionKey = ($) => {
 ```
 fli auth:install           ← one-command setup — schema, keys, scaffolding
 fli auth:create-user       ← create a user directly in the database
+fli auth:dev-admin         ← create or reset dev@knight.works / test1234 as top standing
 fli auth:list-users        ← list users
 fli auth:revoke-sessions   ← revoke all sessions for a user
 fli auth:rotate-key        ← rotate ENCRYPTION_KEY, re-encrypts @secret fields

@@ -5770,6 +5770,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return select === false ? null : final
     }
     if (affected.length) await plugins.afterDelete(modelName, affected, ctx)
+    // Row by row, as the single-row verbs are: a copy a plugin derives from
+    // these rows goes stale and fails open when a bulk write is not heard
+    // (FJS-1725). A delete is heard by afterDelete above.
+    if (rows?.length && (plan.op === 'create' || plan.op === 'update') && plugins?.hearsWrites) {
+      for (const r of rows) await plugins.afterWrite(modelName, LOG_OP[plan.op], read(r, { mode: 'single', hydrateFrom: true }), ctx)
+    }
     if (plan.logs && rows?.length) emitLogs(LOG_OP[plan.op], rows, { system: plan.system, written: writtenOf(plan) })
     if (doomed) await cascadeRemoved(doomed)
     if (plan.announce) announceBulk({ ...plan.announce, count, rows })
@@ -5908,7 +5914,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // The WHERE grades each row as it was; the post-update rule reads the row
     // as it is now, which only RETURNING carries (FJS-1713).
     const _umPost = ctx.hasPolicies && !!shape.policy['post-update']
-    const _umNeedRows = tableHasLogWork || _umWantRows || _umPost
+    const _umNeedRows = tableHasLogWork || _umWantRows || _umPost || !!plugins?.hearsWrites
     const _umStmt = frag(sqlJoin([KW.update, T, KW.set, _umSetAll, _umWhereClause, _umNeedRows && KW.returning], ''))
     return {
       verb: 'updateMany', op: 'update', statements: [{ ..._umStmt, data: row }], count: null,
@@ -6040,7 +6046,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const parent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), hidden[i])) : []
     for (const [i, r] of parent.entries()) hidden[i] = firstRefusal(r, hidden[i])
     // A logged model already takes RETURNING, so opting in costs it nothing.
-    return { data, system, hidden, mode, needRows: tableHasLogWork || wantRows }
+    // A plugin's onAfterWrite is told each row (FJS-1725).
+    return { data, system, hidden, mode, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites }
   }
 
   // The rows as they will be written, and one statement per row. Runs INSIDE

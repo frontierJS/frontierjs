@@ -98,7 +98,7 @@ status at all and falls to 500.
 ## Litestone's errors, through this boundary
 
 The cross-package half, and the half that drifts. **If you own the error class,
-give it a `status`** — `registerErrorMapper()` is for errors you cannot modify.
+give it a `status`** — `app.errorMapper()` is for errors you cannot modify.
 A row landing on 500 with a message about a conflict is a client told to retry
 something that will never work, or not to retry something that would.
 

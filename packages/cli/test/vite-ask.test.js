@@ -41,9 +41,36 @@ describe('askArgv — edit', () => {
     expect(askArgv({ edit: '/app', session: id }).slice(-2)).toEqual(['--resume', id])
   })
 
+  test('each read directory is a Read rule beside the one Edit rule, and grants no edit', () => {
+    const argv = askArgv({ edit: '/app/web', reads: ['/repo/packages/css/', '/app/db'] })
+    const at = argv.indexOf('--allowedTools')
+    expect(argv.slice(at + 1, at + 4)).toEqual(['Edit(//app/web/**)', 'Read(//repo/packages/css/**)', 'Read(//app/db/**)'])
+    expect(argv.filter(a => a.startsWith('Edit('))).toHaveLength(1)
+  })
+
 })
 
 describe('editPrompt', () => {
+
+  const guides = [
+    { pkg: 'css',  file: '/r/css/AGENTS.md',  about: 'the styling language' },
+    { pkg: 'mesa', file: '/r/mesa/AGENTS.md', about: 'the .mesa language' },
+  ]
+
+  test('a first ask lists every guide; a kind names the ones to read first', () => {
+    const p = editPrompt({ instruction: 'x', guides, kind: 'style' })
+    expect(p).toContain('- /r/css/AGENTS.md — the styling language\n- /r/mesa/AGENTS.md — the .mesa language')
+    expect(p).toContain('Before this change, read: /r/css/AGENTS.md')
+    expect(p).not.toContain('read: /r/css/AGENTS.md, /r/mesa')
+    expect(editPrompt({ instruction: 'x', guides, kind: 'layout' })).toContain('Before this change, read: /r/css/AGENTS.md, /r/mesa/AGENTS.md')
+    expect(editPrompt({ instruction: 'x', guides, kind: 'text' })).not.toContain('Before this change')
+  })
+
+  test('a follow-up does not list the guides again, and still names a kind\'s', () => {
+    const p = editPrompt({ instruction: 'x', guides, kind: 'behavior', followUp: true })
+    expect(p).not.toContain('one guide per package')
+    expect(p).toContain('Before this change, read: /r/mesa/AGENTS.md')
+  })
 
   test('a first pick carries the rules, the change, the page, the source and the HTML', () => {
     const p = editPrompt({ instruction: 'make it bold', picks: [{ loc: 'content/routes/index.mesa:4:3', html: '<h1>Hi</h1>' }], page: 'http://localhost:8690/' })

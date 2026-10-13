@@ -22,9 +22,11 @@ inside the API that is already running; `projectTools()` is what it serves.
   `FJS-D955`): `<root>/<Model>.html` is served at `ui://<server>/<Model>` and
   every one-row tool of that model carries `_meta.ui.resourceUri`, both read
   off one per-request set after `narrow` and the key's scopes. `ui` absent is
-  text-only tools. `IDEAS/agent-client-ui.md` Phase 1 is the protocol half;
+  text-only tools. A tool answer carries its object in `structuredContent`,
+  the value the socket would have handed a client, beside the text.
+  `IDEAS/agent-client-ui.md` Phase 1 is the protocol half;
   the build (`fli mcp:build`) and the iframe client are not started.
-- **170 tests over eleven files, plus a drive.** `example`: `verify:mcp` is the only
+- **173 tests over eleven files, plus a drive.** `example`: `verify:mcp` is the only
   place a real MCP client connects and the only one over an app with no `app.db`. `test/projection.test.ts` is the rules against a
   real `.lite` fixture; `test/plugin.test.ts` boots a real Junction app over a
   real Litestone client on a real port and speaks JSON-RPC to it.

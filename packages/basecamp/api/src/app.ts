@@ -11,7 +11,6 @@ import {
   channels,
   healthPlugin,
   membershipClaim,
-  registerErrorMapper,
   Forbidden,
   BadRequest,
 } from '@frontierjs/junction'
@@ -30,7 +29,8 @@ import { buildProviders }            from './providers/index.ts'
 import { createWorkbench }           from './core/workbench.ts'
 import { apply, LEVELS }                         from '@frontierjs/litestone'
 import type { WriteEvent }                       from '@frontierjs/litestone'
-import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
+import { createLitestoneAuth, createAuthPlugin, defineProvider } from '@frontierjs/auth'
+import { ssoFromEnv }                            from './core/sso-env.ts'
 import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
 import { createSecretResolver }          from './core/credentials.ts'
@@ -70,11 +70,14 @@ const AUDIT_EXCEPT = ['servers.heartbeat', 'volumes.report', 'cleanup.report', '
  * on the same file would work and would be wrong: `arrange` writes and
  * `announced()` would then be looking at different connections.
  *
- * Both default to what production does, so the entry point calls this with no
+ * `sso` is the same: the variables sign-in providers are read from, so a test
+ * turns one on without touching the process environment.
+ *
+ * All default to what production does, so the entry point calls this with no
  * arguments and nothing about it changes.
  */
 export async function buildBasecampApp(
-  opts: { db?: unknown; dbPath?: string } = {},
+  opts: { db?: unknown; dbPath?: string; sso?: Record<string, string | undefined> } = {},
 ): Promise<BasecampApp> {
 
   // ── Logger ──────────────────────────────────────────────────────────
@@ -139,8 +142,18 @@ export async function buildBasecampApp(
   // auth owns the model and knows nothing about `isSystemAdmin`, `status` or
   // `kind`; without this seam the only way to read one per request is to fetch
   // the user again after auth already has. See core/session-auth.ts.
+  //
+  // Team sign-in: cookie mode and the OAuth block turn on together, exactly
+  // when one provider is configured (`FJS-D670`). The callback is a browser
+  // redirect and can only hand back a cookie, so a fleet that sets a provider
+  // gives up Bearer login; web/config reads the same list for its twin.
+  const sso = ssoFromEnv(opts.sso ?? env)
   let built: BasecampApp | null = null
   const auth = refuseSuspendedLogin(createLitestoneAuth(db, {
+    oauthProviders: Object.fromEntries(sso.map(p => [p.name, defineProvider(p.name, p.preset, p.opts)])),
+    // '/' covers every same-origin path, which is what `?next=` on the login
+    // screen already confines itself to.
+    oauthReturnToAllow: ['/'],
     encryptionKey: env.ENCRYPTION_KEY,
     sessionTtl:    '7 days',
     sessionFields: basecampSessionFields,
@@ -252,7 +265,7 @@ export async function buildBasecampApp(
   // Matched on `name`, not `instanceof`: the class crosses a package boundary
   // (litestone throws it, junction catches it) and this app resolves its own
   // copy of neither.
-  registerErrorMapper((err: unknown) => {
+  app.errorMapper((err: unknown) => {
     const e = err as { name?: string; transition?: string; required?: number }
     if (e?.name !== 'TransitionGateError') return null
 
@@ -660,6 +673,10 @@ export async function buildBasecampApp(
     prefix:   '/auth',
     services: { apiKeys: false, standingLevel: basecampGateLevel },
     canStartSupport: supportGuard,
+    cookieAuth: sso.length > 0,
+    // The callback lands on the origin the browser sees, which is the web
+    // origin: the proxy forwards /auth, and the state cookie is scoped to it.
+    ...(sso.length ? { oauth: { publicUrl: env.APP_URL, errorRedirect: '/login/' } } : {}),
   }))
 
   app.configure(function setupRoutes(a) {

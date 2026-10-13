@@ -56,6 +56,23 @@ export const env = defineEnv({
   // placeholder, and refused a production boot over a value no code path would
   // have used. ENCRYPTION_KEY below is the credential this app actually has.
 
+  // Team sign-in (`FJS-1783`). A provider is configured when ALL its variables
+  // are set, and a half-set one stops the boot (core/sso-env.ts). Setting any
+  // provider turns cookie sessions on for the whole app (`FJS-D670`): the OAuth
+  // callback is a browser redirect and can only hand back a cookie, so the
+  // desktop shell on tauri://localhost can no longer password-sign-in.
+  // `oidc` has no endpoints of its own — Entra, Okta, Keycloak — and does not
+  // trust the address its issuer reports.
+  GITHUB_CLIENT_ID:     {},
+  GITHUB_CLIENT_SECRET: {},
+  GOOGLE_CLIENT_ID:     {},
+  GOOGLE_CLIENT_SECRET: {},
+  OIDC_CLIENT_ID:       {},
+  OIDC_CLIENT_SECRET:   {},
+  OIDC_AUTHORIZE_URL:   {},
+  OIDC_TOKEN_URL:       {},
+  OIDC_USERINFO_URL:    {},
+
   // ── Encryption ────────────────────────────────────────────
   // Secret.data is @encrypted — Litestone's createClient() throws without a
   // 32-byte (64 hex char) key, and a malformed one is rejected here.

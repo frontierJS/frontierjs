@@ -564,6 +564,15 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
     const result = appDb ? withhold(appDb) : await app.withDb(withhold)
     await recordCall(app, call.trail, tool, a, user, { outcome: 'done', result })
     const answer: CallResult = { content: [{ type: 'text', text: JSON.stringify(result ?? null) }] }
+    // `result` is already the wire shape -- `app.service()` unwrapped it as the
+    // socket's `service_result` is unwrapped, a list keeping its envelope and a
+    // single being the row -- so a view's relayed call resolves what `forward()`
+    // would have, and the client's own `find()`/`get()` read it unchanged.
+    // Rebuilding the envelope here would be a second wrap of one answer and
+    // would hand `get()` a `{ kind, data }` it never unwraps. The field is an
+    // object by the protocol, so a scalar or array answer rides in the text
+    // alone; the text stays beside the object for a host that reads only text.
+    if (isRecord(result)) answer.structuredContent = result
     if (answersOneRow(tool)) {
       // Read off the row the CALLER was answered, so a foreign key their read
       // withheld names nothing (`FJS-D398`).
@@ -574,7 +583,7 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
     if (ctx?.mcpReq?._meta?.[AWAIT_META] !== true) return answer
     return await held(app, call, since, ctx, answer)
   } catch (err) {
-    const fe = toFrameworkError(err)
+    const fe = toFrameworkError(err, app)
     // A 4xx is the caller's own mistake and the message is written for them —
     // *which* field, *which* level. A 5xx message is not: it can carry a table
     // name or a file path, and `sanitizeError` only runs on the transport's own
@@ -687,9 +696,14 @@ function callOf(r: TrailRow) {
 
 interface CallResult {
   content: Array<{ type: 'text'; text: string }>
+  /** The first text block, parsed -- present when the answer is an object. */
+  structuredContent?: Record<string, unknown>
   isError?: boolean
   _meta?:   Record<string, unknown>
 }
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v)
 
 /** The slice of the SDK's handler context this file reads. */
 interface HandlerCtx {

@@ -7,7 +7,7 @@
  * are the kinds the transit stressor's `orders-dirty.csv` carries.
  */
 
-import { parseCell } from '../../src/cells/cells.js'
+import { parseCell, csvCell } from '../../src/cells/cells.js'
 
 const value  = (r) => { assert.equal(r.reason, undefined, `expected a value, got the reason '${r.reason}'`); return r.value }
 const reason = (r) => { assert.equal('value' in r, false, `expected a reason, got the value ${JSON.stringify(r.value)}`); return r.reason }
@@ -100,4 +100,30 @@ test('cells: JSON is parsed, or refused without the parser\'s message', function
   assert.deepEqual(value(parseCell('{"a":[1,2]}', 'json')), { a: [1, 2] })
   // The parser's own message quotes the offending token.
   assert.equal(reason(parseCell('{"a":', 'json')), 'not JSON')
+})
+
+test('cells: csvCell prefixes a quote to text a spreadsheet would run, and to nothing else', function () {
+  assert.equal(csvCell('=1+1'), "'=1+1")
+  assert.equal(csvCell('+1-2'), "'+1-2")
+  assert.equal(csvCell('-2+3'), "'-2+3")
+  assert.equal(csvCell('@SUM(A1)'), "'@SUM(A1)")
+  assert.equal(csvCell('\tx'), "'\tx")
+  assert.equal(csvCell('\rx'), `"'\rx"`)
+  assert.equal(csvCell('=HYPERLINK("https://x","Refund")'), `"'=HYPERLINK(""https://x"",""Refund"")"`)
+  // A number, and text parseCell would read as one, is left as written.
+  assert.equal(csvCell('-12.50'), '-12.50')
+  assert.equal(csvCell('+3'), '+3')
+  assert.equal(csvCell(-7), '-7')
+  assert.equal(csvCell('a=b'), 'a=b')
+  assert.equal(csvCell('-'), "'-")
+})
+
+test('cells: csvCell writes a value as text and quotes by content', function () {
+  assert.equal(csvCell(null), '')
+  assert.equal(csvCell(undefined), '')
+  assert.equal(csvCell(new Date('2026-01-02T03:04:05Z')), '2026-01-02T03:04:05.000Z')
+  assert.equal(csvCell({ a: 1 }), '"{""a"":1}"')
+  assert.equal(csvCell('a,b'), '"a,b"')
+  assert.equal(csvCell('line\nbreak'), '"line\nbreak"')
+  assert.equal(csvCell(12345678901234567890n), '12345678901234567890')
 })

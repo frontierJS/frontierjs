@@ -321,7 +321,7 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
           // over the message here would be a second answer to that question,
           // drifting from the first the day a refusal is reworded.
           const { toFrameworkError } = await import('../../core/errors.ts')
-          const fe = toFrameworkError(err)
+          const fe = toFrameworkError(err, app)
           // `code` IS the status on a FrameworkError — one number, not a status
           // and a string beside it.
           return ctx.json({
