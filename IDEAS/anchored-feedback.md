@@ -125,7 +125,7 @@ feature is uploading a browser's review once.
      or comment through `app.notify`, and Kobami's host adds a Basecamp channel.
      The sink carries a link, never a copy of the pin's state, so there stays one
      origin.
-3. **Cross-origin.** *Waits on V2 — V1 has no store, so nothing crosses an origin.* The preview is on one origin and the store on another, so
+3. ~~**Cross-origin.**~~ **Answered 2026-10-13 (`FJS-D947`): B — Bearer over CORS with `origins: ['*']`, the token scoped to one review by its invite link, and the client attaching it only to the store's configured origin.** *Waits on V2 — V1 has no store, so nothing crosses an origin.* The preview is on one origin and the store on another, so
    the client is Bearer over CORS. `FJS-1090` (no owner says which origins an
    API must allow) is open and this is one more caller of it; `FJS-788`
    (`sierraFetch` sent the Bearer to any absolute URL) is the closed trap to

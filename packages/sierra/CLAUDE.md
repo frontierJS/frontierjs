@@ -201,7 +201,9 @@ src/
                          writes down with it. Drains AFTER pending.js, as an
                          ordinary patch naming the row, which is why it only
                          works on a key the browser minted. Imported dynamically
-                         by pending.js so the dependency stays one-way
+                         by pending.js (so the dependency stays one-way) AND by
+                         resource.js — a static import in either puts the blob
+                         queue in every app's main chunk (`FJS-2752`)
 
   islands/loader.js      — find island markers in prerendered HTML and mount
   postbuild/             — sitemap, redirects, llms.txt, 404, theme, defer, markdown,

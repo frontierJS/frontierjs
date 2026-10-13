@@ -90,7 +90,7 @@ IS the surface command, and every surface it has is one it starts.
 **`--debug` is the flag every command has, carried one process further**: it
 also sets `DEBUG=1` on the servers `fli dev` starts. That is the switch
 Junction already reads — its boot diagnostics, and `config.debug`, which puts
-`mode=debug` on the banner and a 5xx's detail in the response — so it asks the
+`debug=true` on the banner and a 5xx's detail in the response — so it asks the
 servers the same thing it asks fli: the whole error, not the clean line.
 
 **`--host` is the same shape**: it sets `FLI_HOST=1` on the servers, and

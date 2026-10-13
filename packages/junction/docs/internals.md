@@ -688,7 +688,7 @@ any transaction. What was actually wrong is that `transactionScopeHook` left
 `finally` now, so anything reading it after the commit gets a working
 non-transaction client rather than what a reader believes is the transaction.
 
-**The span is the whole of `_callService`** — method policy, idempotency claim,
+**The span is the whole of `_callService`** — method selection, idempotency claim,
 pipeline, announcement, `afterCommit` drain, outbox handoff. Everything that
 semantically belongs to the invocation, which is why an effect queued with
 `ctx.afterCommit` can still read `$`. A nested call runs it again with its own

@@ -91,8 +91,32 @@ test('command-resolves finds a typescript hoisted to a parent node_modules', () 
   } finally { rmSync(ws, { recursive: true, force: true }) }
 })
 
-// FJS-2374: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-test.failing('migration-history reads an exec-form CMD that runs db:migrate', () => {
+test('migration-history reads an ENTRYPOINT script that runs db:migrate', () => {
+  const root = tree({
+    'db/schema.lite': 'model A {\n  id Int @id\n}\n',
+    'Dockerfile':     'FROM oven/bun\nENTRYPOINT ["./entrypoint.sh"]\n',
+    'entrypoint.sh':  '#!/bin/sh\nbun run db:migrate\nexec bun run start\n',
+  })
+  try {
+    const out = runChecks({ root, only: ['migration-history'] })
+    expect(out.skipped).toHaveLength(0)
+    expect(out.findings).toHaveLength(1)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('migration-history names an entrypoint script it cannot read', () => {
+  const root = tree({
+    'db/schema.lite': 'model A {\n  id Int @id\n}\n',
+    'Dockerfile':     'FROM oven/bun\nENTRYPOINT ["./entrypoint.sh"]\n',
+  })
+  try {
+    const out = runChecks({ root, only: ['migration-history'] })
+    expect(JSON.stringify(out.skipped)).toContain('entrypoint.sh')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// FJS-2374
+test('migration-history reads an exec-form CMD that runs db:migrate', () => {
   const root = tree({
     'db/schema.lite': 'model A {\n  id Int @id\n}\n',
     'Dockerfile':     'FROM oven/bun\nCMD ["bun", "run", "db:migrate"]\n',

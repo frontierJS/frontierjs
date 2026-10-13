@@ -436,7 +436,7 @@ is which subset earns a name.
     calls what B removes, and the enforcer is a junction test asserting
     `app.scheduler` offers no `cron`, with the `scheduler-dispatch` fixture moved to
     `every()`.
-- **FJS-D512 — What does the zone binding spell when the wall clock's zone lives on another model, and is the zone column refused by a new `@zone` validator?**
+- ~~**FJS-D512 — What does the zone binding spell when the wall clock's zone lives on another model, and is the zone column refused by a new `@zone` validator?**~~ **Answered 2026-10-13 (`FJS-D512`): A — `@zone` beside `@date`/`@datetime`/`@time` on the zone column (IANA set via `Intl.supportedValuesOf`), and `@zoned(path)` on `@time`/`@date` columns taking a one-hop relation path (`site.timeZone`), the `FJS-499` one-hop precedent; litestone only refuses and describes (`x-zoned` in JSON Schema), and an instant pair stays the app's `@system` columns.**
   `FJS-1214`: `FJS-D143` ruled the form `DateTime @zoned(field)`, but both stressors'
   central object is `startLocal String @time` whose zone is `site.timeZone` (connectteam)
   or `schedule.timeZone` (calendly), one relation away. Today `Site.timeZone String`

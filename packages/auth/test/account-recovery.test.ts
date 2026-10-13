@@ -203,6 +203,19 @@ describe('`standingLevel` — a grader for acting on somebody else', () => {
     expect(await enabled(u.userId)).toBe(true)
   })
 
+  // FJS-2650. The documented resolver is the app's gate `getLevel`, which reads
+  // a principal's `id` and grades a caller without one STRANGER.
+  test('is handed a principal that names the person `id`, as a gate `getLevel` reads it', async () => {
+    const getLevel = (u: { id?: string, role?: string } | null) =>
+      (!u || u.id == null) ? 0 : levelOf(u)
+    const on = await appWith({ standingLevel: getLevel })
+    const op = await person('sysadmin', false)
+    const u  = await person('user')
+    expect((await reset(op.token, u.userId, on)).status).toBe(200)
+    expect(await enabled(u.userId)).toBe(false)
+    expect(((await request(on).get('/account/me').auth(op.token)).body as { standing?: number }).standing).toBe(7)
+  })
+
   test('a person graded as no number is refused, with the operator at SYSADMIN', async () => {
     const on = await appWith({ standingLevel: (s: { role?: string }) =>
       (s.role === 'sysadmin' ? 7 : Number.NaN) })

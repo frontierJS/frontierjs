@@ -221,6 +221,16 @@ describe("data.template", () => {
     if (res.ok) expect((res.data as any).rendered).toBe("Hello, World!")
   })
 
+  test("a placeholder reads own properties only", async () => {
+    const ctx = makeCtx({
+      config: { template: "[{{trigger.constructor}}][{{user.toString}}]" },
+      nodes:  { user: { name: "Alice" } } as any,
+    })
+    const res = await getImpl("data.template").execute(ctx)
+    expect(res.ok).toBe(true)
+    if (res.ok) expect((res.data as any).rendered).toBe("[][]")
+  })
+
   test("nested path interpolation", async () => {
     const ctx = makeCtx({
       config: { template: "User: {{user.name}}" },

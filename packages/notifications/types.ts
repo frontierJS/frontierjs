@@ -177,9 +177,10 @@ export interface NotificationsPluginOptions {
 
   /**
    * A driver per transport name. `email: { mailer }` is the one plain object
-   * accepted — it selects the built-in email path over `app.mail`; any other
-   * value without `send()` is refused at construction, since it would
-   * configure nothing.
+   * accepted — it selects the built-in email path over `app.mail`, and
+   * `'default'` (that one mailer) is the only name it takes. Any other mailer
+   * name, or any other value without `send()`, is refused at construction,
+   * since it would configure nothing.
    */
   transports?: {
     email?:    NotificationDriver | { mailer?: string }

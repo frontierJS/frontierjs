@@ -145,7 +145,7 @@ The three answers are the second open question below.
 
 ## Open questions
 
-- **`FJS-D371` — Does RULE 51 stand: must derived state live in a component?**
+- ~~**`FJS-D371` — Does RULE 51 stand: must derived state live in a component?**~~ **Answered 2026-10-13 (`FJS-D371`): A — RULE 51 stands. A derivation shared by two components is computed at the write site; the chain above is written as a function of the store and called in each component.**
   VISION RULE 51 says reactive logic does not belong in a `.js` module — a store
   holds state and the functions that write it, and deriving happens in a component
   or at the write site. The pillar it meets is the one the comparison weights
@@ -181,7 +181,7 @@ The three answers are the second open question below.
     the earlier recommendation on the ground that it teaches nothing new; the
     audit shows there is nothing to teach it to.
 
-- **If B: how does a module-block signal cross an import?** Only open if
+- ~~**If B: how does a module-block signal cross an import?**~~ **Answered 2026-10-13 (`FJS-D946`): C — An exported reactive value is refused by name; only functions export. Half 1 is then the whole feature, and pillar 1 stays mixed across files.** Only open if
   `FJS-D371` rules B. The measured table under *What happens today* is the input:
   a call in a template is already tracked, while a bare read and an instance
   `const` are not.

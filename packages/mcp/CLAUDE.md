@@ -43,7 +43,7 @@ says how).
 ## What it owns
 
 *Which tools does this standing see, and what decided each.* The inputs are what
-the boundary reads: the service's method policy (`describe().methods`, already
+the boundary reads: the service's method selection (`describe().methods`, already
 applied), the model's `@@gate`, a declared move's `gate` from `x-transitions`,
 and a method's declared `gate:` (`describe().methodGates`) — which over no model
 grades a CRUD verb too, as junction enforces it (`FJS-D408`). `@system` is not an

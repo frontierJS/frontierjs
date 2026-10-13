@@ -24,7 +24,7 @@
 // because a check that refuses the legitimate shape too proves nothing.
 
 import { describe, test, expect } from 'bun:test'
-import { createClient } from '../src/index.js'
+import { createClient, sql } from '../src/index.js'
 import { parse }        from '../src/core/parser.js'
 
 const DECL = `
@@ -537,15 +537,63 @@ describe('querying by the tenant’s own key', () => {
 
   // Dropping an unknown term widens the answer in silence, which is the one
   // failure nothing downstream can see: the request succeeds and the count is
-  // plausible. Both refusals name the key.
+  // plausible. An undeclared key is refused by name.
   test('an undeclared key is refused, not dropped', async () => {
     const db = await seed()
     expect(db.customer.findMany({ where: { fields: { nope: 1 } } })).rejects.toThrow(/'nope' is not a field/)
   })
 
-  test('a declared key with no slot is refused rather than scanned', async () => {
-    const db = await seed()
-    expect(db.customer.findMany({ where: { fields: { notes: 'x' } } })).rejects.toThrow(/holds no slot/)
+  // FJS-D922: a slotless key stores, displays and filters like any other; the
+  // filter is a scan of the blob, slower and never wrong.
+  describe('a declared key with no slot is scanned', () => {
+    const rows = async () => {
+      const db = await seed()
+      await db.customer.createMany({ data: [
+        { name: 'Cy', fields: { tier: 'gold',  notes: 'vip call', flag: true } },
+        { name: 'Di', fields: { tier: 'gold',  notes: 'x',        flag: false } },
+        { name: 'Ed', fields: { tier: 'bronze' } },
+      ] })
+      return db
+    }
+    const names = (rs: any[]) => rs.map(r => r.name).sort()
+
+    test('equality, and an operator, name the right rows', async () => {
+      const db = await rows()
+      expect(names(await db.customer.findMany({ where: { fields: { notes: 'x' } } }))).toEqual(['Di'])
+      expect(names(await db.customer.findMany({ where: { fields: { notes: { contains: 'vip' } } } }))).toEqual(['Cy'])
+      expect(names(await db.customer.findMany({ where: { fields: { notes: { in: ['x', 'vip call'] } } } }))).toEqual(['Cy', 'Di'])
+      expect(names(await db.customer.findMany({ where: { fields: { notes: null } } }))).toEqual(['Ada', 'Bo', 'Ed'])
+    })
+
+    test('it ANDs with a slotted key beside it and with the rest of the where', async () => {
+      const db = await rows()
+      expect(names(await db.customer.findMany({ where: { fields: { tier: 'gold', notes: 'x' } } }))).toEqual(['Di'])
+      expect(names(await db.customer.findMany({ where: { name: 'Cy', fields: { notes: 'x' } } }))).toEqual([])
+      expect(await db.customer.count({ where: { fields: { notes: { not: 'x' } } } })).toBe(1)
+    })
+
+    test('it nests under OR and NOT, and meets a caller’s own $raw', async () => {
+      const db = await rows()
+      expect(names(await db.customer.findMany({ where: { OR: [{ fields: { notes: 'x' } }, { name: 'Ed' }] } }))).toEqual(['Di', 'Ed'])
+      expect(names(await db.customer.findMany({ where: { NOT: { fields: { notes: 'x' } }, name: { startsWith: 'C' } } }))).toEqual(['Cy'])
+      expect(names(await db.customer.findMany({ where: { fields: { notes: 'x' }, $raw: sql`name = ${'Di'}` } }))).toEqual(['Di'])
+    })
+
+    test('a number compares as a number', async () => {
+      const db = await seed()
+      await db.customField.create({ data: { model: 'Customer', key: 'seats', type: 'number', slot: null } })
+      await db.customer.createMany({ data: [
+        { name: 'Cy', fields: { seats: 9 } }, { name: 'Di', fields: { seats: 10 } },
+      ] })
+      expect(names(await db.customer.findMany({ where: { fields: { seats: { gt: 9 } } } }))).toEqual(['Di'])
+    })
+
+    test('the key is a bound path, so a quote in it reads one key and runs nothing', async () => {
+      const db = await seed()
+      await db.customField.create({ data: { model: 'Customer', key: `it's "x"`, type: 'text', slot: null } })
+      await db.customer.create({ data: { name: 'Qu', fields: { [`it's "x"`]: 'yes' } } })
+      expect(names(await db.customer.findMany({ where: { fields: { [`it's "x"`]: 'yes' } } }))).toEqual(['Qu'])
+    })
   })
 
   test('naming a slot directly still works — nothing was taken away', async () => {

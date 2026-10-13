@@ -3,7 +3,7 @@
 //
 // "Is this key an option or an action" used to be answered by exclusion — a
 // function whose key is in neither reserved set — and six consumers re-applied
-// that rule: dispatch twice, the method policy, /manifest, the OpenAPI spec and
+// that rule: dispatch twice, the method selection, /manifest, the OpenAPI spec and
 // /metrics. The deny-lists had already drifted across five copies once.
 //
 // It is answered at construction now and lands in `_customMethods`; everything else

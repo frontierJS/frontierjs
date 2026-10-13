@@ -66,6 +66,7 @@ import { typeScriptIn }                        from './scope.js'
 import { kindOf }                              from './file-kind.js'
 import { readConfig }                          from './config.js'
 import { previewScope }                        from './preview.js'
+import { dockerfileScripts }                   from './utils.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -1178,8 +1179,27 @@ const CHECKS = {
     const dockerfile = ['Dockerfile', join('deploy', 'Dockerfile')]
       .map(p => join(root, p)).find(p => existsSync(p))
     if (!dockerfile) return { skipped: 'no Dockerfile — not deployed this way' }
-    if (!/\bbun\s+run\s+db:migrate\b/.test(readFileSync(dockerfile, 'utf8')))
-      return { skipped: 'the entrypoint does not replay migrations' }
+    // Exec form and shell form are `dockerfileScripts`'s to read; a script an
+    // ENTRYPOINT/CMD hands off to is read here, since the Dockerfile alone
+    // cannot say what it runs.
+    const text = readFileSync(dockerfile, 'utf8')
+    let replays = dockerfileScripts(text).includes('db:migrate')
+    const unread = []
+    if (!replays) {
+      for (const line of text.split('\n')) {
+        if (!/^\s*(CMD|ENTRYPOINT)\b/.test(line)) continue
+        for (const m of line.matchAll(/[\w./-]+\.(?:sh|bash)\b/g)) {
+          const script = [join(root, m[0]), join(dirname(dockerfile), m[0])].find(p => existsSync(p))
+          if (!script) { unread.push(m[0]); continue }
+          if (/\bbun\s+run\s+db:migrate\b/.test(readFileSync(script, 'utf8'))) replays = true
+        }
+      }
+    }
+    if (!replays) {
+      return { skipped: unread.length
+        ? `the entrypoint runs ${unread.join(', ')}, which is not in the tree to read`
+        : 'the entrypoint does not replay migrations' }
+    }
 
     const dir = join(root, 'db', 'migrations')
     const files = existsSync(dir) ? walkSql(dir) : []

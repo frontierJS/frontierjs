@@ -5298,7 +5298,13 @@ function validate(schema) {
     for (const field of model.fields) {
       const gen = field.attributes.find(a => a.kind === 'generated')
       if (!gen) continue
-      const _refs = refsInExpr(gen.expr)  // expr already has {x} → "x" substituted in parseGenerated
+      // A template compiles to concat_ws, which is text; STRICT stores it in an
+      // INTEGER column without a word.
+      if (gen.template !== undefined && field.type.name !== 'String') {
+        errors.push(`Model '${model.name}', field '${field.name}': a @generated template produces text, and '${field.name}' is ${field.type.name} — ` +
+                    `write the expression with double quotes: @generated("{a} * {b}")`)
+      }
+      const _refs =refsInExpr(gen.expr)  // expr already has {x} → "x" substituted in parseGenerated
       // Note: parseGenerated already expanded {x} → "x" — we need to re-extract from raw
       // Actually gen.expr has quotes already, extract names from quoted: "fieldName"
       const quotedRefs = []

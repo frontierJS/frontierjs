@@ -8,7 +8,7 @@
 // Three shapes here do not exist in `example` and are the reason this file does:
 //
 //   Ledger    a LOCKED position (9) on a model whose service still OFFERS the
-//             verb. Every @@gate("…9") in that app sits behind a method policy
+//             verb. Every @@gate("…9") in that app sits behind a method selection
 //             that removed the verb first, so the gate is never consulted and
 //             `levelPasses` against a bare `>=` cannot be told apart.
 //   Invoice   a @gate(5) move on a model written at 8 — the FLOOR case, which

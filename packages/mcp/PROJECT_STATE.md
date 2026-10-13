@@ -13,7 +13,7 @@ inside the API that is already running; `projectTools()` is what it serves.
 - `projectTools(services, views, level)` answers the tool list, the withheld
   list, the unresolved models and the name collisions — each row carrying its
   verdict AND its argument schema.
-- **Four inputs**, matching what the boundary reads: the method policy, the
+- **Four inputs**, matching what the boundary reads: the method selection, the
   model's `@@gate`, a declared move's `gate`, and `describe().methodGates`
   through Junction's own `customMethodGrade`.
 - `schemaViews(schema, generate)` owns the audience. There is no way through this

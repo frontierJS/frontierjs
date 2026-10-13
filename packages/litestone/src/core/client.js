@@ -19,7 +19,7 @@ import {
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
-  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, inList,
+  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, inList, blobKeyClauses,
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
@@ -4028,7 +4028,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap, _pointMap)
     where = _hasScopes ? expandScopes(where) : where
     where = _extensible ? rewriteExtensibleWhere(where, _extTenantCol ? () => extTenant(null, where) : null,
-                                                  _extensible.scope ? () => extScope(null, where) : null) : where
+                                                  _extensible.scope ? () => extScope(null, where) : null, tableAlias) : where
     where = _transformed ? rewriteTransformedWhere(where) : where
     let rewritten = where
     if (ctx.enc.key) {
@@ -4063,20 +4063,22 @@ function makeTable(readDb, writeDb, shape, ctx) {
    * or be shadowed by a column, silently, depending on which won. Under the
    * column there is no collision to resolve.
    *
-   * A key that is not declared, or is declared and holds no slot, is REFUSED by
-   * name rather than dropped or scanned. Dropping widens the result set in
-   * silence, which is the failure this whole feature exists to prevent — the
-   * request succeeds, the count looks plausible, and the answer is about more
-   * rows than were asked for.
+   * A key that is not declared is REFUSED by name rather than dropped.
+   * Dropping widens the result set in silence, which is the failure this whole
+   * feature exists to prevent — the request succeeds, the count looks
+   * plausible, and the answer is about more rows than were asked for. A
+   * declared key that holds no slot is SCANNED instead (`FJS-D922`):
+   * `json_extract` over the blob, ANDed in as a `$raw`, slower and never wrong.
    */
-  function rewriteExtensibleWhere(where, tenantOf, scopeOf) {
+  function rewriteExtensibleWhere(where, tenantOf, scopeOf, tableAlias = null) {
     if (!where || typeof where !== 'object') return where
-    if (Array.isArray(where)) return where.map(w => rewriteExtensibleWhere(w, tenantOf, scopeOf))
+    if (Array.isArray(where)) return where.map(w => rewriteExtensibleWhere(w, tenantOf, scopeOf, tableAlias))
 
-    const out = {}
+    const out     = {}
+    const scanned = []
     for (const [key, val] of Object.entries(where)) {
       if (key === 'AND' || key === 'OR' || key === 'NOT') {
-        out[key] = rewriteExtensibleWhere(val, tenantOf, scopeOf)
+        out[key] = rewriteExtensibleWhere(val, tenantOf, scopeOf, tableAlias)
         continue
       }
       // Only the blob, and only when handed an object of keys. An operator
@@ -4095,13 +4097,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (!d) throw new ValidationError([{ path: [_extensible.column, k], message:
           `'${k}' is not a field this ${modelName} declares` +
           (declared.length ? `. Declared: ${declared.map(x => x.key).join(', ')}` : ' — nothing is declared yet') }])
-        if (!d.slot) throw new ValidationError([{ path: [_extensible.column, k], message:
-          `'${k}' is declared but holds no slot, so there is no index to read it by and no filter that would be honest. ` +
-          `It stores and it displays; raising the pool with max: is what makes it filterable` }])
-        out[d.slot] = v
+        if (d.slot) { out[d.slot] = v; continue }
+        scanned.push([k, v])
       }
     }
-    return out
+    if (!scanned.length) return out
+
+    // `$raw` is a single slot, so a caller using it needs the scan conjoined.
+    const params = []
+    const blob   = `${tableAlias ? `${tableAlias}.` : ''}${quoteIdent(col(_extensible.column))}`
+    const sql    = scanned.flatMap(([k, v]) => blobKeyClauses(blob, k, v, params)).join(' AND ')
+    const mine   = rawClause(sql, params)
+    return out.$raw
+      ? { ...out, $raw: rawClause(`(${mine.sql}) AND (${out.$raw.sql})`, [...mine.params, ...out.$raw.params]) }
+      : { ...out, $raw: mine }
   }
 
   // An equality operand goes through the field's write transforms. A value the
@@ -6117,10 +6126,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // conflict, which is the one failure this mechanism cannot afford to make
     // quietly: the caller believes two writers were reconciled and one of
     // them was overwritten.
-    const _syncPolicy = shape.sync
-    if (base !== undefined && _syncPolicy !== 'field') throw new Error(
+    const syncMode = shape.sync
+    if (base !== undefined && syncMode !== 'field') throw new Error(
       `[litestone] update on "${modelName}" was given a base row, and only @@sync(field) reads one. ` +
-      `This model declares ${_syncPolicy ? `@@sync(${_syncPolicy})` : 'no @@sync policy'}. ` +
+      `This model declares ${syncMode ? `@@sync(${syncMode})` : 'no @@sync'}. ` +
       `A base is the row as the writer read it, and it is what lets two people who edited different ` +
       `columns both win — without @@sync(field) there is nothing to compare it against.`)
 

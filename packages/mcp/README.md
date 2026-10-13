@@ -46,7 +46,7 @@ Here it is three numbers that already exist, enforced in the database layer:
 
 | MCP needs | Where it comes from |
 | --- | --- |
-| the tool list | `describe().methods`, after the service's method policy |
+| the tool list | `describe().methods`, after the service's method selection |
 | input schema per tool | `generateJsonSchema(schema)` — the document the browser already gets |
 | **what the caller may do** | **`@@gate` on the model, `@gate` on a declared move** |
 

@@ -193,7 +193,13 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.querySelectorAll('#tbl tfoot').length;`), 0,
     'and a table given none draws no tfoot')
   await t.clickAt('#empty-rows')
+  // FJS-2749: an add-line row lives in the footer of an empty table, so the
+  // footer is drawn over no rows and handed []. Skeletons still draw none.
+  await t.eventually(`document.querySelector('#tbl-foot tfoot td')?.textContent.trim() ?? null`, '0 rows',
+    'and a footer over no rows is still drawn, handed an empty list')
+  await t.clickAt('#toggle-loading')
   await t.eventually(`document.querySelectorAll('#tbl-foot tfoot').length`, '0',
-    'and a total of no rows is not drawn')
+    'but not over skeletons')
+  await t.clickAt('#toggle-loading')
   await t.clickAt('#refill-rows')
 }

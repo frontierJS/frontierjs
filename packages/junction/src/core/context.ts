@@ -741,7 +741,7 @@ export function requestMeta(): RequestMeta | undefined {
 // store below — that one is deliberately narrower, because widening it would
 // stop a write inside an afterCommit effect from being announced.
 //
-// The span is the whole of _callService: the method policy, the idempotency
+// The span is the whole of _callService: the method selection, the idempotency
 // claim, the pipeline, the announcement, the afterCommit drain, the outbox
 // handoff. Everything that semantically belongs to this invocation. A nested
 // call runs this again with its own context, so `$` inside it is the inner

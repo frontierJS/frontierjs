@@ -18,10 +18,10 @@
 //
 // What is left is the half the framework cannot have, because it is a policy
 // rather than a mechanism: a term on a field this shop declared and did not get
-// a slot for is REPORTED rather than refused. The boundary refuses one, and it
-// is right to — there is no index to read it by. A merchant building an
-// audience needs to be told which of their terms did not apply, which is a
-// sentence and not an error.
+// a slot for is REPORTED rather than applied. The boundary would scan one —
+// correct, with no index to read it by. A merchant building an audience needs
+// to be told which of their terms did not apply, which is a sentence and not
+// an error.
 //
 // It is pure and touches no client and no file, so `verify:custom-fields` can
 // assert the compilation without a database, and the service is the only thing
@@ -75,9 +75,9 @@ export interface CompiledSegment {
  * by it depending on which won.
  *
  * A term on an UNPROMOTED field is returned in `unindexed` rather than included.
- * The boundary refuses one and is right to: there is no index to read it by. But
- * refusing the whole audience would take a merchant's other four terms with it,
- * so the promoted terms are applied and the rest are HANDED BACK. Dropping them
+ * The boundary would scan one (correct, with no index to read it by); the shop
+ * hands it back so the caller decides whether that scan is worth running. The
+ * promoted terms are applied and the rest are HANDED BACK. Dropping them
  * silently is the one failure mode nothing downstream can see — the request
  * succeeds, the count looks plausible, and a discount goes to people it was
  * never meant for.

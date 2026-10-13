@@ -15,8 +15,10 @@
   //
   // `footer` is rows for a <tfoot> — a totals line, handed the rows so it can
   // sum them. A <tfoot> rather than a last body row, because that is what
-  // tells a reader the line is ABOUT the rows rather than one of them, and it
-  // is drawn only over rows: a total of nothing, or of skeletons, says nothing.
+  // tells a reader the line is ABOUT the rows rather than one of them. It is
+  // not drawn over skeletons, and it IS drawn over no rows: an add-line row
+  // lives here and an empty table is where it is needed most. A totals line
+  // that says nothing for nothing guards on `rows.length` itself.
   //
   // `header` is handed each column and drawn INSIDE the <th> after the label or
   // sort button, never in place of them: a cell holding only a checkbox would
@@ -218,7 +220,7 @@
         {/if}
       </tbody>
 
-      {#if footer && !loading && rows.length}
+      {#if footer && !loading}
         <tfoot>
           {@render footer?.(rows)}
         </tfoot>

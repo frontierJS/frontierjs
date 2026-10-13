@@ -64,7 +64,26 @@ test('gate: the two sentinels are what a hand-spelled >= gets wrong', function (
   assert.equal(levelPasses(8, 8), true)
 })
 
+test('gate: levelPasses refuses a required that is not an integer 0–9 (FJS-2228)', function () {
+  // `null >= 0` and `'' >= 0` are TRUE, so a gate read from a bad source admitted
+  // everybody at the bottom rung.
+  for (const bad of [null, undefined, '', '0', '4', NaN, -1, 10, 4.5, true, [], {}]) {
+    assert.equal(levelPasses(bad, 0), false, `levelPasses(${JSON.stringify(bad)}, 0)`)
+    assert.equal(levelPasses(bad, 9), false, `levelPasses(${JSON.stringify(bad)}, 9)`)
+  }
+})
+
 // ─── the grader ───────────────────────────────────────────────────────────────
+
+test('gate: gradeStanding reads its flags for true, not truthiness (FJS-2228)', function () {
+  // A string claim from a JWT or a header is truthy; 'false' must not grade 7.
+  for (const flag of ['isSystemAdmin', 'isOwner', 'isAdmin']) {
+    for (const v of ['false', '0', 'no', 1, {}]) {
+      assert.equal(gradeStanding({ id: 1, role: 'user', [flag]: v }), LEVELS.USER, `${flag}: ${JSON.stringify(v)}`)
+    }
+    assert.equal(gradeStanding({ id: 1, role: 'user', [flag]: true }) > LEVELS.USER, true, `${flag}: true`)
+  }
+})
 
 test('gate: no session is a stranger', function () {
   assert.equal(gradeStanding(null), LEVELS.STRANGER)

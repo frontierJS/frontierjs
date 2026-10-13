@@ -166,7 +166,7 @@ interesting claim is, and level 3 is the one that would be genuinely novel.
 
 ## Open questions
 
-- **Does this workspace release as one train or twenty packages?** They are not
+- ~~**Does this workspace release as one train or twenty packages?**~~ **Answered 2026-10-13 (`FJS-D948`): A — One train: one version for every published package, bumped in lockstep, and every internal peer pinned to the train's number.** They are not
   the same product. A train means one number, a lockstep bump, and a compatibility
   matrix of size one — which is what pre-1.0 frameworks with many packages
   usually converge on, and which would make most of the above unnecessary. Twenty
@@ -180,7 +180,7 @@ interesting claim is, and level 3 is the one that would be genuinely novel.
   - **Recommend A** — then B for a package once a third party depends on it alone.
     A matrix of size one needs nothing built, and pre-alpha nobody outside depends
     on any single number. B builds the matrix before anyone needs it.
-- **What does 1.0 mean here?** Two packages are already past it and the repo
+- ~~**What does 1.0 mean here?**~~ **Answered 2026-10-13 (`FJS-D949`): A — The numbers are wrong: litestone and auth move to the train's `0.x`, their `1.x` releases are deprecated on npm, and 1.0 is defined as the first release whose surface diff is graded.** Two packages are already past it and the repo
   describes itself as pre-alpha. Either the numbers are wrong or the description
   is, and a consumer cannot tell which.
   - **A** — The numbers are wrong: litestone and auth move to the train's `0.x`, their

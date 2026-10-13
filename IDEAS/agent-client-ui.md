@@ -154,7 +154,39 @@ owed to `mesa-ir.md`, not here.
 ## Open questions
 
 - **Does `FJS-D38`'s *nothing is scheduled before alpha* cover this?** Step 0.1
-  of § *The plan* asks it; the answer is recorded there, not here.
+  of § *The plan*. The deferral is written against a *target*, and `FJS-D38`
+  prices a target as *a second compiler backend emitting a cell tree* — the
+  runtime restated. Nothing in Phases 1–4 restates the runtime: the view is the
+  DOM backend's own output wrapped as one HTML document (the widget build's
+  loop, `packages/sierra/src/build/widget-build.js`), and the relay adapter is
+  the handle jetty's `harborApp()` already answers
+  (`packages/jetty/src/resources/harbor-app.js`). `email-kit`'s
+  `target: 'email'` is the precedent: a markup target that shipped under
+  `FJS-D38` with no exemption, because `FJS-D38` names it as one that already
+  exists. Two exemptions have since been ruled anyway — `FJS-D689` for mobile,
+  `FJS-D810` for the terminal shell — so the line now reads as *ask*, and this
+  asks.
+  - **A** — the deferral does not reach it: an MCP App view is markup from the
+    existing backend, as SSR, `email` and the widget target are, so no ruling
+    is owed and `fli decide --by FJS-D38` strikes this. The plan runs from
+    0.2. A note on `FJS-D38` says the line defers backends, not wrappers, so
+    the next markup-shaped proposal does not ask again.
+  - **B** — covered, and exempted the way `FJS-D689` exempted mobile: one
+    `FJS-D##` amending `FJS-D38`'s line for MCP Apps, with the proof it owes
+    named in the ruling (the two artefacts § *The nine* 9 lists). The plan
+    runs from 0.2 under that id.
+  - **C** — covered and held: the paper stays Assessment, Phases 1–4 wait for
+    core to leave alpha, and 0.3 (`toolName` to toolbelt) lands alone, since
+    it is a drift fix `FJS-D197` already owes.
+  - **Recommend A** — `FJS-D38`'s own price paragraph is the test, and this
+    design pays none of it: no second emit, no forked runtime, the same
+    `.mesa` file compiled by the same compiler. B mints a ruling to exempt a
+    thing the line never covered, and every later markup wrapper (a
+    `print-kit` document is already one) would need its own. C holds a line
+    against the one kind of target the ruling priced at zero. *Doctrine vs.
+    discovery* (§ IV): the doctrine's word is *target* and the tree now holds
+    three markup ones built without a ruling; A fixes the doctrine's reading,
+    not the tree.
 - **Sign-in inside the iframe.** The host's standing is whatever the MCP
   session resolved. Whether a resource may ask the host to elevate (OAuth back
   to the app) is a protocol question with no stable answer yet.
@@ -197,6 +229,8 @@ Done when: each step cites the ruling or the probe's result.
 
 - [ ] 0.1 `FJS-D38`'s *nothing is scheduled before alpha* — ask whether a markup
   target plus a relay adapter is covered, the exemption `FJS-D689` gave mobile.
+  Options and the recommendation are in § *Open questions*; `fli decisions`
+  lists it. Closed by the owner's pick, not by this plan.
 - [ ] 0.2 Where the built views live and what the plugin option is called
   (`mcpPlugin({ views })` is the placeholder spelling). An option, so
   `decision-rules`; the same ruling names the Sierra command (2.4).

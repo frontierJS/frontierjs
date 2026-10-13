@@ -553,7 +553,7 @@ function sleep(ms: number): Promise<void> {
 
 function resolvePath(obj: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, key) => {
-    if (acc != null && typeof acc === "object") return (acc as Record<string, unknown>)[key]
+    if (acc != null && typeof acc === "object" && Object.hasOwn(acc, key)) return (acc as Record<string, unknown>)[key]
     return undefined
   }, obj)
 }

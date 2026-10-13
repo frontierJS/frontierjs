@@ -153,7 +153,6 @@ import { jittered } from '@frontierjs/toolbelt/rank'
 import { createList } from './list.js'
 import { liveRecord } from './record.js'
 import { pendingQueue, unreachable } from './pending.js'
-import { attachmentQueue } from './attachments.js'
 import { listCache, listKey } from './list-cache.js'
 import { declareOffline }      from './offline.js'
 import { writeThrough, readLocal, dropRows, answeredWhole, localDbConfigured } from './local-db.js'
@@ -1307,9 +1306,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // settles the row: the call below still carries the bytes, so a working
       // network is one multipart request exactly as it was. The split is what
       // happens when that request could not arrive.
-      const parked = held
+      // Loaded here and not at the top: an app that never holds a photograph
+      // never fetches the blob queue, and a static import would put it in the
+      // main chunk whatever `pending.js` does (`FJS-2752`). Every later use of
+      // `blobs` is inside a loop over `parked`, which is empty unless this ran.
+      const blobs = held && Object.keys(files).length
+        ? (await import('./attachments.js')).attachmentQueue()
+        : null
+      const parked = blobs
         ? await Promise.all(Object.entries(files).map(([field, blob]) =>
-            attachmentQueue().add({ service: serviceName, model, id: rowId, field, blob, versionField: versionOf, callHeaders: held.callHeaders })))
+            blobs.add({ service: serviceName, model, id: rowId, field, blob, versionField: versionOf, callHeaders: held.callHeaders })))
         : []
 
       // network call
@@ -1350,7 +1356,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
           // The bytes go with the refusal. They were parked against a row the
           // boundary has declined, so replaying them would patch a row that
           // does not exist — and `rejected` is where somebody can see it.
-          for (const a of parked) await attachmentQueue().reject(a.key, err)
+          for (const a of parked) await blobs.reject(a.key, err)
           throw err
         }
         // It never arrived, or it timed out and nobody can say. The entry
@@ -1360,7 +1366,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // claiming the server has a row it may not have (`FJS-D300`).
         if (held) {
           await pendingQueue().defer(held.key, err)
-          for (const a of parked) await attachmentQueue().defer(a.key, err)
+          for (const a of parked) await blobs.defer(a.key, err)
           // A held create is a row this device has read: it wrote every
           // column, and litestone stamps a created row's `@version` at 1. With
           // nothing remembered, the next held edit of it carried no version
@@ -1396,7 +1402,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // The bytes travelled on that same request, so the acknowledgement covers
       // them. Settling here and not on the send is the phase 1 rule applied to
       // the other queue.
-      for (const a of parked) await attachmentQueue().settle(a.key)
+      for (const a of parked) await blobs.settle(a.key)
 
       // The write LANDED. Everything below this line can still throw, and a
       // caller told only that the call failed presses Save again and makes a

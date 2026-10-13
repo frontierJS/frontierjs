@@ -62,13 +62,15 @@ describe("audit 1.5 — a fn name is looked up on an object with a prototype", (
     expect(Number(out)).toBe(1)
   })
 
-  // FJS-2340: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  //
-  // A ref walks the context with bracket access, so `$.trigger.constructor`
-  // answers the Object constructor and a template renders it as source text.
-  test.failing("a ref path reads own properties only", () => {
+  // A ref that walked with bracket access answered `$.trigger.constructor` with
+  // the Object constructor, where has() reads own properties only.
+  test("a ref path reads own properties only", () => {
     const got = r.resolve({ type: "ref", path: "$.trigger.constructor" }, { ...(ctx as object), trigger: { a: 1 } } as never)
     expect(got).toBeUndefined()
+  })
+
+  test("a ref root reads own nodes only", () => {
+    expect(() => r.resolve({ type: "ref", path: "$.constructor" }, ctx as never)).toThrow(ResolutionError)
   })
 })
 

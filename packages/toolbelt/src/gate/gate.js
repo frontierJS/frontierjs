@@ -79,7 +79,10 @@ export function levelName(level) {
  * declaration why it must not call this.
  */
 export function levelPasses(required, userLevel) {
-  if (required === LEVELS.LOCKED) return false                    // 9 — asSystem() included
+  // `null >= 0` and `'' >= 0` are true, so a gate read from a bad source would
+  // admit the bottom rung.
+  if (!Number.isInteger(required) || required < 0 || required > LEVELS.LOCKED) return false
+  if (required === LEVELS.LOCKED) return false                   // 9 — asSystem() included
   if (required === LEVELS.SYSTEM) return userLevel === LEVELS.SYSTEM  // 8 — SYSADMIN(7) is not it
   return userLevel >= required
 }
@@ -138,9 +141,11 @@ export const STANDING_FIELDS = Object.freeze([
 export function gradeStanding(user) {
   if (!isIdentified(user)) return LEVELS.STRANGER
 
-  if (user.isSystemAdmin) return LEVELS.SYSADMIN
-  if (user.isOwner)       return LEVELS.OWNER
-  if (user.isAdmin)       return LEVELS.ADMINISTRATOR
+  // `=== true`: a string claim from a JWT or a header is truthy, and 'false' is
+  // a string.
+  if (user.isSystemAdmin === true) return LEVELS.SYSADMIN
+  if (user.isOwner       === true) return LEVELS.OWNER
+  if (user.isAdmin       === true) return LEVELS.ADMINISTRATOR
 
   if (user.verifiedAt  === null) return LEVELS.VISITOR
   if (user.activatedAt === null) return LEVELS.READER

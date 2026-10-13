@@ -4,7 +4,7 @@
  * An MCP server's hard problem is not exposing tools, it is SCOPING them. A
  * hand-written one invents an authorization story from nothing, usually as prose
  * in a system prompt. Here the story is already written: `@@gate` on a model,
- * `@gate` on a declared move, and the method policy on the service. This module
+ * `@gate` on a declared move, and the method selection on the service. This module
  * reads those three and answers what one standing may see.
  *
  * ── It is an AFFORDANCE and the boundary is elsewhere ────────────────────────

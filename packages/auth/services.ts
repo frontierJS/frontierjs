@@ -35,7 +35,7 @@
 // each method answers 400 by name, the way the /auth routes already do for
 // password reset.
 
-import { createService, rateLimitHook, BadRequest, Unauthorized, Forbidden, NotFound, LEVELS } from '@frontierjs/junction'
+import { createService, rateLimitHook, BadRequest, Unauthorized, Forbidden, NotFound, LEVELS, toDataPrincipal } from '@frontierjs/junction'
 import type { IAuth, SessionContext, ServiceContext, Service } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
 import type { AuthOAuth }           from './oauth.ts'
@@ -56,13 +56,23 @@ export const DEFAULT_SERVICE_NAMES = {
   people:   'people',
 } as const
 
+/**
+ * A resolver handed the person the way the gate hands it a principal. The app's
+ * resolver is its `GatePlugin` `getLevel`, which reads `id`; a SessionContext
+ * names the person `userId`, so passed bare the scaffold's `getLevel` grades
+ * everyone STRANGER and every act on somebody else is refused (`FJS-2650`).
+ */
+export function asPrincipal(grade: ((session: SessionContext) => number) | undefined) {
+  return grade && ((session: SessionContext) => grade(toDataPrincipal(session) as SessionContext))
+}
+
 export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): Service[] {
 
-  const level = opts.level
+  const level = asPrincipal(opts.level)
   // Recovery grades the operator AND the person, which `account.me`'s level
   // need not answer — an app whose level is per tenant has none for a bare
   // session, and `account.me` is what a browser gates its buttons on.
-  const standingLevel = opts.standingLevel ?? opts.level
+  const standingLevel = asPrincipal(opts.standingLevel) ?? level
 
   // ─── The password, asked again ─────────────────────────────────────────
   //

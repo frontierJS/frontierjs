@@ -1765,7 +1765,9 @@ xNode.nodeComment = (data) =>
     // and cannot otherwise tell one from a comment an author wrote into
     // `{@html}` — both are Comment nodes with space-padded data, and the
     // author's was the one being deleted (`FJS-906`).
-    if (debug && debugLabel) ctx.write(`<!--$ ${node.value} -->`)
+    // `value` is what the anchor anchors; an anchor made for a pending label
+    // has no block of its own to name.
+    if (debug && debugLabel) ctx.write(`<!--$ ${node.value ?? 'anchor'} -->`)
     else ctx.write('<!---->')
   })
 
@@ -5144,7 +5146,7 @@ export function buildBlock(data, option = {}) {
     const requireLabel = (final, noParent) => {
       if (labelRequest) {
         if (labelRequest.final) {
-          labelRequest.set(tpl.push(xNode.nodeComment({ label: true, value: '' })))
+          labelRequest.set(tpl.push(xNode.nodeComment({ label: true })))
         } else {
           if (final) labelRequest.final = true
           if (noParent) labelRequest.noParent = true
@@ -5164,7 +5166,7 @@ export function buildBlock(data, option = {}) {
         resolve() {
           if (!labelRequest.node) {
             if (labelRequest.noParent)
-              labelRequest.set(tpl.push(xNode.nodeComment({ label: true, value: '' })))
+              labelRequest.set(tpl.push(xNode.nodeComment({ label: true })))
             else if (isRoot) {
               labelRequest.name = tpl._boundName = option.parentElement
               labelRequest = null
@@ -5190,9 +5192,9 @@ export function buildBlock(data, option = {}) {
     // second one's content, and the block that built it sees no reason to run
     // again. `FJS-512`, which read as a `{#if}` going stale while an attribute
     // beside it stayed current.
-    const ownAnchor = () => {
+    const ownAnchor = (kind) => {
       const label = requireLabel(true, true)
-      label.set(tpl.push(xNode.nodeComment({ label: true })))
+      label.set(tpl.push(xNode.nodeComment({ label: true, value: kind })))
       return label
     }
 
@@ -5528,8 +5530,7 @@ export function buildBlock(data, option = {}) {
           // the life of the page. `FJS-110` — a kit <Button disabled={…}> beside
           // a <Button>Cancel</Button> stayed disabled forever while a plain
           // <button> with the identical expression followed it.
-          const label = requireLabel(true, true)  // noParent=true so resolve() also pushes if needed
-          label.set(tpl.push(xNode.nodeComment({ label: true })))
+          const label = ownAnchor(n.name)
           const component = ctx.makeComponent(n)
           binds.push(insertComponent(component, label))
           return
@@ -5623,29 +5624,29 @@ export function buildBlock(data, option = {}) {
         }
       } else if (n.type === 'each') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeEachBlock(n, { label: ownAnchor() }).source)
+        binds.push(ctx.makeEachBlock(n, { label: ownAnchor('each') }).source)
       } else if (n.type === 'virtual-each') {
         // virtual-each is special: $$virtualEach() treats its anchor as the scroll
         // container element (calls parent.appendChild directly). Keep original behavior —
         // pass the parent element rather than a comment anchor.
         if (isRoot) {
           requireFragment = true
-          if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
+          if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true, value: 'virtual-each' }))
         }
         binds.push(ctx.makeVirtualEachBlock(n, { label: requireLabel(true, isRoot) }))
       } else if (n.type === 'if') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeifBlock(n, ownAnchor()))
+        binds.push(ctx.makeifBlock(n, ownAnchor('if')))
       } else if (n.type === 'key') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeKeyBlock(n, ownAnchor()))
+        binds.push(ctx.makeKeyBlock(n, ownAnchor('key')))
       } else if (n.type === 'await') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeAwaitBlock(n, ownAnchor()))
+        binds.push(ctx.makeAwaitBlock(n, ownAnchor('await')))
       } else if (n.type === 'systag') {
         if (n.value.startsWith('@render ')) {
           if (isRoot) requireFragment = true
-          binds.push(ctx.makeRenderTag(n, ownAnchor()))
+          binds.push(ctx.makeRenderTag(n, ownAnchor('render')))
         } else if (n.value.startsWith('@html ')) {
           // {@html expr} — sets innerHTML of a placeholder text node's parent.
           // We insert a comment anchor in the template and use setInnerHTML at runtime.
@@ -5653,7 +5654,7 @@ export function buildBlock(data, option = {}) {
           const rawExpr = n.value.slice('@html '.length).trim()
           const exp = ctx.accessors ? rewriteExpr(rawExpr, ctx.accessors) : rawExpr
           ctx.detectDependency(rawExpr)
-          const label = ownAnchor()
+          const label = ownAnchor('html')
           binds.push(xNode('html-tag', { label, exp }, (w, nd) => {
             w.writeLine(`$$runtime.createEffect(() => { $$runtime.setInnerHTML(${nd.label.name}, ${nd.exp}); });`)
           }))

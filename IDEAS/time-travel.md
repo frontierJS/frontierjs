@@ -294,7 +294,7 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
     paper says: the outbox lives in the app database, so a row delivered after the
     checkpoint comes back undelivered and the relay sends it again. B's list has
     to name those rows.
-- **FJS-D665 — After a restore, may the outbox relay send a row the backup recorded
+- ~~****FJS-D665 — After a restore, may the outbox relay send a row the backup recorded**~~ **Answered 2026-10-13 (`FJS-D665`): A — litestone stamps a restored database with the time its backup was taken, a generic fact on the client. The relay holds every undelivered row created before that time until an operator releases or drops it, and B's `--dry-run` list stays as the read surface. Restoring after a disaster, with the live files gone, is safe under this option.**
   as undelivered, or does it hold those rows for an operator?** Probed for `FJS-1927`:
   `db/jobs.db` is a layout file (`FJS-D493`), so `backup` copies it beside `app.db` and
   `restore --from-backup` puts both back. Caravan's dedup on `occurrenceKey('outbox', id)`

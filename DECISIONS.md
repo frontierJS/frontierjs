@@ -3746,6 +3746,18 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d665"></a>2026-10-13 · `FJS-D665` — **FJS-D665 — After a restore, may the outbox relay send a row the backup recorded — Litestone stamps a restored database with the time its backup was taken, a generic fact on the client. The relay holds every undelivered row created before that time until an operator releases or drops it, and B's `--dry-run` list stays as the read surface. Restoring after a disaster, with the live files gone, is safe under this option.
+
+Asked in [`IDEAS/time-travel.md`](IDEAS/time-travel.md) § Open questions. **A** was picked over **B** (the paper's B and nothing more: the list is printed, the relay resends, and handlers stay idempotent (the `deliverOutbox` contract already says so)), **C** (restore carries the live database's `deliveredAt` marks forward into the restored copy, through a schema attribute that names the table to keep at present. It has nothing to carry when the live file is the thing that was lost).
+
+The paper's recommendation, taken as written: a duplicate mail, webhook or charge cannot be undone, so *strictness follows cost* calls for a hold rather than a warning. A is also the one option that still holds when no live file survives, which is when most restores happen.
+
+### <a id="fjs-d512"></a>2026-10-13 · `FJS-D512` — What does the zone binding spell when the wall clock's zone lives on another model, and is the zone column refused by a new `@zone` validator — `@zone` beside `@date`/`@datetime`/`@time` on the zone column (IANA set via `Intl.supportedValuesOf`), and `@zoned(path)` on `@time`/`@date` columns taking a one-hop relation path (`site.timeZone`), the `FJS-499` one-hop precedent; litestone only refuses and describes (`x-zoned` in JSON Schema), and an instant pair stays the app's `@system` columns.
+
+Asked in [`IDEAS/time-and-recurrence.md`](IDEAS/time-and-recurrence.md) § Open questions. **A** was picked over **B** (A, plus litestone DERIVES the instant columns (`@zoned` on a `DateTime` names its wall-clock and zone sources) and recomputes them when either source changes, so a zone correction cannot leave a stale instant), **C** (sibling-column only (`@zoned(timeZone)` on the same model), and the app copies the zone down; fewest new rules, but it keeps the copy that drifts).
+
+The paper's recommendation, taken as written: and B as its own follow-up row. A closes the `"banana"` hole and makes the pairing declared rather than remembered at the cost of one validator and one path argument; B's recompute-on-write is the real fix for the Azores case, but it is a derived-column mechanism the language does not yet have, and deserves its own ruling. - **The commitment half (`FJS-2170`)** — `readBy(kind, by, timeZone)` in `litestone/src/core/commitment.js` reads a day-kind `by` in one zone per `due()` call, so lago's `on: periodEnd + graceDays` fires 9 h late for Tokyo and 7 h early for Los Angeles from one sweep. Under A the `@zoned(path)` on the `@date` is what `dueSql` reads per row, with `due()` grouping by zone; the alternative is a `zone:` argument on `@@commitment` itself, a second place to say the same binding. Red assertion owed: `due({ by: '2026-10-03T15:00Z' })` holds the Tokyo invoice and not the Los Angeles one.
+
 ### <a id="fjs-d908"></a>2026-10-13 · `FJS-D908` — How does a per-row zone (a column, possibly two relations away) reach a `where` — A zone-aware operator the client lowers: the caller states the wall-clock rule and the zone field (`{ startsAt: { localTime: { atOrBefore: '08:00', zone: 'inviteeTimeZone' } } }`); litestone selects the distinct zones present (`SELECT DISTINCT zone`, bounded and indexable), computes each zone's instant bound with `fromWall`/`partsIn`, and lowers to `(zone = ? AND startsAt <= ?) OR …`. SQL stays instant-only, so `FJS-D143` stands and the cost is one DISTINCT plus an index range per zone. The zone must be a column of the same row; a zone two relations away (`Shift → Employee → User`) needs a join the lowering does not do today, so that case stays open or is solved by A + a denormalized zone column. Adds an operator to `where`, `$checkWhere` and the directive table.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a materialized instant: a stored column the app or a hook keeps current (`remindAt`), plain `where remindAt <= now`, fully indexable, any relation depth because the app writes it. No litestone change at all and `@generated` stays deterministic and same-row (`parser.js` ~973); the cost is that the rule lives in app code beside the write, goes stale when the zone or the rule changes, and `tooLate` (shifts starting before 08:00 local) is still the app's to define), **C** (a framework-bound window per zone, not per row: litestone exposes the *per-zone bound* as a helper (`db.booking.zonedBounds({ zone: 'inviteeTimeZone', wall: '08:00' })` returning `[{ zone, instant }]`) and the app composes the OR itself. Smallest surface and no operator, but every app re-writes the same OR and `$checkWhere` cannot see it, so it is Invariant 4's *beside the owner* by another route. - **Recommend A, same-row zone only** — it is the only choice that makes the database do the narrowing from a declaration, it keeps `FJS-D143`'s *SQL never evaluates a zone* intact (the zones are enumerated, then every comparison is an instant), and `FJS-1214` asks for the same word in declaration so the spelling is shared; B is the workaround an app can already use today and the row's two-relation case should be answered by it (or by a later join-lowering), not by widening A).
@@ -7193,6 +7205,12 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d947"></a>2026-10-13 · `FJS-D947` — Cross-origin — Bearer over CORS with `origins: ['*']`, the token scoped to one review by its invite link, and the client attaching it only to the store's configured origin.
+
+Asked in [`IDEAS/anchored-feedback.md`](IDEAS/anchored-feedback.md) § Open questions. **B** was picked over **A** (Bearer over CORS with an explicit `cors.origins` list of every preview origin), **C** (same origin: the store serves each preview build under its own origin, so the session is a cookie and there is no CORS).
+
+The paper's recommendation, taken as written: with no ambient credential a wildcard origin grants nothing, which is how `example` already runs, so `FJS-1090` does not block it. The token's reach is one review, and sending it only to the store's origin is the lesson of `FJS-788`. A is a list per site that drifts as previews are added, and C moves preview hosting into the store for a problem B does not have.
 
 ### <a id="fjs-d907"></a>2026-10-13 · `FJS-D907` — What is the re-presentment cadence for a soft-declined subscription invoice, and what holds the attempt count and the clock — A fixed short ladder in the app, `RETRY_DAYS = [1, 3, 5, 7]` after each soft decline, attempt number counted from the invoice's failed `Payment` rows (no new column), each dispatch `{ delay, unique: occurrenceKey('collect', invoiceId, attempt) }`. Four tries, not twenty-one; stops at the first paid, hard decline or non-`issued` invoice. Nothing stamped, so a shop changing the ladder moves unfired retries.
 
@@ -11041,6 +11059,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d946"></a>2026-10-13 · `FJS-D946` — If B: how does a module-block signal cross an import — An exported reactive value is refused by name; only functions export. Half 1 is then the whole feature, and pillar 1 stays mixed across files.
+
+Asked in [`IDEAS/review-solid-octane.md`](IDEAS/review-solid-octane.md) § Open questions. **C** was picked over **A** (An exported reactive value is emitted as an accessor function, and an importer writes `canEdit()`. The template already tracks it; RULE 2 grows one case: a `const` calling an import from a `.mesa` file can move. It costs a name spelled `x` in its own file and `x()` everywhere else), **B** (The compiler reads the imported `.mesa` file's module block and learns which exports are signals: the `externalSignals` map, derived instead of written, which retires the drift that map was criticized for. It needs the Vite plugin to hand the compiler a resolver. A barrel re-export is blind to it, so a re-exported `.mesa` name needs a warning).
+
+follows from RULE 51 standing (A): a module block exports functions only, and an exported reactive value is refused by name so the attempt is loud rather than a value that silently stops tracking.
+
+### <a id="fjs-d371"></a>2026-10-13 · `FJS-D371` — Does RULE 51 stand: must derived state live in a component — RULE 51 stands. A derivation shared by two components is computed at the write site; the chain above is written as a function of the store and called in each component.
+
+Asked in [`IDEAS/review-solid-octane.md`](IDEAS/review-solid-octane.md) § Open questions. **A** was picked over **B** (`<script module>` gets the instance script's semantics: a top-level `let` is a signal and a `const` that reaches one re-derives, once per module rather than per instance. RULE 51 narrows to plain `.js` files), **C** (RULE 51 is withdrawn: `createMemo` in a `.js` module is blessed and documented as the way to share a derivation).
+
+derivation keeps one home, the component, where an owner disposes it; a module-scope signal never disposes, and a derivation two components share is a plain function of the store called in each.
 
 ### <a id="fjs-d671"></a>2026-10-12 · `FJS-D671` — Where does a list's selection live: a standalone set primitive the screen composes, a Table-owned column, or a resource-owned set — A standalone signal-backed primitive in `@frontierjs/ui` (a `.js` module beside `dnd.js`): `createSelection(keyOf)` with `has(row)`, `toggle(row)`, `clear()`, `set(rows)`, `count`, and `stateOf(rows)` returning `none | some | all`; plus `Checkbox` `indeterminate` and a `<BulkBar {selection}>` that shows the count and a slot for the actions. The screen draws the header box through `header(col)` and the row box in its own snippet. No change to `Table`.
 
@@ -15936,6 +15966,18 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d949"></a>2026-10-13 · `FJS-D949` — What does 1.0 mean here — The numbers are wrong: litestone and auth move to the train's `0.x`, their `1.x` releases are deprecated on npm, and 1.0 is defined as the first release whose surface diff is graded.
+
+Asked in [`IDEAS/version-compatibility.md`](IDEAS/version-compatibility.md) § Open questions. **A** was picked over **B** (The description is wrong for those two: litestone and auth are stable and keep `1.x`, and the README says which packages are pre-alpha), **C** (1.0 means nothing beyond *published*, stated in each README).
+
+The paper's recommendation, taken as written: the repo is pre-alpha and nothing has a compatibility promise, so a `1.x` on npm promises something nobody is keeping. Pre-alpha nobody depends on the number, so the renumbering is free, and tying 1.0 to a graded diff gives the number something that checks it. B splits one framework's maturity by package, and C leaves a semver reader misled.
+
+### <a id="fjs-d948"></a>2026-10-13 · `FJS-D948` — Does this workspace release as one train or twenty packages — One train: one version for every published package, bumped in lockstep, and every internal peer pinned to the train's number.
+
+Asked in [`IDEAS/version-compatibility.md`](IDEAS/version-compatibility.md) § Open questions. **A** was picked over **B** (Twenty packages: independent semver, each bump graded by a diff of `exports.snapshot.md` (`fli ws:compat`)).
+
+The paper's recommendation, taken as written: then B for a package once a third party depends on it alone. A matrix of size one needs nothing built, and pre-alpha nobody outside depends on any single number. B builds the matrix before anyone needs it.
 
 ### <a id="fjs-d941"></a>2026-10-13 · `FJS-D941` — A signer may name which answers are its scheme's own credential refusal, and conduit forgets and replays once on them as on a 401.
 

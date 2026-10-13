@@ -221,7 +221,7 @@ export interface ServiceDescription {
   name:       string
   /** The accessor this service is over, `null` for one declared `model: null`. */
   model:      string | null
-  /** Declared custom methods, before the method policy. */
+  /** Declared custom methods, before the method selection. */
   customMethods: string[]
   /** What the service will answer, policy applied. */
   methods:    string[]
@@ -622,7 +622,7 @@ async function _callService(
   const isRead   = isReadMethod(service, method as string)
   if (isCustom && isRead && ctx.locals) ctx.locals.readCall = true
 
-  // ── The method policy ────────────────────────────────────────────────
+  // ── The method selection ────────────────────────────────────────────────
   // Enforced HERE because callService is the one path every caller takes —
   // HTTP, WebSocket, a job, and `app.service('audit').create()` from inside
   // the process. Putting it in the transport would leave the internal caller
@@ -654,7 +654,7 @@ async function _callService(
   }
 
   // ── Scopes ───────────────────────────────────────────────────────────
-  // Before the pipeline, as the method policy is: what a credential may ask
+  // Before the pipeline, as the method selection is: what a credential may ask
   // for is settled by the credential, and a hook run for a call that cannot
   // proceed still runs its side effects. An internal call is the app's own
   // code acting inside a call already admitted, so the scope was graded at
@@ -665,7 +665,7 @@ async function _callService(
   }
 
   // ── Idempotency-Key ──────────────────────────────────────────────────
-  // Claimed HERE for the same reason the method policy is: callService is the
+  // Claimed HERE for the same reason the method selection is: callService is the
   // one path every caller takes, and a guarantee that holds over HTTP but not
   // over a socket is not a guarantee. A replay answers the FIRST call's result
   // without running the pipeline, so nothing after this line happens twice —
@@ -1265,7 +1265,7 @@ export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
 //
 // A custom method used to be recognized by EXCLUSION — a function whose key is in
 // neither reserved set — and six consumers re-applied that rule: dispatch twice,
-// the method policy, the manifest, the OpenAPI spec and /metrics. Six copies of
+// the method selection, the manifest, the OpenAPI spec and /metrics. Six copies of
 // one question, none of them able to answer it any better than the deny-lists
 // happened to be that day, and the deny-lists had already drifted across five
 // copies once.
@@ -1576,7 +1576,7 @@ function describeChannel(decl: ChannelDeclaration | undefined): string | boolean
   return typeof decl === 'string' ? decl : true
 }
 
-// ─── The method policy (FJS-004 / FJS-D07) ────────────────────────────────
+// ─── The method selection (FJS-004 / FJS-D07) ────────────────────────────────
 //
 // A model service answers every CRUD verb through the base, WITH validation,
 // whether or not the file declares one. That is opt-OUT safety with no warning:
@@ -1600,7 +1600,6 @@ function describeChannel(decl: ChannelDeclaration | undefined): string | boolean
 /** What `methods: 'readOnly'` expands to. */
 export const READ_ONLY_METHODS: readonly string[] = ['find', 'get', 'aggregate']
 
-/** A service's declared method policy: an allow-list, or the one preset. */
 /**
  * One entry of a `methods:` list, where the method needs more said about it
  * than its name.
@@ -2358,7 +2357,7 @@ export function createBaseService(
     // `methods: 'readOnly'` that makes an audit trail append-only through
     // createService did nothing at all through createBaseService, and the only
     // symptom was a write that succeeded. Which factory you picked decided
-    // whether your method policy existed, exactly as it once decided whether
+    // whether your method selection existed, exactly as it once decided whether
     // your row policies did.
     ...(methods !== undefined ? { methods } : {}),
     // Same reason again, failing closed: a dropped `scope:` refuses every
@@ -3014,7 +3013,7 @@ export function createService(def: ServiceDefinition): Service {
     }
     ;(service as Service)._customMethods = custom
 
-    // Resolve the method policy AFTER the custom methods are on, because an allow-list
+    // Resolve the method selection AFTER the custom methods are on, because an allow-list
     // may name one and the unknown-name check has to be able to see it.
     ;(service as Service)._methods = resolveMethodSelection(
       def.methods,

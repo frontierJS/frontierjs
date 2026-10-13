@@ -88,15 +88,15 @@ describe('audit 1.5 — a failed transport after a committed one', () => {
     expect(h.sent.length).toBe(0)
   })
 
-  // FJS-2344: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  //
   // `transports.email` is the one plain object the plugin accepts — `{ mailer }`
   // — and the name is read by nothing: the driver always sends through
   // app.mail. A second mailer named here configures nothing and is found when
   // mail goes out through the wrong one.
-  test.failing('a mailer name no plugin registered is refused at construction', () => {
+  test('a mailer name no plugin registered is refused at construction', () => {
     expect(() => notificationsPlugin({ db: {}, transports: { email: { mailer: 'secondary' } } }))
       .toThrow(/secondary/)
+    expect(() => notificationsPlugin({ db: {}, transports: { email: { mailer: 'default' } } })).not.toThrow()
+    expect(() => notificationsPlugin({ db: {}, transports: { email: {} } })).not.toThrow()
   })
 
   test('the observed shape: one row, no mail, a thrown error (what the three cases above build on)', async () => {

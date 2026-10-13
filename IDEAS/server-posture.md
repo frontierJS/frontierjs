@@ -545,6 +545,28 @@ posture report.
     a signed command port on the box that holds the fleet's command key, and a server
     row invites the deploy and drain this record refuses on the host. C gives the
     control plane's own container root on its host to read a config file.
+- **FJS-D944 — What does the report-only host Outpost sign its posture report with?**
+  `report.js` signs every POST with `config.secret`, and `outpostCredential`
+  (`api/src/core/hooks.ts`) finds the key through `outpostSecretFor(serverId)` —
+  `Server.outpostSecretId`, with *no second key that also works*. The host has no
+  `Server` row (`FJS-D925`), so a host report today is refused 401 whatever it signs
+  with. Whichever is picked, `keyFor` admits the host key for `posture.report` with
+  no `server_id` alone, as a principal carrying no workspace, and a test refuses
+  the same signature on `servers.heartbeat`.
+  - **A** — A host key of its own, `HOST_REPORT_SECRET`, generated once beside
+    `ENCRYPTION_KEY` in the stack's `.env` by `deploy/build.mjs` and `fli deploy`,
+    and written into the host Outpost's config.
+  - **B** — Derived from `ENCRYPTION_KEY` as an HMAC over a fixed label: `fli deploy`
+    writes only the derived value into the host Outpost's config, and the API derives
+    the same value at boot. There is no new variable to generate, lose or rotate.
+  - **C** — The fleet's own enrollment: a hub method mints a `Secret` and the host
+    Outpost exchanges a one-time token for it, with the row named on the hub's
+    config. This is the same door every machine uses. It needs a system admin's
+    session at install time, though, and a fresh box has no admin yet.
+  - **Recommend B** — the key is derived, not restated, so it has one origin and
+    nothing new to back up. `ENCRYPTION_KEY` already cannot rotate without
+    orphaning every `@encrypted` column, and the HMAC is one-way, so the Outpost's
+    config never holds anything that decrypts a `Secret`.
 
 ## See also
 

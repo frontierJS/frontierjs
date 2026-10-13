@@ -647,6 +647,96 @@ function isTypedJsonPath(val) {
   return false
 }
 
+// One value-or-operator block compared against a JSON value. `at()` returns
+// the SQL expression for the value and pushes any bind it carries, so it is
+// called in the order its text lands: a bound path precedes the operand beside
+// it. A typed path inlines its (schema-written) path and pushes nothing; an
+// extensible key's path is the caller's text and binds (Invariant 8).
+/**
+ * @param {() => string} at
+ * @param {any} val
+ * @param {any[]} params
+ * @param {string} label  where the value lives, for an unknown-operator message
+ * @returns {string[]}
+ */
+function jsonLeafClauses(at, val, params, label) {
+  /** @type {string[]} */
+  const clauses = []
+
+  // Coerce primitive values for SQLite: booleans → 0/1, Date → ISO 8601 string.
+  const coerce = (v) => {
+    if (typeof v === 'boolean') return v ? 1 : 0
+    if (v instanceof Date) return v.toISOString()
+    return v
+  }
+
+  // Text predicates (LIKE) need explicit CAST AS TEXT — json_extract returns
+  // SQLite-native types, and LIKE on a number or NULL silently misbehaves.
+  const text = () => `CAST(${at()} AS TEXT)`
+
+  if (val === null) return [`${at()} IS NULL`]
+
+  if (typeof val !== 'object' || Array.isArray(val)) {
+    // Direct equality. Boolean fields stored as 0/1 by Litestone — coerce.
+    if (Array.isArray(val)) {
+      // Implicit IN
+      if (!val.length) return ['0 = 1']
+      return [inList(at(), val.map(coerce), params, { affinity: false })]
+    }
+    const lhs = at()
+    params.push(coerce(val))
+    return [`${lhs} = ?`]
+  }
+
+  // Operator block — supports the same ops as regular WHERE
+  for (const [op, operand] of Object.entries(val)) {
+    switch (op) {
+      case 'gt':         { const c = at(); params.push(coerce(operand)); clauses.push(`${c} > ?`);  break }
+      case 'gte':        { const c = at(); params.push(coerce(operand)); clauses.push(`${c} >= ?`); break }
+      case 'lt':         { const c = at(); params.push(coerce(operand)); clauses.push(`${c} < ?`);  break }
+      case 'lte':        { const c = at(); params.push(coerce(operand)); clauses.push(`${c} <= ?`); break }
+      case 'contains':
+      case 'startsWith':
+      case 'endsWith':   { const c = text(); params.push(likePattern(op, operand)); clauses.push(`${c} ${LIKE_SQL}`); break }
+      case 'in':
+        if (!operand?.length) { clauses.push('0 = 1'); break }
+        clauses.push(inList(at(), operand.map(coerce), params, { affinity: false }))
+        break
+      case 'notIn': {
+        if (!operand?.length) break
+        const list = inList(at(), operand.map(coerce), params, { not: true, affinity: false })
+        clauses.push(`(${list} OR ${at()} IS NULL)`)
+        break
+      }
+      case 'not': {
+        if (operand === null) { clauses.push(`${at()} IS NOT NULL`); break }
+        const c = at()
+        params.push(coerce(operand))
+        clauses.push(`${c} != ?`)
+        break
+      }
+      default:
+        throw new Error(`Unknown WHERE operator '${op}' inside typed JSON path on field ${label}`)
+    }
+  }
+  return clauses
+}
+
+/**
+ * The clauses for one extensible key that holds no slot: `json_extract(col, ?)`
+ * with the key bound as a path, so a tenant's declared name never enters the
+ * pattern (Invariant 8). Binds are pushed onto `params` in text order.
+ * @param {string} colExpr  the blob column, alias-qualified
+ * @param {string} key
+ * @param {any} val
+ * @param {any[]} params
+ * @returns {string[]}
+ */
+export function blobKeyClauses(colExpr, key, val, params) {
+  const path = '$."' + key.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+  return jsonLeafClauses(() => { params.push(path); return `json_extract(${colExpr}, ?)` }, val, params, key)
+}
+
 // Walk a Where sub-tree against a type declaration, emitting json_extract()
 // clauses. Returns an array of SQL clause strings; the caller joins with AND.
 //
@@ -718,67 +808,8 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 
     // Leaf comparison: emit a json_extract() expression at this path.
     const jsonPath = `'$.${subPath.map(p => p.replace(/'/g, "''")).join('.')}'`
-    const fieldType = field.type.name
-
-    // Coerce primitive values for SQLite: booleans → 0/1, Date → ISO 8601 string.
-    const coerce = (v) => {
-      if (typeof v === 'boolean') return v ? 1 : 0
-      if (v instanceof Date) return v.toISOString()
-      return v
-    }
-
-    // Text predicates (LIKE) need explicit CAST AS TEXT — json_extract returns
-    // SQLite-native types, and LIKE on a number or NULL silently misbehaves.
-    const textCol = `CAST(json_extract(${colExpr}, ${jsonPath}) AS TEXT)`
-    const rawCol  = `json_extract(${colExpr}, ${jsonPath})`
-
-    if (val === null) {
-      clauses.push(`${rawCol} IS NULL`)
-      continue
-    }
-
-    if (typeof val !== 'object' || Array.isArray(val)) {
-      // Direct equality. Boolean fields stored as 0/1 by Litestone — coerce.
-      if (Array.isArray(val)) {
-        // Implicit IN
-        if (!val.length) { clauses.push('0 = 1'); continue }
-        clauses.push(inList(rawCol, val.map(coerce), params, { affinity: false }))
-      } else {
-        params.push(coerce(val))
-        clauses.push(`${rawCol} = ?`)
-      }
-      continue
-    }
-
-    // Operator block — supports the same ops as regular WHERE
-    for (const [op, operand] of Object.entries(val)) {
-      switch (op) {
-        case 'gt':         params.push(coerce(operand));        clauses.push(`${rawCol} > ?`);   break
-        case 'gte':        params.push(coerce(operand));        clauses.push(`${rawCol} >= ?`);  break
-        case 'lt':         params.push(coerce(operand));        clauses.push(`${rawCol} < ?`);   break
-        case 'lte':        params.push(coerce(operand));        clauses.push(`${rawCol} <= ?`);  break
-        case 'contains':
-        case 'startsWith':
-        case 'endsWith':   params.push(likePattern(op, operand)); clauses.push(`${textCol} ${LIKE_SQL}`); break
-        case 'in':
-          if (!operand?.length) { clauses.push('0 = 1'); break }
-          clauses.push(inList(rawCol, operand.map(coerce), params, { affinity: false }))
-          break
-        case 'notIn':
-          if (!operand?.length) break
-          clauses.push(`(${inList(rawCol, operand.map(coerce), params, { not: true, affinity: false })} OR ${rawCol} IS NULL)`)
-          break
-        case 'not':
-          if (operand === null) { clauses.push(`${rawCol} IS NOT NULL`); break }
-          params.push(coerce(operand))
-          clauses.push(`${rawCol} != ?`)
-          break
-        default:
-          throw new Error(`Unknown WHERE operator '${op}' inside typed JSON path on field ${typeDecl.name}.${subPath.join('.')}`)
-      }
-    }
-    // Suppress unused-var warning when fieldType isn't read in some branches
-    void fieldType
+    clauses.push(...jsonLeafClauses(() => `json_extract(${colExpr}, ${jsonPath})`, val, params,
+      `${typeDecl.name}.${subPath.join('.')}`))
   }
 
   return clauses

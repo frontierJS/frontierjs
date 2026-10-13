@@ -418,6 +418,9 @@ export interface AuthServicesOptions {
    *
    *   standingLevel: basecampGateLevel
    *
+   * Handed the person as the gate hands a principal: the session with `id`
+   * beside `userId`, which is what a `getLevel` reads.
+   *
    * A resolver that answers anything but a finite number refuses the act.
    * `account.me` publishes the caller's own answer as `standing`, for a
    * caller asking whether this person may do something — the ask panel.

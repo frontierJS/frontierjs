@@ -2194,7 +2194,11 @@ export function createApp(opts: AppOptions = {}): App {
           devtools: app._devtools.status === 'on'      ? app._devtools.url
                   : app._devtools.status === 'refused' ? `refused — ${app._devtools.reason}`
                   : 'disabled',
-          mode:     config.debug ? 'debug' : 'production',
+          // The environment, read as `loadConfig` reads it. `config.debug` is
+          // DEBUG=1 and says nothing about NODE_ENV, so it is its own field —
+          // folded into `mode` it labeled every non-debug dev server production.
+          mode:     process.env.NODE_ENV ?? 'development',
+          debug:    config.debug ? true : undefined,
         })
 
         // The banner covered API and UI-facing surface and said nothing about

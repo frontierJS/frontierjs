@@ -29,7 +29,8 @@ export function levelName(level: number): string
 
 /**
  * Does a caller at `userLevel` pass a gate of `required`?
- * 9 refuses everything, 8 admits only 8, everything else is `>=`.
+ * 9 refuses everything, 8 admits only 8, everything else is `>=`. A `required`
+ * that is not an integer 0–9 refuses everyone.
  */
 export function levelPasses(required: number, userLevel: number): boolean
 

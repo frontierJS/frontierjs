@@ -153,7 +153,7 @@ function resolvePath(path: string, ctx: ResolutionContext): unknown {
 
   if (root === "trigger") {
     current = ctx.trigger
-  } else if (root in ctx.nodes) {
+  } else if (Object.hasOwn(ctx.nodes, root)) {
     current = ctx.nodes[root]
   } else {
     throw new ResolutionError(
@@ -181,11 +181,14 @@ function resolvePath(path: string, ctx: ResolutionContext): unknown {
       )
     }
 
+    // Own properties only, as has() reads them: `constructor` is not data.
     // Array index access — "items.0" or "items.2"
     if (Array.isArray(current) && /^\d+$/.test(part)) {
       current = current[parseInt(part, 10)]
     } else {
-      current = (current as Record<string, unknown>)[part]
+      current = Object.hasOwn(current as object, part)
+        ? (current as Record<string, unknown>)[part]
+        : undefined
     }
   }
 

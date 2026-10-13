@@ -51,7 +51,19 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
   // first send — which for an alert is the moment it was needed.
   for (const [transportName, config] of Object.entries(opts.transports ?? {})) {
     if (config === undefined || isDriver(config)) continue
-    if (transportName === 'email' && typeof config === 'object' && config !== null) continue
+    if (transportName === 'email' && typeof config === 'object' && config !== null) {
+      // The built-in path sends through app.mail and there is exactly one, so
+      // `default` is the only name that selects anything. Another name would
+      // configure nothing and be found when mail left through the wrong mailer.
+      const mailer = (config as { mailer?: unknown }).mailer
+      if (mailer === undefined || mailer === 'default') continue
+      throw new Error(
+        `[notifications] transports.email.mailer "${String(mailer)}" names a mailer this app ` +
+        'does not have. The built-in email path sends through app.mail, the one mailer, ' +
+        'named `default`. To send through anything else, register your own driver under ' +
+        '`transports.email`.'
+      )
+    }
 
     throw new Error(
       `[notifications] transports.${transportName} has no send(), so it configures ` +

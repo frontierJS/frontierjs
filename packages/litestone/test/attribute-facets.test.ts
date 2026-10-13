@@ -220,6 +220,25 @@ describe('a @generated expression naming a field with no column', () => {
   })
 })
 
+// FJS-2757 — a backtick template is the string it produces, so it compiles to
+// `concat_ws` text. On an Int column that is text in an INTEGER STRICT column,
+// and `amount Int @generated(`{quantity} * {unitPrice}`)` migrated with no
+// warning. The quote that means an expression is the double quote.
+describe('a @generated template on a column that is not a String', () => {
+  const body = (decl: string) => `model QuoteLine {\n  id Int @id\n  quantity Int\n  unitPrice Int\n  ${decl}\n}`
+  for (const type of ['Int', 'Float', 'Boolean', 'Int?']) {
+    it(`refuses one on ${type}`, () => {
+      refuses(body('amount ' + type + ' @generated(`{quantity} * {unitPrice}`)'),
+        /field 'amount': a @generated template produces text, and 'amount' is /)
+    })
+  }
+  it('accepts the template on a String, and the SQL form on an Int', () => {
+    accepts(body('label String @generated(`{quantity} {unitPrice}`)'))
+    accepts(body('label String? @generated(`{quantity} {unitPrice}`)'))
+    accepts(body('amount Int @generated("{quantity} * {unitPrice}")'))
+  })
+})
+
 // FJS-2768 — `{a}` names a FIELD and the column may be called something else:
 // `a Int @map("a_col")` beside `twice Int @generated("{a} * 2")` emitted
 // `"a" * 2`, a string literal to SQLite, and read 0.
