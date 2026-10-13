@@ -274,10 +274,13 @@ are in this file's § Probed.
   environment; unset is localhost and same-origin alone. `VITE_API_URL` cannot
   be the trigger: a dev-server preview proxies the API (§ Probed), so there is
   no other origin to notice. A URL with no valid level refuses everyone.
-- **The level is the API's.** `account/me` carries `level` only when the app
-  passes `services: { level }` to `createAuthPlugin`; without it every caller is
-  refused by name. **Basecamp passes `standingLevel` alone**, so a hosted
-  Basecamp preview needs that one line first; ELA is unchecked.
+- **The level is the API's, and it is the person's `standing`.** `account/me`
+  carries `standing` when the app passes `services: { standingLevel }` or
+  `{ level }` to `createAuthPlugin`; without either every caller is refused by
+  name. Not `level`: that is what the browser's buttons read, and Basecamp,
+  graded per workspace, publishes none. Basecamp's `standingLevel` answers 7
+  for the hub, so its rule is `ASK_ADMIT_LEVEL=SYSADMIN`; ELA passes `level`,
+  which `standing` falls back to.
 - **Submit is offered on a `wb/*` branch, token or not.** Under the rule every
   route already wants the token, so *branch + token* was one condition twice.
 - The panel sends the token under Sierra's `junction.tokenKey`.

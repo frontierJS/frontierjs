@@ -290,7 +290,14 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // `level` is opt-in and absent by default. The app owns the role→level
       // mapping (its own getLevel), and a default answer here would be a
       // SECOND mapping that disagrees with the one every request is graded by.
-      return level ? { ...user, level: level(user) } : { ...user }
+      // `standing` is the answer with no tenant in play, which a caller asking
+      // whether this PERSON may do something reads — the browser's buttons read
+      // `level`, and an app graded per tenant has no honest `level` to give.
+      return {
+        ...user,
+        ...(level         ? { level: level(user) }            : {}),
+        ...(standingLevel ? { standing: standingLevel(user) } : {}),
+      }
     },
 
     // The current password is sent and verified, so a stolen session cannot

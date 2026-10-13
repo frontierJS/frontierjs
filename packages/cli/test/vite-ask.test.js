@@ -460,9 +460,15 @@ describe('sameOrigin', () => {
 
 // ─── who may ask, and Submit ─────────────────────────────────────────────────
 
-// A stand-in for the app's API: `account/me` answers a level per token, the
-// way auth's account service does when the app passes `services: { level }`.
-const API_ANSWERS = { admin: { userId: 'u1', level: 5 }, member: { userId: 'u2', level: 4 }, unlevelled: { userId: 'u3' } }
+// A stand-in for the app's API: `account/me` answers a standing per token, the
+// way auth's account service does when the app passes `services: { standingLevel }`.
+// `perTenant` has a `level` and no standing, which is not the person's answer.
+const API_ANSWERS = {
+  admin:      { userId: 'u1', standing: 5 },
+  member:     { userId: 'u2', standing: 4 },
+  unlevelled: { userId: 'u3' },
+  perTenant:  { userId: 'u4', level: 5 },
+}
 const api = Bun.serve({
   port: 0,
   fetch(req) {
@@ -509,8 +515,9 @@ describe('admitCaller', () => {
     expect(await admitCaller(bearer('member'), admit)).toEqual({ status: 403, error: 'asking here takes ADMINISTRATOR' })
   })
 
-  test('an answer with no level is refused, not guessed at', async () => {
-    expect(await admitCaller(bearer('unlevelled'), admit)).toMatchObject({ status: 502, error: expect.stringContaining('services: { level }') })
+  test('an answer with no standing is refused, not guessed at — a level is not one', async () => {
+    expect(await admitCaller(bearer('unlevelled'), admit)).toMatchObject({ status: 502, error: expect.stringContaining('services: { standingLevel }') })
+    expect(await admitCaller(bearer('perTenant'), admit)).toMatchObject({ status: 502, error: expect.stringContaining('no standing') })
     expect(await admitCaller(bearer('broken'), admit)).toMatchObject({ status: 502 })
   })
 

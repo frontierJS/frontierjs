@@ -419,6 +419,8 @@ export interface AuthServicesOptions {
    *   standingLevel: basecampGateLevel
    *
    * A resolver that answers anything but a finite number refuses the act.
+   * `account.me` publishes the caller's own answer as `standing`, for a
+   * caller asking whether this person may do something — the ask panel.
    */
   standingLevel?: (session: SessionContext) => number
 

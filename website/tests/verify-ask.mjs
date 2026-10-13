@@ -482,13 +482,13 @@ try {
     }
 
     // ── a dev server other people reach: who may ask, and Submit ──────────
-    // A stand-in for the app's API: auth's account/me, with a level per token.
+    // A stand-in for the app's API: auth's account/me, with a standing per token.
     // The rule is read when the plugin is made, so the dev server is started
     // again under it.
     const api = Bun.serve({ port: 0, fetch(req) {
       const token = /^Bearer (\S+)$/.exec(req.headers.get('authorization') ?? '')?.[1]
       const level = { admin: 5, member: 4 }[token]
-      return level ? Response.json({ userId: token, level }) : Response.json({ error: 'no session' }, { status: 401 })
+      return level ? Response.json({ userId: token, standing: level }) : Response.json({ error: 'no session' }, { status: 401 })
     } })
     await server.close()
     process.env.ASK_ADMIT_URL   = `http://localhost:${api.port}/account/me`

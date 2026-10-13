@@ -77,7 +77,7 @@ export function sameOrigin(req) {
  * a localhost dev server, and same-origin is the whole rule. `ASK_ADMIT_URL` is
  * the address that answers who a token is — auth's `account/me` on the app's
  * API — and `ASK_ADMIT_LEVEL` names the level from the gate's LEVELS that the
- * answer's `level` must reach.
+ * answer's `standing` must reach.
  */
 export function readAdmit(env = process.env) {
   const url = String(env.ASK_ADMIT_URL ?? '').trim()
@@ -88,9 +88,11 @@ export function readAdmit(env = process.env) {
 
 /**
  * Null when the caller may ask, else `{ status, error }`. The level is the
- * API's own grading — `account/me` carries it when the app passes `services: {
- * level }` to its auth plugin — so the dev server holds no second role→level
- * mapping, and an answer without one is refused rather than guessed at.
+ * API's own grading of the PERSON — `account/me`'s `standing`, there when the
+ * app passes `services: { standingLevel }` or `{ level }` to its auth plugin —
+ * so the dev server holds no second role→level mapping, and an answer without
+ * one is refused rather than guessed at. Not `level`: that is what the
+ * browser's buttons read, and an app graded per tenant publishes none.
  */
 export async function admitCaller(req, admit) {
   if (!admit) return null
@@ -108,10 +110,10 @@ export async function admitCaller(req, admit) {
   if (r.status === 401 || r.status === 403) return { status: 401, error: 'the API does not know this session — sign in again' }
   if (!r.ok) return { status: 502, error: `the API at ${admit.url} answered ${r.status}` }
   const me = await r.json().catch(() => null)
-  if (!Number.isFinite(me?.level)) {
-    return { status: 502, error: 'the API answered with no level — its auth plugin needs services: { level }' }
+  if (!Number.isFinite(me?.standing)) {
+    return { status: 502, error: 'the API answered with no standing — its auth plugin needs services: { standingLevel } or { level }' }
   }
-  if (me.level < admit.level) return { status: 403, error: `asking here takes ${admit.name}` }
+  if (me.standing < admit.level) return { status: 403, error: `asking here takes ${admit.name}` }
   return null
 }
 

@@ -167,7 +167,7 @@ core/
                 Sierra turns it on (`src/build/ask-plugin.js`); nothing here
                 does. A request must carry this server's Origin, and under
                 `ASK_ADMIT_URL` the page's Bearer token too, graded by the
-                app's own `account/me` level (`admitCaller`). An undo
+                app's own `account/me` standing (`admitCaller`). An undo
                 restores a file whole only while it is exactly what the run
                 left (`createLedger`); a file another writer touched since
                 gets the run's own hunks reversed instead. `/submit` commits

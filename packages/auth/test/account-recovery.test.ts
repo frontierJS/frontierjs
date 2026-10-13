@@ -170,6 +170,20 @@ describe('`standingLevel` — a grader for acting on somebody else', () => {
     expect(await enabled(u.userId)).toBe(false)
   })
 
+  // The ask panel's admit rule reads `standing` — the person, with no tenant
+  // in play — and an app graded per tenant publishes no `level` at all.
+  test('`account.me` answers `standing` from it, and from `level` where it is absent', async () => {
+    const op = await person('sysadmin', false)
+    const me = async (services: Record<string, unknown>) =>
+      (await request(await appWith(services)).get('/account/me').auth(op.token)).body as { level?: number, standing?: number }
+
+    expect(await me({ standingLevel: levelOf })).toMatchObject({ standing: 7 })
+    expect('level' in await me({ standingLevel: levelOf })).toBe(false)
+    expect(await me({ level: () => 4, standingLevel: levelOf })).toMatchObject({ level: 4, standing: 7 })
+    expect(await me({ level: () => 4 })).toMatchObject({ level: 4, standing: 4 })
+    expect('standing' in await me({})).toBe(false)
+  })
+
   test('and the peer rule is its too — a sysadmin still cannot reset a sysadmin', async () => {
     const on   = await appWith({ level: () => 4, standingLevel: levelOf })
     const op   = await person('sysadmin', false)
