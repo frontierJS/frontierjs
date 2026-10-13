@@ -313,7 +313,7 @@ export class HttpTransport extends BaseTransport {
       const spent  = {} as { value?: string }
       const result = await this.attempt<T>(sent, remaining, spent, open)
 
-      if (refusedCredential(result) && !reminted && spent.value !== undefined
+      if (this.refusedCredential(result) && !reminted && spent.value !== undefined
         && this.invalidateSpent(spent.value, sent.who)) {
         reminted = true
         continue
@@ -509,7 +509,9 @@ export class HttpTransport extends BaseTransport {
       // caller acts on, and it is answered as the target wrote it plus the
       // resolved absolute form, since a relative `Location` is legal and common.
       if (REDIRECT_STATUSES.has(res.status)) {
-        const location = headers['location'] ?? ''
+        // A hop that keeps the query (http to https) echoes a URL-carried key.
+        const location = this.scrub(spent)(headers['location'] ?? '') as string
+        if (headers['location'] !== undefined) headers['location'] = location
         if (this.refusedAs('redirect')) {
           return this.fail('auth_failed', `Auth refused: ${res.status} → ${location || '(no Location)'} (auth.refusal 'redirect')`, {
             retryable: false,
@@ -661,7 +663,7 @@ export class HttpTransport extends BaseTransport {
       // `raw` reaches logs, stored job results and responses. The host stays:
       // which target refused is the content of the message (`FJS-710`, `conduit-11`).
       // A key carried in the URL is in that message too, and nothing names it.
-      const scrub   = scrubber(this.descriptor.auth.type === 'api_key' && this.descriptor.auth.query ? spent?.value : undefined)
+      const scrub   = this.scrub(spent)
       const message = scrub(redactUrl((err as Error).message)) as string
       return this.fail('connection_failed', code ? `${message} (${code})` : message, {
         retryable: true,
@@ -672,6 +674,30 @@ export class HttpTransport extends BaseTransport {
       clearTimeout(timer)
       req.signal?.removeEventListener('abort', cancel)
     }
+  }
+
+  // The target refused the credential itself: a 401, a shape `auth.refusal`
+  // declared, or an answer the signer's `refused` names. A 403 is otherwise
+  // the credential accepted and the answer no — minting another changes
+  // nothing. No status is no answer: a signer that threw after the secret
+  // resolved was refused by nobody.
+  private refusedCredential(result: ConduitResult<unknown>): boolean {
+    const status = result.meta.status
+    if (result.error === null || status === undefined) return false
+    if (result.error.kind === 'auth_failed' && status !== 403) return true
+    const auth    = this.descriptor.auth
+    const refused = status >= 400 && auth.type === 'signed' ? this.signers[auth.signer]?.refused : undefined
+    if (!refused) return false
+    try {
+      const body = typeof result.error.raw === 'string' ? result.error.raw : ''
+      return refused({ status, headers: result.meta.headers ?? {}, body }) === true
+    } catch { return false }
+  }
+
+  // Only a key carried in the URL can come back inside one.
+  private scrub(spent: { value?: string } | undefined): (v: unknown) => unknown {
+    const auth = this.descriptor.auth
+    return scrubber(auth.type === 'api_key' && auth.query ? spent?.value : undefined)
   }
 
   private refusedAs(shape: CredentialRefusal): boolean {
@@ -833,15 +859,6 @@ class SerializeError extends Error {
     super(`Request body could not be serialized: ${cause.message}`)
     this.name = 'SerializeError'
   }
-}
-
-// The target refused the credential itself: a 401, or a shape `auth.refusal`
-// declared. A 403 is `auth_failed` too, and is the credential accepted and the
-// answer no — minting another changes nothing. No status is no answer: a
-// signer that threw after the secret resolved was refused by nobody.
-function refusedCredential(result: ConduitResult<unknown>): boolean {
-  const status = result.meta.status
-  return result.error?.kind === 'auth_failed' && status !== undefined && status !== 403
 }
 
 // application/json, application/vnd.api+json, text/json, …

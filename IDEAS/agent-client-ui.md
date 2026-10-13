@@ -1,7 +1,7 @@
 ---
 id: agent-client-ui
 status: proposed
-dated: 2026-10-10
+dated: 2026-10-13
 ---
 
 # Idea — a Resource rendered inside the agent's client: MCP Apps and A2UI as Mesa targets
@@ -86,7 +86,8 @@ A2UI when the IR has a second backend to amortize against.
 ## What it would be
 
 1. **The plugin serves `resources/read` for `ui://<app>/<Resource>`**, built
-   from the resource file by the widget target at build time and stored
+   from the resource file by a Sierra build loop of the widget build's shape
+   (§ *The plan*, 2.1) and stored
    beside the tool manifest, keyed by `x-fjs-build` like the terminal client's
    command cache. A tool that returns a row of model `X` names the `ui://`
    resource for `X` in `_meta`. No new file in the app: the file is the one
@@ -125,7 +126,8 @@ in the plugin rather than in a directory.
    derived from the projection and the build. Nothing restated by hand.
 6. **Owner** — relay already owns *a client whose transport is someone else's*;
    this adds a caller. `mcpPlugin()` already owns the endpoint; `resources/read`
-   goes inside it. Sierra's widget target owns the bundle.
+   goes inside it. A Sierra build loop beside the widget build owns the bundle
+   (§ *The plan*, 2.1).
 7. **Boundary** — the author writes a resource file and knows nothing about
    iframes. The host knows nothing about Mesa. The seam is the protocol's own.
 8. **Failure** — a tool whose model has no resource file returns no `_meta`
@@ -151,10 +153,8 @@ owed to `mesa-ir.md`, not here.
 
 ## Open questions
 
-- **Does `FJS-D38`'s *nothing is scheduled before alpha* cover this?** It covers
-  a non-markup target. MCP Apps is a markup target plus a relay adapter, which
-  is nearer to the widget target than to the terminal. Asking rather than
-  assuming; `FJS-D689` made the same exemption for mobile.
+- **Does `FJS-D38`'s *nothing is scheduled before alpha* cover this?** Step 0.1
+  of § *The plan* asks it; the answer is recorded there, not here.
 - **Sign-in inside the iframe.** The host's standing is whatever the MCP
   session resolved. Whether a resource may ask the host to elevate (OAuth back
   to the app) is a protocol question with no stable answer yet.
@@ -162,8 +162,187 @@ owed to `mesa-ir.md`, not here.
   `aria-describedby`, the kit's forwarding rule (`ui` package) has nowhere to
   land. That is the first thing a spike would learn.
 
+## The plan — MCP Apps first
+
+Written 2026-10-13 from a probe of the tree and the extension spec dated
+2026-01-26. Each phase ends in something checkable; nothing below is behavior
+until its box is closed.
+
+**What the probe corrected.** This paper said Sierra's widget target owns the
+bundle. Half right. A widget is an IIFE a host page mounts through a custom
+element; an MCP App view is a WHOLE HTML5 document the host runs in a sandboxed
+iframe, mime `text/html;profile=mcp-app`, with no network of its own. So the
+emit is the widget build's loop (`build/widget-build.js`: one Vite library build
+per entry, runtime and CSS inside) plus a document wrapper, and the entries are
+`src/resources/*.mesa` rather than `src/Embeds/`. A new loop of the same shape,
+not the widget target.
+
+**The wire, as the spec names it.** A tool links to its view through
+`_meta.ui.resourceUri`; the flat `ui/resourceUri` key is deprecated. The view
+speaks JSON-RPC to `window.parent` over `postMessage`: it sends `ui/initialize`
+and `ui/notifications/initialized`, then `tools/call`, `resources/read`,
+`ui/notifications/size-changed`; the host sends `ui/notifications/tool-input`,
+`ui/notifications/tool-result`, `ui/notifications/host-context-changed`
+(theme, display mode, container size) and `ui/resource-teardown`. The host
+advertises the extension as `capabilities.extensions['io.modelcontextprotocol/ui']`
+with `mimeTypes`; a server with no such client registers text-only tools. A
+resource's `_meta.ui` carries `csp` (`connectDomains`, `resourceDomains`,
+`frameDomains`, `baseUriDomains`), `permissions` and `prefersBorder`. Tool
+`visibility` is `model`, `app`, or both (the default).
+
+### Phase 0 — Rulings and probes
+
+Goal: every judgment call below has an owner's answer before a line is written.
+Done when: each step cites the ruling or the probe's result.
+
+- [ ] 0.1 `FJS-D38`'s *nothing is scheduled before alpha* — ask whether a markup
+  target plus a relay adapter is covered, the exemption `FJS-D689` gave mobile.
+- [ ] 0.2 Where the built views live and what the plugin option is called
+  (`mcpPlugin({ views })` is the placeholder spelling). An option, so
+  `decision-rules`; the same ruling names the Sierra command (2.4).
+- [ ] 0.3 `toolName` — `<service>_<method>`, owned by `projection.ts` — must be
+  ONE spelling on both sides of the iframe. Move to `@frontierjs/toolbelt`
+  (a pure function, `FJS-D26`); `@frontierjs/mcp` and Sierra both import it.
+  A second spelling in the client is the drift `FJS-D197` exists to refuse.
+- [ ] 0.4 SDK compatibility probe. `plugin.ts` builds on
+  `@modelcontextprotocol/server@^2`'s `McpServer`; the extension's helpers
+  (`@modelcontextprotocol/ext-apps/server`: `registerAppTool`,
+  `registerAppResource`, `RESOURCE_MIME_TYPE`, `getUiCapability`) may target
+  SDK v1. If they do not load, hand-register `resources/list` and
+  `resources/read` through `McpServer.registerResource` — a few handlers. This
+  decides 1.2's shape and is the largest unknown in the plan.
+- [ ] 0.5 Scope: one-row views only. `answersOneRow` (`src/breadcrumbs.ts`)
+  already decides *this tool answers one row of model X*; reuse it, never a
+  second rule. A list view over a `find` result is Phase 5 and unscheduled.
+
+### Phase 1 — The protocol half, inside `mcpPlugin()`
+
+Goal: a host that speaks the extension is offered a `ui://` view per model that
+has one, listed from the same projection that lists the tools.
+Done when: `test/plugin.test.ts` reads a view over a real app on a real port, and
+a standing withheld from the model's tools is refused the view.
+
+- [ ] 1.1 Read `capabilities.extensions['io.modelcontextprotocol/ui']` at
+  initialize. Absent: no `_meta.ui` on any tool, no resources, text as today —
+  the silent downgrade § *The nine* item 8 already argues for.
+- [ ] 1.2 `resources/list` and `resources/read` for `ui://<app>/<Model>`, mime
+  `text/html;profile=mcp-app`. A model is listed iff some one-row tool of it is
+  offered at the caller's standing — the projection's answer, read once.
+  `_meta.ui.csp.connectDomains` is `[]`: the view makes no HTTP, every call is
+  the host's.
+- [ ] 1.3 Stamp `_meta.ui.resourceUri` on every tool `answersOneRow` admits.
+  `visibility` stays the default: the verbs a view calls back (`patch`) remain
+  the model's too.
+- [ ] 1.4 The tool answer carries the row in `structuredContent` as Junction's
+  envelope (`kind`/`data`/`total`). Confirm `plugin.ts` does; if the answer is
+  text only, this is the one envelope owner to extend (Invariant 4), so the
+  client's existing unwrap serves the iframe unchanged.
+- [ ] 1.5 Bundle source: the plugin reads `<views>/<Model>.html` at boot, keyed by
+  `x-fjs-build` the way the terminal client's command cache is. A missing file
+  means no pointer for that model, never a boot failure.
+
+### Phase 2 — The build half, in Sierra
+
+Goal: `src/resources/<Model>.mesa` compiles to one self-contained HTML document
+per model, with nothing written by hand.
+Done when: the loop emits a document per resource file over `example`, and a
+file with no markup half emits the model's default form.
+
+- [ ] 2.1 A build loop beside `build/widget-build.js`, same shape: a generated
+  entry per resource file imports the Resource and mounts its view over
+  `mcpApp()` (3.1); the Mesa runtime and the stylesheet are inlined into one
+  `<script>` and one `<style>` of an HTML5 document. N builds for N views, for
+  the reason the widget file states — a bundler's shared chunk is the one thing
+  this host cannot load.
+- [ ] 2.2 What the view IS: the resource file's markup half when it has one,
+  else the generated `<Form record>` — the file already carries the model's
+  default form (Invariant 18). A save is `resource.save(data, { mode: 'patch' })`
+  and leaves through the relay.
+- [ ] 2.3 Theme: `hostContext.theme` from `ui/initialize` becomes the class on
+  `<html>`, since Sierra owns the switch (Bridge index). Mapping
+  `hostContext.styles.variables` onto `@frontierjs/css` tokens is later work,
+  named in Phase 5.
+- [ ] 2.4 The command: a `sierra <name>` beside `sierra widgets` and `sierra
+  site`, wrapped by an `fli mcp:*` command; the name is 0.2's ruling.
+
+### Phase 3 — The client half, a relay adapter
+
+Goal: the Resource inside the iframe is Sierra's own, over a Junction client
+whose transport is the host.
+Done when: a `createResource(name, { app: mcpApp() })` loads and saves through
+`tools/call` with no HTTP from the iframe.
+
+- [ ] 3.1 `mcpApp()` answers `{ client, registry, user }`, the exact handle
+  jetty's `harborApp()` answers (`packages/jetty/src/resources/harbor-app.js`).
+  `createJunctionClient({ relay })`, where `relay` turns a `RelayedCall`
+  (`{ service, method, id, data, query, opts }`) into a `tools/call` request to
+  `window.parent`, named by `toolName(service, method)` (0.3).
+  `tokenStorage: null`; `connect()` is never called.
+- [ ] 3.2 The answer mapping: `CallToolResult.structuredContent` is what
+  `forward()` would have resolved; `isError` rebuilds the framework error's
+  `code` and `data`, so `toFieldErrors(err)` still lands a message under its
+  field. Jetty learned this once — a refusal crossing a JSON port arrived as
+  `{}` and a 409 was indistinguishable from a 400.
+- [ ] 3.3 The handshake: `ui/initialize` → `ui/notifications/initialized` → the
+  first `ui/notifications/tool-result` seeds the record store → mount →
+  `ui/notifications/size-changed`. `host-context-changed` re-applies the theme;
+  `ui/resource-teardown` unmounts.
+- [ ] 3.4 Identity: no boot restore — `account.me` is a route, and a relayed
+  client refuses routes by name. `session.ready` resolves at once with
+  `user: null`; `resource.can()` is permissive on an unknown answer and the
+  server enforces every `tools/call` (Invariant 6). This is the second sibling
+  difference, stated beside the first: no live pushes.
+- [ ] 3.5 The live store is request-response only; `stale` never fires. Written
+  into the handle's header rather than worked around.
+
+### Phase 4 — Proof
+
+Goal: § *The nine* item 9 stops reading `none`.
+Done when: the three tests below are green in CI and the drive is a row in
+`DRIVES.md`.
+
+- [ ] 4.1 Projection test: for every fixture standing, the resource list equals
+  the models of the one-row tools offered, and a withheld tool's model is
+  unlisted.
+- [ ] 4.2 Plugin test over a real app on a real port: `resources/read` answers
+  the document with its mime; a stranger reading a staff-only model is refused.
+- [ ] 4.3 A browser drive over mesa's `test/browser/drive.mjs` harness. The fake
+  host serves from a SECOND origin, as the spec requires of a host and its
+  sandbox (`widget/serve.js` is already the cross-origin shape), with the iframe
+  under `sandbox="allow-scripts allow-same-origin"`. It answers `ui/initialize`
+  and `tools/call` — proxied to the real `/mcp` — and refuses every other
+  method. Asserts: the form renders the row, a patch round-trips, the iframe's
+  failed-request count is zero and no request reaches the app's origin. Lands
+  in `example` as a drive.
+- [ ] 4.4 A real host, by hand: the MCPJam inspector or Claude Desktop. Dated in
+  `packages/mcp/PROJECT_STATE.md`, not asserted.
+
+### Phase 5 — Unscheduled
+
+- [ ] 5.1 List views over a `find` result.
+- [ ] 5.2 `hostContext.styles.variables` → `@frontierjs/css` tokens.
+- [ ] 5.3 A2UI as an IR backend, when `mesa-ir.md` has its seam.
+
+### Sizes and risks
+
+| Piece | Where | Size |
+| --- | --- | --- |
+| protocol (Phase 1) | `packages/mcp/src/plugin.ts` | small; 0.4 is the risk |
+| build loop (Phase 2) | `packages/sierra/src/build/` | medium; copies the widget shape |
+| relay adapter (Phase 3) | Sierra `resource/`, see below | small; the handshake is the work |
+| drive (Phase 4) | `example/` | medium; the fake host is new |
+
+**Where the adapter lives is open.** Sierra's `resource/` owns the Resource and
+already holds `connectApp()`, the other handle over a client that is not the
+page's; `@frontierjs/mcp/client` owns the protocol. Recommend Sierra, with
+`toolName` in toolbelt (0.3): then `@frontierjs/mcp` imports nothing from the UI
+realm and Invariant 1 stays as it is.
+
 ## Sources
 
+- MCP Apps extension spec 2026-01-26:
+  github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx,
+  modelcontextprotocol.io/extensions/apps/overview
 - MCP Apps extension and the 2026-07-28 release:
   blog.modelcontextprotocol.io, workos.com/blog/2026-01-27-mcp-apps,
   scalekit.com/blog/mcp-apps-saas-context-engines

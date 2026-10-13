@@ -107,7 +107,22 @@ export interface SignOutput {
   body?:    string | Uint8Array
 }
 
-export type Signer = (input: SignInput) => SignOutput | Promise<SignOutput>
+// A non-2xx answer as a signer's `refused` reads it.
+export interface RefusedAnswer {
+  status:  number
+  headers: Record<string, string>
+  body:    string
+}
+
+// `refused` says which answers are this scheme's own credential refusal beyond
+// a 401, so they are forgotten and replayed once as a 401 is. APNs refuses an
+// expired provider token with a 403 whose body names it, while a 403 is
+// otherwise the credential accepted and the answer no, which reminting does
+// not change (`FJS-2721`). On the signer and not the descriptor, because only
+// the scheme can read its body and a function is not JSON. A throw is a no.
+export type Signer = ((input: SignInput) => SignOutput | Promise<SignOutput>) & {
+  refused?: (answer: RefusedAnswer) => boolean
+}
 
 export type FollowRedirects = 'never' | 'same-origin'
 

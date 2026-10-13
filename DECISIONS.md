@@ -15937,6 +15937,48 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d941"></a>2026-10-13 · `FJS-D941` — A signer may name which answers are its scheme's own credential refusal, and conduit forgets and replays once on them as on a 401.
+
+APNs refuses an expired provider token with a 403 whose body names it. Conduit
+reads every 403 as the credential accepted, which must stay true for S3's
+`AccessDenied` and a Cloudflare 403. So the stale token stayed cached and every
+push failed until its TTL ran out (`FJS-2721`). The owner picked **a predicate
+on the signer** over **`refusal: ['forbidden']`**, which would remint on every
+403 and spend Apple's rate-limited token updates on `TopicDisallowed` too, and
+over **a declarative body match in the descriptor**, which would be a
+substring grammar inside JSON.
+
+`Signer.refused?(answer: { status, headers, body }) => boolean` is consulted for
+a non-2xx answer the 401 rule did not already call refused. A true is
+forgotten through `invalidate` and replayed once, exactly as a 401 is, POST
+included. A throw is a no. It lives on the signer because only the scheme can
+read its body, and a function cannot ride a JSON descriptor. A `bearer` or
+`api_key` target keeps the 401 rule alone.
+
+*Lives in:* `packages/conduit/src/types.ts` (`Signer`, `RefusedAnswer`) · `packages/conduit/src/transports/http.ts` (`refusedCredential`) · `conduit-connectors/packages/conduit-push/src/apns.ts` (`apnsJwtSigner`).
+
+### <a id="fjs-d940"></a>2026-10-13 · `FJS-D940` — An `api_key` target names where its key travels, a header or a URL parameter, and conduit keeps a URL-carried key out of everything it hands back.
+
+Google's legacy Geocoding takes its key only as `?key=`. A signer could write
+headers and the body but never the URL, so the one way through was the caller
+writing the secret into `req.query`, which every observer and log is handed
+(`FJS-2727`). The owner picked **`query` on `api_key`** over **a `query` slot
+on `SignOutput`**. With the slot, every `?key=` vendor would have to write a
+signer, and conduit would have to track which parameters to redact. With
+`query`, conduit knows the parameter's name. `FJS-D891` is not overturned: this
+is a field on an existing type, and *the key goes in the URL* is not one
+vendor's scheme.
+
+`{ type: 'api_key', ref, query: 'key' }` takes the place of `header`, exactly
+one of the two. The key goes on the URL that is fetched and nowhere else. The
+URL a redirect is judged from stays keyless, and a caller's parameter of the
+same name is displaced. A connection failure's message and `raw`, which Bun
+builds from the URL, and an echoed `Location` are scrubbed of the key. `put()`
+refuses both names or neither, and refuses `query` on a protocol whose URL the
+http transport does not build.
+
+*Lives in:* `packages/conduit/src/types.ts` (`api_key`) · `packages/conduit/src/transports/http.ts` (`dispatch`'s `wire`, `scrubber`) · `packages/conduit/src/conduit.ts` (`assertApiKey`) · `conduit-connectors/packages/conduit-google-maps/src/index.ts` (`googleMapsGeocodingTarget`).
+
 ### <a id="fjs-d913"></a>2026-10-13 · `FJS-D913` — How does Studio get `@frontierjs/css` and its fonts without a CDN, given litestone depends on toolbelt alone — Vendor a generated copy of `frontier.min.css` (~88 KB) at `src/tools/studio.css`, text-imported and served by Studio at its own path; a `packages/css` build step writes it and a litestone test fails when the copy differs from `packages/css/dist`. Fonts drop to the system stack (Inter and JetBrains Mono stay first in the list for machines that have them). No dependency edge, works in a compiled binary, costs one generated file.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Studio resolves `@frontierjs/css` at runtime when it is installed (optional peer) and serves `dist/frontier.min.css` from it, keeping the CDN link as the fallback. No copy to drift, but a data-only app has no css installed, so the offline case this row is about still renders unstyled, and a compiled binary cannot resolve it), **C** (Leave the CDN and record it: Studio already works unstyled (`studio.html` header), and `--host` on an offline machine is the rare case. Smallest change; the row closes as a documented limit).

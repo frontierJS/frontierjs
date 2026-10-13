@@ -5598,6 +5598,19 @@ describe('an api_key target that puts its key in the URL (FJS-2727)', () => {
     expect(JSON.stringify(r)).not.toContain('htz-token-abc')
   })
 
+  it('keeps the key out of a redirect whose Location echoes the query', async () => {
+    const s = recorder((req) => new Response(null, { status: 301, headers: { location: req.url.replace('http:', 'https:') } }))
+    try {
+      const c = createConduit({ credentials: secrets(), targets: [inQuery(s.url)] })
+      await c.init()
+      const r = await c.send({ target: 'provider:geocode', method: 'GET', path: '/a' })
+      expect(r.error?.kind).toBe('redirected')
+      expect(new URL(s.seen[0].url).searchParams.get('key')).toBe('htz-token-abc')
+      expect(JSON.stringify(r)).not.toContain('htz-token-abc')
+      expect(r.meta.headers?.location).toContain('key=[redacted]')
+    } finally { s.stop() }
+  })
+
   it('is refused at register naming neither or both places, or a protocol whose URL it cannot reach', async () => {
     const c = createConduit()
     await c.init()

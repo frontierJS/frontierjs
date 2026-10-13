@@ -223,6 +223,72 @@ describe('signer params', () => {
   })
 })
 
+// APNs refuses an expired provider token with a 403 whose body names it, and
+// conduit treats every 403 as the credential accepted (`FJS-2721`). The scheme
+// knows which 403 is its own refusal, so the signer says.
+describe('a signer that recognizes its own refusal', () => {
+  function apnsLike() {
+    const sent: string[] = []
+    let expired = ''
+    const server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const auth = req.headers.get('authorization') ?? ''
+        sent.push(`${new URL(req.url).pathname} ${auth}`)
+        if (new URL(req.url).pathname === '/bad-device') return Response.json({ reason: 'BadDeviceToken' }, { status: 400 })
+        if (new URL(req.url).pathname === '/topic') return Response.json({ reason: 'TopicDisallowed' }, { status: 403 })
+        if (auth === `bearer ${expired}`) return Response.json({ reason: 'ExpiredProviderToken' }, { status: 403 })
+        return Response.json({ ok: true })
+      },
+    })
+    return { sent, expire: (t: string) => { expired = t }, url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) }
+  }
+  const sign: Signer = ({ secret }) => ({ headers: { authorization: `bearer ${secret}` } })
+
+  it('forgets and remints once on the answers it names, POST included, and on no other', async () => {
+    const v = apnsLike()
+    try {
+      let n = 0
+      const seenAnswers: Array<{ status: number; body: string }> = []
+      const jwt = Object.assign((i: Parameters<Signer>[0]) => sign(i), {
+        refused: (a: { status: number; body: string }) => { seenAnswers.push(a); return a.status === 403 && a.body.includes('ExpiredProviderToken') },
+      })
+      const c = createConduit({ credentials: withCache({ async get() { return `jwt-${++n}` } }, { ttl_ms: Infinity }), signers: { jwt } })
+      await c.register(target({ type: 'signed', ref: 'K', signer: 'jwt' }, { address: v.url }))
+      await c.send({ target: 'provider:vendor', method: 'POST', path: '/push', body: {} })
+      v.expire('jwt-1')
+      const r = await c.send({ target: 'provider:vendor', method: 'POST', path: '/push', body: {} })
+      expect(r.error).toBeNull()
+      expect(v.sent.slice(-2)).toEqual(['/push bearer jwt-1', '/push bearer jwt-2'])
+
+      const topic = await c.send({ target: 'provider:vendor', method: 'POST', path: '/topic', body: {} })
+      const bad   = await c.send({ target: 'provider:vendor', method: 'POST', path: '/bad-device', body: {} })
+      expect(topic.error?.kind).toBe('auth_failed')
+      expect(bad.error?.kind).toBe('client_error')
+      expect(n).toBe(2)
+      expect(seenAnswers.map(a => a.status)).toEqual([403, 403, 400])
+    } finally { v.stop() }
+  })
+
+  it('without the predicate a 403 stays the credential accepted, and a predicate that throws is a no', async () => {
+    const v = apnsLike()
+    try {
+      let n = 0
+      const boom = Object.assign((i: Parameters<Signer>[0]) => sign(i), { refused: () => { throw new Error('bad predicate') } })
+      const c = createConduit({ credentials: withCache({ async get() { return `jwt-${++n}` } }, { ttl_ms: Infinity }), signers: { jwt: sign, boom } })
+      await c.register(target({ type: 'signed', ref: 'K', signer: 'jwt' }, { address: v.url }))
+      await c.register(target({ type: 'signed', ref: 'K2', signer: 'boom' }, { id: 'provider:boom', address: v.url }))
+      v.expire('jwt-1')
+      const plain = await c.send({ target: 'provider:vendor', method: 'GET', path: '/push' })
+      expect(plain.error?.kind).toBe('auth_failed')
+      v.expire('jwt-2')
+      const thrown = await c.send({ target: 'provider:boom', method: 'GET', path: '/push' })
+      expect(thrown.error?.kind).toBe('auth_failed')
+      expect(n).toBe(2)
+    } finally { v.stop() }
+  })
+})
+
 describe('registering a signed target', () => {
   it('refuses a signer that is not installed, naming it', async () => {
     const c = createConduit()

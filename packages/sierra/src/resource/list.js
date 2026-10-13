@@ -13,6 +13,7 @@
  *   const list = invoices.list()                               // the URL is the state
  *   const list = notes.list({ state: 'local' })                // embedded
  *   const list = notes.list({ state: 'local', where: { clientId } })
+ *   const list = cards.list({ state: 'local', where: { listId }, all: true })  // every row, not a page
  *
  *   <FilterBar {filters} {search} value={list.query} directives={list.directives} onchange={list.apply} />
  *   <Table {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort} />
@@ -95,6 +96,7 @@ function overlay(base, top) {
  * @param {object} [opts.directives]  starting directives, over `listQuery.directives`
  * @param {number} [opts.debounce=300] milliseconds a `search` change waits
  * @param {boolean} [opts.composed=false] the service's `find()` answers more than the rows
+ * @param {boolean} [opts.all=false] every load grows the window to the query's end
  */
 export function createList(resource, listQuery, opts = {}) {
   const {
@@ -103,8 +105,15 @@ export function createList(resource, listQuery, opts = {}) {
     debounce = SEARCH_DEBOUNCE_MS,
   } = opts
   const composed = opts.composed === true
+  const whole    = opts.all === true
   if (state !== 'url' && state !== 'local') {
     throw new Error(`[list] state must be 'url' or 'local', got ${JSON.stringify(state)}`)
+  }
+  // A composed list re-reads its whole window on every announcement, so a
+  // composed list of every row re-reads the table on every write to it.
+  if (composed && whole) {
+    throw new Error(`[list] { all: true } cannot be composed — every push would re-read every row.\n` +
+      `  Drop the include from find(), or page a composed list with more().`)
   }
 
   const startQuery      = overlay(listQuery?.query,      opts.query)
@@ -209,6 +218,8 @@ export function createList(resource, listQuery, opts = {}) {
         const loaded = await resource.load(query, currentDirectives())
         if (stamp !== issued) return
         resource.loaded?.(loaded)
+        if (whole) await drain(stamp)
+        if (stamp !== issued) return
         setMore(resource.hasMore())
         setTotal(resource.total?.() ?? null)
       }
@@ -300,6 +311,19 @@ export function createList(resource, listQuery, opts = {}) {
       setError(err)
     }
     setMore(resource.hasMore())
+  }
+
+  // `{ all: true }`: the window grown to the query's end after every load,
+  // inside the load, so a filter change or a reload is whole again rather than
+  // page one. It stops on a page that added nothing as well as on `hasMore`:
+  // a window that holds the end can still answer `hasMore` true (FJS-2617,
+  // FJS-D906), and a loop on `hasMore` alone spins on resolved promises. A
+  // refused page throws to `run`, which reports it on `error` and stops.
+  async function drain(stamp) {
+    while (resource.hasMore()) {
+      const added = await resource.more()
+      if (stamp !== issued || !added?.length) return
+    }
   }
 
   function destroy() {

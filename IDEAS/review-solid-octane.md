@@ -166,14 +166,20 @@ The three answers are the second open question below.
     rather than per instance. RULE 51 narrows to plain `.js` files.
   - **C** — RULE 51 is withdrawn: `createMemo` in a `.js` module is blessed and
     documented as the way to share a derivation.
-  - **Recommend B** — it is the same three keywords with the same meaning one
-    scope out, so it teaches nothing new, and it puts domain derivation in the
-    file the layout already assigns to the domain (Invariant 18). A leaves the
-    heaviest-weighted pillar mixed by rule. C opens a second spelling of
-    derivation (`createMemo` beside `const`), which is the concept cost RULE 51
-    exists to refuse. The cost of B is that module-scope reactivity needs an owner
-    and never disposes, which `createRoot` (RULE 54) already names. B is Half 1
-    above; Half 2 is the question below.
+  - **Recommend A** — the 2026-10-12 usage audit (`docs/mesa-usage-audit-2026-10-12.md`)
+    measured 21 apps: zero `createMemo`/`createEffect` in app `.js`, zero top-level
+    `let` in any `<script module>`, zero `<script module>` `const` deriving from a
+    module value, and 18 pure `fn(store)` helpers in `.js` called from components —
+    option A's shape, written unprompted, with no comment wishing for more. The
+    strain apps show is NOUNS (`record(id)`, a store shape, a nav contract), not
+    where derivation lives. B costs a fourth store spelling beside the three the
+    audit already counted (proxy / raw object + shadow proxy / callback Set), and
+    Half 2 adds an `x()` accessor spelling on import; neither fixes the one
+    derivation trap actually hit (`const` over a list getter, ela
+    `AssignmentBoard.mesa:90`), which B's module `const` meets too. C opens
+    `createMemo` beside `const`, the concept cost RULE 51 exists to refuse. B was
+    the earlier recommendation on the ground that it teaches nothing new; the
+    audit shows there is nothing to teach it to.
 
 - **If B: how does a module-block signal cross an import?** Only open if
   `FJS-D371` rules B. The measured table under *What happens today* is the input:

@@ -7,6 +7,7 @@
 //   bun run fix:loop -- --sev S3,S4        # only these severities
 //   bun run fix:loop -- --budget 3 --dry-run
 //   bun run fix:loop -- --rows 8 --lanes 3   # three rows at a time
+//   bun run fix:loop -- --trial s4 --model haiku --ids FJS-1,FJS-2 --lanes 5
 //
 // Each row runs `/fix-next <id>` in a FRESH `claude -p` session on the first
 // rung of FIX_LADDER, and a row that does not close is retried once on the next —
@@ -65,11 +66,20 @@
 // the main tree when the row ends; a failed attempt's edits are kept as a patch
 // under ~/.fli/lanes/patches instead, and the next attempt at that row starts
 // from it.
+//
+// --trial <name> compares models on the same rows, so nothing it does lands:
+// each lane gets a COPY of the register, the session closes the row in that
+// copy, and the attempt — register edit included — is kept as
+// ~/.fli/lanes/patches/<name>/<id>.<model>.patch and logged to
+// ~/.fli/fix-trial-<name>.jsonl. The session gets no `--add-dir` on the main
+// tree, and no attempt is told of an earlier one, since the earlier one is the
+// other model's. --model pins one rung (effort --effort, default high) with no
+// retry on another, and --ids runs exactly those rows.
 // ============================================================
 
 import { spawnSync }                from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join }                     from 'node:path'
+import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
 import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
@@ -78,7 +88,6 @@ import { LANES_DIR, LINKED, openLane, syncLane, applyPatch, lanePatch, harvest }
 // Not `LADDER`: frame-loop shares that one and stays on Opus.
 const FIX_LADDER = [{ model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'high' }]
 
-const LOG     = join(LOG_DIR, 'fix-loop.jsonl')
 const OUTLINE = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
 
 // The realm catalog a package's hazards are filed under. An app crosses all three.
@@ -90,13 +99,19 @@ const REALMS = {
 }
 
 const args       = parseArgs(process.argv.slice(2))
-const rows = Number(args.rows ?? 4)
 const budget     = Number(args.budget ?? 5)
 const permission = args['permission-mode'] ?? 'auto'
 const dryRun     = Boolean(args['dry-run'])
 const lanes      = Number(args.lanes ?? 0)
+const ids        = args.ids ? String(args.ids).split(',').map(s => s.trim()).filter(Boolean) : null
+const rows       = Number(args.rows ?? ids?.length ?? 4)
+const pinned     = args.model ? [{ model: String(args.model), effort: String(args.effort ?? 'high') }] : null
+const trial      = args.trial ? String(args.trial) : null
+const LOG        = join(LOG_DIR, trial ? `fix-trial-${trial}.jsonl` : 'fix-loop.jsonl')
 
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
+// Without a lane a trial session edits the main tree, and the first model's fix is the second model's starting point.
+if (trial && !(/^[\w-]+$/.test(trial) && lanes)) { console.error('[fix-loop] --trial takes a name of letters, digits, - and _, and needs --lanes'); process.exit(1) }
 // A lane is a linked worktree and ports.js has five port blocks for those.
 if (!Number.isInteger(lanes) || lanes < 0 || lanes > 5) { console.error('[fix-loop] --lanes takes 1–5: a lane is a worktree, and there are five branch port blocks'); process.exit(1) }
 
@@ -141,29 +156,32 @@ async function work(row, n, lane, tag) {
   if (dryRun) { console.log(await preBrief(row)); return }
 
   const brief   = await preBrief(row)
-  const patch   = join(LANES_DIR, 'patches', `${row.id}.patch`)
-  const base    = lane && syncLane(lane)
-  const carried = lane ? applyPatch(lane, patch) : false
-  let outcome
   // An S1 or S2 that fails on Sonnet is retried on Opus anyway, so the Sonnet attempt is spend with no row at the end of it.
-  const ladder = /^S[12]$/.test(row.severity) ? FIX_LADDER.slice(1) : FIX_LADDER
+  const ladder = pinned ?? (/^S[12]$/.test(row.severity) ? FIX_LADDER.slice(1) : FIX_LADDER)
+  const patch   = trial
+    ? join(LANES_DIR, 'patches', trial, `${row.id}.${ladder[0].model}.patch`)
+    : join(LANES_DIR, 'patches', `${row.id}.patch`)
+  const base    = lane && syncLane(lane, { linked: !trial })
+  const carried = lane && !trial ? applyPatch(lane, patch) : false
+  const root    = trial ? lane.dir : ROOT
+  let outcome
   let retried = false
   for (let rung = 0; rung < ladder.length; rung++) {
     const { model, effort } = ladder[rung]
     // A lane starts clean from the main tree, so its earlier attempt is whatever patch it was handed.
-    const earlier = lane && rung === 0 ? carried : attemptedBefore(row.id)
+    const earlier = trial ? false : lane && rung === 0 ? carried : attemptedBefore(row.id)
     const prompt  = earlier
       ? `/fix-next ${row.id} — an earlier fix-loop attempt at this row did not close it; the edits under its packages in the working tree are that attempt's, so read git diff and build on them`
       : `/fix-next ${row.id}`
 
     appendLog(LOG, { id: row.id, severity: row.severity, model, effort, outcome: 'started' })
     const run = await runSession(`${prompt}\n\n${brief}${lane ? laneNote() : ''}`, {
-      model, effort, permission, cap: ladder[rung] === FIX_LADDER[0] ? budget : budget * 2,
+      model, effort, permission, cap: model === 'opus' ? budget * 2 : budget,
       tag, where: `${row.id} [${n}/${rows}]`, phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
-      ...(lane && { cwd: lane.dir, addDirs: [ROOT], env: { PATH: `${lane.bin}:${process.env.PATH}` } }),
+      ...(lane && { cwd: lane.dir, addDirs: trial ? [] : [ROOT], env: { PATH: `${lane.bin}:${process.env.PATH}` } }),
     })
     const status = /fix-next: \S+ (closed|blocked|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
-    outcome   = isClosed(row.id) ? 'closed' : isBlocked(row.id) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'
+    outcome   = isClosed(row.id, root) ? 'closed' : isBlocked(row.id, root) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'
     spent    += run.cost
 
     const dirty = outcome === 'busy' ? dirtyUnder(row) : undefined
@@ -194,6 +212,13 @@ async function work(row, n, lane, tag) {
 // A row that ended carries its edits into the main tree; one that did not keeps
 // them as a patch, so a half-built fix never reaches the tree other lanes copy.
 function settle(lane, base, row, outcome, patch, tag) {
+  if (trial) {
+    const diff = lanePatch(lane, base)
+    mkdirSync(dirname(patch), { recursive: true })
+    writeFileSync(patch, diff)
+    console.log(`[${tag}] ${row.id} ${outcome} — kept, not merged: ${patch}`)
+    return
+  }
   if (['failed', 'ruling'].includes(outcome)) {
     const diff = lanePatch(lane, base)
     if (diff.length) { mkdirSync(join(LANES_DIR, 'patches'), { recursive: true }); writeFileSync(patch, diff) }
@@ -213,6 +238,10 @@ function settle(lane, base, row, outcome, patch, tag) {
 }
 
 function laneNote() {
+  if (trial) return ['', '', '## Lane',
+    '',
+    `This session runs in a lane: a worktree of the main tree, holding everything that tree holds, uncommitted work included. ${LINKED.join(', ')} are this lane's own copies, so \`fli close\`, \`fli file\` and \`fli amend\` write here. Nothing is merged into the main tree: your edits are kept as a patch and reviewed. Work only inside this worktree.`,
+  ].join('\n')
   return ['', '', '## Lane',
     '',
     `This session runs in a lane: a worktree of the main tree at ${ROOT}, holding everything that tree holds, uncommitted work included. Your edits are merged into the main tree when the session ends.`,
@@ -224,14 +253,15 @@ function laneNote() {
 
 // WAIT when every row left shares a package with one a lane is running.
 function nextRow() {
-  const argv = ['next', '--json', '--limit', String(rows + skipped.size + inFlight.size + 5)]
+  // A named row may rank anywhere in the queue.
+  const argv = ['next', '--json', '--limit', String(ids ? 100000 : rows + skipped.size + inFlight.size + 5)]
   if (args.pkg) argv.push('--pkg', args.pkg)
   if (args.sev) argv.push('--sev', args.sev)
   const log = readLog(LOG)
   const running = [...inFlight.values()].flatMap(f => f.pkg)
   let wait = false
   for (const r of JSON.parse(fli(argv)).ready) {
-    if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand) continue
+    if (skipped.has(r.id) || inFlight.has(r.id) || r.byHand || (ids && !ids.includes(r.id))) continue
     if (r.pkg.some(p => running.includes(p))) { wait = true; continue }
     if (stillBusy(r, log)) { console.log(`[fix-loop] ${r.id} skipped — busy last time, and the files that made it so are still dirty`); skipped.add(r.id); continue }
     return r
@@ -378,12 +408,12 @@ function attemptedBefore(id) {
 }
 
 // The register is the authority: an anchor below the § Closed heading is closed.
-function isBlocked(id) {
-  return JSON.parse(fli(['next', '--json'])).blocked.some(r => r.id === id)
+function isBlocked(id, root = ROOT) {
+  return JSON.parse(fli(['next', '--json'], root)).blocked.some(r => r.id === id)
 }
 
-function isClosed(id) {
-  const lines  = readFileSync(join(ROOT, 'ISSUES.md'), 'utf8').split('\n')
+function isClosed(id, root = ROOT) {
+  const lines  = readFileSync(join(root, 'ISSUES.md'), 'utf8').split('\n')
   const header = lines.findIndex(l => l.startsWith('## Closed'))
   const anchor = lines.findIndex(l => l.includes(`id="${id.toLowerCase()}"`))
   return header !== -1 && anchor > header

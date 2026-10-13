@@ -216,8 +216,8 @@ export function lastEntry(file, id) {
 
 // This checkout's own fli, under the runtime running this script. A bare `fli`
 // is whatever global install the machine has, which is a different build.
-export function fli(argv) {
-  const out = spawnSync(process.execPath, [FLI, ...argv], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 << 20 })
+export function fli(argv, cwd = ROOT) {
+  const out = spawnSync(process.execPath, [FLI, ...argv], { cwd, encoding: 'utf8', maxBuffer: 64 << 20 })
   if (out.status !== 0) throw new Error(`fli ${argv[0]} failed: ${out.stderr}`)
   return out.stdout
 }

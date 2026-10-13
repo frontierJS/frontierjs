@@ -174,6 +174,11 @@ src/
   descriptor field is also invisible to the SQLite registry unless it is in
   `EXTRA_KEYS` — it round-trips in memory, survives no restart, and says nothing
   (`FJS-657`).
+- **An `api_key` under `query` is on the fetched URL and nowhere else**
+  (`FJS-D940`). `dispatch` fetches `wire` but answers and judges redirects from
+  the keyless URL, and `scrubber` takes the key out of a connection failure,
+  which Bun builds from the URL, and out of an echoed `Location`. A new place
+  that turns the request URL into a string a caller sees goes through `scrub`.
 - **The HMAC signs the query, and the version is in the signature value.** The
   canonical string is six lines and the third is the query: pairs sorted, RFC
   3986 encoded, empty when there is none. It signed the pathname alone until
@@ -249,8 +254,9 @@ src/
   *Refused* is a 401 or a shape `auth.refusal` declares (`'markup'`,
   `'redirect'`) — a login-page system never says 401, and undeclared its 200
   HTML is `invalid_response`, so the dead session is cached forever
-  (`FJS-1906`). `refusedCredential()` in `http.ts` is the one test; a 403 is
-  never in it. `withCache`'s `invalidate` is a compare-and-set on the refused
+  (`FJS-1906`), or an answer a signer's `refused` names (`FJS-D941`: APNs's
+  403 `ExpiredProviderToken`). `refusedCredential()` in `http.ts` is the one
+  test; a 403 is in it only through a signer. `withCache`'s `invalidate` is a compare-and-set on the refused
   value — an unconditional forget turns twenty sends racing one expired session
   into twenty logins.
   A minted session is `withCache({ get: login }, { ttl_ms: Infinity })`;

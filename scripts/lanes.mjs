@@ -20,6 +20,9 @@
 //   in one lane is taken in every other. A merged copy would hand two
 //   lanes the same next id. Edit refuses a link and names its target,
 //   which is why the session gets `--add-dir` on the main tree.
+//   A trial lane (`syncLane(lane, { linked: false })`) COPIES it instead:
+//   two models fixing one row must not both close it in the main tree,
+//   so each closes its own copy and the register edit rides in the patch.
 // - What the row changes is HARVESTED: each file it touched is merged
 //   three ways into the main tree — what the lane started from, what
 //   the main tree holds now, what the lane ends with — and nothing is
@@ -76,9 +79,13 @@ export function openLane(n) {
  * Make the lane the main tree as it is now, and answer the tree id the harvest
  * is measured from.
  */
-export function syncLane({ dir }) {
+export function syncLane(lane, { linked = true } = {}) {
+  const { dir } = lane
+  lane.linked = linked
   // Unlinked first: a reset must never write through a link into the main tree.
   for (const f of LINKED) if (isLink(join(dir, f))) unlinkSync(join(dir, f))
+  // A linked run leaves the bit set, and a copy it hides never shows in a trial's diff.
+  git(dir, 'update-index', '--no-skip-worktree', ...LINKED)
   git(dir, 'reset', '-q', '--hard', git(ROOT, 'rev-parse', 'HEAD'))
   git(dir, 'clean', '-fdq')
 
@@ -94,12 +101,13 @@ export function syncLane({ dir }) {
 
   for (const f of LINKED) {
     if (existsSync(join(dir, f))) unlinkSync(join(dir, f))
-    symlinkSync(join(ROOT, f), join(dir, f))
+    if (linked) symlinkSync(join(ROOT, f), join(dir, f))
+    else copyFileSync(join(ROOT, f), join(dir, f))
   }
   // A link where the index holds a file reads as a change; the lane's git
   // status then looks as the main tree's does.
-  git(dir, 'update-index', '--skip-worktree', ...LINKED)
-  return snapshot(dir)
+  if (linked) git(dir, 'update-index', '--skip-worktree', ...LINKED)
+  return snapshot(lane)
 }
 
 /** Lay a saved patch onto the lane; false when it no longer applies. */
@@ -109,16 +117,17 @@ export function applyPatch({ dir }, file) {
 }
 
 /** What the lane changed since `base`, as a patch `applyPatch` takes. */
-export function lanePatch({ dir }, base) {
-  return run('git', ['-C', dir, 'diff-tree', '-p', '--binary', '--no-color', base, snapshot(dir)], dir, { raw: true })
+export function lanePatch(lane, base) {
+  return run('git', ['-C', lane.dir, 'diff-tree', '-p', '--binary', '--no-color', base, snapshot(lane)], lane.dir, { raw: true })
 }
 
 /**
  * Merge what the lane changed since `base` into the main tree. Answers
  * `{ written, dropped, conflicts }`; with any conflict nothing was written.
  */
-export function harvest({ dir }, base) {
-  const after   = snapshot(dir)
+export function harvest(lane, base) {
+  const { dir } = lane
+  const after   = snapshot(lane)
   const changes = run('git', ['-C', dir, 'diff-tree', '-r', '-z', '--no-renames', '--name-status', base, after], dir).split('\0').filter(Boolean)
   const plan = [], dropped = [], conflicts = []
 
@@ -158,12 +167,13 @@ function merge(was, main, now, path) {
 
 // A tree object of the lane's working files, built in a throwaway index so the
 // lane's own index — and so its `git status` — stays as the main tree's is.
-function snapshot(dir) {
+// A linked register is the main tree's file and never part of the lane's change.
+function snapshot({ dir, linked = true }) {
   const index = join(LANES_DIR, `index-${process.pid}-${basename(dir)}`)
   copyFileSync(git(dir, 'rev-parse', '--path-format=absolute', '--git-path', 'index'), index)
   try {
     const env = { ...process.env, GIT_INDEX_FILE: index }
-    for (const argv of [['add', '-A', '--', '.', ...EXCLUDE], ['write-tree']]) {
+    for (const argv of [['add', '-A', '--', '.', ...(linked ? EXCLUDE : [])], ['write-tree']]) {
       const out = spawnSync('git', ['-C', dir, ...argv], { env, encoding: 'utf8', maxBuffer: 64 << 20 })
       if (out.status !== 0) throw new Error(`git ${argv[0]} in ${dir}: ${out.stderr}`)
       if (argv[0] === 'write-tree') return out.stdout.trim()

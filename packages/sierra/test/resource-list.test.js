@@ -42,6 +42,13 @@ let total = ROWS.length
 let includes = false
 let extra    = null   // keys laid over every row, for the shapes an include is not
 let delayMs  = 0
+// A server that pages: `pageSize` rows per answer, the cursor the index past
+// the last one. `stuckAt` answers that cursor with no rows and `hasMore` still
+// true -- the drained-window state FJS-2617 found; `failAt` refuses it.
+let pageSize = null
+let stuckAt  = null
+let failAt   = null
+let many     = []
 
 const original = globalThis.fetch
 globalThis.fetch = (async (url, init) => {
@@ -57,6 +64,18 @@ globalThis.fetch = (async (url, init) => {
   if (extra) data = data.map(r => ({ ...r, ...extra }))
   const one = u.pathname.match(/^\/invoices\/(\d+)$/)
   if (one) return json(data.find(r => r.id === Number(one[1])))
+  if (pageSize) {
+    // A string that reads as a number crosses quoted (`toolbelt/query`).
+    const from = Number(JSON.parse(u.searchParams.get('$after') ?? '0'))
+    if (from && from === failAt) {
+      return new Response(JSON.stringify({ message: 'refused' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+    }
+    const slice = from && from === stuckAt ? [] : many.slice(from, from + pageSize)
+    const end   = from + slice.length
+    const hasMore = (from && from === stuckAt) || end < many.length
+    return json({ kind: 'list', object: 'invoices', data: slice, errors: [], total: many.length,
+      limit: pageSize, offset: 0, hasMore, endCursor: hasMore ? String(end) : null })
+  }
   return json({ kind: 'list', object: 'invoices', data, errors: [], total, limit: 20, offset: 0 })
 })
 
@@ -145,6 +164,8 @@ beforeEach(() => {
   includes = false
   extra = null
   delayMs = 0
+  pageSize = stuckAt = failAt = null
+  many = []
 })
 
 afterEach(() => {
@@ -468,6 +489,73 @@ describe('loading, error, the window, teardown', () => {
     await goto('/invoices/', { status: 'paid' })
     await settle()
     expect(sent.length).toBe(before)
+  })
+})
+
+describe('{ all: true } — the window grown to the end', () => {
+  const rowsOf = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, number: `INV-${i + 1}`, status: 'open', total: 1 }))
+
+  test('every page is read, where the same list without it holds one', async () => {
+    await boot('/invoices/')
+    pageSize = 3
+    many = rowsOf(7)
+    const paged = track(invoicesResource().list({ state: 'local' }))
+    await settle()
+    expect(paged.rows.length).toBe(3)
+    expect(paged.hasMore).toBe(true)
+    paged.destroy()
+
+    sent = []
+    const whole = track(invoicesResource().list({ state: 'local', all: true }))
+    await settle()
+    expect(whole.rows.length).toBe(7)
+    expect(whole.hasMore).toBe(false)
+    expect(whole.loading).toBe(false)
+    expect(sent.length).toBe(3)
+  })
+
+  test('a filter change is whole again, not page one', async () => {
+    await boot('/invoices/')
+    pageSize = 3
+    many = rowsOf(7)
+    const list = track(invoicesResource().list({ state: 'local', all: true }))
+    await settle()
+    sent = []
+    list.apply({ status: 'open' })
+    await settle()
+    expect(list.rows.length).toBe(7)
+    expect(sent.length).toBe(3)
+  })
+
+  test('a page that adds nothing ends it, though hasMore still says yes (FJS-2617)', async () => {
+    await boot('/invoices/')
+    pageSize = 3
+    many = rowsOf(7)
+    stuckAt = 3
+    const list = track(invoicesResource().list({ state: 'local', all: true }))
+    await settle()
+    expect(list.rows.length).toBe(3)
+    expect(list.loading).toBe(false)
+    expect(sent.length).toBe(2)
+  })
+
+  test('a refused page ends it on `error`, and is not asked again', async () => {
+    await boot('/invoices/')
+    pageSize = 3
+    many = rowsOf(7)
+    failAt = 3
+    const list = track(invoicesResource().list({ state: 'local', all: true }))
+    await settle()
+    expect(list.error).toBeTruthy()
+    expect(list.rows.length).toBe(3)
+    await settle()
+    expect(sent.length).toBe(2)
+  })
+
+  test('a composed list cannot be whole, and says why', async () => {
+    await boot('/invoices/')
+    expect(() => invoicesResource().list({ state: 'local', composed: true, all: true }))
+      .toThrow(/cannot be composed/)
   })
 })
 
