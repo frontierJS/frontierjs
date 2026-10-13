@@ -983,7 +983,7 @@ Everything in `sierra.config.js`:
 | `siteUrl` | `''` | absolute origin for the sitemap |
 | `llms` | `false` | `true` emits `llms.txt` unless `public/llms.txt` exists · `'auto'` always regenerates it |
 | `markdownPages` | `false` | `true` \| `'auto'` — emit `index.md` beside each page |
-| `speculationRules` | `true` | inject Speculation Rules for static routes |
+| `speculationRules` | `true` | static build: prerender a same-origin link on hover (Speculation Rules, `moderate`); `rel="nofollow"` opts a link out |
 | `build.deferJS` | `false` | defer script tags in `index.html` |
 | `plugins` | `[]` | extra Vite plugins. A `closeBundle` on one is the post-build hook: Sierra calls it once, with `{ outDir, root, config, routeTable }`, after the pages are written, and Vite never calls it |
 | `vite` | `{}` | raw Vite overrides — deep-merged last, arrays concatenated |
@@ -1059,6 +1059,11 @@ should point at it rather than a `createServer` of its own: it resolves a
 directory to its `index.html`, revalidates HTML while leaving hashed assets
 immutable, and serves the site's own `404.html` with a 404 status. It sends no
 CORS, deliberately — this origin serves documents a browser navigates to.
+
+**`sierra site --compile`** makes the same origin and the built site one
+executable — `bin/site` by default, `--out` to move it, `--target bun-darwin-arm64`
+for another OS, `--dir` for a `dist/` something else built. It needs bun to
+compile and nothing to run: `./bin/site --port 8080`, or `PORT`.
 
 **`widget`** — an embeddable script for a page this app does not own. One `.mesa` file
 in `src/Embeds/` becomes one self-contained IIFE: the component, the Mesa runtime and
@@ -1248,7 +1253,7 @@ Runs automatically after `vite build`:
 | `sitemap.xml` from `indexed` routes | always |
 | `llms.txt` | `llms` is `true` or `'auto'` |
 | per-page `index.md` | `markdownPages` |
-| Speculation Rules | `speculationRules !== false` and static routes exist |
+| Speculation Rules (prerender on hover) | static target and `speculationRules !== false` |
 | `defer` on script tags | `build.deferJS` |
 | theme flash-prevention inline script | `theme` configured |
 | whether a browser will install the app | `index.html` links a manifest, or `public/manifest.webmanifest` exists |
@@ -1372,6 +1377,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../devtools` | `initToolbar` |
 | `.../postbuild` | `runPostBuild`, `htmlFiles` (every page a build emitted, for a config plugin's `closeBundle` that rewrites them) |
 | `.../site/serve` | `serveSite` — the prerendered-site origin |
+| `.../site/compile` | `compileSite` — a built site and its origin as one executable |
 | `.../widget/serve` | `serveWidgets` — the widget origin |
 | `.../components/RouterView` | the router outlet component |
 | `.../components/ChainRenderer` | the layout-chain renderer `RouterView` uses |

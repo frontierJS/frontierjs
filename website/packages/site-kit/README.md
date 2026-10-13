@@ -11,7 +11,8 @@ the Kobami client template (`fjs-prototypes/ksite`) extends it next, with a
 cleaning-company theme and content over the same engine.
 
 A site is its `content/` folder: `site-kit dev site`, `site-kit build site`,
-`site-kit preview site`. The shell, the dev entry and the build config live
+`site-kit preview site`. `site-kit build site --binary` then compiles `site/dist`
+and its server into one executable at `site/bin/site` (`./site/bin/site --port 8080`). The shell, the dev entry and the build config live
 here. `content/settings/site.js` is the site's Sierra config, and
 `content/settings/site.md` is its settings. Blocks are exported as
 `@frontierjs/site-kit/blocks/<Name>.mesa`.

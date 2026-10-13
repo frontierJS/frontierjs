@@ -193,8 +193,10 @@ so a fact one derives, the other must lift out of the frame by hand.
 - **`callService`** is the one announcement point, for the bus and the channels.
 - **`core/litestone.ts`** is the Data adapter — `withLitestoneDb`/`withTenantDb`,
   `gateAuth`, `autoValidate`/`validateInput`, `toDataPrincipal`.
-- **`core/directives.ts` and `core/events.ts` import nothing**, so the browser
-  client names them without pulling `node:async_hooks` into a bundle (`FJS-1181`).
+- **`core/directives.ts`, `core/events.ts` and `core/methods.ts` import nothing**,
+  so the browser client names them without pulling `node:async_hooks` into a
+  bundle (`FJS-1181`). `methods.ts` is `CRUD_METHODS`, which `envelope.ts` reads
+  to decide list against single (`FJS-D937`).
 - **`core/app-model.ts` is one walk over a built app**; the snapshot tools under
   `tools/` render it and hold no walk of their own.
 

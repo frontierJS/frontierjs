@@ -169,11 +169,14 @@ async function cmdWidgets() {
 // because the two are separate questions: CI builds and never serves, and a
 // drive serves what CI already built rather than rebuilding to look at it.
 // `vite build` is the build — there is nothing for a sierra subcommand to add.
+// `--compile` reads a finished build for the same reason, so a dist produced
+// by something other than this package's Vite config compiles too.
 
 async function cmdSite() {
-  if (!flag('serve')) {
+  if (!flag('serve') && !flag('compile')) {
     fatal(
-      'sierra site --serve [--port N] serves the built site.\n' +
+      'sierra site --serve [--port N] serves the built site;\n' +
+      '     sierra site --compile [--out bin/site] [--target T] makes it one executable.\n' +
       '     Build it with `vite build -c config/vite.config.js` — a static\n' +
       '     target is an ordinary Vite build that prerenders afterwards.'
     )
@@ -197,6 +200,18 @@ async function cmdSite() {
   const dir = resolve(outDir)
   if (!existsSync(dir))
     fatal(`No build at ${rel(dir)} — run \`vite build -c config/vite.config.js\` first.`)
+
+  if (flag('compile')) {
+    const { compileSite } = await import('../site/compile.js')
+    const outfile = getFlag('out') ?? 'bin/site'
+    let made
+    try   { made = compileSite({ dir, outfile, target: getFlag('target') ?? undefined }) }
+    catch (err) { fatal(err.message) }
+    const bin = rel(made.outfile).startsWith('..') ? made.outfile : `./${rel(made.outfile)}`
+    console.log(`\n  ·  ${made.files} files from ${rel(dir)} → ${bin}`)
+    console.log(`     run it: ${bin} --port 8700\n`)
+    return
+  }
 
   const { serveSite } = await import('../site/serve.js')
   const port   = Number(getFlag('port') ?? 0) || 0
@@ -222,6 +237,8 @@ if (cmd === 'routes') {
   console.log('            --serve [--port N]  serve dist/embeds with the CORS + cache headers it deploys with')
   console.log('  site      --serve [--port N]  serve a prerendered site with the directory-index,')
   console.log('            cache and 404 answers a static host gives (--dir to point at a build)')
+  console.log('            --compile [--out bin/site] [--target T]  the same server and the build')
+  console.log('            as one executable (needs bun; T is a bun target, e.g. bun-darwin-arm64)')
   console.log()
   console.log('  Run from the SURFACE root, not the app root — web/ for routes, widgets/ for')
   console.log('  widgets, site/ for a site. Each is a Vite root, and every path in a sierra')

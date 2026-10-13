@@ -85,7 +85,7 @@ title: Alerts
     busy = rule.id
     try {
       const raw = await alerts.service.invoke('events', rule.id)
-      events = { ...events, [rule.id]: Array.isArray(raw) ? raw : raw?.data ?? [] }
+      events = { ...events, [rule.id]: raw.data }
     } catch (e) {
       error = e.message
     } finally {

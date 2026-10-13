@@ -151,6 +151,7 @@ import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jso
 import { mintId } from '@frontierjs/toolbelt/ids'
 import { jittered } from '@frontierjs/toolbelt/rank'
 import { createList } from './list.js'
+import { liveRecord } from './record.js'
 import { pendingQueue, unreachable } from './pending.js'
 import { attachmentQueue } from './attachments.js'
 import { listCache, listKey } from './list-cache.js'
@@ -1670,8 +1671,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * is why every detail screen went stale the moment somebody else wrote the
    * row (`FJS-518`). This subscribes to the row instead:
    *
-   *   const row = orders.record(page.params.id)
-   *   $: order  = useStore(row)          // moves on a push, with no reload
+   *   const row = orders.record(page.params.id)   // released with the component
+   *   $: order  = row.value              // moves on a push, with no reload
+   *   $: missing = row.loaded && !row.value && row.error()   // 404, 403, or 0
    *   await row.ready                    // if the first read must be awaited
    *
    * The first read goes through this resource's own `_call('get')`, so its
@@ -1696,7 +1698,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // A node another view already holds is not read again, so what it shows
     // is this screen's first sight of the row.
     _sighted(id, null)
-    return junctionResource.record(id, {
+    return liveRecord(junctionResource.record(id, {
       // The same read `service.get(id)` makes, `detailQuery` included: a
       // resource that declares the include shape a detail view needs declares
       // it once, and a record view is a detail view.
@@ -1708,7 +1710,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         return row
       },
       composed,
-    })
+    }))
   }
 
   // ── A read that answered more than the row, on a view that is not composed ──
@@ -1850,7 +1852,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   function declaredFields() {
     if (!extensibleColumn) return Promise.resolve([])
     _declaredPending ??= service.invoke('declaredFields')
-      .then((rows) => { _declared = Array.isArray(rows) ? rows : (rows?.data ?? []); return _declared })
+      .then((rows) => { _declared = rows; return _declared })
       .catch((err) => { _declaredPending = null; throw err })
     return _declaredPending
   }
@@ -3028,6 +3030,8 @@ function _emptyResource(name) {
     record:  () => ({
       id: null,
       ready: Promise.resolve(null),
+      value: null,
+      loaded: true,
       get: () => null,
       error: () => null,
       subscribe: fn => { fn(null); return () => {} },

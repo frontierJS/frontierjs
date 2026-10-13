@@ -28,8 +28,9 @@ link**: the transport speaks conduit's own frame envelope
 (`{ id, type: 'request' | 'response' | 'stream_chunk' | …, method, path, body, seq }`)
 and the far side must implement it. **A third-party WebSocket API is not
 reachable through this package**, and `@frontierjs/outpost` does not use this
-half either: basecamp registers an outpost as an `http` target with `hmac` auth. Streaming is that half's alone — `stream()` over `http`
-and `unix` answers `not_implemented`.
+half either: basecamp registers an outpost as an `http` target with `hmac` auth. A
+vendor's event stream is the `http` half's: `stream()` yields one chunk per SSE
+event, or the bytes of any other body (`FJS-D934`).
 
 ---
 
@@ -42,6 +43,7 @@ src/
   observe.ts        the one place an observer is called
   plugin.ts         the Junction plugin (app.conduit)
   credentials.ts    credential resolvers — a target names one, never inlines it
+  signers.ts        the signers always installed — HTTP Basic
   resilience.ts     per-target load shedding
   trace.ts          trace-context propagation
   types.ts          the target/message types
@@ -194,6 +196,17 @@ src/
   subscription registers `conduit:<target>` through `registerReadiness` — *connected*,
   not *recent message*, since a quiet broker is not an outage — and a new broker
   path that cannot say so does not ship.
+- **An `http` stream is opened by its first read, through `send()`'s ladder.**
+  `stream()` calls the same `attempt()` with `open`, so a refusal before the
+  first byte is the kind `send()` answers, thrown as a `ConduitStreamError`
+  whose `meta.status` a vendor's `translate()` reads. The per-attempt timer
+  covers headers only, and an answer that streams for minutes is not a
+  `timeout`. `conduit.stream()` admits through `resilience` like `send()` and
+  holds the slot until the stream ends, so a stream never `return()`ed holds
+  its `max_concurrent` slot for good. `content-type` decides the chunk:
+  `text/event-stream` gives events, anything else gives bytes with no
+  `max_response_bytes` cap, except an unfinished SSE event, which is capped,
+  because one with no blank line would grow without bound. `stream.test.ts`.
 - **A target is declared, not constructed at the call site.** That is the whole
   point of the package: one place lists what this process may talk to, with what
   credential, under what limits.
@@ -240,7 +253,9 @@ src/
 - **A vendor's scheme is a `signed` target, and the function is the connector's**
   (`FJS-D891`). `auth: { type: 'signed', signer, ref }` names an entry of
   `ConduitOptions.signers`, because a descriptor is JSON in the registry and a
-  function is not. The four older types did not move onto it. The signer gets the
+  function is not. The four older types did not move onto it. **HTTP Basic is
+  the one built-in signer** (`src/signers.ts`, always installed, its name
+  refused to a connector): four connectors wrote it four ways (`FJS-2233`). The signer gets the
   bytes `serialize()` produced and may return a replacement body — an http
   transport sends `authorize().body`, never its own `rawBody`, or the signed bytes
   were not the ones sent. A minted JWT or OAuth token is the RESOLVER's:

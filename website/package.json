@@ -11,7 +11,7 @@
     "verify": "node tests/verify.mjs",
     "verify:ask": "bun tests/verify-ask.mjs",
     "clean": "rm -rf site/dist",
-    "test": "bun run build && bun run verify",
+    "test": "node ../scripts/tmp-run.mjs 'bun run build && bun run verify'",
     "typecheck": "node ../scripts/typecheck.mjs",
     "deploy": "bun run test && wrangler deploy -c wrangler.jsonc"
   },

@@ -6,6 +6,7 @@
 
 import { X509Certificate } from 'node:crypto'
 import { redactUrl } from '@frontierjs/toolbelt/redact'
+import { parseEvents } from '@frontierjs/toolbelt/sse'
 import { BaseTransport } from './base.ts'
 import { encodeBody, CONTENT_TYPE } from './encode.ts'
 import type { BodyEncoding, EncodedBody } from './encode.ts'
@@ -148,7 +149,90 @@ export class HttpTransport extends BaseTransport {
     super(descriptor, credentials)
   }
 
-  async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
+  send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
+    return this.exchange<T>(req, false)
+  }
+
+  /**
+   * The body as it arrives. A `text/event-stream` body yields one chunk per
+   * event, `{ event, data, id }` from toolbelt's reader; any other body yields
+   * its bytes per read, so a recording is passed on without being held whole.
+   *
+   * Opened through the same ladder as `send()`, so a 429 before the first
+   * byte is `rate_limited` with its `retry_after_ms`, a 401 remints once, and
+   * an idempotent request is retried — and a failure to open throws the
+   * ConduitError `send()` would have answered, with the status on `meta`. The
+   * per-attempt timeout covers the wait for headers only: an answer streams as
+   * long as it is long, and the caller's `signal` is what bounds it.
+   */
+  async *stream(req: ConduitRequest): AsyncIterable<ConduitChunk> {
+    const opened = await this.exchange<Response | null>(req, true)
+    if (opened.error) throw new ConduitStreamError(opened.error, opened.meta)
+
+    const res  = opened.data
+    const meta = opened.meta
+    if (!res?.body) return
+
+    const fail = (kind: ConduitError['kind'], message: string): ConduitStreamError =>
+      new ConduitStreamError({ kind, target: this.descriptor.id, protocol: this.protocol, message, retryable: false }, meta)
+
+    const reader = res.body.getReader()
+    const cancel = () => { reader.cancel().catch(() => {}) }
+    req.signal?.addEventListener('abort', cancel, { once: true })
+
+    const sse      = isEventStream(res.headers.get('content-type') ?? '')
+    const decoder  = new TextDecoder()
+    const maxBytes = this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
+    let rest = '', lastId = '', sequence = 0, finished = false
+
+    const chunk = (data: unknown): ConduitChunk => ({ data, sequence: sequence++, timestamp: Date.now(), meta })
+
+    try {
+      while (true) {
+        let next: Awaited<ReturnType<typeof reader.read>>
+        try { next = await reader.read() }
+        catch (err) {
+          if (req.signal?.aborted) throw fail('aborted', 'Canceled by the caller mid-stream')
+          throw fail('stream_error', `The stream died: ${redactUrl((err as Error).message)}`)
+        }
+        // A cancel on the caller's signal resolves the pending read as done.
+        if (req.signal?.aborted) throw fail('aborted', 'Canceled by the caller mid-stream')
+        if (next.done) break
+
+        if (!sse) { yield chunk(next.value); continue }
+
+        const parsed = parseEvents(rest + decoder.decode(next.value, { stream: true }), lastId)
+        rest = parsed.rest; lastId = parsed.lastId
+        for (const ev of parsed.events) yield chunk(ev)
+        // An event is held until its blank line, so a server that never sends
+        // one grows this without bound.
+        if (rest.length > maxBytes) throw fail('invalid_response', `An event exceeded ${maxBytes} bytes without ending`)
+      }
+      finished = true
+
+      if (sse) {
+        const parsed = parseEvents(rest + decoder.decode(), lastId)
+        for (const ev of parsed.events) yield chunk(ev)
+        // A close is the only end SSE has, so a body that stops between two
+        // events reads as finished; one that stops inside an event did not.
+        if (parsed.rest.trim() !== '') throw fail('stream_error', 'The stream ended inside an event')
+      }
+    } finally {
+      req.signal?.removeEventListener('abort', cancel)
+      // A consumer that stops early leaves the body unread, and an unread body
+      // holds the connection.
+      if (!finished) await reader.cancel().catch(() => {})
+      reader.releaseLock()
+    }
+  }
+
+  // ─── Private ────────────────────────────────────────────────
+
+  /**
+   * The ladder: retries, the one remint, `Retry-After` and the deadline. With
+   * `open`, a 2xx answers the unread `Response` in place of its decoded body.
+   */
+  private async exchange<T>(req: ConduitRequest, open: boolean): Promise<ConduitResult<T>> {
     const retries  = this.opts.retry_limit ?? DEFAULT_RETRY_LIMIT
     const deadline = performance.now() + (this.opts.deadline_ms ?? DEFAULT_DEADLINE_MS)
     let   attempt  = 0
@@ -212,7 +296,7 @@ export class HttpTransport extends BaseTransport {
       // The per-attempt timeout is also capped by what is left of the total
       // budget, so a long tail of retries cannot outlive the deadline.
       const spent  = {} as { value?: string }
-      const result = await this.attempt<T>(sent, remaining, spent)
+      const result = await this.attempt<T>(sent, remaining, spent, open)
 
       if (refusedCredential(result) && !reminted && spent.value !== undefined
         && this.invalidateSpent(spent.value, sent.who)) {
@@ -252,22 +336,6 @@ export class HttpTransport extends BaseTransport {
     // Unreachable but TypeScript needs it
     return this.fail('server_error', 'Retry loop exhausted')
   }
-
-  // HTTP streaming (SSE) is not implemented in V1. Throws rather than
-  // yielding an empty iterator: "this protocol cannot stream" must be
-  // distinguishable from "the stream produced nothing".
-  // biome-ignore lint/correctness/useYield: a stub that refuses before it would yield
-  async *stream(_req: ConduitRequest): AsyncIterable<ConduitChunk> {
-    throw new ConduitStreamError({
-      kind:      'not_implemented',
-      target:    this.descriptor.id,
-      protocol:  this.protocol,
-      message:   `Streaming over '${this.protocol}' is not implemented — use a websocket target.`,
-      retryable: false,
-    })
-  }
-
-  // ─── Private ────────────────────────────────────────────────
 
   /**
    * The answer to a transient fault on a request conduit will not replay.
@@ -311,7 +379,7 @@ export class HttpTransport extends BaseTransport {
     }
   }
 
-  private async attempt<T>(req: ConduitRequest, budgetMs = Infinity, spent?: { value?: string }): Promise<ConduitResult<T>> {
+  private async attempt<T>(req: ConduitRequest, budgetMs = Infinity, spent?: { value?: string }, open = false): Promise<ConduitResult<T>> {
     const maxBytes = this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
     const timeout  = Math.min(
       req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS,
@@ -471,6 +539,8 @@ export class HttpTransport extends BaseTransport {
           raw: await readBody(res, maxBytes)
         }, meta)
       }
+
+      if (open) return this.ok<T>(res as T, res.status, headers)
 
       const bytes = await readBytes(res, maxBytes)
 
@@ -823,4 +893,8 @@ async function readBody(res: Response, limit: number): Promise<string> {
 
 function isTextType(contentType: string): boolean {
   return contentType.split(';')[0].trim().toLowerCase().startsWith('text/')
+}
+
+function isEventStream(contentType: string): boolean {
+  return contentType.split(';')[0].trim().toLowerCase() === 'text/event-stream'
 }

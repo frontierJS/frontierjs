@@ -238,10 +238,11 @@ array. Branch on `kind`.
 
 In the browser: `client.service('orders').invoke('pay', id, data)`.
 
-**`invoke()` answers by the same rule as `find`: a custom method returning an
-array arrives as the list envelope `{ kind: 'list', data, … }`, and one
-returning an object arrives as that object.** Read an array answer as `.data`;
-`answer?.data ?? answer` is a guess at a shape the server has already fixed.
+**`invoke()` answers what the method returned**: an array as the array, an
+object as the object (`FJS-D937`). Only `find` answers a page, and only the bulk
+partial-write protocol `{ data, errors }` is a list on any other method.
+Never hedge with `answer?.data ?? …`: against an array answer, `?.data ?? []`
+is an empty screen and no error.
 
 ---
 

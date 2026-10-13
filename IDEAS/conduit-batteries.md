@@ -21,7 +21,6 @@ without conduit is [`FJS-659`](../ISSUES_ARCHIVE.md#fjs-659).
 
 | Item | What it would do | Note |
 | --- | --- | --- |
-| **http `stream()`** | Server-sent events over the http transport | Answers `not_implemented` today, on purpose, so *cannot stream* is told apart from *streamed nothing* ([`FJS-D585`](../DECISIONS.md#fjs-d585)). |
 | **Per-target rate limiter** | Hold a send rather than spend a vendor's quota | Would be an eighth policy number, so it falls back the way the seven do (`FJS-728`). |
 | **Retry budget** | Cap retries as a share of traffic, not per call | Stops a retry storm the per-call cap allows. |
 | **Hedged requests** | Send a second copy when the first is slow, keep the first answer | Only safe for an idempotent call, so it reads the idempotency key. |

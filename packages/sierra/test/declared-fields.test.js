@@ -23,7 +23,7 @@ vi.mock('@frontierjs/sierra/resource', () => ({
       invoke: async (method) => {
         CALLS.push([name, method])
         if (FAIL) { FAIL = false; throw new Error('boom') }
-        return { kind: 'list', data: ANSWER }
+        return ANSWER
       },
     }),
     resource: () => ({

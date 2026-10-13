@@ -251,8 +251,8 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | google-maps | B | new; two hosts, one key | 19 | — | `FJS-2727` for `?key=` Geocoding, or header-auth surfaces only; Nominatim named, not built |
 | oidc | B | new | 36 | **panva oidc-provider proved in-process (44 rows)**; Dex unproved | `FJS-2729`, `FJS-2730`, or the second-target convention; Apple `client_secret_basic` unverified |
 | push | B | new (APNs + FCM) | 23 | — | `FJS-2721`, `FJS-2722`; APNs h2 unmeasured |
-| anthropic | C | new | 21 | — | `FJS-2728`; `streamMessage` owns one `fetch` past the seam |
-| openai | C | new, protocol connector | 23 | Ollama, llama.cpp **unproved** | `FJS-2728`; a local model server |
+| anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
+| openai | C | new, protocol connector | 23 | Ollama, llama.cpp **unproved** | a local model server |
 | twilio | C | new; Basic over the signer seam | 12 | — | nothing |
 | postmark | C | new; inbound over a URL credential | 10 | — | nothing |
 | turnstile | C | new; secret-in-body signer | 12 | — | nothing (`FJS-2726` asserted as-is) |

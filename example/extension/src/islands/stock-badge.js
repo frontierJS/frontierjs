@@ -66,12 +66,11 @@ export default defineIsland({
     ;(async () => {
       try {
         const found = await products.service.find({ slug })
-        const rows  = Array.isArray(found) ? found : (found?.data ?? [])
-        const product = rows[0]
+        const product = found.data[0]
         if (!product) { value.textContent = 'not in the catalog'; return }
 
         const vs   = await variants.service.find({ productId: product.id })
-        const list = Array.isArray(vs) ? vs : (vs?.data ?? [])
+        const list = vs.data
         const on   = list.reduce((n, v) => n + (v.stock ?? 0), 0)
         value.textContent = `${on} on the shelf · ${list.length} variants`
       } catch (e) {

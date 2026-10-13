@@ -45,7 +45,4 @@ export class UnixTransport extends HttpTransport {
     // @ts-ignore — Bun-specific unix socket option
     return { ...init, unix: this.descriptor.address }
   }
-
-  // stream() is inherited: it throws not_implemented, same as HTTP.
-  // Use a websocket target for streaming.
 }

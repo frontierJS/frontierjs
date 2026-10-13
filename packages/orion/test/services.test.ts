@@ -130,10 +130,10 @@ describe("flows: a USER drafts, an administrator activates, the owner runs", () 
     expect(run.trigger).toEqual({ payload: { n: 1 }, by: "u-user" })
 
     const steps = await call(TOKEN.user, `/runs/${run.id}`, "steps")
-    expect((steps.body as any).data.map((s: any) => s.nodeId).sort()).toEqual(["c", "t"])
+    expect((steps.body as any).map((s: any) => s.nodeId).sort()).toEqual(["c", "t"])
 
     const versions = await call(TOKEN.user, `/flows/${id}`, "versions")
-    expect((versions.body as any).data).toEqual([expect.objectContaining({ version: 1, authorId: "u-user" })])
+    expect(versions.body).toEqual([expect.objectContaining({ version: 1, authorId: "u-user" })])
   })
 
   test("only the owner or an administrator changes a flow; an administrator's version names them", async () => {
@@ -142,7 +142,7 @@ describe("flows: a USER drafts, an administrator activates, the owner runs", () 
 
     const saved = await call(TOKEN.admin, `/flows/${id}`, "save", { definition: manual(count("b")) })
     expect(saved.body).toEqual({ flowId: id, version: 2, current: true })
-    const [latest] = ((await call(TOKEN.user, `/flows/${id}`, "versions")).body as any).data
+    const [latest] = (await call(TOKEN.user, `/flows/${id}`, "versions")).body as any
     expect(latest).toMatchObject({ version: 2, authorId: "u-admin" })
   })
 
@@ -363,7 +363,7 @@ describe("the node catalog a screen builds a form from", () => {
   test("it is the REGISTRY's, so a host's plugin node is in it with its schema", async () => {
     const answer = await call(TOKEN.user, "/flows", "nodeTypes")
     expect(answer.status).toBe(200)
-    const types = (answer.body as any).data ?? answer.body
+    const types = answer.body as any
     const byType = new Map(types.map((t: any) => [t.type, t]))
 
     // Every built-in, and the suite's contributed node beside them. The second

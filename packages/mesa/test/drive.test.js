@@ -17,8 +17,8 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { createServer } from 'node:http'
-import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -236,7 +236,7 @@ test('openChrome refuses the flags it owns, before launching anything', async ()
 // A child process, because the subject is what a signal does to a PROCESS.
 // It reports the profile its launch made, so the parent can see the browser
 // was still swept on the way out.
-function launchChild(withHost) {
+function launchChild(withHost, signal = 'SIGTERM') {
   const drive = new URL('../src/drive.js', import.meta.url).href
   const script = `
     import { readdirSync } from 'node:fs'
@@ -262,7 +262,7 @@ function launchChild(withHost) {
       const m = out.match(/up (\S+)/)
       if (!m) return
       clearTimeout(t)
-      child.kill('SIGTERM')
+      child.kill(signal)
       child.on('exit', (code) => resolve({ code, out, profile: join(tmpdir(), m[1]) }))
     })
   })
@@ -280,5 +280,24 @@ describe.skipIf(!CHROME)('a signal (FJS-1658)', () => {
     expect(out).toContain('host shutdown finished')
     expect(code).toBe(0)
     expect(existsSync(profile)).toBe(false)
+  }, 30000)
+})
+
+// A SIGKILL runs no handler, so the browser outlives its drive and keeps its
+// profile fresh. Only the NEXT launch can take it, by its dead launcher's pid.
+describe.skipIf(!CHROME)('a SIGKILL (FJS-2762)', () => {
+  const holders = (profile) =>
+    spawnSync('pgrep', ['-f', `user-data-dir=${profile}`], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean).length
+
+  test('the next launch kills the orphaned browser and removes its profile, temp files included', async () => {
+    const { profile } = await launchChild(false, 'SIGKILL')
+    expect(holders(profile)).toBeGreaterThan(0)
+    expect(readdirSync(join(profile, 'tmp')).some((n) => n.startsWith('com.google.Chrome'))).toBe(true)
+
+    const b = await openChrome()
+    try {
+      expect(holders(profile)).toBe(0)
+      expect(existsSync(profile)).toBe(false)
+    } finally { await b.close() }
   }, 30000)
 })

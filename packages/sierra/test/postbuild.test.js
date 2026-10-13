@@ -14,7 +14,7 @@ import { writeRobots } from '../src/postbuild/robots.js'
 import { generateRedirects } from '../src/postbuild/redirects.js'
 import { generateSitemap } from '../src/postbuild/sitemap.js'
 import { generateLlms } from '../src/postbuild/llms.js'
-import { injectSpeculationRules } from '../src/postbuild/speculation.js'
+import { injectSpeculationRules, SPECULATION_RULES } from '../src/postbuild/speculation.js'
 import { deferJsLoading } from '../src/postbuild/defer-js.js'
 import { injectThemeScript } from '../src/postbuild/inject-theme.js'
 import { injectAnalyticsTag } from '../src/postbuild/inject-analytics.js'
@@ -282,14 +282,6 @@ describe('runPostBuild — what counts as a page', () => {
     expect(xml).toContain('<loc>/catalog/</loc>')
     expect(xml).not.toContain(':slug')
     expect(xml.match(/<loc>/g)).toHaveLength(2)
-  })
-
-  test('prefetch rules see the same set', async () => {
-    const outDir = await setup('spec-static', { 'index.html': page })
-    await runPostBuild({ llms: false }, table, outDir, outDir, ['/', '/products/a/'])
-
-    const html = await readFile(join(outDir, 'index.html'), 'utf8')
-    expect(html).toContain('"/products/a/"')
   })
 
   // The FOUR tests below are about the CALL and not the unit. Every
@@ -725,30 +717,38 @@ describe('generateLlms', () => {
 // ─── injectSpeculationRules ───────────────────────────────────────────────────
 
 describe('injectSpeculationRules', () => {
-  test('injects speculation rules before </head>', async () => {
+  test('injects a hover prerender rule before </head>', async () => {
     const outDir = await setup('speculation', {
       'index.html': '<html><head><title>Test</title></head><body></body></html>',
     })
-    const result = await injectSpeculationRules(['/', '/about/', '/blog/'], outDir)
+    const result = await injectSpeculationRules(outDir)
     expect(result).toContain('Speculation Rules')
-    expect(result).toContain('3 routes')
     const html = await readFile(join(outDir, 'index.html'), 'utf8')
-    expect(html).toContain('speculationrules')
-    expect(html).toContain('"prerender"')
-    expect(html).toContain('"/about/"')
+    const block = html.match(/<script type="speculationrules">([\s\S]*?)<\/script>/)
+    expect(JSON.parse(block[1])).toEqual(SPECULATION_RULES)
+    expect(html.indexOf('speculationrules')).toBeLessThan(html.indexOf('</head>'))
+  })
+
+  test('the rule waits for the reader, and matches links rather than listing routes', () => {
+    // A list rule with no eagerness is `immediate`: every page load prerendered
+    // the first ten routes whether the reader went near them or not.
+    const [rule] = SPECULATION_RULES.prerender
+    expect(rule.source).toBe('document')
+    expect(rule.eagerness).toBe('moderate')
+    expect(rule).not.toHaveProperty('urls')
   })
 
   test('does not inject if already present', async () => {
     const outDir = await setup('speculation-idempotent', {
       'index.html': '<html><head><script type="speculationrules">{}</script></head></html>',
     })
-    const result = await injectSpeculationRules(['/'], outDir)
+    const result = await injectSpeculationRules(outDir)
     expect(result).toBeNull()
   })
 
   test('returns null when no index.html', async () => {
     const outDir = await setup('speculation-empty')
-    const result = await injectSpeculationRules(['/'], outDir)
+    const result = await injectSpeculationRules(outDir)
     expect(result).toBeNull()
   })
 
@@ -765,7 +765,7 @@ describe('injectSpeculationRules', () => {
       'p/navy-tee/index.html': page,
       'assets/index-A1b2C3d4.js': 'console.log(1)',
     })
-    const result = await injectSpeculationRules(['/', '/about/'], outDir)
+    const result = await injectSpeculationRules(outDir)
     expect(result).toContain('3 pages')
     for (const rel of ['index.html', 'about/index.html', 'p/navy-tee/index.html'])
       expect(await readFile(join(outDir, rel), 'utf8')).toContain('speculationrules')
@@ -773,14 +773,20 @@ describe('injectSpeculationRules', () => {
     expect(await readFile(join(outDir, 'assets/index-A1b2C3d4.js'), 'utf8')).toBe('console.log(1)')
   })
 
-  test('a route path cannot close the script block it rides in', async () => {
-    const outDir = await setup('speculation-escape', {
-      'index.html': '<html><head></head><body></body></html>',
-    })
-    await injectSpeculationRules(['/p/</script><img src=x>/'], outDir)
-    const html = await readFile(join(outDir, 'index.html'), 'utf8')
-    expect(html).not.toContain('</script><img')
-    expect(html).toContain('\\u003c/script')
+  test('runPostBuild writes it on a static target and not on an SPA, whose router intercepts the click', async () => {
+    const page  = '<html><head></head><body></body></html>'
+    const table = { tree: [], all: [], indexed: ['/'], redirects: [] }
+    const spa = await setup('speculation-spa', { 'index.html': page })
+    await runPostBuild({ llms: false }, table, spa, spa, null)
+    expect(await readFile(join(spa, 'index.html'), 'utf8')).not.toContain('speculationrules')
+
+    const site = await setup('speculation-static', { 'index.html': page })
+    await runPostBuild({ llms: false }, table, site, site, ['/'])
+    expect(await readFile(join(site, 'index.html'), 'utf8')).toContain('speculationrules')
+
+    const off = await setup('speculation-off', { 'index.html': page })
+    await runPostBuild({ llms: false, speculationRules: false }, table, off, off, ['/'])
+    expect(await readFile(join(off, 'index.html'), 'utf8')).not.toContain('speculationrules')
   })
 })
 

@@ -96,10 +96,16 @@ describe('wrapResult', () => {
     expect(wrapResult([{ id: 1 }], 'posts', 'patch')).toMatchObject({ kind: 'list' })
   })
 
-  test('a custom method answering an array is the list envelope, so invoke() callers read .data', () => {
+  test('a custom method answering an array is a single, so invoke() hands back the array (FJS-D937)', () => {
     const r = wrapResult([{ id: 1 }, { id: 2 }], 'words', 'forVerse')
-    expect(r).toMatchObject({ kind: 'list', object: 'words' })
+    expect(r).toMatchObject({ kind: 'single', object: 'words' })
     expect(r.data).toEqual([{ id: 1 }, { id: 2 }])
+  })
+
+  test('a CRUD verb answering an array is still a list', () => {
+    for (const m of ['find', 'create', 'patch', 'remove']) {
+      expect(wrapResult([{ id: 1 }], 'posts', m).kind).toBe('list')
+    }
   })
 
   test('anything else becomes a single', () => {

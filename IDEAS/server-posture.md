@@ -117,9 +117,8 @@ exported, and it is where the tests go.
 **`declared` is derived, never typed in:**
 
 - **Expected listening set** = 22 (or `Server.sshPort`), 80, 443, 8180 (8181 when
-  the static origin is on), plus the port of each app on this server that has **no
-  hostname** (`AppServer` + `Domain`). An app with a hostname must be on loopback
-  only. Anything else listening on a public address is a finding by name.
+  the static origin is on), plus the port of each app on this server that **declares raw-port
+  exposure** (`FJS-D930`). Every other app must be on loopback only. Anything else listening on a public address is a finding by name.
 - **The command port's allowed source** = Basecamp's own egress address.
 - **Authorized keys** = the `ssh_key` `Secret` that `Server.sshKeyId` names. A key
   on the box Basecamp does not know is a finding. The column holds one key, so
@@ -261,7 +260,7 @@ findings before and after, and is never automatic. Basecamp did not build that b
   covers a kernel, a pending reboot, docker, caddy and the release upgrade.
   `patch.reboot-pending` turns from `low` to `high` severity after a set number of
   days.
-- **The click is a run**, shaped like `CleanupRun`: `server-patch.job.ts` drains the
+- **The click is a run**, a `MaintenanceRun` of kind patch (`FJS-D825`): `server-patch.job.ts` drains the
   server, has the Outpost run `apt-get upgrade` (a signed `POST /system/upgrade`, the
   argv owned by the Outpost and not a caller string), reboots if required, waits for
   the heartbeat, re-reads posture, undrains, and records **what was upgraded,
@@ -278,8 +277,8 @@ findings before and after, and is never automatic. Basecamp did not build that b
    one second statement is install step vs. control, and the pairing test closes it.
 2. **Concept.** One noun, *posture*, already in the repo with this meaning. The
    readings are a *report* (the Outpost's word) and the patch is a *run* (the
-   cleanup word). Whether `PatchRun` is its own model or `CleanupRun` widens into
-   maintenance runs is open (Q2).
+   cleanup word). The patch run widens `CleanupRun` into `MaintenanceRun`
+   (`FJS-D825`).
 3. **Complexity.** It belongs to the problem: CIS, dev-sec and Wazuh SCA all
    converged on *an agent reports, a server grades, each control pairs with a fix*.
 4. **Predictability.** It copies the disk report's path and the alerting grader's
@@ -309,24 +308,124 @@ two routes, which stays severable inside the one file that already runs commands
 
 ## Phases
 
-1. **Readings + grader + a Posture tab on the server page + `/security/`**, read-only,
-   with the `dependency_vulnerable` notification. *Proves:* a fresh DigitalOcean box
-   enrolled today shows `net.firewall-default-deny` and `ssh.password-off` failing (or
-   `ssh.password-off` passing, if the image already ships it that way — that is worth
-   knowing too), and it sorts to the top of `/security/`.
-2. **Basecamp's own host**: report-only Outpost from `fli deploy`, the `hub.*`
-   controls, and `/hub/security/`. *Proves:* the `bun run image:up` stack shows its
-   host's readings, and `hub.backup-recent` fails on a stack with no backup.
-3. **The outside probe + cloud firewall read.** *Proves:* an app declaring raw-port
-   exposure (`FJS-D930`) is reported reachable on its port from outside and one that
-   does not is refused, and the host is probed
-   from a fleet Outpost rather than from itself.
-4. **Harden at install + the Harden action**, with the pairing test. *Proves:* the
-   phase-1 box after Harden grades clean, and the outside probe agrees.
-5. **The patch run.** *Proves:* a box with `reboot-required` is drained, upgraded,
-   rebooted, back online, undrained, and the run row lists the packages.
-6. **Second opinions, on demand:** Lynis index, docker-bench, Trivy over the images
-   in use, and an authorized Vigil engagement against Basecamp itself.
+### Phase 0 — Read the box before writing the reader
+
+Goal: every reading's real output, captured, and the tree re-checked against
+§ What exists.
+Done when: `packages/outpost/test/fixtures/posture/` holds one capture per row of
+the readings table, from a fresh enrollment image, with the commands that need
+root or fail marked.
+
+- [ ] 0.1 Run each readings command on a fresh box from `server-provision.job.ts`
+  (a droplet-hour, the owner's call) and on the dev host; save the outputs as
+  fixtures and note which ones exit non-zero, because those grade `unknown`.
+- [x] 0.2 Re-probe the tree for the rows this plan leans on.
+  - `CleanupRun` is still `CleanupRun`: `FJS-D825`'s `MaintenanceRun` is ruled and
+    unbuilt, so it is step 5.1.
+  - `Dependency` has no vulnerable column. The count is derived from
+    `advisories`, keyed by installed version, which is what 1.9 reads.
+  - `Server.sshKeyId` names one `ssh_key` `Secret`, as `declared` assumes.
+  - Outpost has no posture code and Basecamp has none outside the word.
+
+### Phase 1 — Readings, grader and screens, read-only
+
+Goal: every fleet machine reports posture and `/security/` ranks the workspace's
+machines and code ([`FJS-2713`](../ISSUES.md#fjs-2713), [`FJS-2715`](../ISSUES.md#fjs-2715)).
+Done when: a fresh DigitalOcean box enrolled today shows `net.firewall-default-deny`
+and `ssh.password-off` failing (or `ssh.password-off` passing, if the image already
+ships it that way — that is worth knowing too), and it sorts to the top of
+`/security/`.
+
+- [ ] 1.1 The raw-port exposure declaration on `App` (`FJS-D930`), the half the
+  grader reads. An app with no hostname that does not declare it is an
+  unexpected listener, which until 3.1 is the truth.
+- [ ] 1.2 `inspector.posture()` in `docker.js`: the readings table, every command
+  an argv array, a failing command `unknown`; tested against the 0.1 fixtures.
+- [ ] 1.3 The `posture` report in `report.js` (6h, plus once at start) and the
+  signed `POST /posture` for *check now*.
+- [ ] 1.4 `core/posture.ts`: `gradePosture` and the derived `declared`, with the
+  test that a report older than twice its interval grades every control `unknown`.
+- [ ] 1.5 `ServerPosture`, the report endpoint, `posture_failed`/`posture_restored`
+  `ServerEvent`s, the `server.posture.failing` metric and its retention.
+- [ ] 1.6 The `posture_failed` notification kind, with `server_unreachable`'s two
+  addressees.
+- [ ] 1.7 The Posture tab on the server page.
+- [ ] 1.8 `/security/`: machines worst first, outside findings above the box's own,
+  stale never clean, plus the vulnerable count linking to `/dependencies/`.
+- [ ] 1.9 The `dependency_vulnerable` notification, sent once when an installed
+  version first gains an advisory.
+
+### Phase 2 — Basecamp's own host
+
+Goal: the box holding `ENCRYPTION_KEY` is graded ([`FJS-2714`](../ISSUES.md#fjs-2714)).
+Done when: the `bun run image:up` stack shows its host's readings on
+`/hub/security/`, and `hub.backup-recent` fails on a stack with no backup.
+
+- [ ] 2.1 The Outpost's report-only mode: the command listener off, `posture`
+  posted over loopback (`FJS-D925`).
+- [ ] 2.2 `fli deploy` installs it on the host.
+- [ ] 2.3 `ServerPosture` rows with `serverId` null, read by the hub alone.
+- [ ] 2.4 `hub.backup-recent`, `hub.db-mode` and `hub.env-mode`.
+- [ ] 2.5 `/hub/security/` behind `isSystemAdmin` (`FJS-D924`), refusing *Harden*
+  and the patch run and showing the `fli deploy` command instead.
+
+### Phase 3 — The outside view
+
+Goal: what answers from outside is graded from outside.
+Done when: an app declaring raw-port exposure is reported reachable on its port
+from outside and one that does not is refused, and the host is probed from a
+fleet Outpost rather than from itself.
+
+- [ ] 3.1 Every published port binds `127.0.0.1` and a declared raw port is
+  published on every interface (`FJS-D930`, amending `FJS-D565`), with
+  `verify-docker.mjs` asserting both.
+- [ ] 3.2 The port probe from the uptime monitor's vantage, grading
+  `net.reachable-unexpected`.
+- [ ] 3.3 A fleet Outpost probes Basecamp's own host; with no fleet machine the
+  control is `unknown` and the screen says why.
+- [ ] 3.4 The provider cloud firewall read through the existing Conduit target.
+
+### Phase 4 — Harden at install, and the Harden action
+
+Goal: a box Basecamp builds grades clean, and one it did not can be brought there
+on a click ([`FJS-2712`](../ISSUES.md#fjs-2712)).
+Done when: the phase-1 box after *Harden* grades clean, and the outside probe agrees.
+
+- [ ] 4.1 `unattended-upgrades`, security origin only, no automatic reboot.
+- [ ] 4.2 The sshd drop-in.
+- [ ] 4.3 The nftables ruleset and the `DOCKER-USER` drop (`FJS-D928`).
+- [ ] 4.4 The `outpost.service` sandbox ([`FJS-1761`](../ISSUES.md#fjs-1761)).
+- [ ] 4.5 Docker and Caddy pinned to a major, the versions in `enrollment.ts`,
+  installed versions in the heartbeat (`FJS-D931`).
+- [ ] 4.6 The provider cloud firewall, created by `server-provision.job.ts`.
+- [ ] 4.7 The pairing test: every `hardenedAtInstall` control names a marker in
+  `installScript()`, and no marker is without a control.
+- [ ] 4.8 The *Harden* action through the Outpost, showing findings before and
+  after, never automatic.
+
+### Phase 5 — The patch run
+
+Goal: anything that restarts is applied by a person and recorded.
+Done when: a box with `reboot-required` is drained, upgraded, rebooted, back online,
+undrained, and the run row lists the packages.
+
+- [ ] 5.1 Widen `CleanupRun` into `MaintenanceRun` with a `kind` (`FJS-D825`).
+- [ ] 5.2 The Outpost's signed `POST /system/upgrade`, its argv the Outpost's own.
+- [ ] 5.3 `server-patch.job.ts`: drain, upgrade, reboot if required, wait for the
+  heartbeat, re-read posture, undrain, record each package from and to.
+- [ ] 5.4 The screen: what is pending, the apps a drain takes down, and
+  `patch.reboot-pending` rising to `high` with age.
+
+### Phase 6 — Second opinions, on demand
+
+Goal: a check this design did not write.
+Done when: each runs from the server page and its result is stored beside the
+posture report.
+
+- [ ] 6.1 Lynis hardening index.
+- [ ] 6.2 docker-bench-security.
+- [ ] 6.3 Trivy over the images in use.
+- [ ] 6.4 An authorized Vigil engagement against Basecamp itself, run by hand.
 
 ## Open questions (owner)
 

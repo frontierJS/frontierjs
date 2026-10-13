@@ -12,6 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSyn
 import { join }          from 'path'
 import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
+import { spawn }         from 'child_process'
 
 import { readDecisions, openDecisions, rulingSections, QUESTIONS_HEADING } from '../core/decisions.js'
 import { decide, settle, nextDecisionNumber } from '../core/decide.js'
@@ -113,6 +114,16 @@ describe('the read', () => {
         { letter: 'B', text: 'expose the ciphertext as it is stored on disk' },
       ])
       expect(q.recommend).toEqual({ letter: 'A', why: 'a view that leaks nothing is what a caller expects' })
+    } finally { cleanup() }
+  })
+
+  test('the prose after the question is its body, the lead left out', () => {
+    const { root, cleanup } = fixture()
+    try {
+      const byId = Object.fromEntries(readDecisions(root).map(q => [q.id, q]))
+      expect(byId['views:omit-encrypted-columns-or-expose-them'].body).toBe('Decryption is above SQLite.')
+      expect(byId['views:does-the-cache-key-grow'].body).toBe('Nobody has measured it.')
+      expect(byId['FJS-D07'].body).toBe('')
     } finally { cleanup() }
   })
 
@@ -367,6 +378,35 @@ describe('the settle', () => {
         expect(out.reason).toMatch(reason)
       }
       expect(read(root)).toEqual(was)
+    } finally { cleanup() }
+  })
+})
+
+// ─── several processes at once ────────────────────────────────────────────────
+
+describe('ruling from several processes at once', () => {
+  // `fli decide` in a terminal and basecamp's screen are two processes writing
+  // one DECISIONS.md: unguarded, both read the same next id and the second write
+  // drops the first ruling.
+  test('every ruling lands, each under its own id', async () => {
+    const asked = [1, 2, 3, 4].flatMap(n => [
+      `- **Question ${n}?** Argued.`,
+      '  - **A** — yes',
+      '  - **B** — no',
+      '  - **Recommend A** — it is',
+    ])
+    const { root, cleanup } = fixture({ paper: ['---', 'id: race', 'status: proposed', '---', '', '## Open questions', '', ...asked, ''].join('\n') })
+    try {
+      const module = join(import.meta.dir, '..', 'core', 'decide.js')
+      const script = `const { decide } = await import(${JSON.stringify(module)}); const out = decide({ root: ${JSON.stringify(root)}, id: 'race:question-' + process.argv[1], pick: 'A', section: 'Naming & vocabulary' }); if (!out.ok) { console.error(out.reason); process.exit(1) }`
+      const codes = await Promise.all([1, 2, 3, 4].map(n => new Promise(done =>
+        spawn(process.execPath, ['-e', script, String(n)], { stdio: 'ignore' }).on('close', done))))
+      expect(codes).toEqual([0, 0, 0, 0])
+
+      const ids = [...readFileSync(join(root, 'DECISIONS.md'), 'utf8').matchAll(/^### .*?`(FJS-D\d+)` — Question \d/gm)].map(m => m[1])
+      expect(ids.length).toBe(4)
+      expect(new Set(ids).size).toBe(4)
+      expect(readDecisions(root).filter(q => q.id.startsWith('race:')).every(q => q.state === 'ruled')).toBe(true)
     } finally { cleanup() }
   })
 })

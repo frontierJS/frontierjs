@@ -200,8 +200,11 @@ index.ts     public API
 - **A magic link is a FIRST factor** (`FJS-D888`). `verifyMagicLink` ends at
   `firstFactorProven()`, the tail `login()` shares, so a `totp` account owes its
   code after the click. A new first factor goes through that function, not
-  `issueSession`, or it is a way past the second; OAuth still calls
-  `issueSession` directly (`FJS-2541`). The flow exists only where
+  `issueSession`, or it is a way past the second. **So is an OAuth sign-in**
+  (`FJS-D915`): every branch of `oauthResolve` and `confirmOAuthLink` ends
+  there, and the callback answers a challenge as `?oauth_error=code_required`
+  plus `oauth_expires` and the `login_challenge` cookie, finished at
+  `POST /auth/login/challenge`. The magic-link flow exists only where
   `onMagicLinkRequested` is set, which, like `onPasswordResetRequested`, runs
   after the request answers. The six-digit code is compared against the row
   the ADDRESS names and is never used to find one, and `Verification.attempts`

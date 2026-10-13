@@ -26,7 +26,7 @@
 // leak onto the service alongside it.
 
 import { describe, test, expect } from 'bun:test'
-import { createBaseService } from '../src/core/service.ts'
+import { createBaseService, createService, requiredScope, scopeRefusal } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
 const authenticate = () => {}
@@ -64,6 +64,13 @@ describe('createBaseService — option pass-through', () => {
     const summary = async (_ctx: ServiceContext) => ({ ok: true })
     const svc = createBaseService({ model: 'lead', summary })
     expect((svc as Record<string, unknown>).summary).toBe(summary)
+  })
+
+  test('carries scope through to what createService grades', () => {
+    // Dropped, it fails closed: every scoped key refused at every method.
+    const built = createService({ name: 'leads', ...createBaseService({ model: 'lead', scope: 'crm' }) })
+    expect(requiredScope(built, 'find')).toBe('crm')
+    expect(scopeRefusal(built, 'find', { scopes: ['crm'] })).toBeNull()
   })
 })
 

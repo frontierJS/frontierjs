@@ -150,17 +150,18 @@ response that is not `text/event-stream` throws rather than yielding nothing.
 A detail screen watches its row:
 
 ```js
-let order   = null
-let missing = false
-let unwatch = null
-const row = orders.record(page.params.id)   // { composed: true } if get() answers includes
-unwatch = row.subscribe(v => { order = v })
-row.ready.then(v => { if (v == null) missing = true })
-$.onDestroy(() => { unwatch?.(); row.release() })
+let order  = null
+let failed = null
+let row    = null
+row = orders.record(page.params.id)   // { composed: true } if get() answers includes
+$: { order = row.value }
+$: { if (row.loaded && !row.value) failed = row.error() }   // { status: 404 | 403 | 0 }
 ```
 
-Write the handle as a `let` assigned on its own line, as above — the reason is a
-language rule and lives in Mesa's AGENTS file.
+`row.value`, `row.loaded` and `row.error()` are tracked, and the view is
+released when the component that made it is torn down — not when a `$:` that
+made it runs again. Write the handle as a `let` assigned on its own line, as
+above — the reason is a language rule and lives in Mesa's AGENTS file.
 
 ---
 
@@ -364,7 +365,7 @@ Everything above is loud. These are not.
 
 - **`record(id).ready` resolves `null` for a missing row AND a refused one.** It
   does not reject for either, so a spinner keyed on `order == null` spins
-  forever. Key it on whether the read has answered.
+  forever. Key it on `row.loaded`; `row.error()` says which.
 
 - **A patch can take a row OUT of a live list.** A store means the query that
   filled it, so a row edited out of the filter is removed. Past the first page a
@@ -391,7 +392,7 @@ Everything above is loud. These are not.
 3. Every `page.*`, `session.*` or `status.*` a component renders is named in a `$:`.
 4. Filters travel as `page.query`, directives as `page.directives`; no `$`-key
    is hand-built into an object.
-5. A kept row is `record(id)`, released on destroy; a list is `list()` or a
+5. A kept row is `record(id)`, released with its component; a list is `list()` or a
    watched store.
 6. Money is rendered through the declaration, never as the integer.
 7. A `site/` route declaring `render: static` has `db:` in its surface config, a
@@ -415,6 +416,7 @@ Sierra surface:
 | `resource-model-miss` | `createResource('x')` that resolves to no model where one plausibly exists |
 | `route-part-prefix` | a `_folder.Part.mesa` sitting in a different folder than its prefix names |
 | `page-path-retired` · `detail-read-dead` | `page.path` / `to.path`; a `service.get()` result kept in screen state |
+| `import-subpath-exported` | an import of a `@frontierjs/*` subpath the installed package no longer exports — a rename keeps no alias — or a relative path into its files that is gone |
 | `table-column-key` · `money-rendered-raw` | a `<Table>` column spelled `key` instead of `name`; a `@money` column interpolated bare |
 | `static-publish-db` | a `target: 'static'` surface with companions and no `db:` |
 | `app-layout` · `surface-config` · `widget-entry-name` | a surface in the wrong place; config outside `config/`; a misnamed widget |

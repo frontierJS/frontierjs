@@ -174,9 +174,16 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   // A link is live when a clone would hold it, which the disk does not answer:
   // an ignored build output and a sibling checkout are both there locally.
   const tree = treePaths(root)
+  // A register folder git ignores is kept on purpose (a client repo's notes),
+  // and a clone holds neither its papers nor the rows linking them — so a link
+  // inside it is graded the way the folder is kept, on the disk.
+  const regRel  = relative(root, doc.dir).split(sep).join('/')
+  const regKept = !tree || !regRel || tree.has(regRel)
   const inTree = (abs) => {
-    const rel = relative(root, abs)
-    return existsSync(abs) && (!tree || tree.has(rel.split(sep).join('/')))
+    if (!existsSync(abs)) return false
+    if (!tree) return true
+    const rel = relative(root, abs).split(sep).join('/')
+    return tree.has(rel) || (!regKept && (rel === regRel || rel.startsWith(`${regRel}/`)))
   }
   const leavesRoot = (abs) => {
     const rel = relative(root, abs)

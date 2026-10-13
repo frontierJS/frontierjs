@@ -4,7 +4,7 @@
   "description": "FrontierJS pure-function kits — zero dependencies, no I/O, importable from any package",
   "type": "module",
   "scripts": {
-    "test": "bun test/run.js",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test/run.js'",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "exports": {

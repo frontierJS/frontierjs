@@ -267,6 +267,15 @@ imports `@frontierjs/mesa/runtime.js`; sierra's build passes
 `@frontierjs/sierra/router`. `render-component.test.js` carries the negative case —
 the same import still fails under the default.
 
+A temp module is named by its text and this process's pid, and it lives until the
+process exits. Two trees that compile a shared component to the same text name it
+the same way, so the second root's import is answered by the module registry —
+which is what lets a prerender of N pages import each layout once rather than N
+times. The file cannot go sooner: a later importer is resolved against the disk,
+not the registry, and dies with *Cannot find module*. The exit sweep removes them;
+an age sweep removes what a killed process left. `render-cache.test.js` pins the
+sharing, `render-component.test.js` § *temp module lifetime* the sweeps.
+
 ## What a browser global answers, and why nothing says so
 
 A server render runs inside happy-dom, so the browser globals are **present and

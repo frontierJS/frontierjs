@@ -272,6 +272,7 @@ title: Registers
 <div class="section-header">
   <h1>Registers</h1>
   <span class="cluster">
+    <Button href="/registers/decide/" id="registers-decide-link">Decide{data ? ` · ${decidable()}` : ''}</Button>
     <Button variant="ghost" href="/workbench/">Workbench</Button>
     <Button variant="ghost" href="/pages/">Pages</Button>
   </span>

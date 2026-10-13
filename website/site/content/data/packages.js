@@ -34,6 +34,7 @@ const PACKAGES = resolve(HERE, '../../../../packages')
  */
 export const HELD_BACK = {
   '@frontierjs/orion': 'mid-port and never released to npm, so a page would hand a visitor an install that 404s',
+  '@frontierjs/print-kit': 'moved in from Transit (FJS-D816) and never released to npm, so a page would hand a visitor an install that 404s',
 }
 
 let cached = null

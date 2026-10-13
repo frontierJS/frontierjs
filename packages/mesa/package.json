@@ -69,7 +69,7 @@
     }
   },
   "scripts": {
-    "test": "node test/spec-check.mjs && vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && bun test/terminal/run.mjs",
+    "test": "node ../../scripts/tmp-run.mjs 'node test/spec-check.mjs && vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs && bun test/terminal/run.mjs'",
     "test:watch": "vitest",
     "test:browser": "node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs && node test/browser/repl/run.mjs",
     "test:browser:runtime": "node test/browser/runtime/run.mjs",

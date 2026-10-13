@@ -586,6 +586,7 @@ export function createAuthPlugin(
             } catch {
               return oauthFailure(ctx, oauth, 'state')
             }
+            if (!('token' in issued)) return oauthCodeRequired(ctx, oauth, issued)
             if (cookieAuth && typeof ctx.setCookie === 'function') {
               ctx.setCookie('session', issued.token, {
                 httpOnly: true,
@@ -612,6 +613,7 @@ export function createAuthPlugin(
           if (resolved.outcome === 'proof-required') {
             return oauthFailure(ctx, oauth, 'link_required')
           }
+          if (resolved.outcome === 'code-required') return oauthCodeRequired(ctx, oauth, resolved)
 
           // The same cookie every other route in this plugin sets, through the
           // same options — this is a sign-in and there is no second kind.
@@ -696,22 +698,11 @@ function respond(
 ): Response {
   const payload = data as { token?: string; challenge?: string; expiresAt?: string } | null
 
-  // A half-finished login. The ticket stands in for the password for as long as
-  // it lives, so in cookie mode it goes where the token goes and for the same
-  // reason — httpOnly, out of reach of page JavaScript. `sameSite: 'strict'`
-  // rather than 'lax': nothing navigates to this step, so there is no
-  // cross-site GET to accommodate.
+  // A half-finished login: in cookie mode the ticket leaves the body for
+  // `setChallengeCookie`, as the token leaves it for the session cookie.
   if (payload?.challenge && typeof payload.token !== 'string') {
     if (cookieAuth && typeof ctx.setCookie === 'function') {
-      ctx.setCookie(CHALLENGE_COOKIE, payload.challenge, {
-        httpOnly: true,
-        sameSite: 'strict',
-        secure:   process.env.NODE_ENV === 'production',
-        path:     '/',
-        // Seconds, from the expiry the provider already decided. Deriving it here
-        // from a config value would be a second answer to how long a ticket lives.
-        maxAge:   Math.max(1, Math.ceil((new Date(String(payload.expiresAt)).getTime() - Date.now()) / 1000)),
-      })
+      setChallengeCookie(ctx, payload.challenge, String(payload.expiresAt))
       const { challenge: _c, ...withoutTicket } = payload
       return ctx.json(withoutTicket, status)
     }
@@ -801,9 +792,41 @@ function callbackUri(app: App, prefix: string, publicUrl: string, provider: stri
 function oauthFailure(
   ctx:    TransportContext,
   oauth:  { errorRedirect?: string },
-  code:   'denied' | 'state' | 'exchange' | 'unavailable' | 'link_required',
+  code:   'denied' | 'state' | 'exchange' | 'unavailable' | 'link_required' | 'code_required',
+  extra:  Record<string, string> = {},
 ): Response {
   const target = oauth.errorRedirect ?? '/'
   const join   = target.includes('?') ? '&' : '?'
-  return ctx.redirect!(`${target}${join}oauth_error=${code}`)
+  const query  = new URLSearchParams({ oauth_error: code, ...extra })
+  return ctx.redirect!(`${target}${join}${query}`)
+}
+
+// The provider proved the first factor and the account owes its code
+// (FJS-D915). A redirect has no body to carry login()'s challenge, so the ticket
+// goes where login's goes in cookie mode and the expiry rides the URL, which is
+// what the page renders its code box from (sierra's `awaitingCode`).
+function oauthCodeRequired(
+  ctx:    TransportContext,
+  oauth:  { errorRedirect?: string },
+  owed:   { challenge: string; expiresAt: string },
+): Response {
+  setChallengeCookie(ctx, owed.challenge, owed.expiresAt)
+  return oauthFailure(ctx, oauth, 'code_required', { oauth_expires: owed.expiresAt })
+}
+
+// A half-finished login. The ticket stands in for the password for as long as
+// it lives, so in cookie mode it goes where the token goes and for the same
+// reason — httpOnly, out of reach of page JavaScript. `sameSite: 'strict'`
+// rather than 'lax': the step that spends it is a same-site POST. A browser
+// still stores it from the OAuth callback, a cross-site top-level navigation.
+function setChallengeCookie(ctx: TransportContext, challenge: string, expiresAt: string): void {
+  ctx.setCookie?.(CHALLENGE_COOKIE, challenge, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure:   process.env.NODE_ENV === 'production',
+    path:     '/',
+    // Seconds, from the expiry the provider already decided. Deriving it here
+    // from a config value would be a second answer to how long a ticket lives.
+    maxAge:   Math.max(1, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000)),
+  })
 }

@@ -15,7 +15,7 @@
 // somebody else can still open.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { makeAuth, rejectsWith, type Harness } from './harness.ts'
+import { makeAuth, rejectsWith, signedIn, type Harness } from './harness.ts'
 import { defineProvider, InvalidTokenError, OAuthError } from '../index.ts'
 
 const trusted   = defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' })
@@ -96,7 +96,7 @@ describe('confirmOAuthLink', () => {
     const user = await account('claim@shop.test', false)
     await h.auth.oauthResolve('google', id({ providerId: 'c-1', email: 'claim@shop.test' }))
 
-    const issued = await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'c-1' }))
+    const issued = signedIn(await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'c-1' })))
 
     expect(issued.token).toBeTruthy()
     expect(issued.user.userId).toBe(user.id)
@@ -269,7 +269,7 @@ describe('an unproven claim on an address nobody holds', () => {
   test('the click makes a verified account holding that identity and signs in', async () => {
     await h.auth.oauthResolve('google', id({ providerId: 'nh-2', email: 'later@shop.test', emailVerified: false }))
 
-    const issued = await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'nh-2', name: 'Later' }))
+    const issued = signedIn(await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'nh-2', name: 'Later' })))
 
     const user = await h.sys.user.findFirst({ where: { email: 'later@shop.test' } })
     expect(issued.user.userId).toBe(user.id)

@@ -630,9 +630,9 @@ export class ServiceProxy<
   // Named for what it does rather than for a category: a service has methods,
   // and this calls one the client has no typed shortcut for.
   //
-  // The answer follows find's rule: a method returning an ARRAY arrives as the
-  // list envelope `{ kind: 'list', data }`, so read `.data`; one returning an
-  // object arrives as that object.
+  // The answer is what the method returned -- an array as the array, an object
+  // as the object (`FJS-D937`). Only the bulk partial-write protocol
+  // `{ data, errors }` arrives as the list envelope.
 
   async invoke(
     name: string,

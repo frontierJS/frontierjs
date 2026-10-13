@@ -281,6 +281,12 @@ reason `/auth/login` is one: it is what produces a session, so it cannot be gate
 by holding one. In `cookieAuth` mode the ticket rides an httpOnly cookie and the
 body carries only the expiry.
 
+An OAuth sign-in owes the code too: the provider is a first factor, like a
+password or a magic link. The callback cannot answer a body, so it sets the same
+cookie and redirects to `errorRedirect` with `?oauth_error=code_required` and
+`oauth_expires`. Sierra's `session` reads that as `awaitingCode`, the state a
+password challenge sets, so the page's code box and `submitCode()` finish it.
+
 Everything a signed-in caller does to their own factor is a SERVICE on `account`,
 beside `changePassword` — a call that can be refused for want of a session is not
 a route (`FJS-D20`):

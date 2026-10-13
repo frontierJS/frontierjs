@@ -65,7 +65,7 @@
   "scripts": {
     "dev": "bun run --watch example/app.ts",
     "start": "NODE_ENV=production bun run example/app.ts",
-    "test": "bun test test/",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test test/'",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "test:example": "bun test ./example/test.ts",
     "test:all": "bun test test/ ./example/test.ts",

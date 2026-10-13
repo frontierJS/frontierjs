@@ -41,17 +41,32 @@ const target = (auth: TargetDescriptor['auth'], extra: Partial<TargetDescriptor>
   ...extra,
 })
 
-const basic: Signer = ({ secret }) => ({ headers: { authorization: `Basic ${btoa(secret)}` } })
 const inBody: Signer = ({ secret, body }) => ({ body: `${body ?? ''}&secret=${secret}` })
 
 describe('a signed target', () => {
-  it('sends what the signer returns: Basic, with the secret resolved at send time', async () => {
+  it('sends Basic through the built-in signer, with the secret resolved at send time', async () => {
     seen.length = 0
-    const c = createConduit({ credentials: createStaticResolver({ SID: 'AC1:tok' }), signers: { basic } })
+    const c = createConduit({ credentials: createStaticResolver({ SID: 'AC1:tok' }) })
     await c.register(target({ type: 'signed', ref: 'SID', signer: 'basic' }))
     const r = await c.send({ target: 'provider:vendor', method: 'GET', path: '/x' })
     expect(r.error).toBeNull()
     expect(seen[0].authorization).toBe(`Basic ${btoa('AC1:tok')}`)
+  })
+
+  // Two copies written in connectors disagreed on both of these (`FJS-2233`).
+  it('sends a key-only Basic credential with its colon, and a non-ASCII password as UTF-8', async () => {
+    seen.length = 0
+    const c = createConduit({ credentials: createStaticResolver({ KEY: 'shippo_live', LOGIN: 'me@x.io:pässw%rd:2' }) })
+    await c.register(target({ type: 'signed', ref: 'KEY', signer: 'basic' }))
+    await c.register(target({ type: 'signed', ref: 'LOGIN', signer: 'basic' }, { id: 'provider:login' }))
+    await c.send({ target: 'provider:vendor', method: 'GET', path: '/x' })
+    await c.send({ target: 'provider:login', method: 'GET', path: '/x' })
+    const decoded = seen.map(r => Buffer.from(r.authorization!.replace(/^Basic /, ''), 'base64').toString('utf8'))
+    expect(decoded).toEqual(['shippo_live:', 'me@x.io:pässw%rd:2'])
+  })
+
+  it('refuses a connector signer that takes a built-in name', () => {
+    expect(() => createConduit({ signers: { basic: () => ({}) } })).toThrow(/built-in 'basic'/)
   })
 
   it('sends a body the signer rewrote, and the signer saw the serialized one', async () => {
@@ -79,7 +94,7 @@ describe('a signed target', () => {
 
   it('cannot be displaced by a caller header of the same name', async () => {
     seen.length = 0
-    const c = createConduit({ credentials: createStaticResolver({ SID: 'a:b' }), signers: { basic } })
+    const c = createConduit({ credentials: createStaticResolver({ SID: 'a:b' }) })
     await c.register(target({ type: 'signed', ref: 'SID', signer: 'basic' }))
     await c.send({ target: 'provider:vendor', method: 'GET', path: '/x', headers: { Authorization: 'Bearer FORGED' } })
     expect(seen[0].authorization).toBe(`Basic ${btoa('a:b')}`)
@@ -130,7 +145,7 @@ describe('a signed target', () => {
 
 describe('registering a signed target', () => {
   it('refuses a signer that is not installed, naming it', async () => {
-    const c = createConduit({ signers: { basic } })
+    const c = createConduit()
     await expect(c.register(target({ type: 'signed', ref: 'K', signer: 'nope' })))
       .rejects.toThrow(/signer 'nope'.*installed: basic/)
   })
@@ -141,13 +156,13 @@ describe('registering a signed target', () => {
   })
 
   it('refuses a followed redirect, which would replay a signature for another request', async () => {
-    const c = createConduit({ signers: { basic } })
+    const c = createConduit()
     await expect(c.register(target({ type: 'signed', ref: 'K', signer: 'basic' }, { follow_redirects: 'same-origin' })))
       .rejects.toThrow(/same-origin/)
   })
 
   it('refuses an address per send, where a stored credential would go wherever a row says', async () => {
-    const c = createConduit({ signers: { basic } })
+    const c = createConduit()
     await expect(c.register(target({ type: 'signed', ref: 'K', signer: 'basic' }, { address: '', address_from: 'request' })))
       .rejects.toThrow(/stored credential/)
   })

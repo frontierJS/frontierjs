@@ -165,6 +165,12 @@ export function folderColor(name) {
 
 // ─── the drawing ────────────────────────────────────────────────────────────
 
+const dirLabel = (d, open, { icons, link }) => {
+  const icon   = icons ? `${open ? '📂' : '📁'} ` : ''
+  const hidden = open ? '' : ` ${chalk.dim(`(${countFiles(d)})`)}`
+  return `${icon}${link(chalk.bold(paint(folderColor(d.name), d.name)), d.path)}${hidden}`
+}
+
 /**
  * Rows of the tree under `dir`.
  *   icons   — emoji before each name
@@ -184,10 +190,8 @@ export function renderTree(dir, { icons = true, depth = 0, dirsOnly = false, lin
       const branch = chalk.dim(last ? '└── ' : '├── ')
       if (it.dir) {
         counts.dirs += it.dir.name.split('/').length
-        const open  = !depth || level < depth
-        const icon  = icons ? `${open ? '📂' : '📁'} ` : ''
-        const hidden = open ? '' : ` ${chalk.dim(`(${countFiles(it.dir)})`)}`
-        rows.push(`${prefix}${branch}${icon}${link(chalk.bold(paint(folderColor(it.dir.name), it.dir.name)), it.dir.path)}${hidden}`)
+        const open = !depth || level < depth
+        rows.push(`${prefix}${branch}${dirLabel(it.dir, open, { icons, link })}`)
         if (open) walk(it.dir, prefix + chalk.dim(last ? '    ' : '│   '), level + 1)
         else counts.files += countFiles(it.dir)
         return
@@ -204,10 +208,133 @@ export function renderTree(dir, { icons = true, depth = 0, dirsOnly = false, lin
   return { rows, counts }
 }
 
+/** Levels below `dir`, a compacted row counting as one — the largest `depth` that changes anything. */
+export function treeDepth(dir) {
+  let deepest = 0
+  for (const d of dir.dirs.values()) deepest = Math.max(deepest, treeDepth(d))
+  return dir.dirs.size ? deepest + 1 : (dir.files.length ? 1 : 0)
+}
+
 /** The root row — the directory's own name. */
 export function rootRow(root, { icons = true } = {}) {
   const name = basename(root) || root
   return `${icons ? '📂 ' : ''}${chalk.bold(paint(folderColor(name), name))}`
+}
+
+// ─── lanes ──────────────────────────────────────────────────────────────────
+//
+// Each top-level folder its own tree, the trees packed side by side to the
+// terminal's width. A lane is kept whole wherever one fits the screen, because
+// a folder broken across two columns loses the guides that say where a row is.
+
+// SGR color, and the OSC 8 link around a name.
+const ANSI = /\x1b\[[0-9;]*m|\x1b\]8;;[^\x1b]*\x1b\\/g
+
+/** Terminal cells a row takes — escapes are zero, an emoji is two. */
+export function visibleWidth(s) {
+  let w = 0
+  for (const ch of s.replace(ANSI, '')) w += /\p{Emoji_Presentation}/u.test(ch) ? 2 : 1
+  return w
+}
+
+/** One lane per top-level folder, then one for the files at the root. */
+export function buildLanes(tree, { icons = true, depth = 0, dirsOnly = false, link = t => t } = {}) {
+  const lanes = []
+  for (const d of [...tree.dirs.values()].sort(byName)) {
+    const open = !depth || depth > 1
+    const body = open ? renderTree(d, { icons, depth: depth ? depth - 1 : 0, dirsOnly, link }).rows : []
+    lanes.push({
+      rows: [dirLabel(d, open, { icons, link }), ...body],
+      cont: `${icons ? '📂 ' : ''}${chalk.dim(`${d.name} (cont.)`)}`,
+    })
+  }
+  if (!dirsOnly && tree.files.length) {
+    const files = renderTree({ ...tree, dirs: new Map() }, { icons, link }).rows
+    const head  = `${icons ? '📄 ' : ''}${chalk.dim('files')}`
+    lanes.push({ rows: [head, ...files], cont: `${icons ? '📄 ' : ''}${chalk.dim('files (cont.)')}` })
+  }
+  return lanes
+}
+
+// Lanes in order, down a column of `height` rows and then across. A lane
+// taller than the column is cut into column-high pieces, each after the first
+// headed by its `cont` row. A cell is `[row, width]`, measured once.
+function pack(lanes, height, gap) {
+  const columns = []
+  let cur = null
+  const open = () => { cur = { cells: [] }; columns.push(cur); return cur }
+  for (const lane of lanes) {
+    if (lane.cells.length > height) {
+      let rest = lane.cells
+      open().cells.push(...rest.slice(0, height))
+      rest = rest.slice(height)
+      while (rest.length) {
+        open().cells.push(lane.cont, ...rest.slice(0, height - 1))
+        rest = rest.slice(height - 1)
+      }
+      cur.single = false
+      continue
+    }
+    // Two closed folders in a row are a list, and a blank between each doubles it.
+    const gapRows = cur?.single && lane.cells.length === 1 ? [] : [['', 0]]
+    if (cur && cur.cells.length + gapRows.length + lane.cells.length <= height) cur.cells.push(...gapRows, ...lane.cells)
+    else open().cells.push(...lane.cells)
+    cur.single = lane.cells.length === 1
+  }
+  for (const c of columns) c.width = Math.max(0, ...c.cells.map(x => x[1]))
+  return {
+    columns,
+    height: Math.max(0, ...columns.map(c => c.cells.length)),
+    width:  columns.reduce((w, c) => w + c.width, 0) + gap * Math.max(0, columns.length - 1),
+  }
+}
+
+// The shortest column height from `from` whose packing fits `width`. Taller
+// columns are never wider in practice, so a binary search; `null` when even
+// one column is too wide.
+function shortest(lanes, width, gap, from) {
+  const total = lanes.reduce((n, l) => n + l.cells.length + 1, 0)
+  if (pack(lanes, Math.max(from, total), gap).width > width) return null
+  let lo = from, hi = Math.max(from, total)
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (pack(lanes, mid, gap).width <= width) hi = mid
+    else lo = mid + 1
+  }
+  return pack(lanes, lo, gap)
+}
+
+/**
+ * Lanes laid out across `width` cells. Whole lanes if that fits in `height`
+ * rows; otherwise the shortest layout that splits one. Nothing fitting the
+ * width at all is one column.
+ */
+export function layoutLanes(lanes, { width, height = Infinity, gap = 3 }) {
+  if (!lanes.length) return { columns: [], height: 0, width: 0 }
+  const measured = lanes.map(l => ({
+    cells: l.rows.map(r => [r, visibleWidth(r)]),
+    cont:  [l.cont, visibleWidth(l.cont)],
+  }))
+  const tallest = Math.max(...measured.map(l => l.cells.length))
+  const whole   = shortest(measured, width, gap, tallest)
+  if (whole && whole.height <= height) return whole
+  // A piece shorter than this is a header and a row or two, and reads as noise.
+  const split = shortest(measured, width, gap, Math.min(tallest, 8))
+  if (split && (!whole || split.height < whole.height)) return split
+  return whole ?? pack(measured, Infinity, gap)
+}
+
+/** The layout as printed lines, each column padded to its width. */
+export function drawLanes(layout, { gap = 3 } = {}) {
+  const lines = []
+  for (let i = 0; i < layout.height; i++) {
+    const cells = layout.columns.map(c => {
+      const [row, w] = c.cells[i] ?? ['', 0]
+      return row + ' '.repeat(c.width - w)
+    })
+    lines.push(cells.join(' '.repeat(gap)).trimEnd())
+  }
+  return lines
 }
 
 export const isDir = p => existsSync(p) && statSync(p).isDirectory()

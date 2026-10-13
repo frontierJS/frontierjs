@@ -241,24 +241,37 @@ const STYLE = `
 .topbar { gap: var(--space-md); flex-wrap: wrap }
 .topbar #q { flex: 1; min-width: 12rem; max-width: 32rem }
 .ra-theme { display: flex; align-items: center; gap: var(--space-2xs); margin-left: auto }
+.screen { width: 100%; max-width: 72rem; margin-inline: auto }
 .tablist a.tab { text-decoration: none }
-.ra-facets { padding-block: var(--space-sm) }
+.ra-facets { padding-block: var(--space-md) }
 .ra-facets:empty { display: none }
-.ra-row { border-bottom: 1px solid var(--border, currentColor) }
-.ra-row > summary { display: flex; gap: var(--space-sm); align-items: baseline; cursor: pointer; padding-block: var(--space-xs); list-style: none }
+/* A row is three columns — what kind it is, what it says, where it ranks —
+   so every title starts at the same x and the facts sit under it, not beside it. */
+.ra-row { border-bottom: var(--border-width, 1px) solid var(--rule) }
+.ra-row > summary { display: grid; grid-template-columns: minmax(6.5rem, max-content) minmax(0, 1fr) auto; column-gap: var(--space-md); align-items: start; cursor: pointer; padding: var(--space-lg) var(--space-sm); border-radius: var(--card-radius, 6px); list-style: none }
+.ra-row > summary:hover { background: var(--surface-sunken) }
 .ra-row > summary::-webkit-details-marker { display: none }
-.ra-row > summary .ra-title { flex: 1; min-width: 0 }
+.ra-lead { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-xs) }
+.ra-main { display: grid; gap: var(--space-2xs); min-width: 0 }
+.ra-title { line-height: 1.45; overflow-wrap: anywhere }
 .ra-row[open] > summary .ra-title { font-weight: 600 }
+.ra-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) }
+.ra-tail { justify-self: end }
 .ra-id { font-family: var(--font-mono, monospace); white-space: nowrap }
-.ra-meta { white-space: nowrap }
-.ra-body { padding: 0 0 var(--space-md) var(--space-lg); display: grid; gap: var(--space-xs) }
-.ra-body p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere }
-.ra-opts { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2xs) }
+.ra-body { padding: 0 var(--space-sm) var(--space-xl) calc(var(--space-sm) + 6.5rem + var(--space-md)); display: grid; gap: var(--space-sm) }
+.ra-body p { margin: 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere }
+.ra-opts { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-xs) }
 .ra-opts li.is-rec { font-weight: 600 }
 .ra-cmd { font-family: var(--font-mono, monospace); width: 100% }
 .ra-row.is-flash > summary { outline: 2px solid currentColor; outline-offset: 2px }
 .hidden { display: none !important }
-@media (max-width: 640px) { .ra-meta { display: none } .ra-body { padding-left: 0 } }
+@media (max-width: 640px) {
+  .ra-row > summary { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--space-xs) }
+  .ra-lead { grid-row: 1; grid-column: 1 }
+  .ra-tail { grid-row: 1; grid-column: 2 }
+  .ra-main { grid-column: 1 / -1 }
+  .ra-body { padding-left: var(--space-sm) }
+}
 `
 
 // ─── script ───────────────────────────────────────────────────────────────────
@@ -349,37 +362,45 @@ function source(at){
   return '<div class="text-xs text-muted"><a class="link" href="'+esc(at.edit)+'">edit '+esc(at.file)+(at.line?':'+at.line:'')+'</a> · <a class="link" href="'+esc(at.href)+'">view</a></div>'
 }
 
+function rowHead(lead,title,sub,tail){
+  return '<summary><span class="ra-lead">'+lead+'</span>'
+    +'<span class="ra-main"><span class="ra-title">'+title+'</span>'
+    +(sub?'<span class="ra-sub text-xs text-muted">'+sub+'</span>':'')+'</span>'
+    +'<span class="ra-tail">'+(tail||'')+'</span></summary>'
+}
+
 function issueRow(r){
   const rank=r.rank&&r.rank.n?'#'+r.rank.n:''
-  return '<details class="ra-row" data-id="'+esc(r.id)+'"><summary>'
-    +'<span class="badge '+tone(r.severity)+'">'+esc(r.severity)+'</span>'
-    +'<span class="ra-id">'+esc(r.id)+'</span>'
-    +'<span class="ra-title">'+esc(r.title)+'</span>'
-    +(r.blockedBy.length?'<span class="badge warning">blocked by '+esc(r.blockedBy.join(', '))+'</span>':'')
-    +'<span class="ra-meta text-xs text-muted">'+esc([].concat(r.pkg).join(', '))+' · '+esc(r.status)+(r.verified?' · '+esc(r.verified):'')+'</span>'
-    +(rank?'<span class="pill">'+rank+'</span>':'')
-    +'</summary><div class="ra-body">'
+  return '<details class="ra-row" data-id="'+esc(r.id)+'">'
+    +rowHead(
+      '<span class="badge '+tone(r.severity)+'">'+esc(r.severity)+'</span><span class="ra-id">'+esc(r.id)+'</span>',
+      esc(r.title),
+      '<span>'+esc([].concat(r.pkg).join(', '))+' · '+esc(r.status)+(r.verified?' · '+esc(r.verified):'')+'</span>'
+        +(r.blockedBy.length?'<span class="badge warning">blocked by '+esc(r.blockedBy.join(', '))+'</span>':''),
+      rank?'<span class="pill">'+rank+'</span>':'')
+    +'<div class="ra-body">'
     +(r.rank?'<div class="text-xs text-muted">score '+r.rank.score+' — '+esc(r.rank.terms.join(' · '))+'</div>':'')
     +'<p class="text-sm">'+esc(r.body)+'</p>'+refChips(r.refs)+linkChips(r.links)+source(r.at)+'</div></details>'
 }
 
 function rulingRow(r){
-  return '<details class="ra-row" data-id="'+esc(r.id||'')+'"><summary>'
-    +'<span class="ra-meta text-xs text-muted">'+esc(r.date)+'</span>'
-    +(r.id?'<span class="badge info">'+esc(r.id)+'</span>':'')
-    +'<span class="ra-title">'+esc(r.title)+'</span>'
-    +(r.status?'<span class="badge muted">'+esc(r.status)+(r.supersededBy?' '+esc(r.supersededBy):'')+'</span>':'')
-    +'<span class="ra-meta text-xs text-muted">'+esc(r.section)+'</span>'
-    +'</summary><div class="ra-body"><p class="text-sm">'+esc(r.body)+'</p>'+refChips(r.refs)+linkChips(r.links)+source(r.at)+'</div></details>'
+  return '<details class="ra-row" data-id="'+esc(r.id||'')+'">'
+    +rowHead(
+      r.id?'<span class="badge info">'+esc(r.id)+'</span>':'',
+      esc(r.title),
+      '<span>'+esc([r.date,r.section].filter(Boolean).join(' · '))+'</span>'
+        +(r.status?'<span class="badge muted">'+esc(r.status)+(r.supersededBy?' '+esc(r.supersededBy):'')+'</span>':''))
+    +'<div class="ra-body"><p class="text-sm">'+esc(r.body)+'</p>'+refChips(r.refs)+linkChips(r.links)+source(r.at)+'</div></details>'
 }
 
 function ideaRow(r){
-  return '<details class="ra-row" data-id="'+esc(r.id)+'"><summary>'
-    +'<span class="badge '+ideaTone(r.status)+'">'+esc(r.status||'?')+'</span>'
-    +'<span class="ra-title">'+esc(r.title)+'</span>'
-    +(r.questions?'<a class="pill" href="#/decide/'+esc(r.id)+'" title="open questions">'+r.questions+' ?</a>':'')
-    +'<span class="ra-meta text-xs text-muted">'+esc(r.id)+(r.dated?' · '+esc(r.dated):'')+'</span>'
-    +'</summary><div class="ra-body"><p class="text-sm">'+esc(r.body)+'</p>'+refChips(r.refs)+linkChips(r.links)+source(r.at)+'</div></details>'
+  return '<details class="ra-row" data-id="'+esc(r.id)+'">'
+    +rowHead(
+      '<span class="badge '+ideaTone(r.status)+'">'+esc(r.status||'?')+'</span>',
+      esc(r.title),
+      esc(r.id)+(r.dated?' · '+esc(r.dated):''),
+      r.questions?'<a class="pill" href="#/decide/'+esc(r.id)+'" title="open questions">'+r.questions+' ?</a>':'')
+    +'<div class="ra-body"><p class="text-sm">'+esc(r.body)+'</p>'+refChips(r.refs)+linkChips(r.links)+source(r.at)+'</div></details>'
 }
 
 // \`fli decide\` is the one writer, so the page hands out its exact command.
@@ -395,11 +416,12 @@ function questionRow(x){
     return '<li class="'+(rec?'is-rec':'')+'"><strong>'+esc(o.letter)+'</strong> — '+esc(o.text)
       +' <button class="btn ghost" data-copy="'+esc(x.id)+'" data-letter="'+esc(o.letter)+'">copy fli decide</button></li>'
   }).join('')
-  return '<details class="ra-row" data-id="'+esc(x.id)+'" data-paper="'+esc(x.paper||'')+'"'+(x.state==='decidable'?' open':'')+'><summary>'
-    +'<span class="badge '+(x.state==='decidable'?'success':'muted')+'">'+esc(x.state)+'</span>'
-    +'<span class="ra-title">'+esc(x.question)+'</span>'
-    +'<span class="ra-meta text-xs text-muted">'+esc(x.paper||x.source)+'</span>'
-    +'</summary><div class="ra-body">'
+  return '<details class="ra-row" data-id="'+esc(x.id)+'" data-paper="'+esc(x.paper||'')+'"'+(x.state==='decidable'?' open':'')+'>'
+    +rowHead(
+      '<span class="badge '+(x.state==='decidable'?'success':'muted')+'">'+esc(x.state)+'</span>',
+      esc(x.question),
+      esc(x.paper||x.source))
+    +'<div class="ra-body">'
     +(opts?'<ul class="ra-opts dense">'+opts+'</ul>':'<p class="text-sm text-muted">No lettered options yet — write **A** / **B** sub-bullets and a **Recommend X** line to make it pickable.</p>')
     +(x.recommend?'<p class="text-sm">★ Recommend '+esc(x.recommend.letter)+' — '+esc(x.recommend.why)+'</p>':'')
     +'<input class="field ra-cmd hidden" readonly>'

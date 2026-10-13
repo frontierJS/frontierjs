@@ -25,6 +25,10 @@ what they mean in any app.
   route's companion under the running runtime. It runs the SITE's vite, its
   peer: from a linked site-kit a bare import finds the workspace's copy, and
   Vite looks for a preset's `sass` beside its own (FJS-2026).
+  `build --binary` then hands `dist/` to Sierra's `compileSite`
+  (`@frontierjs/sierra/site/compile`) for `<dir>/bin/site`; `fli site:build
+  --binary` cannot, because it runs the `config/vite.config.js` a site-kit site
+  has none of (FJS-2756).
 - `config/vite.js` — `siteKit({ root, port, host })`, the whole Vite + Sierra config.
   Owns `target`, `routesDir: 'content/routes'`, `outDir`, `trailingSlash`, and
   the route table's home in `<site>/.sierra/` (never `node_modules/`, which

@@ -79,8 +79,13 @@ const RUNNER = /^(?:npx |bunx )?(?:bun test(?:\s|$)|vitest(?:\s|$))/
 // vitest colors its summary whatever FORCE_COLOR says.
 const ANSI = /\x1b\[[0-9;]*m/g
 
+// A package's script runs inside scripts/tmp-run.mjs (FJS-2762), and the
+// command it reads is the quoted argument.
+const TMP_RUN = /^node \S*tmp-run\.mjs '(.*)'$/s
+
 export function parseCounts(script, text) {
-  const segments   = String(script ?? '').split(/&&|;|\|\|/).map(s => s.trim()).filter(Boolean)
+  const command    = String(script ?? '').trim().replace(TMP_RUN, '$1')
+  const segments   = command.split(/&&|;|\|\|/).map(s => s.trim()).filter(Boolean)
   const readable   = segments.filter(s => RUNNER.test(s)).length
   const plain      = String(text ?? '').replace(ANSI, '')
   const counts     = { pass: 0, fail: 0, skip: 0, partial: false, failed: [] }

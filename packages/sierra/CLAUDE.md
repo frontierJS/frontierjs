@@ -63,6 +63,13 @@ src/
     serve.js             the static server that surface deploys with — a
                          directory index, a cache answer per file kind, and the
                          site's own 404.html served with a 404
+    compile.js           a built site and serve.js as ONE executable
+                         (`sierra site --compile`, `fli site:build --binary`).
+                         Bun's embedded filesystem has no directories and
+                         renames every file with a hash, so serve.js takes a
+                         `files` map and judges headers by the PUBLISHED name;
+                         `test/site-compile.test.js` asserts the binary answers
+                         what the directory does
 
   widget/                — the `widgets/` surface's runtime and its origin
     index.js             the embed runtime: a custom element (and a selector,
@@ -126,6 +133,10 @@ src/
     resource.js          createResource — coerce → blankToNull → validate
     list.js              resource.list() — where a list's state lives, its load
                          and re-run, and the window. Imports the router
+    record.js            resource.record() as a component reads it — `value`,
+                         `loaded` and `error()` tracked; released by a ROOT,
+                         because a `$:` re-run disposes the effects it made and
+                         a view kept across re-runs would go deaf
     field-rules.js       schema → field rules; the control table and the
                          registry over it; toFieldErrors. LEAF: no client import
     schema-registry.js   modelNameFor / schemaFor, over `createSchemaRegistry()` —
@@ -218,7 +229,11 @@ src/
   cookie mode strips `challenge` on the wire, so a real challenge arrives carrying
   only the expiry. `session.awaitingCode` is what a page renders the box from and
   `submitCode(code)` finishes it; `retryable: false` closes the box, because the
-  attempt is spent and every further code will be refused (`FJS-D261`).
+  attempt is spent and every further code will be refused (`FJS-D261`). **An
+  OAuth sign-in arrives at the same box by URL** (`FJS-D915`):
+  `?oauth_error=code_required` sets `awaitingCode` from `oauth_expires` rather
+  than `oauthError`, and the boot restore does not ask while it is set, since
+  that 401 would `clear()` the box before the page rendered it.
 
 - **In a terminal process `typeof window` is `'object'` and nothing else of a
   browser is there.** OpenTUI's renderer plants `globalThis.window = {
@@ -236,7 +251,10 @@ src/
   unchanged, because an extra wrapper would move every `:host > *` rule.
 - **`isHashedAsset` matches a REPEATED extension.** `…-C_TQPJ-f.js.map` is
   hashed and a pattern anchored on the last segment says otherwise, so a
-  sourcemap was revalidated forever beside a file cached for a year.
+  sourcemap was revalidated forever beside a file cached for a year. And it
+  asks WHERE first: only a root-relative `assets/…` path is hashed, because
+  `massage-featured.jpg` has the shape and is replaced in place (`FJS-2754`).
+  A hashed file emitted anywhere else is revalidated (`FJS-2755`).
 - **`/__sierra/static-data` refuses three ways, and `Sec-Fetch-Site` is the one
   a verb check cannot cover.** `<img src>`, `<script src>` and a top-level form
   GET are all simple GETs sending no `Origin`. The check allows an ABSENT header

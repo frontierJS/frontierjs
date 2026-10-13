@@ -438,8 +438,9 @@ core/
   guard.js      one writer at a time across processes, on this machine — a
                 `wx`-created file holding the winner's pid. `ports.js` takes it
                 over `sessions.lock`, and `withRegisterGuard` (registers.js) over
-                every `close`/`file`/`amend`, keyed on where `ISSUES.md` really
-                is, because fix-loop lanes write the main tree's through a link.
+                every `close`/`file`/`amend`/`decide`/`settle`, keyed on where
+                `ISSUES.md` really is, because fix-loop lanes write the main
+                tree's through a link. Not reentrant: a caller never wraps one.
   lock.js       is another run working in this directory — the format, the
                 parser, the four scripts and the reading of one. A DIFFERENT
                 question from the journal's *what state did the last run leave*,
@@ -572,7 +573,10 @@ core/
   file-tree.js  a folder drawn as a tree — `fli tree`. The listing is
                 `tree.js`'s, so ignored files are absent with no skip list;
                 icons are emoji with DEFAULT emoji presentation only, since one
-                needing U+FE0F is one cell in some terminals and two in others
+                needing U+FE0F is one cell in some terminals and two in others.
+                On a wide terminal each top-level folder is a LANE, packed down
+                then across; a row is measured in cells (`visibleWidth`), never
+                in string length, or every column after an emoji shifts
   guarded-write.js the policy of `.claude/hooks/guarded-write.mjs` — decision-rules
                 hinted in front of a WRITE to `DECISIONS.md`, `IDEAS/` or
                 litestone's parser/catalog. A Bash command counts only where

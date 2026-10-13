@@ -25,14 +25,17 @@
  *     provider says the address is — CVE-2026-53516's shape
  *   · a `returnTo` is honored only if it passed the allow-list at flow START
  *   · a person cannot unlink their last way in
+ *   · an account with a second factor owes its code after the provider, as
+ *     after a password (FJS-D915)
  *
  * Every one of those is a refusal. The happy path is three of eighteen.
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS } from './lib/preflight.mjs'
+import { authenticator } from './lib/authenticator.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -146,6 +149,9 @@ const me = (j) => hop(`${API}/api/account/me`, j).then(r => r.ok ? r.json() : nu
 
 console.log('\nverify:oauth — signing in with a provider\n')
 
+// The seeded admin marks § 7's account verified: this app mails no
+// verification, and only a verified account is linked to a provider.
+execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 start('bun', ['run', 'api/index.ts'], 'api', { SHOP_COOKIE_AUTH: '1', API_PORT, IDP_SINK_PORT })
 if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
 // Every real endpoint on the IdP answers 401 or 404 without a credential, so
@@ -203,6 +209,8 @@ console.log('\nwhat the screen can ask')
   const { OAUTH_ERRORS } = await import(
     '../../../packages/sierra/src/resource/session.js'
   )
+  // Not `code_required`: it opens the code box rather than saying anything
+  // (FJS-D915), and sierra's session test is where that is asserted.
   const emitted = ['denied', 'state', 'exchange', 'unavailable', 'link_required']
   const missing = emitted.filter(c => !OAUTH_ERRORS[c])
   ok('every code this API can emit has words on the client side',
@@ -326,6 +334,66 @@ console.log('\nwhat is attached')
   } else {
     ok('unlinking the LAST way in is refused with 409', false, 'no connection to try it on')
   }
+}
+
+// ── 7. a second factor ─────────────────────────────────────────────────────
+//
+// A provider is a first factor like a password (FJS-D915): an account with a
+// confirmed TOTP gets the challenge cookie and no session, and the code finishes
+// it at the route a password sign-in uses. The codes come from the drives'
+// own authenticator, never from the function that checks them.
+console.log('\nan account with a second factor')
+{
+  const PW    = 'two-step-pw-1'
+  const email = `totp-${uniq}@shop.test`
+  const sub   = `s-totp-${uniq}`
+
+  const call = async (j, path, body, method) => {
+    const url = `${API}/api${path}`
+    const r = await fetch(url, {
+      method: method === 'PATCH' ? 'PATCH' : 'POST', redirect: 'manual',
+      headers: {
+        'content-type': 'application/json', cookie: j.for(url),
+        ...(method && method !== 'PATCH' ? { 'x-service-method': method } : {}),
+      },
+      body: JSON.stringify(body),
+    })
+    j.set(r.headers.getSetCookie?.() ?? [])
+    return { status: r.status, body: await r.json().catch(() => null) }
+  }
+
+  const own = jar()
+  await call(own, '/auth/register', { email, password: PW, name: 'Two Step' })
+  const userId = (await me(own))?.userId
+  const admin  = jar()
+  await call(admin, '/auth/login', { email: 'alex@shop.test', password: 'correct-horse-battery' })
+  const marked = await call(admin, `/users/${userId}`, { emailVerified: true }, 'PATCH')
+  const setup  = await call(own, '/account/me', { currentPassword: PW }, 'setupTotp')
+  const secret = setup.body?.secret ?? ''
+  const on     = await call(own, '/account/me', { code: authenticator(secret, -1) }, 'confirmTotp')
+  ok('the account is verified and its factor is on',
+     marked.status === 200 && on.status === 200, `patch ${marked.status}, confirm ${on.status}`)
+
+  await setNext({ sub, email, verified: true, deny: false })
+  const j    = jar()
+  const flow = await signIn(j)
+  const to   = new URL(String(flow.callback.headers.get('location')), API)
+  ok('the provider sign-in answers code_required, with the expiry the page renders',
+     to.searchParams.get('oauth_error') === 'code_required' &&
+     !Number.isNaN(Date.parse(String(to.searchParams.get('oauth_expires')))), to.href)
+  ok('…a challenge cookie and no session', j.has('login_challenge') && !j.has('session'))
+
+  const done = await call(j, '/auth/login/challenge', { code: authenticator(secret, 0) })
+  ok('the code finishes it at the route a password sign-in uses', done.status === 200 && j.has('session'),
+     `got ${done.status}`)
+  ok('…and the session is this person', (await me(j))?.email === email)
+
+  // Branch 1 now: the subject was linked above, and is seen again.
+  const k = jar()
+  const again = await signIn(k)
+  ok('a returning provider sign-in owes the code too',
+     String(again.callback.headers.get('location')).includes('oauth_error=code_required') && !k.has('session'),
+     String(again.callback.headers.get('location')))
 }
 
 // ─── Result ────────────────────────────────────────────────────────────────

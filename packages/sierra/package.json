@@ -24,6 +24,7 @@
     "./widget": "./src/widget/index.js",
     "./widget/serve": "./src/widget/serve.js",
     "./site/serve": "./src/site/serve.js",
+    "./site/compile": "./src/site/compile.js",
     "./check": "./src/build/mesa-check.js",
     "./tui": "./src/tools/tui.js"
   },
@@ -31,7 +32,7 @@
     "sierra": "./src/tools/cli.js"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "node ../../scripts/tmp-run.mjs 'vitest run'",
     "test:safety": "bun test/static-safety-real.mjs && bun test/filter-operators-real.mjs",
     "test:installable": "node test/browser/installable.mjs",
     "test:widgets": "cd test/fixtures/widget-site && node ../../../src/tools/cli.js widgets --config config/sierra.config.js && node test/verify.mjs",

@@ -184,7 +184,7 @@ Auth is declared on the target and applied automatically on every request. Calle
 | `bearer`  | Adds `Authorization: Bearer <secret>` |
 | `api_key` | Adds a custom header: `{ header: 'X-Api-Key', ref: 'STRIPE_KEY' }` |
 | `hmac`    | Signs a canonical string with HMAC-SHA256 — see below |
-| `signed`  | A vendor's own scheme, as a function a connector supplies — see *Signers* |
+| `signed`  | A vendor's own scheme, as a function a connector supplies; HTTP Basic is the built-in `signer: 'basic'` — see *Signers* |
 | `none`    | No auth headers added |
 
 Applied on **every** protocol: HTTP and Unix on each request, WebSocket on the connection upgrade.
@@ -213,17 +213,23 @@ This binds each signature to one method, one path and one query, so a captured s
 
 #### Signers
 
-Basic, a secret inside the body, SigV4 and a minted JWT are not new `type`s. One
+A secret inside the body, SigV4 and a minted JWT are not new `type`s. One
 `signed` type names a function in `ConduitOptions.signers`, which a connector
 exports for the app to spread in:
 
 ```ts
-const basic: Signer = ({ secret }) => ({ headers: { authorization: `Basic ${btoa(secret)}` } })
+const inBody: Signer = ({ secret, body }) => ({ body: `${body ?? ''}&secret=${secret}` })
 
-createConduit({ signers: { basic }, targets: [
-  { id: 'provider:twilio', …, auth: { type: 'signed', signer: 'basic', ref: 'TWILIO_BASIC' } },
+createConduit({ signers: { inBody }, targets: [
+  { id: 'provider:turnstile', …, encoding: 'form', auth: { type: 'signed', signer: 'inBody', ref: 'TURNSTILE' } },
 ] })
 ```
+
+**HTTP Basic is built in** as `signer: 'basic'` and needs no install: the ref
+resolves to `user:password` (RFC 7617, UTF-8; a key with no colon is sent as
+`key:`). A connector's signer may not take the name. OAuth's client
+authentication form-encodes the halves first (RFC 6749 §2.3.1) and is a
+different scheme with its own signer.
 
 The signer is handed the resolved `secret`, the `method`, `url`, `path`, `query`,
 the serialized `body` and the `headers` already set. It returns `headers` to add
@@ -391,13 +397,25 @@ This holds for bad input too: a body that will not serialize (a cyclic object, a
 | `overloaded` | yes | the target's concurrency cap is full — nothing was sent |
 | `aborted` | yes | the caller's `signal` ended the call. **Does not count toward the circuit breaker** — the caller left, the target did not fail. On an unkeyed POST that was in flight it comes back `retryable: false, indeterminate: true`, like a timeout |
 | `redirected` | no | a 3xx. Redirects are not followed unless the target sets `follow_redirects: 'same-origin'`, because a followed redirect re-sends the credential to wherever it points |
-| `stream_error` | no | a `websocket` stream failed after setup |
+| `stream_error` | no | a stream failed after it opened — a socket that dropped, or an `http` event stream that ended inside an event |
 
-`stream()` throws a `ConduitStreamError` if the stream cannot be established — target not found, connection failed before the first chunk, unresolvable credential, or a protocol that cannot stream. Once streaming, chunks arrive as `AsyncIterable<ConduitChunk>`.
+`stream()` throws a `ConduitStreamError` if the stream cannot be established — target not found, a refused credential, a breaker that is open, a cap that is full, or a status that is not 2xx. Once streaming, chunks arrive as `AsyncIterable<ConduitChunk>`. `err.conduit` is the same `ConduitError` `send()` answers for the same failure, and `err.meta.status` is the status, so one translation reads both.
 
 It also throws if the socket **drops mid-stream**, so a network blip during a log tail terminates the consumer instead of blocking it forever. Chunks already yielded are yours to keep; wrap the `for await` in a `try/catch` to distinguish "the log ended" from "the connection died".
 
-Only `websocket` targets can stream. `http` and `unix` throw `not_implemented` rather than yielding an empty iterator — "this protocol cannot stream" must not look like "there was no output".
+**Over `http` and `unix`, what a chunk holds is decided by the response's `content-type`** (`FJS-D934`). A `text/event-stream` body yields one chunk per event, `data: { event, data, id }` as `@frontierjs/toolbelt/sse` reads it. Any other body yields a `Uint8Array` per read and is never held whole, so `max_response_bytes` does not apply to it. Each chunk's `meta` carries the response's status and headers.
+
+```ts
+const body = { model: 'claude-sonnet-4-5', max_tokens: 64, stream: true, messages: [{ role: 'user', content: 'hello' }] }
+for await (const chunk of app.conduit.stream({ target: 'provider:anthropic', method: 'POST', path: '/v1/messages', body })) {
+  const { event, data } = chunk.data as { event: string; data: unknown }
+  console.log(event, data)
+}
+```
+
+The stream is opened through the same ladder as `send()`: a 401 remints once, a 429 is `rate_limited` with its `retry_after_ms`, and an idempotent request is retried before its first byte. The per-attempt `timeout_ms` covers the wait for headers only, and the caller's `signal` bounds the stream itself. An open stream holds one of the target's `max_concurrent` slots until it ends, and breaking out of the `for await` closes the body.
+
+SSE has no end marker of its own, so a body that closes between two events reads as a stream that finished. Whether the vendor sent its last event (`message_stop`, `[DONE]`) is the connector's to check.
 
 ---
 
@@ -880,7 +898,7 @@ const { conduit } = await createTestConduit(
 
 **Not a service mesh.** It does not proxy application traffic between services.
 
-**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket API is not reachable through this package, and streaming is that half's alone: `stream()` over `http` or `unix` answers `not_implemented`.
+**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket API is not reachable through this package; a third-party event stream is, over `http`.
 
 **Not a receiver — yet.** Conduit dials; it does not listen. Verifying a webhook is app code today (`example/api/src/providers/stripe/index.ts` is the reference), and `IDEAS/inbound-integrations.md` is where that is going.
 

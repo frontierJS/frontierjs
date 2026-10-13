@@ -20,6 +20,7 @@
 
 import { describe, test, expect, vi, beforeEach, afterAll } from 'vitest'
 import { createJunctionClient } from '../../junction/src/client/index.ts'
+import { createRoot, createEffect, createSignal, flushSync } from '@frontierjs/mesa/runtime'
 
 const rows = new Map()
 const calls = []
@@ -225,6 +226,108 @@ describe('resource.record(id)', () => {
     const row = orders.record(1)
     expect(await row.ready).toBeNull()
     expect(row.get()).toBeNull()
+  })
+})
+
+// ─── As a component reads it ─────────────────────────────────────────────────
+//
+// `value`, `loaded` and `error()` are read from a `$:`, so each must be TRACKED:
+// an effect reading one has to run again when it moves. And the view is
+// released by its owner's teardown, never by its owner's next run — ELA's
+// `WithAccount` calls `record(id)` from a `$:` and keeps the view across
+// re-runs that leave the id alone.
+
+describe('resource.record(id) in a component', () => {
+  const settle = async () => { await new Promise(r => setTimeout(r, 0)); flushSync() }
+
+  test('value is tracked, and moves on a push', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    const seen = []
+    const dispose = createRoot((d) => {
+      const row = orders.record(1)
+      createEffect(() => { seen.push(row.value?.status ?? null) })
+      return d
+    })
+    await settle()
+    client.service('orders')._receive('patched', { id: 1, status: 'paid', version: 4 })
+    flushSync()
+    expect(seen).toEqual([null, 'pending', 'paid'])
+    dispose()
+  })
+
+  test('loaded says the read FINISHED, and error() says why there is no row', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    let row
+    const dispose = createRoot((d) => { row = orders.record(2); return d })
+    expect(row.loaded).toBe(false)
+    await settle()
+    expect(row.loaded).toBe(true)
+    expect(row.value).toBeNull()
+    expect(row.error()).toMatchObject({ status: 404 })
+    dispose()
+  })
+
+  test('a refresh refused after the first read is HEARD — the row it re-emits is unchanged', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    const statuses = []
+    let row
+    const dispose = createRoot((d) => {
+      row = orders.record(1)
+      createEffect(() => { statuses.push(row.error()?.status ?? null) })
+      return d
+    })
+    await settle()
+    rows.delete(1)
+    await row.refresh()
+    flushSync()
+    expect(statuses.at(-1)).toBe(404)
+    dispose()
+  })
+
+  test('released when its owner is torn down', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    let row
+    const dispose = createRoot((d) => { row = orders.record(1); return d })
+    await settle()
+    dispose()
+    client.service('orders')._receive('patched', { id: 1, status: 'paid', version: 4 })
+    flushSync()
+    expect(row.value.status).toBe('pending')
+  })
+
+  test('NOT released when the effect that made it runs again', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    const [tick, setTick] = createSignal(0)
+    let held = null
+    const dispose = createRoot((d) => {
+      createEffect(() => {
+        tick()
+        if (!held) held = orders.record(1)
+      })
+      return d
+    })
+    await settle()
+    setTick(1)
+    flushSync()
+    client.service('orders')._receive('patched', { id: 1, status: 'paid', version: 4 })
+    flushSync()
+    expect(held.value.status).toBe('paid')
+    dispose()
+    client.service('orders')._receive('patched', { id: 1, status: 'shipped', version: 5 })
+    flushSync()
+    expect(held.value.status).toBe('paid')
+  })
+
+  test('release() by hand still works, and a teardown after it is harmless', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    let row
+    const dispose = createRoot((d) => { row = orders.record(1); return d })
+    await settle()
+    row.release()
+    client.service('orders')._receive('patched', { id: 1, status: 'paid', version: 4 })
+    flushSync()
+    expect(row.value.status).toBe('pending')
+    expect(() => dispose()).not.toThrow()
   })
 })
 

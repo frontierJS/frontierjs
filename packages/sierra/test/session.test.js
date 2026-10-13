@@ -200,6 +200,53 @@ describe('an OAuth refusal on the URL', () => {
     expect(s.session.oauthError).toBe('link_required')
     expect(s.session.oauthMessage).toMatch(/inbox|email/i)
   })
+
+  // `code_required` is the provider answering the FIRST factor of an account
+  // that owes its code (FJS-D915). It lands where a password's challenge lands,
+  // so a page with a code box for one has it for the other. As an error it
+  // would read *enter your code* on a page with no box to type it in.
+  test('code_required opens the code box rather than reporting an error', async () => {
+    const nav = atUrl('https://shop.test/sign-in?oauth_error=code_required&oauth_expires=2030-01-01T00%3A00%3A00.000Z')
+    const s = await freshSession()
+
+    s.initSession(fakeClient())
+    await s.ready
+
+    expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
+    expect(s.session.oauthError).toBeNull()
+    expect(s.session.oauthMessage).toBeNull()
+    expect(nav.href).toBe('https://shop.test/sign-in')
+  })
+
+  test('in cookie mode the boot restore does not ask, so the box survives it', async () => {
+    // The callback set a challenge cookie and no session. Asked, `me` answers
+    // 401, `clear()` runs, and the box closes before the page renders it.
+    atUrl('https://shop.test/sign-in?oauth_error=code_required&oauth_expires=2030-01-01T00%3A00%3A00.000Z')
+    const s = await freshSession()
+    const client = fakeClient({ cookieAuth: true, fail: Object.assign(new Error('Unauthorized'), { code: 401 }) })
+
+    s.initSession(client)
+    await s.ready
+
+    expect(client.calls).toEqual([])
+    expect(s.session.checked).toBe(true)
+    expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
+  })
+
+  test('submitCode finishes an OAuth sign-in exactly as it finishes a password one', async () => {
+    atUrl('https://shop.test/sign-in?oauth_error=code_required&oauth_expires=2030-01-01T00%3A00%3A00.000Z')
+    const s = await freshSession()
+    const client = fakeClient({ cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+    client.auth._c = client
+
+    s.initSession(client)
+    await s.ready
+    await s.submitCode('123456')
+
+    expect(client.calls).toEqual(['completeSignIn:123456', 'me'])
+    expect(s.session.user.email).toBe('a@b.c')
+    expect(s.session.awaitingCode).toBeNull()
+  })
 })
 
 describe('the boot restore', () => {

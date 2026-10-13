@@ -26,6 +26,10 @@
 // `object` key — a record with a column called `object` was indistinguishable
 // from an envelope. isServiceResult() checks the discriminant instead.
 
+import { CRUD_METHODS } from './methods.ts'
+
+const CRUD = new Set<string>(CRUD_METHODS)
+
 // ─── Shape ────────────────────────────────────────────────────────────────
 
 /** Discriminant. `single` carries one record, `list` carries an array. */
@@ -257,7 +261,8 @@ function listShape(raw: unknown): { data: unknown[]; extra: string[] } | null {
  *
  *   find            → a list, or it throws
  *   { data, errors} → a list — the bulk partial-write protocol, any method
- *   Array           → list (bulk patch/remove)
+ *   Array           → a list from a CRUD verb (bulk patch/remove); a single
+ *                     from a custom method, so the caller gets the array
  *   Anything else   → single
  *
  * **The METHOD decides, not the shape.** It used to be shape alone: any
@@ -270,9 +275,17 @@ function listShape(raw: unknown): { data: unknown[]; extra: string[] } | null {
  * method that promises a list, so it is the only one that gets one built for it.
  * A custom method answering `{ data, total, anythingElse }` is now a `single`, which
  * unwraps whole and loses nothing.
+ *
+ * A custom method's array is a single for the same reason (`FJS-D937`): a
+ * list exists to carry total/limit/offset, a bare array has none, and as a list
+ * it reached `invoke()` as `{ kind, data }` while an object answer arrived bare
+ * -- so every caller had to know which the method returned, and 28 app sites
+ * hedged with `answer?.data ?? answer`.
  */
 export function wrapResult(raw: unknown, object: string, method = ''): ServiceResult {
-  if (Array.isArray(raw)) return list(object, raw)
+  if (Array.isArray(raw)) {
+    return method && !CRUD.has(method) ? single(object, raw) : list(object, raw)
+  }
 
   refuseStream(raw, object, method, 'answered')
 

@@ -42,7 +42,13 @@ const KIT = {
   table:   `import Table         from '@frontierjs/ui/components/display/Table.mesa'`,
   cell:    `import Cell          from '@frontierjs/ui/components/display/Cell.mesa'`,
   filters: `import FilterBar     from '@frontierjs/ui/components/display/FilterBar.mesa'`,
+  confirm: `import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'`,
 }
+
+// A delete asks through ConfirmationPopover, which carries its own panel. The
+// attribute form (`data-confirm`) answers only under a ConfirmProvider in the
+// root layout, and these pages are written into layouts this module did not
+// write: with no provider there, the click deletes without asking.
 
 // The id column is asked for rather than assumed: `@id` may be on any column,
 // and a model keyed by anything else is the case where a hardcoded `id` creates
@@ -157,7 +163,6 @@ export function listPage(o) {
   let busy = null
 
   async function remove(id) {
-    if (!confirm('Delete ' + id + '?')) return
     error = null
     busy  = id
     try { await ${o.res}.service.remove(id) }
@@ -173,13 +178,17 @@ export function listPage(o) {
 
   const rowDelete = o.rowDelete
     ? `
-        <Button
-          variant="ghost"
-          tone="danger"
-          size="sm"
-          disabled={${o.gate ? '!canDelete || ' : ''}busy === record[idField]}
-          onclick={() => remove(record[idField])}
-        >Delete</Button>`
+        <ConfirmationPopover title={'Delete ' + record[idField] + '?'} confirmLabel="Delete"
+                             onconfirm={() => remove(record[idField])}>
+          {#snippet trigger()}
+            <Button
+              variant="ghost"
+              tone="danger"
+              size="sm"
+              disabled={${o.gate ? '!canDelete || ' : ''}busy === record[idField]}
+            >Delete</Button>
+          {/snippet}
+        </ConfirmationPopover>`
     : ''
 
   const gateFootnote = o.gate
@@ -205,7 +214,7 @@ ${session}
   ${KIT.table}
   ${KIT.cell}
   ${KIT.filters}
-
+${o.rowDelete ? '  ' + KIT.confirm + '\n' : ''}
 ${idFieldLine(o.res)}
 
   // Ranked from the schema, with the header text taken from each column's
@@ -329,7 +338,7 @@ ${o.gate ? '  ' + KIT.alert + '\n' : ''}  ${KIT.button}
 ${idFieldLine(o.res)}${watch}
 ${SC}
 
-<div class="stack">
+<div class="container narrow">
 <SectionHeader title="${o.heading}" level={1}>
   {#snippet action()}
     <Button variant="ghost" href="${o.basePath}">${o.backLabel}</Button>
@@ -338,7 +347,6 @@ ${SC}
 
 ${o.gate ? gateNotice(o.res, 'create') : ''}<${o.form}
   class="card"
-  style="max-width: 32rem"
   method="create"
   submitLabel="${o.submitLabel}"
   cancelHref="${o.basePath}"
@@ -408,6 +416,7 @@ ${session}
   ${KIT.header}
   ${KIT.spinner}
   ${KIT.cell}
+  ${KIT.confirm}
 ${kids.imp}
 
 ${idFieldLine(o.res)}${watch}
@@ -422,46 +431,31 @@ ${idFieldLine(o.res)}${watch}
   let failed   = null
   let deleting = false
 
-  // The read FINISHED, whatever it found. Without it the spinner is drawn from
-  // record == null, which cannot tell "still loading" from "the read came back
-  // with nothing" — so a row that does not exist, and one this caller may not
-  // read, both spin forever with nothing said.
-  let loaded   = false
-
   // WATCHED, not fetched once. service.get() is the raw proxy and answers a
   // plain object, so a write from another tab, a job or a webhook reaches the
   // store and never this screen — which looks correct the whole time, because a
   // screen re-reads after its OWN actions and never after anyone else's
-  // (FJS-533). record() subscribes to the same node the list is a view over.
+  // (FJS-533). record() subscribes to the same node the list is a view over,
+  // and is released when this page is torn down.
   //
   // Where this service's get() answers MORE than the row — an include, a count
   // assembled per call — declare it: record(id, { composed: true }), or the
   // first announcement drops the children.
-  // The handle is a let ASSIGNED rather than a const initialized, and that is
-  // the whole difference between this screen working and a spinner forever: a
-  // const whose initializer CALLS a local binding is a lazy derivation
-  // (FJS-D212), nothing reads unwatch until $.onDestroy, so the subscribe
-  // never ran and record stayed null with nothing reporting a problem.
-  // Every hand-written detail screen in this repo writes it this way.
-  let unwatch   = null
-  const row     = ${o.res}.record(id)
-  unwatch = row.subscribe(v => { record = v })
+  const row = ${o.res}.record(id)
+  $: { record = row.value }
 
-  // ready RESOLVES with null for a refusal and for a row that is not there —
-  // record() swallows the response so a .catch alone never fires. row.error()
-  // holds the reason: 404 is a row that is not there, 403 a refusal, 0 no answer.
-  row.ready
-    .then(v => {
-      if (v != null || failed) return
-      const why = row.error()?.status
-      failed = why === 404 ? id + ' was not found.'
-        : why === 403 || why === 401 ? 'You do not have access to ' + id + '.'
-        : 'Could not load ' + id + '.'
-    })
-    .catch(e => { failed = e.message })
-    .finally(() => { loaded = true })
+  // row.loaded is the read FINISHED, whatever it found. Without it the spinner
+  // is drawn from record == null, which cannot tell "still loading" from "the
+  // read came back with nothing" — so a row that does not exist, and one this
+  // caller may not read, both spin forever with nothing said. row.error() says
+  // which: 404 is a row that is not there, 403 a refusal, 0 no answer.
+  $: { if (row.loaded && !row.value) failed = whyMissing(row.error()?.status) }
 
-  $.onDestroy(() => { unwatch?.(); row.release?.() })
+  function whyMissing(code) {
+    return code === 404 ? id + ' was not found.'
+      : code === 403 || code === 401 ? 'You do not have access to ' + id + '.'
+      : 'Could not load ' + id + '.'
+  }
 
   // What a person calls this row: the column the model names it by
   // (\`@@label\`, or a conventional \`name\`/\`title\`), once the row is here. The
@@ -477,7 +471,6 @@ ${idFieldLine(o.res)}${watch}
   const { columns: facts } = ${o.res}.summary()
 ${moveScript(o, 'failed')}${kids.script}
   async function remove() {
-    if (!confirm('Delete ' + (nameOf(record) ?? id) + '?')) return
     failed   = null
     deleting = true
     try {
@@ -490,7 +483,7 @@ ${moveScript(o, 'failed')}${kids.script}
   }
 ${SC}
 
-<div class="stack">
+<div class="container narrow">
 <SectionHeader title={nameOf(record) ?? '${o.heading} ' + id} level={1}>
   {#snippet action()}
     <Button variant="ghost" href="${o.basePath}">${o.backLabel}</Button>
@@ -526,18 +519,18 @@ ${kids.markup}{#if record}
        \`actions\` snippet, which <Form> takes over its own slot. Delete carries
        its own \`loading\`; submit does not need one, because a type="submit"
        button inside <Form> reads the form's in-flight state from context. -->
-  <${o.form} bind:record class="card" style="max-width: 32rem">
+  <${o.form} bind:record class="card">
     {#snippet actions()}
       <Button type="submit">${o.submitLabel}</Button>
-      <Button
-        tone="danger"
-        variant="outlined"
-        loading={deleting}
-        onclick={remove}
-      >${o.deleteLabel}</Button>
+      <ConfirmationPopover title={'Delete ' + (nameOf(record) ?? id) + '?'}
+                           confirmLabel="${o.deleteLabel}" onconfirm={remove}>
+        {#snippet trigger()}
+          <Button tone="danger" variant="outlined" loading={deleting}>${o.deleteLabel}</Button>
+        {/snippet}
+      </ConfirmationPopover>
     {/snippet}
   </${o.form}>
-{:else if !loaded}
+{:else if !row.loaded}
   <Spinner label="Loading" />
 {/if}
 </div>

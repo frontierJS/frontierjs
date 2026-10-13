@@ -73,6 +73,13 @@ describe('parseCounts', () => {
     expect([c.pass, c.fail, c.skip, c.partial]).toEqual([13, 1, 1, false])
   })
 
+  test('a script inside tmp-run is read by its quoted command', () => {
+    expect(parseCounts(`node ../../scripts/tmp-run.mjs 'bun test test/'`, BUN_PASS))
+      .toEqual({ pass: 12, fail: 0, skip: 0, partial: false, failed: [] })
+    const c = parseCounts(`node ../../scripts/tmp-run.mjs 'bun test a.test.js && bun test b.test.js'`, BUN_PASS + BUN_FAIL)
+    expect([c.pass, c.fail, c.partial]).toEqual([13, 1, false])
+  })
+
   test('a script that also runs something unreadable is partial, not complete', () => {
     // mesa's shape: a spec check, vitest, then two CDP drives.
     const c = parseCounts('node test/spec-check.mjs && vitest run && node test/browser/runtime/run.mjs', VITEST_PASS)

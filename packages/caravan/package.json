@@ -37,7 +37,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "bun test",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test'",
     "test:watch": "bun test --watch",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },

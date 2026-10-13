@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // web/test/verify-registers.mjs — /registers/ reads the workspace's registers,
-// rules on a question, and hands a row to Claude in the workbench.
+// rules on a question, and hands a row to Claude in the workbench; and
+// /registers/decide/ walks the open questions on a phone-sized screen.
 //
 //   bun web/test/verify-registers.mjs
 //   API_PORT=7120 UI_PORT=7020 bun web/test/verify-registers.mjs   # beside a dev server
@@ -21,6 +22,11 @@
 //   prompt it was handed and answers in stream-json — followed on the screen
 //   from working to done, and the chat it names is the card the link opens.
 //
+//   The decide screen's queue is `openDecisions`' order, swiped with real
+//   touch events at 390px wide; Explain is the read-only ask (its argv is
+//   recorded), a follow-up resumes its session, and a ruling waits out its
+//   undo window and is refused by fli for a planted section.
+//
 // ─── Traps ───────────────────────────────────────────────────────────────
 //
 //   The stand-in runs in the real workspace root, so it writes only into the
@@ -39,6 +45,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
 import { collectRegisterAtlas } from '../../../cli/core/register-atlas.js'
+import { openDecisions }       from '../../../cli/core/decisions.js'
 import { portFor }              from '@frontierjs/cli/core/ports.js'
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
@@ -80,6 +87,7 @@ const SCRATCH   = mkdtempSync(join(tmpdir(), 'basecamp-registers-'))
 const DB        = join(SCRATCH, 'basecamp.db')
 const WORKBENCH = join(SCRATCH, 'workbench')
 const PROMPT    = join(SCRATCH, 'prompt.txt')
+const ARGV      = join(SCRATCH, 'argv.json')
 const dbEnv     = { DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit/') }
 
 const FAKE_CLAUDE = join(SCRATCH, 'fake-claude')
@@ -87,6 +95,7 @@ writeFileSync(FAKE_CLAUDE, `#!/usr/bin/env node
 const fs = require('fs')
 const input = fs.readFileSync(0, 'utf8')
 fs.writeFileSync(${JSON.stringify(PROMPT)}, input)
+fs.writeFileSync(${JSON.stringify(ARGV)}, JSON.stringify(process.argv.slice(2)))
 const out = l => process.stdout.write(JSON.stringify(l) + '\\n')
 out({ type: 'system', subtype: 'init', session_id: '0b5b4c3e-6a51-4c8e-9a52-0d1f3c7e2a10' })
 setTimeout(() => {
@@ -269,9 +278,125 @@ try {
   const card = await until(`document.getElementById(decodeURIComponent(location.hash.slice(1)))?.textContent ?? null`, t => !!t, 'the linked card never rendered')
   check('the workbench draws the card the link names', card.includes('Placed it.'), card.slice(0, 120))
 
+  await decideScreen()
+
+  check('DECISIONS.md is still untouched', hash('DECISIONS.md') === decisionsBefore)
   check('no console errors on the screens', !consoleErrors.length, consoleErrors.join(' | ').slice(0, 300))
 } catch (e) {
   bad('the drive stopped', e.message)
+}
+
+async function decideScreen() {
+  console.log('\n  /registers/decide/ — one question at a time, on a phone')
+  const queued = openDecisions(ROOT).decidable
+  if (queued.length < 2) return bad('fewer than two questions with options to walk', `${queued.length}`)
+  const [first, second] = queued
+
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true })
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 })
+  await evaluate(`localStorage.removeItem('basecamp.registers.section'); localStorage.removeItem('basecamp.registers.skipped')`)
+  await goto('/registers/decide/')
+  const id = () => evaluate(`document.getElementById('decide-card')?.dataset.id ?? null`)
+  await until(`document.getElementById('decide-card')?.dataset.id ?? null`, v => !!v, 'no card rendered', 30_000)
+  check(`the first card is fli decide's first question, ${first.id}`, await id() === first.id, await id())
+  check('with every option', await evaluate(`document.querySelectorAll('#decide-options [data-letter]').length`) === first.options.length)
+  check('and its prose', !first.body || ((await textOf('#decide-body')) ?? '').length > 20)
+  check('all of it — the prose is not cut off at phone width', !first.body ||
+    await evaluate(`(e => e.scrollHeight <= e.clientHeight + 1)(document.getElementById('decide-body'))`))
+  if (first.recommend) check(`the big button is the recommendation, ${first.recommend.letter}`,
+    (await textOf('#decide-accept'))?.startsWith(`${first.recommend.letter} · Recommended`), await textOf('#decide-accept'))
+  check('nothing is wider than the phone', await evaluate(`document.documentElement.scrollWidth <= innerWidth`),
+    `${await evaluate('document.documentElement.scrollWidth')}px`)
+  check('the buttons sit inside the screen', await evaluate(`document.getElementById('decide-bar').getBoundingClientRect().bottom <= innerHeight + 1`))
+
+  await goto(`/registers/decide/?ids=${encodeURIComponent(`${second.id},not-a-question,${first.id}`)}`)
+  await until(`document.getElementById('decide-card')?.dataset.id ?? null`, v => v === second.id, '?ids= did not lead with its first id', 30_000)
+  check(`?ids= walks its own order, ${second.id} first`, await id() === second.id, await id())
+  check('and only those, an unknown id dropped', (await textOf('#decide-count'))?.includes('2 left'), await textOf('#decide-count'))
+  await goto('/registers/decide/')
+  await until(`document.getElementById('decide-card')?.dataset.id ?? null`, v => v === first.id, 'the plain walk did not come back', 30_000)
+
+  if (first.recommend) {
+    await evaluate(`document.getElementById('decide-accept').click()`)
+    const said = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => !!t, 'a pick with no section was never stopped')
+    check('a ruling with no section chosen is stopped on the screen', /section/i.test(said) && await id() === first.id, said)
+    check('and the press lands on the section picker', await evaluate(`document.activeElement?.id === 'decide-section'`))
+  }
+
+  // A real touch drag: touch-action pan-y hands the horizontal move to the card.
+  const swipe = async (by) => {
+    const box = await evaluate(`(() => { const r = document.getElementById('decide-card').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 60 } })()`)
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x, y: box.y }] })
+    for (let i = 1; i <= 8; i++) {
+      await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + by * i / 8, y: box.y + i }] })
+      await sleep(16)
+    }
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await sleep(500)
+  }
+
+  await swipe(-260)
+  check(`a swipe left skips to ${second.id}`, await id() === second.id, await id())
+  check('and the skip is remembered', (await evaluate(`localStorage.getItem('basecamp.registers.skipped')`))?.includes(first.id))
+  check('the count says one skipped', /1 skipped/.test((await textOf('#decide-count')) ?? ''), await textOf('#decide-count'))
+
+  console.log('\n  Explain — Claude, read-only, on the card')
+  await evaluate(`document.getElementById('decide-explain').click()`)
+  await until(`document.getElementById('decide-explanation')?.dataset.state ?? null`, s => s === 'working', 'Explain never showed a run')
+  ok('Explain shows Claude working on the card')
+  const done = await until(`document.getElementById('decide-explanation')?.dataset.state ?? null`, s => s !== 'working', 'the explanation never finished', 30_000)
+  check('and follows it to done without a reload', done === 'done', done)
+  check('the reply is on the card', ((await textOf('#decide-explanation')) ?? '').includes('Placed it.'))
+  if (process.env.FJS_DRIVE_SHOT) {
+    const { data } = await send('Page.captureScreenshot', { format: 'png' })
+    await Bun.write(process.env.FJS_DRIVE_SHOT.replace(/(\.png)?$/, '-decide.png'), Buffer.from(data, 'base64'))
+  }
+  const asked = readFileSync(PROMPT, 'utf8')
+  check('Claude was handed the question at its line', asked.includes(`${second.id} — ${second.file}:${second.line}`), asked.slice(0, 200))
+  check('with every option', second.options.every(o => asked.includes(`- **${o.letter}** — `)))
+  const argv = JSON.parse(readFileSync(ARGV, 'utf8'))
+  check('as the read-only ask — tools listed, no bypass', argv.includes('--tools') && !argv.includes('bypassPermissions'), argv.join(' ').slice(0, 200))
+
+  await fill({ 'decide-follow': 'what breaks if we wait?' })
+  await evaluate(`document.querySelector('.decide-follow button[type=submit]').click()`)
+  await until(`document.getElementById('decide-explanation')?.dataset.state ?? null`, s => s === 'working', 'the follow-up never ran')
+  await until(`document.getElementById('decide-explanation')?.dataset.state ?? null`, s => s === 'done', 'the follow-up never finished', 30_000)
+  const resumed = JSON.parse(readFileSync(ARGV, 'utf8'))
+  check('a follow-up resumes the same session', resumed.includes('--resume') && resumed.includes('0b5b4c3e-6a51-4c8e-9a52-0d1f3c7e2a10'), resumed.join(' ').slice(0, 200))
+  check('and sends only the follow-up', readFileSync(PROMPT, 'utf8') === 'what breaks if we wait?')
+  check('the card shows the follow-up asked', ((await textOf('#decide-explanation')) ?? '').includes('what breaks if we wait?'))
+
+  console.log('\n  Ruling — the undo window, then fli refuses a planted section')
+  const other = second.options.find(o => o.letter !== second.recommend?.letter)
+  await evaluate(`document.querySelector('#decide-actions [data-letter="${other.letter}"]').click()`)
+  await until(`!!document.getElementById('decide-why')`, v => v, 'a pick against the recommendation never asked why')
+  check(`${other.letter} asks why before it can rule`, await evaluate(`document.querySelector('#decide-reason button[type=submit]').disabled`))
+  await clickText('#decide-reason button', 'Cancel')
+
+  // Only real sections are offered; one more is planted so the ruling reaches
+  // fli's decide and is refused there, writing nothing.
+  await evaluate(`(() => {
+    const s = document.getElementById('decide-section')
+    s.add(new Option('No such section', 'No such section')); s.value = 'No such section'
+    s.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  if (!second.recommend) return bad(`${second.id} carries no recommendation to swipe to`)
+  await swipe(280)
+  await until(`!!document.getElementById('decide-undo')`, v => v, 'a swipe right never opened the undo window')
+  check('a swipe right rules the recommendation, inside an undo window', ((await textOf('#decide-undo')) ?? '').includes(`Ruling ${second.recommend.letter}`))
+  check('and the next card is already up', await id() !== second.id)
+  await evaluate(`document.getElementById('decide-undo-button').click()`)
+  await sleep(400)
+  check('Undo puts the question back on top', await id() === second.id, await id())
+
+  await evaluate(`document.getElementById('decide-accept').click()`)
+  const refused = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => /not ruled/.test(t), 'the ruling was never sent and refused', 15_000)
+  check('after the window the ruling is sent, and fli refuses the section', /no section named/.test(refused), refused)
+  await until(`document.getElementById('decide-card')?.dataset.id ?? null`, v => v === second.id, 'the refused question never came back')
+  ok('the refused question is back on top')
+
+  await send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  await send('Emulation.clearDeviceMetricsOverride', {})
 }
 
 await cleanup()

@@ -438,6 +438,40 @@ describe('a dead link is graded against the tree, not the disk', () => {
   })
 })
 
+// A client repo may keep its registers out of git on purpose. A clone then holds
+// neither the papers nor the rows linking them, so a link between two of them is
+// graded the way the folder is kept — on the disk — while a link out to code is
+// still graded against the tree.
+
+describe('a register folder git ignores is graded on the disk', () => {
+  let root
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), 'fli-regignored-'))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'x', registers: { prefix: 'FJS', dir: '.project' } }))
+    writeFileSync(join(root, '.gitignore'), '.project/\ndist/\n')
+    mkdirSync(join(root, 'dist'))
+    writeFileSync(join(root, 'dist', 'built.css'), '/* built */\n')
+    mkdirSync(join(root, '.project', 'IDEAS'), { recursive: true })
+    writeFileSync(join(root, '.project', 'IDEAS', 'paper.md'), '---\nid: paper\nstatus: proposed\n---\n\n# Idea — a paper\n')
+    writeFileSync(join(root, '.project', 'ISSUES.md'), [
+      '## S1 — blockers',
+      '| Id | Pkg | Title | Status | Verified | Detail |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| <a id="fjs-001"></a>FJS-001 | cli | **Paper beside it.** | open | 2026-08-17 | [p](IDEAS/paper.md) |',
+      '| <a id="fjs-002"></a>FJS-002 | cli | **Build output.** | open | 2026-08-17 | [b](../dist/built.css) |',
+      '| <a id="fjs-003"></a>FJS-003 | cli | **Missing paper.** | open | 2026-08-17 | [m](IDEAS/gone.md) |',
+    ].join('\n'))
+    const run = spawnSync('git', ['init', '-q'], { cwd: root })
+    if (run.status !== 0) throw new Error('git init failed')
+  })
+  afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+  test('a link inside the ignored folder is live when the file is on disk', () => {
+    const hits = of(runRegisterCheck({ root, today: TODAY }), 'dead-link')
+    expect(hits.map(h => h.id).sort()).toEqual(['FJS-002', 'FJS-003'])
+  })
+})
+
 // ─── the report ───────────────────────────────────────────────────────────────
 
 describe('the report', () => {

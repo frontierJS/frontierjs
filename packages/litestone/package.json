@@ -121,7 +121,7 @@
   },
   "scripts": {
     "dev": "bun src/tools/cli.js",
-    "test": "bun test test/",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test test/'",
     "test:watch": "bun test --watch test/",
     "test:smoke": "bun test test/cli-smoke.test.ts",
     "test:browser": "node test/browser/verify-browser-client.mjs",

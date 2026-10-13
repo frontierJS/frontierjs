@@ -381,7 +381,7 @@ export async function loadShippingOptions() {
   if (cart.shippingOptions.length) return cart.shippingOptions
   const rows = await required().service('shipping-methods')
     .find({ active: true }, { orderBy: 'position', limit: 20 })
-  _cart.shippingOptions = rows?.data ?? rows ?? []
+  _cart.shippingOptions = rows.data
   return cart.shippingOptions
 }
 

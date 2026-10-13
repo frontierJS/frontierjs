@@ -3,7 +3,7 @@
 // kind their skill works on. Pure: the atlas is a literal, no fli, no disk.
 
 import { describe, expect, test } from 'bun:test'
-import { composePrompt, namedIds, branchSlug, type Atlas } from '../src/core/registers.ts'
+import { composePrompt, namedIds, branchSlug, explainPrompt, type Atlas, type Queued } from '../src/core/registers.ts'
 
 const at = (file: string, line: number) => ({ file, line, href: file, edit: '' })
 
@@ -78,5 +78,27 @@ describe('branchSlug', () => {
     expect(branchSlug(['paper:cross-origin'], () => false)).toBe('paper-cross-origin')
     expect(branchSlug(['FJS-12'], s => s === 'fjs-12' || s === 'fjs-12-2')).toBe('fjs-12-3')
     expect(branchSlug([], () => false)).toBe('discuss')
+  })
+})
+
+describe('explainPrompt', () => {
+  const q: Queued = {
+    id: 'paper:cross-origin', question: 'Cross-origin.', body: 'The store is on another origin.',
+    options: [{ letter: 'A', text: 'a list of origins' }, { letter: 'B', text: 'any origin, a scoped token' }],
+    recommend: { letter: 'B', why: 'a wildcard grants nothing without a credential' },
+    paper: 'paper', status: 'proposed', file: 'IDEAS/paper.md', line: 12,
+  }
+
+  test('the question as argued — id at its line, prose, every option and the recommendation', () => {
+    const p = explainPrompt(q)
+    expect(p).toContain('paper:cross-origin — IDEAS/paper.md:12')
+    expect(p).toContain('**Cross-origin.** The store is on another origin.')
+    expect(p).toContain('- **A** — a list of origins')
+    expect(p).toContain('- **Recommend B** — a wildcard grants nothing without a credential')
+    expect(p).toContain('You are read-only')
+  })
+
+  test('a question with no recommendation says so rather than inventing one', () => {
+    expect(explainPrompt({ ...q, recommend: null })).toContain('No recommendation is written.')
   })
 })

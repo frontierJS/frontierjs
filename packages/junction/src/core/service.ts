@@ -2076,7 +2076,7 @@ export function createBaseService(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, methodGates, methodClaims, transactional } = opts
+  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, scope, methodGates, methodClaims, transactional } = opts
 
   const base = model === null ? overNoModel(name) : createLitestoneBase({
     model,
@@ -2361,6 +2361,9 @@ export function createBaseService(
     // whether your method policy existed, exactly as it once decided whether
     // your row policies did.
     ...(methods !== undefined ? { methods } : {}),
+    // Same reason again, failing closed: a dropped `scope:` refuses every
+    // scoped key at every method of the service (FJS-D916).
+    ...(scope !== undefined ? { scope } : {}),
     // Same reason as `methods` above: createService is where the around hook is
     // installed, so a base that drops this declares a transaction nobody opens.
     ...(transactional !== undefined ? { transactional } : {}),

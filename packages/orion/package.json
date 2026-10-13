@@ -16,7 +16,7 @@
     "./orion.lite": "./db/orion.lite"
   },
   "scripts": {
-    "test": "bun test test",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test test'",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "bench": "bun bench/checkpoint.ts"
   },

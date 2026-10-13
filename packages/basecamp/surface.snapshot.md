@@ -978,13 +978,16 @@ name when it declares none.
 
 ### `registers` · model `registers`
 
-- **methods** — `overview`, `record`, `discuss`, `decide`
-- **custom methods** — `overview`, `record`, `discuss`, `decide`
+- **methods** — `overview`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
+- **custom methods** — `overview`, `record`, `queue`, `explanation`, `discuss`, `decide`, `explain`
 - **who may call** —
   - `overview` — standing 5 or above — declared `gate: 5`
   - `record` — standing 5 or above — declared `gate: 5`
+  - `queue` — standing 5 or above — declared `gate: 5`
+  - `explanation` — standing 5 or above — declared `gate: 5`
   - `discuss` — standing 5 or above — declared `gate: 5`
   - `decide` — standing 5 or above — declared `gate: 5`
+  - `explain` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

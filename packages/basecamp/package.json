@@ -17,7 +17,7 @@
     "build": "bun run build:db && bun run build:web",
     "build:db": "bun db/generate.js --check",
     "build:web": "vite build -c web/config/vite.config.js",
-    "test": "bun test",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test'",
     "verify": "bun web/test/verify.mjs",
     "verify:build": "vite build -c web/config/vite.config.js && bun web/test/verify-build.mjs",
     "image": "node deploy/build.mjs",

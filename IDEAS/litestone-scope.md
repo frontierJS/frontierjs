@@ -163,7 +163,7 @@ written about 87 more times.
     restatement that can drift from the group (§ V's fifth question). C leaves the ruling's third
     sentence (*a new `.lite` word names the axis it serves*) with no artefact, which is the
     `none` answer to § V's ninth question, and the sentence then reads as enforced when it is not.
-- **What happens to `driver jsonl`?** **On hold (owner, 2026-10-08):** not to be built or ruled until the owner reopens it. The measurement below stands.
+- ~~**What happens to `driver jsonl`?**~~ **Answered 2026-10-13 (`FJS-D936`): C — Retire the format as a logging driver. The audit trail moves to its SQLite form; `drivers/jsonl.js`, `jsonl-index.js`, the jsonl half of `retention.js` and `driver logger`/`driver trail` stay in the tree, each flagged NOT IN USE UNTIL FURTHER NOTICE, and no schema declares them. Basecamp, `example` and the prototypes redeclare their audit database (pre-alpha: the old trail files are deleted, not migrated). One engine; the trail gains gates, indexes and migrations, and runs in the browser. Retention becomes a `DELETE` plus incremental vacuum rather than a file rewrite.** **On hold (owner, 2026-10-08):** not to be built or ruled until the owner reopens it. The measurement below stands.
   § 2: a second engine in the language, whose one real user is the audit trail.
   - **A** — Keep both drivers, and move `jsonl` behind the engine seam
     `#sql-engine` already gives `bun:sqlite` and wasm (`FJS-D305`). The core learns

@@ -7,7 +7,7 @@
     "create-frontier": "./index.js"
   },
   "scripts": {
-    "test": "bun test test/create.test.js",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test test/create.test.js'",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {

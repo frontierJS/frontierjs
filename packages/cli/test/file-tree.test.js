@@ -10,7 +10,10 @@ import { spawnSync }                        from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir }                           from 'node:os'
 import { join, resolve }                    from 'node:path'
-import { buildTree, compactTree, renderTree, fileIcon, folderColor, listPaths } from '../core/file-tree.js'
+import {
+  buildTree, compactTree, renderTree, treeDepth, fileIcon, folderColor, listPaths,
+  visibleWidth, buildLanes, layoutLanes, drawLanes,
+} from '../core/file-tree.js'
 
 const FLI = resolve(import.meta.dir, '../bin/fli.js')
 
@@ -102,6 +105,68 @@ describe('icons and colors', () => {
     expect(folderColor('cli/src/routes')).toBe(folderColor('routes'))
     expect(folderColor('.github/workflows')).toBe('#9e9e9e')
     expect(folderColor('shell')).toBe(null)
+  })
+})
+
+describe('lanes', () => {
+  const lane = (name, n) => ({ rows: [name, ...Array.from({ length: n - 1 }, (_, i) => `${name}${i}`)], cont: `${name}+` })
+
+  test('a row is measured in cells — escapes are zero, an emoji is two', () => {
+    expect(visibleWidth('\x1b[1m📂 \x1b]8;;file:///x\x1b\\ab\x1b]8;;\x1b\\\x1b[22m')).toBe(5)
+    expect(visibleWidth('│   ├── x')).toBe(9)
+  })
+
+  test('one lane per top-level folder, then the files at the root', () => {
+    const lanes = buildLanes(buildTree(PATHS), { icons: false })
+    expect(lanes.map(l => l.rows[0])).toEqual(['api', 'db', 'web', 'files'])
+    expect(lanes[0].rows).toEqual(['api', '├── src', '│   └── app.ts', '└── test', '    └── app.test.ts'])
+    expect(buildLanes(buildTree(PATHS), { icons: false, dirsOnly: true }).map(l => l.rows[0])).toEqual(['api', 'db', 'web'])
+  })
+
+  test('at depth 1 every lane is one closed row with its count', () => {
+    const lanes = buildLanes(buildTree(PATHS), { icons: false, depth: 1 })
+    expect(lanes.slice(0, 3).map(l => l.rows)).toEqual([['api (2)'], ['db (2)'], ['web (1)']])
+  })
+
+  test('lanes go down a column, then across, kept whole when that fits the height', () => {
+    // Three columns are 12 cells; at 10 the shortest layout stacks b and c.
+    const layout = layoutLanes([lane('a', 4), lane('b', 2), lane('c', 3)], { width: 10, height: 10 })
+    expect(drawLanes(layout)).toEqual([
+      'a    b',
+      'a0   b0',
+      'a1',
+      'a2   c',
+      '     c0',
+      '     c1',
+    ])
+  })
+
+  test('a lane taller than the screen is cut, and its next piece is headed (cont.)', () => {
+    const layout = layoutLanes([lane('a', 12), lane('b', 2)], { width: 40, height: 6 })
+    expect(layout.height).toBeLessThanOrEqual(8)
+    const cols = layout.columns.map(c => c.cells.map(x => x[0]))
+    expect(cols[1][0]).toBe('a+')
+    expect(cols.flat().filter(r => r && r !== 'a+')).toHaveLength(14)
+  })
+
+  test('two one-row lanes stack with no blank between them', () => {
+    const layout = layoutLanes([lane('a', 1), lane('b', 1), lane('c', 3)], { width: 3, height: 10 })
+    expect(drawLanes(layout)).toEqual(['a', 'b', '', 'c', 'c0', 'c1'])
+  })
+
+  test('nothing fits the width: one column, never a crash', () => {
+    const layout = layoutLanes([lane('wide-lane', 2), lane('other', 2)], { width: 3 })
+    expect(layout.columns).toHaveLength(1)
+  })
+
+  test('columns are padded by cells, so an emoji row lines up', () => {
+    const layout = layoutLanes([{ rows: ['📂 a'], cont: '' }, { rows: ['bbbb'], cont: '' }], { width: 20, height: 1 })
+    expect(drawLanes(layout, { gap: 1 })).toEqual(['📂 a bbbb'])
+  })
+
+  test('treeDepth counts a compacted chain as one level', () => {
+    expect(treeDepth(buildTree(PATHS))).toBe(4)
+    expect(treeDepth(compactTree(buildTree(PATHS)))).toBe(3)
   })
 })
 

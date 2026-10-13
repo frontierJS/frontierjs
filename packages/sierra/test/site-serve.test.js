@@ -35,6 +35,9 @@ const FILES = {
   // A binary a reader seeks into. A prerendered site carries podcast audio,
   // video and fonts, and every one of those is a range request.
   'media/clip.webp':               'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  // A Luminous Heart image: `featured` is eight letters, the shape of a hash,
+  // and the file is replaced at the same path (`FJS-2754`).
+  'media/images/massage-featured.jpg': 'JPEG',
   '404.html':                      '<h1>no such page</h1>',
   // Big enough to be worth compressing — a real prerendered page is.
   'big/index.html':                '<h1>big</h1>' + '<p>lorem ipsum dolor sit amet</p>'.repeat(200),
@@ -117,6 +120,32 @@ describe('the cache answer', () => {
     const res = await get('/assets/my-file-name.js')
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).not.toMatch(/immutable/)
+  })
+
+  test('a word shaped like a hash, outside assets/, is not', async () => {
+    // Replacing this photo reached nobody who had loaded it: a year-long
+    // immutable on a name that never changes.
+    const res = await get('/media/images/massage-featured.jpg')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).not.toMatch(/immutable/)
+  })
+
+  test('a site rooted inside a directory named assets is not all hashed', async () => {
+    // The question is where the file sits IN THE BUILD, so a disk path above
+    // the root must not answer it.
+    const parent = mkdtempSync(join(tmpdir(), 'sierra-site-root-'))
+    const root   = join(parent, 'assets')
+    mkdirSync(join(root, 'media'), { recursive: true })
+    writeFileSync(join(root, 'media', 'hero-A1b2C3d4.jpg'), 'JPEG')
+    const nested = await serveSite({ dir: root })
+    try {
+      const res = await fetch(`${nested.url}/media/hero-A1b2C3d4.jpg`)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).not.toMatch(/immutable/)
+    } finally {
+      await nested.close()
+      rmSync(parent, { recursive: true, force: true })
+    }
   })
 
   test('getting the two backwards is the failure this pairs against', async () => {

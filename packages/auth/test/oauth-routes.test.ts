@@ -13,6 +13,7 @@ import { createTestApp, request } from '@frontierjs/junction'
 import { createAuthPlugin } from '../plugin.ts'
 import { defineProvider, OAUTH_STATE_COOKIE } from '../oauth.ts'
 import { makeAuth, type Harness } from './harness.ts'
+import { totp, TOTP_STEP_SEC } from '../totp.ts'
 
 const PUBLIC_URL = 'https://shop.test'
 
@@ -305,6 +306,68 @@ describe('GET /auth/oauth/{provider}/callback', () => {
     const creds = await h.sys.credential.findMany({ where: { userId: user.id } })
     expect(creds.some((c: any) => c.type === 'password')).toBe(true)
     expect(creds.some((c: any) => String(c.type).startsWith('oauth:'))).toBe(false)
+  })
+
+  // ── an account that owes a second factor (FJS-D915) ──
+  //
+  // A provider click is a first factor like a password. Paired with 'the
+  // matching cookie signs the person in' above: the same callback, on an
+  // account with no factor, ends at a session.
+
+  async function userWithTotp(email: string) {
+    const made = await h.auth.createUser({ email, password: 'correct-horse-1' })
+    await h.sys.user.update({ where: { id: made.userId }, data: { emailVerified: true } })
+    const { secret } = await h.auth.setupTotp!(made.userId, 'correct-horse-1')
+    await h.auth.confirmTotp!(made.userId, totp(secret, new Date()))
+    return { userId: made.userId, secret }
+  }
+
+  async function signInWith(sub: string, email: string) {
+    const state = await startFlow()
+    stubProviderAs(sub, email)
+    return request(app)
+      .get(`/auth/oauth/google/callback?code=c&state=${state}`)
+      .set('cookie', `${OAUTH_STATE_COOKIE}=${state}`)
+  }
+
+  const ticketOf = (res: any) => cookieOf(res).match(/login_challenge=([^;,\s]+)/)?.[1] ?? null
+
+  test('a TOTP account answers a challenge and no session, on the link and on every sign-in after it', async () => {
+    const email = 'route-totp@shop.test'
+    await userWithTotp(email)
+
+    // Branch 4: a verified account, linked on the first provider sign-in.
+    const linked = await signInWith('totp-sub', email)
+    const where  = new URL(String(linked.headers['location']), PUBLIC_URL)
+    expect(where.pathname).toBe('/sign-in')
+    expect(where.searchParams.get('oauth_error')).toBe('code_required')
+    expect(Number.isNaN(Date.parse(String(where.searchParams.get('oauth_expires'))))).toBe(false)
+    expect(cookieOf(linked)).not.toContain('session=')
+    expect(ticketOf(linked)).toBeTruthy()
+
+    // Branch 1: the same subject, seen before.
+    const again = await signInWith('totp-sub', email)
+    expect(new URL(String(again.headers['location']), PUBLIC_URL).searchParams.get('oauth_error')).toBe('code_required')
+    expect(cookieOf(again)).not.toContain('session=')
+  })
+
+  test('the code finishes it through the route a password sign-in uses', async () => {
+    const email = 'route-totp-finish@shop.test'
+    const { secret } = await userWithTotp(email)
+
+    const res    = await signInWith('totp-finish-sub', email)
+    const ticket = ticketOf(res)
+    expect(ticket).toBeTruthy()
+
+    // One step ahead: the confirming code is spent (Credential.totpLastStep).
+    const code = totp(secret, new Date(Date.now() + TOTP_STEP_SEC * 1000))
+    const done = await request(app)
+      .post('/auth/login/challenge')
+      .set('cookie', `login_challenge=${ticket}`)
+      .send({ code })
+
+    expect(done.status).toBe(200)
+    expect(cookieOf(done)).toContain('session=')
   })
 
   test('the state cookie is cleared on the way through', async () => {

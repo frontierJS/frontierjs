@@ -147,7 +147,7 @@ const asAdmin = (path, init = {}) => fetch(`${API}/api${path}`, {
 const stamp = Date.now().toString().slice(-6)
 async function makePaidOrder(suffix) {
   const customers  = await (await asAdmin('/customers?$limit=1')).json()
-  const customerId = (customers?.data ?? customers)[0]?.id
+  const customerId = customers.data[0]?.id
   const created    = await (await asAdmin('/orders', {
     method: 'POST',
     body: JSON.stringify({ reference: `EXT-${stamp}${suffix}`, customerId, total: 42 }),
@@ -317,7 +317,7 @@ check('and the shipped order leaves the despatch queue — the STORE removes it'
 
 const slug = await (async () => {
   const r = await (await asAdmin('/products?active=true&$limit=1')).json()
-  return (r?.data ?? r)[0]?.slug
+  return r.data[0]?.slug
 })()
 
 const pageTarget = await send('Target.createTarget', { url: 'about:blank' })

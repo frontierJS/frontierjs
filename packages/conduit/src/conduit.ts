@@ -5,6 +5,7 @@
 import { X509Certificate }    from 'node:crypto'
 import { createMemoryStore }  from './stores/memory.ts'
 import { createEnvResolver }  from './credentials.ts'
+import { BUILT_IN_SIGNERS }   from './signers.ts'
 import { Resilience, countsAsTargetFault } from './resilience.ts'
 import { Router }             from './router.ts'
 import { createObserverGuard } from './observe.ts'
@@ -230,7 +231,12 @@ export function createConduit(
 ): IConduit {
   const store       = opts.store ?? createMemoryStore()
   const credentials = opts.credentials ?? createEnvResolver()
-  const signers     = opts.signers ?? {}
+  // A connector's signer under a built-in name would replace the standard
+  // scheme for every target that names it, its own vendor's and everyone else's.
+  for (const name of Object.keys(opts.signers ?? {}))
+    if (Object.hasOwn(BUILT_IN_SIGNERS, name))
+      throw new TypeError(`ConduitOptions.signers.${name} replaces conduit's built-in '${name}' signer. Give the connector's own scheme its own name.`)
+  const signers     = { ...BUILT_IN_SIGNERS, ...opts.signers }
   const observers   = opts.observers ?? {}
   // Observers are arbitrary user code. A throwing one must not take down the
   // caller's request: send() documents that it never throws, and a failed
@@ -550,46 +556,84 @@ export function createConduit(
       })
     }
 
-    const transport = await router.resolve(req.target)
-
-    if (!transport) {
+    if (req.signal?.aborted) {
       abort({
-        kind:      'target_not_found',
+        kind:      'aborted',
         target:    req.target,
         protocol:  null,
-        message:   `No target registered: '${req.target}'`,
-        retryable: false
+        message:   'Canceled by the caller before it was opened',
+        retryable: true,
       })
     }
 
-    counters.streams.opened++
-    safe('onStreamStart', () => observers.onStreamStart?.(seen))
-
-    let chunks = 0
-    try {
-      for await (const chunk of transport!.stream(withTrace(req, transport!))) {
-        chunks++
-        yield chunk
-      }
-    } catch (err) {
-      // A stream that drops mid-flight reports through onError, same as a
-      // failed send — previously stream() fired onRequest and nothing else,
-      // so a wedged log tail was invisible to any observability.
-      const conduitErr = err instanceof ConduitStreamError
-        ? err.conduit
-        : {
-            kind:      'stream_error' as const,
-            target:    req.target,
-            protocol:  null,
-            message:   (err as Error).message,
-            retryable: false,
-          }
-      bump(counters.errors, conduitErr.kind, 1)
-      safe('onError', () => observers.onError?.(seen, conduitErr))
-      throw err
+    // Admitted as send() is, and the slot is held until the stream ends: an
+    // open stream is a request the target is still serving, so a breaker that
+    // sheds sends and dials streams would pile those onto a target it had
+    // already judged unwell.
+    const key = req.address === undefined ? req.target : `${req.target} ${originOf(req.address)}`
+    if (key !== req.target) resilience.inherit(key, req.target)
+    const admission = resilience.admit(key)
+    if (!admission.ok) {
+      abort({
+        kind:      admission.kind,
+        target:    req.target,
+        protocol:  null,
+        message:   admission.message,
+        retryable: true,
+      })
     }
 
-    safe('onStreamEnd', () => observers.onStreamEnd?.(seen, chunks))
+    let outcome: 'success' | 'target_fault' | 'other' = 'other'
+    try {
+      const transport = await router.resolve(req.target)
+
+      if (!transport) {
+        abort({
+          kind:      'target_not_found',
+          target:    req.target,
+          protocol:  null,
+          message:   `No target registered: '${req.target}'`,
+          retryable: false
+        })
+      }
+
+      counters.streams.opened++
+      safe('onStreamStart', () => observers.onStreamStart?.(seen))
+
+      let chunks = 0
+      try {
+        for await (const chunk of transport!.stream(withTrace(req, transport!))) {
+          chunks++
+          outcome = 'success'
+          yield chunk
+        }
+      } catch (err) {
+        // A stream that drops mid-flight reports through onError, same as a
+        // failed send — previously stream() fired onRequest and nothing else,
+        // so a wedged log tail was invisible to any observability.
+        const conduitErr = err instanceof ConduitStreamError
+          ? err.conduit
+          : {
+              kind:      'stream_error' as const,
+              target:    req.target,
+              protocol:  null,
+              message:   (err as Error).message,
+              retryable: false,
+            }
+        // An http stream is opened by its first read, so nothing came back
+        // means it was never established.
+        if (chunks === 0) counters.streams.failed++
+        if (countsAsTargetFault(conduitErr.kind) && !outwaited(req, key, conduitErr.kind)) outcome = 'target_fault'
+        bump(counters.errors, conduitErr.kind, 1)
+        safe('onError', () => observers.onError?.(seen, conduitErr))
+        throw err
+      }
+
+      outcome = 'success'
+      safe('onStreamEnd', () => observers.onStreamEnd?.(seen, chunks))
+    } finally {
+      resilience.release(key, outcome)
+    }
   }
 
   async function register(descriptor: TargetDescriptor): Promise<void> {

@@ -55,9 +55,10 @@ export const QUESTION_ID = /\b[A-Z][A-Z0-9]*-D\d+\b/g
 /**
  * Every question the registers hold, ruled ones included, in file order.
  *
- * Each is `{ id, source, file, line, question, state, options, recommend,
- * paper }` where `state` is `ruled` · `decidable` · `open`, `options` is
- * `[{ letter, text }]` and `recommend` is `{ letter, why }` or null.
+ * Each is `{ id, source, file, line, question, body, state, options,
+ * recommend, paper }` where `body` is the bullet's prose after the question,
+ * `state` is `ruled` · `decidable` · `open`, `options` is `[{ letter, text }]`
+ * and `recommend` is `{ letter, why }` or null.
  */
 export function readDecisions(root) {
   const ideas  = ideaQuestions(root)
@@ -164,7 +165,7 @@ function ideaQuestions(root) {
           line:      i + 1,
           question:  lead.question,
           struck:    lead.struck,
-          text:      [top[1]],
+          text:      [lead.rest],
           options:   [],
           recommend: null,
           paper,
@@ -193,22 +194,23 @@ function ideaQuestions(root) {
 }
 
 function finish(q) {
-  const body  = q.text.join(' ')
+  const body  = q.text.join(' ').trim()
   const ruled = q.struck || /\*\*Answered\b/.test(body)
   const state = ruled ? 'ruled' : q.options.length >= 2 ? 'decidable' : 'open'
   const { text, last, struck, ...rest } = q
-  return { ...rest, state }
+  return { ...rest, body, state }
 }
 
-// `**Question?** prose` → the bold lead. A bullet with no bold lead is still a
-// question; its first sentence stands in, so a paper written in plainer prose is
-// queued rather than dropped.
+// `**Question?** prose` → the bold lead, and the prose after it. A bullet with
+// no bold lead is still a question; its first sentence stands in, so a paper
+// written in plainer prose is queued rather than dropped.
 function questionLead(text) {
   const struck = text.match(/^~~\*\*(.+?)\*\*~~/)
-  if (struck) return { question: struck[1].trim(), struck: true }
+  if (struck) return { question: struck[1].trim(), struck: true, rest: text.slice(struck[0].length) }
   const bold = text.match(/^\*\*(.+?)\*\*/)
-  if (bold) return { question: bold[1].trim(), struck: false }
-  return { question: text.split(/(?<=[.?])\s/)[0].trim(), struck: false }
+  if (bold) return { question: bold[1].trim(), struck: false, rest: text.slice(bold[0].length) }
+  const first = text.split(/(?<=[.?])\s/)[0]
+  return { question: first.trim(), struck: false, rest: text.slice(first.length) }
 }
 
 // ─── ISSUES ───────────────────────────────────────────────────────────────────
@@ -230,6 +232,7 @@ function issueQuestions(root) {
       file:      r.file,
       line:      r.line,
       question:  firstSentence(r.title ?? ''),
+      body:      '',
       state:     'open',
       options:   [],
       recommend: null,

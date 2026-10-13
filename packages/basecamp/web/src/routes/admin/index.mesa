@@ -56,19 +56,17 @@ title: Members
   // the ladder core/gate.ts grades on.
   $: grantable = myRole ? roles.slice(0, roles.indexOf(myRole) + 1) : roles
 
-  const rowsOf = (result) => Array.isArray(result) ? result : result?.data ?? []
-
   async function load() {
     error = null; loading = true
     try {
       // `members` is a custom method on the workspaces service — the workspace
       // is ctx.id, which is why that one service needs no X-Workspace-Id.
-      members = rowsOf(await workspaces.service.invoke('members', session.workspaceId))
+      members = (await workspaces.service.invoke('members', session.workspaceId)).data
       // Invitations are gated at read 5, so a developer looking at this screen
       // gets a refusal here and a members list all the same. Swallowed rather
       // than raised for that reason: an empty pending list is the truthful
       // answer for somebody who may not see them.
-      pending = await invitations.load().then(rowsOf).then(rows => (canInvite = true, rows)).catch(() => (canInvite = false, []))
+      pending = await invitations.load().then(rows => (canInvite = true, rows)).catch(() => (canInvite = false, []))
     } catch (e) {
       error = e.message
     } finally {

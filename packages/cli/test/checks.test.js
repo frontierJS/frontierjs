@@ -648,6 +648,67 @@ describe('the router speaks pathname and search (FJS-1083)', () => {
   })
 })
 
+describe('a @frontierjs import names a subpath its package exports', () => {
+  // A stand-in package, so the exports map under test is the one written here.
+  const PKG = {
+    'node_modules/@frontierjs/kit/package.json': JSON.stringify({
+      name: '@frontierjs/kit',
+      exports: { '.': './src/index.js', './resource': './src/resource/index.js',
+                 './components/*': './src/components/*.mesa', './components/internal': null },
+    }),
+    'node_modules/@frontierjs/kit/src/resource/local-db.js': 'export const x = 1\n',
+  }
+  const app = (name, files) => tree(name, { 'package.json': '{}', ...PKG, ...files })
+  const route = (body) => `<script>\n  ${body}\n</script>\n`
+
+  test('a retired subpath is an error that lists what is exported', () => {
+    const root = app('ise-retired', { 'web/src/routes/a.mesa': route("import { createResource } from '@frontierjs/kit/junction'") })
+    const { findings } = only(root, 'import-subpath-exported')
+    expect(findings.length).toBe(1)
+    expect(findings[0].line).toBe(2)
+    expect(findings[0].message).toMatch(/exports: \., \.\/resource, \.\/components\/\*/)
+  })
+
+  test('a test file, which no build reaches, is read too', () => {
+    const root = app('ise-test', { 'api/test/a.test.ts': "import { x } from '@frontierjs/kit/junction'\n" })
+    expect(only(root, 'import-subpath-exported').findings.length).toBe(1)
+  })
+
+  test('a relative path into node_modules whose file is gone is an error', () => {
+    const root = app('ise-deep', { 'api/test/a.test.ts':
+      "import { a } from '../../node_modules/@frontierjs/kit/src/junction/local-db.js'\n" +
+      "import { b } from '../../node_modules/@frontierjs/kit/src/resource/local-db.js'\n" })
+    const { findings } = only(root, 'import-subpath-exported')
+    expect(findings.map(f => f.line)).toEqual([1])
+  })
+
+  test('an exported subpath, a pattern match, a query and the root fire nothing', () => {
+    const root = app('ise-ok', { 'web/src/routes/a.mesa': route([
+      "import { a } from '@frontierjs/kit'",
+      "import { b } from '@frontierjs/kit/resource'",
+      "import B from '@frontierjs/kit/components/Button'",
+      "import css from '@frontierjs/kit/resource?raw'",
+      "const c = await import('@frontierjs/kit/resource')",
+    ].join('\n  ')) })
+    expect(only(root, 'import-subpath-exported').findings).toEqual([])
+  })
+
+  test('a null carve-out under a pattern is not exported', () => {
+    const root = app('ise-null', { 'web/src/routes/a.mesa': route("import I from '@frontierjs/kit/components/internal'") })
+    expect(only(root, 'import-subpath-exported').findings.length).toBe(1)
+  })
+
+  test('a package not installed is not graded', () => {
+    // Without the manifest there is no authority, and a guess would fire on
+    // every app that has not run `bun install`.
+    const root = tree('ise-none', { 'package.json': '{}',
+      'web/src/routes/a.mesa': route("import { x } from '@frontierjs/kit/junction'") })
+    const res = only(root, 'import-subpath-exported')
+    expect(res.findings).toEqual([])
+    expect(res.skipped.length).toBe(1)
+  })
+})
+
 describe('a co-located part that names a folder (FJS-D250)', () => {
   // The rule grades a CLAIM, not a convention: sierra rules the roles of a
   // route file and says nothing about what a component is called, and neither
@@ -2309,6 +2370,44 @@ describe('detail-read-dead', () => {
       'api/src/services/x.ts': "let row\nrow = await orders.service.get(1)\n",
     })
     expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+})
+
+describe('envelope-hedge', () => {
+  const screen = (body) => ({ ...CLEAN, 'web/src/pages/x.mesa': body })
+  const script = (line) => screen(`<script>\n  async function load() {\n    ${line}\n  }\n</script>\n`)
+
+  test('a value read as the envelope OR itself is reported', () => {
+    const root = tree('eh-or-self', script('rows = answer?.data ?? answer ?? []'))
+    const { findings } = only(root, 'envelope-hedge')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/FJS-D937/)
+    expect(findings[0].message).toMatch(/findData\(\)/)
+  })
+
+  test('an Array.isArray guard over the same value is the same guess', () => {
+    const root = tree('eh-isarray', script('rows = Array.isArray(raw) ? raw : (raw?.data ?? [])'))
+    expect(only(root, 'envelope-hedge').findings).toHaveLength(1)
+  })
+
+  test('a member path counts as one value', () => {
+    const root = tree('eh-path', script('rows = res.body?.data ?? res.body'))
+    expect(only(root, 'envelope-hedge').findings).toHaveLength(1)
+  })
+
+  test('a guard over a call caught to null is left alone — text cannot tell it from a guess', () => {
+    const root = tree('eh-null-guard', script('rows = list?.data ?? []'))
+    expect(only(root, 'envelope-hedge').findings).toEqual([])
+  })
+
+  test('falling back to a DIFFERENT member of the same value is not a hedge', () => {
+    const root = tree('eh-error-body', script('errs = err?.data ?? err?.errors ?? []'))
+    expect(only(root, 'envelope-hedge').findings).toEqual([])
+  })
+
+  test('falling back to a longer name that starts the same is not the value', () => {
+    const root = tree('eh-prefix', script('rows = r?.data ?? rows'))
+    expect(only(root, 'envelope-hedge').findings).toEqual([])
   })
 })
 

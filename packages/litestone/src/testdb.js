@@ -19,27 +19,13 @@ import { generateDDL, generateDDLForDatabase } from './core/ddl.js'
 import { splitStatements }                     from './core/migrate.js'
 import { migrationStatements }                 from './core/migrations.js'
 import { openDatabase }                        from './core/engine.js'
-import { mkdirSync, copyFileSync, existsSync, rmSync, readdirSync, statSync } from 'fs'
+import { copyFileSync, existsSync, rmSync, readdirSync, statSync } from 'fs'
 import { join, resolve }                       from 'path'
-import { tmpdir }                              from 'os'
+import { tempDir }                             from './tmp-dirs.js'
 
 // schemaText → { dir, files: { dbName: filename } }. Per process: a bun test
 // file is its own process, so nothing here is shared across parallel files.
 const templates = new Map()
-
-let cleanupRegistered = false
-
-function registerCleanup() {
-  if (cleanupRegistered) return
-  cleanupRegistered = true
-  // One listener for every template this process built. Registering per
-  // template hits the max-listeners warning on a suite with many schemas.
-  process.on('exit', () => {
-    for (const { dir } of templates.values()) {
-      try { rmSync(dir, { recursive: true, force: true }) } catch {}
-    }
-  })
-}
 
 function applyDDL(file, ddl) {
   const raw = openDatabase(file)
@@ -123,8 +109,9 @@ function applyMigrations(file, files) {
 }
 
 function buildTemplate(schema, schemaText, migrations) {
-  const dir = join(tmpdir(), `litestone-template-${process.pid}-${templates.size}`)
-  mkdirSync(dir, { recursive: true })
+  // Reaped by the next run on the way in: an 'exit' handler never fires under
+  // bun test, and one that removed these left 1540 behind in a day (FJS-2762).
+  const dir = tempDir('litestone-template-')
 
   const declared = schema.databases ?? []
   const files    = {}
@@ -150,7 +137,6 @@ function buildTemplate(schema, schemaText, migrations) {
 
   const template = { dir, files }
   templates.set(templateKey(schemaText, migrations), template)
-  registerCleanup()
   return template
 }
 

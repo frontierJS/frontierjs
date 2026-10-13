@@ -71,7 +71,7 @@ title: Activity
       // caller's problem today (junction FJS-020), so the same tolerant read
       // the admin screen uses rather than a second guess at the envelope.
       const raw = await workspaces.service.invoke('members', session.workspaceId)
-      const members = Array.isArray(raw) ? raw : raw?.data ?? []
+      const members = raw.data
       people = Object.fromEntries(members.map(m => [m.userId, m.user?.name || m.user?.email || m.userId]))
     } catch {
       // Not fatal — without it the feed still reads, with ids instead of names.
@@ -87,7 +87,7 @@ title: Activity
       let fleet = []
       try {
         const raw = await servers.service.invoke('feed', null, null, { limit: FEED_CAP })
-        fleet = (Array.isArray(raw) ? raw : raw?.data ?? []).map(e => ({
+        fleet = raw.data.map(e => ({
           id:          `srv-${e.id}`,
           createdAt:   e.createdAt,
           actorId:     null,

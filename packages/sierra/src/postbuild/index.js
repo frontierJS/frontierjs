@@ -11,7 +11,7 @@
  *
  * Conditional:
  *   5. llms          — generate llms.txt (when config.llms is true or 'auto')
- *   6. speculation   — inject Speculation Rules into index.html
+ *   6. speculation   — hover-prerender Speculation Rules on every page (static)
  *   7. deferJS       — defer script tags in index.html
  *   8. theme         — the pre-paint theme script (if config.theme)
  *   8b. analytics    — the vendor tag on every prerendered page (static, if config.analytics)
@@ -124,19 +124,10 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
     if (rMd) results.push(rMd)
   }
 
-  // 7. Speculation Rules (conditional — when static routes exist)
-  if (config.speculationRules !== false) {
-    // Same reason as the sitemap: on a static target the pages a dynamic route
-    // produced are real URLs and belong here. The `:`/`*` filter still applies
-    // — a prerendered URL is concrete by construction, so it removes nothing
-    // there, and on an SPA it is doing the work it always did (`FJS-502`).
-    const staticRoutes = indexed.filter(
-      p => !p.includes(':') && !p.includes('*')
-    )
-    if (staticRoutes.length > 0) {
-      const rSpec = await injectSpeculationRules(staticRoutes, outDir)
-      if (rSpec) results.push(rSpec)
-    }
+  // 7. Speculation Rules (static only — an SPA's router owns its hover prefetch)
+  if (config.speculationRules !== false && prerenderedUrls) {
+    const rSpec = await injectSpeculationRules(outDir)
+    if (rSpec) results.push(rSpec)
   }
 
   // 8. Defer JS (conditional)

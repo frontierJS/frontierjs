@@ -29,7 +29,6 @@ title: Run
   $: (page.params, session.level)
 
   const TONE = { completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted', skipped: 'muted' }
-  const rowsOf = (v) => Array.isArray(v) ? v : v?.data ?? []
 
   let run     = null
   let row     = null
@@ -47,7 +46,7 @@ title: Run
   }
 
   async function loadSteps() {
-    steps = rowsOf(await runs.service.invoke('steps', page.params.runId))
+    steps = await runs.service.invoke('steps', page.params.runId)
     seen  = run?.status ?? null
   }
 

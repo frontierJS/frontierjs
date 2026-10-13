@@ -188,12 +188,31 @@ describe('what the generators write', () => {
   })
 
   // Nothing between <main class="screen"> and a page's components carries a
-  // vertical gap, so flat siblings put the filter bar flush on the table.
-  test('a generated page wraps its markup in one .stack', () => {
+  // vertical gap, so flat siblings put the filter bar flush on the table. A
+  // .stack spaces its children, and so does a .container (cards.css), which
+  // the create and edit pages use to hold a form to a readable width.
+  // window.confirm is a native dialog no theme reaches, and the kit's other
+  // form, data-confirm, answers only under a ConfirmProvider the layout may not
+  // mount -- where it is absent, the click deletes without asking.
+  test('a generated delete asks through ConfirmationPopover', () => {
+    let asked = 0
+    for (const [what, source] of Object.entries(GENERATED)) {
+      const code = source.replace(/\/\/.*$/gm, '')
+      expect(code, `${what} calls window.confirm`).not.toMatch(/\bconfirm\(/)
+      if (!/>Delete<\/Button>|deleteLabel|>Delete</.test(source)) continue
+      if (!source.includes('service.remove(')) continue
+      asked++
+      expect(source, `${what} deletes without asking`).toContain('<ConfirmationPopover')
+      expect(source, `${what} names the popover it renders`).toContain("from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'")
+    }
+    expect(asked, 'no generated page deletes at all').toBeGreaterThan(0)
+  })
+
+  test('a generated page wraps its markup in one block that spaces its children', () => {
     for (const [what, source] of Object.entries(GENERATED)) {
       if (!source.includes('<SectionHeader')) continue
       const markup = source.slice(source.lastIndexOf('</script>') + 9).trim()
-      expect(markup.startsWith('<div class="stack">'), `${what} has no .stack around its body`).toBe(true)
+      expect(/^<div class="(stack|container narrow)">/.test(markup), `${what} has no .stack or .container around its body`).toBe(true)
       expect(markup.endsWith('</div>'), `${what} closes its .stack early`).toBe(true)
     }
   })
@@ -267,7 +286,7 @@ describe('the moves a row may make', () => {
     for (const [what, source] of pages.filter(([w]) => /edit|detail/.test(w))) {
       expect(source, what).toMatch(/const nameOf = \(rec\) => \(rec && \w+\.labelSource !== 'fallback' && rec\[\w+\.labelField\]\) \|\| null/)
       expect(source, what).toMatch(/<SectionHeader title=\{nameOf\(record\) \?\? '[^']+ ' \+ id\}/)
-      expect(source, what).toContain("confirm('Delete ' + (nameOf(record) ?? id) + '?')")
+      expect(source, what).toContain("<ConfirmationPopover title={'Delete ' + (nameOf(record) ?? id) + '?'}")
     }
   })
 

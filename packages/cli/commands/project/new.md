@@ -1820,7 +1820,9 @@ title: Sign in
   }
 ${sc}
 
-<div class="auth-card card stack gap-md">
+<!-- A <form>, so Enter in either box signs in. Buttons that do not submit say
+     type="button", or Enter would press the first of them. -->
+<form class="auth-card card stack gap-md" on:submit|preventDefault={session.awaitingCode ? handleCode : handleSubmit}>
   <h1 class="text-xl">Sign in</h1>
 
   {#if error}
@@ -1830,14 +1832,14 @@ ${sc}
   {#if session.awaitingCode}
     <p class="text-sm text-muted">Enter the code from your authenticator app, or one of your recovery codes.</p>
     <input class="field" bind:value={code} autocomplete="one-time-code" inputmode="numeric" placeholder="123456" aria-label="Code" />
-    <button class="btn primary" on:click={handleCode} disabled={loading}>
+    <button class="btn primary" type="submit" disabled={loading}>
       {loading ? 'Checking…' : 'Verify'}
     </button>
-    <button class="btn ghost" on:click={startOver} disabled={loading}>Start over</button>
+    <button class="btn ghost" type="button" on:click={startOver} disabled={loading}>Start over</button>
   {:else}
     <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
     <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
-    <button class="btn primary" on:click={handleSubmit} disabled={loading}>
+    <button class="btn primary" type="submit" disabled={loading}>
       {loading ? 'Signing in…' : 'Sign in'}
     </button>
 
@@ -1858,7 +1860,7 @@ ${sc}
       </div>
     </div>
   {/if}
-</div>
+</form>
 
 <style>
   .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
@@ -1922,7 +1924,7 @@ title: Reset your password
   })
 ${sc}
 
-<div class="auth-card card stack gap-md">
+<form class="auth-card card stack gap-md" on:submit|preventDefault={token() ? confirm : request}>
   <h1 class="text-xl">Reset your password</h1>
 
   {#if error}
@@ -1937,7 +1939,7 @@ ${sc}
   {:else if token()}
     <input class="field" bind:value={password} type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
     <input class="field" bind:value={again}    type="password" placeholder="The same again"   aria-label="The same again"   autocomplete="new-password" />
-    <button class="btn primary" on:click={confirm} disabled={busy}>
+    <button class="btn primary" type="submit" disabled={busy}>
       {busy ? 'Saving…' : 'Set password'}
     </button>
   {:else if sent}
@@ -1955,12 +1957,12 @@ ${sc}
   {:else}
     <p class="text-sm text-muted">Enter the address you sign in with and we will send a link to set a new password.</p>
     <input class="field" bind:value={email} type="email" placeholder="Email" aria-label="Email" autocomplete="email" />
-    <button class="btn primary" on:click={request} disabled={busy || !email.trim()}>
+    <button class="btn primary" type="submit" disabled={busy || !email.trim()}>
       {busy ? 'Sending…' : 'Send reset link'}
     </button>
     <a class="link text-sm" href="/login/">Back to sign in</a>
   {/if}
-</div>
+</form>
 
 <style>
   .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
@@ -2070,16 +2072,18 @@ ${sc}
         <dt>Email</dt>
         <dd>{session.user.email}</dd>
       </dl>
-${withName ? `      <input class="field" bind:value={name} placeholder="Your name" aria-label="Name" autocomplete="name" />
-      <button class="btn primary" on:click={saveName} disabled={busy}>Save name</button>
+${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveName}>
+        <input class="field" bind:value={name} placeholder="Your name" aria-label="Name" autocomplete="name" />
+        <button class="btn primary" type="submit" disabled={busy}>Save name</button>
+      </form>
 ` : ``}    </section>
 
-    <section class="card stack gap-sm">
+    <form class="card stack gap-sm" on:submit|preventDefault={changePassword}>
       <h2 class="text-lg">Password</h2>
       <input class="field" bind:value={current} type="password" placeholder="Current password" aria-label="Current password" autocomplete="current-password" />
       <input class="field" bind:value={next}    type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
-      <button class="btn primary" on:click={changePassword} disabled={busy || !current || !next}>Change password</button>
-    </section>
+      <button class="btn primary" type="submit" disabled={busy || !current || !next}>Change password</button>
+    </form>
   </div>
 
   <section class="card stack gap-sm sessions">
@@ -2149,7 +2153,7 @@ title: Create an account
   }
 ${sc}
 
-<div class="auth-card card stack gap-md">
+<form class="auth-card card stack gap-md" on:submit|preventDefault={handleSubmit}>
   <h1 class="text-xl">Create an account</h1>
 
   {#if error}
@@ -2159,12 +2163,12 @@ ${sc}
   <input class="field" bind:value={name}     type="text"     placeholder="Name"     aria-label="Name" />
   <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
   <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
-  <button class="btn primary" on:click={handleSubmit} disabled={loading}>
+  <button class="btn primary" type="submit" disabled={loading}>
     {loading ? 'Creating…' : 'Create account'}
   </button>
 
   <p class="text-sm text-muted">Already have one? <a class="link" href="/login/">Sign in</a></p>
-</div>
+</form>
 
 <style>
   .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }

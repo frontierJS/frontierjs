@@ -924,6 +924,11 @@ function coverage() {
       missing.push(dir)
       continue
     }
+    // FJS-2762: a suite writes under $TMPDIR and much of it is never removed;
+    // outside tmp-run.mjs that lands in /tmp, where nothing reaps it.
+    if (hasTest && !/^node (\.\.\/)+scripts\/tmp-run\.mjs '/.test(pkg.scripts.test)) {
+      fail(`${dir}'s \`test\` script does not run inside scripts/tmp-run.mjs — write it as node <path to>/scripts/tmp-run.mjs '<command>'.`)
+    }
     if (pkg && !pkg.scripts?.typecheck && !(dir in exempt)) {
       note(`${dir} has no \`typecheck\` script — Invariant 14's ratchet cannot see it.`)
     }

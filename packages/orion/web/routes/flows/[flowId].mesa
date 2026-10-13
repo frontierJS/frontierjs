@@ -56,7 +56,6 @@ title: Flow
   const TONE = { draft: 'muted', active: 'success', paused: 'warning', archived: 'muted', completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted' }
 
   // A list result may arrive as the envelope or as the rows.
-  const rowsOf = (v) => Array.isArray(v) ? v : v?.data ?? []
 
   let flow     = null
   let row      = null
@@ -84,7 +83,7 @@ title: Flow
   }
 
   async function loadDefinition() {
-    versions = rowsOf(await flows.service.invoke('versions', page.params.flowId))
+    versions = await flows.service.invoke('versions', page.params.flowId)
     if (flow?.currentVersion == null) { source = source || JSON.stringify({ name: flow?.name ?? '', nodes: { t: { id: 't', type: 'trigger.manual', config: {} } }, edges: [] }, null, 2); return }
     const file = await flows.service.invoke('export', page.params.flowId)
     source = JSON.stringify(file.definition, null, 2)
@@ -93,14 +92,14 @@ title: Flow
   async function loadRuns() {
     if (!versions.length) { recent = []; return }
     const found = await runs.service.find({ flowVersionId: { in: versions.map(v => v.id) } }, { orderBy: '-createdAt', limit: 20 })
-    recent = rowsOf(found)
+    recent = found.data
   }
 
   // A catalog that did not arrive is said once, where the inspector would be.
   // It is not an error on the page: everything else here works without it, and
   // the definition is still editable as the document it is.
   async function loadTypes() {
-    try { types = rowsOf(await flows.service.invoke('nodeTypes')) }
+    try { types = await flows.service.invoke('nodeTypes') }
     catch (e) { typesError = e.message }
   }
 

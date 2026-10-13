@@ -43,7 +43,7 @@
     "test:phase5": "node test/phase5.test.js",
     "test:phase6": "node test/phase6.test.js",
     "test:phase7": "node test/phase7.test.js",
-    "test": "node test/phase0.test.js && node test/phase1.test.js && node test/phase2.test.js && node test/phase2.5.test.js && bun test/phase3.test.js && node test/phase4.test.js && node test/phase5.test.js && node test/phase6.test.js && node test/phase7.test.js && node test/phase8.test.js && node test/phase9.test.js && node test/audit-relay.test.js",
+    "test": "node ../../scripts/tmp-run.mjs 'node test/phase0.test.js && node test/phase1.test.js && node test/phase2.test.js && node test/phase2.5.test.js && bun test/phase3.test.js && node test/phase4.test.js && node test/phase5.test.js && node test/phase6.test.js && node test/phase7.test.js && node test/phase8.test.js && node test/phase9.test.js && node test/audit-relay.test.js'",
     "test:bun:phase0": "bun test/phase0.test.js",
     "test:bun:phase1": "bun test/phase1.test.js",
     "test:bun:phase2": "bun test/phase2.test.js",

@@ -50,7 +50,13 @@ vi.mock('@frontierjs/sierra/resource', () => ({
           const release = registry.node(model, id).hold()
           const held = registry.peek(model, id)?.get()
           const ready = held != null ? Promise.resolve(held) : load()
-          return { id, ready, release }
+          const get   = () => registry.peek(model, id)?.get() ?? null
+          return {
+            id, ready, release, get,
+            error:     () => null,
+            subscribe: (fn) => { fn(get()); return () => {} },
+            refresh:   async () => get(),
+          }
         },
       }
     },

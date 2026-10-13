@@ -30,6 +30,9 @@ beforeAll(async () => {
   DIR = mkdtempSync(join(tmpdir(), 'sierra-widgets-'))
   mkdirSync(join(DIR, 'assets'))
   writeFileSync(join(DIR, 'buy-button.js'), 'console.log(1)')
+  // An entry whose last word is eight letters — hash-shaped, and the one file
+  // a host page can never be told has changed (`FJS-2754`).
+  writeFileSync(join(DIR, 'cta-featured.js'), 'console.log(4)')
   writeFileSync(join(DIR, 'big.js'), BIG)
   writeFileSync(join(DIR, 'logo.png'), Buffer.alloc(4096, 7))
   // One file per type a widget bundle can legitimately reference and that
@@ -104,7 +107,7 @@ describe('what it serves', () => {
     // hashed is cached for a year and the only way back is to rename the file.
     // Repeating the extension segment must not loosen that — `my-file-name` is
     // refused on the same eight characters either way.
-    for (const path of ['/buy-button.js', '/assets/my-file-name.js.map']) {
+    for (const path of ['/buy-button.js', '/cta-featured.js', '/assets/my-file-name.js.map']) {
       expect((await get(path)).headers.get('cache-control'), path)
         .not.toMatch(/immutable/)
     }

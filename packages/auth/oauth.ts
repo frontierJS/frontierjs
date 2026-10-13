@@ -440,6 +440,11 @@ export async function fetchIdentity(
 export type OAuthResolution =
   | { outcome: 'signed-in';      token: string; user: import('@frontierjs/junction').SessionContext }
   /**
+   * The provider is a first factor like a password (`FJS-D915`), so an account
+   * with a confirmed second factor gets `login()`'s challenge and no session.
+   */
+  | { outcome: 'code-required';  challenge: string; expiresAt: string }
+  /**
    * Nobody has proved this address: the provider did not vouch for it, or the
    * account holding it never verified it, so there is nothing to create or
    * link to safely. NOT an error — it is a legitimate state with a way out,
@@ -469,10 +474,7 @@ export interface AuthOAuth {
 
   oauthResolve(providerName: string, identity: OAuthIdentity): Promise<OAuthResolution>
 
-  confirmOAuthLink(token: string, providerName: string, identity: OAuthIdentity): Promise<{
-    token: string
-    user:  import('@frontierjs/junction').SessionContext
-  }>
+  confirmOAuthLink(token: string, providerName: string, identity: OAuthIdentity): Promise<import('@frontierjs/junction').LoginResult>
 
   listConnections(userId: string): Promise<Array<{ id: string; provider: string; createdAt: string }>>
   removeConnection(userId: string, credentialId: string): Promise<{ id: string }>

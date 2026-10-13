@@ -77,7 +77,7 @@ title: Networking
 
   async function loadMembers(id) {
     const raw = await networks.service.invoke('members', id)
-    members = { ...members, [id]: Array.isArray(raw) ? raw : raw?.data ?? [] }
+    members = { ...members, [id]: raw.data }
   }
 
   load()

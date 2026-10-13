@@ -12,20 +12,24 @@
 //   GET  /registers          overview  every open row, open question and ruling, without bodies
 //   GET  /registers/:id      record    every record holding that id, whole
 //   POST /registers          discuss   { text, intent, branch? } — a workbench send to this checkout or a new branch of it
-//   POST /registers/:id      decide    { pick, why?, section } — fli's own `decide`, under the register guard
+//   POST /registers/:id      decide    { pick, why?, section } — fli's own `decide`
+//   GET  /registers          queue     every question with lettered options, in `fli decide`'s order, with its prose
+//   POST /registers/:id      explain   { ask? } — Claude, read-only, on one of them; a follow-up resumes its session
+//   GET  /registers/:id      explanation  what that run has said so far
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { localMachineRefusal }     from '../../core/env.ts'
+import { env, localMachineRefusal } from '../../core/env.ts'
 import { branchName }              from '../../core/workbench-branch.ts'
 import {
   loadFli, registerRoot, readAtlas, forgetAtlas, recordsFor, composePrompt, branchSlug,
+  readQueue, explain, explanationOf,
 } from '../../core/registers.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
-const READS  = ['overview', 'record']
-const WRITES = ['discuss', 'decide']
+const READS  = ['overview', 'record', 'queue', 'explanation']
+const WRITES = ['discuss', 'decide', 'explain']
 
 export function createRegistersService(app: BasecampApp) {
   async function workspace() {
@@ -80,6 +84,25 @@ export function createRegistersService(app: BasecampApp) {
       return { id, ...found }
     },
 
+    async queue() {
+      return readQueue(await workspace())
+    },
+
+    async explain() {
+      const root = await workspace()
+      const id   = String($.id ?? '')
+      const q    = (await readQueue(root)).questions.find(x => x.id === id)
+      if (!q) throw new NotFound(`'${id}' is not a question with options waiting on a ruling`)
+      const out = await explain(root, q, { ask: body().ask, bin: env.CLAUDE_BIN })
+      if ('refused' in out) throw new Conflict(out.refused)
+      return out
+    },
+
+    async explanation() {
+      await workspace()
+      return explanationOf(String($.id ?? ''))
+    },
+
     async discuss() {
       const root  = await workspace()
       const input = body()
@@ -109,13 +132,13 @@ export function createRegistersService(app: BasecampApp) {
       const root = await workspace()
       const f    = await loadFli()
       const b    = body()
-      const out  = f.withRegisterGuard(root, () => f.decide({
+      const out  = f.decide({
         root,
         id:      String($.id ?? ''),
         pick:    String(b.pick ?? ''),
         why:     String(b.why ?? ''),
         section: String(b.section ?? ''),
-      }))
+      })
       if (!out.ok) throw new BadRequest(out.reason)
       forgetAtlas()
       return out

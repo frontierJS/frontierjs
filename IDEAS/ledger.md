@@ -316,7 +316,7 @@ behavior, when built, to `packages/litestone/docs/schema.md`.
 
 ## Open questions
 
-- **Q1 — Is a balance a column trait the engine keeps at write, or does `@from` stay the only aggregate?**
+- ~~**Q1 — Is a balance a column trait the engine keeps at write, or does `@from` stay the only aggregate?**~~ **Answered 2026-10-13 (`FJS-D935`): A — `@balance(Model, sum: field | count: true)`: stored, kept by triggers, refused below any constraint the column declares, and the source derived append-only.**
   `@from` is correct for every number nobody writes against. The two ledgers in
   `example` both need a refusal at the moment an entry lands, which a read-time
   aggregate cannot make.

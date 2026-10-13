@@ -51,7 +51,8 @@ import { watchProxy } from '@frontierjs/mesa/runtime'
  * @property {string|null} oauthMessage  the same thing in words, for rendering.
  *                                `OAUTH_ERRORS` is the table and it is one
  *                                owner, so five apps do not write five switches
- * @property {string|null} awaitingCode  a password was accepted and a second
+ * @property {string|null} awaitingCode  a first factor was accepted (a password,
+ *                                a magic link or a provider) and a second
  *                                factor is owed — the ISO instant the attempt
  *                                lapses at, or null. It is what a sign-in page
  *                                renders the code box from, and it is REACTIVE
@@ -107,7 +108,11 @@ export function initSession(client) {
   // authenticated caller to sign-in (FJS-474). Signing in worked, which is what
   // hid it: `_adopt` handles the no-token answer and `refresh()` runs on the way
   // through, so the app behaved correctly until the first reload.
-  if (!client.hasCredential) {
+  //
+  // An OAuth sign-in that owes its code also has nothing to restore: the
+  // callback set a challenge cookie and no session, and the 401 a refresh would
+  // get clears `awaitingCode` before the page can render the box.
+  if (!client.hasCredential || _w.awaitingCode) {
     _w.checked = true
     _resolveReady()
     return
@@ -398,8 +403,18 @@ function takeOAuthError() {
   const code = url.searchParams.get('oauth_error')
   if (!code) return
 
-  _w.oauthError   = code
-  _w.oauthMessage = oauthErrorMessage(code)
+  // Not an error: the provider was the first factor and the account owes its
+  // code (FJS-D915). It lands on the state a password's challenge sets, so a
+  // page that renders a code box for one renders it for the other, and
+  // `submitCode()` finishes it. Read as an error it would put *enter your code*
+  // on a page with no box to type it in.
+  if (code === 'code_required') {
+    _w.awaitingCode = url.searchParams.get('oauth_expires')
+  } else {
+    _w.oauthError   = code
+    _w.oauthMessage = oauthErrorMessage(code)
+  }
   url.searchParams.delete('oauth_error')
+  url.searchParams.delete('oauth_expires')
   history.replaceState(history.state, '', url.pathname + url.search + url.hash)
 }

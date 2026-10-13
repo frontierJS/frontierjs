@@ -27,6 +27,11 @@
 // already written down, and overruling it without saying why leaves a ruling
 // whose reason nobody can recover.
 //
+// Both acts hold `withRegisterGuard`, as `file`/`close`/`amend` do: a pick reads
+// `DECISIONS.md`, mints the next id and writes it back, so two at once keep one
+// ruling and issue its id twice. The guard is not reentrant — a caller must not
+// take it around these.
+//
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -35,7 +40,7 @@ import { join, relative }                                      from 'node:path'
 import { readDecisions, rulingSections, QUESTION_ID } from './decisions.js'
 import { moveToClosed }                from './close.js'
 import { errorKeys, newErrors }          from './register-check.js'
-import { readRegisters, registerLayout } from './registers.js'
+import { readRegisters, registerLayout, withRegisterGuard } from './registers.js'
 
 const WHY_MAX = 2000
 
@@ -48,7 +53,11 @@ const LEAD_ID = /^`?[A-Z][A-Z0-9]*-D\d+`?\s*[—–:-]\s*/
  * Answers `{ ok: true, ruling, files }` or `{ ok: false, reason }` — a refusal
  * is an answer rather than a throw, because both callers show it to a person.
  */
-export function decide({ root, id, pick, why = '', section, today = new Date() }) {
+export function decide(opts) {
+  return withRegisterGuard(opts.root, () => decideUnguarded(opts))
+}
+
+function decideUnguarded({ root, id, pick, why = '', section, today = new Date() }) {
   const q = readDecisions(root).find(d => d.id === id)
   if (!q)                     return refuse(`no question has the id ${id}`)
   if (q.state === 'ruled')    return refuse(`${id} is already ruled`)
@@ -118,7 +127,11 @@ export function decide({ root, id, pick, why = '', section, today = new Date() }
  *
  * Answers `{ ok: true, ruling, question, files }` or `{ ok: false, reason }`.
  */
-export function settle({ root, id, by, why = '', today = new Date() }) {
+export function settle(opts) {
+  return withRegisterGuard(opts.root, () => settleUnguarded(opts))
+}
+
+function settleUnguarded({ root, id, by, why = '', today = new Date() }) {
   const q = readDecisions(root).find(d => d.id === id)
   if (!q)                  return refuse(`no question has the id ${id}`)
   if (q.state === 'ruled') return refuse(`${id} is already ruled`)

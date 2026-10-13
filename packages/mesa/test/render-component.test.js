@@ -475,7 +475,7 @@ describe('renderComponent — tmpDir', () => {
     ).rejects.toThrow(/@probe\/kit|Cannot find package/)
   })
 
-  it('writes temp modules under tmpDir, and cleans them up', async () => {
+  it('writes temp modules under tmpDir, named by their text, and keeps them for the process', async () => {
     const scratch = path.join(ROOT, 'scratch-tmp')   // deliberately absent
     expect(existsSync(scratch)).toBe(false)
 
@@ -483,21 +483,29 @@ describe('renderComponent — tmpDir', () => {
 
     // Created on demand — a build should not have to mkdir it first.
     expect(existsSync(scratch)).toBe(true)
-    const left = (await readdir(scratch)).filter((f) => f.startsWith('__mesa_render_'))
-    expect(left).toEqual([])
+    // A module cannot be unlinked once imported: a later tree importing the
+    // same path is resolved against the disk, not the registry. So the file
+    // stays until the exit sweep, and its name is its text plus this pid.
+    const written = (await readdir(scratch)).filter((f) => f.startsWith('__mesa_render_'))
+    expect(written).toHaveLength(1)
+    expect(written[0]).toMatch(new RegExp(`^__mesa_render_Simple\\.mesa_${process.pid}_[0-9a-f]{20}\\.mjs$`))
+
+    // The same text again is the same name — nothing new is written.
+    await renderFile(path.join(ROOT, 'Simple.mesa'), { target: 'fragment', tmpDir: scratch })
+    expect((await readdir(scratch)).filter((f) => f.startsWith('__mesa_render_'))).toEqual(written)
   })
 
-  it('leaves the default untouched when tmpDir is omitted', async () => {
+  it('lands in the package root when tmpDir is omitted', async () => {
     const { html } = await renderFile(path.join(ROOT, 'Simple.mesa'), { target: 'fragment' })
     expect(html).toContain('Simple')
 
     // Scoped to this fixture's own name on purpose. The default tmpDir IS the
     // mesa package root, and vitest runs test FILES in parallel, so a bare
-    // `startsWith('__mesa_render_')` scan here races every other suite's
-    // in-flight render and fails intermittently.
-    const stray = (await readdir(process.cwd()))
-      .filter((f) => f.startsWith('__mesa_render_Simple.mesa'))
-    expect(stray).toEqual([])
+    // `startsWith('__mesa_render_')` scan here would count every other suite's
+    // modules. The lifetime suite below proves the exit sweep removes them.
+    const here = (await readdir(process.cwd()))
+      .filter((f) => f.startsWith(`__mesa_render_Simple.mesa_${process.pid}_`))
+    expect(here).toHaveLength(1)
   })
 })
 
@@ -653,14 +661,15 @@ describe('renderComponent — options.transformSource', () => {
 
 // ─── Temp modules must not outlive the process that wrote them ───────────────
 //
-// The `finally` blocks in renderComponent cover every path this process gets to
-// run, and two it does not: a caller that ABANDONS the render — sierra's
-// prerender races it against a timeout with Promise.race, so a component that
-// hangs at import leaves a promise that never settles — and a process that dies
-// with a render in flight. Both stranded a .mjs in the default tmpDir, which is
-// this package's own root, where `bun run ci`'s hygiene phase reports it as an
-// ignored source file until somebody deletes it by hand. Two sat there for
-// three days.
+// A temp module lives for the process — a later tree's import of a shared
+// component is resolved against the disk, so it cannot go sooner — and the
+// 'exit' sweep is what removes it. Nothing else does, including a caller that
+// ABANDONS the render: sierra's prerender races it against a timeout with
+// Promise.race, so a component that hangs at import leaves a promise that
+// never settles. A process that dies without 'exit' strands a .mjs in the
+// default tmpDir, which is this package's own root, where `bun run ci`'s
+// hygiene phase reports it as an ignored source file until somebody deletes
+// it by hand. Two sat there for three days; the age sweep covers that.
 //
 // The abandonment case runs in a CHILD PROCESS because what it asserts is an
 // 'exit' handler, which cannot be observed from inside the process that has it.
@@ -671,7 +680,7 @@ describe('renderComponent — temp module lifetime', () => {
   beforeAll(async () => { await mkdir(ROOT, { recursive: true }) })
   afterAll(() => { rmSync(ROOT, { recursive: true, force: true }) })
 
-  it('cleans up a render the caller abandoned', async () => {
+  it('sweeps every module on exit, a render the caller abandoned included', async () => {
     const { execFile } = await import('child_process')
     const { promisify } = await import('util')
 

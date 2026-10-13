@@ -378,6 +378,15 @@ export function createLitestoneAuth(
     return { challenge: value, expiresAt: String(row.expiresAt) }
   }
 
+  // A provider click is a first factor like a password (FJS-D915). An OAuth
+  // branch that called `issueSession` itself would be a way past the code.
+  async function oauthFirstFactor(user: any, meta: Record<string, unknown>): Promise<OAuthResolution> {
+    const result = await firstFactorProven(user, meta)
+    return 'token' in result
+      ? { outcome: 'signed-in', ...result }
+      : { outcome: 'code-required', ...result }
+  }
+
   // Wrong codes against a pending enrollment, by credential id. In memory, unlike
   // the login ticket's `attempts` column: the only caller is a session that
   // already holds the account, and the service limiter in front of it is
@@ -1362,7 +1371,7 @@ export function createLitestoneAuth(
           model: 'User', records: [known.id], actorId: known.id,
           meta:  { provider: providerName },
         })
-        return { outcome: 'signed-in', ...(await issueSession(known, 'session', { provider: providerName })) }
+        return oauthFirstFactor(known, { provider: providerName })
       }
 
       // ── 2. No address ─────────────────────────────────────────────────
@@ -1431,7 +1440,7 @@ export function createLitestoneAuth(
           model: 'User', records: [made.id], actorId: made.id,
           meta:  { provider: providerName, emailVerified: true },
         })
-        return { outcome: 'signed-in', ...(await issueSession(made, 'session', { provider: providerName })) }
+        return oauthFirstFactor(made, { provider: providerName })
       }
 
       // ── 4. Somebody holds it → three conditions ───────────────────────
@@ -1462,7 +1471,7 @@ export function createLitestoneAuth(
         model: 'User', records: [existing.id], actorId: existing.id,
         meta:  { provider: providerName },
       })
-      return { outcome: 'signed-in', ...(await issueSession(existing, 'session', { provider: providerName })) }
+      return oauthFirstFactor(existing, { provider: providerName })
     },
 
     // ── OAuth: prove the address AND the identity, then attach ───────────
@@ -1494,7 +1503,7 @@ export function createLitestoneAuth(
       token: string,
       providerName: string,
       identity: OAuthIdentity,
-    ): Promise<{ token: string; user: SessionContext }> {
+    ): Promise<LoginResult> {
       const pending = await sys.verification.findFirst({
         where: {
           purpose: 'oauthLink',
@@ -1544,7 +1553,7 @@ export function createLitestoneAuth(
           model: 'User', records: [made.id], actorId: made.id,
           meta:  { provider: pending.provider, emailVerified: true, viaProof: true },
         })
-        return issueSession(made, 'session', { provider: pending.provider })
+        return firstFactorProven(made, { provider: pending.provider })
       }
 
       const wasUnverified = user.emailVerified !== true
@@ -1572,7 +1581,7 @@ export function createLitestoneAuth(
         meta:  { provider: pending.provider, viaProof: true, evictedPriorCredentials: wasUnverified },
       })
 
-      return issueSession(verified, 'session', { provider: pending.provider })
+      return firstFactorProven(verified, { provider: pending.provider })
     },
 
     // ── OAuth: what is attached to this account ──────────────────────────

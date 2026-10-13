@@ -388,10 +388,9 @@ export type HookType = 'before' | 'validated' | 'method' | 'after' | 'around' | 
 // `from '.../transport/bridge.ts'` imports keep working.
 export type { ServiceResult, ResultKind, ListResult, SingleResult } from './envelope.ts'
 
-// The framework's own method names. Every table that asks "is this a custom
-// method" reads this one; a name missing from a copy is served as custom there.
-export const CRUD_METHODS = ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'] as const
-export type ServiceMethod = typeof CRUD_METHODS[number]
+export { CRUD_METHODS } from './methods.ts'
+import type { ServiceMethod } from './methods.ts'
+export type { ServiceMethod }
 export type AnyMethod     = ServiceMethod | string
 
 // ─── Call options (internal service-to-service calls) ─────────────────────

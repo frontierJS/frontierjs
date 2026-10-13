@@ -55,7 +55,7 @@
 
 import path          from 'path'
 import { createHash } from 'crypto'
-import { readFile, writeFile, unlink, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
@@ -152,30 +152,41 @@ async function defaultTmpDir() {
   return typeof _defaultTmpDir === 'string' ? _defaultTmpDir : '/tmp'
 }
 
-function makeTmpPath(filePath, tmpDir) {
+/**
+ * The temp module's path is a function of its TEXT, so two trees that compile
+ * a shared component to the same module name it the same way, and the second
+ * root's import of it is answered by the module registry instead of a fresh
+ * evaluation. Sierra's prerender synthesizes a new wrapper root per page, so
+ * every page used to re-import every layout and shared component under a fresh
+ * random name: 775 modules written and evaluated for 76 distinct files on one
+ * 23-page site, half the build's wall time.
+ *
+ * The pid is in the name because a second process in the same tmpDir sweeps
+ * what it wrote when it exits, and a path it shares with this one would go
+ * with it.
+ */
+function makeTmpPath(filePath, tmpDir, js) {
   const base = path.basename(filePath).replace(/[^a-zA-Z0-9._-]/g, '_')
   return path.join(
     typeof tmpDir === 'string' && tmpDir ? tmpDir : '/tmp',
-    `${_tmpPrefix}${base}_${Date.now()}_${Math.random().toString(36).slice(2)}.mjs`
+    `${_tmpPrefix}${base}_${process.pid}_${digest(js).slice(0, 20)}.mjs`
   )
 }
 
-async function cleanTempFiles(paths) {
-  await Promise.all(paths.map(p => unlink(p).catch(() => {})))
-  for (const p of paths) _liveTemp.delete(p)
-}
-
 // ── Temp-module lifetime ──────────────────────────────────────────────────────
-// renderComponent's `finally` blocks clean up on every path this process gets
-// to run. Two it does not. A caller may ABANDON the render: sierra's prerender
-// races it against a timeout with Promise.race, so a component that hangs at
-// import leaves a promise that never settles and a `finally` that never runs,
-// while the build reports the route skipped and exits. And a process that dies
-// takes the pending cleanup with it. Either way a .mjs is stranded in whatever
-// tmpDir was in use — by default this package's own root, where `bun run ci`'s
-// hygiene phase reports it as an ignored source file, for everyone, until
-// somebody deletes it by hand.
+// A temp module lives for the process. It cannot be removed once imported:
+// the registry keeps the module but resolves a NEW importer against the disk,
+// so a second tree importing a shared component after its file was unlinked
+// dies with "Cannot find module" (measured, Node and Bun both). The set is
+// bounded by distinct module text, which is what the module registry already
+// holds, and the sweeps below remove the files — on exit, and by age for the
+// process that died without one. By default tmpDir is this package's own
+// root, where `bun run ci`'s hygiene phase reports a stranded .mjs as an
+// ignored source file, for everyone, until somebody deletes it by hand.
 const _liveTemp = new Set()
+// A write in flight, by path: two trees reaching one module at once must not
+// both truncate it while a third is importing it.
+const _writing = new Map()
 let _exitSweepInstalled = false
 
 /** Synchronous — an 'exit' listener may not await. */
@@ -320,7 +331,6 @@ function applyAlias(spec, alias) {
  *   - tmpPath   — path to the temp .mjs file for this component
  *   - css       — all collected CSS (this file + all deps)
  *   - modules   — Map<originalPath, compiledJS> (JS target)
- *   - tempFiles — array of all temp file paths created (for cleanup)
  *   - exports   — named exports extracted from the module (e.g. subject)
  *   - islands   — every `client:*` call site in this file and its deps, each
  *                 tagged with the file it was written in
@@ -377,37 +387,22 @@ function refuseCompileErrors(problems) {
   )
 }
 
-async function compileTree(filePath, visited = new Map(), tempFiles = [], opts = {}, sourceOverride = null) {
-  const canonical = path.resolve(filePath)
+// ── The compiled-file cache ───────────────────────────────────────────────────
+// One compile per file content and compile options, for the life of the
+// process. The tree cache below reuses a whole tree; this is what two DIFFERENT
+// trees share — every layout and component a prerender's pages have in common.
+// Keyed by the source as read, so an edit is a new entry and the old one is the
+// price of the edit. What is cached is the compiler's answer; the import
+// rewrites that depend on where the tree's other modules landed are redone per
+// tree, which is a string replace.
+const _fileCache = new Map()
 
-  // Cycle guard
-  if (visited.has(canonical)) {
-    return { tmpPath: visited.get(canonical).tmpPath, css: '', tempFiles, modules: new Map(), islands: [], styles: [] }
-  }
+function fileKey(canonical, source, { compileOptions, descope, transformSource }) {
+  return digest(JSON.stringify([canonical, digest(source), compileOptions, descope, fnId(transformSource)]))
+}
 
-  // Read source — use override at entry point to avoid writing a temp .mesa file
-  let source
-  if (sourceOverride !== null) {
-    source = sourceOverride
-  } else {
-    try {
-      source = await readFile(canonical, 'utf8')
-    } catch (err) {
-      throw new Error(`[Mesa renderComponent] Cannot read file: ${canonical}\n${err.message}`)
-    }
-    // What the tree was built from, as read: the render cache checks each
-    // file again before it reuses the tree (see `_treeCache`).
-    opts.deps?.push([canonical, digest(source)])
-    // A meta-framework's bundler prepares every file before Mesa sees it —
-    // Sierra injects its auto-imports there. This path reads the same files
-    // from disk, so without the same preparation a page that renders in dev
-    // fails the prerender naming a component nobody forgot (`FJS-1491`). Not
-    // applied to the entry's own source: the caller composed it and already
-    // said what it is.
-    if (opts.transformSource) source = await opts.transformSource(source, canonical)
-  }
-
-  // Compile
+async function compileFile(canonical, source, opts) {
+  if (opts.transformSource) source = await opts.transformSource(source, canonical)
   let ctx
   try {
     ctx = await compileSource(source, {
@@ -422,21 +417,6 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     throw new Error(`[Mesa renderComponent] Compile error in ${canonical}:\n${err.message}`)
   }
 
-  // A compile that COLLECTED errors is a compile that failed. `compileSource`
-  // only throws for the failures the parser cannot walk past; everything else
-  // — `bind:this` on a non-`let`, `{@const}` with no assignment, an unknown
-  // `<mesa:*>`, `export default` in an instance script — lands in
-  // `analysis.errors`, which the Vite plugin reads and this path never did, so
-  // a prerender emitted the broken component's markup and said nothing.
-  //
-  // Collected across the whole tree rather than thrown here: a prerender that
-  // dies on file 300 of 400 naming one file makes the author run it 400 times.
-  // `renderComponent` throws once, at the entry, naming every file.
-  if (ctx.analysis?.errors?.length && opts.problems) {
-    opts.problems.push({ file: canonical, errors: [...ctx.analysis.errors] })
-  }
-
-  let js  = ctx.result
   // De-scope CSS — but only for the targets that INLINE it.
   //
   // email and fragment push every declaration into a `style=""` attribute, so
@@ -458,6 +438,82 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   if (cssId && cssRaw && opts.descope) {
     css = cssRaw.replace(new RegExp(`\\.${cssId}\\b`, 'g'), '')
   }
+  return {
+    js:      ctx.result,
+    cssRaw,
+    cssId,
+    css,
+    islands: ctx.islands ?? [],
+    errors:  ctx.analysis?.errors?.length ? [...ctx.analysis.errors] : [],
+  }
+}
+
+async function compileTree(filePath, visited = new Map(), opts = {}, sourceOverride = null) {
+  const canonical = path.resolve(filePath)
+
+  // Cycle guard. A module that imports an ancestor needs the ancestor's path
+  // before the ancestor's text is final, so the ancestor is pinned to a name
+  // that is not derived from its text — that tree shares nothing, which is
+  // the price of a cycle and not of a render.
+  if (visited.has(canonical)) {
+    const seen = visited.get(canonical)
+    seen.tmpPath ??= makeTmpPath(canonical, opts.tmpDir, `${process.pid}:${Math.random()}`)
+    seen.pinned = true
+    return { tmpPath: seen.tmpPath, css: '', modules: new Map(), islands: [], styles: [] }
+  }
+  const slot = { tmpPath: null, pinned: false }
+  visited.set(canonical, slot)
+
+  // Read source — use override at entry point to avoid writing a temp .mesa file
+  let source
+  if (sourceOverride !== null) {
+    source = sourceOverride
+  } else {
+    try {
+      source = await readFile(canonical, 'utf8')
+    } catch (err) {
+      throw new Error(`[Mesa renderComponent] Cannot read file: ${canonical}\n${err.message}`)
+    }
+    // What the tree was built from, as read: the render cache checks each
+    // file again before it reuses the tree (see `_treeCache`).
+    opts.deps?.push([canonical, digest(source)])
+  }
+
+  // Compile, or take the compile an earlier tree did of this same text. A
+  // meta-framework's bundler prepares every file before Mesa sees it — Sierra
+  // injects its auto-imports there. This path reads the same files from disk,
+  // so without the same preparation a page that renders in dev fails the
+  // prerender naming a component nobody forgot (`FJS-1491`). Not applied to
+  // the entry's own source: the caller composed it and already said what it
+  // is. The cache holds the BUILD, so concurrent trees wait on one compile; a
+  // compile that threw is dropped and the next tree compiles and gets the
+  // error itself.
+  const fileOpts = sourceOverride !== null ? { ...opts, transformSource: null } : opts
+  const key = fileKey(canonical, source, fileOpts)
+  let build = _fileCache.get(key)
+  if (!build) {
+    build = compileFile(canonical, source, fileOpts)
+    _fileCache.set(key, build)
+    build.catch(() => { if (_fileCache.get(key) === build) _fileCache.delete(key) })
+  }
+  const unit = await build
+
+  // A compile that COLLECTED errors is a compile that failed. `compileSource`
+  // only throws for the failures the parser cannot walk past; everything else
+  // — `bind:this` on a non-`let`, `{@const}` with no assignment, an unknown
+  // `<mesa:*>`, `export default` in an instance script — lands in
+  // `analysis.errors`, which the Vite plugin reads and this path never did, so
+  // a prerender emitted the broken component's markup and said nothing.
+  //
+  // Collected across the whole tree rather than thrown here: a prerender that
+  // dies on file 300 of 400 naming one file makes the author run it 400 times.
+  // `renderComponent` throws once, at the entry, naming every file.
+  if (unit.errors.length && opts.problems) {
+    opts.problems.push({ file: canonical, errors: [...unit.errors] })
+  }
+
+  let js = unit.js
+  const { cssRaw, cssId, css } = unit
   // Per-component styles, keyed by the scope hash. The concatenated `css` above
   // is what a caller drops into one <style> blob; this is the same content split
   // so a consumer can emit `<style id="mHASH">` per component. That id is what
@@ -480,14 +536,7 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   // each entry with the file it came from. Without that, two components both
   // declaring `<Counter client:load />` are indistinguishable in the flattened
   // list, and a loader cannot resolve `Counter` to a module to import.
-  const islands = (ctx.islands ?? []).map((i) => ({ ...i, file: canonical }))
-
-  // Reserve the tmpPath before recursing so cycle guard works.
-  // opts.tmpDir is threaded rather than read from a module const so that the
-  // recursive path lands in the same directory as the entry — an import graph
-  // split across two directories resolves bare specifiers inconsistently.
-  const tmpPath = makeTmpPath(canonical, opts.tmpDir)
-  visited.set(canonical, { tmpPath })
+  const islands = unit.islands.map((i) => ({ ...i, file: canonical }))
 
   // Find + rewrite .mesa/.md imports
   const rewrites = []
@@ -540,7 +589,7 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
       continue
     }
     const depPath = resolveMesaImport(spec, canonical)
-    const child = await compileTree(depPath, visited, tempFiles, opts)
+    const child = await compileTree(depPath, visited, opts)
     for (const [k, v] of child.modules) modules.set(k, v)
     islands.push(...child.islands)
     for (const s of child.styles) {
@@ -559,21 +608,37 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     js = js.replace(match, () => prefix + childTmp + suffix)
   }
 
-  // Write temp file.
+  // Named after the text it holds, now that the text is final — a child's path
+  // is part of it, so a change anywhere below is a new name here. opts.tmpDir
+  // is threaded rather than read from a module const so that the recursive
+  // path lands in the same directory as the entry — an import graph split
+  // across two directories resolves bare specifiers inconsistently.
+  const tmpPath = slot.pinned ? slot.tmpPath : makeTmpPath(canonical, opts.tmpDir, js)
+  slot.tmpPath = tmpPath
+
+  // Write temp file, unless this process already has. Checked on disk and not
+  // only in `_liveTemp`: another process's stale sweep may have taken a file
+  // older than an hour from under a server that is still running, and the
+  // next tree to import it would fail. Rewriting identical text is harmless.
   //
   // The render targets import these paths, so the files have to exist. The `js`
   // target only wants the in-memory `modules` map — it never imports anything —
-  // so it opts out rather than writing a file per module and deleting it again.
-  // `modules` is captured above before import rewriting, so what it holds is the
-  // original source either way.
+  // so it opts out rather than writing a file per module. `modules` is captured
+  // above before import rewriting, so what it holds is the original source
+  // either way.
   if (!opts.noEmit) {
     installExitSweep()
-    await writeFile(tmpPath, js)
-    tempFiles.push(tmpPath)
-    _liveTemp.add(tmpPath)
+    if (_writing.has(tmpPath)) {
+      await _writing.get(tmpPath)
+    } else if (!(_liveTemp.has(tmpPath) && existsSync(tmpPath))) {
+      const write = writeFile(tmpPath, js).finally(() => _writing.delete(tmpPath))
+      _writing.set(tmpPath, write)
+      await write
+      _liveTemp.add(tmpPath)
+    }
   }
 
-  return { tmpPath, css: styles.map((s) => s.css).join('\n'), tempFiles, modules, islands, styles }
+  return { tmpPath, css: styles.map((s) => s.css).join('\n'), modules, islands, styles }
 }
 
 // ── HTML rendering ────────────────────────────────────────────────────────────
@@ -990,23 +1055,12 @@ export async function renderComponent(source, options = {}) {
       ? filePath
       : filePath + '.mesa'
 
-    let modules, css, treeIslands
     const problems = []
     // Pass source directly — no temp .mesa file needed at entry point.
-    // tempFiles is tracked and cleaned even though noEmit should leave it empty:
-    // this call used to pass a throwaway [] and drop it, so every js-target
-    // compile stranded one .mjs per module in the package directory.
-    const tempFiles = []
-    try {
-      const result = await compileTree(
-        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource, noEmit: true, problems }, source
-      )
-      modules     = result.modules
-      css         = result.css
-      treeIslands = result.islands
-    } finally {
-      await cleanTempFiles(tempFiles)
-    }
+    const result = await compileTree(
+      srcPath, new Map(), { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource, noEmit: true, problems }, source
+    )
+    const { modules, css, islands: treeIslands } = result
     refuseCompileErrors(problems)
 
     const cleanModules = new Map()
@@ -1031,106 +1085,100 @@ export async function renderComponent(source, options = {}) {
   // Pass source directly to compileTree — no temp .mesa file at entry point.
   // compileTree will still create temp .mjs files for compiled output,
   // but only for the compiled JS, never a duplicate .mesa temp file.
-  const tempFiles = []
   const problems  = []
   let html, namedExports, css, unocss_css, preWrapHTML, treeIslands, treeStyles
 
-  try {
-    // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk.
-    //    Or reuse the tree an earlier call compiled, when no file in it has changed.
-    const treeOpts = { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource }
-    const key = treeKey(rootPath, source, treeOpts)
-    // The cache holds the BUILD, not its result, so renders that arrive while
-    // a tree compiles wait for that one compile rather than each starting
-    // their own — a send to fifty recipients compiles once, not fifty times.
-    // A build that failed is dropped, and the next caller compiles and gets
-    // the error itself.
-    let entry = await _treeCache.get(key)?.catch(() => null)
-    if (!entry || !(await treeIsCurrent(entry))) {
-      const build = (async () => {
-        const visited = new Map()
-        const deps    = []
-        const tree = await compileTree(rootPath, visited, tempFiles, { ...treeOpts, problems, deps }, source)
-        refuseCompileErrors(problems)
+  // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk.
+  //    Or reuse the tree an earlier call compiled, when no file in it has changed.
+  const treeOpts = { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource }
+  const key = treeKey(rootPath, source, treeOpts)
+  // The cache holds the BUILD, not its result, so renders that arrive while
+  // a tree compiles wait for that one compile rather than each starting
+  // their own — a send to fifty recipients compiles once, not fifty times.
+  // A build that failed is dropped, and the next caller compiles and gets
+  // the error itself.
+  let entry = await _treeCache.get(key)?.catch(() => null)
+  if (!entry || !(await treeIsCurrent(entry))) {
+    const build = (async () => {
+      const visited = new Map()
+      const deps    = []
+      const tree = await compileTree(rootPath, visited, { ...treeOpts, problems, deps }, source)
+      refuseCompileErrors(problems)
 
-        // Temp path back to the file it was compiled from, so a stack can name a
-        // component rather than a scratch file.
-        const sources = new Map()
-        for (const [canonical, { tmpPath }] of visited) sources.set(tmpPath, canonical)
-        const mod = await import(tree.tmpPath)
-        return { mod, sources, deps, css: tree.css.trim(), islands: tree.islands, styles: tree.styles }
-      })()
-      _treeCache.set(key, build)
-      build.catch(() => { if (_treeCache.get(key) === build) _treeCache.delete(key) })
-      entry = await build
+      // Temp path back to the file it was compiled from, so a stack can name a
+      // component rather than a scratch file.
+      const sources = new Map()
+      for (const [canonical, { tmpPath }] of visited) sources.set(tmpPath, canonical)
+      const mod = await import(tree.tmpPath)
+      return { mod, sources, deps, css: tree.css.trim(), islands: tree.islands, styles: tree.styles }
+    })()
+    _treeCache.set(key, build)
+    build.catch(() => { if (_treeCache.get(key) === build) _treeCache.delete(key) })
+    entry = await build
+  }
+  css = entry.css
+  treeIslands = [...(entry.islands ?? [])]
+  treeStyles  = [...(entry.styles ?? [])]
+
+  // 2. Execute the component
+  const rendered = await executeComponent(entry.mod, data, { label: path.basename(rootPath), sources: entry.sources })
+  html         = rendered.html
+  preWrapHTML  = rendered.html   // saved for plain-text generation after try block
+  namedExports = rendered.namedExports
+
+  // 3. UnoCSS — scan rendered HTML for class names
+  unocss_css = await generateUnoCSS(html, unocss)
+  const allCSS = [css, unocss_css].filter(Boolean).join('\n')
+
+  // 4. Apply CSS strategy per target
+  if (target === 'email') {
+    const inlined = inlineCSS(html, allCSS, {
+      preserveMediaQueries,
+      removeStyleTags: true,
+      inlineStyleTags: true,
+    })
+    // The inliner prepends a <style>@media...</style> block when preserveMediaQueries:true
+    // Extract it so we can move it to <head>
+    let preservedCSS = ''
+    let bodyHTML = inlined
+    const styleMatch = inlined.match(/^<style>([\s\S]*?)<\/style>\n?/)
+    if (styleMatch) {
+      preservedCSS = styleMatch[1]
+      bodyHTML = inlined.slice(styleMatch[0].length)
     }
-    css = entry.css
-    treeIslands = [...(entry.islands ?? [])]
-    treeStyles  = [...(entry.styles ?? [])]
-
-    // 2. Execute the component
-    const rendered = await executeComponent(entry.mod, data, { label: path.basename(rootPath), sources: entry.sources })
-    html         = rendered.html
-    preWrapHTML  = rendered.html   // saved for plain-text generation after try block
-    namedExports = rendered.namedExports
-
-    // 3. UnoCSS — scan rendered HTML for class names
-    unocss_css = await generateUnoCSS(html, unocss)
-    const allCSS = [css, unocss_css].filter(Boolean).join('\n')
-
-    // 4. Apply CSS strategy per target
-    if (target === 'email') {
-      const inlined = inlineCSS(html, allCSS, {
-        preserveMediaQueries,
-        removeStyleTags: true,
-        inlineStyleTags: true,
-      })
-      // The inliner prepends a <style>@media...</style> block when preserveMediaQueries:true
-      // Extract it so we can move it to <head>
-      let preservedCSS = ''
-      let bodyHTML = inlined
-      const styleMatch = inlined.match(/^<style>([\s\S]*?)<\/style>\n?/)
-      if (styleMatch) {
-        preservedCSS = styleMatch[1]
-        bodyHTML = inlined.slice(styleMatch[0].length)
-      }
-      html = wrapEmailDoc(bodyHTML, {
-        // A `subject` export may be a FUNCTION of the render data — a receipt's
-        // subject names the order, and `<script module>` runs before props
-        // exist, so a template literal cannot say it. The caller applies it
-        // (`result.subject` hands back whatever was exported); the document's
-        // <title> is a string or nothing. Passing the function through here
-        // threw `subject.replace is not a function` out of the renderer, which
-        // is a confusing way to learn that a document title cannot be a
-        // callback.
-        subject:      typeof namedExports.subject === 'string' ? namedExports.subject : '',
-        preservedCSS,
-        bgcolor:      namedExports.bgcolor  ?? '#f4f4f4',
-      })
-    } else if (target === 'fragment') {
-      html = inlineCSS(html, allCSS, {
-        preserveMediaQueries,
-        removeStyleTags:  true,
-        inlineStyleTags:  true,
-      })
-    } else {
-      // html target — keep CSS in a <style> block, don't inline
-      // (caller can use wrapPage() from render.js to assemble a full document)
-      //
-      // `styleTag: false` opts out, for a caller that assembles the document
-      // itself and wants the styles per component rather than as one blob —
-      // see `result.styles`. Sierra's prerenderer does exactly that, so that
-      // each block can carry its component's scope hash as an `id` and the
-      // runtime's `addStyles` recognizes it as already present. Without the
-      // opt-out the caller has no way to suppress this copy, and the page ends
-      // up carrying the same rules twice.
-      if (allCSS.trim() && styleTag !== false) {
-        html = `<style>\n${allCSS}\n</style>\n` + html
-      }
+    html = wrapEmailDoc(bodyHTML, {
+      // A `subject` export may be a FUNCTION of the render data — a receipt's
+      // subject names the order, and `<script module>` runs before props
+      // exist, so a template literal cannot say it. The caller applies it
+      // (`result.subject` hands back whatever was exported); the document's
+      // <title> is a string or nothing. Passing the function through here
+      // threw `subject.replace is not a function` out of the renderer, which
+      // is a confusing way to learn that a document title cannot be a
+      // callback.
+      subject:      typeof namedExports.subject === 'string' ? namedExports.subject : '',
+      preservedCSS,
+      bgcolor:      namedExports.bgcolor  ?? '#f4f4f4',
+    })
+  } else if (target === 'fragment') {
+    html = inlineCSS(html, allCSS, {
+      preserveMediaQueries,
+      removeStyleTags:  true,
+      inlineStyleTags:  true,
+    })
+  } else {
+    // html target — keep CSS in a <style> block, don't inline
+    // (caller can use wrapPage() from render.js to assemble a full document)
+    //
+    // `styleTag: false` opts out, for a caller that assembles the document
+    // itself and wants the styles per component rather than as one blob —
+    // see `result.styles`. Sierra's prerenderer does exactly that, so that
+    // each block can carry its component's scope hash as an `id` and the
+    // runtime's `addStyles` recognizes it as already present. Without the
+    // opt-out the caller has no way to suppress this copy, and the page ends
+    // up carrying the same rules twice.
+    if (allCSS.trim() && styleTag !== false) {
+      html = `<style>\n${allCSS}\n</style>\n` + html
     }
-
-  } finally {
-    await cleanTempFiles(tempFiles)
   }
 
   const result = {

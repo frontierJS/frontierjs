@@ -1396,7 +1396,7 @@ Folds in auth's scoped-key refusal at `people`/`account-recovery` (`FJS-1446`'s 
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions, on [`FJS-2541`](ISSUES.md#fjs-2541). **B** was picked over **A** (the provider counts as both factors; nothing to build, and a stolen provider account walks past a factor its owner turned on), **C** (a per-provider `secondFactor: 'ours' | 'theirs'` trusting the OIDC `amr` claim; GitHub sends none, so for most providers C is B plus an option).
 
-The paper's recommendation, taken as written: turning on TOTP is the person saying *my account needs the code*, and `FJS-D888` already held the mailbox to it. Strictness follows what a mistake destroys (§ IV), here the account. A newly registered account has no factor, so `oauth.registered` is unchanged. C can be added beside B if a provider's own MFA ever needs to count. **What fails when it stops holding:** an auth row asserting an OAuth sign-in on a `totp` account answers a challenge and no session, and a `verify:oauth` step that finishes one through the page. Both are owed by the build.
+The paper's recommendation, taken as written: turning on TOTP is the person saying *my account needs the code*, and `FJS-D888` already held the mailbox to it. Strictness follows what a mistake destroys (§ IV), here the account. A newly registered account has no factor, so `oauth.registered` is unchanged. **Amended at the ruling:** `code_required` is not a message. Sierra's `?oauth_error=` reader turns it into `session.awaitingCode`, the state a password challenge sets, so a page already wired for a password sign-in's code finishes an OAuth one unchanged through `submitCode()`. Read as an error it would put *enter your code* on a page with no box to type it in. `confirmOAuthLink`, the mailed link's way to a session, ends at `firstFactorProven` too: it is a fourth door to the same session. C can be added beside B if a provider's own MFA ever needs to count. **What fails when it stops holding:** an auth row asserting an OAuth sign-in on a `totp` account answers a challenge and no session, and a `verify:oauth` step that finishes one through the page. Both are owed by the build.
 
 ### <a id="fjs-d888"></a>2026-10-10 · `FJS-D888` — Magic-link sign-in: what a mailbox proves — It is a FIRST factor. An unknown address gets its account at the click, through `onRegister`; an account with a second factor owes its code after the click, as after a password; an account whose only way in is an OAuth provider is refused. The mail carries a link and a six-digit code, either one spends it.
 
@@ -3739,6 +3739,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d935"></a>2026-10-13 · `FJS-D935` — Q1 — Is a balance a column trait the engine keeps at write, or does `@from` stay the only aggregate — `@balance(Model, sum: field | count: true)`: stored, kept by triggers, refused below any constraint the column declares, and the source derived append-only.
+
+Asked in [`IDEAS/ledger.md`](IDEAS/ledger.md) § Open questions. **A** was picked over **B** (no new word. Document the `move()` shape as the pattern and add a `litestone advise` rule that finds a column written beside an append-only child and suggests the reconciliation), **C** (`@from(…, stored: true)`: the same machinery as A behind an option on the existing word).
+
+The paper's recommendation, taken as written: B leaves the promise in a comment, where `asSystem()`, a seed and `fli tinker` already break it without a sound. C puts two different answers to *can this refuse* behind one word, so reading `@from` would no longer tell a developer whether a write can fail. - **Evidence, 2026-10-09 — the Lago stressor, a second domain (prepaid credit).** `fjs-prototypes/lago` § Q2 graded a hand-kept `Account.balance` under `@@check("kind <> 'prepaid' OR balance <= 0")` against Σ `Posting.amount` read at the spend, two $7 spends of $10, in one process and in two (`api/test/journal.test.ts`). The kept column refused the second spend in every arrangement, `asSystem()` included. The sum refused it only when read inside the spending transaction (`$transaction`'s FIFO lock and `BEGIN IMMEDIATE` serialize it, across processes too); read before the transaction, both guards passed and only the column's CHECK stopped $14 leaving $10. The sum costs 230 µs at 1k postings, 3.3 ms at 10k and 37 ms at 100k on one account, inside the write lock, against 15–35 µs for the column. And a direct write moved the column with no posting, the drift A's triggers would close. Two things A's spelling must answer that inventory did not ask. **The floor is per row, not per column:** a receivable goes either way and a prepaid account may not, so `@balance(Posting, sum: amount) @gte(0)` on `Account` floors every kind; Lago's own wallet validates `balance_cents >= 0` only `if: :traceable?`. **The sign:** debit-positive postings put credit-normal accounts (prepaid, payable, revenue) below zero, so the floor is `<= 0` or a negation. TigerBeetle ships two flags, `debits_must_not_exceed_credits` and `credits_must_not_exceed_debits`, for this reason. Lago itself keeps `wallets.balance_cents` at write under a per-customer advisory lock and `lock_version` (`credits/applied_prepaid_credits_service.rb:23-42`), which is spelling (a) plus a lock.
 
 ### <a id="fjs-d917"></a>2026-10-12 · `FJS-D917` — What `search()`'s text means — the words a person typed, every one required; FTS5's own syntax is `raw: true`, and a box searched as it is typed says `prefix: true`
 
@@ -7163,6 +7169,16 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d937"></a>2026-10-13 · `FJS-D937` — A custom method's array reaches its caller as the array: only `find` answers a page, and only the bulk partial-write protocol is a list on any other method.
+
+Asked in [`docs/mesa-usage-audit-2026-10-12.md`](docs/mesa-usage-audit-2026-10-12.md) § 6.3. **B** was picked over **A** (keep [`FJS-D76`](#fjs-d76)'s rule for every array, so `invoke()` goes on answering `{ kind: 'list', data }` for one and the caller reads `.data`).
+
+`FJS-D76` kept a list's envelope because a list carries metadata that has nowhere else to live. An array from a custom method carries none — no `total`, `limit` or `offset` — so the envelope held nothing a caller used, while an object answer arrived bare. A caller had to know which the method returned before it could read the answer, which fails § V's boundary question, and app code hedged: 28 `invoke` sites across 21 apps read `answer?.data ?? answer`, two basecamp screens guarding with `Array.isArray` first. This is *doctrine vs. discovery*: D76's rule was right for the page it was written about and reached past it to every array. The audit's other ~110 hedges were on `find`, which D76 already settled; they date from before it, when `find` answered a bare array in the browser.
+
+What must stay true, and what fails when it stops: the three paths a call takes agree — HTTP, the socket and `app.service().call()` (`packages/junction/test/invoke-answer.test.ts`) — and the method decides list against single (`test/envelope.test.ts`). A client reading one answer two ways is `fli check`'s `envelope-hedge`, a warning. A client reading `?.data ?? []` off an array answer, which is an empty screen and no error, has **none**: text cannot tell it from a guard on a call caught to `null`.
+
+*Lives in:* `packages/junction/src/core/envelope.ts` (`wrapResult`) · `packages/junction/src/core/methods.ts` (`CRUD_METHODS`, moved out of `context.ts` so the browser client can read it) · `packages/cli/core/checks.js` (`envelope-hedge`).
 
 ### <a id="fjs-d883"></a>2026-10-10 · `FJS-D883` — Does an action bypass the Service abstraction, or go through it — Through it: an action calls a service method, and the request-shaped half (the 303, the re-render with `errors`) belongs to the runner that called the action, so `ServiceContext` never gains a redirect.
 
@@ -10832,6 +10848,9 @@ First consumer: `packages/basecamp`'s `/audit`, which drops four hand-written
 `MethodNotAllowed` stubs for one line.
 
 ### <a id="fjs-d76"></a>2026-08-02 · `FJS-D76` — The result envelope has one owner, and `kind` is the discriminant.
+
+**Status:** amended-by [`FJS-D937`](#fjs-d937) — *a list keeps its envelope* now reaches a CRUD verb's array and the bulk protocol only; a custom method's array unwraps to the array.
+
 `{ kind, object, data, errors, total?, limit?, offset? }`. `kind` is `'single' |
 'list'` and is THE field to branch on; `object` is the SERVICE name for both
 kinds (`'posts'`, never `'list'` and never `'Post'`), so it is a stable identity
@@ -15857,6 +15876,65 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d936"></a>2026-10-13 · `FJS-D936` — What happens to `driver jsonl` — Retire the format as a logging driver. The audit trail moves to its SQLite form; `drivers/jsonl.js`, `jsonl-index.js`, the jsonl half of `retention.js` and `driver logger`/`driver trail` stay in the tree, each flagged NOT IN USE UNTIL FURTHER NOTICE, and no schema declares them. Basecamp, `example` and the prototypes redeclare their audit database (pre-alpha: the old trail files are deleted, not migrated). One engine; the trail gains gates, indexes and migrations, and runs in the browser. Retention becomes a `DELETE` plus incremental vacuum rather than a file rewrite.
+
+Asked in [`IDEAS/litestone-scope.md`](IDEAS/litestone-scope.md) § Open questions. **C** was picked over **A** (Keep both drivers, and move `jsonl` behind the engine seam `#sql-engine` already gives `bun:sqlite` and wasm (`FJS-D305`). The core learns *an engine answering a subset of verbs* generically, in place of the 77 references to `jsonl` it has now. Weeks of work, and two engines stay), **B** (Retire `driver jsonl` as general model storage, and keep the format only as the logger's private storage, inside the audit-trail code. Removes the request-log use (only `packages/litestone/example` declares one); the `logger` branches stay), **D** (Move `jsonl` and `logger` together into an audit battery package (the first question's **A**, for this one area). - **Recommend C, after one measurement** — it is the one-level-simpler version: one storage engine, and FJS-D180's lock and the compaction machinery stop being litestone's to keep correct. The measurement that could overturn it is write cost: a `create()` on a logged model with the trail as a SQLite insert in a second database, against the jsonl append, interleaved A/B in `bench/audit-bench.mjs`. If the SQLite trail costs much more on the hot path, **B** is the fallback. - **Measured 2026-10-08: the SQLite trail is cheaper.** `bun run bench audit-trail-ab` (§ 13): a `create()` on a logged model, trail write flushed and settled inside the timing, 500 per batch, 12 interleaved rounds. Four runs: jsonl append 152–163 µs/op, SQLite insert 109–121 µs/op, a ratio of 0.67–0.74; the hot path before the deferred write is the same for both, 47–53 µs. Taken on a loaded machine (load 1.7–3.4), so the absolute numbers are soft and the ratio held across every run. The measurement that could overturn **C** does not, and **B** is not needed as a fallback).
+
+C with one amendment by the owner: nothing written for jsonl is deleted. The SQLite trail measured cheaper (0.67–0.74) and is one engine, so it is the only trail an app declares; the jsonl code is parked, flagged NOT IN USE UNTIL FURTHER NOTICE, rather than removed. The 2026-10-08 hold on this question is lifted by this ruling.
+
+### <a id="fjs-d934"></a>2026-10-12 · `FJS-D934` — Conduit's http `stream()` is the response body as it arrives: one chunk per event of a `text/event-stream` body, and the bytes of any other.
+
+`FJS-D585` kept http `stream()` at `not_implemented` until an app needed it.
+Three did at once. `conduit-anthropic` and `conduit-openai` each owned a `fetch`
+that re-resolved the credential, re-set the headers and re-graded the status,
+which cost them the breaker, the concurrency cap, the observers and the retry
+ladder (`FJS-2728`). ELA buffered 3CX recordings of up to 64 MB under a raised
+`max_response_bytes` (`FJS-2579`). One `stream()` serves both cases, and the
+`content-type` decides the chunk, which extends D585's rule: a body is decoded
+only when its type says what it is. An SSE body yields `{ event, data, id }` as
+`@frontierjs/toolbelt/sse` reads it. Any other body yields a `Uint8Array` per
+read, with no `max_response_bytes` cap. A request option for the shape was
+rejected, because it would be a second way to say what the response already
+says.
+
+A stream opens through `send()`'s own `attempt()`, with the retries, the one
+remint and `Retry-After`. A failure before the first byte throws the
+`ConduitError` that `send()` answers, with the status on `ConduitStreamError.meta`,
+so a connector's `translate()` handles both paths. The per-attempt timeout
+covers the wait for headers, and the caller's `signal` bounds the body.
+`conduit.stream()` now admits through `resilience` on every protocol and holds
+the slot until the stream ends, because an open stream is a request the target
+is still serving. A failure after the open is `stream_error` and not
+`indeterminate`: the 2xx says the request was applied. Each chunk carries the
+response's `meta`. That is the only place a raw route finds the `content-type`
+it has to pass on.
+
+The decision rules ran before the code. **Paved road vs. the workaround**
+decided it: two connectors had written the same owned `fetch`.
+
+*Lives in:* `packages/conduit/src/transports/http.ts` (`stream`, `exchange`) · `packages/conduit/src/conduit.ts` (`stream`) · `packages/conduit/stream.test.ts`.
+
+### <a id="fjs-d933"></a>2026-10-12 · `FJS-D933` — HTTP Basic is conduit's one built-in signer, and a protocol that spends two credentials registers one target per credential.
+
+`FJS-D891` stands: a vendor's scheme is a `signed` target and gets no `TargetAuth`
+variant. Basic is not one vendor's scheme. Four connectors had each written it,
+and the copies disagreed: twilio sent the secret as given, shipping added the
+colon a key-only login needs, oidc form-encoded both halves first, and serpgrid
+answered the whole `Basic …` value from its resolver under `api_key`
+(`FJS-2233`). The owner picked **a built-in signer** over **a `basic` variant**
+(which overturns D891) and over **an exported signer the app installs**
+(every app has to remember the line). `basic` is always installed, and a connector's
+signer may not take the name.
+
+OIDC's token endpoint spends the client's Basic, and userinfo spends the user's
+Bearer. The `oidc-client-basic` signer decided per request by method and by an
+existing `authorization` header (`FJS-2729`). The owner picked **one target per
+credential** over **per-route `auth`**, which would have been a second place that
+declares auth. `oidcClientTarget` signs everything it carries and `oidcPublicTarget` carries
+no auth. The same shape answers `FJS-2722`'s mint-through-a-second-target.
+
+*Lives in:* `packages/conduit/src/signers.ts` · `packages/conduit/signers.test.ts` · `conduit-connectors/packages/conduit-oidc/src/index.ts` (`oidcClientTarget`, `oidcPublicTarget`, `assertSpends`).
 
 ### <a id="fjs-d932"></a>2026-10-12 · `FJS-D932` — Where a site-kit build finds the images to make responsive — In the built HTML: a postbuild step rewrites every local raster `<img>` in the prerendered pages.
 

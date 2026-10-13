@@ -19,7 +19,7 @@
     }
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "node ../../scripts/tmp-run.mjs 'vitest run'",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },

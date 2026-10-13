@@ -28,12 +28,11 @@
 //   until each answers, asserts, and kills.
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
+import { tempDir } from '../../../litestone/src/tmp-dirs.js'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 // The count is the enum's; `db/test/schema.test.ts` holds this list equal to it.
 import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
@@ -68,11 +67,12 @@ async function cleanup() {
   for (const c of children) { try { c.kill?.() ?? process.kill(-c.pid, 'SIGTERM') } catch {} }
   await sleep(300)
   await browser?.close()
+  await rm(SCRATCH, { recursive: true, force: true })
 }
 function fail(msg) { console.error(`\n✗ ${msg}\n`); cleanup().then(() => process.exit(1)) }
 
 // ─── A database of its own ───────────────────────────────────────────────
-const SCRATCH = mkdtempSync(join(tmpdir(), 'basecamp-screens-'))
+const SCRATCH = tempDir('basecamp-screens-')
 const DB      = join(SCRATCH, 'basecamp.db')
 // A database is TWO declared paths, and redirecting one of them is what this
 // drive used to do: `database main` moved here and `database audit` followed
@@ -2030,5 +2030,4 @@ try {
 
 console.log(`\n${failed ? '✗' : '✓'} ${passed}/${passed + failed} checks passed\n`)
 await cleanup()
-await rm(SCRATCH,  { recursive: true, force: true })
 process.exit(failed ? 1 : 0)

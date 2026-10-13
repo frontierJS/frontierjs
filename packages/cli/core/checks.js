@@ -124,8 +124,12 @@ export const RULES = [
     title: 'a <Table> column names its field `name`, the way the schema does' },
   { id: 'page-path-retired',    scope: 'app',  severity: 'error', invariant: null,
     title: 'the router speaks `pathname` and `search`, as the browser does' },
+  { id: 'import-subpath-exported', scope: 'app', severity: 'error', invariant: null,
+    title: 'a @frontierjs import names a subpath its package still exports' },
   { id: 'detail-read-dead',     scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a row a screen KEEPS is watched, not fetched once' },
+  { id: 'envelope-hedge',       scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a service answer is read in the one shape the server gives it' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a service reads the request-scoped client, not the module one' },
   { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: 6,
@@ -1952,6 +1956,60 @@ const CHECKS = {
     return { findings }
   },
 
+  // A subpath is renamed in one change with no alias left behind (the root
+  // CLAUDE.md § Evolution policy), so an app on the old spelling is broken from
+  // that commit on. The build says so only for a file the build reaches: a test,
+  // an `api/` script or a surface nobody built stays broken unseen, which is how
+  // nine sibling apps sat on `@frontierjs/sierra/junction` after it became
+  // `./resource`. The authority is the INSTALLED package's own `exports` map, so
+  // the rule carries no list of retired names to keep current.
+  //
+  // Only `@frontierjs/*`: a third-party package keeps its old subpaths working
+  // across a rename and this framework does not.
+  'import-subpath-exported': ({ root }) => {
+    const files = sources(root, ['.mesa', '.css', ...SCRIPT_EXT], ...SURFACES, 'tests', 'db')
+    if (!files.length) return { skipped: 'no source under a surface' }
+
+    const findings = []
+    let graded = 0
+    for (const path of files) {
+      const code = readCode(path)
+
+      for (const m of code.matchAll(FJS_IMPORT_RE)) {
+        const [, , pkg, tail = ''] = m
+        const manifest = installedManifest(dirname(path), pkg)
+        if (!manifest) continue
+        graded++
+        const subpath = '.' + tail
+        const exported = exportedSubpaths(manifest.exports)
+        if (!exported || subpathExported(manifest.exports, subpath)) continue
+        findings.push({
+          file: path, line: lineOf(code, m.index),
+          message: `\`${pkg}${tail}\` is not a subpath ${pkg} exports, so the import fails wherever ` +
+                   'it is built or run. A renamed subpath keeps no alias, so the import moves to the ' +
+                   `new name. ${pkg} exports: ${exported.join(', ')}.`,
+        })
+      }
+
+      for (const m of code.matchAll(DEEP_IMPORT_RE)) {
+        const target = resolve(dirname(path), m[2])
+        if (['', ...SCRIPT_EXT].some(ext => existsSync(target + ext))) { graded++; continue }
+        const pkg = m[2].match(/node_modules\/(@frontierjs\/[^/]+)/)[1]
+        if (!installedManifest(dirname(path), pkg)) continue
+        graded++
+        findings.push({
+          file: path, line: lineOf(code, m.index),
+          message: `\`${m[2]}\` reaches into ${pkg}'s files past its \`exports\` map, and the file ` +
+                   'is not there any more. Import an exported subpath instead; a file behind one ' +
+                   'moves without notice.',
+        })
+      }
+    }
+
+    if (!graded) return { skipped: 'no @frontierjs import resolves to an installed package' }
+    return { findings }
+  },
+
   'detail-read-dead': ({ root }) => {
     const files = sources(root, ['.mesa', ...SCRIPT_EXT], ...CLIENT_SURFACES)
     if (!files.length) return { skipped: 'no client surface' }
@@ -2052,6 +2110,45 @@ const CHECKS = {
     }
 
     return looked ? { findings } : { skipped: 'no service.get() on a client surface' }
+  },
+
+  // `find` answers the list envelope and `invoke` answers what the method
+  // returned (`FJS-D76`, `FJS-D937`), so a client reading an answer two ways
+  // is guessing at a shape the server already fixed. The guess was harmless
+  // while both halves were right; it stops being harmless the day the method
+  // changes, because nothing then says which half the screen relied on.
+  //
+  // Only the two spellings that name ONE value both ways are graded. A bare
+  // `x?.data ?? []` is also how a screen guards a call it caught to `null`, and
+  // text cannot tell that from a guess.
+  'envelope-hedge': ({ root }) => {
+    const files = sources(root, ['.mesa', ...SCRIPT_EXT], ...CLIENT_SURFACES)
+    if (!files.length) return { skipped: 'no client surface' }
+
+    const ID     = '[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*'
+    const HEDGES = [
+      new RegExp(`(?<![\\w$.])(${ID})\\?\\.data\\s*\\?\\?\\s*\\1(?![\\w$.?\\[])`, 'g'),
+      new RegExp(`Array\\.isArray\\(\\s*(${ID})\\s*\\)\\s*\\?\\s*\\1\\s*:\\s*\\(?\\s*\\1\\??\\.data\\b`, 'g'),
+    ]
+
+    const findings = []
+    for (const path of files) {
+      const code = readCode(path)
+      for (const re of HEDGES) {
+        for (const m of code.matchAll(re)) {
+          findings.push({
+            file: path, line: lineOf(code, m.index),
+            message: `\`${m[0]}\` reads one answer as two shapes. \`find\` always answers the list ` +
+                     'envelope, so read `.data` (or call `findData()`); `invoke` answers what the method ' +
+                     'returned, an array as the array and an object as the object (`FJS-D937`). Pick the ' +
+                     'one the server gives: against an array, the `?.data ?? []` half of a hedge is an ' +
+                     'empty screen and no error.',
+          })
+        }
+      }
+    }
+
+    return { findings }
   },
 
   'service-module-db': ({ root }) => {
@@ -3677,6 +3774,65 @@ function isAppRoot(root) {
   if (existsSync(join(root, 'db', 'schema.lite'))) return true
   const manifest = ['package.json', '.fli.json'].some(f => existsSync(join(root, f)))
   return manifest && SURFACES.some(d => existsSync(join(root, d)))
+}
+
+// ─── a @frontierjs specifier against its package's exports ────────────────────
+
+// `from '…'`, `import '…'`, `import('…')`, `require('…')` and a CSS `@import`.
+// A Vite query (`?inline`, `?raw`) is not part of the subpath.
+const FJS_IMPORT_RE  = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(['"`])(@frontierjs\/[a-z0-9][a-z0-9._-]*)(\/[^'"`\n?]*)?(?:\?[^'"`\n]*)?\1/g
+const DEEP_IMPORT_RE = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(['"`])(\.{1,2}\/[^'"`\n]*node_modules\/@frontierjs\/[^'"`\n]+)\1/g
+
+/**
+ * The manifest of `pkg` as node would find it from `dir` — the nearest
+ * `node_modules/<pkg>` walking up. A surface may hold its own install, so the
+ * walk starts at the importing file rather than the app root. Never
+ * `require.resolve`, which bun answers from its global cache (`FJS-666`).
+ */
+const manifestCache = new Map()
+function installedManifest(dir, pkg) {
+  const key = `${dir}\0${pkg}`
+  if (manifestCache.has(key)) return manifestCache.get(key)
+  let found = null
+  for (let here = dir; ; here = dirname(here)) {
+    const file = join(here, 'node_modules', pkg, 'package.json')
+    if (existsSync(file)) {
+      try { found = JSON.parse(readFileSync(file, 'utf8')) } catch { found = null }
+      break
+    }
+    if (dirname(here) === here) break
+  }
+  manifestCache.set(key, found)
+  return found
+}
+
+/** The subpath keys of an `exports` field, or null when there is none to grade. */
+function exportedSubpaths(exports) {
+  if (exports == null) return null
+  if (typeof exports === 'string' || Array.isArray(exports)) return ['.']
+  const keys = Object.keys(exports)
+  // A conditions object (`{ import, require }`) exports the root alone.
+  if (!keys.some(k => k.startsWith('.'))) return ['.']
+  return keys.filter(k => exports[k] !== null)
+}
+
+/** Node's subpath matching: an exact key, a one-`*` pattern, or a legacy `./dir/` prefix. */
+function subpathExported(exports, subpath) {
+  const isMap = typeof exports === 'object' && !Array.isArray(exports) &&
+                Object.keys(exports).some(k => k.startsWith('.'))
+  if (!isMap) return subpath === '.'
+  if (Object.hasOwn(exports, subpath)) return exports[subpath] !== null
+  let hit = null
+  for (const key of Object.keys(exports)) {
+    const star = key.indexOf('*')
+    const match = star === -1
+      ? key.endsWith('/') && subpath.startsWith(key)
+      : subpath.startsWith(key.slice(0, star)) && subpath.endsWith(key.slice(star + 1)) &&
+        subpath.length >= key.length - 1
+    // The longest matching key wins, which is how a `null` carve-out beats `./*`.
+    if (match && (hit === null || key.length > hit.length)) hit = key
+  }
+  return hit !== null && exports[hit] !== null
 }
 
 // ─── the src/ layout (FJS-D625, FJS-D626, FJS-D627) ───────────────────────────

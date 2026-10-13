@@ -45,11 +45,25 @@ export type Atlas = {
 
 type Decided = { ok: true, ruling: string, pick: string, closed: string | null, files: string[] } | { ok: false, reason: string }
 
+type Option    = { letter: string, text: string }
+type Recommend = { letter: string, why: string }
+type Asked = {
+  id: string, file: string, line: number, question: string, body: string,
+  options: Option[], recommend: Recommend | null, paper: { id: string, status: string } | null,
+}
+type AskEvent =
+  | { type: 'session', id: string } | { type: 'text', text: string } | { type: 'tool', text: string }
+  | { type: 'result', ok: boolean, stop: string | null, cost: number | null } | { type: 'error', text: string }
+
 type Fli = {
   collectRegisterAtlas: (root: string) => Atlas
   findRegisterRoot:     (start: string) => string | null
-  withRegisterGuard:    <T>(root: string, fn: () => T) => T
+  registerLayout:       (root: string) => { dir: string }
   decide: (o: { root: string, id: string, pick: string, why: string, section: string }) => Decided
+  openDecisions:  (root: string) => { decidable: Asked[], open: Asked[] }
+  rulingSections: (root: string) => string[]
+  runAsk: (o: { root: string, prompt: string, session?: string | null, bin?: string, onEvent: (e: AskEvent) => void }) =>
+    { error: string } | { child: unknown, done: Promise<number | null> }
 }
 
 // The cli is a devDependency and the image installs none, so it is reached
@@ -59,7 +73,9 @@ export const loadFli = () => fli ??= Promise.all([
   import('@frontierjs/cli/core/register-atlas.js'),
   import('@frontierjs/cli/core/registers.js'),
   import('@frontierjs/cli/core/decide.js'),
-]).then(([a, r, d]) => ({ ...a, ...r, ...d }) as unknown as Fli)
+  import('@frontierjs/cli/core/decisions.js'),
+  import('@frontierjs/cli/core/ask-claude.js'),
+]).then(mods => Object.assign({}, ...mods) as unknown as Fli)
 
 /** The register root this Basecamp sits in, found from this file rather than the cwd. */
 export async function registerRoot(): Promise<string | null> {
@@ -78,9 +94,12 @@ const RANK_TTL_MS = 5 * 60_000
 
 function signature(root: string, dir: string): string {
   const stamp = (p: string) => { try { return statSync(p).mtimeMs } catch { return 0 } }
-  const parts = ['ISSUES.md', 'ISSUES_ARCHIVE.md', 'DECISIONS.md', 'IDEAS'].map(n => stamp(join(dir, n)))
-  // A paper edited in place moves its own mtime and not the directory's.
-  try { for (const n of readdirSync(join(dir, 'IDEAS'))) parts.push(stamp(join(dir, 'IDEAS', n))) } catch {}
+  const parts = ['ISSUES.md', 'ISSUES_ARCHIVE.md', 'DECISIONS.md', 'IDEAS', 'IDEAS/shipped'].map(n => stamp(join(dir, n)))
+  // A paper edited in place moves its own mtime and not the directory's, and
+  // a shipped paper can still hold a question nobody ruled.
+  for (const sub of ['IDEAS', 'IDEAS/shipped']) {
+    try { for (const n of readdirSync(join(dir, sub))) parts.push(stamp(join(dir, sub, n))) } catch {}
+  }
   return `${root}|${parts.join(',')}`
 }
 
@@ -97,6 +116,128 @@ export async function readAtlas(root: string): Promise<Atlas> {
 }
 
 export function forgetAtlas() { cached = null }
+
+// ─── the queue ────────────────────────────────────────────────────────────────
+//
+// /registers/decide/ is `fli decide`'s walk on a phone: the questions with
+// lettered options, in the walk's order, one card each. Read off fli's
+// `openDecisions` rather than the atlas, because a card needs the prose the
+// question is argued in and the atlas's ranking (3s, git history) is nothing
+// a card shows. A question an existing ruling settles is the walk's alone —
+// confirming one is `fli decide --by`, which this screen does not offer.
+
+export type Queued = {
+  id: string, question: string, body: string, options: Option[], recommend: Recommend | null,
+  paper: string | null, status: string, file: string, line: number,
+}
+export type Queue = { sections: string[], questions: Queued[], open: number }
+
+let queued: { sig: string, queue: Queue } | null = null
+
+export async function readQueue(root: string): Promise<Queue> {
+  const f   = await loadFli()
+  const sig = signature(root, f.registerLayout(root).dir)
+  if (queued?.sig === sig) return queued.queue
+  const queue = f.openDecisions(root)
+  const out: Queue = {
+    sections: f.rulingSections(root),
+    open:     queue.open.length,
+    questions: queue.decidable.map(q => ({
+      id: q.id, question: q.question, body: q.body, options: q.options, recommend: q.recommend,
+      paper: q.paper?.id ?? null, status: q.paper?.status ?? '', file: q.file, line: q.line,
+    })),
+  }
+  queued = { sig, queue: out }
+  return out
+}
+
+// ─── Claude explains a question ───────────────────────────────────────────────
+//
+// fli's `runAsk`, the read-only ask: `claude -p` with Read, Grep, Glob and a
+// Bash allow-list, hooks off, a $2 budget — the argv keeps it read-only, not
+// the prompt. Not the workbench: a send there joins the checkout's own chat,
+// queues behind whatever it is running, and answers on another screen.
+//
+// Held in this process only. A restart loses an explanation, which costs one
+// press; storing it would be a copy of a reply about files that move.
+
+export type Turn = { ask: string | null, text: string, steps: number, doing: string }
+export type Explanation = {
+  id: string, state: 'working' | 'done' | 'error', turns: Turn[], cost: number, error: string | null, startedAt: string,
+}
+
+// Each run is a separate claude process on this laptop, and a swipe is cheap.
+export const EXPLAINING_MAX = 3
+const FOLLOW_MAX = 2000
+
+const explanations = new Map<string, Explanation & { session: string | null }>()
+
+export function explanationOf(id: string): Explanation | null {
+  const held = explanations.get(id)
+  if (!held) return null
+  const { session, ...shown } = held
+  return { ...shown, turns: held.turns.map(t => ({ ...t })) }
+}
+
+export function explainPrompt(q: Queued): string {
+  return [
+    'I am ruling on the open questions in this workspace one at a time, from my phone, and pressed "explain" on this one before picking.',
+    '',
+    `${q.id} — ${q.file}:${q.line}`,
+    `**${q.question}** ${q.body}`.trim(),
+    ...q.options.map(o => `- **${o.letter}** — ${o.text}`),
+    q.recommend ? `- **Recommend ${q.recommend.letter}** — ${q.recommend.why}` : '- No recommendation is written.',
+    '',
+    'You are read-only: Read, Grep, Glob, and git, rg and ls in Bash. Read the question where it is argued and what it cites — rulings in DECISIONS.md, rows in ISSUES.md, the code it names. Then explain, for someone choosing in the next minute:',
+    '1. What is actually being decided, in two or three plain sentences.',
+    '2. Each option: what changes if I pick it, what it costs, what it rules out.',
+    '3. Whether the recommendation still holds against the code as it is now — cite file:line where it matters — and what would change your mind.',
+    'Under 300 words. No preamble and no headings; the reply renders on a narrow card.',
+  ].join('\n')
+}
+
+/**
+ * Start explaining `q`, or ask a follow-up in the same session. A question
+ * already being explained answers what it has so far rather than starting a
+ * second run; one already explained answers that, until a follow-up asks
+ * more. A press after a failed run starts over.
+ */
+export async function explain(root: string, q: Queued, input: { ask?: unknown, bin?: string }): Promise<Explanation | { refused: string }> {
+  const follow = String(input.ask ?? '').trim()
+  const was    = explanations.get(q.id)
+  if (was?.state === 'working')            return explanationOf(q.id)!
+  if (was?.state === 'done' && !follow)    return explanationOf(q.id)!
+  const held = was?.state === 'error' && !follow ? undefined : was
+  if (follow.length > FOLLOW_MAX) return { refused: `that is ${follow.length} characters; ${FOLLOW_MAX} is the limit` }
+  const running = [...explanations.values()].filter(e => e.state === 'working').length
+  if (running >= EXPLAINING_MAX) return { refused: `Claude is already explaining ${running} questions — wait for one to finish` }
+
+  const f     = await loadFli()
+  const entry: Explanation & { session: string | null } = held
+    ?? { id: q.id, state: 'working', turns: [], cost: 0, error: null, startedAt: new Date().toISOString(), session: null }
+  const turn: Turn = { ask: follow || null, text: '', steps: 0, doing: '' }
+  const resume = held?.session ?? null
+  const prompt = resume ? follow : follow ? `${explainPrompt(q)}\n\nAnd specifically: ${follow}` : explainPrompt(q)
+
+  const run = f.runAsk({ root, prompt, session: resume, bin: input.bin, onEvent: e => {
+    if (e.type === 'session') entry.session = e.id
+    // Text before a tool call is narration ("let me read the paper"); the
+    // last text block is the answer.
+    if (e.type === 'text')    turn.text = e.text
+    if (e.type === 'tool')    { turn.steps++; turn.doing = e.text }
+    if (e.type === 'result' && !e.ok) entry.error = `Claude stopped before finishing (${e.stop ?? 'unknown'})`
+    if (e.type === 'result')  entry.cost += e.cost ?? 0
+    if (e.type === 'error')   entry.error = e.text
+  } })
+  if ('error' in run) return { refused: run.error }
+
+  entry.state = 'working'
+  entry.error = null
+  entry.turns.push(turn)
+  explanations.set(q.id, entry)
+  run.done.then(code => { entry.state = entry.error || code ? 'error' : 'done' })
+  return explanationOf(q.id)!
+}
 
 /** Every record holding `id`, of every kind — a ruling and the question it answered share one. */
 export function recordsFor(atlas: Atlas, id: string) {

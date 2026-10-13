@@ -209,7 +209,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           (claimed in app.ts, ONE instance, because a queued message lives in
           the instance that started the run) with the prompt
           core/registers.ts composes per intent — `fix` and `frame` are the
-          repo's `/fix-next` and `/frame-next`, never a restatement of them
+          repo's `/fix-next` and `/frame-next`, never a restatement of them.
+          /registers/decide/ is `fli decide`'s walk on a phone — `queue` is
+          fli's `openDecisions` (the walk's order, with each question's prose),
+          a swipe is the same `decide`, held five seconds in the BROWSER for
+          Undo; `explain` is fli's read-only `runAsk`, not the workbench, kept
+          in this process's memory per question and resumed for a follow-up
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
           storing either would be a second answer that goes stale

@@ -59,9 +59,10 @@ export type TargetAuth =
   // hash of the body. `header_prefix` names the three headers this emits
   // (default 'X-Fjs' → X-Fjs-Signature, X-Fjs-Timestamp, X-Fjs-Nonce).
   | { type: 'hmac';    ref: string; header_prefix?: string; refusal?: CredentialRefusal[]; per_caller?: true }
-  // A vendor's own scheme (Basic, a secret in the body, a minted JWT, SigV4),
+  // A vendor's own scheme (a secret in the body, a minted JWT, SigV4),
   // supplied as a function by the connector: `signer` names one of
   // `ConduitOptions.signers`, `ref` is the secret handed to it (`FJS-D891`).
+  // HTTP Basic is the built-in `signer: 'basic'`.
   // A name and not the function, because a descriptor round-trips through the
   // registry as JSON.
   | { type: 'signed';  ref: string; signer: string; refusal?: CredentialRefusal[]; per_caller?: true }
@@ -465,22 +466,31 @@ export interface ResponseMeta {
 
 // ─── Streaming ──────────────────────────────────────────────
 
+// Over http, `data` is one `{ event, data, id }` per event of a
+// `text/event-stream` body and a `Uint8Array` per read of any other body
+// (`FJS-D934`). `meta` is the response the chunk is part of — a `Content-Type`
+// to pass a recording on with is answered nowhere else. A websocket stream has
+// no response and carries none.
 export interface ConduitChunk {
   data:      unknown
   sequence:  number
   timestamp: number
+  meta?:     ResponseMeta
 }
 
-// Thrown by conduit.stream() when the stream cannot be
-// established (target not found, connection failed before
-// first chunk). Check err.conduit for structured details.
+// Thrown by conduit.stream() when the stream cannot be established, and when
+// it ends in a failure. `conduit` is the ConduitError send() would have
+// answered; `meta` carries the status, which a vendor's translation of a
+// refusal reads beside the kind.
 export class ConduitStreamError extends Error {
   readonly conduit: ConduitError
+  readonly meta?:   ResponseMeta
 
-  constructor(err: ConduitError) {
+  constructor(err: ConduitError, meta?: ResponseMeta) {
     super(err.message)
     this.name    = 'ConduitStreamError'
     this.conduit = err
+    if (meta) this.meta = meta
   }
 }
 
@@ -641,7 +651,9 @@ export interface ConduitOptions {
 
   // The functions a `{ type: 'signed', signer }` target names, by name. A
   // connector exports its own to spread in here (`FJS-D891`). A target naming
-  // one that is not here is refused at put().
+  // one that is not here is refused at put(). `basic` (RFC 7617, the ref
+  // resolving to `user:password`) is always installed, and a name it holds is
+  // refused here (`src/signers.ts`).
   signers?:     Record<string, Signer>
 
   // Targets to register immediately on init.

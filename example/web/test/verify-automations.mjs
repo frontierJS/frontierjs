@@ -193,7 +193,7 @@ const signInAs = (email) => evaluate(`
 const archiveLeftovers = () => evaluate(`
   const { flows } = await import(${JSON.stringify(FLOW_MODULE)});
   const found = await flows.service.find({ status: { in: ['draft', 'active', 'paused'] } }, { limit: 200 });
-  const rows  = Array.isArray(found) ? found : found?.data ?? [];
+  const rows  = found.data;
   let moved = 0;
   for (const f of rows.filter(f => f.name.startsWith(${JSON.stringify(PREFIX)}))) {
     await flows.service.invoke('archive', f.id);
@@ -485,12 +485,11 @@ try {
   const readsNothing = () => evaluate(`
     const { flows } = await import(${JSON.stringify(FLOW_MODULE)});
     const { runs }  = await import(${JSON.stringify(RUN_MODULE)});
-    const rows = (v) => Array.isArray(v) ? v : v?.data ?? [];
     const status = async (p) => { try { await p; return 200 } catch (e) { return e?.code ?? e?.status ?? String(e) } };
     return {
-      flowListed: rows(await flows.service.find({}, { limit: 200 })).some(f => f.id === ${JSON.stringify(flowId)}),
+      flowListed: (await flows.service.find({}, { limit: 200 })).data.some(f => f.id === ${JSON.stringify(flowId)}),
       flow:       await status(flows.service.get(${JSON.stringify(flowId)})),
-      runListed:  rows(await runs.service.find({}, { limit: 200 })).some(r => r.id === ${JSON.stringify(runId)}),
+      runListed:  (await runs.service.find({}, { limit: 200 })).data.some(r => r.id === ${JSON.stringify(runId)}),
       run:        await status(runs.service.get(${JSON.stringify(runId)})),
       steps:      await status(runs.service.invoke('steps', ${JSON.stringify(runId)})),
       pause:      await status(flows.service.invoke('pause', ${JSON.stringify(flowId)})),

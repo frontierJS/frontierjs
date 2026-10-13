@@ -28,7 +28,7 @@
  * expression with `return` on its own line — ASI turns it into `return;`.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, readdirSync, statSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -79,16 +79,26 @@ export function findChrome({ run = whichSync, exists = existsSync, candidates = 
 // Two halves, because neither alone is enough:
 //   · a signal-safe sweep of what THIS process launched, so an interrupted run
 //     takes its browsers with it. Synchronous — an exit handler cannot await.
-//   · a reap of PREVIOUS runs' profiles on the way in, past an age floor,
-//     which is the only thing that covers a SIGKILL no handler can see. The
-//     floor is what keeps a concurrent drive of the same suite safe.
+//   · a reap of PREVIOUS runs' profiles on the way in, which is the only thing
+//     that covers a SIGKILL no handler can see — a tool call's timeout sends
+//     exactly that. A profile is named for the pid that launched it, and the
+//     reap takes one whose launcher is dead: it kills the Chrome still holding
+//     it, then removes it. An age floor cannot do this job. The orphan touches
+//     its profile every 20-50s, so the profile never ages past the floor, and
+//     removing it without the kill only lets Chrome write it back — 41
+//     profiles and 7.9GB survived that way (FJS-2762). A live launcher is
+//     what keeps a concurrent drive safe.
+//
+// Chrome's own temp files (`com.google.Chrome.*`) follow $TMPDIR, so it is
+// pointed inside the profile and they go with it; a SIGKILLed Chrome left
+// hundreds a day in /tmp.
 //
 // The sweep cannot come from litestone's tmp-dirs.js: mesa is the leaf and
 // takes no framework dependency but @frontierjs/toolbelt, which does no I/O by
 // ruling (FJS-D26). Change one, ask whether the other needs it.
 
-const REAP_AFTER_MS = 60 * 60 * 1000
 const PROFILE_PREFIX = 'fjs-drive-'
+const OWNED_PROFILE  = /^fjs-drive-(\d+)-/
 
 /** Chrome processes this run launched, with the profile each one holds and
  *  whether that profile is the caller's to keep. */
@@ -104,7 +114,7 @@ function sleepSync(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 
  *  the profile open, and it writes the directory back after it is removed. The
  *  pattern starts past the dashes, or pkill reads it as an option. */
 function killHolders(entry) {
-  try { entry.chrome.kill('SIGKILL') } catch { /* already gone */ }
+  try { entry.chrome?.kill('SIGKILL') } catch { /* already gone */ }
   try { spawnSync('pkill', ['-KILL', '-f', `user-data-dir=${entry.profile}`]) } catch { /* no pkill */ }
 }
 
@@ -150,17 +160,28 @@ function installSweep() {
   process.on('unhandledRejection', (e) => { if (hostOwns('unhandledRejection')) return; sweepLaunched(); console.error(e); process.exit(1) })
 }
 
-function reapStaleProfiles() {
-  const cutoff = Date.now() - REAP_AFTER_MS
+/** Whether a pid names a running process. EPERM is a process somebody else
+ *  owns — alive, and its profile is not ours to take. */
+function alive(pid) {
+  try { process.kill(pid, 0); return true }
+  catch (e) { return e.code === 'EPERM' }
+}
+
+function reapOrphanedProfiles() {
   let entries
   try { entries = readdirSync(tmpdir()) } catch { return }
+  const orphans = []
   for (const name of entries) {
-    if (!name.startsWith(PROFILE_PREFIX)) continue
-    const full = join(tmpdir(), name)
-    try {
-      if (statSync(full).mtimeMs > cutoff) continue
-      rmSync(full, { recursive: true, force: true })
-    } catch { /* a concurrent drive got there first */ }
+    const owner = name.match(OWNED_PROFILE)?.[1]
+    if (!owner || alive(Number(owner))) continue
+    orphans.push({ profile: join(tmpdir(), name) })
+  }
+  if (!orphans.length) return
+  // Kill first, wait, then remove — the order sweepLaunched() explains.
+  for (const entry of orphans) killHolders(entry)
+  sleepSync(300)
+  for (const { profile } of orphans) {
+    try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch { /* a concurrent drive got there first */ }
   }
 }
 
@@ -206,9 +227,14 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       : 'no Chrome on this machine — install Chrome or Chromium, or point $FJS_CHROME at a binary')
 
   installSweep()
-  reapStaleProfiles()
+  reapOrphanedProfiles()
   if (kept) mkdirSync(kept, { recursive: true })
-  const profile = kept ?? mkdtempSync(join(tmpdir(), PROFILE_PREFIX))
+  const profile = kept ?? mkdtempSync(join(tmpdir(), `${PROFILE_PREFIX}${process.pid}-`))
+  // Emptied each launch: a kept profile would otherwise collect what every
+  // SIGKILLed browser before this one left in it.
+  const chromeTmp = join(profile, 'tmp')
+  rmSync(chromeTmp, { recursive: true, force: true })
+  mkdirSync(chromeTmp)
   // A port Chrome PICKS and a profile of its own, both. A fixed 9222 is held by
   // whichever browser bound it first, so a second drive attaches to another
   // run's session and grades that screen — measured in example's `verify:stock`,
@@ -224,7 +250,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     '--force-color-profile=srgb', '--hide-scrollbars',
     ...args,
     'about:blank',
-  ], { stdio: ['ignore', 'ignore', 'pipe'] })
+  ], { stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, TMPDIR: chromeTmp } })
 
   const entry = { chrome, profile, keep: !!kept }
   launched.add(entry)

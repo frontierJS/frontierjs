@@ -70,7 +70,7 @@ title: Server
   // method — POST /servers/:id with X-Service-Method: events, the sub-path form
   // is a 404 — and no announcement carries it.
   async function loadEvents() {
-    events = rowsOf(await servers.service.invoke('events', page.params.id))
+    events = await servers.service.invoke('events', page.params.id)
   }
 
   // Which apps run here — the question an operator asks before draining or
@@ -165,17 +165,6 @@ title: Server
     online: 'success', draining: 'warning',
     unreachable: 'danger', stopped: 'muted', destroyed: 'muted',
   }
-
-  /**
-   * `action()` hands back exactly what the server sent, and a custom method
-   * that answers rows sends `{ total, limit, offset, data }` — only `find` is
-   * built into a list envelope.
-   *
-   * Assigning that object straight to `events` is not an error: `.length` is
-   * undefined, so the page renders "No events recorded" over a full trail and
-   * looks like a service that returned nothing.
-   */
-  const rowsOf = (result) => Array.isArray(result) ? result : result?.data ?? []
 
   // ── While a job is working on this machine ─────────────────────────
   //

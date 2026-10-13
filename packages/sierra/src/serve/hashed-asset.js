@@ -35,7 +35,22 @@
  */
 const HASHED = /-[A-Za-z0-9_-]{8}(?:\.[a-z0-9]+)+$/
 
-/** @param {string} path @returns {boolean} */
+/**
+ * The shape alone is not enough, because eight letters is an English word:
+ * `media/images/massage-featured.jpg` matched, and a photo replaced at that
+ * path never reached anyone who had loaded it (`FJS-2754`). No character test
+ * separates `featured` from a hash — `IMG_1234` and `20261012` are names a
+ * camera and a date stamp write. WHERE the file sits does: Vite writes every
+ * hashed file into its `assets/` directory at the build root, and a file the
+ * app put there by hand is the one case left. A build with another `assetsDir`
+ * is revalidated, the safe way to be wrong.
+ *
+ * Read against the ROOT-RELATIVE path, so a server rooted under a directory
+ * named `assets` does not hand every file it serves the answer.
+ */
+const IN_ASSETS = /^assets[/\\]/
+
+/** @param {string} path  root-relative, as a request names it @returns {boolean} */
 export function isHashedAsset(path) {
-  return HASHED.test(path)
+  return IN_ASSETS.test(path) && HASHED.test(path)
 }

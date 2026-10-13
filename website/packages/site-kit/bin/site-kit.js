@@ -2,7 +2,8 @@
 // bin/site-kit.js — run a site from its content/ folder.
 //
 //   site-kit dev <dir> [--port N] [--host]       client-routed, how a page is written
-//   site-kit build <dir>                         prerendered into <dir>/dist, what ships
+//   site-kit build <dir> [--binary]              prerendered into <dir>/dist, what ships;
+//                                                --binary then compiles it into <dir>/bin/site
 //   site-kit preview <dir> [--port N] [--host]   serves <dir>/dist as a static host would
 //
 // Both servers answer on localhost only; --host opens them to the LAN.
@@ -19,11 +20,17 @@ const flag = (name) => {
 }
 // --host takes no value, so the word after it is still a positional.
 const [cmd, dir] = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--port')
-const port = flag('port') ? Number(flag('port')) : undefined
-const lan  = args.includes('--host')
+const port   = flag('port') ? Number(flag('port')) : undefined
+const lan    = args.includes('--host')
+const binary = args.includes('--binary')
 
-const USAGE = 'usage: site-kit <dev|build|preview> <dir> [--port N] [--host]'
+const USAGE = 'usage: site-kit <dev|build|preview> <dir> [--port N] [--host] [--binary]'
 if (!dir || !['dev', 'build', 'preview'].includes(cmd)) {
+  console.error(USAGE)
+  process.exit(2)
+}
+if (binary && cmd !== 'build') {
+  console.error('site-kit: --binary compiles what a build wrote, so it goes with build')
   console.error(USAGE)
   process.exit(2)
 }
@@ -50,6 +57,11 @@ if (cmd === 'preview') {
 
   if (cmd === 'build') {
     await vite.build(config)
+    if (binary) {
+      const { compileSite } = await import('@frontierjs/sierra/site/compile')
+      const made = compileSite({ dir: resolve(root, 'dist'), outfile: resolve(root, 'bin/site') })
+      console.log(`\n  ·  ${made.files} files from ${dir}/dist → ${dir}/bin/site\n     run it: ${dir}/bin/site --port 8080\n`)
+    }
   } else {
     const server = await vite.createServer(config)
     await server.listen()

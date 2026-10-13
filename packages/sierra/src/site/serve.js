@@ -30,7 +30,7 @@
 
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
 import { isHashedAsset } from '../serve/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
@@ -74,8 +74,30 @@ async function resolveFile(rootDir, safe, allowOutside) {
       // What the URL SAID is settled above; what the file IS is a second
       // question, and only realpath can answer it (`FJS-783`).
       if (!await withinRoot(rootDir, file, allowOutside)) continue
-      return file
+      // Root-relative, the name `resolveEntry` gives: `cacheFor` reads where in
+      // the build the file sits, and the disk path above the root is not that.
+      return { read: file, name: relative(rootDir, file) }
     } catch { /* next candidate */ }
+  }
+  return null
+}
+
+/**
+ * The same two candidates against a closed map of files — the site compiled into
+ * one executable (`site/compile.js`). Bun's embedded filesystem has no
+ * directories and no realpath, so `stat` and `withinRoot` answer nothing there;
+ * a map key IS the published path, and nothing outside the map is reachable.
+ *
+ * `name` is the published path because the embedded file is renamed with a
+ * content hash — `index-2ax96sah.html` — and `cacheFor` reading that would mark
+ * every page immutable.
+ */
+function resolveEntry(files, safe) {
+  const candidates = safe === '' || safe.endsWith('/')
+    ? [join(safe, 'index.html')]
+    : [safe, join(safe, 'index.html')]
+  for (const name of candidates) {
+    if (files.has(name)) return { read: files.get(name), name }
   }
   return null
 }
@@ -84,7 +106,10 @@ async function resolveFile(rootDir, safe, allowOutside) {
  * Serve `dir` as a prerendered site origin.
  *
  * @param {object}  opts
- * @param {string}  opts.dir           the build output — one index.html per route
+ * @param {string}  [opts.dir]         the build output — one index.html per route
+ * @param {Map<string, string>} [opts.files]  in place of `dir`: published path
+ *                                     (`about/index.html`) → a path `readFile`
+ *                                     reads. What a compiled site serves from
  * @param {number}  [opts.port=0]      0 asks the OS, and the real one comes back
  *                                     on the result, so parallel drives cannot
  *                                     collide
@@ -96,9 +121,12 @@ async function resolveFile(rootDir, safe, allowOutside) {
  * @returns {Promise<{ port: number, url: string, close: () => Promise<void> }>}
  */
 export async function serveSite({
-  dir, port = 0, host = '0.0.0.0', notFound = '404.html', allowOutside = [],
+  dir, files, port = 0, host = '0.0.0.0', notFound = '404.html', allowOutside = [],
 } = {}) {
-  const rootDir = resolve(dir)
+  const rootDir = files ? null : resolve(dir)
+  const find    = files
+    ? async (safe) => resolveEntry(files, safe)
+    : (safe) => resolveFile(rootDir, safe, allowOutside)
 
   const server = createServer(async (req, res) => {
     const headers = { 'X-Content-Type-Options': 'nosniff' }
@@ -131,11 +159,11 @@ export async function serveSite({
       return
     }
 
-    const file = await resolveFile(rootDir, safe, allowOutside)
+    const file = await find(safe)
 
     if (file) {
-      const body   = await readFile(file)
-      const type   = contentTypeFor(file, { charset: true })
+      const body   = await readFile(file.read)
+      const type   = contentTypeFor(file.name, { charset: true })
       const answer = bodyAnswer(body, type, {
         range:          req.headers.range,
         acceptEncoding: req.headers['accept-encoding'],
@@ -145,7 +173,7 @@ export async function serveSite({
         ...headers,
         ...answer.headers,
         'Content-Type':  type,
-        'Cache-Control': cacheFor(file),
+        'Cache-Control': cacheFor(file.name),
       })
       res.end(req.method === 'HEAD' ? undefined : answer.body)
       return
@@ -153,9 +181,9 @@ export async function serveSite({
 
     // A miss gets the site's own 404 page where the build emitted one, with the
     // status still 404 — a soft 404 is a page a crawler indexes.
-    const fallback = await resolveFile(rootDir, notFound, allowOutside)
+    const fallback = await find(notFound)
     if (fallback) {
-      const body = await readFile(fallback)
+      const body = await readFile(fallback.read)
       res.writeHead(404, {
         ...headers,
         'Content-Type':   'text/html; charset=utf-8',

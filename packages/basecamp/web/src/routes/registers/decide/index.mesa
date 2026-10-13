@@ -1,0 +1,599 @@
+---
+title: Decide
+---
+<script>
+  // `fli decide`'s walk on a phone: one open question at a time, its options
+  // and the recommendation, and a ruling in one press — swipe right (or →) for
+  // the recommendation, left (or ←) to skip, a letter for any other option.
+  // "Explain" asks Claude, read-only, on the card, and keeps working while you
+  // swipe on; it is there when the question comes round again.
+  //
+  // A ruling is fli's `decide` (api services/registers), the same refusals and
+  // the same register:check put-back as the terminal. It is held for
+  // UNDO_MS before it is sent, because a swipe is easier to make by accident
+  // than a keypress and a sent ruling is two edited files.
+  //
+  // Skips are remembered per browser and go to the back of the queue, so the
+  // next visit starts on questions not yet looked at.
+  //
+  // `?ids=a,b,c` walks only those questions, in that order — a triage tier
+  // that lives outside the registers. An id already ruled drops out.
+  import { page }      from '@frontierjs/sierra/router'
+  import { registers } from '../../../resources/Register.mesa'
+
+  import Badge    from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Markdown from '@frontierjs/ui/components/display/Markdown.mesa'
+  import Pill     from '@frontierjs/ui/components/display/Pill.mesa'
+
+  const SECTION_KEY  = 'basecamp.registers.section'   // shared with /registers/
+  const SKIPPED_KEY  = 'basecamp.registers.skipped'
+  const UNDO_MS      = 5000
+  const EXPLAIN_POLL = 2000
+  const SWIPE_AT     = 0.28   // of the card's width
+  const FLY_MS       = 220
+
+  let queue   = null   // { sections, questions, open }
+  let error   = null
+  let offered = true
+
+  let section = ''
+  let skipped = []
+  try { section = localStorage.getItem(SECTION_KEY) ?? '' } catch {}
+  try { skipped = JSON.parse(localStorage.getItem(SKIPPED_KEY) ?? '[]') } catch {}
+
+  let destroyed = false
+
+  async function load() {
+    try {
+      queue = await registers.service.invoke('queue', null)
+      error = null
+    } catch (err) {
+      if (err.code === 404) offered = false
+      error = err.message
+    }
+  }
+
+  load().then(tick)
+  addEventListener('keydown', key)
+  $.onDestroy(() => {
+    destroyed = true
+    clearTimeout(explainTimer)
+    removeEventListener('keydown', key)
+    flush()
+  })
+
+  function remember(k, v) { try { localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)) } catch {} }
+
+  // ─── the queue ──────────────────────────────────────────────────────
+
+  let ruled   = []     // { id, question, pick, ruling, closed, state: 'writing' | 'done' } — this visit
+  let pending = null   // { q, pick, why, section } — inside the undo window
+  let pendingTimer = null
+
+  const only = () => (page.query?.ids ?? '').split(',').map(s => s.trim()).filter(Boolean)
+
+  // The walk's order — or `?ids=`'s — with what was skipped moved to the back
+  // in the order it was skipped. A question being ruled or inside its undo
+  // window is out.
+  function remaining() {
+    if (!queue) return []
+    const out   = new Set([...ruled.map(r => r.id), pending?.q.id].filter(Boolean))
+    const ids   = only()
+    const walk  = ids.length ? ids.map(id => queue.questions.find(q => q.id === id)).filter(Boolean) : queue.questions
+    const live  = walk.filter(q => !out.has(q.id))
+    const back  = new Set(skipped)
+    return [...live.filter(q => !back.has(q.id)), ...skipped.map(id => live.find(q => q.id === id)).filter(Boolean)]
+  }
+  const current = () => remaining()[0] ?? null
+  const top     = () => current() ? [current()] : []
+
+  const optionText = (q, letter) => q.options.find(o => o.letter === letter)?.text ?? ''
+
+  // ─── a card arriving ────────────────────────────────────────────────
+
+  let follow = ''
+  let asking = null    // { letter } — a pick against the recommendation, waiting on its reason
+  let why    = ''
+
+  function arrived() {
+    follow = ''; asking = null; why = ''
+    dx = 0; flying = false
+  }
+
+  // ─── the swipe ──────────────────────────────────────────────────────
+  //
+  // `touch-action: pan-y` gives vertical moves to the page's own scroll and
+  // horizontal ones to these handlers; a move that turns out vertical is the
+  // browser's, and it says so with pointercancel.
+
+  let dx = 0
+  let dragging = false
+  let flying   = false
+  let drag     = null   // { id, x, y, width, axis }
+
+  function down(e) {
+    if (flying || (e.pointerType === 'mouse' && e.button !== 0)) return
+    if (e.target.closest('button, a, input, textarea, select, summary, form')) return
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, width: e.currentTarget.offsetWidth || 360, axis: null }
+  }
+
+  function move(e) {
+    if (!drag || e.pointerId !== drag.id) return
+    const mx = e.clientX - drag.x
+    const my = e.clientY - drag.y
+    if (!drag.axis) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return
+      drag.axis = Math.abs(mx) > Math.abs(my) ? 'x' : 'y'
+      if (drag.axis === 'x') { dragging = true; e.currentTarget.setPointerCapture?.(e.pointerId) }
+    }
+    if (drag.axis === 'x') dx = mx
+  }
+
+  function up(e) {
+    if (!drag || e.pointerId !== drag.id) return
+    const { width, axis } = drag
+    drag = null
+    dragging = false
+    if (axis !== 'x') return
+    const q = current()
+    if (q?.recommend && dx > width * SWIPE_AT) return rule(q, q.recommend.letter)
+    if (dx < -width * SWIPE_AT) return skip()
+    dx = 0
+  }
+
+  function cancel() { drag = null; dragging = false; dx = 0 }
+
+  // The card leaves before the next one draws; a timer rather than
+  // transitionend, which a backgrounded tab or a headless browser may never fire.
+  function fly(direction, then) {
+    flying = true
+    dx = (direction === 'right' ? 1 : -1) * Math.max(innerWidth, 480)
+    setTimeout(() => { then(); arrived() }, FLY_MS)
+  }
+
+  const stamp = (side) => {
+    const d = side === 'right' ? dx : -dx
+    return d > 0 ? Math.min(1, d / 120) : 0
+  }
+
+  // ─── skip, rule, undo ───────────────────────────────────────────────
+
+  function skip() {
+    const q = current()
+    if (!q || flying) return
+    fly('left', () => {
+      skipped = [...skipped.filter(id => id !== q.id), q.id]
+      remember(SKIPPED_KEY, skipped)
+    })
+  }
+
+  function press(letter) {
+    const q = current()
+    if (!q || flying) return
+    if (q.recommend?.letter === letter) return rule(q, letter)
+    asking = { letter }
+    why = ''
+    queueMicrotask(() => document.getElementById('decide-why')?.focus())
+  }
+
+  function rule(q, pick, reason = '') {
+    if (!section) {
+      // The refusal renders above the card, off a phone's screen, so a press
+      // read as doing nothing — take the eye to the picker it is asking for.
+      error = 'Choose the DECISIONS.md section your rulings go under first.'
+      dx = 0
+      const picker = document.getElementById('decide-section')
+      picker?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      picker?.focus()
+      return
+    }
+    // One ruling in its window at a time: a second press sends the first.
+    flush()
+    error = null
+    fly('right', () => {
+      pending = { q, pick, why: reason, section }
+      pendingTimer = setTimeout(flush, UNDO_MS)
+    })
+  }
+
+  function undo() {
+    if (!pending) return
+    clearTimeout(pendingTimer)
+    const { q } = pending
+    pending = null
+    skipped = skipped.filter(id => id !== q.id)
+    remember(SKIPPED_KEY, skipped)
+    arrived()
+  }
+
+  // decide writes DECISIONS.md and the paper under fli's register guard, so
+  // rulings go one after another, never two at once.
+  let chain = Promise.resolve()
+
+  function flush() {
+    if (!pending) return
+    clearTimeout(pendingTimer)
+    const p = pending
+    pending = null
+    ruled = [...ruled, { id: p.q.id, question: p.q.question, pick: p.pick, ruling: null, closed: null, state: 'writing' }]
+    chain = chain.then(async () => {
+      try {
+        const out = await registers.service.invoke('decide', p.q.id, { pick: p.pick, why: p.why, section: p.section })
+        ruled = ruled.map(r => r.id === p.q.id ? { ...r, ruling: out.ruling, closed: out.closed, state: 'done' } : r)
+        skipped = skipped.filter(id => id !== p.q.id)
+        remember(SKIPPED_KEY, skipped)
+      } catch (err) {
+        // Back on top with the reason, and the queue re-read — a refusal is
+        // often another session having ruled it first.
+        ruled = ruled.filter(r => r.id !== p.q.id)
+        if (!destroyed) await load()
+        error = `${p.q.id} was not ruled: ${err.message}`
+      }
+    })
+  }
+
+  function confirmWhy(e) {
+    e?.preventDefault()
+    const q = current()
+    if (!q || !asking || !why.trim()) return
+    rule(q, asking.letter, why.trim())
+  }
+
+  function chooseSection(value) {
+    section = value
+    remember(SECTION_KEY, value)
+    if (value && /section/.test(error ?? '')) error = null
+  }
+
+  // ─── Claude ─────────────────────────────────────────────────────────
+  //
+  // One loop: whatever card is on top has its explanation read once, and
+  // re-read while Claude is still on it. A card swiped away stops being polled
+  // and its run carries on in the API.
+
+  let explained  = {}      // id → explanation, or null when there is none
+  let explaining = false
+  let explainTimer = null
+
+  async function tick() {
+    const q = current()
+    if (q && (explained[q.id] === undefined || explained[q.id]?.state === 'working')) {
+      try { explained = { ...explained, [q.id]: await registers.service.invoke('explanation', q.id) } } catch {}
+    }
+    if (!destroyed && offered) explainTimer = setTimeout(tick, EXPLAIN_POLL)
+  }
+
+  async function explainIt(q, ask = '') {
+    if (explaining) return
+    explaining = true
+    error = null
+    try {
+      explained = { ...explained, [q.id]: await registers.service.invoke('explain', q.id, ask ? { ask } : {}) }
+      follow = ''
+    } catch (err) {
+      error = err.message
+    } finally {
+      explaining = false
+    }
+  }
+
+  function ask(e, q) {
+    e.preventDefault()
+    if (follow.trim()) explainIt(q, follow.trim())
+  }
+
+  const lastTurn = (ex, t) => ex.turns[ex.turns.length - 1] === t
+  const seconds  = (ex) => Math.max(0, Math.round((Date.now() - Date.parse(ex.startedAt)) / 1000))
+
+  // ─── keys, for a laptop ─────────────────────────────────────────────
+
+  function key(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.target.closest?.('input, textarea, select, [contenteditable]')) return
+    const q = current()
+    if (!q || asking) return
+    if (e.key === 'ArrowRight' && q.recommend) { e.preventDefault(); rule(q, q.recommend.letter) }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); skip() }
+    else if (e.key === 'e' && !explained[q.id]) { e.preventDefault(); explainIt(q) }
+    else if (e.key === 'u' && pending) { e.preventDefault(); undo() }
+    else if (/^[a-dA-D]$/.test(e.key) && e.key !== 'e' && q.options.some(o => o.letter === e.key.toUpperCase())) {
+      e.preventDefault(); press(e.key.toUpperCase())
+    }
+  }
+</script>
+
+<div class="decide stack gap-md" id="decide">
+  <header class="decide-head">
+    <a href="/registers/" class="text-sm">← Registers</a>
+    {#if queue}
+      <span class="text-sm text-muted" id="decide-count">
+        {#if only().length}<a href="/registers/decide/" id="decide-all">your list</a> · {/if}{remaining().length} left{#if ruled.length} · {ruled.length} ruled{/if}{#if skipped.length} · {skipped.filter(id => remaining().some(q => q.id === id)).length} skipped{/if}
+      </span>
+    {/if}
+  </header>
+
+  {#if !offered}
+    <Callout tone="muted" title="Not offered on this Basecamp">
+      <p class="text-body">
+        The registers are the workspace Basecamp runs in, and Explain runs Claude Code in that checkout —
+        so this is only offered by a Basecamp on your own machine, started with <code>LOCAL_MACHINE=1</code>.
+      </p>
+      <p class="text-sm text-muted">{error}</p>
+    </Callout>
+  {:else if !queue}
+    {#if error}<article class="alert danger" id="screen-error"><div class="alert-content">{error}</div></article>{/if}
+    <p class="text-muted" aria-busy="true">Reading the open questions…</p>
+  {:else}
+    <label class="decide-file text-sm" data-empty={section ? null : 'true'}>
+      <span>{section ? 'Rulings go under' : 'First: which DECISIONS.md section do rulings go under?'}</span>
+      <select class="field" id="decide-section" value={section} on:change={(e) => chooseSection(e.target.value)}>
+        <option value="">Choose a section…</option>
+        {#each queue.sections as s}<option value={s} selected={s === section}>{s}</option>{/each}
+      </select>
+    </label>
+
+    {#if error}
+      <article class="alert danger" id="screen-error"><div class="alert-content">{error}</div></article>
+    {/if}
+
+    {#each top() as q (q.id)}
+      <article class="decide-card {dragging ? 'dragging' : ''} {flying ? 'flying' : ''}" id="decide-card" data-id={q.id}
+               style:transform={dx ? `translateX(${dx}px) rotate(${dx / 30}deg)` : null}
+               on:pointerdown={down} on:pointermove={move} on:pointerup={up} on:pointercancel={cancel}>
+        {#if q.recommend}<span class="pill success decide-stamp decide-stamp-right" style:opacity={stamp('right')}>{q.recommend.letter} ✓</span>{/if}
+        <span class="pill decide-stamp decide-stamp-left" style:opacity={stamp('left')}>Later</span>
+
+        <div class="cluster gap-xs">
+          {#if q.paper}<Pill tone="info">{q.paper}</Pill>{/if}
+          {#if q.status}<span class="text-xs text-muted">{q.status}</span>{/if}
+          {#if skipped.includes(q.id)}<Badge tone="muted">skipped before</Badge>{/if}
+        </div>
+
+        <h2 class="decide-question"><Markdown text={q.question} /></h2>
+
+        {#if q.body}
+          <div class="decide-body text-sm" id="decide-body"><Markdown text={q.body} /></div>
+        {/if}
+
+        <ol class="decide-options" id="decide-options">
+          {#each q.options as o (o.letter)}
+            <li class="decide-option {q.recommend?.letter === o.letter ? 'recommended' : ''}" data-letter={o.letter}>
+              <span class="decide-letter">{o.letter}</span>
+              <div class="stack gap-3xs">
+                <Markdown text={o.text} class="text-sm" />
+                {#if q.recommend?.letter === o.letter}<span><Pill tone="success">Recommended</Pill></span>{/if}
+              </div>
+            </li>
+          {/each}
+        </ol>
+
+        {#if q.recommend}
+          <section class="decide-why stack gap-3xs" id="decide-recommend">
+            <span class="kicker">Why {q.recommend.letter}</span>
+            <Markdown text={q.recommend.why} class="text-sm" />
+          </section>
+        {:else}
+          <p class="text-sm text-muted">No recommendation is written, so any pick needs a reason.</p>
+        {/if}
+
+        {#if !explained[q.id]}
+          <div class="cluster gap-sm">
+            <Button variant="outlined" id="decide-explain" disabled={explaining} onclick={() => explainIt(q)}>
+              {explaining ? 'Asking…' : '✦ Explain with Claude'}
+            </Button>
+            <span class="text-xs text-muted">read-only · keeps going if you swipe on</span>
+          </div>
+        {:else}
+          {@const ex = explained[q.id]}
+          <section class="decide-claude stack gap-sm" id="decide-explanation" data-state={ex.state}>
+            <span class="kicker">Claude</span>
+            {#each ex.turns as t}
+              {#if t.ask}<p class="decide-ask text-sm">{t.ask}</p>{/if}
+              {#if ex.state === 'working' && lastTurn(ex, t)}
+                <p class="text-sm text-muted" aria-busy="true">
+                  Reading{t.steps ? ` — ${t.steps} step${t.steps === 1 ? '' : 's'}` : ''} · {seconds(ex)}s
+                  {#if t.doing}<br /><code class="text-xs">{t.doing}</code>{/if}
+                </p>
+              {:else if t.text}
+                <Markdown text={t.text} headingBase={4} class="text-sm" />
+              {/if}
+            {/each}
+            {#if ex.error}<article class="alert danger"><div class="alert-content text-sm">{ex.error}</div></article>{/if}
+            {#if ex.state !== 'working'}
+              <form class="decide-follow" on:submit={(e) => ask(e, q)}>
+                <label class="visually-hidden" for="decide-follow">Ask Claude a follow-up</label>
+                <input class="field" id="decide-follow" placeholder={ex.state === 'error' ? 'Ask again…' : 'Ask a follow-up…'}
+                       value={follow} on:input={(e) => follow = e.target.value} />
+                <Button type="submit" size="sm" disabled={!follow.trim() || explaining}>Ask</Button>
+              </form>
+              {#if ex.state === 'error' && !ex.turns.some(t => t.text)}
+                <Button size="sm" variant="ghost" onclick={() => explainIt(q)}>Try again</Button>
+              {/if}
+            {/if}
+            {#if ex.cost}<span class="text-xs text-muted">${ex.cost.toFixed(2)}</span>{/if}
+          </section>
+        {/if}
+
+        <p class="text-xs text-muted decide-where"><code>{q.file}:{q.line}</code></p>
+      </article>
+    {:else}
+      <section class="stack gap-sm" id="decide-done">
+        <h2 class="h4">{ruled.length ? 'That is every question.' : 'Nothing is waiting on a ruling.'}</h2>
+        <p class="text-sm text-muted">
+          {queue.open ? `${queue.open} more ${queue.open === 1 ? 'question has' : 'questions have'} no lettered options yet — frame them from Registers first.` : 'Every open question has been ruled.'}
+        </p>
+        <Button variant="outlined" href="/registers/">Back to Registers</Button>
+      </section>
+    {/each}
+
+    {#if ruled.length}
+      <details class="decide-ruled text-sm" id="decide-ruled">
+        <summary>{ruled.length} ruled this visit — uncommitted</summary>
+        <ul class="stack gap-3xs">
+          {#each ruled as r (r.id)}
+            <li><code>{r.ruling ?? '…'}</code> {r.pick} — {r.question}{r.closed ? ` · closed ${r.closed}` : ''}</li>
+          {/each}
+        </ul>
+      </details>
+    {/if}
+  {/if}
+
+  {#if queue && (current() || pending)}
+    <div class="decide-bar stack gap-xs" id="decide-bar">
+      {#if pending}
+        <div class="decide-undo" id="decide-undo">
+          <span class="text-sm">Ruling <strong>{pending.pick}</strong> on {pending.q.question}</span>
+          <Button size="sm" variant="outlined" id="decide-undo-button" onclick={undo}>Undo</Button>
+          <span class="decide-undo-fill" style:animation-duration={`${UNDO_MS}ms`}></span>
+        </div>
+      {/if}
+
+      {#if current()}
+        {#if asking}
+          <form class="stack gap-xs" id="decide-reason" on:submit={confirmWhy}>
+            <label class="text-sm" for="decide-why">
+              Why <strong>{asking.letter}</strong>{current().recommend ? ` over ${current().recommend.letter}` : ''}?
+              <span class="text-muted">It becomes the ruling's reason.</span>
+            </label>
+            <textarea class="field" rows="3" id="decide-why" value={why} on:input={(e) => why = e.target.value}></textarea>
+            <div class="decide-actions">
+              <Button variant="ghost" onclick={() => asking = null}>Cancel</Button>
+              <Button type="submit" disabled={!why.trim()}>Rule {asking.letter}</Button>
+            </div>
+          </form>
+        {:else}
+          <div class="decide-actions" id="decide-actions">
+            <Button variant="ghost" id="decide-skip" onclick={skip}>Skip</Button>
+            {#each current().options.filter(o => o.letter !== current().recommend?.letter) as o (o.letter)}
+              <Button variant="outlined" data-letter={o.letter} onclick={() => press(o.letter)}>{o.letter}</Button>
+            {/each}
+            {#if current().recommend}
+              <Button tone="success" id="decide-accept" data-letter={current().recommend.letter}
+                      onclick={() => rule(current(), current().recommend.letter)}>
+                {current().recommend.letter} · Recommended
+              </Button>
+            {/if}
+          </div>
+          <p class="text-xs text-muted decide-hint">Swipe right for the recommendation, left to skip. Keys: → ← a–d, e explains.</p>
+        {/if}
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .decide { max-inline-size: 40rem; margin-inline: auto; padding-block-end: var(--space-sm); }
+  .decide-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); }
+
+  .decide-file { display: grid; gap: var(--space-3xs); }
+  .decide-file[data-empty='true'] {
+    padding: var(--space-sm);
+    border: var(--border-width) solid var(--rule-strong);
+    border-radius: var(--card-radius);
+    background: var(--tint-surface);
+  }
+
+  .decide-card {
+    position: relative;
+    display: grid;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border: var(--border-width) solid var(--rule);
+    border-radius: var(--card-radius);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-md);
+    touch-action: pan-y;
+    transition: transform var(--motion-base) var(--motion-ease);
+    animation: decide-in var(--motion-base) var(--motion-ease-enter, ease-out);
+  }
+  .decide-card.dragging { transition: none; user-select: none; cursor: grabbing; }
+  .decide-card.flying   { pointer-events: none; }
+  @keyframes decide-in { from { opacity: 0.3; transform: scale(0.97); } }
+
+  .decide-stamp {
+    position: absolute;
+    inset-block-start: var(--space-md);
+    font-size: var(--text-lg);
+    pointer-events: none;
+    opacity: 0;
+  }
+  .decide-stamp-right { inset-inline-start: var(--space-md); rotate: -12deg; }
+  .decide-stamp-left  { inset-inline-end: var(--space-md); rotate: 12deg; }
+
+  .decide-question { font-size: var(--text-xl); line-height: var(--leading-snug); margin: 0; }
+  .decide-question :global(p) { margin: 0; }
+
+  .decide-body { overflow-wrap: anywhere; color: var(--ink-soft); }
+
+  .decide-options { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-xs); }
+  .decide-option {
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    gap: var(--space-xs);
+    align-items: start;
+    padding: var(--space-xs) var(--space-sm);
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    overflow-wrap: anywhere;
+  }
+  .decide-option.recommended { border-color: var(--rule-strong); background: var(--tint-surface); }
+  .decide-letter {
+    display: grid;
+    place-items: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    border: var(--border-width) solid var(--rule-strong);
+    border-radius: var(--pill-radius);
+    font-weight: 600;
+  }
+
+  .decide-why    { padding-inline-start: var(--space-sm); border-inline-start: var(--border-width) solid var(--rule-strong); }
+  .decide-claude { padding: var(--space-sm); border-radius: var(--card-radius); background: var(--surface-sunken); overflow-wrap: anywhere; }
+  .decide-ask    { margin: 0; font-style: italic; color: var(--ink-mute); }
+  .decide-follow { display: flex; gap: var(--space-xs); }
+  .decide-follow .field { flex: 1; min-inline-size: 0; }
+  .decide-where  { margin: 0; overflow-wrap: anywhere; }
+
+  .decide-ruled ul { margin-block-start: var(--space-xs); padding-inline-start: var(--space-md); }
+
+  /* The bar rides the bottom of the screen, where a thumb is. */
+  .decide-bar {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 1;
+    padding: var(--space-sm) 0 max(var(--space-sm), env(safe-area-inset-bottom));
+    background: var(--surface);
+    border-block-start: var(--border-width) solid var(--rule);
+  }
+  .decide-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+  .decide-actions :global(.btn) { flex: 1; min-block-size: 3rem; justify-content: center; }
+  .decide-actions :global(#decide-accept) { flex: 2.5; }
+  .decide-hint { margin: 0; text-align: center; }
+  @media (pointer: coarse) { .decide-hint { display: none; } }
+
+  .decide-undo {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--card-radius);
+    background: var(--tint-surface);
+    overflow: hidden;
+  }
+  .decide-undo > .text-sm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .decide-undo-fill {
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-end: 0;
+    block-size: 3px;
+    inline-size: 100%;
+    background: var(--rule-strong);
+    transform-origin: left;
+    animation: decide-undo linear forwards;
+  }
+  @keyframes decide-undo { to { transform: scaleX(0); } }
+</style>
