@@ -319,6 +319,30 @@ root or fail marked.
 - [ ] 0.1 Run each readings command on a fresh box from `server-provision.job.ts`
   (a droplet-hour, the owner's call) and on the dev host; save the outputs as
   fixtures and note which ones exit non-zero, because those grade `unknown`.
+  - Dev-host half captured 2026-10-13: `packages/outpost/test/fixtures/posture/dev-host.json`
+    by `capture.mjs` beside it, Ubuntu 22.04, systemd 249, as uid 1000. The
+    fresh-image half, as root on 24.04, is still owed.
+  - **A missing binary THROWS.** `Bun.spawn` raises ENOENT (caddy and chronyc here)
+    rather than exiting 127, and `spawnRun` does not catch it, so 1.2 catches it
+    and grades `unknown` or one absent tool fails the whole report.
+  - **Everything that grades the box's defenses needs root**: `nft`, `iptables`,
+    `sshd -T` ("no hostkeys available"), `/root/.ssh` and `/etc/sudoers` all
+    refuse uid 1000. The Outpost is root today; if 4.4's sandbox ever adds `User=`,
+    those controls go `unknown` together.
+  - **`systemd-analyze security --json` needs systemd 250.** The fleet image is
+    24.04 (255); an imported 22.04 box refuses the flag, so `outpost.sandbox` is
+    `unknown` there unless 1.2 parses the text table.
+  - **`docker ps` reports ports as a human string**, `0.0.0.0:8090->80/tcp,
+    [::]:8090->80/tcp`, and the same app is public on IPv6 as well. `DOCKER-USER`
+    is an IPv4 chain, so `net.container-public` and 4.3 have to read and write
+    the IPv6 side too.
+  - **`/var/run/reboot-required` can name a kernel that will never boot**: it
+    lists `linux-image-5.15` while 6.8 HWE runs. Graded on age alone,
+    `patch.reboot-pending` would rise to `high` and stay there, so it compares the
+    package against the running kernel's series.
+  - `timedatectl show` has `NTPSynchronized` but no offset; the offset is
+    `chronyc -c tracking`, which the install provides. `apt-get -s` works
+    unprivileged with `Debug::NoLocking=1`.
 - [x] 0.2 Re-probe the tree for the rows this plan leans on.
   - `CleanupRun` is still `CleanupRun`: `FJS-D825`'s `MaintenanceRun` is ruled and
     unbuilt, so it is step 5.1.

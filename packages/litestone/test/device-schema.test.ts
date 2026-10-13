@@ -261,6 +261,93 @@ describe('what it will not do', () => {
   })
 })
 
+// ─── a policy that reads past the set ─────────────────────────────────────
+
+// `FJS-D847`. The relation a policy reads comes out with the model it points
+// at, and the policy does not compile without it — the device database never
+// opens and every offline read falls through to the list cache (`FJS-2248`).
+// Each refusal is paired with the same schema once the named model declares
+// `@@sync`, opened and read through the policy.
+describe('a @@sync model whose policy reads a model that is not @@sync is refused', () => {
+  const PORTAL = (rule: string, collectionSync = '') => `
+model Collection {
+  id        Int        @id
+  ownerId   Int
+  bookmarks Bookmark[]
+  @@gate("0")
+  ${collectionSync}
+}
+
+model Bookmark {
+  id           Int        @id
+  collectionId Int
+  collection   Collection @relation(fields: [collectionId], references: [id])
+  url          String
+  @@gate("0")
+  ${rule}
+  @@sync(server)
+}
+`
+  const READS = "@@allow('read', collection.ownerId == auth().id)"
+
+  test('a path through the relation: refused, naming the model to add @@sync to', () => {
+    expect(() => deviceSchema(parse(PORTAL(READS))))
+      .toThrow(/Bookmark @@allow\(read\) reads collection\.ownerId, and Collection does not declare @@sync[\s\S]*Add @@sync to Collection/)
+  })
+
+  test('with Collection synced it builds, opens, and the policy answers on the device', async () => {
+    const r = deviceSchema(parse(PORTAL(READS, '@@sync(server)')))
+    expect(r.models.sort()).toEqual(['Bookmark', 'Collection'])
+
+    const root = await createClient({ parsed: JSON.parse(JSON.stringify(r.parsed)), db: ':memory:' })
+    const sys  = root.asSystem()
+    await sys.collection.create({ data: { id: 1, ownerId: 7 } })
+    await sys.collection.create({ data: { id: 2, ownerId: 8 } })
+    await sys.bookmark.create({ data: { id: 1, collectionId: 1, url: 'a' } })
+    await sys.bookmark.create({ data: { id: 2, collectionId: 2, url: 'b' } })
+
+    const mine = await root.$setAuth({ id: 7 }).bookmark.findMany()
+    expect(mine.map((b: any) => b.url)).toEqual(['a'])
+  })
+
+  test('check(rel) is refused the same way', () => {
+    expect(() => deviceSchema(parse(PORTAL("@@allow('read', check(collection))"))))
+      .toThrow(/delegates to check\(collection\)[\s\S]*Add @@sync to Collection/)
+  })
+
+  test('rel.some(...) on a to-many is refused the same way', () => {
+    const src = PORTAL('', '@@sync(server)')
+      .replace('  @@gate("0")\n  @@sync(server)\n}\n\nmodel Bookmark',
+               '  @@gate("0")\n  @@allow(\'read\', tags.some(name == "x"))\n  @@sync(server)\n}\n\nmodel Bookmark')
+      .replace('  bookmarks Bookmark[]', '  bookmarks Bookmark[]\n  tags      Tag[]') +
+      '\nmodel Tag {\n  id Int @id\n  name String\n  collectionId Int\n  collection Collection @relation(fields: [collectionId], references: [id])\n}\n'
+    expect(() => deviceSchema(parse(src)))
+      .toThrow(/Collection @@allow\(read\) reads tags, and Tag does not declare @@sync[\s\S]*Add @@sync to Tag/)
+  })
+
+  test('a field-level @allow is refused the same way', () => {
+    const src = PORTAL('', '@@sync(server)').replace('  url          String',
+      "  url          String     @allow('read', collection.ownerId == auth().id)")
+    expect(() => deviceSchema(parse(src.replace('@@sync(server)\n}\n\nmodel Bookmark', '\n}\n\nmodel Bookmark'))))
+      .toThrow(/Bookmark\.url @allow\(read\) reads collection\.ownerId/)
+  })
+
+  test('every crossing is named in one refusal, and each model to add once', () => {
+    const src = PORTAL(READS + "\n  @@deny('delete', collection.ownerId != auth().id)")
+    let message = ''
+    try { deviceSchema(parse(src)) } catch (e: any) { message = e.message }
+    expect(message).toContain('@@allow(read)')
+    expect(message).toContain('@@deny(delete)')
+    expect(message.match(/Add @@sync to (.*?),/)?.[1]).toBe('Collection')
+  })
+
+  // The relation that stays because nothing reads it through a policy is still
+  // only graded: `Count.variant` in SOURCE is the case, and it boots below.
+  test('a dropped relation no policy reads is a note, not a refusal', () => {
+    expect(noteFor(project(), 'Count.variant')?.grade).toBe('lost')
+  })
+})
+
 // ─── it boots ─────────────────────────────────────────────────────────────
 
 describe('the result is a schema a client can open', () => {

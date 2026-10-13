@@ -45,6 +45,9 @@
 // A caller that ignores `notes` gets a working client; a caller that prints
 // them gets to see that `StocktakeCount.variant` is not a column it can
 // `include` in a stockroom.
+//
+// One cut is refused rather than graded: a relation a kept model's POLICY reads,
+// since the policy does not compile without it (`FJS-D847`).
 
 const GRADES = ['lost', 'changed', 'noted']
 
@@ -78,6 +81,8 @@ export function deviceSchema(parseResult) {
 
   if (!syncable.length)
     note('noted', 'the schema', 'no model declares @@sync, so a device is given no tables at all')
+
+  refuseCrossingPolicies(source, syncable, keptNames)
 
   const enumsByName    = new Map((source.enums    ?? []).map(e => [e.name, e]))
   const typesByName    = new Map((source.types    ?? []).map(t => [t.name, t]))
@@ -167,14 +172,6 @@ export function deviceSchema(parseResult) {
         note('lost', `${model.name} @@${attr.kind}([${(attr.fields ?? []).join(', ')}])`,
           'it names a relation that is not in the device schema')
         continue
-      }
-      if ((attr.kind === 'allow' || attr.kind === 'deny') && walksDropped(attr.expr, droppedFields)) {
-        // Not rewritten and not dropped: a policy is the row's own rule and
-        // guessing at half of one is worse than either. It is reported because
-        // a predicate reaching through a relation that is not here evaluates
-        // against nothing, which on a device looks like an empty screen.
-        note('noted', `${model.name} @@${attr.kind}`,
-          'the predicate reaches through a relation the device does not have, so it will not resolve locally')
       }
       attributes.push(attr)
     }
@@ -287,27 +284,72 @@ function namesReferredToBy(field) {
   return out
 }
 
+// ─── the refusal ──────────────────────────────────────────────────────────
+
+const POLICY_KINDS = new Set(['allow', 'deny', 'fieldAllow'])
+
 /**
- * Does a policy expression name one of the relations that came out?
+ * Refuse a `@@sync` model whose row policy reads a model that is not `@@sync`
+ * (`FJS-D847`).
  *
- * A generic walk rather than a reading of the expression grammar: this decides
- * a NOTE and nothing else, and a second copy of that grammar here would go
- * stale against `@frontierjs/toolbelt/predicate` with nothing saying so.
+ * The relation comes out of the device schema with the model it points at, and
+ * the policy naming it does not compile without it — the device database never
+ * opens and every offline read falls through to the list cache, on a build
+ * that said nothing (`FJS-2248`). Emitting the other model's schema without its
+ * rows was refused in the same ruling: the policy would read an empty table and
+ * answer wrong in silence.
+ *
+ * The three node kinds that cross a relation are the three `readReach`
+ * (`core/policy.js`) follows. A `check(rel)` into a kept model needs no walk
+ * here: that model is kept, so its own policies are graded in its own turn.
  */
-function walksDropped(expr, dropped) {
-  if (!dropped.size || !expr) return false
-  let found = false
-  const walk = (node) => {
-    if (found || !node || typeof node !== 'object') return
-    if (Array.isArray(node)) { node.forEach(walk); return }
-    for (const [key, value] of Object.entries(node)) {
-      if (typeof value === 'string' && (key === 'name' || key === 'field' || key === 'path') && dropped.has(value)) {
-        found = true
-        return
+function refuseCrossingPolicies(source, syncable, keptNames) {
+  const byName = new Map((source.models ?? []).map(m => [m.name, m]))
+  const views  = new Set((source.views ?? []).map(v => v.name))
+
+  // field name → the model it points at, for every relation on `model`
+  const relationsOf = (model) => new Map((model?.fields ?? [])
+    .filter(f => f.type?.kind !== 'scalar' && (byName.has(f.type?.name) || views.has(f.type?.name)))
+    .map(f => [f.name, f.type.name]))
+
+  const found   = []
+  const missing = new Set()
+
+  for (const model of syncable) {
+    const policies = [
+      ...(model.attributes ?? []).filter(a => POLICY_KINDS.has(a.kind))
+        .map(a => ({ label: `${model.name} @@${a.kind}(${(a.operations ?? []).join(', ')})`, expr: a.expr })),
+      ...(model.fields ?? []).flatMap(f => (f.attributes ?? []).filter(a => POLICY_KINDS.has(a.kind))
+        .map(a => ({ label: `${model.name}.${f.name} @allow(${(a.operations ?? []).join(', ')})`, expr: a.expr }))),
+    ]
+
+    for (const { label, expr } of policies) {
+      const walk = (node, owner) => {
+        if (!node || typeof node !== 'object') return
+        if (Array.isArray(node)) { for (const n of node) walk(n, owner); return }
+        const rels = relationsOf(owner)
+        const rel  = node.type === 'check' ? node.field
+                   : node.type === 'path' || node.type === 'some' ? node.rel : null
+        const target = rel != null ? rels.get(rel) : null
+        if (target && !keptNames.has(target)) {
+          const spelled = node.type === 'path' ? `reads ${rel}.${node.name}`
+                        : node.type === 'check' ? `delegates to check(${rel})` : `reads ${rel}`
+          found.push(`${label} ${spelled}, ` +
+            `and ${target} ${views.has(target) ? 'is a view, which a device does not have' : 'does not declare @@sync'}`)
+          if (!views.has(target)) missing.add(target)
+          return
+        }
+        if (node.type === 'some' && target) { walk(node.where, byName.get(target)); return }
+        for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v, owner)
       }
-      walk(value)
+      walk(expr, model)
     }
   }
-  walk(expr)
-  return found
+
+  if (!found.length) return
+  throw new Error(
+    'deviceSchema: a @@sync model\'s policy reads a model the device is not given, so the device ' +
+    'database would not open (FJS-D847):\n  ' + found.join('\n  ') +
+    (missing.size ? `\n  Add @@sync to ${[...missing].sort().join(', ')}, or ` : '\n  ') +
+    'carry the value the rule reads on the synced model itself.')
 }

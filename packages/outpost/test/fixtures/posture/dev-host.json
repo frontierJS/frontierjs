@@ -1,0 +1,315 @@
+{
+  "meta": {
+    "host": "dev-host",
+    "uid": 1000,
+    "at": "2026-10-13T08:59:58.232Z"
+  },
+  "readings": {
+    "os": {
+      "argv": [
+        "cat",
+        "/etc/os-release"
+      ],
+      "exitCode": 0,
+      "stdout": "PRETTY_NAME=\"Ubuntu 22.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"22.04\"\nVERSION=\"22.04.5 LTS (Jammy Jellyfish)\"\nVERSION_CODENAME=jammy\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=jammy\n",
+      "stderr": ""
+    },
+    "kernel.running": {
+      "argv": [
+        "uname",
+        "-r"
+      ],
+      "exitCode": 0,
+      "stdout": "6.8.0-138-generic\n",
+      "stderr": ""
+    },
+    "kernel.installed": {
+      "argv": [
+        "dpkg-query",
+        "-W",
+        "-f",
+        "${Package} ${Version}\n",
+        "linux-image-[0-9]*"
+      ],
+      "exitCode": 0,
+      "stdout": "linux-image-5.11.0-34-generic 5.11.0-34.36\nlinux-image-5.11.0-36-generic 5.11.0-36.40\nlinux-image-5.11.0-37-generic 5.11.0-37.41\nlinux-image-5.11.0-38-generic 5.11.0-38.42\nlinux-image-5.11.0-40-generic 5.11.0-40.44\nlinux-image-5.11.0-41-generic 5.11.0-41.45\nlinux-image-5.11.0-44-generic 5.11.0-44.48\nlinux-image-5.11.0-49-generic 5.11.0-49.55\nlinux-image-5.13.0-28-generic 5.13.0-28.31\nlinux-image-5.13.0-30-generic 5.13.0-30.33\nlinux-image-5.13.0-35-generic 5.13.0-35.40\nlinux-image-5.13.0-37-generic 5.13.0-37.42\nlinux-image-5.13.0-39-generic 5.13.0-39.44\nlinux-image-5.13.0-40-generic 5.13.0-40.45\nlinux-image-5.13.0-41-generic 5.13.0-41.46\nlinux-image-5.13.0-44-generic 5.13.0-44.49\nlinux-image-5.13.0-48-generic 5.13.0-48.54\nlinux-image-5.13.0-51-generic 5.13.0-51.58\nlinux-image-5.13.0-52-generic 5.13.0-52.59\nlinux-image-5.15.0-100-generic 5.15.0-100.110\nlinux-image-5.15.0-101-generic 5.15.0-101.111\nlinux-image-5.15.0-102-generic 5.15.0-102.112\nlinux-image-5.15.0-105-generic 5.15.0-105.115\nlinux-image-5.15.0-106-generic 5.15.0-106.116\nlinux-image-5.15.0-107-generic 5.15.0-107.117\nlinux-image-5.15.0-112-generic 5.15.0-112.122\nlinux-image-5.15.0-113-generic 5.15.0-113.123\nlinux-image-5.15.0-116-generic 5.15.0-116.126\nlinux-image-5.15.0-117-generic 5.15.0-117.127\nlinux-image-5.15.0-118-generic 5.15.0-118.128\nlinux-image-5.15.0-119-generic 5.15.0-119.129\nlinux-image-5.15.0-121-generic 5.15.0-121.131\nlinux-image-5.15.0-122-generic 5.15.0-122.132\nlinux-image-5.15.0-124-generic 5.15.0-124.134\nlinux-image-5.15.0-125-generic 5.15.0-125.135\nlinux-image-5.15.0-126-generic 5.15.0-126.136\nlinux-image-5.15.0-127-generic 5.15.0-127.137\nlinux-image-5.15.0-130-generic 5.15.0-130.140\nlinux-image-5.15.0-131-generic 5.15.0-131.141\nlinux-image-5.15.0-133-generic 5.15.0-133.144\nlinux-image-5.15.0-134-generic 5.15.0-134.145\nlinux-image-5.15.0-135-generic 5.15.0-135.146\nlinux-image-5.15.0-136-generic 5.15.0-136.147\nlinux-image-5.15.0-138-generic 5.15.0-138.148\nlinux-image-5.15.0-139-generic 5.15.0-139.149\nlinux-image-5.15.0-140-generic 5.15.0-140.150\nlinux-image-5.15.0-141-generic 5.15.0-141.151\nlinux-image-5.15.0-142-generic 5.15.0-142.152\nlinux-image-5.15.0-143-generic 5.15.0-143.153\nlinux-image-5.15.0-144-generic 5.15.0-144.157\nlinux-image-5.15.0-151-generic 5.15.0-151.161\nlinux-image-5.15.0-152-generic 5.15.0-152.162\nlinux-image-5.15.0-153-generic 5.15.0-153.163\nlinux-image-5.15.0-156-generic 5.15.0-156.166\nlinux-image-5.15.0-157-generic 5.15.0-157.167\nlinux-image-5.15.0-160-generic 5.15.0-160.170\nlinux-image-5.15.0-161-generic 5.15.0-161.171\nlinux-image-5.15.0-163-generic 5.15.0-163.173\nlinux-image-5.15.0-164-generic 5.15.0-164.174\nlinux-image-5.15.0-168-generic 5.15.0-168.178\nlinux-image-5.15.0-170-generic 5.15.0-170.180\nlinux-image-5.15.0-171-generic 5.15.0-171.181\nlinux-image-5.15.0-173-generic 5.15.0-173.183\nlinux-image-5.15.0-174-generic 5.15.0-174.184\nlinux-image-5.15.0-176-generic 5.15.0-176.186\nlinux-image-5.15.0-177-generic 5.15.0-177.187\nlinux-image-5.15.0-179-generic 5.15.0-179.189\nlinux-image-5.15.0-181-generic 5.15.0-181.191\nlinux-image-5.15.0-185-generic 5.15.0-185.195\nlinux-image-5.15.0-186-generic 5.15.0-186.196\nlinux-image-5.15.0-187-generic 5.15.0-187.197\nlinux-image-5.15.0-190-generic 5.15.0-190.200\nlinux-image-5.15.0-191-generic 5.15.0-191.201\nlinux-image-5.15.0-198-generic 5.15.0-198.208\nlinux-image-5.15.0-46-generic 5.15.0-46.49\nlinux-image-5.15.0-47-generic 5.15.0-47.51\nlinux-image-5.15.0-48-generic 5.15.0-48.54\nlinux-image-5.15.0-50-generic 5.15.0-50.56\nlinux-image-5.15.0-52-generic 5.15.0-52.58\nlinux-image-5.15.0-53-generic 5.15.0-53.59\nlinux-image-5.15.0-56-generic 5.15.0-56.62\nlinux-image-5.15.0-57-generic 5.15.0-57.63\nlinux-image-5.15.0-58-generic 5.15.0-58.64\nlinux-image-5.15.0-60-generic 5.15.0-60.66\nlinux-image-5.15.0-67-generic 5.15.0-67.74\nlinux-image-5.15.0-69-generic 5.15.0-69.76\nlinux-image-5.15.0-70-generic 5.15.0-70.77\nlinux-image-5.15.0-71-generic 5.15.0-71.78\nlinux-image-5.15.0-72-generic 5.15.0-72.79\nlinux-image-5.15.0-73-generic 5.15.0-73.80\nlinux-image-5.15.0-75-generic 5.15.0-75.82\nlinux-image-5.15.0-76-generic 5.15.0-76.83\nlinux-image-5.15.0-78-generic 5.15.0-78.85\nlinux-image-5.15.0-79-generic 5.15.0-79.86\nlinux-image-5.15.0-82-generic 5.15.0-82.91\nlinux-image-5.15.0-83-generic 5.15.0-83.92\nlinux-image-5.15.0-84-generic 5.15.0-84.93\nlinux-image-5.15.0-86-generic 5.15.0-86.96\nlinux-image-5.15.0-87-generic 5.15.0-87.97\nlinux-image-5.15.0-88-generic 5.15.0-88.98\nlinux-image-5.15.0-89-generic 5.15.0-89.99\nlinux-image-5.15.0-91-generic 5.15.0-91.101\nlinux-image-5.15.0-92-generic 5.15.0-92.102\nlinux-image-5.15.0-94-generic 5.15.0-94.104\nlinux-image-5.15.0-97-generic 5.15.0-97.107\nlinux-image-5.19.0-32-generic 5.19.0-32.33~22.04.1\nlinux-image-5.19.0-35-generic 5.19.0-35.36~22.04.1\nlinux-image-5.19.0-38-generic 5.19.0-38.39~22.04.1\nlinux-image-5.19.0-40-generic 5.19.0-40.41~22.04.1\nlinux-image-5.19.0-41-generic 5.19.0-41.42~22.04.1\nlinux-image-5.19.0-42-generic 5.19.0-42.43~22.04.1\nlinux-image-5.19.0-43-generic 5.19.0-43.44~22.04.1\nlinux-image-5.19.0-45-generic 5.19.0-45.46~22.04.1\nlinux-image-5.19.0-46-generic 5.19.0-46.47~22.04.1\nlinux-image-5.19.0-50-generic 5.19.0-50.50\nlinux-image-5.8.0-25-generic 5.8.0-25.26\nlinux-image-5.8.0-44-generic 5.8.0-44.50\nlinux-image-5.8.0-45-generic 5.8.0-45.51\nlinux-image-5.8.0-48-generic 5.8.0-48.54\nlinux-image-5.8.0-49-generic 5.8.0-49.55\nlinux-image-5.8.0-50-generic 5.8.0-50.56\nlinux-image-5.8.0-53-generic 5.8.0-53.60\nlinux-image-5.8.0-55-generic 5.8.0-55.62\nlinux-image-5.8.0-59-generic 5.8.0-59.66\nlinux-image-5.8.0-63-generic 5.8.0-63.71\nlinux-image-6.2.0-26-generic 6.2.0-26.26~22.04.1\nlinux-image-6.2.0-31-generic 6.2.0-31.31~22.04.1\nlinux-image-6.2.0-32-generic 6.2.0-32.32~22.04.1\nlinux-image-6.2.0-33-generic 6.2.0-33.33~22.04.1\nlinux-image-6.2.0-34-generic 6.2.0-34.34~22.04.1\nlinux-image-6.2.0-35-generic 6.2.0-35.35~22.04.1\nlinux-image-6.2.0-36-generic 6.2.0-36.37~22.04.1\nlinux-image-6.2.0-37-generic 6.2.0-37.38~22.04.1\nlinux-image-6.2.0-39-generic 6.2.0-39.40~22.04.1\nlinux-image-6.5.0-14-generic 6.5.0-14.14~22.04.1\nlinux-image-6.5.0-15-generic 6.5.0-15.15~22.04.1\nlinux-image-6.5.0-17-generic 6.5.0-17.17~22.04.1\nlinux-image-6.5.0-18-generic 6.5.0-18.18~22.04.1\nlinux-image-6.5.0-21-generic 6.5.0-21.21~22.04.1\nlinux-image-6.5.0-25-generic 6.5.0-25.25~22.04.1\nlinux-image-6.5.0-26-generic 6.5.0-26.26~22.04.1\nlinux-image-6.5.0-27-generic 6.5.0-27.28~22.04.1\nlinux-image-6.5.0-28-generic 6.5.0-28.29~22.04.1\nlinux-image-6.5.0-35-generic 6.5.0-35.35~22.04.1\nlinux-image-6.5.0-41-generic 6.5.0-41.41~22.04.2\nlinux-image-6.5.0-44-generic 6.5.0-44.44~22.04.1\nlinux-image-6.8.0-100-generic 6.8.0-100.100~22.04.1\nlinux-image-6.8.0-101-generic 6.8.0-101.101~22.04.1\nlinux-image-6.8.0-106-generic 6.8.0-106.106~22.04.1\nlinux-image-6.8.0-107-generic 6.8.0-107.107~22.04.1\nlinux-image-6.8.0-110-generic 6.8.0-110.110~22.04.1\nlinux-image-6.8.0-111-generic 6.8.0-111.111~22.04.1\nlinux-image-6.8.0-117-generic 6.8.0-117.117~22.04.1\nlinux-image-6.8.0-124-generic 6.8.0-124.124~22.04.1\nlinux-image-6.8.0-134-generic 6.8.0-134.134~22.04.1\nlinux-image-6.8.0-136-generic 6.8.0-136.136~22.04.1\nlinux-image-6.8.0-138-generic 6.8.0-138.138~22.04.1\nlinux-image-6.8.0-40-generic 6.8.0-40.40~22.04.3\nlinux-image-6.8.0-45-generic 6.8.0-45.45~22.04.1\nlinux-image-6.8.0-47-generic 6.8.0-47.47~22.04.1\nlinux-image-6.8.0-48-generic 6.8.0-48.48~22.04.1\nlinux-image-6.8.0-49-generic 6.8.0-49.49~22.04.1\nlinux-image-6.8.0-50-generic 6.8.0-50.51~22.04.1\nlinux-image-6.8.0-51-generic 6.8.0-51.52~22.04.1\nlinux-image-6.8.0-52-generic 6.8.0-52.53~22.04.1\nlinux-image-6.8.0-57-generic 6.8.0-57.59~22.04.1\nlinux-image-6.8.0-58-generic 6.8.0-58.60~22.04.1\nlinux-image-6.8.0-59-generic 6.8.0-59.61~22.04.1\nlinux-image-6.8.0-60-generic 6.8.0-60.63~22.04.1\nlinux-image-6.8.0-64-generic 6.8.0-64.67~22.04.1\nlinux-image-6.8.0-65-generic 6.8.0-65.68~22.04.1\nlinux-image-6.8.0-78-generic 6.8.0-78.78~22.04.1\nlinux-image-6.8.0-79-generic 6.8.0-79.79~22.04.1\nlinux-image-6.8.0-84-generic 6.8.0-84.84~22.04.1\nlinux-image-6.8.0-85-generic 6.8.0-85.85~22.04.1\nlinux-image-6.8.0-86-generic 6.8.0-86.87~22.04.1\nlinux-image-6.8.0-87-generic 6.8.0-87.88~22.04.1\nlinux-image-6.8.0-90-generic 6.8.0-90.91~22.04.1\nlinux-image-6.8.0-94-generic 6.8.0-94.96~22.04.1\n",
+      "stderr": ""
+    },
+    "reboot.required": {
+      "argv": [
+        "stat",
+        "-c",
+        "%Y",
+        "/var/run/reboot-required"
+      ],
+      "exitCode": 0,
+      "stdout": "1791303939\n",
+      "stderr": ""
+    },
+    "reboot.pkgs": {
+      "argv": [
+        "cat",
+        "/var/run/reboot-required.pkgs"
+      ],
+      "exitCode": 0,
+      "stdout": "linux-image-5.15.0-198-generic\nlinux-base\n",
+      "stderr": ""
+    },
+    "apt.pending": {
+      "argv": [
+        "apt-get",
+        "-s",
+        "-o",
+        "Debug::NoLocking=1",
+        "upgrade"
+      ],
+      "exitCode": 0,
+      "stdout": "NOTE: This is only a simulation!\n      apt-get needs root privileges for real execution.\n      Keep also in mind that locking is deactivated,\n      so don't depend on the relevance to the real current situation!\nReading package lists...\nBuilding dependency tree...\nReading state information...\nCalculating upgrade...\nThe following packages were automatically installed and are no longer required:\n  libappindicator1 libdbusmenu-gtk4 libfwupd2 libfwupdplugin5 libgcab-1.0-0\n  libsecret-tools libsmbios-c2\nUse 'apt autoremove' to remove them.\nThe following packages have been kept back:\n  dnsmasq-base\nThe following packages will be upgraded:\n  code krb5-locales libaudit-common libaudit1 libgssapi-krb5-2\n  libgssapi-krb5-2:i386 libk5crypto3 libk5crypto3:i386 libkrb5-3\n  libkrb5-3:i386 libkrb5support0 libkrb5support0:i386 libnetplan0\n  netplan-generator netplan.io python3-netplan stripe\nThe following packages will be DOWNGRADED:\n  firefox\n17 upgraded, 0 newly installed, 1 downgraded, 0 to remove and 1 not upgraded.\nInst libaudit-common [1:3.0.7-1build1] (1:3.0.7-1ubuntu0.1 Ubuntu:22.04/jammy-updates [all])\nConf libaudit-common (1:3.0.7-1ubuntu0.1 Ubuntu:22.04/jammy-updates [all])\nInst libaudit1 [1:3.0.7-1build1] (1:3.0.7-1ubuntu0.1 Ubuntu:22.04/jammy-updates [amd64])\nConf libaudit1 (1:3.0.7-1ubuntu0.1 Ubuntu:22.04/jammy-updates [amd64])\nInst libkrb5support0 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64]) [libkrb5support0:amd64 on libkrb5support0:i386] [libkrb5support0:i386 on libkrb5support0:amd64] [libkrb5support0:i386 libkrb5-3:amd64 ]\nInst libkrb5support0:i386 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386]) [libkrb5-3:amd64 libkrb5-3:i386 ]\nInst libkrb5-3 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64]) [libkrb5-3:amd64 on libkrb5-3:i386] [libkrb5-3:i386 on libkrb5-3:amd64] [libgssapi-krb5-2:amd64 libkrb5-3:i386 ]\nInst libkrb5-3:i386 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386]) [libgssapi-krb5-2:amd64 libgssapi-krb5-2:i386 ]\nInst libgssapi-krb5-2 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64]) [libgssapi-krb5-2:amd64 on libgssapi-krb5-2:i386] [libgssapi-krb5-2:i386 on libgssapi-krb5-2:amd64] [libgssapi-krb5-2:i386 ]\nInst libgssapi-krb5-2:i386 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386])\nInst libk5crypto3:i386 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386]) [libk5crypto3:amd64 on libk5crypto3:i386] [libk5crypto3:i386 on libk5crypto3:amd64] [libk5crypto3:amd64 ]\nInst libk5crypto3 [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64])\nConf libkrb5support0 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64])\nConf libk5crypto3 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64])\nInst netplan-generator [0.107.1-3ubuntu0.22.04.4] (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64]) []\nInst python3-netplan [0.107.1-3ubuntu0.22.04.4] (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64]) []\nInst netplan.io [0.107.1-3ubuntu0.22.04.4] (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64]) []\nInst libnetplan0 [0.107.1-3ubuntu0.22.04.4] (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64])\nInst code [1.136.2-1788561671] (1.140.0-1790759618 code stable:stable [amd64])\nInst firefox [1:1snap1-0ubuntu2] (157.0~build1 namespaces/moz-fx-productdelivery-pr-38b5/repositories/mozilla:mozilla [amd64])\nInst krb5-locales [1.19.2-2ubuntu0.8] (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [all])\nInst stripe [1.50.10] (1.53.0 Artifactory:stable [amd64])\nConf libkrb5support0:i386 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386])\nConf libkrb5-3 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64])\nConf libkrb5-3:i386 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386])\nConf libgssapi-krb5-2 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [amd64])\nConf libgssapi-krb5-2:i386 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386])\nConf libk5crypto3:i386 (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [i386])\nConf netplan-generator (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64])\nConf python3-netplan (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64])\nConf netplan.io (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64])\nConf libnetplan0 (0.107.1-3ubuntu0.22.04.5 Ubuntu:22.04/jammy-updates [amd64])\nConf code (1.140.0-1790759618 code stable:stable [amd64])\nConf firefox (157.0~build1 namespaces/moz-fx-productdelivery-pr-38b5/repositories/mozilla:mozilla [amd64])\nConf krb5-locales (1.19.2-2ubuntu0.10 Ubuntu:22.04/jammy-updates [all])\nConf stripe (1.53.0 Artifactory:stable [amd64])\n",
+      "stderr": ""
+    },
+    "unattended.periodic": {
+      "argv": [
+        "apt-config",
+        "dump",
+        "APT::Periodic"
+      ],
+      "exitCode": 0,
+      "stdout": "APT::Periodic \"\";\nAPT::Periodic::Update-Package-Lists \"14\";\nAPT::Periodic::Download-Upgradeable-Packages \"0\";\nAPT::Periodic::AutocleanInterval \"0\";\nAPT::Periodic::Unattended-Upgrade \"1\";\n",
+      "stderr": ""
+    },
+    "unattended.config": {
+      "argv": [
+        "apt-config",
+        "dump",
+        "Unattended-Upgrade"
+      ],
+      "exitCode": 0,
+      "stdout": "Unattended-Upgrade \"\";\nUnattended-Upgrade::Allowed-Origins \"\";\nUnattended-Upgrade::Allowed-Origins:: \"${distro_id}:${distro_codename}\";\nUnattended-Upgrade::Allowed-Origins:: \"${distro_id}:${distro_codename}-security\";\nUnattended-Upgrade::Allowed-Origins:: \"${distro_id}ESMApps:${distro_codename}-apps-security\";\nUnattended-Upgrade::Allowed-Origins:: \"${distro_id}ESM:${distro_codename}-infra-security\";\nUnattended-Upgrade::DevRelease \"auto\";\n",
+      "stderr": ""
+    },
+    "unattended.timer": {
+      "argv": [
+        "systemctl",
+        "is-enabled",
+        "apt-daily-upgrade.timer"
+      ],
+      "exitCode": 0,
+      "stdout": "enabled\n",
+      "stderr": ""
+    },
+    "unattended.lastRun": {
+      "argv": [
+        "stat",
+        "-c",
+        "%Y",
+        "/var/log/unattended-upgrades/unattended-upgrades.log"
+      ],
+      "exitCode": 0,
+      "stdout": "1791831165\n",
+      "stderr": ""
+    },
+    "unattended.log": {
+      "argv": [
+        "tail",
+        "-n",
+        "20",
+        "/var/log/unattended-upgrades/unattended-upgrades.log"
+      ],
+      "exitCode": 0,
+      "stdout": "2026-10-10 06:38:11,837 INFO Initial whitelist (not strict): \n2026-10-10 06:38:13,530 INFO No packages found that can be upgraded unattended and no pending auto-removals\n2026-10-11 06:05:45,376 INFO Starting unattended upgrades script\n2026-10-11 06:05:45,377 INFO Allowed origins are: o=Ubuntu,a=jammy, o=Ubuntu,a=jammy-security, o=UbuntuESMApps,a=jammy-apps-security, o=UbuntuESM,a=jammy-infra-security\n2026-10-11 06:05:45,377 INFO Initial blacklist: \n2026-10-11 06:05:45,377 INFO Initial whitelist (not strict): \n2026-10-11 06:05:47,006 INFO No packages found that can be upgraded unattended and no pending auto-removals\n2026-10-11 08:12:14,068 INFO Starting unattended upgrades script\n2026-10-11 08:12:14,069 INFO Allowed origins are: o=Ubuntu,a=jammy, o=Ubuntu,a=jammy-security, o=UbuntuESMApps,a=jammy-apps-security, o=UbuntuESM,a=jammy-infra-security\n2026-10-11 08:12:14,069 INFO Initial blacklist: \n2026-10-11 08:12:14,069 INFO Initial whitelist (not strict): \n2026-10-12 06:36:06,472 INFO Starting unattended upgrades script\n2026-10-12 06:36:06,473 INFO Allowed origins are: o=Ubuntu,a=jammy, o=Ubuntu,a=jammy-security, o=UbuntuESMApps,a=jammy-apps-security, o=UbuntuESM,a=jammy-infra-security\n2026-10-12 06:36:06,473 INFO Initial blacklist: \n2026-10-12 06:36:06,473 INFO Initial whitelist (not strict): \n2026-10-12 06:36:08,118 INFO No packages found that can be upgraded unattended and no pending auto-removals\n2026-10-12 11:52:45,846 INFO Starting unattended upgrades script\n2026-10-12 11:52:45,847 INFO Allowed origins are: o=Ubuntu,a=jammy, o=Ubuntu,a=jammy-security, o=UbuntuESMApps,a=jammy-apps-security, o=UbuntuESM,a=jammy-infra-security\n2026-10-12 11:52:45,847 INFO Initial blacklist: \n2026-10-12 11:52:45,847 INFO Initial whitelist (not strict): \n",
+      "stderr": ""
+    },
+    "version.docker": {
+      "argv": [
+        "docker",
+        "version",
+        "--format",
+        "json"
+      ],
+      "exitCode": 0,
+      "stdout": "{\"Client\":{\"Version\":\"29.8.0\",\"ApiVersion\":\"1.56\",\"DefaultAPIVersion\":\"1.56\",\"GitCommit\":\"88096ef\",\"GoVersion\":\"go1.26.8\",\"Os\":\"linux\",\"Arch\":\"amd64\",\"BuildTime\":\"Wed Sep 23 15:26:13 2026\",\"Context\":\"default\"},\"Server\":{\"Platform\":{\"Name\":\"\"},\"Version\":\"29.8.0\",\"ApiVersion\":\"1.56\",\"MinAPIVersion\":\"1.40\",\"Os\":\"linux\",\"Arch\":\"amd64\",\"Components\":[{\"Name\":\"Engine\",\"Version\":\"29.8.0\",\"Details\":{\"ApiVersion\":\"1.56\",\"Arch\":\"amd64\",\"BuildTime\":\"Wed Sep 23 15:26:53 2026\",\"Experimental\":\"false\",\"GitCommit\":\"3ce5872\",\"GoVersion\":\"go1.26.8\",\"KernelVersion\":\"6.8.0-138-generic\",\"MinAPIVersion\":\"1.40\",\"Module\":\"github.com/moby/moby/v2\",\"ModuleVersion\":\"v2.0.0-beta.23+dirty\",\"Os\":\"linux\"}},{\"Name\":\"containerd\",\"Version\":\"v2.3.4\",\"Details\":{\"GitCommit\":\"db8809540e1a7a9da5d518876894933ff55692ab\"}},{\"Name\":\"runc\",\"Version\":\"1.5.1\",\"Details\":{\"GitCommit\":\"\"}},{\"Name\":\"docker-init\",\"Version\":\"0.19.0\",\"Details\":{\"GitCommit\":\"de40ad0\"}}],\"GitCommit\":\"3ce5872\",\"GoVersion\":\"go1.26.8\",\"KernelVersion\":\"6.8.0-138-generic\",\"BuildTime\":\"2026-09-23T15:26:53.000000000+00:00\"}}\n",
+      "stderr": ""
+    },
+    "version.caddy": {
+      "argv": [
+        "caddy",
+        "version"
+      ],
+      "exitCode": null,
+      "stdout": "",
+      "stderr": "",
+      "spawnError": "ENOENT"
+    },
+    "version.bun": {
+      "argv": [
+        "bun",
+        "--version"
+      ],
+      "exitCode": 0,
+      "stdout": "1.4.2\n",
+      "stderr": ""
+    },
+    "net.listening": {
+      "argv": [
+        "ss",
+        "-tlnpH"
+      ],
+      "exitCode": 0,
+      "stdout": "LISTEN 0      511        127.0.0.1:21085 0.0.0.0:* users:((\"proc\",pid=1,fd=44))         \nLISTEN 0      4096       127.0.0.1:11434 0.0.0.0:*                                            \nLISTEN 0      5          127.0.0.1:8301  0.0.0.0:* users:((\"proc\",pid=1,fd=3))       \nLISTEN 0      128        127.0.0.1:631   0.0.0.0:*                                            \nLISTEN 0      4096       127.0.0.1:1025  0.0.0.0:* users:((\"proc\",pid=1,fd=19))\nLISTEN 0      4096       127.0.0.1:1043  0.0.0.0:* users:((\"proc\",pid=1,fd=24))\nLISTEN 0      4096       127.0.0.1:1143  0.0.0.0:* users:((\"proc\",pid=1,fd=20))\nLISTEN 0      511        127.0.0.1:59725 0.0.0.0:* users:((\"proc\",pid=1,fd=52))         \nLISTEN 0      511        127.0.0.1:60693 0.0.0.0:* users:((\"proc\",pid=1,fd=54))         \nLISTEN 0      511          0.0.0.0:8300  0.0.0.0:* users:((\"proc\",pid=1,fd=21))         \nLISTEN 0      511        127.0.0.1:58604 0.0.0.0:* users:((\"proc\",pid=1,fd=45))         \nLISTEN 0      511        127.0.0.1:58992 0.0.0.0:* users:((\"proc\",pid=1,fd=53))         \nLISTEN 0      4096         0.0.0.0:8090  0.0.0.0:*                                            \nLISTEN 0      512          0.0.0.0:7196  0.0.0.0:* users:((\"proc\",pid=1,fd=7))          \nLISTEN 0      512          0.0.0.0:7195  0.0.0.0:* users:((\"proc\",pid=1,fd=7))          \nLISTEN 0      511        127.0.0.1:54710 0.0.0.0:* users:((\"proc\",pid=1,fd=43))          \nLISTEN 0      128          0.0.0.0:22    0.0.0.0:*                                            \nLISTEN 0      4096   127.0.0.53%lo:53    0.0.0.0:*                                            \nLISTEN 0      511        127.0.0.1:45169 0.0.0.0:* users:((\"proc\",pid=1,fd=43))         \nLISTEN 0      511        127.0.0.1:45677 0.0.0.0:* users:((\"proc\",pid=1,fd=43))         \nLISTEN 0      511        127.0.0.1:45879 0.0.0.0:* users:((\"proc\",pid=1,fd=45))         \nLISTEN 0      511        127.0.0.1:46121 0.0.0.0:* users:((\"proc\",pid=1,fd=52))          \nLISTEN 0      10         127.0.0.1:43067 0.0.0.0:* users:((\"proc\",pid=1,fd=73))        \nLISTEN 0      511        127.0.0.1:43057 0.0.0.0:* users:((\"proc\",pid=1,fd=81))         \nLISTEN 0      511        127.0.0.1:43725 0.0.0.0:* users:((\"proc\",pid=1,fd=52))          \nLISTEN 0      511        127.0.0.1:41107 0.0.0.0:* users:((\"proc\",pid=1,fd=64))         \nLISTEN 0      511        127.0.0.1:42317 0.0.0.0:* users:((\"proc\",pid=1,fd=43))         \nLISTEN 0      511        127.0.0.1:42799 0.0.0.0:* users:((\"proc\",pid=1,fd=45))          \nLISTEN 0      511        127.0.0.1:42891 0.0.0.0:* users:((\"proc\",pid=1,fd=55))         \nLISTEN 0      511        127.0.0.1:39090 0.0.0.0:* users:((\"proc\",pid=1,fd=43))          \nLISTEN 0      511        127.0.0.1:38749 0.0.0.0:* users:((\"proc\",pid=1,fd=54))          \nLISTEN 0      511        127.0.0.1:33731 0.0.0.0:* users:((\"proc\",pid=1,fd=43))         \nLISTEN 0      511        127.0.0.1:33807 0.0.0.0:* users:((\"proc\",pid=1,fd=157))         \nLISTEN 0      512                *:8127        *:* users:((\"bun\",pid=1,fd=7))           \nLISTEN 0      4096            [::]:8090     [::]:*                                            \nLISTEN 0      512                *:7197        *:* users:((\"proc\",pid=1,fd=7)) \nLISTEN 0      128             [::]:22       [::]:*                                            \nLISTEN 0      128            [::1]:631      [::]:*                                            \n",
+      "stderr": ""
+    },
+    "net.containers": {
+      "argv": [
+        "docker",
+        "ps",
+        "--format",
+        "json"
+      ],
+      "exitCode": 0,
+      "stdout": "{\"Command\":\"\\\"/docker-entrypoint.…\\\"\",\"CreatedAt\":\"2026-10-03 21:03:38 -0700 MST\",\"HealthStatus\":\"none\",\"ID\":\"f9fb9796f486\",\"Image\":\"3dd08163706a\",\"Labels\":\"maintainer=NGINX Docker Maintainers \\u003cdocker-maint@nginx.com\\u003e\",\"LocalVolumes\":\"0\",\"Mounts\":\"\",\"Names\":\"fjs-12ec1da7-ac83-459d-980d-f95eea84a8d6\",\"Networks\":\"bridge\",\"Platform\":null,\"Ports\":\"0.0.0.0:8090-\\u003e80/tcp, [::]:8090-\\u003e80/tcp\",\"RunningFor\":\"9 days ago\",\"Size\":\"0B\",\"State\":\"running\",\"Status\":\"Up 23 hours\"}\n",
+      "stderr": ""
+    },
+    "net.ruleset": {
+      "argv": [
+        "nft",
+        "-j",
+        "list",
+        "ruleset"
+      ],
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "Operation not permitted (you must be root)\n"
+    },
+    "net.dockerUser": {
+      "argv": [
+        "iptables",
+        "-S",
+        "DOCKER-USER"
+      ],
+      "exitCode": 4,
+      "stdout": "",
+      "stderr": "iptables v1.8.7 (nf_tables): Could not fetch rule set generation id: Permission denied (you must be root)\n\n"
+    },
+    "ssh.effective": {
+      "argv": [
+        "sshd",
+        "-T"
+      ],
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "sshd: no hostkeys available -- exiting.\r\n"
+    },
+    "ssh.keys.root": {
+      "argv": [
+        "ssh-keygen",
+        "-lf",
+        "/root/.ssh/authorized_keys"
+      ],
+      "exitCode": 255,
+      "stdout": "",
+      "stderr": "ssh-keygen: /root/.ssh/authorized_keys: Permission denied\r\n"
+    },
+    "accounts.uid0": {
+      "argv": [
+        "awk",
+        "-F:",
+        "$3 == 0 { print $1 }",
+        "/etc/passwd"
+      ],
+      "exitCode": 0,
+      "stdout": "root\n",
+      "stderr": ""
+    },
+    "accounts.nopasswd": {
+      "argv": [
+        "grep",
+        "-rh",
+        "NOPASSWD",
+        "/etc/sudoers",
+        "/etc/sudoers.d"
+      ],
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "grep: /etc/sudoers: Permission denied\ngrep: /etc/sudoers.d/README: Permission denied\n"
+    },
+    "time.sync": {
+      "argv": [
+        "timedatectl",
+        "show"
+      ],
+      "exitCode": 0,
+      "stdout": "Timezone=America/Phoenix\nLocalRTC=no\nCanNTP=yes\nNTP=yes\nNTPSynchronized=yes\nTimeUSec=Tue 2026-10-13 01:59:57 MST\nRTCTimeUSec=Tue 2026-10-13 01:59:57 MST\n",
+      "stderr": ""
+    },
+    "time.tracking": {
+      "argv": [
+        "chronyc",
+        "-c",
+        "tracking"
+      ],
+      "exitCode": null,
+      "stdout": "",
+      "stderr": "",
+      "spawnError": "ENOENT"
+    },
+    "runtime.outpostUnit": {
+      "argv": [
+        "systemd-analyze",
+        "security",
+        "outpost",
+        "--json=short"
+      ],
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "systemd-analyze: unrecognized option '--json=short'\n"
+    },
+    "runtime.containers": {
+      "argv": [
+        "docker",
+        "ps",
+        "-q"
+      ],
+      "exitCode": 0,
+      "stdout": "f9fb9796f486\n",
+      "stderr": ""
+    },
+    "files.etc": {
+      "argv": [
+        "stat",
+        "-c",
+        "%a %U %G %n",
+        "/etc/basecamp",
+        "/etc/basecamp/outpost.key",
+        "/etc/basecamp/outpost.env"
+      ],
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "stat: cannot statx '/etc/basecamp': No such file or directory\nstat: cannot statx '/etc/basecamp/outpost.key': No such file or directory\nstat: cannot statx '/etc/basecamp/outpost.env': No such file or directory\n"
+    },
+    "files.certExpiry": {
+      "argv": [
+        "openssl",
+        "x509",
+        "-enddate",
+        "-noout",
+        "-in",
+        "/etc/basecamp/outpost.crt"
+      ],
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "Could not open file or uri for loading certificate from /etc/basecamp/outpost.crt\n405760ABEB740000:error:16000069:STORE routines:ossl_store_get0_loader_int:unregistered scheme:../crypto/store/store_register.c:237:scheme=file\n405760ABEB740000:error:80000002:system library:file_open:No such file or directory:../providers/implementations/storemgmt/file_store.c:267:calling stat(/etc/basecamp/outpost.crt)\nUnable to load certificate\n"
+    },
+    "runtime.inspect": {
+      "argv": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .Name}} {{json .HostConfig.Privileged}} {{json .Mounts}}",
+        "f9fb9796f486"
+      ],
+      "exitCode": 0,
+      "stdout": "\"/fjs-12ec1da7-ac83-459d-980d-f95eea84a8d6\" false []\n",
+      "stderr": ""
+    }
+  }
+}

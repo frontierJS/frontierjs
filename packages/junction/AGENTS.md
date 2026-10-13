@@ -358,6 +358,15 @@ as* has the table.
 
 Pinned by `test/idempotency.test.ts` and `test/outbox.test.ts`.
 
+**A move the schema owes at a time — `@@commitment` — is made by
+`commitments()`**, from `@frontierjs/junction/commitments`, configured after
+caravan. `start()` refuses a schema declaring one without it, and so does any
+boot of an app that configures caravan. An app a test builds in-process with no
+queue boots without it and keeps no time: the test is the clock. Set the
+client's (`env.clock.set(at)`), then `await fireDue(app)` fires every row due by
+then, as `createApp({ system })`, with the same `hooks` the app hands
+`commitments()`. Pinned by `test/commitments-clock.test.ts`.
+
 ---
 
 ## Silent failures

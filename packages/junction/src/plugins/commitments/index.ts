@@ -200,8 +200,7 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
   const cron        = opts.cron        ?? '* * * * *'
   const lookaheadMs = opts.lookaheadMs ?? DEFAULT_LOOKAHEAD_MS
   const queue       = opts.queue
-  const zoneFor     = async (tenant: string | null): Promise<string> =>
-    (typeof opts.timeZone === 'function' ? await opts.timeZone(tenant) : opts.timeZone) ?? 'UTC'
+  const zoneFor     = (tenant: string | null): Promise<string> => zoneIn(opts.timeZone, tenant)
 
   // What /metrics answers. `due` is the last sweep's count; the other three are
   // cumulative since boot. `lapsed` counts fires that found their row no longer
@@ -235,14 +234,7 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
       if (!jobs?.handle) throw new Error(
         `[Junction] commitments(): app.jobs has no handle() — configure caravan before commitments().`)
 
-      const keys = Object.keys(opts.hooks ?? {})
-      if (keys.length) {
-        const declared = declaredKeys(app)
-        const unknown  = keys.filter(k => !declared.has(k))
-        if (unknown.length) throw new Error(
-          `[Junction] commitments(): hooks name ${unknown.map(k => `'${k}'`).join(', ')}, which no ` +
-          `@@commitment declares — declared: ${[...declared].join(', ') || 'none'}.`)
-      }
+      refuseUnknownHooks(app, opts.hooks, 'commitments()')
 
       await refuseUnprincipled(app)
 
@@ -346,26 +338,108 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
     }))
   }
 
-  /**
-   * Re-derive, then move. The tenant is the one the fire was dispatched for,
-   * re-bound by Caravan, so `withDb` answers that tenant's client, scoped to
-   * the app's own principal (`createApp({ system })`) — a fire is work nobody
-   * asked for. `fireCommitment` below is the rest.
-   */
+  /** One fire as Caravan runs it — the tenant and principal re-bound by the queue. */
   async function fire(app: App, job: FirePayload, tenant: string | null): Promise<void> {
-    await app.withDb(async (raw) => {
-      try {
-        if (await fireCommitment(raw, job, { hooks: opts.hooks, outbox: app.outbox, tenant }) === 'fired') fired++
-        else lapsed++
-      } catch (err) {
-        failed++
-        // With no system principal the fire is STRANGER(0), and the gate's
-        // refusal names the level it wanted, not the principal nobody declared.
-        if (app.principal?.() || !(err instanceof Error)) throw err
-        throw new Error(`${err.message} — the fire ran as nobody: this app declares no createApp({ system }).`, { cause: err })
-      }
-    })
+    try {
+      if (await fireAsApp(app, job, tenant, opts.hooks) === 'fired') fired++
+      else lapsed++
+    } catch (err) {
+      failed++
+      throw err
+    }
   }
+}
+
+/** A day kind's calendar — the option's zone, or its answer for this tenant; UTC unstated. */
+async function zoneIn(opt: CommitmentsPluginOptions['timeZone'], tenant: string | null): Promise<string> {
+  return (typeof opt === 'function' ? await opt(tenant) : opt) ?? 'UTC'
+}
+
+/**
+ * Re-derive, then move, inside the principal and tenant the caller bound — a
+ * Caravan job's `runAs(null, { tenant })`, or `fireDue`'s own — so `withDb`
+ * answers that tenant's client, scoped to the app's own principal
+ * (`createApp({ system })`): a fire is work nobody asked for. `fireCommitment`
+ * below is the rest.
+ */
+async function fireAsApp(
+  app: App, job: FirePayload, tenant: string | null, hooks: Record<string, CommitmentHook> | undefined,
+): Promise<FireOutcome> {
+  return app.withDb(async (raw) => {
+    try {
+      return await fireCommitment(raw, job, { hooks, outbox: app.outbox, tenant })
+    } catch (err) {
+      // With no system principal the fire is STRANGER(0), and the gate's
+      // refusal names the level it wanted, not the principal nobody declared.
+      if (app.principal?.() || !(err instanceof Error)) throw err
+      throw new Error(`${err.message} — the fire ran as nobody: this app declares no createApp({ system }).`, { cause: err })
+    }
+  })
+}
+
+export interface FireDueOptions {
+  /** What a move owes beyond itself — the `hooks` the app hands `commitments()`, run by each fire. */
+  hooks?:    Record<string, CommitmentHook>
+  /** Whose calendar a day-kind `on:` is read in — `commitments({ timeZone })`'s option. */
+  timeZone?: CommitmentsPluginOptions['timeZone']
+}
+
+export interface FireDueResult {
+  /** Rows `due()` answered by the client's clock, across every declaration and database. */
+  due:    number
+  /** Of those, how many moved, and how many were no longer owed when their fire asked again. */
+  fired:  number
+  lapsed: number
+}
+
+/**
+ * Every row owed a move by the client's clock NOW, fired now in this process —
+ * the sweep and the fire with no queue between them (`FJS-D938`).
+ *
+ * For an app built in-process with no queue, which keeps no time of its own and
+ * so is not refused for configuring no `commitments()`: its test is the clock.
+ * Set the client's (`env.clock.set()`), then `await fireDue(app)`. Each fire is
+ * the plugin's own — as `createApp({ system })` in the row's tenant, re-derived
+ * before it moves, `hooks` in the move's transaction — and one that fails
+ * throws, where the queue would have retried it. Nothing fires early: no
+ * lookahead, only what is due by now.
+ */
+export async function fireDue(app: App, opts: FireDueOptions = {}): Promise<FireDueResult> {
+  refuseUnknownHooks(app, opts.hooks, 'fireDue()')
+
+  // Collected first and fired after the walk: under a tenant registry the walk
+  // holds each tenant's client, and a fire leases that tenant's client again.
+  const owed: Array<{ job: FirePayload; tenant: string | null }> = []
+  await forEachAppDatabase(app, declares, async (raw, tenant) => {
+    const db       = raw as CommitmentClient
+    const timeZone = await zoneIn(opts.timeZone, tenant)
+    for (const accessor of new Set(db.$commitments.map(d => d.accessor)))
+      for (const row of await db.asSystem()[accessor].due({ timeZone }))
+        owed.push({
+          job:    { accessor, transition: row.transition, id: row.id, dueAt: row.dueAt, timeZone },
+          // Under row tenancy the database names no tenant; the row's own is the fire's.
+          tenant: row.tenant !== undefined ? row.tenant : tenant,
+        })
+  })
+
+  const out: FireDueResult = { due: owed.length, fired: 0, lapsed: 0 }
+  for (const { job, tenant } of owed)
+    out[await app.runAs(null, { tenant }, () => fireAsApp(app, job, tenant, opts.hooks))]++
+  return out
+}
+
+/**
+ * A hook keyed by a commitment nothing declares is refused, because a renamed
+ * commitment would otherwise leave its effect unrun with nothing saying so.
+ */
+function refuseUnknownHooks(app: App, hooks: Record<string, CommitmentHook> | undefined, who: string): void {
+  const keys = Object.keys(hooks ?? {})
+  if (!keys.length) return
+  const declared = declaredKeys(app)
+  const unknown  = keys.filter(k => !declared.has(k))
+  if (unknown.length) throw new Error(
+    `[Junction] ${who}: hooks name ${unknown.map(k => `'${k}'`).join(', ')}, which no ` +
+    `@@commitment declares — declared: ${[...declared].join(', ') || 'none'}.`)
 }
 
 /**

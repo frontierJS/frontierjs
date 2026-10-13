@@ -19,6 +19,8 @@ import { existsSync, readFileSync } from 'fs'
 import { gzipSync } from 'zlib'
 import { pathToFileURL } from 'url'
 import { diffSchemaModes } from '../resource/schema-registry.js'
+import { wantsLocalDb }    from './local-db-plugin.js'
+import { refusal }         from './refusal.js'
 
 /** Default locations, tried in order when `config.schema` isn't set. */
 const DEFAULT_PATHS = [
@@ -342,16 +344,21 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   // app. Computed whether or not `offline: { db: true }` is set, because it is
   // a filter over a tree that is already in hand; what the flag decides is
   // whether it is EMITTED (`build/local-db-plugin.js`).
+  //
+  // A filter that throws is RETURNED rather than said: it is a refusal when the
+  // app asked for the device database and nothing at all when it did not, and
+  // only the plugin holds the config that tells the two apart.
   let device = null
+  let deviceFailure = null
   if (typeof litestone.deviceSchema === 'function') {
     try {
       device = litestone.deviceSchema(result)
     } catch (err) {
-      warn?.(`the device schema could not be built, so offline reads have no tables: ${err.message}`)
+      deviceFailure = err.message
     }
   }
 
-  return { defs, models, updatePatch, readPatch, device }
+  return { defs, models, updatePatch, readPatch, device, deviceFailure }
 }
 
 /**
@@ -408,6 +415,15 @@ export function schemaPlugin(config, sierraContext) {
     return generated
   }
 
+  // `offline: { db: true }` over a device schema that would not open is a
+  // database that is not there, found in a basement: every offline read falls
+  // through to the list cache with one console warning each (`FJS-2248`).
+  const deviceRefusal = (generated) =>
+    generated?.deviceFailure && wantsLocalDb(config)
+      ? `[Sierra] offline: { db: true } is asked for and the device schema cannot be built from ` +
+        `${schemaPath.replace(root + '/', '')}.\n${generated.deviceFailure}`
+      : null
+
   return {
     name: 'sierra:schema',
     enforce: 'pre',
@@ -423,6 +439,9 @@ export function schemaPlugin(config, sierraContext) {
 
       sierraContext.schemaPath = schemaPath
       const generated = await generate()
+
+      const refused = deviceRefusal(generated)
+      if (refused) throw refusal(refused)
 
       if (generated) {
         // The SIZE, beside the model count. What crosses here is the largest
@@ -449,7 +468,11 @@ export function schemaPlugin(config, sierraContext) {
       const regenerate = async (file) => {
         if (resolve(file) !== resolve(schemaPath)) return
 
-        await generate()
+        const generated = await generate()
+        // Said rather than thrown: a throw here is an unhandled rejection in
+        // the watcher, and the dev server would keep serving with nobody told.
+        const refused = deviceRefusal(generated)
+        if (refused) console.error(refused)
 
         // virtual:sierra embeds the schemas, so it has to be rebuilt. A full
         // reload rather than an HMR update: make() defaults are read when a

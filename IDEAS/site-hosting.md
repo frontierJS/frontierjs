@@ -30,9 +30,9 @@ Read 2026-10-12.
 - **The proof is already host-neutral.** `website/tests/verify.mjs` serves
   `dist/` with Sierra's `serveSite`, never with wrangler, and so does the
   `site/deploy/` container.
-- **`serveSite` ignores `_redirects` and serves it as a file** —
-  [`FJS-2717`](../ISSUES.md#fjs-2717). A declared redirect answers 404 under
-  every drive and in the container, and 301 on Cloudflare.
+- **`serveSite` answers `_redirects` as the host does** and never serves it or
+  `_headers` ([`FJS-2717`](../ISSUES.md#fjs-2717), closed). It answers the
+  exact-path rules Sierra emits and refuses any other shape at start.
 - **The cache rule lives only in `serveSite`'s `cacheFor`.** Nothing tells a
   host that HTML revalidates and a hashed asset is immutable.
 - **Host functions are what still holds ksite on Pages**
@@ -162,8 +162,9 @@ candidate host for that file's option A.
 
 Each step adds its case to the website's `verify` drive before it is done.
 
-1. **`serveSite` honors `_redirects`** and refuses to serve `_redirects` and
-   `_headers` (`FJS-2717`). Drive case: a redirect route answers 301.
+1. ~~**`serveSite` honors `_redirects`** and refuses to serve `_redirects` and
+   `_headers` (`FJS-2717`).~~ Done. The website has no redirect route, so the
+   case is `packages/sierra/test/site-serve.test.js`.
 2. **`_headers` from `cacheFor`.** Check with a real deploy that Workers
    assets applies it before anything depends on it.
 3. **Host functions** (question 1): bundled to one entry, mounted by

@@ -101,6 +101,17 @@ export function layoutChainFor(routeFile, routesDirAbs) {
 }
 
 /**
+ * Why a static route is not written, or null when it is. One answer for the
+ * prerender and for `bundleUnreachable`, which has to know whether the home
+ * page will overwrite Vite's SPA shell before the bundle is rendered.
+ */
+export function omittedReason(node) {
+  return node.meta?.status === 'draft' ? 'a draft (`status: draft`), not published'
+    : node.meta?.redirect ? `redirects to ${node.meta.redirect}, which _redirects answers`
+    : null
+}
+
+/**
  * Substitute `:param` segments in a route path.
  * '/blog/:slug/' + { slug: 'hello' } → '/blog/hello/'
  *
@@ -478,9 +489,7 @@ export async function prerenderRoutes(opts) {
   // is written, and both are named in `omitted` rather than silently absent.
   const omitted = []
   const staticNodes = flatten(tree).filter(n => n.meta?.render === 'static' && n.file).filter((n) => {
-    const reason = n.meta?.status === 'draft' ? 'a draft (`status: draft`), not published'
-      : n.meta?.redirect ? `redirects to ${n.meta.redirect}, which _redirects answers`
-      : null
+    const reason = omittedReason(n)
     if (reason) omitted.push({ route: n.path ?? n.id, reason })
     return !reason
   })

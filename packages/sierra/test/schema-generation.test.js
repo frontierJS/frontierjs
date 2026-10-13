@@ -470,6 +470,59 @@ describe('a found litestone that will not load', () => {
   })
 })
 
+// `FJS-D847`. A `@@sync` model whose policy reads a model that is not `@@sync`
+// projects to a device schema that does not open, so with the device database
+// asked for, every offline read fell through to the list cache on a green
+// build (`FJS-2248`). The refusal is the build's only when the app asked for
+// the database: `@@sync` alone is the pending queue and the list cache, which
+// open no tables.
+describe('a device schema that would not open', () => {
+
+  const CROSSING = (collectionSync = '') => `
+model Collection {
+  id        Int        @id
+  ownerId   Int
+  bookmarks Bookmark[]
+  @@gate("0")
+  ${collectionSync}
+}
+
+model Bookmark {
+  id           Int        @id
+  collectionId Int
+  collection   Collection @relation(fields: [collectionId], references: [id])
+  @@gate("0")
+  @@allow('read', collection.ownerId == auth().id)
+  @@sync(server)
+}
+`
+  const DB = { offline: { db: true } }
+
+  test('with offline: { db: true } the build is refused, naming the model to add @@sync to', async () => {
+    const { dir } = fixture(CROSSING())
+    const err = await schemaPlugin(DB, {}).configResolved({ root: dir }).catch(e => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toContain('offline: { db: true }')
+    expect(err.message).toContain('reads collection.ownerId, and Collection does not declare @@sync')
+    expect(err.message).toContain('Add @@sync to Collection')
+  })
+
+  test('the same schema with Collection synced builds, and carries both models', async () => {
+    const { dir } = fixture(CROSSING('@@sync(server)'))
+    const ctx = {}
+    await schemaPlugin(DB, ctx).configResolved({ root: dir })
+    expect(ctx.deviceModels.sort()).toEqual(['Bookmark', 'Collection'])
+  })
+
+  test('without the device database the same schema builds, and nothing is emitted for a device', async () => {
+    const { dir } = fixture(CROSSING())
+    const ctx = {}
+    await schemaPlugin({ offline: true }, ctx).configResolved({ root: dir })
+    expect(ctx.schemaDefs).not.toBeNull()
+    expect(ctx.deviceSchema).toBeNull()
+  })
+})
+
 // A watcher on the FILE sees `change` and `unlink` and then nothing for the
 // recreate that `git stash` / `git checkout` / a pull does, so the dev server
 // served the last schema it saw for good (`FJS-1470`). The DIRECTORY gives

@@ -1,11 +1,15 @@
 /**
- * redirects.js — Generate _redirects file for Cloudflare/Netlify
+ * redirects.js — the _redirects file, written by the build and read by serveSite
  *
- * Format:
+ * Format (Netlify's, which Cloudflare reads):
  *   /old-path/  /new-path/  301
  *
  * Source: the route table's `redirects` — [[from, to], ...] pairs
  * from route frontmatter `redirect: /new-path/`
+ *
+ * Both directions live here because a redirect route emits no page, so this
+ * file is its only answer, and a reader that parses it differently from the
+ * writer is a redirect that works on the host and 404s in every drive (FJS-2717).
  */
 
 import { writeFile } from 'fs/promises'
@@ -29,4 +33,57 @@ export async function generateRedirects(redirects, outDir) {
 
   await writeFile(join(outDir, '_redirects'), lines.join('\n'), 'utf8')
   return `_redirects (${redirects.length} rule${redirects.length === 1 ? '' : 's'})`
+}
+
+const STATUSES = new Set([301, 302, 303, 307, 308])
+
+/**
+ * The key a path matches under: `/old` and `/old/` are one rule, the same way
+ * serveSite answers both with one page.
+ */
+export function redirectKey(path) {
+  return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+}
+
+/**
+ * Parse a _redirects file into `redirectKey(from)` → `{ to, status }`.
+ *
+ * Only the exact-path shape is answered. A splat, a placeholder, a query match,
+ * a forced rule or a 200 rewrite is a rule the host answers and serveSite would
+ * not, so it throws naming the line rather than serving a 404 where the host
+ * redirects — the silence FJS-2717 was. The first rule for a path wins, as it
+ * does on the host.
+ *
+ * @param {string} text
+ * @returns {Map<string, { to: string, status: number }>}
+ */
+export function parseRedirects(text) {
+  const rules = new Map()
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim()
+    if (line === '' || line.startsWith('#')) return
+
+    const refuse = (why) => {
+      throw new Error(
+        `[Sierra] _redirects line ${i + 1}: '${line}' — ${why}. serveSite answers ` +
+        `'FROM TO [STATUS]' with an exact FROM path and a ${[...STATUSES].join('/')} status, ` +
+        'and refuses the rest rather than answer 404 where the host redirects.'
+      )
+    }
+
+    const parts = line.split(/\s+/)
+    if (parts.length > 3) refuse('a query match or extra field')
+    if (parts.length < 2) refuse('no TO')
+    const [from, to, statusText = '302'] = parts
+
+    if (!from.startsWith('/')) refuse('FROM is not a path on this origin')
+    if (from.includes('*'))    refuse('a splat')
+    if (from.split('/').some(seg => seg.startsWith(':'))) refuse('a placeholder')
+    const status = Number(statusText)
+    if (!STATUSES.has(status)) refuse(`status ${statusText} is not a redirect`)
+
+    const key = redirectKey(from)
+    if (!rules.has(key)) rules.set(key, { to, status })
+  })
+  return rules
 }

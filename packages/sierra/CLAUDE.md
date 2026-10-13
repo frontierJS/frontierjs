@@ -61,8 +61,11 @@ src/
 
   site/                  — the `site/` surface's origin
     serve.js             the static server that surface deploys with — a
-                         directory index, a cache answer per file kind, and the
-                         site's own 404.html served with a 404
+                         directory index, a cache answer per file kind, the
+                         site's own 404.html served with a 404, and the
+                         `_redirects` the build wrote — read at start, parsed by
+                         `postbuild/redirects.js`, and refused there for a rule
+                         shape it cannot answer
     compile.js           a built site and serve.js as ONE executable
                          (`sierra site --compile`, `fli site:build --binary`).
                          Bun's embedded filesystem has no directories and
@@ -118,7 +121,12 @@ src/
     slot-rewrite.js      compile-time slot rewriting
     prerender.js         routes declaring `render: static` → HTML
     island-bundle.js     one chunk per island the static build needs
-    prune-unreachable.js what a static build may publish: the emitted pages walked
+    prune-unreachable.js what a static build may publish: the emitted pages walked;
+                         `bundleUnreachable` says so from the tree BEFORE the
+                         bundle, and the postbuild plugin's `config` hook then
+                         skips JS minify and the gzip report — a third of a
+                         site's build, spent on chunks the prune deletes. The
+                         prune refuses if that prediction kept a chunk.
     widget-build.js      one self-contained IIFE per widget in src/Embeds/
     static-safety.js     proves a prerendered page is publishable
     refusal.js           an error that prints as its message alone — for a

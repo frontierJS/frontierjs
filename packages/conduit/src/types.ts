@@ -54,7 +54,13 @@ export type CredentialRefusal = typeof CREDENTIAL_REFUSALS[number]
 // sent for the next (`FJS-2232`).
 export type TargetAuth =
   | { type: 'bearer';  ref: string; refusal?: CredentialRefusal[]; per_caller?: true }
-  | { type: 'api_key'; ref: string; header: string; refusal?: CredentialRefusal[]; per_caller?: true }   // header name is not secret
+  // The key travels as `header`, or as the URL parameter `query` for a vendor
+  // that reads it nowhere else (Google's legacy Geocoding: `?key=`). Neither
+  // name is secret. Under `query` the transport puts the key on the URL it
+  // fetches and nowhere a caller or observer is handed, and scrubs it from a
+  // failure Bun builds out of that URL (`FJS-2727`).
+  | { type: 'api_key'; ref: string; header: string; query?: never; refusal?: CredentialRefusal[]; per_caller?: true }
+  | { type: 'api_key'; ref: string; query: string; header?: never; refusal?: CredentialRefusal[]; per_caller?: true }
   // Signs a canonical string over method, path, timestamp, nonce and a
   // hash of the body. `header_prefix` names the three headers this emits
   // (default 'X-Fjs' → X-Fjs-Signature, X-Fjs-Timestamp, X-Fjs-Nonce).
@@ -64,8 +70,12 @@ export type TargetAuth =
   // `ConduitOptions.signers`, `ref` is the secret handed to it (`FJS-D891`).
   // HTTP Basic is the built-in `signer: 'basic'`.
   // A name and not the function, because a descriptor round-trips through the
-  // registry as JSON.
-  | { type: 'signed';  ref: string; signer: string; refusal?: CredentialRefusal[]; per_caller?: true }
+  // registry as JSON. `params` is the per-target fact a scheme signs under —
+  // SigV4's region and service — handed to the signer as `SignInput.params`.
+  // Without it the app registered one signer per value under a name like
+  // `s3:<region>`, which a conduit rebuilt from the store could not read back
+  // (`FJS-2725`). Stored in plaintext: never a secret.
+  | { type: 'signed';  ref: string; signer: string; params?: Record<string, string>; refusal?: CredentialRefusal[]; per_caller?: true }
   | { type: 'none' }
 
 // What a signer is handed: the resolved secret and the request as it will go on
@@ -74,6 +84,8 @@ export type TargetAuth =
 // `headers` every header already set, lowercased, auth excluded.
 export interface SignInput {
   secret:  string
+  // The target's `auth.params`, `{}` when it states none.
+  params:  Readonly<Record<string, string>>
   method:  string
   url:     string
   path:    string
@@ -213,6 +225,18 @@ export interface TargetDescriptor {
   // a dev receiver on localhost turns both on and says so.
   destinations?:   { allowHttp?: boolean; allowPrivate?: boolean }
 
+  // Further origins this counterparty answers on, each a bare origin
+  // (`https://www.googleapis.com`). A send reaches one by naming
+  // `ConduitRequest.address` — as it may an absolute URL on `address`'s own
+  // origin — and an address on any other origin is refused. One provider is often several hosts — OIDC
+  // discovery names absolute endpoints, and Google's sit on three origins — and
+  // one target per origin made an app register targets for hosts it learned at
+  // runtime (`FJS-2730`). The credential goes to every origin listed, so the
+  // list is a declaration and never what a send says. Refused beside
+  // `address_from`, which is the per-row address, and beside `pinned_cert`,
+  // which names one certificate.
+  origins?:        string[]
+
   // How this target collapses a duplicate request, if it does.
   //
   // `header` is the name the key travels under. `Idempotency-Key` is the
@@ -336,9 +360,10 @@ export type QueryValue = string | number | boolean
 export interface ConduitRequest {
   target:      string
 
-  // The URL this one request goes to, for a target declared
-  // `address_from: 'request'`, and refused for any other. `path` and `query`
-  // are applied to it as to a registered address.
+  // The URL this one request goes to: any URL for a target declared
+  // `address_from: 'request'`, otherwise one on the target's own origin or on
+  // one it declares in `origins`, and refused for any other. `path` and `query` are applied to it as to a
+  // registered address.
   address?:    string
   method:      string
   path?:       string

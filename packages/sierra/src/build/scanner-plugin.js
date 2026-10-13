@@ -22,9 +22,22 @@ import { PAGE_RESERVED } from '../router/page-fields.js'
  * @param {object} sierraContext
  * @returns {import('vite').Plugin}
  */
+/**
+ * The route tree as this plugin reads it. The one place the scanner is called
+ * with an app's config, so a second reader of the tree — the postbuild plugin,
+ * which decides before the bundle whether it will publish — sees the same
+ * tree, not one scanned with a defaulted option.
+ */
+export function scanRoutes(config, root, mounts = new Set()) {
+  return scan(config.routesDir ?? 'src/routes', {
+    cwd: root,
+    trailingSlash: config.trailingSlash ?? 'always',
+    mounts,
+  })
+}
+
 export function scannerPlugin(config, sierraContext) {
   const routesDir = config.routesDir ?? 'src/routes'
-  const trailingSlash = config.trailingSlash ?? 'always'
 
   let root = process.cwd()
   let watcher = null
@@ -45,11 +58,7 @@ export function scannerPlugin(config, sierraContext) {
 
   async function runScan(root, warn, error) {
     const found = new Set()
-    const tree = await scan(routesDir, {
-      cwd: root,
-      trailingSlash,
-      mounts: found,
-    })
+    const tree = await scanRoutes(config, root, found)
     for (const dir of found) if (!mounts.has(dir)) watcher?.add(dir)
     mounts = found
 

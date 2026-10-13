@@ -189,6 +189,8 @@ export abstract class BaseTransport {
   protected async authorize(ctx: AuthContext = {}): Promise<{
     headers: Record<string, string>
     body:    string | Uint8Array | undefined
+    // URL parameters only the fetch carries: an `api_key` target's `query`.
+    query?:  Record<string, string>
   }> {
     const auth = this.descriptor.auth
     if (auth.type === 'none') return { headers: {}, body: ctx.body }
@@ -203,7 +205,9 @@ export abstract class BaseTransport {
         return { headers: { 'Authorization': `Bearer ${secret}` }, body: ctx.body }
 
       case 'api_key':
-        return { headers: { [auth.header]: secret }, body: ctx.body }
+        return auth.query
+          ? { headers: {}, body: ctx.body, query: { [auth.query]: secret } }
+          : { headers: { [auth.header!]: secret }, body: ctx.body }
 
       case 'signed': {
         // Registered at put(), so a miss here is a conduit rebuilt without the
@@ -211,12 +215,13 @@ export abstract class BaseTransport {
         const sign = this.signers[auth.signer]
         if (!sign) throw new CredentialError(this.descriptor.id, auth.ref, `no signer named '${auth.signer}' is installed`)
         const { method, path, query } = this.authContext(ctx)
-        const out = await sign({
+        const out = await this.beforeDispatch(auth.ref, `signer '${auth.signer}' refused`, () => sign({
           secret, method, path, query,
+          params:  auth.params ?? {},
           url:     ctx.url ?? this.descriptor.address,
           body:    ctx.body,
           headers: ctx.headers ?? {},
-        })
+        }))
         return { headers: out.headers ?? {}, body: out.body ?? ctx.body }
       }
 
@@ -254,7 +259,7 @@ export abstract class BaseTransport {
   // Empty string counts as unresolved — an unset env var read through a
   // shell default is the common way to end up with one.
   private async secret(ref: string): Promise<string> {
-    const value = await this.credentials.get(ref)
+    const value = await this.beforeDispatch(ref, undefined, () => this.credentials.get(ref))
     if (value === null || value === undefined || value === '') {
       throw new CredentialError(this.descriptor.id, ref)
     }
@@ -267,11 +272,26 @@ export abstract class BaseTransport {
   // resolver without getFor, so the missing method here is a resolver swapped
   // after registration, and it fails closed the same way.
   private async secretFor(ref: string, who: CredentialCaller | undefined): Promise<string> {
-    const value = who && this.credentials.getFor ? await this.credentials.getFor(ref, who) : null
+    const getFor = this.credentials.getFor
+    const value  = who && getFor ? await this.beforeDispatch(ref, undefined, () => getFor.call(this.credentials, ref, who)) : null
     if (value === null || value === undefined || value === '') {
       throw new CredentialError(this.descriptor.id, ref, who ? undefined : 'the send names no caller')
     }
     return value
+  }
+
+  // A resolver or signer throwing has sent nothing, so whatever it threw is a
+  // CredentialError: the transport's catch would otherwise read a plain Error
+  // as a network fault, retry a GET and call a POST indeterminate when the
+  // fault is configuration (`FJS-2723`, `FJS-2726`). A resolver has no target
+  // id to build one with, so it is built here, message kept.
+  private async beforeDispatch<T>(ref: string, stage: string | undefined, fn: () => T | Promise<T>): Promise<T> {
+    try { return await fn() }
+    catch (err) {
+      if (err instanceof CredentialError) throw err
+      const why = (err as Error)?.message ?? String(err)
+      throw new CredentialError(this.descriptor.id, ref, stage ? `${stage}: ${why}` : why)
+    }
   }
 
   // Forget a refused credential, for the caller it was resolved for.

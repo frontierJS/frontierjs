@@ -68,12 +68,34 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
   }
 
   assertRefusal(descriptor)
+  assertApiKey(descriptor)
+  assertSignerParams(descriptor)
   assertPerCaller(descriptor)
   assertIdempotency(descriptor)
   assertResilience(descriptor)
+  assertOrigins(descriptor)
   assertPinnedCert(descriptor)
   assertRequestAddressed(descriptor)
   assertBroker(descriptor)
+}
+
+// An origin with a path would be compared and never matched; one beside a
+// per-row address or a pin would be accepted and not applied.
+function assertOrigins(descriptor: TargetDescriptor): void {
+  const origins = descriptor.origins as unknown
+  if (origins === undefined) return
+  const where = `Target '${descriptor.id}' origins`
+  if (!Array.isArray(origins))
+    throw new TypeError(`${where} must be an array of origins`)
+  if (descriptor.protocol !== 'http')
+    throw new TypeError(`${where}: only an 'http' target reaches an origin, this one is '${descriptor.protocol}'`)
+  if (descriptor.address_from !== undefined)
+    throw new TypeError(`${where}: a target with address_from 'request' takes any address a send names, graded per send`)
+  if (descriptor.pinned_cert !== undefined)
+    throw new TypeError(`${where}: a pinned certificate names one counterparty, and this target declares several origins`)
+  for (const origin of origins)
+    if (typeof origin !== 'string' || originOf(origin) !== origin)
+      throw new TypeError(`${where}: '${String(origin)}' is not an origin — scheme, host and port, no path (${originOf(String(origin))})`)
 }
 
 // A per-caller credential is resolved per SEND (`FJS-D848`). A websocket or
@@ -89,6 +111,35 @@ function assertPerCaller(descriptor: TargetDescriptor): void {
       `Target '${descriptor.id}': auth.per_caller needs a credential per send, and a `
       + `${descriptor.kind === 'broker' ? 'broker' : 'websocket'} target authenticates one connection for every caller.`,
     )
+}
+
+// A key named for both places or neither has no one place it goes, and a key
+// in the URL of a protocol whose URL this transport does not build is never sent.
+function assertApiKey(descriptor: TargetDescriptor): void {
+  const auth = descriptor.auth
+  if (auth.type !== 'api_key') return
+  const where = `Target '${descriptor.id}' auth (api_key)`
+  const named = [auth.header, auth.query].filter((n) => typeof n === 'string' && n !== '')
+  if (named.length !== 1 || (auth.header !== undefined && auth.query !== undefined))
+    throw new TypeError(`${where}: name exactly one of header or query`)
+  if (auth.query !== undefined && descriptor.protocol !== 'http' && descriptor.protocol !== 'unix')
+    throw new TypeError(`${where}: a key in the URL reaches only an 'http' or 'unix' target, this one is '${descriptor.protocol}'`)
+}
+
+// Read only by a signer, so on any other type they would be accepted and
+// ignored. A number is refused rather than stringified: the signer compares
+// what it is handed, and `9000` and `'9000'` are one typo apart.
+function assertSignerParams(descriptor: TargetDescriptor): void {
+  const params = (descriptor.auth as { params?: unknown }).params
+  if (params === undefined) return
+  const where = `Target '${descriptor.id}' auth.params`
+  if (descriptor.auth.type !== 'signed')
+    throw new TypeError(`${where}: auth '${descriptor.auth.type}' has no signer to read them`)
+  if (params === null || typeof params !== 'object' || Array.isArray(params))
+    throw new TypeError(`${where} must be an object of strings`)
+  for (const [key, value] of Object.entries(params))
+    if (typeof value !== 'string')
+      throw new TypeError(`${where}.${key} must be a string, got ${JSON.stringify(value)}`)
 }
 
 // A refusal shape the transport never reads would leave the session it was
@@ -436,7 +487,9 @@ export function createConduit(
     // away work that a wait of one reset window would have completed.
     // A request-addressed target serves many counterparties, one per row, so
     // its breaker is per origin: one dead subscriber URL closes itself and
-    // not the target. Graded by the target's own resilience either way.
+    // not the target. A send naming an address on a declared origin is keyed
+    // the same way, so a dead JWKS host does not shed discovery. Graded by the
+    // target's own resilience either way.
     const key = req.address === undefined ? req.target : `${req.target} ${originOf(req.address)}`
     if (key !== req.target) resilience.inherit(key, req.target)
     const admission = resilience.admit(key)

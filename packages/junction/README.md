@@ -1549,9 +1549,19 @@ does.
   hook on a client the caller scopes. `outbox` is `app.outbox`, which
   `enqueue` needs.
 - **A schema declaring `@@commitment` with no `commitments()` configured is
-  refused at start**, because every declared move would stay owed forever. Asked
+  refused by a process that keeps time** — `start()`, or any boot of an app
+  carrying caravan — because every declared move would stay owed forever. Asked
   of `app.db`, or of the registry's parsed schema under `createApp({ tenants })`,
-  which opens no tenant.
+  which opens no tenant. An app booted in-process with no queue
+  (`_startForTest()`, `_startOnce()`) is not refused: nothing in it runs on its
+  own clock, and its caller is the clock (`FJS-D938`).
+- **`fireDue(app, { hooks, timeZone })` fires every row due by the client's clock
+  now, in this process, with no queue** — the sweep and the fire run back to
+  back, each fire the plugin's own: as `createApp({ system })` in the row's
+  tenant, re-derived before it moves, `hooks` in the move's transaction. A test
+  sets the clock (`env.clock.set(at)`) and calls it; one that fails throws, where
+  the queue would have retried. Answers `{ due, fired, lapsed }`. Nothing fires
+  early: there is no lookahead.
 
 `GET /metrics` answers `commitments: { due, fired, lapsed, failed, lastSweepAt }`.
 `app.commitments.sweep()` runs one sweep now.

@@ -37,6 +37,11 @@ Detail: `references/resources-and-forms.md`
 - **`createResource` coerces, blank-strips and validates by default.**
 - **`@system` is the column an application writes and its caller does not**
 - **`<Form {resource} />` with no children IS the form**
+- **`find()` answers the list envelope; `invoke()` answers exactly what the method returned** (`FJS-D937`)
+- **`list()` is a page's live list; a route that calls `service.find` itself owns keeping it current.**
+- **A resource's `<script module>` holds what the UI says about its model, so an enum's tone map lives there once.**
+- **`list.more()` catches its error into `list.error`, so a loop on `hasMore` alone spins on a failing call.**
+- **A raw route is reached with `client.fetch(path)`, which carries the client's credentials.**
 
 ## Mesa
 Detail: `references/mesa.md`
@@ -46,8 +51,10 @@ Detail: `references/mesa.md`
 - **On an ELEMENT `bind:` means the DOM writes back, so it is `value`, `checked`, `files` — plus `group` and `this` — and every other `bind:x` there is refused, naming `x={expr}`** (`FJS-D136`)
 - **Mesa's scoped styles do not reach into child components.**
 - **A block that reads a `const` derived from another `const` can mount a STALE value** (`FJS-1684`)
+- **A `const` read off a getter is a constant, whatever the getter reads.**
 - **Replacing a value notifies; mutating one does not — and `o = o` is the deliberate exception.**
 - **An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that.**
+- **A function hides its reads from the compiler, which costs a subscription and an ordering.**
 - **A `$: dep, handler` does not run at mount, and its `prev` is the same object when the change was a mutation.**
 - **A watched object cannot be cloned or spread out of its proxy — `unproxy()` it.**
 - **An unkeyed `{#each}` is keyed by INDEX, so a row's DOM state stays with the position after a reorder.**
@@ -56,6 +63,7 @@ Detail: `references/mesa.md`
 - **In a `.md` file `{…}` interpolates a bare path only; anything else stays literal text, with no error.**
 - **A compiled component called directly instead of through `mount()` renders and never answers a click.**
 - **A parent sends a prop only when ITS value changed, so re-sending the same value does not reset a child's own edit** (`FJS-2589`)
+- **A component reaches the DOM through nodes it owns.**
 
 ## Driving a browser
 Detail: `references/driving-a-browser.md`
@@ -70,3 +78,4 @@ Detail: `references/build-output-and-frontierjs-css.md`
 - **A `var()` naming a token nothing defines drops the whole DECLARATION**
 - **A class name is not checked by anything**
 - **A code sample highlighted with `prefix: true` loses its first character.**
+- **An inline `style=` carries a custom property and the `<style>` block reads it.**

@@ -10,6 +10,8 @@
 import { afterAll, describe, expect, it } from 'bun:test'
 import { createConduit } from './src/conduit.ts'
 import { createStaticResolver, withCache } from './src/credentials.ts'
+import { createSQLiteStore } from './src/stores/sqlite.ts'
+import { Database } from 'bun:sqlite'
 import type { CredentialResolver, Signer, TargetDescriptor } from './src/types.ts'
 
 const seen: Array<{ authorization: string | null; type: string | null; body: string; query: string }> = []
@@ -132,14 +134,92 @@ describe('a signed target', () => {
     expect(called).toBe(false)
   })
 
-  it('a signer that throws is an auth_failed, not a thrown send', async () => {
+  // Nothing left the process, so the answer is neither a network fault nor
+  // indeterminate — a GET was retried three times and a POST claimed it may
+  // have landed (`FJS-2726`). And the credential was never refused, so a
+  // minted one is not forgotten either.
+  it('a signer that throws is auth_failed: not retried, not indeterminate, nothing sent, nothing reminted', async () => {
+    seen.length = 0
+    let calls = 0, mints = 0
+    const mint: CredentialResolver = { async get() { return `k-${++mints}` }, invalidate() {} }
     const c = createConduit({
-      credentials: createStaticResolver({ K: 'k' }),
-      signers:     { boom: () => { throw new Error('bad key') } },
+      credentials: mint,
+      signers:     { boom: () => { calls++; throw new Error('needs encoding form') } },
     })
     await c.register(target({ type: 'signed', ref: 'K', signer: 'boom' }))
-    const r = await c.send({ target: 'provider:vendor', method: 'GET', path: '/x' })
-    expect(r.error).not.toBeNull()
+    for (const method of ['GET', 'POST'] as const) {
+      const r = await c.send({ target: 'provider:vendor', method, path: '/x', body: method === 'POST' ? { a: 1 } : undefined })
+      expect(r.error).toMatchObject({ kind: 'auth_failed', retryable: false })
+      expect(r.error!.indeterminate).toBeUndefined()
+      expect(r.error!.message).toContain('needs encoding form')
+    }
+    expect({ calls, mints, sent: seen.length }).toEqual({ calls: 2, mints: 2, sent: 0 })
+  })
+
+  // A resolver has no target id to build a CredentialError with, so a mint
+  // that fails throws whatever its vendor threw (`FJS-2723`).
+  it('a resolver that throws a plain Error is auth_failed with its message, never indeterminate', async () => {
+    seen.length = 0
+    const failing: CredentialResolver = { async get() { throw new Error('invalid_grant') } }
+    const c = createConduit({ credentials: failing, signers: { s: () => ({}) } })
+    await c.register(target({ type: 'signed', ref: 'K', signer: 's' }))
+    await c.register(target({ type: 'bearer', ref: 'K' }, { id: 'provider:bearer' }))
+    for (const id of ['provider:vendor', 'provider:bearer']) {
+      const r = await c.send({ target: id, method: 'POST', path: '/send', body: { a: 1 } })
+      expect(r.error).toMatchObject({ kind: 'auth_failed', retryable: false })
+      expect(r.error!.indeterminate).toBeUndefined()
+      expect(r.error!.message).toContain('invalid_grant')
+    }
+    expect(seen.length).toBe(0)
+  })
+})
+
+// A scheme with a per-target fact (SigV4's region and service) carries it on
+// the descriptor, or the app registers one signer per value under a
+// parameterized name the registry cannot read back (`FJS-2725`).
+describe('signer params', () => {
+  it('hands auth.params to the signer, and {} when the target states none', async () => {
+    const got: Array<Parameters<Signer>[0]['params']> = []
+    const c = createConduit({
+      credentials: createStaticResolver({ K: 'k' }),
+      signers:     { spy: (input) => { got.push(input.params); return {} } },
+    })
+    await c.register(target({ type: 'signed', ref: 'K', signer: 'spy', params: { region: 'auto', service: 's3' } }))
+    await c.register(target({ type: 'signed', ref: 'K', signer: 'spy' }, { id: 'provider:bare' }))
+    await c.send({ target: 'provider:vendor', method: 'GET', path: '/x' })
+    await c.send({ target: 'provider:bare', method: 'GET', path: '/x' })
+    expect(got).toEqual([{ region: 'auto', service: 's3' }, {}])
+  })
+
+  it('survives the SQLite registry, so a conduit rebuilt from the store signs under the same params', async () => {
+    const db = new Database(':memory:')
+    const a  = createConduit({ store: createSQLiteStore(db), signers: { spy: () => ({}) } })
+    await a.init()
+    await a.register(target({ type: 'signed', ref: 'K', signer: 'spy', params: { region: 'eu-west-1' } }))
+    let got: Record<string, string> | undefined
+    const b = createConduit({
+      store:       createSQLiteStore(db),
+      credentials: createStaticResolver({ K: 'k' }),
+      signers:     { spy: (input) => { got = input.params; return {} } },
+    })
+    await b.init()
+    const r = await b.send({ target: 'provider:vendor', method: 'GET', path: '/x' })
+    expect(r.error).toBeNull()
+    expect(got).toEqual({ region: 'eu-west-1' })
+  })
+
+  it('refuses a value that is not a string, naming the key', async () => {
+    const c = createConduit({ signers: { spy: () => ({}) } })
+    await expect(c.register(target({ type: 'signed', ref: 'K', signer: 'spy', params: { port: 9000 as unknown as string } })))
+      .rejects.toThrow(/auth\.params\.port must be a string/)
+    await expect(c.register(target({ type: 'signed', ref: 'K', signer: 'spy', params: ['a'] as unknown as Record<string, string> })))
+      .rejects.toThrow(/auth\.params must be an object/)
+  })
+
+  it('refuses params on a type with no signer to read them', async () => {
+    const c = createConduit()
+    await expect(c.register(target({ type: 'bearer', ref: 'K', params: { region: 'x' } } as unknown as TargetDescriptor['auth'])))
+      .rejects.toThrow(/auth\.params.*'bearer' has no signer/)
   })
 })
 

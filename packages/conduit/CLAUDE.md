@@ -209,7 +209,12 @@ src/
   because one with no blank line would grow without bound. `stream.test.ts`.
 - **A target is declared, not constructed at the call site.** That is the whole
   point of the package: one place lists what this process may talk to, with what
-  credential, under what limits.
+  credential, under what limits. **A counterparty on several hosts is one target
+  with `origins`** (`FJS-D939`): a send names an absolute `address`, admitted on
+  the target's own origin or a declared one and refused by name otherwise. The
+  credential goes to every declared origin, so the list is never a send's to
+  widen. Breaker and concurrency are keyed per origin whenever a send names an
+  address.
 - **`stub` and `not_implemented` are different answers.** A stub transport
   succeeds with a canned response; NotImplemented refuses. Do not use the first
   as a placeholder for a transport you meant to write.
@@ -261,7 +266,12 @@ src/
   were not the ones sent. A minted JWT or OAuth token is the RESOLVER's:
   `withCache({ get: mint }, { ttl_ms })` is its expiry, so conduit holds no
   credential lifetime. `put()` refuses an unknown signer by name, and a signed
-  target beside `follow_redirects` or `address_from`.
+  target beside `follow_redirects` or `address_from`. A per-target fact the
+  scheme signs under (SigV4's region) is `auth.params`, strings only, never a
+  secret — not a signer registered per value (`FJS-2725`). **A resolver or signer
+  that throws has sent nothing**, so `beforeDispatch` makes any throw a
+  `CredentialError` — `auth_failed`, never `indeterminate`, never a remint
+  (`FJS-2723`, `FJS-2726`).
 - **A credential that belongs to the caller is `per_caller`, and it never goes
   through `get(ref)`** (`FJS-D848`). One target and one ref, a login per
   tenant: the transport asks `getFor(ref, who)` with

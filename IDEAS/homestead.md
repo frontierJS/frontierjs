@@ -578,7 +578,7 @@ fails every INSERT against it. And **the `database` blocks come out**: `db:`
 overrides a declared `main` and nothing else, so `database audit { driver
 logger }` would send a device at `./db/audit/`, a fleet-wide file on a server.
 
-Every cut is graded `lost` / `changed` / `noted` — `litestone import`'s
+Every cut but one (`FJS-D847`) is graded `lost` / `changed` / `noted` — `litestone import`'s
 vocabulary for the other direction — and the proof is that the result BOOTS:
 27 unit tests through a JSON round trip, and in Chrome over OPFS the same
 filtered schema opens, a stocktake is counted and read back through `include`,

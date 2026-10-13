@@ -1374,6 +1374,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d847"></a>2026-10-13 · `FJS-D847` — Does a `@@sync` model whose policy walks a model the device does not sync get that model's schema emitted, or is it refused at build — Refuse at build a `@@sync` model whose policy names a model that is not `@@sync`, naming the model to add it to.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (walk the policies when emitting the device schema and add each model they reach).
+
+The paper's recommendation, taken as written: A puts a model's schema on the device without its rows, so the policy reads an empty table and answers wrong in silence; B fails loudly and is the refusal half every gap ships with.
+
 ### <a id="fjs-d923"></a>2026-10-12 · `FJS-D923` — A `@@softDelete` column is written by `remove()` and `restore()` and by no patch; every update-family verb naming `deletedAt` is refused by name, `asSystem()` included
 
 `update({ data: { deletedAt } })` was `remove()` spelled as a patch and graded as one: at the UPDATE gate, with no cascade walked and no removal announced, so a caller the delete gate refused removed the row anyway (`FJS-2578`). `update`, `updateMany`, `upsert` and `upsertMany` (its `update:` list, or every key its rows carry when there is none) throw `SoftDeleteWriteError` — 400, because the verb is wrong rather than the caller, the shape `BulkTransitionError` already has. **`asSystem()` is refused too**: the cascade is integrity, not authority (`FJS-D502`), and `sys.<model>.remove()` already lifts the gate. **`create` may still state the column** — creating a row already deleted removes nothing, and it is the import shape. An omitted key (`undefined`) is not a write.
@@ -3739,6 +3745,24 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d908"></a>2026-10-13 · `FJS-D908` — How does a per-row zone (a column, possibly two relations away) reach a `where` — A zone-aware operator the client lowers: the caller states the wall-clock rule and the zone field (`{ startsAt: { localTime: { atOrBefore: '08:00', zone: 'inviteeTimeZone' } } }`); litestone selects the distinct zones present (`SELECT DISTINCT zone`, bounded and indexable), computes each zone's instant bound with `fromWall`/`partsIn`, and lowers to `(zone = ? AND startsAt <= ?) OR …`. SQL stays instant-only, so `FJS-D143` stands and the cost is one DISTINCT plus an index range per zone. The zone must be a column of the same row; a zone two relations away (`Shift → Employee → User`) needs a join the lowering does not do today, so that case stays open or is solved by A + a denormalized zone column. Adds an operator to `where`, `$checkWhere` and the directive table.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a materialized instant: a stored column the app or a hook keeps current (`remindAt`), plain `where remindAt <= now`, fully indexable, any relation depth because the app writes it. No litestone change at all and `@generated` stays deterministic and same-row (`parser.js` ~973); the cost is that the rule lives in app code beside the write, goes stale when the zone or the rule changes, and `tooLate` (shifts starting before 08:00 local) is still the app's to define), **C** (a framework-bound window per zone, not per row: litestone exposes the *per-zone bound* as a helper (`db.booking.zonedBounds({ zone: 'inviteeTimeZone', wall: '08:00' })` returning `[{ zone, instant }]`) and the app composes the OR itself. Smallest surface and no operator, but every app re-writes the same OR and `$checkWhere` cannot see it, so it is Invariant 4's *beside the owner* by another route. - **Recommend A, same-row zone only** — it is the only choice that makes the database do the narrowing from a declaration, it keeps `FJS-D143`'s *SQL never evaluates a zone* intact (the zones are enumerated, then every comparison is an instant), and `FJS-1214` asks for the same word in declaration so the spelling is shared; B is the workaround an app can already use today and the row's two-relation case should be answered by it (or by a later join-lowering), not by widening A).
+
+the only choice that makes the database do the narrowing from a declaration while SQL never evaluates a zone (FJS-D143): zones are enumerated, every comparison is an instant. Same-row zone only; a zone two relations away is a materialized instant (B), which an app can already write.
+
+### <a id="fjs-d911"></a>2026-10-13 · `FJS-D911` — How does a parent's column reach a child's `@derived` or `@from` — Ship the to-one `@from(rel, column)` form: when the first argument names a to-one relation field on this model and the second a column on its target, `parseFrom` returns a `{ rel, column }` op and the client compiles it with the correlated scalar subquery a policy's `relation.column` path already builds. `@from` stays the one owner of "bring a value onto this row", the refusal's promise becomes true, and the `.some` refusal keeps its `exists: true` cure.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (correct the message only: say a `@derived` field does not cross a relation and name no cure (a stored copy, or a `post-update` `@@deny` for the same-team check). Smallest change, but the capability stays missing and the Linear schema keeps a copied `category` that goes stale when a state is re-categorised), **C** (let `@derived` itself accept a one-hop path (`@derived(state.category)`), routing `case 'path'` to the same subquery. The spelling the author reaches for first, but it is the second way to cross a relation that the `policy.js` comment says this language exists to avoid, and `@derived` stops being same-row).
+
+The paper's recommendation, taken as written: `@from` is already the declared owner of crossing a relation onto a row and the refusal already promises it; B adds the missing to-one direction on existing machinery with no second origin.
+
+### <a id="fjs-d922"></a>2026-10-13 · `FJS-D922` — Does a declared extensible key with no slot get filtered by a scan, as `extensible-columns.md` § The thirteenth field says, or refused, as `rewriteExtensibleWhere` does — and if refused, how does a filter UI learn which keys it may offer — Honor the doc: a slotless key compiles to `json_extract(<blob>, ?)` with the key bound as a path parameter (Invariant 8), ANDed with the scope the query already carries. Slower, never wrong; the "widens in silence" worry that justified refusal applies to dropping a term, not to scanning it. The refusal test flips to a scan test; an undeclared key is still refused by name.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep the refusal and correct the doc: § The thirteenth field says "stores and displays; filtering needs a slot", and `$declaredFields()` rows gain a derived `filterable` (slot held) so a filter UI offers only those keys. Nothing slow can be asked for, but a tenant past the pool size cannot filter on a key they declared, and the Q6 measurement (most realistic declarations hold no slot) says that is most keys), **C** (A: scan for a slotless key, plus `$declaredFields()` marks `indexed` per key so a UI can warn rather than hide. Most code and the widest surface).
+
+The paper's recommendation, taken as written: it is what the doc promises and what a tenant expects; the failure refusal guards (a silently wider answer) is not a property of a scan, and the Q6 numbers say refusal would make filtering unavailable for the common case.
 
 ### <a id="fjs-d935"></a>2026-10-13 · `FJS-D935` — Q1 — Is a balance a column trait the engine keeps at write, or does `@from` stay the only aggregate — `@balance(Model, sum: field | count: true)`: stored, kept by triggers, refused below any constraint the column declares, and the source derived append-only.
 
@@ -7169,6 +7193,36 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d907"></a>2026-10-13 · `FJS-D907` — What is the re-presentment cadence for a soft-declined subscription invoice, and what holds the attempt count and the clock — A fixed short ladder in the app, `RETRY_DAYS = [1, 3, 5, 7]` after each soft decline, attempt number counted from the invoice's failed `Payment` rows (no new column), each dispatch `{ delay, unique: occurrenceKey('collect', invoiceId, attempt) }`. Four tries, not twenty-one; stops at the first paid, hard decline or non-`issued` invoice. Nothing stamped, so a shop changing the ladder moves unfired retries.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the ladder is stamped on the invoice at issue like `graceDays` (`retryDays`, an `Int[]`-shaped column or a count plus interval), so terms already given never move (`FJS-D355`). Truest to the invoice owning its deadline, but a new frozen column for a schedule the customer is never told), **C** (a `@@commitment` on `Invoice` (`retry`, `on: dueOn + N`, `while: status == 'issued'`) whose hook dispatches the collect, so the retry clock is the same graded, durable machinery as dunning and survives a lost queue. One commitment fires once per N, so a ladder needs several, and each needs a stamped day count).
+
+The paper's recommendation, taken as written: the attempt count already lives in the `Payment` rows and the ladder is a shop habit rather than a term (the `remind` commitment's `3d` is a literal for the same reason); a short ladder keeps clear of the network-scrutiny the row names, and B or C can replace it without changing the dispatch's `unique` shape.
+
+### <a id="fjs-d910"></a>2026-10-13 · `FJS-D910` — Are `$or`/`$and`/`$not` wire vocabulary, or in-process only — Name them in the toolbelt table as a third class beside DIRECTIVES and TRANSPORT_PARAMS (`COMBINATORS`): `unknownDirectives` skips them, `splitParams` leaves them in `ctx.query`, and Invariant 10 is amended to say a combinator is a filter written with a `$`. `?$or[][name]=a` and `{ $or: [...] }` over WS both work; the dedupe of the three lists (`match.js`, `litestone.ts`, the table) collapses into one.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Remove them from the wire: delete the `$or`/`$and`/`$not` branches from `matchesQuery` and keep `parseWhere`'s only for in-process callers that build `where` themselves. Invariant 10 stands as written; a client needing OR over a transport calls a custom service method).
+
+The paper's recommendation, taken as written: OR/NOT filters are the commonest thing a list screen needs beyond equality, `matchesQuery` already grades them for live stores, and the litestone `where` grammar is the same everywhere; Invariant 10's point (a `$` key is not a column) survives because the table names exactly three combinators and still refuses every other `$` name.
+
+### <a id="fjs-d912"></a>2026-10-13 · `FJS-D912` — Who derives the cross-origin list — the web domain's `https://` origin plus a wrapped shell's `tauri://localhost` / `http://tauri.localhost` — and where does it land — `fli deploy` derives it and hands it to the API as one framework-level env (`FJS_CORS_ORIGINS`: `https://<web.domain>` plus the shell schemes of each wrapped surface), which `applyConfiguredMiddleware` merges into `middleware.cors.origins` and `csrf.origins`. One new reader in junction, no per-app code; the OS split lives in one cli table beside `desktop-surface.js`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a toolbelt helper `appOrigins({ webDomain, shells })` that an app's `junction.config.js` calls, so the list is still written in the app but never spelled by hand. No env, no junction change; each app still has to pass the domain), **C** (build nothing: the boot notice stays, and the measured cookie fact is recorded as a hazard. Apps keep listing origins in `junction.config.js` as basecamp does).
+
+The paper's recommendation, taken as written: the web domain is declared once, in the deploy config, and a second hand-written copy in `junction.config.js` is the drift this row exists for; A reuses the env mechanism basecamp already proves, lifted from one app to the framework.
+
+### <a id="fjs-d914"></a>2026-10-13 · `FJS-D914` — When a custom method answers another model's row, how does the announcement learn which model it is — a per-method declaration, or a refusal to guess — `answers: 'Task'` on the `methods:` entry (a model name, validated at boot like `model:`). `announcementPayload` and `announceToChannels` take that accessor for this method, so the completeness check, the re-read and the per-recipient grading all use Task's columns and policy. One declaration, derived everywhere else; the cost is a second place a `model` can be named on a service, beside `FJS-D628`'s `model:`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (No declaration: a custom method's answer is announced as-is and never re-read when its id/shape does not match the service's model (skip the re-read for any custom method, keep it for CRUD verbs). Nothing to learn, but the broadcast is then graded against the wrong model's policy, so the announcement must also be withheld from channels unless `$.dispatch` states a payload — the same silent loss as today), **C** (Refuse to guess, by name: a custom method whose answer has more keys than the service's model, or whose declared output type is another model, throws at boot/first call naming `answers:`-or-`$.dispatch`. No new option, but it makes a legitimate method a hard failure).
+
+The paper's recommendation, taken as written: the grading rule (`FJS-D175`) already says the DECLARED model is the accessor, and a method that answers another model's row is declaring one more fact about itself; naming it keeps the check, the re-read and the grade on one accessor instead of three guesses.
+
+### <a id="fjs-d938"></a>2026-10-13 · `FJS-D938` — Which processes does the `@@commitment` authoring check refuse, and how does a queue-less test app fire what is owed — The check asks a process that KEEPS TIME: `start()` always, and any boot of an app configuring `caravan` (the queue the sweep runs on). An in-process app with neither is a harness whose test is the clock, and `fireDue(app, { hooks, timeZone })` in `@frontierjs/junction/commitments` fires every row due by the client's clock, inline, through the plugin's own fire. Derived from the start mode and the configured plugins; no flag.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Refuse only under `start()`; `_startForTest()` and `_startOnce()` never ask. Simplest sentence, but a suite that boots the real composition — caravan and all — never sees the refusal, which is `check-attachments`' warning: the check that only runs when serving is the one nobody sees fail), **C** (Keep the refusal everywhere and ship a double in `@frontierjs/junction/testing` (a `commitments` stand-in with no queue) that every test app configures. One line per test file, 31 times in ELA, for wiring that tests nothing).
+
+The paper's recommendation, taken as written: it keeps the refusal under the test runner for every app composed like the deployed one, waives it for exactly the app that runs nothing on its own clock, and gives that app's test the fire it needs without a second fire path.
 
 ### <a id="fjs-d937"></a>2026-10-13 · `FJS-D937` — A custom method's array reaches its caller as the array: only `find` answers a page, and only the bulk partial-write protocol is a list on any other method.
 
@@ -13192,6 +13246,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d909"></a>2026-10-13 · `FJS-D909` — Where does the one doc-fence reader live and how does a package supply the prelude its examples run under — One reader in `@frontierjs/toolbelt` (a `docfences` kit: fences with `lang`, `words`, `line`, nearest preceding schema). Litestone's runner, `runnableFences` and `doc-audit` all import it; each package keeps its own `test/doc-examples.test.*` supplying its prelude, and `doc-examples-run` keeps grading the wiring. Toolbelt is below the graph (`FJS-D26`) so any package may import it; the cost is that `FJS-D860`'s "moves to `fli check`" is amended to "moves to toolbelt".
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`fli check` owns the reader AND the run: a package declares `test/doc-prelude.{js,ts}` (default export `(block) => { imports, head }`), `fli check` writes each unmarked fence as a module under that prelude and runs it. One runner for 20 packages, no per-package test file; the cost is a new file convention plus a process fleet inside `fli check`, and the prelude for a drive-needing package (mesa served page, sierra build) is not a head string), **C** (Reader in `packages/cli/core`, package runners import it by relative path from the workspace, the way `@frontierjs/ui` reads mesa's CDP harness. No new package surface, but it makes every package's suite depend on cli, a reverse edge).
+
+The paper's recommendation, taken as written: it is the only choice with one reader and no reverse edge, it keeps `FJS-D860`'s "the package owns its words" (the prelude), and the 19 runners then each become a small test over a shared reader instead of 19 copies of litestone's 226 lines.
+
 ### <a id="fjs-d931"></a>2026-10-12 · `FJS-D931` — Q5 — Pin the installs — Also pin a major for Docker and Caddy with an apt preference, keep every version beside `BUN_VERSION`, and report the installed versions in the heartbeat.
 
 Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (As built: Bun and the Outpost pinned in `enrollment.ts` (`BUN_VERSION`, `OUTPOST_VERSION`), Docker and Caddy whatever their signed apt repositories serve on the day), **C** (Pin exact versions for all four).
@@ -15876,6 +15936,34 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d913"></a>2026-10-13 · `FJS-D913` — How does Studio get `@frontierjs/css` and its fonts without a CDN, given litestone depends on toolbelt alone — Vendor a generated copy of `frontier.min.css` (~88 KB) at `src/tools/studio.css`, text-imported and served by Studio at its own path; a `packages/css` build step writes it and a litestone test fails when the copy differs from `packages/css/dist`. Fonts drop to the system stack (Inter and JetBrains Mono stay first in the list for machines that have them). No dependency edge, works in a compiled binary, costs one generated file.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Studio resolves `@frontierjs/css` at runtime when it is installed (optional peer) and serves `dist/frontier.min.css` from it, keeping the CDN link as the fallback. No copy to drift, but a data-only app has no css installed, so the offline case this row is about still renders unstyled, and a compiled binary cannot resolve it), **C** (Leave the CDN and record it: Studio already works unstyled (`studio.html` header), and `--host` on an offline machine is the rare case. Smallest change; the row closes as a documented limit).
+
+The paper's recommendation, taken as written: it is the only option that fixes the offline case without a dependency edge; the drift is checked by a test rather than by memory, and dropping web fonts for the system stack removes the second CDN call with no asset to carry.
+
+### <a id="fjs-d939"></a>2026-10-13 · `FJS-D939` — A conduit target declares the further origins its counterparty answers on, and a send names an absolute address on one of them.
+
+One provider is often several hosts. OIDC discovery answers absolute endpoints,
+and Google's sit on three origins. Under one target per origin, `conduit-oidc`
+refused a foreign endpoint and the app registered a second target for a host it
+only learned at runtime (`FJS-2730`). The owner picked **`origins` on the
+target**. The rejected options: **`origins` for `auth: 'none'` only**, which
+leaves google-maps' shared key on two targets, and **ruling the status quo**,
+which would cost Google OIDC three bound sends.
+
+`TargetDescriptor.origins` is a list of bare origins. `ConduitRequest.address`
+is admitted on any target when its origin is the target's own or one it
+declares, and is refused by name otherwise, before anything is sent. The
+credential goes to every declared origin. That is why the list is a declaration
+and never something a send says. `put()` refuses `origins` beside `address_from`
+(which takes any URL, graded per send), beside `pinned_cert` (one certificate),
+on a protocol other than http, and on an entry that is not an origin. One
+declaration covers every origin, so this keeps `FJS-D933`'s *one place declares
+auth*.
+
+*Lives in:* `packages/conduit/src/types.ts` (`origins`) · `packages/conduit/src/conduit.ts` (`assertOrigins`) · `packages/conduit/src/transports/http.ts` (`declaresOrigin`) · `conduit-connectors/packages/conduit-oidc/src/index.ts`.
 
 ### <a id="fjs-d936"></a>2026-10-13 · `FJS-D936` — What happens to `driver jsonl` — Retire the format as a logging driver. The audit trail moves to its SQLite form; `drivers/jsonl.js`, `jsonl-index.js`, the jsonl half of `retention.js` and `driver logger`/`driver trail` stay in the tree, each flagged NOT IN USE UNTIL FURTHER NOTICE, and no schema declares them. Basecamp, `example` and the prototypes redeclare their audit database (pre-alpha: the old trail files are deleted, not migrated). One engine; the trail gains gates, indexes and migrations, and runs in the browser. Retention becomes a `DELETE` plus incremental vacuum rather than a file rewrite.
 

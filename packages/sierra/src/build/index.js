@@ -17,14 +17,14 @@ import { resolve, isAbsolute, relative } from 'path'
 import { readdir, rm } from 'fs/promises'
 import { mesaPlugin, prepareForCompile, inspectOn } from './mesa-plugin.js'
 import { devtoolsPlugin } from '../devtools/plugin.js'
-import { scannerPlugin } from './scanner-plugin.js'
+import { scannerPlugin, scanRoutes } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
 import { localDbPlugin, localDbWorkerPlugins } from './local-db-plugin.js'
 import { virtualSierraPlugin } from '../virtual/virtual-sierra.js'
 import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
 import { buildIslandBundle, injectIntoPages } from './island-bundle.js'
-import { pruneUnreachable } from './prune-unreachable.js'
+import { pruneUnreachable, bundleUnreachable } from './prune-unreachable.js'
 import { autoImportPlugin } from './auto-import-plugin.js'
 import { markdownLayoutsPlugin } from './markdown-layouts.js'
 import { expandGlobs } from './glob-expand.js'
@@ -85,6 +85,8 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  * @typedef {Object} SierraContext
  * @property {object|null} tree        — current route tree
  * @property {Map} staticMap           — file → ctx.isStatic boolean
+ * @property {string[]} [cssAssets]    — the main bundle's stylesheets, read in writeBundle
+ * @property {string[]} [jsChunks]     — the main bundle's chunks, which the island bundle's are not
  */
 
 /**
@@ -347,9 +349,31 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
   let outDir = config.outDir ?? 'dist/client'
   let isBuild = false
   let viteAliases = {}
+  // Whether this build skipped minifying its chunks: decided before the
+  // bundle, checked after the prune (prune-unreachable.js).
+  let unminified = false
 
   return {
     name: 'sierra:postbuild',
+
+    // JavaScript the prune will delete is not minified or gzip-measured first.
+    // An app that states either key keeps its word; a `build.minify` of its
+    // own is the FJS-799 case this must not reopen.
+    async config(userConfig, { command }) {
+      if (command !== 'build' || (config.target ?? 'spa') !== 'static') return
+      const tree = await scanRoutes(config, userConfig.root ? resolve(userConfig.root) : process.cwd())
+      if (!bundleUnreachable(tree)) return
+      const build = {}
+      if (userConfig.build?.minify === undefined) {
+        unminified = true
+        build.minify = false
+        // `minify: false` alone turns the stylesheet's minifier off with it,
+        // and the stylesheet is the one asset every page links.
+        if (userConfig.build?.cssMinify === undefined) build.cssMinify = true
+      }
+      if (userConfig.build?.reportCompressedSize === undefined) build.reportCompressedSize = false
+      return { build }
+    },
 
     configResolved(viteConfig) {
       root = viteConfig.root ?? process.cwd()
@@ -370,9 +394,14 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
     // order), so reading the bundle a hook earlier saw an empty asset list and
     // linked nothing, with no error to say so.
     writeBundle(_opts, bundle) {
-      sierraContext.cssAssets = Object.values(bundle)
+      const out = Object.values(bundle)
+      sierraContext.cssAssets = out
         .filter((c) => c.type === 'asset' && c.fileName.endsWith('.css'))
         .map((c) => c.fileName)
+      // This bundle's own chunks. The island bundle is a second build with its
+      // own minifier, so its chunks surviving the prune says nothing about
+      // the prediction; one of these surviving does.
+      sierraContext.jsChunks = out.filter((c) => c.type === 'chunk').map((c) => c.fileName)
     },
 
     async closeBundle() {
@@ -601,6 +630,16 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
       // through the entry the moment the router asks for it.
       if ((config.target ?? 'spa') === 'static') {
         const pruned = await pruneUnreachable({ outDir })
+        const own = new Set(sierraContext.jsChunks ?? [])
+        const reachable = pruned.kept.filter((f) => own.has(f))
+        if (unminified && reachable.length) {
+          throw new Error(
+            `[Sierra] the bundle was built unminified because no page could reach it, ` +
+            `and ${reachable.length} chunk(s) are reachable: ${reachable.join(', ')}. ` +
+            `That is a Sierra defect in bundleUnreachable (build/prune-unreachable.js); ` +
+            `set \`build.minify\` in the app's config to ship meanwhile.`
+          )
+        }
         if (pruned.removed.length) {
           console.log(
             `\n  [Sierra] Published ${pruned.kept.length} script(s); ` +
@@ -608,6 +647,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
             `(${(pruned.bytes / 1024).toFixed(0)} KB):`
           )
           for (const f of pruned.removed) console.log(`    · ${f}`)
+          if (unminified) console.log(`    (built without a minifier: every route is static, so no page could reach the main bundle)`)
         }
         reportShippedHints(sierraContext, pruned.kept, root)
       }

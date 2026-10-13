@@ -18,6 +18,9 @@
  *     to anyone who visited last week, which is invisible locally.
  *   • **A 404 that is a page.** A static host serves `404.html` when it has one.
  *     Emitting one and never serving it is the same as not having one.
+ *   • **`_redirects` is configuration, not a file.** A redirect route emits no
+ *     page, so its line there is its only answer; a server that serves the file
+ *     instead answers 404 where the host answers 301 (`FJS-2717`).
  *
  * There is no CORS here and that is deliberate — this origin serves documents
  * a browser navigates to, not resources another origin fetches. The API is what
@@ -35,6 +38,7 @@ import { join, relative, resolve } from 'node:path'
 import { isHashedAsset } from '../serve/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
 import { bodyAnswer, methodAnswer } from '../serve/http-answers.js'
+import { parseRedirects, redirectKey } from '../postbuild/redirects.js'
 
 import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 
@@ -48,6 +52,9 @@ function cacheFor(path) {
   // it change on every build, so the only safe answer is revalidate.
   return 'public, max-age=0, must-revalidate'
 }
+
+// The host reads these and never publishes them.
+const HOST_CONFIG = new Set(['_redirects', '_headers'])
 
 /**
  * Resolve an already-decoded, root-relative path to a file on disk.
@@ -119,6 +126,9 @@ function resolveEntry(files, safe) {
  *                                     legitimately resolve into; see
  *                                     serve/served-path.js
  * @returns {Promise<{ port: number, url: string, close: () => Promise<void> }>}
+ *
+ * `_redirects` is read once, here, so a rule serveSite cannot answer throws
+ * before the origin listens. A rebuild under a running server keeps the old rules.
  */
 export async function serveSite({
   dir, files, port = 0, host = '0.0.0.0', notFound = '404.html', allowOutside = [],
@@ -127,6 +137,11 @@ export async function serveSite({
   const find    = files
     ? async (safe) => resolveEntry(files, safe)
     : (safe) => resolveFile(rootDir, safe, allowOutside)
+
+  const rulesFile = await find('_redirects')
+  const redirects = rulesFile
+    ? parseRedirects(await readFile(rulesFile.read, 'utf8'))
+    : new Map()
 
   const server = createServer(async (req, res) => {
     const headers = { 'X-Content-Type-Options': 'nosniff' }
@@ -149,7 +164,7 @@ export async function serveSite({
       return
     }
 
-    const urlPath = req.url.split('?')[0].split('#')[0]
+    const [urlPath, query] = req.url.split('#')[0].split(/\?(.*)/s)
     const safe    = relativePathFor(urlPath)
 
     // Not a 404: a URL that cannot be decoded is not a file that is missing.
@@ -159,7 +174,17 @@ export async function serveSite({
       return
     }
 
-    const file = await find(safe)
+    // Before the file lookup: the host follows a rule whether or not a file
+    // sits at its path.
+    const rule = redirects.get(redirectKey('/' + safe))
+    if (rule) {
+      const location = query && !rule.to.includes('?') ? `${rule.to}?${query}` : rule.to
+      res.writeHead(rule.status, { ...headers, Location: location })
+      res.end()
+      return
+    }
+
+    const file = HOST_CONFIG.has(safe) ? null : await find(safe)
 
     if (file) {
       const body   = await readFile(file.read)

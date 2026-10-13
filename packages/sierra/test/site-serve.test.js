@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { serveSite } from '../src/site/serve.js'
+import { generateRedirects, parseRedirects } from '../src/postbuild/redirects.js'
 
 let DIR
 let server
@@ -404,6 +405,118 @@ describe('the port it answers on', () => {
       expect(s.url).toContain(String(s.port))
     } finally {
       await s.close()
+    }
+  })
+})
+
+describe('_redirects (FJS-2717)', () => {
+  // A redirect route emits no page, so its line in `_redirects` is its only
+  // answer. A server that serves the file answers 404 where the host answers
+  // 301, and no drive can prove a redirect. The file is written by the build's
+  // own emitter, so the reader is tested against what the writer produces.
+  let ROOT, s
+
+  beforeAll(async () => {
+    ROOT = mkdtempSync(join(tmpdir(), 'sierra-redirects-'))
+    mkdirSync(join(ROOT, 'new'))
+    mkdirSync(join(ROOT, 'shadowed'))
+    writeFileSync(join(ROOT, 'index.html'), '<h1>home</h1>')
+    writeFileSync(join(ROOT, 'new', 'index.html'), '<h1>new</h1>')
+    writeFileSync(join(ROOT, 'shadowed', 'index.html'), '<h1>stale</h1>')
+    writeFileSync(join(ROOT, '_headers'), '/*\n  X-Frame-Options: DENY\n')
+    writeFileSync(join(ROOT, '404.html'), '<h1>no such page</h1>')
+    await generateRedirects([['/old/', '/new/'], ['/shadowed/', '/new/']], ROOT)
+    s = await serveSite({ dir: ROOT })
+  })
+
+  afterAll(async () => {
+    await s?.close()
+    rmSync(ROOT, { recursive: true, force: true })
+  })
+
+  const hop = (path, init) => fetch(`${s.url}${path}`, { redirect: 'manual', ...init })
+
+  test('a declared redirect answers 301 with its target', async () => {
+    const res = await hop('/old/')
+    expect(res.status).toBe(301)
+    expect(res.headers.get('location')).toBe('/new/')
+  })
+
+  test('the path without its slash is the same rule, as it is the same page', async () => {
+    expect((await hop('/old')).status).toBe(301)
+  })
+
+  test('the query string travels with it', async () => {
+    const res = await hop('/old/?utm_source=x&b=2')
+    expect(res.headers.get('location')).toBe('/new/?utm_source=x&b=2')
+  })
+
+  test('HEAD redirects too', async () => {
+    expect((await hop('/old/', { method: 'HEAD' })).status).toBe(301)
+  })
+
+  test('a rule wins over a file at its path, as it does on the host', async () => {
+    const res = await hop('/shadowed/')
+    expect(res.status).toBe(301)
+  })
+
+  test('_redirects and _headers are configuration, never served', async () => {
+    for (const path of ['/_redirects', '/_headers']) {
+      const res = await hop(path)
+      expect(res.status).toBe(404)
+      const body = await res.text()
+      expect(body).toContain('no such page')
+      expect(body).not.toContain('/new/')
+    }
+  })
+
+  test('a site with no _redirects serves as before', async () => {
+    expect((await get('/about/')).status).toBe(200)
+  })
+
+  test('the compiled form honors it from the files map', async () => {
+    const files = new Map([
+      ['index.html', join(ROOT, 'index.html')],
+      ['_redirects', join(ROOT, '_redirects')],
+    ])
+    const c = await serveSite({ files })
+    try {
+      const res = await fetch(`${c.url}/old/`, { redirect: 'manual' })
+      expect(res.status).toBe(301)
+      expect((await fetch(`${c.url}/_redirects`)).status).toBe(404)
+    } finally {
+      await c.close()
+    }
+  })
+})
+
+describe('a _redirects rule serveSite cannot answer is refused at start', () => {
+  test('the exact-path shapes parse, status defaulting to 302 as on the host', () => {
+    const rules = parseRedirects('# c\n\n/a/  /b/  301\n/c  https://x.test/d\n/a  /z/  308\n')
+    expect(rules.get('/a')).toEqual({ to: '/b/', status: 301 })
+    expect(rules.get('/c')).toEqual({ to: 'https://x.test/d', status: 302 })
+  })
+
+  test.each([
+    ['/blog/*  /news/:splat  301',  'a splat'],
+    ['/p/:slug  /q/:slug  301',     'a placeholder'],
+    ['/a  /b  200',                 'status 200'],
+    ['/a  /b  301!',                'status 301!'],
+    ['/a  id=:id  /b  301',         'a query match'],
+    ['https://x.test/a  /b  301',   'not a path'],
+    ['/a',                          'no TO'],
+  ])('%s', (line, why) => {
+    expect(() => parseRedirects(line)).toThrow(why)
+  })
+
+  test('the refusal names the line, and the server never listens', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sierra-redirects-bad-'))
+    writeFileSync(join(root, 'index.html'), '<h1>home</h1>')
+    writeFileSync(join(root, '_redirects'), '/ok/  /new/  301\n/blog/*  /news/:splat  301\n')
+    try {
+      await expect(serveSite({ dir: root })).rejects.toThrow('_redirects line 2')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

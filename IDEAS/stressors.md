@@ -580,9 +580,11 @@ and the API's memory stayed flat throughout.
 ### 18. EventMark — a schedule whose record is a text file
 
 *Added 2026-09-29, from a read of `EventMark.jsx`: one React file, a port of an
-earlier Svelte prototype (Schedown), kept outside the tree. Nothing is built. The
-rank only reflects when it was appended, and most of its surface is Connecteam's
-(#2).*
+earlier Svelte prototype (Schedown). Phase 0 is done in `fjs-prototypes/eventmark`,
+whose `PLAN.md` carries the run and the measurements on the original (M1–M3).
+**The record shape is ruled: rows, with the text a projection that writes back
+through an import (Q1 = B, 2026-10-13).** The rank only reflects when it was
+appended, and most of its surface is Connecteam's (#2).*
 
 **What it is.** A Markdown-flavored DSL. YAML frontmatter declares `people`,
 `attendees` and `locations` by key. Then `# Monday, 8/25` is a day,
@@ -595,10 +597,12 @@ with it: a volunteer drive, and a daycare whose rooms carry staff-to-child ratio
 Shifts, people and places are #2's questions and are not re-run here. It earns a
 slot for these:
 
-- **The text is the record and the screen writes back into it.** The parser drops
-  any line it does not match, and `toEventMark` writes back only what was parsed.
-  So a comment or an unrecognized line typed into the editor is gone after the
-  first drag. In FJS the record is a row, which leaves three shapes: a `Schedule`
+- **The text is the record and the screen writes back into it.** A drag
+  re-serializes only what was parsed. An unrecognized line inside a day survives
+  as notes; YAML comments, unknown frontmatter keys and stray lines outside a day
+  are lost. **A heading the parser cannot match is worse than lost:** it becomes
+  note text and the people under it join the PREVIOUS shift, so one typo assigns
+  someone to a shift and the next drag writes it down (PLAN M1–M3). In FJS the record is a row, which leaves three shapes: a `Schedule`
   with one text column, where the gate, validation and audit see a blob; a model
   tree `Schedule → Day → Event → Shift → Assignment` with the document as an
   export, where hand-editing the text becomes an import that diffs against rows;
@@ -617,7 +621,7 @@ slot for these:
 - **A double-booking the prototype does not see.** In the outreach sample, `kris`
   is on the gym's Shift 1 (09:00–12:00) and on the pool's Morning Outreach
   (09:00–10:30) on the same day. That makes it a caller for `@@exclude(person, …)`,
-  whose write path is `FJS-1528` (still open). The daycare sample has `mr_theo`
+  whose write path, `FJS-1528`, closed on 2026-09-29. The daycare sample has `mr_theo`
   ending one room at 12:00 and starting the other at 12:00, which tests the
   half-open boundary. Its ranges are wall-clock strings hung on a free-text day
   label.
@@ -648,8 +652,9 @@ slot for these:
 role-to-Tailwind-color map, which is ksite's theme question (#16) again.
 
 **Gradable** from the two samples as fixtures, driven in a browser:
-`parse(serialize(doc))` is identity, and a hand-typed comment survives a drag or
-its loss is refused out loud. `kris`'s overlap is refused. `mr_theo`'s adjacent
+`parse(serialize(doc))` is identity, a hand-typed comment survives a drag or
+its loss is refused out loud, and an import refuses a heading it cannot place
+rather than moving its people onto another shift. `kris`'s overlap is refused. `mr_theo`'s adjacent
 shifts are not. Dropping the toddler room to one adult flips it under ratio, and
 so does enrolling the ninth child. `Tues, 8/25` is flagged.
 

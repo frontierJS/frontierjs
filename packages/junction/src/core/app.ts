@@ -2006,12 +2006,19 @@ export function createApp(opts: AppOptions = {}): App {
         // keep the clock, owes it forever and nothing says so. A tenanted app
         // has no `app.db`, so its registry's parsed schema is asked instead —
         // opening a tenant to read a client would create a database file.
+        //
+        // Asked only of a process that keeps time: one that serves, or one
+        // carrying the queue the sweep would run on. An app booted in-process
+        // with neither is a harness whose test is the clock, and refusing it
+        // made one declared commitment break every test file built over the
+        // schema (`FJS-2708`); its test fires what is owed with `fireDue(app)` (`FJS-D938`).
+        const keepsTime = mode === 'serve' || plugins.some(p => p.name === 'caravan')
         const db = app.db as { $commitments?: unknown[] } | undefined
         const registrySchema = (app as { tenants?: { schema?: { models?: Array<{ attributes: Array<{ kind: string }> }> } } })
           .tenants?.schema
         const owes = (db && typeof db === 'object' && '$commitments' in db && (db.$commitments?.length ?? 0) > 0) ||
           !!registrySchema?.models?.some(m => m.attributes.some(a => a.kind === 'commitment'))
-        if (owes && !plugins.some(p => p.name === 'commitments'))
+        if (keepsTime && owes && !plugins.some(p => p.name === 'commitments'))
           _authoringFindings.push(
             `this schema declares @@commitment and no commitments() plugin is configured — ` +
             `nothing will make the transitions it owes. app.configure(commitments()), after caravan.`)

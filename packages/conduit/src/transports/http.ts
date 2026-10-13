@@ -11,6 +11,7 @@ import { BaseTransport } from './base.ts'
 import { encodeBody, CONTENT_TYPE } from './encode.ts'
 import type { BodyEncoding, EncodedBody } from './encode.ts'
 import { CredentialError, ConduitStreamError } from '../types.ts'
+import { originOf } from '../address.ts'
 import type {
   ConduitRequest,
   ConduitResult,
@@ -96,6 +97,17 @@ const NEVER_DISPATCHED = new Set([
 function redactedRaw(err: unknown): unknown {
   if (typeof err !== 'object' || err === null) return redactUrl(err)
   return Object.fromEntries(Object.entries(err).map(([k, v]) => [k, redactUrl(v)]))
+}
+
+// Every spelling of `secret` a URL can hold, replaced wherever it appears in a
+// string or one level of an object's values.
+function scrubber(secret: string | undefined): (v: unknown) => unknown {
+  if (!secret) return (v) => v
+  const forms = [...new Set([secret, encodeURIComponent(secret), new URLSearchParams({ k: secret }).toString().slice(2)])]
+  const one   = (v: unknown) => typeof v === 'string' ? forms.reduce((s, f) => s.split(f).join('[redacted]'), v) : v
+  return (v) => (typeof v === 'object' && v !== null)
+    ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, one(x)]))
+    : one(v)
 }
 
 function neverDispatched(code: string | undefined): boolean {
@@ -245,13 +257,16 @@ export class HttpTransport extends BaseTransport {
     }
 
     // A request-addressed target has no address without one, and any other
-    // target's address is the registered one: a caller cannot redirect it.
+    // target's address is the registered one or on an origin it declares: a
+    // caller cannot redirect it, and its credential goes nowhere undeclared.
     const addressed = this.descriptor.address_from === 'request'
     if (addressed && !req.address) {
       return this.fail('invalid_request', `Target '${this.descriptor.id}' takes its address per send, and none was named`, { retryable: false })
     }
-    if (!addressed && req.address !== undefined) {
-      return this.fail('invalid_request', `Target '${this.descriptor.id}' has a registered address; a send names one only for a target declared address_from 'request'`, { retryable: false })
+    if (!addressed && req.address !== undefined && !this.declaresOrigin(req.address)) {
+      return this.fail('invalid_request',
+        `Target '${this.descriptor.id}': '${originOf(req.address)}' is neither its address's origin nor one it declares in origins`,
+        { retryable: false })
     }
 
     // A non-idempotent method is retried only when there is an idempotency key
@@ -454,7 +469,15 @@ export class HttpTransport extends BaseTransport {
           spent,
           who:     req.who,
         })
-        return this.fetchInit({
+        let wire: string | undefined
+        if (signed.query) {
+          const keyed = new URL(target)
+          // set, not append: a caller's parameter of the same name is displaced,
+          // as a caller's header is by an auth header.
+          for (const [k, v] of Object.entries(signed.query)) keyed.searchParams.set(k, v)
+          wire = keyed.toString()
+        }
+        return { wire, init: this.fetchInit({
           method,
           headers: this.mergeHeaders(plain, signed.headers),
           // `Uint8Array<ArrayBufferLike>` does not structurally satisfy this
@@ -466,7 +489,7 @@ export class HttpTransport extends BaseTransport {
           // given except `Authorization` — so an `api_key` header and an HMAC
           // signature both went to whatever host the 3xx named (`FJS-679`).
           redirect: 'manual' as RequestRedirect,
-        })
+        }) }
       })
 
       // The timeout deliberately stays armed through the body read below.
@@ -637,10 +660,12 @@ export class HttpTransport extends BaseTransport {
       // Bun's error carries the request URL as `path`, userinfo included, and
       // `raw` reaches logs, stored job results and responses. The host stays:
       // which target refused is the content of the message (`FJS-710`, `conduit-11`).
-      const message = redactUrl((err as Error).message)
+      // A key carried in the URL is in that message too, and nothing names it.
+      const scrub   = scrubber(this.descriptor.auth.type === 'api_key' && this.descriptor.auth.query ? spent?.value : undefined)
+      const message = scrub(redactUrl((err as Error).message)) as string
       return this.fail('connection_failed', code ? `${message} (${code})` : message, {
         retryable: true,
-        raw: redactedRaw(err)
+        raw: scrub(redactedRaw(err))
       })
 
     } finally {
@@ -671,13 +696,17 @@ export class HttpTransport extends BaseTransport {
   private async dispatch(
     startUrl: string,
     method:   string,
-    init:     (target: string) => Promise<RequestInit>,
+    // `wire` is the URL fetched when it is not `target`: the key an `api_key`
+    // target carries as a query parameter. Only the fetch sees it, so the URL
+    // this answers and every redirect judged from it stay keyless.
+    init:     (target: string) => Promise<{ init: RequestInit; wire?: string }>,
   ): Promise<{ res: Response; url: string }> {
     const mode = this.descriptor.follow_redirects ?? 'never'
     let   url  = startUrl
 
     for (let hop = 0; ; hop++) {
-      const res = await fetch(url, await init(url))
+      const built = await init(url)
+      const res   = await fetch(built.wire ?? url, built.init)
 
       if (mode === 'never' || !REDIRECT_STATUSES.has(res.status)) return { res, url }
 
@@ -716,8 +745,14 @@ export class HttpTransport extends BaseTransport {
   // things per protocol (§3.1).
 
   /** Base URL requests are built against. */
+  // `exchange()` admitted `req.address` before this is reached.
   protected baseAddress(req?: ConduitRequest): string {
-    return this.descriptor.address_from === 'request' ? (req?.address ?? '') : this.descriptor.address
+    return req?.address ?? this.descriptor.address
+  }
+
+  private declaresOrigin(address: string): boolean {
+    const origin = originOf(address)
+    return origin === originOf(this.descriptor.address) || (this.descriptor.origins?.includes(origin) ?? false)
   }
 
   /** Last chance to adjust fetch options before the request goes out. */
@@ -802,9 +837,11 @@ class SerializeError extends Error {
 
 // The target refused the credential itself: a 401, or a shape `auth.refusal`
 // declared. A 403 is `auth_failed` too, and is the credential accepted and the
-// answer no — minting another changes nothing.
+// answer no — minting another changes nothing. No status is no answer: a
+// signer that threw after the secret resolved was refused by nobody.
 function refusedCredential(result: ConduitResult<unknown>): boolean {
-  return result.error?.kind === 'auth_failed' && result.meta.status !== 403
+  const status = result.meta.status
+  return result.error?.kind === 'auth_failed' && status !== undefined && status !== 403
 }
 
 // application/json, application/vnd.api+json, text/json, …

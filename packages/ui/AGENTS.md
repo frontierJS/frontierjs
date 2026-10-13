@@ -110,7 +110,7 @@ the package has no root entry.
 | a blocking dialog · a side panel | `@frontierjs/ui/components/overlay/Modal.mesa` · `@frontierjs/ui/components/overlay/Drawer.mesa` |
 | a menu of actions | `@frontierjs/ui/components/overlay/DropdownMenu.mesa` with `@frontierjs/ui/components/overlay/DropdownItem.mesa`, `@frontierjs/ui/components/overlay/DropdownLabel.mesa`, `@frontierjs/ui/components/overlay/DropdownSeparator.mesa` |
 | content that must escape a scroll container · a description on hover and focus | `@frontierjs/ui/components/overlay/Popover.mesa` · `@frontierjs/ui/components/overlay/Tooltip.mesa` |
-| confirm a destructive click | `@frontierjs/ui/components/overlay/ConfirmProvider.mesa` once, then `data-confirm` on any element; `@frontierjs/ui/components/overlay/ConfirmationPopover.mesa` when a component owns its trigger |
+| confirm a destructive click | `@frontierjs/ui/components/overlay/ConfirmProvider.mesa` once, then `data-confirm` on any element — the provider's document listener is what reads the attribute, so with none mounted the click runs unconfirmed; `@frontierjs/ui/components/overlay/ConfirmationPopover.mesa` when a component owns its trigger or cannot be sure a provider is mounted |
 | ⌘K | `@frontierjs/ui/components/overlay/CommandPalette.mesa` with `@frontierjs/ui/stores/commandPaletteStore.js` |
 | a transient message · a banner for the whole app | `@frontierjs/ui/components/feedback/Toaster.mesa` with `@frontierjs/ui/stores/toastStore.js` · `@frontierjs/ui/components/feedback/AlertProvider.mesa` with `@frontierjs/ui/stores/alertStore.js` |
 | a message in the page flow, announced as it appears (`role="alert"`) | `@frontierjs/ui/components/feedback/Alert.mesa` |

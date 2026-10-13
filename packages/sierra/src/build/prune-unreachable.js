@@ -34,6 +34,38 @@
 
 import { readdir, readFile, rm, stat } from 'fs/promises'
 import { join, resolve } from 'path'
+import { omittedReason } from './prerender.js'
+
+/**
+ * Whether this build's bundle will be pruned whole — known BEFORE the bundle
+ * is rendered, from the route tree alone.
+ *
+ * The only page that can name a main-bundle chunk is Vite's own index.html,
+ * the SPA shell: a prerendered page loads its islands and nothing else, and
+ * islands are a second build. So when every route declares `render: static`
+ * and the home route is one the prerender writes, the shell is overwritten and
+ * `pruneUnreachable` keeps nothing. Every route rather than the home alone,
+ * because a static target with a client-routed route and no shell is a site
+ * with a dead URL, and that is not a shape to optimize.
+ *
+ * A build that knows this skips JavaScript minification and the gzip report
+ * (build/index.js), which were a third of a 23-page site's wall time, spent
+ * on files the prune deletes a second later. The prune checks the prediction
+ * and refuses when it was wrong: an unminified chunk that ships is readable
+ * source (`FJS-799`), and would ship quietly.
+ */
+export function bundleUnreachable(tree) {
+  const routes = flattenRoutes(tree)
+  if (!routes.length) return false
+  if (!routes.every((n) => n.meta?.render === 'static')) return false
+  return routes.some((n) => n.path === '/' && omittedReason(n) === null)
+}
+
+function flattenRoutes(node) {
+  if (!node) return []
+  const here = node.file ? [node] : []
+  return [...here, ...(node.children ?? []).flatMap(flattenRoutes)]
+}
 
 /** Every `.html` under `dir`, at any depth. */
 async function htmlFiles(dir) {

@@ -1,12 +1,12 @@
 ---
 id: orion-port
-status: proposed
+status: partial
 dated: 2026-09-14
 ---
 
 # Idea — Porting orion's mockup onto FrontierJS
 
-**Status: PROPOSED.** Dated 2026-09-14, read against the tree. Orion is not
+**Status: PHASES 1 TO 7 BUILT; NEVER RELEASED (`FJS-1369`).** Dated 2026-09-14, status amended 2026-10-13. Orion is not
 deferred (`FJS-D275`), and its shape is ruled (`FJS-D269`–`FJS-D274`).
 
 `packages/orion/README.md` is the intent — what orion is for and the
@@ -534,13 +534,13 @@ what proves the screens.
 `DRIVES.md`'s tables, then one real automation in basecamp. Anything orion needs
 and cannot express is filed against the framework, per the README.
 
-*Status 2026-09-20: both halves are built; the basecamp install is not finished
-([`FJS-1197`](../ISSUES_ARCHIVE.md#fjs-1197)).* The basecamp automation is the one an
+*Status 2026-10-13: both halves are built and the basecamp install is finished
+([`FJS-1197`](../ISSUES_ARCHIVE.md#fjs-1197), closed 2026-09-26); what remains is
+the first npm release ([`FJS-1369`](../ISSUES_ARCHIVE.md#fjs-1369)).* The basecamp automation is the one an
 operator wants — a failed release pages the workspace's ops channel, through the
 real job, the real flow, conduit and a real receiver — and installing it found
 [`FJS-1161`](../ISSUES_ARCHIVE.md#fjs-1161) and [`FJS-1159`](../ISSUES_ARCHIVE.md#fjs-1159),
-both ruled. What it did not finish is the seed, `db/schema.d.ts`, the table
-count and three junction snapshots, and four schema-derived checks are red.
+both ruled.
 
 *The `example` half was done 2026-09-15.* `verify:automations` passes 37
 assertions and has a row in both tables. Building it found `FJS-1162`–`FJS-1166`,

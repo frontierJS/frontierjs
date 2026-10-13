@@ -4843,7 +4843,7 @@ describe('a target whose address comes per send (FJS-1667)', () => {
     expect((await c.send({ target: 'hook:slack', method: 'POST' })).error?.kind).toBe('invalid_request')
     const redirected = await c.send({ target: 'provider:hetzner', address: 'https://evil.example', method: 'GET' })
     expect(redirected.error?.kind).toBe('invalid_request')
-    expect(redirected.error?.message).toMatch(/registered address/)
+    expect(redirected.error?.message).toMatch(/'https:\/\/evil\.example' is neither its address's origin/)
   })
 
   it('refuses a private or plaintext address unless the target says so, and sends nothing', async () => {
@@ -5463,4 +5463,149 @@ describe('a credential refused without a 401 (FJS-1906)', () => {
       await c.destroy()
     })
   }
+})
+
+// ─── FJS-2730 · one counterparty on several origins ──────────
+//
+// OIDC discovery names absolute endpoints, and Google's sit on three origins.
+// One target per origin made the app register a target per host it learned at
+// runtime; `origins` declares them on the one target, and a send names its
+// address only on one of them.
+
+describe('a target on several origins (FJS-2730)', () => {
+  function two() {
+    const seen: Array<{ origin: string; path: string; key: string | null }> = []
+    const serve = () => Bun.serve({
+      port: 0,
+      fetch(req) {
+        const u = new URL(req.url)
+        seen.push({ origin: u.origin, path: u.pathname + u.search, key: req.headers.get('x-key') })
+        return Response.json({ ok: true })
+      },
+    })
+    const a = serve(), b = serve()
+    return {
+      seen,
+      a: `http://127.0.0.1:${a.port}`,
+      b: `http://127.0.0.1:${b.port}`,
+      stop: () => { a.stop(true); b.stop(true) },
+    }
+  }
+  const keyed = (address: string, origins: string[]): TargetDescriptor => providerTarget({
+    id: 'provider:google', address, origins,
+    auth: { type: 'api_key', ref: 'HETZNER_TOKEN', header: 'X-Key' },
+  })
+
+  it('sends to a declared origin the address a send names, credential included, and to its own address without one', async () => {
+    const s = two()
+    try {
+      const c = createConduit({ credentials: secrets(), targets: [keyed(`${s.a}/base`, [s.b])] })
+      await c.init()
+      const own   = await c.send({ target: 'provider:google', method: 'GET', path: '/disc' })
+      const other = await c.send({ target: 'provider:google', method: 'GET', address: `${s.b}/oauth2/v3/certs?x=1`, query: { y: 2 } })
+      expect(own.error).toBeNull()
+      expect(other.error).toBeNull()
+      expect(s.seen).toEqual([
+        { origin: s.a, path: '/base/disc',              key: 'htz-token-abc' },
+        { origin: s.b, path: '/oauth2/v3/certs?x=1&y=2', key: 'htz-token-abc' },
+      ])
+    } finally { s.stop() }
+  })
+
+  it('refuses an address on an origin the target does not declare, sending nothing', async () => {
+    const s = two()
+    try {
+      const c = createConduit({ credentials: secrets(), targets: [keyed(s.a, [])] })
+      await c.init()
+      const r = await c.send({ target: 'provider:google', method: 'GET', address: `${s.b}/steal` })
+      expect(r.error).toMatchObject({ kind: 'invalid_request', retryable: false })
+      expect(r.error!.message).toContain(s.b)
+      expect(s.seen.length).toBe(0)
+
+      // A target declaring none takes an absolute URL on its own origin, which
+      // is no new reach, and refuses every other.
+      await c.register(providerTarget({ address: `${s.a}/v1` }))
+      const foreign = await c.send({ target: 'provider:hetzner', method: 'GET', address: `${s.b}/x` })
+      expect(foreign.error?.kind).toBe('invalid_request')
+      expect(s.seen.length).toBe(0)
+      const own = await c.send({ target: 'provider:hetzner', method: 'GET', address: `${s.a}/x` })
+      expect(own.error).toBeNull()
+      expect(s.seen).toEqual([{ origin: s.a, path: '/x', key: null }])
+    } finally { s.stop() }
+  })
+
+  it('is refused at register where it would be accepted and not applied', async () => {
+    const c = createConduit()
+    await c.init()
+    for (const [bad, why] of [
+      [{ origins: ['https://x.test/path'] }, /'https:\/\/x\.test\/path' is not an origin/],
+      [{ origins: ['not a url'] }, /is not an origin/],
+      [{ origins: 'https://x.test' }, /must be an array/],
+      [{ origins: ['https://x.test'], protocol: 'websocket' }, /only an 'http' target/],
+      [{ origins: ['https://x.test'], address: '', address_from: 'request', auth: { type: 'none' } }, /address_from/],
+      [{ origins: ['https://x.test'], pinned_cert: 'x' }, /pinned certificate/],
+    ] as const) await expect(c.register(providerTarget(bad as unknown as Partial<TargetDescriptor>))).rejects.toThrow(why)
+  })
+
+  it('survives the SQLite registry', async () => {
+    const db = new Database(':memory:')
+    const store = createSQLiteStore(db)
+    await store.init()
+    await store.set(providerTarget({ origins: ['https://www.googleapis.com'] }))
+    const reopened = createSQLiteStore(db)
+    await reopened.init()
+    expect((await reopened.get('provider:hetzner'))?.origins).toEqual(['https://www.googleapis.com'])
+  })
+})
+
+// ─── FJS-2727 · a key that only travels as a query parameter ─
+//
+// Google's legacy Geocoding takes its key only as `?key=`. The one way through
+// was the caller writing the secret into `req.query`, which puts it in the
+// request every observer and log is handed.
+
+describe('an api_key target that puts its key in the URL (FJS-2727)', () => {
+  const inQuery = (address: string): TargetDescriptor => providerTarget({
+    id: 'provider:geocode', address,
+    auth: { type: 'api_key', ref: 'HETZNER_TOKEN', query: 'key' },
+  })
+
+  it('sends the key as the named parameter beside the caller\'s query, which cannot displace it, and never as a header', async () => {
+    const s = recorder(() => Response.json({ ok: true }))
+    try {
+      const seen: unknown[] = []
+      const c = createConduit({ credentials: secrets(), targets: [inQuery(s.url)], observers: { onRequest: (req) => { seen.push(req) } } })
+      await c.init()
+      const r = await c.send({ target: 'provider:geocode', method: 'GET', path: '/maps/api/geocode/json?address=x', query: { key: 'FORGED', region: 'us' } })
+      expect(r.error).toBeNull()
+      const url = new URL(s.seen[0].url)
+      expect(url.searchParams.getAll('key')).toEqual(['htz-token-abc'])
+      expect(url.searchParams.get('address')).toBe('x')
+      expect(url.searchParams.get('region')).toBe('us')
+      expect([...s.seen[0].headers.values()]).not.toContain('htz-token-abc')
+      expect(JSON.stringify(seen)).not.toContain('htz-token-abc')
+    } finally { s.stop() }
+  })
+
+  it('keeps the key out of a connection failure, whose message Bun builds from the URL', async () => {
+    const probe = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+    const port = probe.port
+    probe.stop(true)
+    const target = inQuery(`http://127.0.0.1:${port}`)
+    const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+    const r = await t.send({ target: target.id, method: 'GET', path: '/a' })
+    expect(r.error!.kind).toBe('connection_failed')
+    expect(JSON.stringify(r)).not.toContain('htz-token-abc')
+  })
+
+  it('is refused at register naming neither or both places, or a protocol whose URL it cannot reach', async () => {
+    const c = createConduit()
+    await c.init()
+    for (const [auth, extra, why] of [
+      [{ type: 'api_key', ref: 'K' }, {}, /exactly one of header or query/],
+      [{ type: 'api_key', ref: 'K', header: 'X-Key', query: 'key' }, {}, /exactly one of header or query/],
+      [{ type: 'api_key', ref: 'K', query: '' }, {}, /exactly one of header or query/],
+      [{ type: 'api_key', ref: 'K', query: 'key' }, { protocol: 'websocket', address: 'ws://127.0.0.1:1' }, /only an 'http' or 'unix' target/],
+    ] as const) await expect(c.register(providerTarget({ auth: auth as unknown as TargetDescriptor['auth'], ...(extra as Partial<TargetDescriptor>) }))).rejects.toThrow(why)
+  })
 })
