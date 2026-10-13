@@ -11,6 +11,7 @@ title: Dependencies
   // last pushed, and the OLDEST registry answer. An empty list means *no
   // dependencies* or *never pushed*, and only the first clock can tell those
   // apart.
+  import { page }    from '@frontierjs/sierra/router'
   import { session } from '../../session.js'
   import { ago }     from '../../datetime.js'
   import { dependencies } from '../../resources/Dependency.mesa'
@@ -34,7 +35,8 @@ title: Dependencies
   let loading   = true
   let checking  = false
   let search    = ''
-  let status    = ''
+  // `/security/` links here as `?status=vulnerable`.
+  let status    = page.query?.status ?? ''
   // The framework's own packages by default: in the framework's repo the apps
   // beside it (example, basecamp, the website) declare most of the names.
   let publishedOnly = true

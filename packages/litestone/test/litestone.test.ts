@@ -8941,6 +8941,32 @@ describe('GatePlugin', () => {
     db.$close()
   })
 
+  // FJS-2770
+  test('a nested set passes the target model update gate that connect passes', async () => {
+    const { GatePlugin } = await import('../src/plugins/gate.js')
+    const db = await makeDb(`
+      model User {
+        id    Int    @id
+        tasks Task[]
+        @@gate("2.6.6.6")
+      }
+      model Task {
+        id      Int    @id
+        members User[]
+      }
+    `, 'gate-nested-set', { plugins: [new GatePlugin({ getLevel: () => 3 })] })
+    await db.asSystem().user.create({ data: { id: 1 } })
+    const as = db.$setAuth({ id: 9 })
+    await as.task.create({ data: { id: 1 } })
+    await expect(as.task.update({ where: { id: 1 }, data: { members: { connect: [{ id: 1 }] } } }))
+      .rejects.toThrow('"User.update"')
+    await expect(as.task.update({ where: { id: 1 }, data: { members: { set: [{ id: 1 }] } } }))
+      .rejects.toThrow('"User.update"')
+    const t = await db.asSystem().task.findUnique({ where: { id: 1 }, include: { members: true } })
+    expect(t.members).toEqual([])
+    db.$close()
+  })
+
 
   test('SYSADMIN(7) — only users with isSystemAdmin reach this level', async () => {
     const { GatePlugin } = await import('../src/plugins/gate.js')

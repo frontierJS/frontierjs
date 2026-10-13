@@ -567,3 +567,38 @@ describe('the dev watcher survives the schema being recreated', () => {
     expect(server.sent.length).toBe(1)
   })
 })
+
+
+// The tokenizer THROWS on some half-typed input — an unterminated backtick, a
+// stray `/`, a malformed number — where the parser proper answers `valid:
+// false`. Uncaught, the watcher's regenerate rejected and a mid-edit save
+// exited the dev server (`FJS-2706`).
+describe('a schema the tokenizer throws on', () => {
+  const MID_EDIT = 'model Lead {\n  id Integer @id\n  x Text @default(`a)\n}'
+
+  test('warns and returns null rather than throwing', async () => {
+    const { dir, path } = fixture(MID_EDIT)
+    const warnings = []
+    const out = await generateSchemas(path, (m) => warnings.push(m), dir)
+    expect(out).toBeNull()
+    expect(warnings.join('\n')).toContain('Unterminated template literal')
+  })
+
+  test('the dev watcher survives a save of it', async () => {
+    const { dir, path } = fixture()
+    const ctx = {}
+    const plugin = schemaPlugin({}, ctx)
+    await plugin.configResolved({ root: dir })
+    const handlers = {}
+    plugin.configureServer({
+      watcher: { add() {}, on: (ev, fn) => { handlers[ev] = fn } },
+      moduleGraph: { getModuleById: () => null, invalidateModule() {} },
+      ws: { send() {} },
+    })
+
+    writeFileSync(path, MID_EDIT)
+    await handlers.change(path)
+    expect(ctx.schemaDefs).toBeNull()
+    expect(ctx.schemaFailure).toContain('Unterminated template literal')
+  })
+})

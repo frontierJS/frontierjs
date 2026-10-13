@@ -291,6 +291,8 @@ const BOTH_PAYLOAD = {
   workspaceId: 'w1', workspaceName: 'Ops', personEmail: 'new@x.co', role: 'developer',
   from: '2026-09-01', to: '2026-09-08',
   deploysOk: 3, deploysFailed: 1, alertsFired: 2, jobsFailed: 0,
+  failed: ['ssh.password-off: PasswordAuthentication is yes'],
+  found: [{ name: 'lodash', version: '4.17.15', advisories: ['GHSA-p6mc-m468-83gw'] }],
 }
 
 describe('who a workspace tells', () => {

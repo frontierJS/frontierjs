@@ -50,6 +50,10 @@ export function readConfig(env = process.env) {
     /** Disk and volumes are asked of Docker, which walks the filesystem — far
      *  more expensive than a heartbeat, and it changes far more slowly. */
     reportMs:    Number(env.OUTPOST_REPORT_MS ?? 300_000),
+    /** The posture reading is some thirty processes and a box's defenses
+     *  change by an upgrade or an operator, so Basecamp's *check now* is the
+     *  fast path and this is the floor. */
+    postureMs:   Number(env.OUTPOST_POSTURE_MS ?? 21_600_000),
     version:     env.OUTPOST_VERSION ?? '0.1.0',
     /** The URL Basecamp should send commands to. Stated rather than derived:
      *  this process cannot see the address the world reaches it at. */

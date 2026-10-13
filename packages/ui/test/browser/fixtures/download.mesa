@@ -1,0 +1,16 @@
+<script>
+  // download.mesa — a file built on the page, saved with `download()`, and a
+  // wrong argument, whose refusal is published to `#refused`.
+  import { download } from '@frontierjs/ui/utils'
+
+  let refused = ''
+
+  const save = () => download(new Blob(['id,total\n1,100\n'], { type: 'text/csv' }), 'orders.csv')
+  const wrong = () => {
+    try { download(new Response('id,total'), 'orders.csv') } catch (e) { refused = e.message }
+  }
+</script>
+
+<button id="save" on:click={save}>Save</button>
+<button id="wrong" on:click={wrong}>Wrong</button>
+<output id="refused">{refused}</output>

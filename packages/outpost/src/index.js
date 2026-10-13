@@ -41,6 +41,10 @@ const staticServer = config.staticPort
 
 const stopTimers = reporter.start()
 
+// The firewall unit reloads its exposed set empty at boot, so every exposed app
+// is dropped until this refills it.
+docker.syncExposed().catch(err => console.error(`outpost: the firewall's exposed set was not refilled — ${err.message}`))
+
 console.log(
   `outpost ${config.version} · server ${config.serverId} · :${server.port} → ${config.basecampUrl}` +
   (staticServer ? ` · static :${staticServer.port}` : ' · static disabled'))

@@ -105,6 +105,7 @@ const IMPORT_MAP = {
     '@frontierjs/ui/controls':          '/kit/controls.js',
     '@frontierjs/ui/utils':             '/kit/utils.js',
     '@frontierjs/ui/dnd':               '/kit/dnd.js',
+    '@frontierjs/ui/drag':              '/kit/drag.js',
     '@frontierjs/ui/selection':         '/kit/selection.js',
     '@frontierjs/ui/stores/toastStore': '/kit/stores/toastStore.js',
     '@frontierjs/ui/stores/alertStore': '/kit/stores/alertStore.js',

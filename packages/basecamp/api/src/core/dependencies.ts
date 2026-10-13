@@ -12,6 +12,7 @@
 // it does not answer is WHICH part moved, and that is the only parse here.
 
 import type { BasecampApp } from '../basecamp.types.ts'
+import { notifyPeople, workspaceMembers } from './notify.ts'
 
 // ─── Targets ─────────────────────────────────────────────────────────────
 // Declared at boot beside the mail provider. Public APIs with no credential;
@@ -118,6 +119,8 @@ export interface CheckResult {
   error:      string | null
   /** The registry answered that it has no such package — an answer, not a failure. */
   missing:    boolean
+  /** OSV did not answer, so `advisories` is empty for want of an answer and not because none exist. */
+  advisoriesUnknown: boolean
 }
 
 type Send = (req: { target: string; method: string; path: string; body?: unknown }) =>
@@ -206,6 +209,7 @@ export async function checkNames(
       advisories,
       error:      registry[i].error ?? osvError,
       missing:    registry[i].missing,
+      advisoriesUnknown: osvError !== null,
     }
   })
 }
@@ -216,20 +220,35 @@ export async function checkNames(
  * reported; a name no project uses any more is skipped.
  *
  * `db` is the system client — the registry columns are @system.
+ *
+ * One refresh at a time. A push dispatches its own check, so two overlap, and
+ * each decides what is NEW by reading the advisories before it writes: both
+ * would read the same `before` and announce the same advisory twice.
  */
-export async function refreshDependencies(app: BasecampApp, db: any, opts: { workspaceId?: string } = {}) {
+let refreshing: Promise<unknown> = Promise.resolve()
+
+export function refreshDependencies(app: BasecampApp, db: any, opts: { workspaceId?: string } = {}) {
+  const run = refreshing.then(() => refreshOnce(app, db, opts))
+  refreshing = run.catch(() => {})
+  return run
+}
+
+async function refreshOnce(app: BasecampApp, db: any, opts: { workspaceId?: string }) {
   const deps: any[] = await db.dependency.findMany({
     where:   opts.workspaceId ? { workspaceId: opts.workspaceId } : {},
     include: { uses: { select: { installed: true } } },
   })
   const wanted = deps
     .filter(d => d.uses.length)
-    .map(d => ({ id: d.id, name: d.name,
+    .map(d => ({ id: d.id, name: d.name, workspaceId: d.workspaceId as string,
+                 before: (d.advisories ?? {}) as Record<string, Advisory[]>,
                  installed: [...new Set(d.uses.map((u: any) => u.installed).filter(Boolean))] as string[] }))
 
   const results = await checkNames(app, wanted)
   const now = new Date().toISOString()
   let failed = 0
+  // Per workspace, because the people to tell are a workspace's members.
+  const news = new Map<string, DependencyVulnerableFound[]>()
 
   for (const [i, r] of results.entries()) {
     if (r.error && !r.latest && !r.missing) {
@@ -237,11 +256,30 @@ export async function refreshDependencies(app: BasecampApp, db: any, opts: { wor
       await db.dependency.update({ where: { id: wanted[i].id }, data: { checkError: r.error } })
       continue
     }
+    // OSV not answering is not "no advisories": writing {} would wipe the
+    // standing answer and announce every advisory again when OSV came back.
+    const advisories = r.advisoriesUnknown ? wanted[i].before : r.advisories
     await db.dependency.update({ where: { id: wanted[i].id }, data: {
-      latest: r.latest, deprecated: r.deprecated, advisories: r.advisories,
+      latest: r.latest, deprecated: r.deprecated, advisories,
       checkedAt: now, checkError: r.error,
     } })
+
+    for (const [version, list] of Object.entries(advisories)) {
+      const known = new Set((wanted[i].before[version] ?? []).map(a => a.id))
+      const fresh = list.map(a => a.id).filter(id => !known.has(id))
+      if (!fresh.length) continue
+      const found = news.get(wanted[i].workspaceId) ?? []
+      found.push({ name: wanted[i].name, version, advisories: fresh })
+      news.set(wanted[i].workspaceId, found)
+    }
   }
+
+  // After the write: a send that throws must not leave the advisory unrecorded
+  // and the next run announcing it a second time.
+  for (const [workspaceId, found] of news)
+    await notifyPeople(app, 'dependency_vulnerable', await workspaceMembers(app, workspaceId), { workspaceId, found })
 
   return { checked: results.length, failed }
 }
+
+type DependencyVulnerableFound = { name: string; version: string; advisories: string[] }

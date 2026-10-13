@@ -106,7 +106,8 @@ what they mean in any app.
   inline module script needs an `index.html` on disk.
 - `src/layouts/Block.mesa` — what `layout: Block` names (FJS-D654), exported
   as `@frontierjs/site-kit/layouts/Block.mesa`. The element follows position:
-  a Band with a `.container` at the top, an `<article>` nested, an `<a>` with
+  a Band with a `.container` at the top, an `<article>` nested (inside another
+  Block, known through `$context`, or stated `nested`), an `<a>` with
   a `url`, the stated `tag` otherwise. Six typed keys, each checked against
   `@frontierjs/css/vocabulary.json` at render, so the list of good values is
   css's, never a copy (FJS-D823); `classes:` is refused. A consumer that runs

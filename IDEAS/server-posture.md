@@ -47,7 +47,7 @@ carries `outpost_version` and nothing about the OS.
   PREROUTING and forwarded through Docker's own chains. ufw's INPUT rules never
   see it. `docker.js` publishes an app with no hostname on every interface
   (`FJS-D565`, deliberately, until `FJS-D930` lands), so adding ufw alone would leave that port open while
-  `ufw status` reads closed. Filtering belongs in `DOCKER-USER`, or at the provider.
+  `ufw status` reads closed. Filtering belongs on the forward hook, or at the provider.
 - **`outpost.service` runs as root with no sandboxing**: no `User=`, no
   `ProtectSystem`, no `NoNewPrivileges`. Docker access is root-equivalent anyway,
   so the gain is in narrowing what a compromised Outpost can write, not in the user.
@@ -92,7 +92,7 @@ owner of that, and a stale one until the Outpost is upgraded.
 | versions | docker, caddy, bun | `--version` |
 | network | listening sockets with address and process | `ss -tlnpH` |
 | network | published container ports with host ip | `docker ps --format` |
-| network | firewall ruleset, `DOCKER-USER` contents | `nft -j list ruleset` |
+| network | firewall ruleset, the forward drop and its exposed set | `nft -j list ruleset` |
 | ssh | effective config subset: `passwordauthentication`, `permitrootlogin`, `pubkeyauthentication`, `maxauthtries` | `sshd -T` |
 | ssh | authorized key fingerprints per user | `ssh-keygen -lf` |
 | accounts | uid-0 users, `NOPASSWD` sudo rules | `/etc/passwd`, `/etc/sudoers.d` |
@@ -130,8 +130,8 @@ in a comment:
 
 `ssh.password-off` · `ssh.root-key-only` · `ssh.unknown-key` ·
 `net.firewall-default-deny` · `net.unexpected-listener` ·
-`net.container-public` (published on `0.0.0.0` with no matching `DOCKER-USER`
-rule) · `net.caddy-admin-loopback` · `patch.security-pending` ·
+`net.container-public` (published on `0.0.0.0`, undeclared, and not dropped
+on the forward hook) · `net.caddy-admin-loopback` · `patch.security-pending` ·
 `patch.auto-updates-on` · `patch.reboot-pending` (graded on age) · `os.eol` ·
 `time.synced` · `outpost.sandbox` · `outpost.cert-expiry` ·
 `accounts.extra-uid0` · `docker.privileged`.
@@ -178,11 +178,10 @@ and its code together, because an operator asking whether they are exposed means
   live. This screen reads; acting stays on the server page, at the gate the action
   already has.
 - **Code** — the `vulnerable` count from `Dependency`, linking to `/dependencies/`
-  filtered to it. The advisories are already there. What is missing is the push:
-  a dependency turning vulnerable sends no notification
-  ([`FJS-2715`](../ISSUES.md#fjs-2715)). The fix is a `dependency_vulnerable`
-  notification kind, sent when an installed version first gains an advisory and
-  not again each day.
+  filtered to it. The advisories are already there, and the push is the
+  `dependency_vulnerable` notification kind, sent when an installed version
+  first gains an advisory and not again each day
+  ([`FJS-2715`](../ISSUES.md#fjs-2715)).
 
 The route reads `ServerPosture` and `Dependency` at the caller's level. Both are
 workspace-scoped, so the tenancy block keeps a workspace to its own rows without
@@ -236,7 +235,7 @@ Added to `installScript()`:
 | --- | --- |
 | `unattended-upgrades`, security origin only, **`Automatic-Reboot "false"`** | `patch.auto-updates-on` |
 | sshd drop-in `/etc/ssh/sshd_config.d/10-basecamp.conf`: password off, root `prohibit-password`, `MaxAuthTries 3` | `ssh.*` |
-| nftables ([`FJS-D928`](../DECISIONS.md#fjs-d928)): input default drop, allow the expected set, 8180 from Basecamp only; `DOCKER-USER` drop of non-established traffic to container ports not in the expected set | `net.*` |
+| nftables ([`FJS-D928`](../DECISIONS.md#fjs-d928)): input default drop, allow the expected set, 8180 from Basecamp only; a forward chain in the same table dropping a DNAT'd connection whose host port is not in its `exposed` set | `net.*` |
 | `chrony` | `time.synced` |
 | `outpost.service`: `NoNewPrivileges`, `ProtectSystem=strict` with `ReadWritePaths` for its own dirs, `PrivateTmp` | `outpost.sandbox` |
 | provider cloud firewall, created by `server-provision.job.ts` with the server | `net.reachable-unexpected` |
@@ -334,8 +333,8 @@ root or fail marked.
     `unknown` there unless 1.2 parses the text table.
   - **`docker ps` reports ports as a human string**, `0.0.0.0:8090->80/tcp,
     [::]:8090->80/tcp`, and the same app is public on IPv6 as well. `DOCKER-USER`
-    is an IPv4 chain, so `net.container-public` and 4.3 have to read and write
-    the IPv6 side too.
+    is an IPv4 chain, which is why 4.3's drop is an `inet` forward chain: one
+    rule covers both families.
   - **`/var/run/reboot-required` can name a kernel that will never boot**: it
     lists `linux-image-5.15` while 6.8 HWE runs. Graded on age alone,
     `patch.reboot-pending` would rise to `high` and stay there, so it compares the
@@ -360,22 +359,28 @@ and `ssh.password-off` failing (or `ssh.password-off` passing, if the image alre
 ships it that way — that is worth knowing too), and it sorts to the top of
 `/security/`.
 
-- [ ] 1.1 The raw-port exposure declaration on `App` (`FJS-D930`), the half the
+- [x] 1.1 The raw-port exposure declaration on `App` (`FJS-D930`), the half the
   grader reads. An app with no hostname that does not declare it is an
   unexpected listener, which until 3.1 is the truth.
-- [ ] 1.2 `inspector.posture()` in `docker.js`: the readings table, every command
+- [x] 1.2 `inspector.posture()` in `docker.js`: the readings table, every command
   an argv array, a failing command `unknown`; tested against the 0.1 fixtures.
-- [ ] 1.3 The `posture` report in `report.js` (6h, plus once at start) and the
+- [x] 1.3 The `posture` report in `report.js` (6h, plus once at start) and the
   signed `POST /posture` for *check now*.
-- [ ] 1.4 `core/posture.ts`: `gradePosture` and the derived `declared`, with the
+- [x] 1.4 `core/posture.ts`: `gradePosture` and the derived `declared`, with the
   test that a report older than twice its interval grades every control `unknown`.
-- [ ] 1.5 `ServerPosture`, the report endpoint, `posture_failed`/`posture_restored`
+- [x] 1.5 `ServerPosture`, the report endpoint, `posture_failed`/`posture_restored`
   `ServerEvent`s, the `server.posture.failing` metric and its retention.
-- [ ] 1.6 The `posture_failed` notification kind, with `server_unreachable`'s two
+- [x] 1.6 The `posture_failed` notification kind, with `server_unreachable`'s two
   addressees.
-- [ ] 1.7 The Posture tab on the server page.
-- [ ] 1.8 `/security/`: machines worst first, outside findings above the box's own,
+- [x] 1.7 The Posture tab on the server page.
+- [x] 1.8 `/security/`: machines worst first, outside findings above the box's own,
   stale never clean, plus the vulnerable count linking to `/dependencies/`.
+  - Built under `FJS-2713`. `App.exposesPort` is the declaration; the card on the
+    server page is a section, not a tab, because the page has none. Outside
+    findings have nothing to sort above until 3.2. `ssh.unknown-key` reads a
+    public key out of the `sshKeyId` Secret's data, so a Secret holding only a
+    private key grades it `unknown`. The `--json=short` overall score is
+    unconfirmed on 255; 1.2 falls back to the text form's exposure line.
 - [ ] 1.9 The `dependency_vulnerable` notification, sent once when an installed
   version first gains an advisory.
 
@@ -415,14 +420,24 @@ Goal: a box Basecamp builds grades clean, and one it did not can be brought ther
 on a click ([`FJS-2712`](../ISSUES.md#fjs-2712)).
 Done when: the phase-1 box after *Harden* grades clean, and the outside probe agrees.
 
-- [ ] 4.1 `unattended-upgrades`, security origin only, no automatic reboot.
-- [ ] 4.2 The sshd drop-in.
-- [ ] 4.3 The nftables ruleset and the `DOCKER-USER` drop (`FJS-D928`).
+- [x] 4.1 `unattended-upgrades`, security origin only, no automatic reboot.
+- [x] 4.2 The sshd drop-in.
+  - Written only where an `authorized_keys` holds a key, so a pasted install
+    cannot lock a password-only box's owner out; that box grades `ssh.*` failing.
+- [x] 4.3 The nftables ruleset and the forward drop (`FJS-D928`).
+  - Its own `inet basecamp` table, loaded by `basecamp-firewall.service`. The
+    forward chain (`FJS-2772`) runs at priority -1, before Docker's, and drops
+    a DNAT'd connection unless `ct original proto-dst` is in the `exposed` set,
+    because after DNAT the destination port is the container's. That set is
+    the Outpost's: `/deploy` carries `exposes_port`, the container is labeled
+    `fjs.exposed-port`, and every `/deploy`, `/stop` and Outpost start refills
+    the set from the labels. A firewall unit restarted alone empties the set
+    until the next of those.
 - [ ] 4.4 The `outpost.service` sandbox ([`FJS-1761`](../ISSUES.md#fjs-1761)).
 - [ ] 4.5 Docker and Caddy pinned to a major, the versions in `enrollment.ts`,
   installed versions in the heartbeat (`FJS-D931`).
 - [ ] 4.6 The provider cloud firewall, created by `server-provision.job.ts`.
-- [ ] 4.7 The pairing test: every `hardenedAtInstall` control names a marker in
+- [x] 4.7 The pairing test: every `hardenedAtInstall` control names a marker in
   `installScript()`, and no marker is without a control.
 - [ ] 4.8 The *Harden* action through the Outpost, showing findings before and
   after, never automatic.

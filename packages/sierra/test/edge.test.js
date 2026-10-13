@@ -80,6 +80,7 @@ const POSTBUILD = {
   'html-files.js':       'pipeline',
   'move-404.js':         'build',
   'redirects.js':        'build',
+  'functions.js':        'site',
   'inject-theme.js':     'build',
   'inject-analytics.js': 'build',
   'manifest.js':         'build',

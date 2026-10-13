@@ -307,7 +307,7 @@ describe('generated migration', () => {
     expect(onDisk).toContain(generateDDL(r.schema))
   })
 
-  test('applies to a fresh database — 62 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 63 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -350,8 +350,9 @@ describe('generated migration', () => {
     // of them extended here with `workspaceId` because a fragment cannot name
     // the host's tenant column (`FJS-D310`). 60 with `Variable`, which took
     // an environment's and an app's variables out of two Json columns. 62 with
-    // `Dependency` and `DependencyUse`, the dependency mirror.
-    expect(tables.length).toBe(62)
+    // `Dependency` and `DependencyUse`, the dependency mirror. 63 with
+    // `ServerPosture`.
+    expect(tables.length).toBe(63)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

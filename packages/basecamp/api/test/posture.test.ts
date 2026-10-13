@@ -1,0 +1,264 @@
+/**
+ * posture.test.ts — a machine's security posture: the grader, and a signed
+ * report landing as a row, its ServerEvents and the fleet ranking (FJS-2713).
+ *
+ * The grader half is pure and graded against the shapes the Outpost sends
+ * (`inspector.posture()`, tested against a real capture in packages/outpost).
+ * The service half signs with an enrolled machine's own key, as a real Outpost
+ * does, because an unsigned report is refused at the transport.
+ */
+
+import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
+import { join }        from 'node:path'
+import { createHash }  from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir }      from 'node:os'
+import { ensureCert }  from '@frontierjs/outpost/cert'
+import { createTestEnv, session } from '@frontierjs/testing'
+import { signRequest } from '@frontierjs/toolbelt/signature'
+import { GatePlugin }  from '@frontierjs/litestone'
+import { basecampGateLevel } from '../src/core/gate.ts'
+import { buildBasecampApp }  from '../src/app.ts'
+import { grantsFor }         from '../src/core/capabilities.ts'
+import { declaredFor, gradePosture, postureChanges, publicKeyFingerprints, POSTURE_INTERVAL_MS } from '../src/core/posture.ts'
+import type { PostureReadings } from '../src/core/posture.ts'
+import { prunePosture } from '../src/jobs/retention.job.ts'
+
+const NOW = Date.parse('2026-10-13T12:00:00Z')
+
+// A clean fleet box, the shape `inspector.posture()` answers.
+const CLEAN: PostureReadings = {
+  os:           { id: 'ubuntu', version: '24.04', codename: 'noble' },
+  kernel:       { running: '6.8.0-45-generic', installed: ['6.8.0-45-generic'] },
+  reboot:       { required: false, since: null, pkgs: [] },
+  updates:      { pending: 3, security: 0 },
+  auto_updates: { enabled: true, last_run: '2026-10-13T06:00:00Z' },
+  versions:     { docker: '27.3.1', caddy: '2.8.4', bun: '1.4.2' },
+  listening:    [
+    { address: '0.0.0.0',   port: 22,   process: 'sshd' },
+    { address: '::',        port: 443,  process: 'caddy' },
+    { address: '0.0.0.0',   port: 8180, process: 'bun' },
+    { address: '127.0.0.1', port: 2019, process: 'caddy' },
+    { address: '127.0.0.1', port: 8090, process: 'docker-proxy' },
+  ],
+  containers:   [{ name: 'fjs-web', published: [{ host_ip: '127.0.0.1', host_port: 8090, container_port: 80, proto: 'tcp' }] }],
+  firewall:     { input_policy: 'drop', forward_drop: true, exposed: [] },
+  ssh:          { password_authentication: 'no', permit_root_login: 'prohibit-password', pubkey_authentication: 'yes', max_auth_tries: 3 },
+  ssh_keys:     [],
+  uid0:         ['root'],
+  nopasswd:     [],
+  time:         { synced: true, offset_s: 0.0004 },
+  outpost_unit: { exposure: 4.2, predicate: 'OK' },
+  privileged:   [{ name: '/fjs-web', privileged: false, docker_sock: false }],
+  files:        [],
+  cert:         { expires_at: '2027-10-01T00:00:00Z' },
+}
+
+const DECLARED = declaredFor({ sshPort: 22, apps: [{ type: 'container', port: 8090, exposesPort: false }], sshKeyData: null })
+const grade    = (r: PostureReadings | null, at: number | string = NOW) => gradePosture(r, DECLARED, { at, now: NOW })
+const byId     = (r: PostureReadings | null, at?: number) => Object.fromEntries(grade(r, at).map(c => [c.id, c]))
+
+describe('the grader', () => {
+  test('a clean box passes every control it can read', () => {
+    const controls = byId(CLEAN)
+    // No key Basecamp issued is on record, so the unknown key cannot be told.
+    expect(controls['ssh.unknown-key'].ok).toBe('unknown')
+    const rest = Object.values(controls).filter(c => c.id !== 'ssh.unknown-key')
+    expect(rest.filter(c => c.ok !== true).map(c => `${c.id}: ${c.message}`)).toEqual([])
+  })
+
+  test('the drift the row names fails by name', () => {
+    const drifted: PostureReadings = {
+      ...CLEAN,
+      ssh:       { ...CLEAN.ssh!, password_authentication: 'yes' },
+      listening: [...CLEAN.listening!, { address: '0.0.0.0', port: 6379, process: 'redis-server' }],
+      updates:   { pending: 12, security: 4 },
+    }
+    const c = byId(drifted)
+    expect(c['ssh.password-off'].ok).toBe(false)
+    expect(c['net.unexpected-listener'].ok).toBe(false)
+    expect(c['net.unexpected-listener'].message).toContain('6379 (redis-server)')
+    expect(c['patch.security-pending'].ok).toBe(false)
+  })
+
+  test('a reading the box could not take is unknown, never passing', () => {
+    const c = byId({ ...CLEAN, ssh: null, firewall: null, listening: null })
+    expect(c['ssh.password-off'].ok).toBe('unknown')
+    expect(c['net.firewall-default-deny'].ok).toBe('unknown')
+    expect(c['net.unexpected-listener'].ok).toBe('unknown')
+    expect(c['net.caddy-admin-loopback'].ok).toBe('unknown')
+  })
+
+  test('a report older than twice its interval grades every control unknown', () => {
+    const old = NOW - 2 * POSTURE_INTERVAL_MS - 1
+    expect(grade(CLEAN, old).every(c => c.ok === 'unknown')).toBe(true)
+    expect(grade(CLEAN, NOW - POSTURE_INTERVAL_MS).some(c => c.ok === true)).toBe(true)
+  })
+
+  test('an app that declares exposure is expected; one that does not is a stranger', () => {
+    const publicApp: PostureReadings = {
+      ...CLEAN,
+      listening:  [...CLEAN.listening!, { address: '0.0.0.0', port: 9000, process: 'docker-proxy' }],
+      containers: [{ name: 'fjs-raw', published: [{ host_ip: '0.0.0.0', host_port: 9000, container_port: 9000, proto: 'tcp' }] }],
+      firewall:   { input_policy: 'drop', forward_drop: false, exposed: [] },
+    }
+    const undeclared = byId(publicApp)
+    expect(undeclared['net.unexpected-listener'].ok).toBe(false)
+    expect(undeclared['net.container-public'].ok).toBe(false)
+
+    const declared = declaredFor({ sshPort: 22, apps: [{ type: 'container', port: 9000, exposesPort: true }] })
+    const ok = Object.fromEntries(gradePosture(publicApp, declared, { at: NOW, now: NOW }).map(c => [c.id, c]))
+    expect(ok['net.unexpected-listener'].ok).toBe(true)
+    expect(ok['net.container-public'].ok).toBe(true)
+  })
+
+  // FJS-2772: the forward chain drops a published port unless the box's
+  // exposed set holds it, so the set is graded against what apps declare.
+  test('an undeclared public port is covered by the forward drop, unless the exposed set lets it through', () => {
+    const published = { ...CLEAN, containers: [{ name: 'fjs-raw', published: [{ host_ip: '0.0.0.0', host_port: 9000, container_port: 9000, proto: 'tcp' }] }] }
+    expect(byId({ ...published, firewall: { input_policy: 'drop', forward_drop: true, exposed: [] } })['net.container-public'].ok).toBe(true)
+    const stale = byId({ ...published, firewall: { input_policy: 'drop', forward_drop: true, exposed: [9000] } })['net.container-public']
+    expect(stale.ok).toBe(false)
+    expect(stale.message).toContain('9000 (fjs-raw)')
+  })
+
+  test('a reboot-required naming another kernel series is not a pending reboot', () => {
+    // The dev-host capture: a 5.15 image listed while 6.8 HWE runs.
+    const c = byId({ ...CLEAN,
+      kernel: { running: '6.8.0-138-generic', installed: [] },
+      reboot: { required: true, since: '2026-01-01T00:00:00Z', pkgs: ['linux-image-5.15.0-198-generic', 'linux-base'] } })
+    expect(c['patch.reboot-pending'].ok).toBe(true)
+
+    const real = byId({ ...CLEAN, reboot: { required: true, since: '2026-09-01T00:00:00Z', pkgs: ['libc6'] } })
+    expect(real['patch.reboot-pending'].ok).toBe(false)
+  })
+
+  test('a key on the box that Basecamp did not issue is a finding', () => {
+    // An ed25519 public key's wire form: a length-prefixed type, then the key.
+    const blob = Buffer.concat([
+      Buffer.from([0, 0, 0, 11]), Buffer.from('ssh-ed25519'), Buffer.from([0, 0, 0, 32]), Buffer.alloc(32, 7),
+    ]).toString('base64')
+    const fp   = 'SHA256:' + createHash('sha256').update(Buffer.from(blob, 'base64')).digest('base64').replace(/=+$/, '')
+    expect(publicKeyFingerprints(`{"public_key":"ssh-ed25519 ${blob} basecamp"}`)).toEqual([fp])
+
+    const declared = declaredFor({ sshPort: 22, apps: [], sshKeyData: `ssh-ed25519 ${blob} basecamp` })
+    const keys = (fingerprints: string[]) => Object.fromEntries(gradePosture(
+      { ...CLEAN, ssh_keys: fingerprints.map(f => ({ user: 'root', fingerprint: f })) },
+      declared, { at: NOW, now: NOW }).map(c => [c.id, c]))['ssh.unknown-key']
+    expect(keys([fp]).ok).toBe(true)
+    expect(keys([fp, 'SHA256:somebody-else']).ok).toBe(false)
+  })
+
+  test('a move is passing to failing, or back; unknown on either side is none', () => {
+    const before = grade(CLEAN)
+    const after  = grade({ ...CLEAN, ssh: { ...CLEAN.ssh!, password_authentication: 'yes' } })
+    expect(postureChanges(before, after).failed.map(c => c.id)).toEqual(['ssh.password-off'])
+    expect(postureChanges(after, before).restored.map(c => c.id)).toEqual(['ssh.password-off'])
+    expect(postureChanges(grade({ ...CLEAN, ssh: null }), after).failed.map(c => c.id)).toEqual([])
+  })
+})
+
+// ─── the service ────────────────────────────────────────────────────────────
+
+const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
+const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
+const CERT       = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-posture-cert-'))).cert
+
+let env: any, ws: any, owner: any, machine: any, other: any, SECRET: string
+
+beforeAll(async () => {
+  env = await createTestEnv({
+    schema: SCHEMA, migrations: MIGRATIONS, encryptionKey: '0'.repeat(64),
+    plugins: [new GatePlugin({ getLevel: basecampGateLevel })],
+    api: ({ db, path }: any) => buildBasecampApp({ db, dbPath: path }),
+  })
+  const sys  = env.system
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+  const acct = await sys.account.create({ data: { slug: `acme-${uniq()}`, displayName: 'Acme' } })
+  const o    = await sys.user.create({ data: { email: `owner-${uniq()}@x.co`, accountId: acct.id } })
+  ws = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}`, ownerId: o.id } })
+  await sys.workspaceMember.create({ data: {
+    workspaceId: ws.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
+  } })
+  owner   = session({ userId: o.id, workspaceId: ws.id })
+  machine = await sys.server.create({ data: { workspaceId: ws.id, name: 'drifted-01', slug: `d-${uniq()}`, status: 'pending' } })
+  other   = await sys.server.create({ data: { workspaceId: ws.id, name: 'quiet-02',   slug: `q-${uniq()}`, status: 'pending' } })
+
+  const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
+  const token = mintEnrollToken().token
+  await sys.server.update({ where: { id: machine.id },
+    data: { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) } })
+  SECRET = (await env.http.post(`/servers/${machine.id}/enroll`).send({ token, cert: CERT })).body.secret
+}, 120_000)
+
+afterAll(async () => { await env?.close() })
+
+async function report(readings: PostureReadings, at = new Date().toISOString()) {
+  const body = { server_id: machine.id, at, readings }
+  const req  = env.http.post('/posture').set('x-service-method', 'report')
+  const head = await signRequest({
+    secret: SECRET, method: 'POST', path: '/posture', serviceMethod: 'report', body: JSON.stringify(body),
+    timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+  })
+  for (const [k, v] of Object.entries(head)) req.set(k, v)
+  return req.send(body)
+}
+
+describe('a report lands', () => {
+  test('unsigned is refused', async () => {
+    const res = await env.http.post('/posture').set('x-service-method', 'report').send({ server_id: machine.id, readings: CLEAN })
+    expect(res.status).toBe(401)
+  })
+
+  test('a drifted box is a row, a ServerEvent per failing control, and tops the fleet', async () => {
+    const drifted = { ...CLEAN, ssh: { ...CLEAN.ssh!, password_authentication: 'yes' }, firewall: { input_policy: 'accept', forward_drop: true, exposed: [] } }
+    const res = await report(drifted)
+    expect(res.status).toBe(200)
+    expect(res.body.failed).toEqual(expect.arrayContaining(['ssh.password-off', 'net.firewall-default-deny']))
+
+    const rows = await env.system.serverPosture.findMany({ where: { serverId: machine.id } })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].failing).toBeGreaterThanOrEqual(2)
+
+    const events = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'posture_failed' } })
+    expect(events.map((e: any) => e.metadata.control)).toEqual(expect.arrayContaining(['ssh.password-off', 'net.firewall-default-deny']))
+
+    const fleet = await env.as(owner).service('posture').call('fleet', undefined, {})
+    expect(fleet.servers.map((s: any) => s.serverName)).toEqual(['drifted-01', 'quiet-02'])
+    expect(fleet.servers[1].reported).toBe(false)
+    expect(fleet.dependencies.vulnerable).toBe(0)
+  })
+
+  test('fixing it writes posture_restored, and the same failure twice writes no second event', async () => {
+    await report({ ...CLEAN, firewall: { input_policy: 'accept', forward_drop: true, exposed: [] } })
+    const restored = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'posture_restored' } })
+    expect(restored.map((e: any) => e.metadata.control)).toEqual(['ssh.password-off'])
+    const failed = await env.system.serverEvent.findMany({ where: { serverId: machine.id, kind: 'posture_failed' } })
+    expect(failed.filter((e: any) => e.metadata.control === 'net.firewall-default-deny')).toHaveLength(1)
+  })
+
+  test('the newest report reads stale once it is old, never clean', async () => {
+    await report(CLEAN, new Date(Date.now() - 3 * POSTURE_INTERVAL_MS).toISOString())
+    // Ordered by when the box read itself, so a late, old report is not "latest".
+    const latest = await env.as(owner).service('posture').call('latest', machine.id, {})
+    expect(latest.stale).toBe(false)
+
+    const lone = await env.system.server.create({ data: { workspaceId: ws.id, name: 'lone', slug: `l-${Date.now()}`, status: 'pending' } })
+    await env.system.serverPosture.create({ data: {
+      serverId: lone.id, at: new Date(Date.now() - 3 * POSTURE_INTERVAL_MS).toISOString(),
+      controls: grade(CLEAN), failing: 0, unknown: 1,
+    } })
+    const stale = await env.as(owner).service('posture').call('latest', lone.id, {})
+    expect(stale.stale).toBe(true)
+    expect(stale.controls.every((c: any) => c.ok === 'unknown')).toBe(true)
+  })
+
+  test('retention keeps each machine\'s newest however old', async () => {
+    const lone = await env.system.server.create({ data: { workspaceId: ws.id, name: 'old', slug: `o-${Date.now()}`, status: 'pending' } })
+    for (const daysAgo of [90, 60])
+      await env.system.serverPosture.create({ data: { serverId: lone.id, at: new Date(Date.now() - daysAgo * 86_400_000).toISOString() } })
+    await prunePosture(env.system)
+    const left = await env.system.serverPosture.findMany({ where: { serverId: lone.id } })
+    expect(left).toHaveLength(1)
+  })
+})

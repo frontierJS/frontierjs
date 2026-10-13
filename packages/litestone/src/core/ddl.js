@@ -292,7 +292,7 @@ export function columnDefaultExpr(field) {
 
 // ─── Column definition ────────────────────────────────────────────────────────
 
-function columnDef(field, schema = null, compositePk = false, strict = true) {
+function columnDef(field, schema = null, compositePk = false, strict = true, cmap = null) {
   const col   = fieldToColumnName(field)
   const parts = [`  "${col}" ${sqlType(field.type)}`]
 
@@ -328,7 +328,9 @@ function columnDef(field, schema = null, compositePk = false, strict = true) {
   const gen = field.attributes.find(a => a.kind === 'generated')
   if (gen) {
     const storage = gen.stored ? 'STORED' : 'VIRTUAL'
-    parts.push(`GENERATED ALWAYS AS (${gen.expr}) ${storage}`)
+    // `{a}` names a FIELD; a @map'd one has a different column, and SQLite
+    // reads the field's name as a string literal rather than failing.
+    parts.push(`GENERATED ALWAYS AS (${mapExprCols(gen.expr, cmap)}) ${storage}`)
   }
 
   // GENERATED from a schema function call — @funcName(arg1, arg2)
@@ -339,7 +341,7 @@ function columnDef(field, schema = null, compositePk = false, strict = true) {
     if (fn) {
       let expr = fn.expr
       fn.params.forEach((p, i) => {
-        expr = expr.replaceAll(`{${p.name}}`, `"${call.args[i]}"`)
+        expr = expr.replaceAll(`{${p.name}}`, `"${mapCol(cmap, call.args[i])}"`)
       })
       parts.push(`GENERATED ALWAYS AS (${expr}) STORED`)
     }
@@ -619,7 +621,8 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
   const columnFields = model.fields.filter(isStoredField)
 
   const pkCount      = model.fields.filter(f => f.attributes.some(a => a.kind === 'id')).length
-  const colDefs      = columnFields.map(f => columnDef(f, schema, pkCount > 1, strict))
+  const cmap         = columnMapFor(model)
+  const colDefs      = columnFields.map(f => columnDef(f, schema, pkCount > 1, strict, cmap))
   const enumChecks   = columnFields.map(f => enumCheck(f, schema)).filter(Boolean)
   const constraints  = tableConstraints(model, schema, pluralize)
   const points       = pointDefs(model, columnMapFor(model))

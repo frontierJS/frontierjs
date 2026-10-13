@@ -1,0 +1,26 @@
+<script>
+  // drag.mesa — one box with a drag on it, and the record of what it reported.
+  //
+  // `moves` changes on every move, so the attachment's getter is read again
+  // under a state that moved mid-drag; a drag rebuilt by that change would
+  // start twice. The pointer id is published so a spec can take the capture
+  // away, which is the cancel a touch scroll causes.
+  import { drag } from '@frontierjs/ui/drag'
+
+  let starts = 0
+  let moves  = 0
+  let last   = { x: 0, y: 0 }
+  let ends   = []
+
+  const box = drag(() => ({
+    start: (e) => { starts++; window.__pid = e.pointerId; return moves },
+    move:  (_e, _from, d) => { moves++; last = d },
+    end:   (_e, from, { cancelled }) => { ends = [...ends, `${cancelled ? 'cancel' : 'up'}@${from}`] },
+  }))
+</script>
+
+<div id="box" style="width: 80px; height: 80px; margin: 40px; background: gray; touch-action: none" {@attach box}></div>
+
+<output id="starts">{starts}</output>
+<output id="moved">{last.x},{last.y}</output>
+<output id="ends">{ends.join(' ')}</output>

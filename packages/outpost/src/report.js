@@ -1,16 +1,16 @@
 /*
  * report.js — the Outpost's outbound half: what this machine tells Basecamp.
  *
- * Three calls, and they are exactly the three endpoints `FJS-349` found taking
- * no credential at all. Each is signed with this machine's own key, over the
- * exact bytes sent, by the same module basecamp verifies with — one
- * definition, two ends.
+ * Four calls, each signed with this machine's own key, over the exact bytes
+ * sent, by the same module basecamp verifies with — one definition, two ends.
+ * Three of them are the endpoints `FJS-349` found taking no credential at all.
  *
- * PUSH rather than poll, on two clocks: the heartbeat is small and frequent
+ * PUSH rather than poll, on three clocks: the heartbeat is small and frequent
  * because `lastHeartbeatAt` is how basecamp decides a machine is reachable, and
  * the disk picture is expensive and slow-moving, so asking for it every thirty
  * seconds would spend the machine's IO on an answer nobody reads between
- * deploys.
+ * deploys. The posture reading is slower still — about thirty processes, over
+ * facts an upgrade or an operator changes.
  *
  * The FIRST heartbeat is the one that matters: it carries `outpost_url`, which
  * is what registers this machine as a Conduit target. Until it lands, every
@@ -82,6 +82,10 @@ export function createReporter(config, {
       return post('/cleanup', 'report', { server_id: config.serverId, ...(await inspector.disk()) })
     },
 
+    async reportPosture() {
+      return post('/posture', 'report', { server_id: config.serverId, ...(await inspector.posture()) })
+    },
+
     /** Both timers. Every tick is caught and logged rather than thrown: a
      *  control plane that is down for a minute must not take the Outpost with
      *  it — the machine still has containers to run, and the next tick is the
@@ -91,14 +95,16 @@ export function createReporter(config, {
 
       tick('first heartbeat', () => this.heartbeat())
       tick('first report', async () => { await this.reportVolumes(); await this.reportDisk() })
+      tick('first posture', () => this.reportPosture())
 
       const beat = setInterval(() => tick('heartbeat', () => this.heartbeat()), config.heartbeatMs)
       const rep  = setInterval(() => tick('report', async () => {
         await this.reportVolumes()
         await this.reportDisk()
       }), config.reportMs)
+      const pos  = setInterval(() => tick('posture', () => this.reportPosture()), config.postureMs)
 
-      return () => { clearInterval(beat); clearInterval(rep) }
+      return () => { clearInterval(beat); clearInterval(rep); clearInterval(pos) }
     },
   }
 }

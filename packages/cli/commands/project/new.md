@@ -597,7 +597,7 @@ function makeApiAppTs(useAuth, useWeb, useQueue = false) {
   // The queue's own settings are DECLARED in junction.config.js (its database,
   // its job directory), so the call takes none.
   const queue = useQueue ? `// ─── Deferred work ────────────────────────────────────────────────────────
-// Caravan is a SQLite queue in its own file, db/jobs.db. \`boot()\` autoloads
+// Caravan is a SQLite queue in its own file, jobs.db beside DATABASE_URL. \`boot()\` autoloads
 // api/src/jobs/*.job.ts and \`work()\` starts the workers; a job that declares
 // \`cron\` needs no line here. retention.job.ts is the one that matters on day
 // one: the schema declares \`retention 90d\` on the audit trail, and litestone
@@ -1123,16 +1123,25 @@ function makeJunctionConfig(appName, useWeb, useQueue = false) {
   // directory, so the app would open a second, empty db/jobs.db from anywhere
   // but the app root.
   const hereImport = useQueue ? `
-import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath }    from 'node:url'
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
+
+// Beside the main database. A deploy mounts only the directory DATABASE_URL
+// points at, so a queue written beside the code is inside the container and
+// every release starts with an empty one -- pending jobs and a pause included.
+const dbUrl  = process.env.DATABASE_URL
+const jobsDb = dbUrl && dbUrl !== ':memory:'
+  ? resolve(here('../../'), dirname(dbUrl), 'jobs.db')
+  : here('../../db/jobs.db')
 ` : ''
   const caravan = useQueue ? `
   // The job queue: a SQLite file of its own, and the directory its \`*.job.ts\`
   // files are autoloaded from. Declared here, so app.ts passes createCaravan()
   // nothing.
   caravan: {
-    db:      here('../../db/jobs.db'),
+    db:      jobsDb,
     jobsDir: here('../src/jobs'),
   },
 ` : ''

@@ -14,6 +14,27 @@
 import { defineJob }  from '@frontierjs/caravan'
 import { runsAsApp }  from './context.ts'
 
+const POSTURE_KEEP_MS = 30 * 86_400_000
+
+/**
+ * `ServerPosture` older than thirty days, except each machine's newest: a box
+ * whose Outpost went quiet a month ago still shows its last answer as stale,
+ * rather than as never having reported.
+ */
+export async function prunePosture(db: any, now = Date.now()): Promise<number> {
+  const cutoff = new Date(now - POSTURE_KEEP_MS).toISOString()
+  const old    = await db.serverPosture.findMany({ where: { at: { lt: cutoff } }, select: { id: true, serverId: true } })
+  if (!old.length) return 0
+  const keep = new Set<string>()
+  for (const serverId of new Set<string>(old.map((r: any) => r.serverId))) {
+    const newest = await db.serverPosture.findFirst({ where: { serverId }, orderBy: { at: 'desc' }, select: { id: true } })
+    if (newest) keep.add(newest.id)
+  }
+  const ids = old.map((r: any) => r.id as string).filter((id: string) => !keep.has(id))
+  if (ids.length) await db.serverPosture.deleteMany({ where: { id: { in: ids } } })
+  return ids.length
+}
+
 /** What `$retain()` answers, one row per table it touched. */
 interface Swept { model: string; table: string; removed: number; error?: string }
 
@@ -42,6 +63,9 @@ export default defineJob(
 
     if (removed)
       console.log(`[retention] removed ${removed} row(s) across ${swept.filter((r: Swept) => r.removed).length} table(s)`)
+
+    const postures = await prunePosture(db)
+    if (postures) console.log(`[retention] removed ${postures} posture report(s)`)
   },
   { cron: '0 4 * * *' },
 )

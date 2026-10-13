@@ -29,6 +29,7 @@ import { createExclusionLedger } from './exclusion.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses, GATE_LIFT, liftsGate } from '../plugins/gate.js'
 import { CapabilityPlugin, requireCapability, requireGrantSubset } from '../plugins/capability.js'
+import { isNestedWrite } from '../plugins/reach.js'
 import { capabilityDeclarations, capabilityNames } from './capabilities.js'
 import {
   buildPolicyMap, buildScopeMap, compileScope, compileStatic, policyExprToString,
@@ -5127,11 +5128,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!data) return { scalar: {}, nested: {}, hasNested: false }
     const rels = shape.relations
     const scalar = {}, nested = {}
-    const OP_KEYS = new Set(['create','connect','connectOrCreate','disconnect','delete','update','set'])
     for (const [k, v] of Object.entries(data)) {
-      // Nested write if: key is a known relation (any kind) AND value looks like an op object
-      if (k in rels && v !== null && typeof v === 'object' && !Array.isArray(v)
-          && Object.keys(v).some(op => OP_KEYS.has(op))) {
+      if (k in rels && isNestedWrite(v)) {
         nested[k] = v
       } else {
         scalar[k] = v

@@ -82,6 +82,10 @@ try {
   write(join(SITE, 'content/settings/site.js'),
     `export default { preset: 'demo-preset', document: { head: '<meta name="site-own" content="1">' } }\n`)
   write(join(SITE, 'content/routes/index.md'), ['---', 'render: static', 'layout: Steps', '---', '', 'Welcome to {company_name}.', ''].join('\n'))
+  write(join(SITE, 'content/routes/reviews.md'),
+    ['---', 'render: static', 'layout: Block', 'name: Testimonials', '---', '',
+      "<script>import Block from '@frontierjs/site-kit/layouts/Block.mesa'</script>", '',
+      '<Block name="Reviews">Kind words.</Block>', ''].join('\n'))
 
   const built = spawnSync('bun', [join(ROOT, 'bin/site-kit.js'), 'build', SITE], { encoding: 'utf8' })
   check('the site builds', built.status === 0, `${built.stdout}\n${built.stderr}`.slice(-1200))
@@ -101,6 +105,11 @@ try {
     const read = (path) => { try { return readFileSync(join(SITE, 'dist', path), 'utf8') } catch { return null } }
     check("a preset's public/ file ships at its own path", read('theme/mark.svg') === '<svg>preset</svg>', read('theme/mark.svg'))
     check("a path in both public/ directories ships the site's file", read('shared.txt') === 'site', read('shared.txt'))
+    // A Band is 100vw, so a second one inside the first scrolled the page sideways (FJS-2716).
+    const reviews = read('reviews/index.html') ?? read('reviews.html') ?? ''
+    check('a Block in a Block layout\'s Markdown prerenders as an article, not a second Band',
+      (reviews.match(/class="band/g) ?? []).length === 1 && /<article class="reviews"[^>]*>\s*Kind words\./.test(reviews),
+      reviews.match(/<section class="band[\s\S]*?<\/section>/)?.[0] ?? reviews.slice(0, 600))
   }
 } finally {
   rmSync(SITE, { recursive: true, force: true })

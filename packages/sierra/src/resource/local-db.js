@@ -139,9 +139,9 @@ function accessorFor(db, model) {
  * Failure is silent on purpose — this is a side effect of a read that already
  * succeeded, and a screen must not fail because a device could not write.
  */
-export async function writeThrough(model, rows) {
+export async function writeThrough(model, rows, whole = null) {
   try {
-    return await writeRows(model, rows)
+    return await writeRows(model, rows, whole)
   } catch (err) {
     // Once per MODEL. Whatever makes one write-through of a model fail usually
     // makes every one of them fail, so a warning per read is a console nobody
@@ -163,28 +163,104 @@ export async function writeThrough(model, rows) {
  * keys, because it holds a window the server's keys were enforced over
  * (`FJS-D485`), so a screen's `load()` writes in whatever order it arrives.
  *
- * Answers false where there is nothing to write to: no config, no rows, no
- * database, or a model the device does not hold.
+ * **`whole` is `{ where, idField }` when the rows are the server's WHOLE answer
+ * to `where`** — see `answeredWhole()`. Every row the device holds under that
+ * `where` and the answer did not name is then taken off: an upsert alone never
+ * removes anything, so a row deleted on the server, or one that left the
+ * question, stayed on the device and answered offline reads for good
+ * (`FJS-2256`). An empty whole answer is written for the same reason.
+ *
+ * Answers false where there is nothing to write to: no config, no rows and no
+ * whole answer, no database, or a model the device does not hold.
  */
-export async function writeRows(model, rows) {
-  if (!_config || !Array.isArray(rows) || rows.length === 0) return false
+export async function writeRows(model, rows, whole = null) {
+  if (!_config || !Array.isArray(rows)) return false
+  if (rows.length === 0 && !whole) return false
   const db = await localDb()
   if (!db) return false
   const accessor = accessorFor(db, model)
   if (!accessor) return false
 
   const table = db.asSystem()[accessor]
-  try {
-    await table.upsertMany({ data: rows })
-  } catch (err) {
-    // An update gate of 9 refuses the system client too, and upsertMany grades
-    // its conflict half as an update (`FJS-1700`). Such a row never changes on
-    // the server, so replaying it insert-only loses nothing — and without this
-    // an append-only ledger like `@@gate("5.5.9.9")` kept nothing on the device.
-    if (!(err?.code === 'ACCESS_DENIED' && err.operation === 'update' && err.required === 9)) throw err
-    await table.upsertMany({ data: rows, update: [] })
+  if (rows.length) {
+    try {
+      await table.upsertMany({ data: rows })
+    } catch (err) {
+      // An update gate of 9 refuses the system client too, and upsertMany grades
+      // its conflict half as an update (`FJS-1700`). Such a row never changes on
+      // the server, so replaying it insert-only loses nothing — and without this
+      // an append-only ledger like `@@gate("5.5.9.9")` kept nothing on the device.
+      if (!(err?.code === 'ACCESS_DENIED' && err.operation === 'update' && err.required === 9)) throw err
+      await table.upsertMany({ data: rows, update: [] })
+    }
   }
+  if (whole) await _dropAbsent(model, table, rows, whole)
   return true
+}
+
+/**
+ * Was this answer everything the server holds for its `where`?
+ *
+ * The question `hasMore()` asks, answered the way junction's live list answers
+ * it — `total` where the server counted, its own `hasMore` where it did not —
+ * so the warm, which reads a bare envelope, and a `load()`, which reads the
+ * list's state, cannot disagree about the same answer. A page past the first,
+ * a cursor and a search are never whole: each names a slice of the `where`,
+ * and taking off what a slice left out would empty the rest of the table.
+ *
+ * `res` is the envelope, a bare array — a service answering no metadata is a
+ * list with no page 2, which is what `hasMore()` says of it too — or
+ * `{ data, hasMore }` from a live list that has already decided.
+ */
+export function answeredWhole(res, directives) {
+  const d = directives ?? {}
+  if (d.search || d.after != null || Number(d.offset ?? 0) > 0) return false
+  if (Array.isArray(res)) return true
+  if (!Array.isArray(res?.data)) return false
+  const offset = typeof res.offset === 'number' ? res.offset : 0
+  if (offset > 0) return false
+  return typeof res.total === 'number' ? res.total <= res.data.length : res.hasMore !== true
+}
+
+// The device's rows under `where`, less the ones the answer named. Read with
+// the same `where` `readLocal` answers an offline read with, so what this takes
+// off is exactly what that read would otherwise have shown. A `where` the
+// device cannot evaluate — a relation that did not cross — takes nothing off,
+// and `readLocal` declines the same question, so nothing stale is shown either.
+async function _dropAbsent(model, table, rows, { where, idField }) {
+  if (!idField) return
+  try {
+    const named = new Set(rows.map(r => String(r?.[idField])))
+    const held  = await table.findMany({ where: where ?? {}, select: { [idField]: true } })
+    const gone  = held.map(r => r?.[idField]).filter(id => id != null && !named.has(String(id)))
+    if (gone.length) await table.deleteMany({ where: { [idField]: { in: gone } } })
+  } catch (err) {
+    // A delete gate of 9 refuses the system client as an update gate does, and
+    // such a model's rows are never removed on the server either.
+    _warnOnce(`took nothing off ${model} that the server no longer answers`, err)
+  }
+}
+
+/**
+ * Take rows off the device by key — a `remove` the server acknowledged.
+ *
+ * A side effect of a write that already landed, so it never throws: a device
+ * that could not drop the row has the next whole answer to take it off.
+ */
+export async function dropRows(model, idField, ids) {
+  const keys = (ids ?? []).filter(id => id != null)
+  if (!_config || !idField || !keys.length) return false
+  try {
+    const db = await localDb()
+    if (!db) return false
+    const accessor = accessorFor(db, model)
+    if (!accessor) return false
+    await db.asSystem()[accessor].deleteMany({ where: { [idField]: { in: keys } } })
+    return true
+  } catch (err) {
+    _warnOnce(`kept a row of ${model} the server removed`, err)
+    return false
+  }
 }
 
 const _warned = new Set()

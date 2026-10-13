@@ -30,6 +30,8 @@ const SIERRA_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 let _proxy
 let _client
+// What the live list says of its last answer — a window with a page 2.
+let _hasMore = false
 
 vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => _client }))
 
@@ -40,10 +42,12 @@ const { _resetListCache, listCache, listKey } = await import('../src/resource/li
 const { warmOffline, _resetOffline } = await import('../src/resource/offline.js')
 const { writeThrough, readLocal, localDbConfigured, _resetLocalDb, _useLocalDbClient } =
   await import('../src/resource/local-db.js')
+const { createJunctionClient } = await import('../../junction/src/client/index.ts')
 
 const SOURCE = `
 model Sheet { id String @id @default(uuid())  name String  closedAt DateTime?  @@gate("0.0.0.0")  @@sync(server) }
 model Plain { id String @id @default(uuid())  name String                      @@gate("0.0.0.0") }
+model Note  { id Int @id  body String  version Int @version                     @@gate("0.0.0.0")  @@sync(server) }
 `
 
 const offline = () => Promise.reject(new TypeError('Failed to fetch'))
@@ -65,7 +69,7 @@ let _device
  * regardless cannot tell a hydrated device from an empty one — which is the
  * exact confusion the feature is about. So the fake keeps what it is given.
  */
-function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, lockedUpdate = false } = {}) {
+function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, lockedUpdate = false, lockedDelete = false } = {}) {
   const calls = []
   const held = new Map(rows.map(r => [r.id, r]))
   const table = {
@@ -80,11 +84,25 @@ function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, l
       for (const row of args.data) held.set(row.id, row)
       return Promise.resolve({ count: args.data.length })
     },
+    // A `where` of plain values is applied, an absent column reading as null,
+    // because what a whole answer takes off is decided by which held rows the
+    // question reaches — a fake answering every row would take off rows the
+    // question never named and pass.
     findMany: (args) => {
       calls.push(['findMany', args])
-      return fail ? Promise.reject(fail) : Promise.resolve([...held.values()])
+      if (fail) return Promise.reject(fail)
+      const where = Object.entries(args?.where ?? {})
+      return Promise.resolve([...held.values()].filter(r => where.every(([k, v]) => (r[k] ?? null) === v)))
     },
-    deleteMany: (args) => { calls.push(['deleteMany', args]); held.clear(); return Promise.resolve({ count: 0 }) },
+    deleteMany: (args) => {
+      calls.push(['deleteMany', args])
+      if (lockedDelete) return Promise.reject(Object.assign(new Error('"Sheet.delete" is LOCKED'),
+        { code: 'ACCESS_DENIED', operation: 'delete', required: 9 }))
+      const keys = args?.where?.id?.in
+      if (keys) for (const k of keys) held.delete(k)
+      else held.clear()
+      return Promise.resolve({ count: 0 })
+    },
     // Litestone's own answer for a model with no `@@fts`: a refusal by name,
     // which is a throw and so *cannot answer* here.
     search: (q, args) => {
@@ -98,7 +116,7 @@ function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, l
     $close: () => Promise.resolve(true),
     asSystem: () => Object.fromEntries(models.map(m => [m, table])),
   }
-  return { client, calls, systemUsed: () => calls.length > 0 }
+  return { client, calls, held: () => [...held.keys()], systemUsed: () => calls.length > 0 }
 }
 
 /** Configure the module and hand it the fake instead of opening a worker. */
@@ -109,6 +127,7 @@ beforeEach(async () => {
   _resetListCache()
   _resetOffline()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
+  _hasMore = false
 
   _proxy = {
     find:    () => Promise.resolve({ data: [{ id: 'S1', name: 'from the server' }], total: 1 }),
@@ -124,6 +143,7 @@ beforeEach(async () => {
   const handlers = {}
   _client = {
     connected: false,
+    callHeaders: () => ({}),
     on: (e, fn) => { (handlers[e] ??= []).push(fn) },
     service: () => _proxy,
     resource: () => ({
@@ -134,6 +154,7 @@ beforeEach(async () => {
       })(),
       stale: { get: () => 0, subscribe: (fn) => { fn(0); return () => {} }, reset: () => {} },
       load: function (q, d) { return _proxy.find(q, d).then(r => { const rows = r?.data ?? []; this.store.set(rows); return rows }) },
+      hasMore: () => _hasMore,
     }),
   }
 
@@ -403,6 +424,175 @@ describe('a load that DID reach the server', () => {
   })
 })
 
+// ─── FJS-2256: a row the server no longer answers leaves the device ───────
+//
+// The device was only ever UPSERTED into, so a row deleted on the server — by
+// this screen or anybody — stayed and answered every offline read: an online
+// remove answered 200, an online reload listed none, and offline the device
+// still listed the row. Two ways off: the remove itself, and an answer that was
+// the whole of its `where` taking off what it did not name.
+
+describe('a row the server no longer answers leaves the device', () => {
+  const tick = () => new Promise(res => setTimeout(res, 0))
+
+  test('a remove that landed takes the row off', async () => {
+    const d = makeDevice({ rows: [{ id: 'S1', name: 'a' }, { id: 'S2', name: 'b' }] })
+    useDevice(d)
+    await sheets().service.remove('S1')
+    await tick()
+    expect(d.held()).toEqual(['S2'])
+  })
+
+  // The stressor's own sequence: removed elsewhere, the reload online answers
+  // none, and the offline read must agree with it rather than with last week.
+  test('an online reload answering none empties the question, and offline agrees', async () => {
+    const d = makeDevice({ rows: [{ id: 'F1', name: 'followed' }] })
+    useDevice(d)
+    const r = sheets()
+    _proxy.find = () => Promise.resolve({ data: [], total: 0 })
+    await r.load({})
+    await tick()
+    expect(d.held()).toEqual([])
+
+    _proxy.find = offline
+    expect(await r.load({})).toEqual([])
+  })
+
+  test('a whole answer takes off only what its own where reaches', async () => {
+    const d = makeDevice({ rows: [
+      { id: 'S1', name: 'kept', closedAt: null },
+      { id: 'S2', name: 'gone', closedAt: null },
+      { id: 'S3', name: 'another question', closedAt: '2026-10-01' },
+    ] })
+    useDevice(d)
+    _proxy.find = () => Promise.resolve({ data: [{ id: 'S1', name: 'kept', closedAt: null }], total: 1 })
+    await sheets().load({ closedAt: null })
+    await tick()
+    expect(d.held().sort()).toEqual(['S1', 'S3'])
+  })
+
+  // A window names a slice of its `where`. Taking off what a slice left out
+  // would empty the rest of the table on every paged list.
+  test('a window with a page 2 takes nothing off', async () => {
+    const d = makeDevice({ rows: [{ id: 'S1' }, { id: 'S2' }] })
+    useDevice(d)
+    _hasMore = true
+    await sheets().load({}, { limit: 1 })
+    await tick()
+    expect(d.held().sort()).toEqual(['S1', 'S2'])
+  })
+
+  test('nor does a page past the first, or a search', async () => {
+    const d = makeDevice({ rows: [{ id: 'S1' }, { id: 'S2' }] })
+    useDevice(d)
+    await sheets().load({}, { offset: 20 })
+    await sheets().load({}, { search: 'from' })
+    await tick()
+    expect(d.calls.some(c => c[0] === 'deleteMany')).toBe(false)
+  })
+
+  test('the warm is an answer too, and an empty one is kept as empty', async () => {
+    const d = makeDevice({ rows: [{ id: 'OLD', closedAt: null }] })
+    useDevice(d)
+    _proxy.find = () => Promise.resolve({ data: [], total: 0 })
+    sheets({ offlineQuery: { query: { closedAt: null } } })
+
+    const report = await warmOffline()
+    expect(report).toEqual([{ service: 'sheets', rows: 0, kept: true }])
+    expect(d.held()).toEqual([])
+  })
+
+  test('and a warm whose envelope says there is more takes nothing off', async () => {
+    const d = makeDevice({ rows: [{ id: 'OLD' }] })
+    useDevice(d)
+    _proxy.find = () => Promise.resolve({ data: [{ id: 'S1' }], total: 2 })
+    sheets({ offlineQuery: { query: {} } })
+    await warmOffline()
+    expect(d.held().sort()).toEqual(['OLD', 'S1'])
+  })
+
+  // `@@gate("5.5.9.9")`: nothing removes such a row on the server either, and
+  // the rows that did arrive are still kept.
+  test('a device whose delete is LOCKED keeps the answer and warns once', async () => {
+    const d = makeDevice({ rows: [{ id: 'OLD' }], lockedDelete: true })
+    useDevice(d)
+    expect(await writeThrough('Sheet', [{ id: 'S1' }], { where: {}, idField: 'id' })).toBe(true)
+    expect(d.held().sort()).toEqual(['OLD', 'S1'])
+    expect(console.warn).toHaveBeenCalledTimes(1)
+  })
+
+  test('a held remove, replayed and acknowledged, takes the row off', async () => {
+    const d = makeDevice({ rows: [{ id: 'S1' }, { id: 'S2' }] })
+    useDevice(d)
+    const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/resource/pending.js')
+    _resetPendingQueue()
+    const q = pendingQueue()
+    await q.ready
+    await q.add({ service: 'sheets', model: 'Sheet', method: 'remove', id: 'S1', idField: 'id' })
+    await drainPending({ callHeaders: () => ({}), service: () => ({ remove: () => Promise.resolve({ id: 'S1' }) }) })
+    expect(d.held()).toEqual(['S2'])
+    _resetPendingQueue()
+  })
+})
+
+// ─── FJS-2250: one row with no network ────────────────────────────────────
+//
+// `load()` answered an outage from the device and `record(id)` answered null,
+// so a detail screen opened offline said the row did not exist while the list
+// before it had just shown it. Driven through Junction's REAL client, because
+// `record()` is its view and a fake would have no `ready`, no `error()` and no
+// node for the answer to land in.
+
+describe('record(id) with no network', () => {
+  const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+  beforeEach(() => {
+    _client = createJunctionClient({ url: 'http://localhost:3000' })
+    vi.stubGlobal('fetch', () => Promise.reject(new TypeError('Failed to fetch')))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  test('answers the row the device holds, with no failure on the view', async () => {
+    useDevice(makeDevice({ rows: [{ id: 'S1', name: 'held' }, { id: 'S2', name: 'other' }] }))
+    const row = sheets().record('S1')
+    expect(await row.ready).toEqual({ id: 'S1', name: 'held' })
+    expect(row.error()).toBeNull()
+    row.release()
+  })
+
+  test('a row the device does not hold is still the outage it was', async () => {
+    useDevice(makeDevice({ rows: [{ id: 'S2', name: 'other' }] }))
+    const row = sheets().record('S1')
+    expect(await row.ready).toBeNull()
+    expect(row.error()).toEqual({ status: 0, code: 'TypeError' })
+    row.release()
+  })
+
+  // A 403 is this caller's answer NOW; a copy taken when they could read the
+  // row must not overrule it.
+  test('a refusal is never answered from the device', async () => {
+    const d = makeDevice({ rows: [{ id: 'S1', name: 'held' }] })
+    useDevice(d)
+    vi.stubGlobal('fetch', () => Promise.resolve(json({ name: 'Forbidden', message: 'no', code: 403 }, 403)))
+    const row = sheets().record('S1')
+    expect(await row.ready).toBeNull()
+    expect(row.error().status).toBe(403)
+    expect(d.calls.length).toBe(0)
+    row.release()
+  })
+
+  // A held edit of a row opened offline carried no version and replayed as a
+  // 400 (`FJS-1299`); the device's copy is a read of the version it holds.
+  test('the version of the device\'s row is the one this screen read', async () => {
+    useDevice(makeDevice({ models: ['note'], rows: [{ id: 7, body: 'held', version: 4 }] }))
+    const notes = createResource('notes', { model: 'Note' })
+    const row = notes.record(7)
+    await row.ready
+    expect(notes.version(7)).toBe(4)
+    row.release()
+  })
+})
+
 // ─── hydration — the tables are filled on purpose ─────────────────────────
 //
 // What phase 4 owed last. The device used to be only as full as what a screen
@@ -447,7 +637,7 @@ describe('the warm fills the device rather than the cache', () => {
     await warmOffline()
 
     _proxy.find = offline
-    const rows = await r.load({ name: 'something else' }, { limit: 5, orderBy: '-id' })
+    const rows = await r.load({}, { limit: 5, orderBy: '-id' })
     expect(rows.map(x => x.id)).toEqual(['S1'])
   })
 
@@ -459,7 +649,7 @@ describe('the warm fills the device rather than the cache', () => {
     await warmOffline()
 
     _proxy.find = offline
-    await expect(r.load({ name: 'something else' }, { limit: 5, orderBy: '-id' })).rejects.toThrow()
+    await expect(r.load({}, { limit: 5, orderBy: '-id' })).rejects.toThrow()
   })
 
   // ── `FJS-D337`: the declared window is the DEVICE's ─────────────────────

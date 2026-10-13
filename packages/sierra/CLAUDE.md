@@ -66,6 +66,9 @@ src/
                          `_redirects` the build wrote — read at start, parsed by
                          `postbuild/redirects.js`, and refused there for a rule
                          shape it cannot answer
+                         Takes `functions` (the entry `postbuild/functions.js`
+                         wrote) and mounts it BEFORE the verb check, since a
+                         function answers POST
     compile.js           a built site and serve.js as ONE executable
                          (`sierra site --compile`, `fli site:build --binary`).
                          Bun's embedded filesystem has no directories and
@@ -205,6 +208,9 @@ src/
                            inject-analytics.js: the vendor tag on a static page,
                            read from analytics/tag.js, which the runtime reads too,
                            manifest.js: can a browser INSTALL the build, and
+                           functions.js: the host-function directory → one entry
+                           (`.sierra/functions.js`), its routes, and the
+                           handler a host mounts (`FJS-D919`),
                            offline-shell.js: sw.js + a precache list derived
                            from what this build emitted (`offline: true`).
                            Sierra writes that one because only the build knows

@@ -50,13 +50,18 @@ export function createOutpostServer(config, {
   // another full tolerance, and a nonce forgotten sooner replays (FJS-1833).
   const seenNonce   = nonceMemory(2 * TOLERANCE_S * 1_000)
 
+  // After any change to which containers exist. A failed refill leaves the
+  // release standing: the set fails closed, and the posture report says so.
+  const syncExposed = () => docker.syncExposed()
+    .catch(err => log.error?.(`outpost: the firewall's exposed set was not refilled — ${err.message}`))
+
   const routes = {
     // snake_case in, camelCase inside. The bodies are basecamp's wire contract
     // — `app_id`, `timeout_s`, `keep_images` — and a route that passed one
     // straight through read `appId` as undefined and addressed a container
     // called `fjs-undefined`, which exists on no machine and reports healthy
     // nowhere.
-    'POST /pull':          (body) => docker.pull({ image: body.image }),
+    'POST /pull':          (body) => docker.pull({ image: body.image, digest: body.digest }),
     // The build alone, so a failing one is its own step and happens before the
     // old container is touched. `/deploy` given the digest this answers starts
     // those bytes and builds nothing.
@@ -72,6 +77,7 @@ export function createOutpostServer(config, {
     // takes it too, and its `/deploy` puts it back.
     'POST /stop': async (body) => {
       const stopped = await docker.stop({ appId: body.app_id })
+      await syncExposed()
       const { removed } = await ingress.unroute({ appId: body.app_id })
       return { ...stopped, unrouted: removed }
     },
@@ -117,9 +123,11 @@ export function createOutpostServer(config, {
           digest:   built.digest ?? body.digest,
           config:   body.config ?? {},
           port,
-          loopback: hosts.length > 0,
+          loopback:    hosts.length > 0,
+          exposesPort: body.exposes_port === true,
         })
       } catch (err) {
+        await syncExposed()
         // The route already moved to the new port. A put-back container
         // answers on the port IT published, so a route left dialing the new
         // one sends the restored app's hostnames a 502.
@@ -131,6 +139,7 @@ export function createOutpostServer(config, {
         }
         throw err
       }
+      await syncExposed()
       return { ...started, hosts, commit_sha: built.commitSha ?? null }
     },
 
@@ -245,6 +254,9 @@ export function createOutpostServer(config, {
     'POST /system/prune':  (body) => inspector.prune({ targets: body.targets, keepImages: body.keep_images })
       .then(async result => ({ ...result, usage: await inspector.disk() })),
     'POST /volumes/prune': (body) => inspector.pruneVolumes(body.names ?? []),
+    // Basecamp's *check now*: the readings come back in the answer and
+    // Basecamp ingests them, rather than this posting a report beside it.
+    'POST /posture':       () => inspector.posture(),
   }
 
   async function handle(req) {

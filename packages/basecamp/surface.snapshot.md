@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-49 services · 41 routes · 17 plugins · prefix (none)
+50 services · 41 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -55,7 +55,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (92)
+### A service hook runs in front of the body (95)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -120,6 +120,9 @@ name, and is as unread as the body.
 | `networks.members` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `posture.latest` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `posture.fleet` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `posture.check` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `recipes.restore` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
 | `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `requireWorkspaceRole` |
@@ -923,6 +926,29 @@ name when it declares none.
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `posture` · model `ServerPosture`
+
+- **methods** — `latest`, `fleet`, `check`, `report`
+- **custom methods** — `latest`, `fleet`, `check`, `report`
+- **who may call** —
+  - `latest` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `fleet` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `check` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `report` — anyone, a stranger included — declared `gate: 0`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `check` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

@@ -1,0 +1,11 @@
+<script module>
+  // src/resources/ServerPosture.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
+  // The service is `posture` and the model `ServerPosture`, an irregular pair,
+  // so the model is named. No create: a report is what a machine said, and the
+  // only writer is its Outpost.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const postures = createResource('posture', { model: 'ServerPosture' })
+</script>

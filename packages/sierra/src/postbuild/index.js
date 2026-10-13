@@ -10,6 +10,7 @@
  *   4. sitemap       — generate sitemap.xml from indexed routes
  *
  * Conditional:
+ *   3b. functions    — the host-function entry (when config.functions names a directory)
  *   5. llms          — generate llms.txt (when config.llms is true or 'auto')
  *   6. speculation   — hover-prerender Speculation Rules on every page (static)
  *   7. deferJS       — defer script tags in index.html
@@ -23,6 +24,7 @@
 import { move404, NOT_FOUND_URL } from './move-404.js'
 import { writeRobots } from './robots.js'
 import { generateRedirects } from './redirects.js'
+import { generateFunctions } from './functions.js'
 import { generateSitemap } from './sitemap.js'
 import { generateLlms } from './llms.js'
 import { injectSpeculationRules } from './speculation.js'
@@ -87,6 +89,10 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   // 3. _redirects
   const rRedirects = await generateRedirects(routeTable.redirects ?? [], outDir)
   if (rRedirects) results.push(rRedirects)
+
+  // 3b. Host functions
+  const rFunctions = await generateFunctions(config, root)
+  if (rFunctions) results.push(rFunctions)
 
   // What each page DECLARED about itself. Built once here and handed to every
   // step that needs it: `generateSitemap` reads `sitemap: { priority,

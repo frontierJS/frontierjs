@@ -260,6 +260,7 @@ siteName: Basecamp
       { href: '/volumes/',            label: 'Volumes',         icon: 'volumes' },
       { href: '/registry/',           label: 'Registry',        icon: 'registry' },
       { href: '/dns/',                label: 'DNS & edge',      icon: 'dns' },
+      { href: '/security/',           label: 'Security',        icon: 'security' },
       { href: '/cleanup/',            label: 'Cleanup',         icon: 'cleanup' },
       { href: '/infra-graph/',        label: 'Graph',           icon: 'graph' },
     ] },

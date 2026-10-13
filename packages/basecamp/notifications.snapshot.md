@@ -22,14 +22,16 @@ on the definition is what holds it still.
 | --- | --- |
 | `alert_firing` | `inApp` · `email` |
 | `alert_resolved` | `inApp` · `email` |
+| `dependency_vulnerable` | `inApp` · `email` |
 | `deploy_failed` | `inApp` · `email` |
 | `deploy_success` | `inApp` · `email` |
 | `job_failed` | `inApp` · `email` |
 | `member_joined` | `inApp` · `email` |
+| `posture_failed` | `inApp` · `email` |
 | `server_unreachable` | `inApp` · `email` |
 | `weekly_digest` | `inApp` · `email` |
 
-8 notification(s).
+10 notification(s).
 
 Which transports a given send *uses* is not here: `via` is a function of the
 payload and the recipient, so it is a runtime answer. This is the set each

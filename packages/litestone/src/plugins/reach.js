@@ -9,21 +9,30 @@
 
 // ─── Nested write preflight ───────────────────────────────────────────────────
 
-const OP_KEYS = new Set(['create', 'connect', 'connectOrCreate', 'disconnect', 'delete', 'update'])
+// The keys that make a relation's value a nested write rather than a row. A
+// value naming none of them is not one, and junction carries a relation key
+// past its input schema on this same test (`FJS-2633`) — so a list kept here
+// and a second one there would disagree on what reaches the gate.
+const NESTED_WRITE_OPS = new Set(['create', 'connect', 'connectOrCreate', 'disconnect', 'delete', 'update', 'set'])
+
+export function isNestedWrite(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).some(op => NESTED_WRITE_OPS.has(op))
+}
 
 export function collectNestedOps(data, tableName, shapes, ops = []) {
   if (!data || typeof data !== 'object') return ops
   const rels = shapes[tableName].relations
 
   for (const [key, val] of Object.entries(data)) {
-    if (!(key in rels) || !val || typeof val !== 'object') continue
-    if (!Object.keys(val).some(k => OP_KEYS.has(k))) continue
+    if (!(key in rels) || !isNestedWrite(val)) continue
     const rel = rels[key]
     const target = rel.targetModel
 
     if (val.create)          ops.push({ model: target, op: 'create' })
     if (val.connect)         ops.push({ model: target, op: 'update' })
     if (val.disconnect)      ops.push({ model: target, op: 'update' })
+    if (val.set)             ops.push({ model: target, op: 'update' })
     if (val.delete)          ops.push({ model: target, op: 'delete' })
     if (val.update)          ops.push({ model: target, op: 'update' })
     if (val.connectOrCreate) {

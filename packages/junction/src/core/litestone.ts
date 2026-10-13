@@ -1715,9 +1715,29 @@ export function resolveDefsKey(
  * nothing here restates what a model has.
  */
 function modelFieldNames(schema: unknown, defsKey: string): Set<string> {
-  const models = (schema as { models?: Array<{ name?: string, fields?: Array<{ name?: string }> }> })?.models
+  return new Set(fieldsOf(schema, defsKey).map(f => f?.name).filter((n): n is string => typeof n === 'string'))
+}
+
+// An implicit many-to-many is its own kind, not a `relation`.
+const RELATION_KINDS = new Set(['relation', 'implicitM2M'])
+
+function relationFieldNames(schema: unknown, defsKey: string): string[] {
+  return fieldsOf(schema, defsKey)
+    .filter(f => RELATION_KINDS.has(f?.type?.kind ?? '') && typeof f.name === 'string')
+    .map(f => f.name as string)
+}
+
+type SchemaField = { name?: string, type?: { kind?: string } }
+
+function fieldsOf(schema: unknown, defsKey: string): SchemaField[] {
+  const models = (schema as { models?: Array<{ name?: string, fields?: SchemaField[] }> })?.models
   const model  = Array.isArray(models) ? models.find(m => m?.name === defsKey) : null
-  return new Set((model?.fields ?? []).map(f => f?.name).filter((n): n is string => typeof n === 'string'))
+  return model?.fields ?? []
+}
+
+async function nestedWriteTest(): Promise<(value: unknown) => boolean> {
+  const mod = await import('@frontierjs/litestone') as { isNestedWrite?: (value: unknown) => boolean }
+  return typeof mod.isNestedWrite === 'function' ? mod.isNestedWrite : () => false
 }
 
 /**
@@ -1838,6 +1858,13 @@ const _compiledFor = new WeakMap<object, Map<string, {
   /** The `@guarded` / `@secret` subset of `fields`: never read, so a write
    *  naming one is deliberate and is refused rather than stripped. */
   guarded:   Set<string>
+  /** The relation fields, whose nested writes no generated document declares —
+   *  parse() strips them, and a 200 then answers for a write never made. */
+  relations: string[]
+  /** Litestone's own test for an op object, so a relation key is carried
+   *  exactly when the Data boundary would read it as a nested write and an
+   *  echoed include is still dropped. */
+  nested:    (value: unknown) => boolean
   /** The model's own name, for the sentence a refusal writes. */
   model:     string
 } | null>>()
@@ -1964,6 +1991,7 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
         )
       } else {
         try {
+          const nested = await nestedWriteTest()
           // jsonSchemaToJunctionSchema returns a spec; createSchema compiles it.
           perModel.set(accessor, {
             create:    createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema,      'create')),
@@ -1975,6 +2003,8 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
             // asked `$protectedFields('accounts')`, which knows no such model,
             // and the empty answer let a guarded key be stripped with a 2xx.
             guarded:   guardedFieldNames(client, resolveAccessor(client, accessor)),
+            relations: relationFieldNames(client.$schema, defsKey),
+            nested,
             model:     defsKey,
           })
         } catch (err) {
@@ -1999,7 +2029,14 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
         'Declare it `@transient` on the model in db/schema.lite if a caller should be able to send it.',
         compiled.guarded,
       )
-      return compiled[mode].parse(row) as Record<string, unknown>
+      const parsed = compiled[mode].parse(row) as Record<string, unknown>
+      // Carried unvalidated: the Data boundary grades a nested write — the
+      // target's gate, its @guarded columns, its own field rules — and this
+      // schema has no shape for one to check.
+      const src = row as Record<string, unknown>
+      for (const rel of compiled.relations)
+        if (rel in src && compiled.nested(src[rel])) parsed[rel] = src[rel]
+      return parsed
     }
 
     // Bulk: validate element-wise and PARTITION. parse() rejects an array

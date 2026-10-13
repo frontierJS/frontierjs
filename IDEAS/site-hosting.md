@@ -167,8 +167,12 @@ Each step adds its case to the website's `verify` drive before it is done.
    case is `packages/sierra/test/site-serve.test.js`.
 2. **`_headers` from `cacheFor`.** Check with a real deploy that Workers
    assets applies it before anything depends on it.
-3. **Host functions** (question 1): bundled to one entry, mounted by
-   `serveSite`; ksite's two move. Closes `FJS-1540`.
+3. ~~**Host functions** (question 1): bundled to one entry, mounted by
+   `serveSite`; ksite's two move. Closes `FJS-1540`.~~ Done for the entry and
+   the mount (`functions:` config key, `.sierra/functions.js`,
+   `test/site-functions.test.js`). Left, filed as `FJS-2775`: the Vite dev
+   mount, the compiled-binary mount, the Plausible proxy derived from
+   `analytics:`, and the bundling the adapter does in step 4.
 4. **The Cloudflare adapter**: the Worker entry (functions first, then
    `env.ASSETS.fetch`) and the generated wrangler config; `site-kit deploy`.
    `website/wrangler.jsonc` shrinks to what question 4 leaves, and ksite

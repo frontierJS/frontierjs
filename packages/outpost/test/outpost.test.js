@@ -29,7 +29,7 @@ import { join }                   from 'node:path'
 const CONFIG = {
   serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
   port: 7180, version: '0.1.0', publicUrl: 'https://outpost.test:7180',
-  heartbeatMs: 30_000, reportMs: 300_000, workDir: '/tmp/outpost-test',
+  heartbeatMs: 30_000, reportMs: 300_000, postureMs: 21_600_000, workDir: '/tmp/outpost-test',
   // Nothing listens on port 1: a machine with no Caddy, refused at once.
   caddyAdmin: 'http://127.0.0.1:1',
 }
@@ -205,6 +205,23 @@ describe('what the machine is asked to do', () => {
       expect(res.status).toBe(500)
       expect((await res.json()).error).toContain('repository not found')
       expect(argv().some(c => c.startsWith('docker build'))).toBe(false)
+    })
+
+    test('a source path is the build context, inside the checkout', async () => {
+      // Ignored, a repo with its Dockerfile in a subdirectory built the root (FJS-2123).
+      const { server, argv } = serverFor({ 'git -C': { stdout: 'c0ffee\n' } })
+      const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: { ...GIT, path: 'services/web' }, image: 'x' })
+
+      expect(res.status).toBe(200)
+      expect(argv().some(c => c === `docker build -t x ${CONFIG.workDir}/app-1/services/web`)).toBe(true)
+    })
+
+    test.each(['../etc', '/etc', 'a/../..', 'a\\b', 'a//b', '-f/x', '.'])('a source path of %j is refused before anything runs', async (path) => {
+      const { server, argv } = serverFor({})
+      const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: { ...GIT, path }, image: 'x' })
+
+      expect(res.status).toBe(500)
+      expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker build'))).toBe(false)
     })
 
     test('a source that is not git is refused', async () => {
@@ -426,6 +443,29 @@ describe('what the machine is asked to do', () => {
     expect(fake.calls.map(c => c.join(' '))).toContain('docker pull acme-web:1.2.3')
   })
 
+  test('a release naming a digest the machine holds does not pull', async () => {
+    // An image built or loaded here has no registry to pull from, and a bare
+    // pull of its tag fails with *pull access denied* (`FJS-2645`). The digest
+    // is what identifies bytes; a tag is a name and always pulls.
+    const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+    })
+    const body = await (await send(server, 'POST', '/pull', { image: 'acme-web:local', digest: DIGEST })).json()
+    expect(body.digest).toBe(DIGEST)
+    expect(fake.calls.map(c => c.join(' ')).some(c => c.startsWith('docker pull'))).toBe(false)
+  })
+
+  test('a digest the machine does not hold still pulls the image by name', async () => {
+    const fake = fakeRunner({ 'docker image inspect': { exitCode: 1, stderr: 'Error: No such image\n' } })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      log: { warn() {}, error() {} },
+    })
+    await send(server, 'POST', '/pull', { image: 'acme-web:1.2.3', digest: DIGEST })
+    expect(fake.calls.map(c => c.join(' '))).toContain('docker pull acme-web:1.2.3')
+  })
+
   test('a failing docker command answers the machine\'s own words', async () => {
     // Not a generic 500: a deploy that fails with nothing but a red pill is the
     // shape this whole package exists to replace.
@@ -571,6 +611,41 @@ describe('the ingress — Caddy, through its admin API', () => {
     await deploy(bare.server)
     expect(runArgv(bare.fake)).toContain('-p 7300:80')
     expect(runArgv(bare.fake)).not.toContain('FJS_TRUST_PROXY')
+  })
+
+  // FJS-2772: a published port is forwarded, so only the forward chain's
+  // exposed set lets one through, and that set is rebuilt from these labels.
+  test('a declared raw port is labeled and refilled into the firewall set; an undeclared one is not', async () => {
+    const declared = serverWith(fakeCaddy(), fakeRunner({
+      'docker run': { stdout: 'container-1\n' },
+      'docker ps -a': { stdout: 'fjs-app-1 7300\nfjs-app-1_replaced 7299\nfjs-app-2 9000\n' },
+    }))
+    await deploy(declared.server, { exposes_port: true })
+    expect(runArgv(declared.fake)).toContain('--label fjs.exposed-port=7300')
+    expect(declared.fake.calls.find(c => c[0] === 'nft')).toEqual(['nft', 'flush set inet basecamp exposed ; add element inet basecamp exposed { 7300, 9000 }'])
+
+    const bare = serverWith(fakeCaddy())
+    await deploy(bare.server)
+    expect(runArgv(bare.fake)).not.toContain('fjs.exposed-port')
+    expect(bare.fake.calls.find(c => c[0] === 'nft')).toEqual(['nft', 'flush set inet basecamp exposed'])
+
+    // Behind Caddy the port is on loopback and never forwarded from outside.
+    const fronted = serverWith(fakeCaddy())
+    await deploy(fronted.server, { hosts: ['shop.example.com'], exposes_port: true })
+    expect(runArgv(fronted.fake)).not.toContain('fjs.exposed-port')
+  })
+
+  test('a machine with no basecamp firewall is reported unsynced, and a stop refills the set', async () => {
+    const fake = fakeRunner({ 'nft': { exitCode: 1, stderr: 'Error: No such file or directory\nflush set inet basecamp exposed\n' } })
+    expect(await createDocker({ run: fake.run }).syncExposed())
+      .toEqual({ synced: false, exposed: [], reason: 'no basecamp firewall on this machine' })
+
+    const refused = fakeRunner({ 'nft': { exitCode: 1, stderr: 'Operation not permitted (you must be root)\n' } })
+    await expect(createDocker({ run: refused.run }).syncExposed()).rejects.toThrow('you must be root')
+
+    const { server, fake: stopped } = serverWith(fakeCaddy())
+    await send(server, 'POST', '/stop', { app_id: 'app-1' })
+    expect(stopped.calls.some(c => c[0] === 'nft')).toBe(true)
   })
 
   test('a redeploy replaces the route rather than adding a second', async () => {

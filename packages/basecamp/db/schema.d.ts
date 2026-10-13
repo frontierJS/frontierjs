@@ -56,7 +56,7 @@ export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' 
 
 export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
-export type ServerEventKind = 'created' | 'removed' | 'reboot_requested' | 'drain_started' | 'drain_cancelled' | 'provision_requested' | 'provision_created' | 'provision_ready' | 'provision_timeout' | 'destroy_requested' | 'destroy_finished' | 'enrollment_issued' | 'sync_requested' | 'status_synced' | 'status_sync_ignored' | 'sync_failed' | 'sync_no_account' | 'sync_unsupported' | 'sync_unrecognized' | 'came_online' | 'unreachable' | 'recipe_ran' | 'recipe_failed' | 'cleanup_queued' | 'cleanup_ran' | 'cleanup_failed' | 'volume_removed' | 'volumes_pruned'
+export type ServerEventKind = 'created' | 'removed' | 'reboot_requested' | 'drain_started' | 'drain_cancelled' | 'provision_requested' | 'provision_created' | 'provision_ready' | 'provision_timeout' | 'destroy_requested' | 'destroy_finished' | 'enrollment_issued' | 'sync_requested' | 'status_synced' | 'status_sync_ignored' | 'sync_failed' | 'sync_no_account' | 'sync_unsupported' | 'sync_unrecognized' | 'came_online' | 'unreachable' | 'recipe_ran' | 'recipe_failed' | 'cleanup_queued' | 'cleanup_ran' | 'cleanup_failed' | 'volume_removed' | 'volumes_pruned' | 'posture_failed' | 'posture_restored'
 
 export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare'
 
@@ -102,7 +102,7 @@ export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
 export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace'
 
-export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'member_joined' | 'job_failed' | 'weekly_digest'
+export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'posture_failed' | 'dependency_vulnerable' | 'member_joined' | 'job_failed' | 'weekly_digest'
 
 export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update' | 'Variable.create' | 'Variable.delete' | 'Variable.update'
 
@@ -2253,6 +2253,7 @@ export interface App {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
+  exposesPort: boolean
   blueprintId?: string | null
   createdAt: string
   updatedAt: string
@@ -2275,6 +2276,7 @@ export interface AppCreate {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
+  exposesPort?: boolean
   blueprintId?: string | null
 }
 
@@ -2294,6 +2296,7 @@ export interface AppUpdate {
   healthCheck?: string | null
   cpuLimit?: number | null
   memLimitMb?: number | null
+  exposesPort?: boolean
   blueprintId?: string | null
 }
 
@@ -2313,6 +2316,7 @@ export interface AppWhere extends WhereBase {
   healthCheck?: string | WhereOp<string> | null
   cpuLimit?: number | WhereOp<number> | null
   memLimitMb?: number | WhereOp<number> | null
+  exposesPort?: boolean | WhereOp<boolean> | null
   blueprintId?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
@@ -3105,6 +3109,57 @@ export interface DiskUsageWhere extends WhereBase {
 export type DiskUsageOrderBy =
   | { [K in keyof Omit<DiskUsage, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<DiskUsage, never>]?: OrderDir }>
+
+// ─── ServerPosture ───────────────────────────────────────────────
+
+export interface ServerPosture {
+  id: string
+  serverId: string
+  at: string
+  readings: unknown
+  controls: unknown
+  failing: number
+  unknown: number
+  createdAt: string
+}
+
+export interface ServerPostureCreate {
+  id?: string
+  serverId: string
+  at: string
+  readings?: unknown
+  controls?: unknown
+  failing?: number
+  unknown?: number
+}
+
+export interface ServerPostureUpdate {
+  id?: string
+  serverId?: string
+  at?: string
+  readings?: unknown
+  controls?: unknown
+  failing?: number
+  unknown?: number
+}
+
+export interface ServerPostureWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  serverId?: string | WhereOp<string> | null
+  at?: string | WhereOp<string> | null
+  readings?: unknown | WhereOp<unknown> | null
+  controls?: unknown | WhereOp<unknown> | null
+  failing?: number | WhereOp<number> | null
+  unknown?: number | WhereOp<number> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: ServerPostureWhere[]
+  OR?:  ServerPostureWhere[]
+  NOT?: ServerPostureWhere
+}
+
+export type ServerPostureOrderBy =
+  | { [K in keyof Omit<ServerPosture, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<ServerPosture, never>]?: OrderDir }>
 
 // ─── CleanupRun ──────────────────────────────────────────────────
 
@@ -4435,6 +4490,7 @@ export interface ServiceTypes {
   recipes: Recipe
   recipeRuns: RecipeRun
   diskUsages: DiskUsage
+  serverPostures: ServerPosture
   cleanupRuns: CleanupRun
   featureFlags: FeatureFlag
   flagOverrides: FlagOverride
@@ -4483,6 +4539,8 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
   findFirstOrThrow(args?: { where?: TWhere }): Promise<TRow>
   findUniqueOrThrow(args: { where: TWhere }): Promise<TRow>
   findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>
+  /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
+  cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
   count(args?: { where?: TWhere }): Promise<number>
   create(args: { data: TCreate; include?: any; select?: any }): Promise<TRow>
   createMany(args: { data: TCreate[] }): Promise<{ count: number }>
@@ -4572,7 +4630,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$ping' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$ping' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
@@ -4616,6 +4674,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere>
   readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere>
   readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere>
+  readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere>
   readonly cleanupRun: TableClient<CleanupRun, CleanupRunCreate, CleanupRunUpdate, CleanupRunWhere>
   readonly featureFlag: TableClient<FeatureFlag, FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagWhere>
   readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere>

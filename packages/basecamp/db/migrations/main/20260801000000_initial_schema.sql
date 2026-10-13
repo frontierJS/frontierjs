@@ -420,7 +420,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   "email" INTEGER NOT NULL DEFAULT 0,
   "inApp" INTEGER NOT NULL DEFAULT 1,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('deploy_success', 'deploy_failed', 'alert_firing', 'alert_resolved', 'server_unreachable', 'member_joined', 'job_failed', 'weekly_digest')),
+  CHECK ("kind" IN ('deploy_success', 'deploy_failed', 'alert_firing', 'alert_resolved', 'server_unreachable', 'posture_failed', 'dependency_vulnerable', 'member_joined', 'job_failed', 'weekly_digest')),
   UNIQUE ("userId", "kind"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -757,7 +757,7 @@ CREATE TABLE IF NOT EXISTS "server_event" (
   "message" TEXT NOT NULL,
   "metadata" TEXT NOT NULL DEFAULT '{}',
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('created', 'removed', 'reboot_requested', 'drain_started', 'drain_cancelled', 'provision_requested', 'provision_created', 'provision_ready', 'provision_timeout', 'destroy_requested', 'destroy_finished', 'enrollment_issued', 'sync_requested', 'status_synced', 'status_sync_ignored', 'sync_failed', 'sync_no_account', 'sync_unsupported', 'sync_unrecognized', 'came_online', 'unreachable', 'recipe_ran', 'recipe_failed', 'cleanup_queued', 'cleanup_ran', 'cleanup_failed', 'volume_removed', 'volumes_pruned')),
+  CHECK ("kind" IN ('created', 'removed', 'reboot_requested', 'drain_started', 'drain_cancelled', 'provision_requested', 'provision_created', 'provision_ready', 'provision_timeout', 'destroy_requested', 'destroy_finished', 'enrollment_issued', 'sync_requested', 'status_synced', 'status_sync_ignored', 'sync_failed', 'sync_no_account', 'sync_unsupported', 'sync_unrecognized', 'came_online', 'unreachable', 'recipe_ran', 'recipe_failed', 'cleanup_queued', 'cleanup_ran', 'cleanup_failed', 'volume_removed', 'volumes_pruned', 'posture_failed', 'posture_restored')),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_event_serverId" ON "server_event" ("serverId");
@@ -808,6 +808,19 @@ CREATE TABLE IF NOT EXISTS "disk_usage" (
   UNIQUE ("serverId"),
   FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS "server_posture" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "serverId" TEXT NOT NULL,
+  "at" TEXT NOT NULL,
+  "readings" TEXT NOT NULL DEFAULT '{}',
+  "controls" TEXT NOT NULL DEFAULT '[]',
+  "failing" INTEGER NOT NULL DEFAULT 0,
+  "unknown" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("serverId") REFERENCES "server" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_server_posture_serverId_at" ON "server_posture" ("serverId", "at");
 
 CREATE TABLE IF NOT EXISTS "cleanup_run" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -938,6 +951,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "healthCheck" TEXT,
   "cpuLimit" REAL,
   "memLimitMb" INTEGER,
+  "exposesPort" INTEGER NOT NULL DEFAULT 0,
   "blueprintId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),

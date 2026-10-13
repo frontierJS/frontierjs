@@ -1,0 +1,92 @@
+---
+title: Security
+---
+<script>
+  // Which of my boxes is not sound — the fleet half — and whether my code is
+  // exposed — the dependency half (IDEAS/server-posture.md § Where it is seen).
+  //
+  // This screen READS. Check now, and every later fix, live on the server's own
+  // page at the gate those actions already have. A machine that never reported
+  // or whose last report is older than twice its interval reads as such, never
+  // as clean: `posture.fleet` grades staleness on read and sorts worst first.
+  import { postures } from '../../resources/ServerPosture.mesa'
+  import { ago }      from '../../datetime.js'
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+
+  let fleet   = null
+  let error   = null
+  let loading = true
+
+  async function load() {
+    error = null
+    try {
+      fleet = await postures.service.invoke('fleet', null, {})
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+  load()
+
+  const off = postures.service.on('*', (method) => {
+    if (method === 'report' || method === 'check') load()
+  })
+  $.onDestroy(off)
+</script>
+
+<div class="section-header">
+  <h1>Security</h1>
+</div>
+<p class="text-muted">Every machine's own report of its security controls, worst first, and the dependencies an advisory names.</p>
+
+{#if error}
+  <p class="alert danger" role="alert">{error}</p>
+{/if}
+
+{#if loading}
+  <p class="text-muted">Loading…</p>
+{:else if fleet}
+  <article class="card stack" id="security-code">
+    <h2 class="h4">Code</h2>
+    {#if fleet.dependencies.vulnerable}
+      <p><a href="/dependencies/?status=vulnerable"><strong>{fleet.dependencies.vulnerable}</strong>
+        {fleet.dependencies.vulnerable === 1 ? 'dependency is' : 'dependencies are'} vulnerable</a> — an advisory names the installed version.</p>
+    {:else}
+      <p class="text-sm text-muted">No advisory names an installed dependency version.</p>
+    {/if}
+  </article>
+
+  <h2 class="h4">Machines</h2>
+  {#if !fleet.servers.length}
+    <EmptyState title="No machines" description="A server's Outpost reports its posture every six hours once it is enrolled." />
+  {:else}
+    <table class="table" id="security-machines">
+      <thead>
+        <tr><th>Machine</th><th>Failing</th><th>Unknown</th><th>Last report</th></tr>
+      </thead>
+      <tbody>
+        {#each fleet.servers as row}
+          <tr data-server={row.serverId}>
+            <td><a href={`/servers/${row.serverId}/#server-posture`}>{row.serverName}</a></td>
+            <td>
+              {#if !row.reported}
+                <Badge tone="muted">never reported</Badge>
+              {:else if row.stale}
+                <Badge tone="warning">stale</Badge>
+              {:else if row.failing}
+                <Badge tone="danger">{row.failing} failing</Badge>
+                <span class="text-sm text-muted">{row.controls.filter(c => c.ok === false).map(c => c.id).join(', ')}</span>
+              {:else}
+                <Badge tone="success">passing</Badge>
+              {/if}
+            </td>
+            <td>{row.reported ? row.unknown : '—'}</td>
+            <td>{row.at ? ago(row.at) : '—'}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
+{/if}

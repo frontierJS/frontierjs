@@ -9,7 +9,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | File | What it owns |
 | --- | --- |
 | `src/config.js` | every environment variable, and the three that have no safe default |
-| `src/docker.js` | **the one place a command runs on the machine** — `createDocker` for containers, `createInspector` for volumes and disk |
+| `src/docker.js` | **the one place a command runs on the machine** — `createDocker` for containers, `createInspector` for volumes, disk and `posture()`: the box's defenses as facts, a failed or missing command `null` (unknown) per key, never a verdict. Its argv table is `test/fixtures/posture/capture.mjs`'s, and the replay test refuses one the capture lacks |
 | `src/server.js` | the inbound half: the route table, and the signature every route but `/health` requires |
 | `src/static.js` | **the other kind of release** — an app whose source is the FILES. Writes them under their own digest, swaps one symlink, and computes the digest itself. `activate` links the app's ID as a host label as well as its slug: a routed hostname reaches the ID, because a slug is a label any app on the machine may take over |
 | `src/serve.js` | the origin those files answer on. A SECOND listener, its own port, nothing signed — see below |
@@ -96,6 +96,12 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   (`FJS-D565`). An app with no hostname keeps its port on every interface, or
   nothing reaches it; `verify:docker` connects on a non-loopback address to
   prove the other case refuses.
+- **On a box the install built, a published port is dropped from outside unless
+  the app declares it** (`FJS-D930`). The install's `inet basecamp` forward
+  chain lets a DNAT'd connection through only when its host port is in the
+  `exposed` set, and `syncExposed` refills that set from the `fjs.exposed-port`
+  labels after every `/deploy` and `/stop` and at start. An `exposes_port` that
+  never reaches `/deploy` is an app that starts healthy and answers nobody.
 - **A path with no extension is served `index.html`.** An app using the History
   API 404s on every refresh otherwise. A request that names a file gets the
   truth — a fallback there hides a typo forever.

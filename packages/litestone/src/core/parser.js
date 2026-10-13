@@ -5315,6 +5315,12 @@ function validate(schema) {
         if (!fieldNames.has(dep)) {
           errors.push(`Model '${model.name}', field '${fieldName}': @generated references unknown field '${dep}'`)
         }
+        // SQLite reads a name that is not a column as a string literal, so a
+        // field with no column builds and reads 0 rather than failing.
+        else if (!isStoredField(model.fields.find(f => f.name === dep))) {
+          errors.push(`Model '${model.name}', field '${fieldName}': @generated references '${dep}', which is not a stored column — ` +
+                      `@computed, @transient, @from, @derived, @edge and relation fields have none. Reference the stored fields it is built from`)
+        }
         // 2. Self-reference
         if (dep === fieldName) {
           errors.push(`Model '${model.name}', field '${fieldName}': @generated cannot reference itself`)

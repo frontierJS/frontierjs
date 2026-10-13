@@ -15,6 +15,7 @@ title: Server
   import NoRecord   from '../../../components/NoRecord.mesa'
   import ServerHealthBody from '../../../components/widgets/ServerHealthBody.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
+  import { postures }  from '../../../resources/ServerPosture.mesa'
 
   $: page.params
 
@@ -85,8 +86,40 @@ title: Server
     }
   }
 
+  // The machine's own report of its security controls. Not fatal, like the
+  // placements: the machine is the screen.
+  let posture = null
+  async function loadPosture() {
+    try {
+      posture = await postures.service.invoke('latest', page.params.id)
+    } catch {
+      posture = null
+    }
+  }
+
+  async function checkPosture() {
+    error = null; busy = 'posture'
+    try {
+      posture = await postures.service.invoke('check', server.id)
+      await loadEvents()
+      toasts.success(posture.failing ? `${posture.failing} control(s) failing` : 'Posture checked')
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const offPosture = postures.service.on('*', (method, signal) => {
+    if (method === 'report' && signal?.serverId === page.params.id) { loadPosture(); loadEvents() }
+  })
+  $.onDestroy(offPosture)
+
+  const POSTURE_TONE = { true: 'success', false: 'danger', unknown: 'muted' }
+
   load()
-  $: page.params.id, () => load()
+  loadPosture()
+  $: page.params.id, () => { load(); loadPosture() }
 
   // The row moves itself now; this is here for the TRAIL, which nothing pushes.
   // The event is named after the method — `servers heartbeat`, `servers drain`
@@ -461,6 +494,35 @@ title: Server
       {/if}
     </article>
   </div>
+
+  <!-- A failing control is a finding, never a refusal: deploys continue. -->
+  <article class="card stack" id="server-posture">
+    <div class="cluster">
+      <h2 class="h4">Posture</h2>
+      <Button variant="outlined" id="posture-check" disabled={busy === 'posture'} onclick={checkPosture}>
+        {busy === 'posture' ? 'Checking…' : 'Check now'}
+      </Button>
+    </div>
+    {#if !posture?.reported}
+      <p class="text-sm text-muted">No posture report yet. The Outpost sends one at start and every six hours.</p>
+    {:else}
+      <p class="text-sm text-muted">
+        {#if posture.stale}<span class="badge warning">stale</span>{/if}
+        Read {at(posture.at)} · {posture.failing} failing · {posture.unknown} unknown
+      </p>
+      <table class="table">
+        <tbody>
+          {#each [...posture.controls].sort((a, b) => (a.ok === false ? 0 : a.ok === 'unknown' ? 1 : 2) - (b.ok === false ? 0 : b.ok === 'unknown' ? 1 : 2)) as c}
+            <tr data-control={c.id}>
+              <td><span class="badge {POSTURE_TONE[String(c.ok)]}">{c.ok === true ? 'pass' : c.ok === false ? 'fail' : 'unknown'}</span></td>
+              <td><code>{c.id}</code></td>
+              <td class="text-sm">{c.message}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </article>
 
   {#if cloudMade && moves.has('destroy')}
     <article class="card outlined danger stack" id="server-destroy">

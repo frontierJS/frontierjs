@@ -591,6 +591,66 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('systemctl enable --now chrony.service')
   })
 
+  // FJS-2712: the grader and the install are two statements of one setting, so
+  // each control the install satisfies is marked in both and the marks agree in
+  // both directions; one moved without the other is a box graded against a
+  // step it never ran.
+  test('every control hardened at install names a marker in the script, and no marker is without one', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const { HARDENED_AT_INSTALL, CONTROL_IDS } = await import('../src/core/posture.ts')
+    const script  = installScript()
+    const markers = [...script.matchAll(/^# posture: (\S+)$/gm)].map(m => m[1])
+    expect(HARDENED_AT_INSTALL.length).toBeGreaterThan(0)
+    expect([...new Set(markers)].sort()).toEqual([...HARDENED_AT_INSTALL].sort())
+    for (const id of markers) expect(CONTROL_IDS).toContain(id)
+  })
+
+  test('the install turns on security updates, closes password ssh and drops unasked inbound traffic', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const script = installScript()
+    expect(script).toMatch(/apt-get install -yqq [^\n]*\bunattended-upgrades\b/)
+    expect(script).toContain('APT::Periodic::Unattended-Upgrade "1";')
+    expect(script).toContain('Unattended-Upgrade::Automatic-Reboot "false";')
+    expect(script).toContain('codename=${distro_codename}-security')
+    expect(script).toContain('/etc/ssh/sshd_config.d/10-basecamp.conf')
+    expect(script).toContain('PasswordAuthentication no')
+    expect(script).toContain('PermitRootLogin prohibit-password')
+    expect(script).toContain('MaxAuthTries 3')
+    expect(script).toMatch(/hook input priority 0; policy drop;/)
+    // Docker's own rules live in the same nftables; a flush takes every
+    // container's networking down with it.
+    expect(script).not.toContain('flush ruleset')
+    expect(script).toContain('$SSH_PORTS')
+    expect(script).toContain('$OUTPOST_PORT')
+  })
+
+  // FJS-2772: a published port is DNAT'd and forwarded, never input, so the
+  // inbound policy does not reach it. The forward chain drops every DNAT'd
+  // connection whose host port is not in the set the Outpost fills on /deploy.
+  test('the install drops forwarded traffic to a published port nothing declared', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const script  = installScript()
+    const ruleset = script.match(/<<NFTEOF\n([\s\S]*?)\nNFTEOF/)?.[1] ?? ''
+    expect(ruleset).toMatch(/set exposed \{\s*type inet_service/)
+    expect(ruleset).toMatch(/hook forward priority -1; policy accept;/)
+    expect(ruleset).toContain('ct original proto-dst @exposed accept')
+    expect(ruleset).toMatch(/^\s*ct status dnat drop$/m)
+
+    // The ruleset loads in a real nft, in a network namespace of its own.
+    const filled = ruleset.replaceAll('$SSH_PORTS', '22').replaceAll('${OUTPOST_STATIC_PORT}', '8181').replaceAll('$OUTPOST_PORT', '8180')
+    const probe  = Bun.spawnSync(['unshare', '-rn', 'nft', '-c', '-f', '-'], { stdin: new TextEncoder().encode(filled) })
+    if (probe.exitCode === null || /not found|Operation not permitted|unshare failed/i.test(probe.stderr.toString())) return
+    expect(probe.stderr.toString()).toBe('')
+    expect(probe.exitCode).toBe(0)
+  })
+
+  test('the install is a script bash can parse', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const run = Bun.spawnSync(['bash', '-n'], { stdin: new TextEncoder().encode(installScript()) })
+    expect(run.stderr.toString()).toBe('')
+    expect(run.exitCode).toBe(0)
+  })
+
   // FJS-1762: the install runs as root on every machine, so nothing in it may be
   // whatever an upstream returns that day. Docker comes from a signed apt
   // repository, Bun and the Outpost by a version Basecamp holds.

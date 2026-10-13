@@ -28,7 +28,9 @@ const LOG = '/var/log/unattended-upgrades/unattended-upgrades.log'
 const READINGS = {
   'os':                  ['cat', '/etc/os-release'],
   'kernel.running':      ['uname', '-r'],
-  'kernel.installed':    ['dpkg-query', '-W', '-f', '${Package} ${Version}\n', 'linux-image-[0-9]*'],
+  // The status column, because `-W` also lists every kernel removed with its
+  // config left behind (`rc`) — 176 of them on the dev host, beside 3 installed.
+  'kernel.installed':    ['dpkg-query', '-W', '-f', '${db:Status-Abbrev} ${Package}\n', 'linux-image-[0-9]*'],
   'reboot.required':     ['stat', '-c', '%Y', '/var/run/reboot-required'],
   'reboot.pkgs':         ['cat', '/var/run/reboot-required.pkgs'],
   'apt.pending':         ['apt-get', '-s', '-o', 'Debug::NoLocking=1', 'upgrade'],
@@ -43,7 +45,6 @@ const READINGS = {
   'net.listening':       ['ss', '-tlnpH'],
   'net.containers':      ['docker', 'ps', '--format', 'json'],
   'net.ruleset':         ['nft', '-j', 'list', 'ruleset'],
-  'net.dockerUser':      ['iptables', '-S', 'DOCKER-USER'],
   'ssh.effective':       ['sshd', '-T'],
   'ssh.keys.root':       ['ssh-keygen', '-lf', '/root/.ssh/authorized_keys'],
   'accounts.uid0':       ['awk', '-F:', '$3 == 0 { print $1 }', '/etc/passwd'],
@@ -51,6 +52,9 @@ const READINGS = {
   'time.sync':           ['timedatectl', 'show'],
   'time.tracking':       ['chronyc', '-c', 'tracking'],
   'runtime.outpostUnit': ['systemd-analyze', 'security', 'outpost', '--json=short'],
+  // systemd 249 refuses `--json`, and the text form's last line carries the
+  // overall score on every version.
+  'runtime.outpostUnitText': ['systemd-analyze', 'security', '--no-pager', 'outpost'],
   'runtime.containers':  ['docker', 'ps', '-q'],
   'files.etc':           ['stat', '-c', '%a %U %G %n', '/etc/basecamp', '/etc/basecamp/outpost.key', '/etc/basecamp/outpost.env'],
   'files.certExpiry':    ['openssl', 'x509', '-enddate', '-noout', '-in', '/etc/basecamp/outpost.crt'],

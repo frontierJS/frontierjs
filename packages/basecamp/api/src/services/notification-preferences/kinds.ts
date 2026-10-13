@@ -48,6 +48,14 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A machine stopped checking in. Its apps may still be running — nobody here can tell.',
     email: true,  inApp: true },
 
+  { kind: 'posture_failed', label: 'Server posture failing',
+    description: 'A security control on a machine stopped holding — password SSH, an unexpected listener, updates pending.',
+    email: true,  inApp: true },
+
+  { kind: 'dependency_vulnerable', label: 'Dependency vulnerable',
+    description: 'An installed version of a package gained a published advisory.',
+    email: true,  inApp: true },
+
   { kind: 'alert_firing',   label: 'Alert firing',
     description: 'An alert rule crossed its threshold.',
     email: true,  inApp: true },

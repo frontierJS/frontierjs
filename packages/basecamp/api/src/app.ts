@@ -55,9 +55,9 @@ import type { BasecampApp } from './basecamp.types.ts'
 
 // Recorded nowhere, and stated once because two hooks take it: both halves of
 // the audit trail must skip the same calls or a pre-image is read for an event
-// that is never written. All three are an outpost on a timer — fifty machines
+// that is never written. Every one is an outpost on a timer — fifty machines
 // reporting their disks every minute buries every action a person took.
-const AUDIT_EXCEPT = ['servers.heartbeat', 'volumes.report', 'cleanup.report']
+const AUDIT_EXCEPT = ['servers.heartbeat', 'volumes.report', 'cleanup.report', 'posture.report']
 
 /**
  * Build the app.

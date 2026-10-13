@@ -727,3 +727,109 @@ describe('an id filed under the wrong section', () => {
     expect(of(runRegisterCheck({ root: REPO, staleDays: 0 }), 'id-section')).toHaveLength(0)
   })
 })
+
+// ─── the overview's ranked rows ───────────────────────────────────────────────
+//
+// `overview.md` is read by four consumers and graded by none of them. Each
+// fault below is silent in all four: a row of the wrong width is read into the
+// wrong fields, a shared rank answers for whichever row came first, and a
+// Status cell goes on saying `idea` after its paper shipped.
+
+describe('the overview table', () => {
+  let dir
+
+  const HEAD = [
+    '| # | Item | Effort | Payoff | Edge | Realms | Status | Source |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+  ]
+  const row = (rank, status, source = 'open.md', item = '**An item.**') =>
+    `| ${rank} | ${item} | S | ●●○○ | parity | A | ${status} | \`${source}\` |`
+
+  const fixture = (rows) => {
+    dir = mkdtempSync(join(tmpdir(), 'fli-overview-'))
+    writeFileSync(join(dir, 'package.json'), DECLARED)
+    writeFileSync(join(dir, 'ISSUES.md'), [
+      '## S2 — high',
+      '| Id | Pkg | Title | Status | Verified | Detail |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| <a id="fjs-001"></a>FJS-001 | cli | **Still open.** | open | 2026-08-17 | — |',
+      '',
+      '## Closed',
+      '| Id | Title | Closed | How |',
+      '| --- | --- | --- | --- |',
+      '| <a id="fjs-002"></a>FJS-002 | cli — **Fixed.** | 2026-08-17 | fixed |',
+      '',
+    ].join('\n'))
+    mkdirSync(join(dir, 'IDEAS'))
+    const paper = (name, status) => writeFileSync(join(dir, 'IDEAS', name),
+      `---\nid: ${name.replace('.md', '')}\nstatus: ${status}\ndated: 2026-08-01\n---\n\n# ${name}\n`)
+    paper('open.md', 'proposed')
+    paper('done.md', 'shipped')
+    paper('gone.md', 'withdrawn')
+    writeFileSync(join(dir, 'IDEAS', 'overview.md'), [...HEAD, ...rows, ''].join('\n'))
+    return runRegisterCheck({ root: dir, staleDays: 0 })
+  }
+  afterAll(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
+
+  test('a row of the wrong width is reported, in both directions', () => {
+    const result = fixture([
+      row('0.1', 'idea'),
+      '| 0.2 | **Too narrow** | S | idea |',
+      row('0.3', 'idea') + ' extra |',
+    ])
+    const hits = of(result, 'row-shape')
+    expect(hits.map(h => h.id)).toEqual(['0.2', '0.3'])
+    expect(hits[0].message).toContain('4 cells where its table declares 8')
+    expect(hits[0].file).toBe('IDEAS/overview.md')
+  })
+
+  test('a row with no rank is reported rather than vanishing', () => {
+    const hits = of(fixture([row('zero', 'idea')]), 'row-shape')
+    expect(hits).toHaveLength(1)
+    expect(hits[0].message).toContain('not a rank')
+  })
+
+  test('a rank two rows share is reported against the second', () => {
+    const hits = of(fixture([row('1.1', 'idea'), row('1.2', 'idea'), row('1.1', 'partial')]), 'duplicate-id')
+    expect(hits).toHaveLength(1)
+    expect(hits[0].id).toBe('1.1')
+    expect(hits[0].detail).toContain('also at IDEAS/overview.md:')
+  })
+
+  test('an open status over a shipped or withdrawn paper is reported', () => {
+    const result = fixture([
+      row('2.1', 'idea', 'done.md'),
+      row('2.2', '**proposed**', 'gone.md'),
+      row('2.3', 'idea', 'open.md'),
+    ])
+    expect(of(result, 'overview-status').map(h => h.id)).toEqual(['2.1', '2.2'])
+  })
+
+  test('a defect whose every cited row is closed is reported, one with an open row is not', () => {
+    const result = fixture([
+      row('3.1', 'defect', 'open.md', '**Fixed `FJS-002`.**'),
+      row('3.2', 'defect', 'open.md', '**Half `FJS-001` `FJS-002`.**'),
+      row('3.3', 'defect', 'open.md', '**Cites nothing.**'),
+      row('3.4', 'defect', 'open.md', '**Remainder.** after `FJS-002`, three fixes are still owed'),
+    ])
+    expect(of(result, 'overview-status').map(h => h.id)).toEqual(['3.1'])
+  })
+
+  test('a status already reconciled in prose is left alone', () => {
+    const result = fixture([
+      row('4.1', '~~`idea`~~ — shipped', 'done.md'),
+      row('4.2', 'partial', 'done.md'),
+      row('4.3', 'shipped', 'open.md'),
+    ])
+    expect(of(result, 'overview-status')).toHaveLength(0)
+    expect(of(result, 'row-shape')).toHaveLength(0)
+  })
+
+  test('this repo\'s overview agrees with its papers and its register', () => {
+    const result = runRegisterCheck({ root: REPO, staleDays: 0 })
+    const here   = (rule) => of(result, rule).filter(h => h.file === 'IDEAS/overview.md')
+    expect(here('overview-status')).toHaveLength(0)
+    expect(here('row-shape')).toHaveLength(0)
+    expect(here('duplicate-id')).toHaveLength(0)
+  })
+})

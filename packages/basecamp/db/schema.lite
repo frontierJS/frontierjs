@@ -240,6 +240,8 @@ enum ServerEventKind {
   recipe_ran recipe_failed cleanup_queued cleanup_ran cleanup_failed
   // Disks.
   volume_removed volumes_pruned
+  // A posture control moving between passing and failing (`core/posture.ts`).
+  posture_failed posture_restored
 }
 enum ProviderKind   { custom hetzner digitalocean cloudflare }
 enum EnvironmentTier { development test preview staging production }
@@ -370,6 +372,8 @@ enum NotificationKind {
   alert_firing
   alert_resolved
   server_unreachable
+  posture_failed
+  dependency_vulnerable
   member_joined
   job_failed
   weekly_digest
@@ -1424,6 +1428,10 @@ model App {
   healthCheck   String?     @trim @regex("^/[^ ]*$", "a path beginning with '/'")
   cpuLimit      Float?      @gt(0) @lte(256)
   memLimitMb    Int?        @gte(6)
+  // `port` is meant to be reached directly on the machine's public address, not
+  // only through Caddy by hostname (`FJS-D930`). The posture grader reads it:
+  // a public listener no app declares is `net.unexpected-listener`.
+  exposesPort   Boolean     @default(false)
 
   // The catalog entry this app was made from, or null for one a person
   // described by hand. A record of origin and never a live link: what the
@@ -1915,6 +1923,37 @@ model DiskUsage {
 
   @@gate("2.8")
   @@unique([serverId])
+}
+
+// One posture report from a machine's Outpost: what the box said about its own
+// security (`readings`, the Outpost's snake_case facts) and what
+// `core/posture.ts` graded them as when they arrived (`controls`). OBSERVED,
+// like DiskUsage, and a row per report rather than one per machine, because
+// *when did this stop holding* is read off the ServerEvents a control moving
+// writes, and the report that moved it has to still be here to show.
+//
+// `controls` is stored and not re-derived on read: what the grader said is the
+// record, and a later grader reading old readings would rewrite history. A
+// screen still grades staleness on read (`gradePosture`), because a report
+// stops being true by sitting here.
+//
+// Pruned by `retention.job.ts`, keeping each machine's newest.
+model ServerPosture {
+  id        String   @id @default(uuid())
+  serverId  String
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  // When the box took the readings — the Outpost's clock, not the arrival.
+  at        DateTime
+  readings  Json     @default("{}")
+  controls  Json     @default("[]")
+  failing   Int      @default(0)
+  unknown   Int      @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@gate("2.8")
+  @@index([serverId, at])
 }
 
 // A reclaim sweep on ONE server — queued, then carried out by an outpost.

@@ -19,7 +19,9 @@
 // different (`FJS-351`). A rule that refuses the correct spelling too proves
 // nothing about the mistake.
 import { describe, it, expect } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { parse } from '../src/core/parser.js'
+import { generateDDL } from '../src/core/ddl.js'
 
 const refuses = (schema: string, pattern: RegExp) => {
   const p = parse(schema)
@@ -187,5 +189,57 @@ describe('a model with no stored column', () => {
   })
   it('accepts an @@external model, which has no DDL', () => {
     accepts(`model Post {\n  @@external\n}`)
+  })
+})
+
+// FJS-2707 — a `@generated` expression is SQL over the row's COLUMNS, and a
+// field with none is a name SQLite reads as a string literal: beside
+// `sub Int @from(Line, sum: amount)`, `twice Int @generated("{sub} * 2")`
+// built, and read 0 for every row.
+describe('a @generated expression naming a field with no column', () => {
+  const LINE = `model Line {\n  id Int @id\n  orderId Int\n  order Order @relation(fields: [orderId], references: [id])\n  amount Int\n}`
+  const CASES = [
+    { kind: '@from',      decl: `sub Int @from(Line, sum: amount)` },
+    { kind: '@computed',  decl: `sub Int @computed` },
+    { kind: '@derived',   decl: `q Int\n  sub Boolean @derived(q > 5)` },
+    { kind: '@transient', decl: `sub Int? @transient` },
+  ] as const
+
+  for (const { kind, decl } of CASES) {
+    it(`refuses one naming a ${kind} field`, () => {
+      refuses(`model Order {\n  id Int @id\n  lines Line[]\n  ${decl}\n  twice Int @generated("{sub} * 2")\n}\n${LINE}`,
+        /field 'twice': @generated references 'sub', which is not a stored column/)
+    })
+  }
+  it('refuses one naming a relation field', () => {
+    refuses(`model Order {\n  id Int @id\n  lines Line[]\n  n Int @generated("{lines}")\n}\n${LINE}`,
+      /field 'n': @generated references 'lines', which is not a stored column/)
+  })
+  it('accepts one naming a stored field, and one naming another @generated', () => {
+    accepts(`model Order {\n  id Int @id\n  sub Int\n  twice Int @generated("{sub} * 2")\n  quad Int @generated("{twice} * 2")\n}`)
+  })
+})
+
+// FJS-2768 — `{a}` names a FIELD and the column may be called something else:
+// `a Int @map("a_col")` beside `twice Int @generated("{a} * 2")` emitted
+// `"a" * 2`, a string literal to SQLite, and read 0.
+describe('a @generated expression naming a @map field', () => {
+  const run = (src: string, insert: string, read: string) => {
+    const p = parse(src)
+    expect({ valid: p.valid, errors: p.errors }).toEqual({ valid: true, errors: [] })
+    const db = new Database(':memory:')
+    db.exec(generateDDL(p.schema, { foreignKeys: false }))
+    db.exec(insert)
+    return db.query(read).get() as Record<string, unknown>
+  }
+  it('reads the column, not a string literal', () => {
+    const row = run(`model T {\n  id Int @id\n  a Int @map("a_col")\n  twice Int @generated("{a} * 2")\n}`,
+      `INSERT INTO t (id, a_col) VALUES (1, 3)`, `SELECT twice, a_col FROM t`)
+    expect(row).toEqual({ twice: 6, a_col: 3 })
+  })
+  it('reads two mapped columns through a stored generated column', () => {
+    const row = run(`model T {\n  id Int @id\n  a Int @map("a_col")\n  b Int @map("b_col")\n  sum Int @generated("{a} + {b}", stored)\n}`,
+      `INSERT INTO t (id, a_col, b_col) VALUES (1, 3, 4)`, `SELECT sum FROM t`)
+    expect(row).toEqual({ sum: 7 })
   })
 })

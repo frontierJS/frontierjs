@@ -352,9 +352,17 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
   // Whether this build skipped minifying its chunks: decided before the
   // bundle, checked after the prune (prune-unreachable.js).
   let unminified = false
+  // Rollup runs closeBundle after a FAILED build too. Prerendering then ran
+  // over a build whose buildStart never finished, and its own error replaced
+  // the one that stopped the build (`FJS-2701`).
+  let failed = false
 
   return {
     name: 'sierra:postbuild',
+
+    buildStart() { failed = false },
+    buildEnd(error) { failed = !!error },
+    renderError()   { failed = true },
 
     // JavaScript the prune will delete is not minified or gzip-measured first.
     // An app that states either key keeps its word; a `build.minify` of its
@@ -405,7 +413,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
     },
 
     async closeBundle() {
-      if (!isBuild) return  // skip in dev server
+      if (!isBuild || failed) return  // skip in dev server, and after a failed build
 
       // One build, one record of what failed while loading — see app-import.js.
       beginBuildImports()

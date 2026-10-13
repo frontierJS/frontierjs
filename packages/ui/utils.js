@@ -433,3 +433,38 @@ export function plotRuns(values) {
   })
   return runs
 }
+
+/*
+ * ── Saving a file ────────────────────────────────────────────────────
+ */
+
+// How long the object URL outlives the click. `click()` only queues the save,
+// and a URL revoked in the same task can cancel it (Firefox, Safari); the
+// window is FileSaver.js's.
+const SAVE_GRACE_MS = 40_000
+
+/**
+ * Hand the person `blob` as a file named `filename`.
+ *
+ *   download(new Blob([csv], { type: 'text/csv' }), 'orders.csv')
+ *   download(await (await client.fetch('/exports/orders')).blob(), 'orders.csv')
+ *
+ * The second line is the authenticated case: `client.fetch` carries the
+ * session, which a link cannot (`client.fetch` in the junction client).
+ * The anchor goes in the document for the click: older Firefox ignores a
+ * click on a detached one.
+ */
+export function download(blob, filename) {
+  if (!(blob instanceof Blob)) {
+    throw new TypeError(`download: expected a Blob, got ${blob === null ? 'null' : typeof blob} — a Response is \`await res.blob()\``)
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.hidden = true
+  document.body.append(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), SAVE_GRACE_MS)
+}

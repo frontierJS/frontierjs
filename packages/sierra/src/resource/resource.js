@@ -156,7 +156,7 @@ import { pendingQueue, unreachable } from './pending.js'
 import { attachmentQueue } from './attachments.js'
 import { listCache, listKey } from './list-cache.js'
 import { declareOffline }      from './offline.js'
-import { writeThrough, readLocal, localDbConfigured } from './local-db.js'
+import { writeThrough, readLocal, dropRows, answeredWhole, localDbConfigured } from './local-db.js'
 
 /**
  * The methods a queue may NOT hold. A read has nothing to replay, and replaying
@@ -1296,7 +1296,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
       const held = holdMode && !NEVER_QUEUED.has(method) && attachable
         ? await pendingQueue().add({
-            service: serviceName, model, method, id: ctx.id,
+            service: serviceName, model, method, id: ctx.id, idField,
             data: _heldData(_withoutFiles(ctx.data, files), holdMode, versionOf),
             ...(heldBase ? { base: heldBase } : {}),
             callHeaders: client.callHeaders(),
@@ -1403,6 +1403,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // second row (`FJS-823`). The flag is set here rather than in the catch
       // because here is the only place that knows the difference.
       if (method !== 'find' && method !== 'get') committed = true
+
+      // A removed row leaves the device as it leaves the store. Left for the
+      // next whole answer, it answered every offline read until one came — and
+      // a list paged past its first window never brings one (`FJS-2256`).
+      if (method === 'remove' && syncMode && localDbConfigured()) {
+        const gone = ctx.id != null ? [ctx.id]
+          : (Array.isArray(ctx.result) ? ctx.result : []).map(r => r?.[idField])
+        dropRows(model, idField, gone).catch(() => {})
+      }
 
       // Record before the after-hooks, so a hook that reads the version off the
       // resource sees the one that just came back rather than the previous read.
@@ -1583,8 +1592,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // waiting on a disk — so the fact is not available here to skip on.
         if (key) listCache().remember(key, rows).catch(() => {})
         // And into the device's own tables, where a query engine can answer a
-        // question nobody asked before the outage (`FJS-D307`).
-        if (key && localDbConfigured()) writeThrough(model, rows).catch(() => {})
+        // question nobody asked before the outage (`FJS-D307`) — and, when this
+        // answer was the whole of its `where`, off them too (`FJS-2256`).
+        if (key && localDbConfigured()) {
+          const whole = answeredWhole({ data: rows, hasMore: junctionResource.hasMore?.() === true }, directives)
+            ? { where: query ?? {}, idField } : null
+          writeThrough(model, rows, whole).catch(() => {})
+        }
       }
       return rows
     } catch (err) {
@@ -1703,14 +1717,40 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // resource that declares the include shape a detail view needs declares
       // it once, and a record view is a detail view.
       load: async () => {
-        const row = await _call('get', id, null,
-                                opts.query      ?? detailQuery?.query      ?? {},
-                                opts.directives ?? detailQuery?.directives ?? {})
-        if (!composed && row) warnComposed('record', [row])
-        return row
+        const query = opts.query ?? detailQuery?.query ?? {}
+        try {
+          const row = await _call('get', id, null, query,
+                                  opts.directives ?? detailQuery?.directives ?? {})
+          if (!composed && row) warnComposed('record', [row])
+          return row
+        } catch (err) {
+          const held = await _heldRow(err, id, query)
+          if (!held) throw err
+          return held
+        }
       },
       composed,
     }))
+  }
+
+  // ── One row with no network: the device's copy (`FJS-2250`) ──────────────
+  //
+  // `load()` answers an outage from the device and `record(id)` answered null,
+  // so a detail screen opened offline said *not found* for a row the list on
+  // the screen before it had just shown. Silence only, as in `load()`: a 403 or
+  // a 404 is the server's answer now and a copy taken earlier must not overrule
+  // it. The device and not the list cache — the cache keeps a row in every slot
+  // that ever held it, so a row the device has already dropped as removed would
+  // come back from a stale slot.
+  async function _heldRow(err, id, query) {
+    if (!syncMode || !unreachable(err) || !localDbConfigured()) return null
+    const rows = await readLocal(model, { ...query, [idField]: id }, { limit: 1 })
+    if (!rows?.length) return null
+    // A held edit of it carries this version, as one of a row the offline
+    // list showed does through the store (`FJS-1299`).
+    _sawRows(rows)
+    _sighted(rows[0][idField], rows[0])
+    return rows[0]
   }
 
   // ── A read that answered more than the row, on a view that is not composed ──
@@ -2983,7 +3023,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       declareOffline({
         service:    serviceName,
         model,
-        find:       (q, d) => service.find(q, d).then(r => r?.data ?? r ?? []),
+        find:       service.find,
+        idField,
         query:      offlineQuery.query,
         directives: offlineQuery.directives,
       })

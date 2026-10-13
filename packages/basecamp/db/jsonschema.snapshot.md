@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-103 definitions · 62 models · 1 view · 40 enums · 0 other
+104 definitions · 63 models · 1 view · 40 enums · 0 other
 ```
 
 ## Definitions
@@ -68,6 +68,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Recipe` | model |
 | `RecipeRun` | model |
 | `DiskUsage` | model |
+| `ServerPosture` | model |
 | `CleanupRun` | model |
 | `FeatureFlag` | model |
 | `FlagOverride` | model |
@@ -149,7 +150,7 @@ validates, and a select that silently drops an option.
 - `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
-- `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`
+- `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`, `posture_failed`, `posture_restored`
 - `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`
 - `EnvironmentTier` — `development`, `test`, `preview`, `staging`, `production`
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
@@ -172,7 +173,7 @@ validates, and a select that silently drops an option.
 - `BackupDestination` — `local`, `s3`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`
-- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `member_joined`, `job_failed`, `weekly_digest`
+- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `posture_failed`, `dependency_vulnerable`, `member_joined`, `job_failed`, `weekly_digest`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 
 ## Models
@@ -803,6 +804,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` `x-transforms` | `pattern` `regex` |
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
+| `exposesPort` | `boolean` = `false` | — | — | — | — |
 | `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
@@ -1059,6 +1061,23 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `reportedAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `serverId` · not accepted — `id`
+
+### `ServerPosture`
+
+- gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `server` — belongsTo `Server` via `serverId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `serverId` | `string` | yes | — | — | — |
+| `at` | `string` | yes | — | `format: "date-time"` | — |
+| `readings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `controls` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `failing` | `integer` = `0` | — | — | — | — |
+| `unknown` | `integer` = `0` | — | — | — | — |
+
+**On create**: required — `serverId`, `at` · not accepted — `id`
 
 ### `CleanupRun`
 

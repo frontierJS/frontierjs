@@ -14,6 +14,8 @@
  * about SQL (Invariant 8), for the same reason.
  */
 
+import { validRelativePath } from './static.js'
+
 /** A digest is `sha256:` and 64 hex characters. Anything else is not an
  *  identity and Basecamp refuses to record it, so this refuses to report it. */
 const DIGEST = /^sha256:[0-9a-f]{64}$/
@@ -84,6 +86,11 @@ function logArgs(logs) {
  *  Basecamp's own health step polls the same ten times three seconds, and its
  *  `/deploy` send is given the room for it. */
 const HEALTH = { attempts: 10, intervalMs: 3_000 }
+
+/** The host port an app declared reachable from outside (`FJS-D930`), on its
+ *  container. The install's `inet basecamp` table drops every other one. */
+const EXPOSED_LABEL = 'fjs.exposed-port'
+const EXPOSED_SET   = 'inet basecamp exposed'
 
 export function createDocker({
   run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
@@ -246,9 +253,16 @@ export function createDocker({
   return {
     digestOf,
 
-    /** Pull an image that already exists somewhere else. */
-    async pull({ image }) {
+    /** Pull an image that already exists somewhere else. A release that names
+     *  a digest this machine holds has nothing to fetch: an image built or
+     *  loaded here has no registry, and pulling its tag fails with *pull access
+     *  denied* (`FJS-2645`). A tag names no bytes, so it always pulls. */
+    async pull({ image, digest }) {
       if (!image) throw new Error('pull needs an image')
+      if (isDigest(digest)) {
+        const held = await run(['docker', 'image', 'inspect', '--format', '{{.Id}}', digest])
+        if (held.exitCode === 0) return { digest }
+      }
       await docker(['pull', image], { timeoutMs: 900_000 })
       return { digest: await digestOf(image) }
     },
@@ -261,6 +275,12 @@ export function createDocker({
      * so building here is honest rather than a compromise.
      */
     async build({ appId, source, image }) {
+      // The path is caller text that joins the build context: the allow-list
+      // /static/publish uses, checked before a clone is spent on it.
+      if (source.path != null) {
+        const bad = validRelativePath(source.path)
+        if (bad) throw new Error(`source path: ${bad}`)
+      }
       const dir = `${workDir}/${appId}`
       await run(['mkdir', '-p', dir])
 
@@ -276,7 +296,7 @@ export function createDocker({
       }
 
       const sha = (await git(['-C', dir, 'rev-parse', 'HEAD'])).trim()
-      await docker(['build', '-t', image, dir], { timeoutMs: 1_800_000 })
+      await docker(['build', '-t', image, source.path != null ? `${dir}/${source.path}` : dir], { timeoutMs: 1_800_000 })
       return { digest: await digestOf(image), commitSha: sha }
     },
 
@@ -287,7 +307,7 @@ export function createDocker({
      * `_replaced` until then, and comes back if the new one does not start or
      * does not answer.
      */
-    async deploy({ appId, image, digest, config = {}, port, loopback = false }) {
+    async deploy({ appId, image, digest, config = {}, port, loopback = false, exposesPort = false }) {
       const name     = `fjs-${appId}`
       const replaced = `${name}_replaced`
       checkRunConfig(config)
@@ -314,6 +334,10 @@ export function createDocker({
       // on every interface is the same app over plain HTTP, around the
       // certificate. An app with no hostname keeps it, or nothing reaches it.
       if (port) argv.push('-p', `${loopback ? '127.0.0.1:' : ''}${port}:${config.containerPort ?? port}`)
+      // The host firewall drops a forwarded connection to any published port
+      // not in its exposed set, and `syncExposed` builds that set from this
+      // label, so the declaration lives and dies with the container.
+      if (port && exposesPort && !loopback) argv.push('--label', `${EXPOSED_LABEL}=${port}`)
       // The data a container keeps, on a NAMED volume that outlives it. Every
       // release replaces the container, so a database started without one
       // comes back empty after its next release. Named for the app, so the
@@ -402,6 +426,37 @@ export function createDocker({
       return { stopped: result.exitCode === 0 }
     },
 
+    /**
+     * Refill the firewall's exposed set from the containers that declare a
+     * port, whole and in one nft transaction, so a port an app stopped
+     * declaring leaves with the next sync. Stopped containers count: after a
+     * reboot the firewall unit reloads an empty set before Docker has restarted
+     * anything, and an exposed app would stay dropped until its next release.
+     * A `_replaced` is never served, so its port does not count.
+     *
+     * A machine with no basecamp table answers `synced: false` rather than
+     * throwing: nothing there drops a forwarded port, and the posture report
+     * grades that. A failure fails closed, since a port missing from the set
+     * is dropped.
+     */
+    async syncExposed() {
+      const listed = await run(['docker', 'ps', '-a', '--filter', `label=${EXPOSED_LABEL}`, '--format', `{{.Names}} {{.Label "${EXPOSED_LABEL}"}}`])
+      if (listed.exitCode !== 0) throw new Error(`docker ps failed (exit ${listed.exitCode}): ${(listed.stderr ?? '').trim()}`)
+      const ports = [...new Set(String(listed.stdout ?? '').split('\n')
+        .map(line => line.trim().split(/\s+/))
+        .filter(([name]) => name && !name.endsWith('_replaced'))
+        .map(([, port]) => Number(port))
+        .filter(port => Number.isInteger(port) && port > 0 && port < 65536))].sort((a, b) => a - b)
+
+      const fill   = ports.length ? ` ; add element ${EXPOSED_SET} { ${ports.join(', ')} }` : ''
+      const result = await run(['nft', `flush set ${EXPOSED_SET}${fill}`])
+        .catch(err => { if (err?.code === 'ENOENT') return null; throw err })
+      if (!result || (result.exitCode !== 0 && /No such file or directory/i.test(result.stderr ?? '')))
+        return { synced: false, exposed: ports, reason: 'no basecamp firewall on this machine' }
+      if (result.exitCode !== 0) throw new Error(`nft failed (exit ${result.exitCode}): ${(result.stderr ?? '').trim()}`)
+      return { synced: true, exposed: ports }
+    },
+
     published,
     healthCheck,
 
@@ -416,6 +471,274 @@ export function createDocker({
       return { exit_code: result.exitCode, stdout: result.stdout, stderr: result.stderr }
     },
   }
+}
+
+/*
+ * ─── posture ─────────────────────────────────────────────────────────────────
+ *
+ * What the machine's defenses look like, as FACTS: Basecamp grades them against
+ * what it knows the box should run (`IDEAS/server-posture.md`), so a verdict
+ * here would be a second owner of that and a stale one until this is upgraded.
+ *
+ * A reading whose command fails is `null` — unknown, which is neither absent
+ * nor passing. Every key is always present, and one tool missing from the box
+ * must cost its own reading and nothing else.
+ *
+ * The argv here is the table `test/fixtures/posture/capture.mjs` records, and
+ * the replay test refuses any argv the capture does not hold, so the two move
+ * together.
+ */
+
+const UNATTENDED_LOG = '/var/log/unattended-upgrades/unattended-upgrades.log'
+
+const POSTURE = {
+  os:              ['cat', '/etc/os-release'],
+  kernelRunning:   ['uname', '-r'],
+  // The status column, because `-W` also lists every kernel removed with its
+  // config left behind (`rc`), which outnumber the installed ones by fifty.
+  kernelInstalled: ['dpkg-query', '-W', '-f', '${db:Status-Abbrev} ${Package}\n', 'linux-image-[0-9]*'],
+  rebootRequired:  ['stat', '-c', '%Y', '/var/run/reboot-required'],
+  rebootPkgs:      ['cat', '/var/run/reboot-required.pkgs'],
+  aptPending:      ['apt-get', '-s', '-o', 'Debug::NoLocking=1', 'upgrade'],
+  aptPeriodic:     ['apt-config', 'dump', 'APT::Periodic'],
+  aptTimer:        ['systemctl', 'is-enabled', 'apt-daily-upgrade.timer'],
+  aptLastRun:      ['stat', '-c', '%Y', UNATTENDED_LOG],
+  dockerVersion:   ['docker', 'version', '--format', 'json'],
+  caddyVersion:    ['caddy', 'version'],
+  bunVersion:      ['bun', '--version'],
+  listening:       ['ss', '-tlnpH'],
+  containers:      ['docker', 'ps', '--format', 'json'],
+  ruleset:         ['nft', '-j', 'list', 'ruleset'],
+  sshd:            ['sshd', '-T'],
+  rootKeys:        ['ssh-keygen', '-lf', '/root/.ssh/authorized_keys'],
+  uid0:            ['awk', '-F:', '$3 == 0 { print $1 }', '/etc/passwd'],
+  nopasswd:        ['grep', '-rh', 'NOPASSWD', '/etc/sudoers', '/etc/sudoers.d'],
+  timeSync:        ['timedatectl', 'show'],
+  timeTracking:    ['chronyc', '-c', 'tracking'],
+  unitJson:        ['systemd-analyze', 'security', 'outpost', '--json=short'],
+  containerIds:    ['docker', 'ps', '-q'],
+  files:           ['stat', '-c', '%a %U %G %n', '/etc/basecamp', '/etc/basecamp/outpost.key', '/etc/basecamp/outpost.env'],
+  cert:            ['openssl', 'x509', '-enddate', '-noout', '-in', '/etc/basecamp/outpost.crt'],
+}
+// systemd 249 refuses `--json`, and the text form's last line carries the
+// overall score on every version. Asked only when the JSON gave none.
+const UNIT_TEXT = ['systemd-analyze', 'security', '--no-pager', 'outpost']
+// Privileged and the socket mount and nothing else: `docker inspect` whole
+// carries every container's environment, secrets included, into this report.
+const INSPECT   = ['docker', 'inspect', '--format', '{{json .Name}} {{json .HostConfig.Privileged}} {{json .Mounts}}']
+
+// A reading is slow-moving and asked every few hours; a wedged `apt-get` must
+// not hold the report for the runner's ten-minute default.
+const POSTURE_TIMEOUT_MS = 60_000
+
+const ok      = r => r?.exitCode === 0
+const lines   = text => String(text ?? '').split('\n').map(s => s.trim()).filter(Boolean)
+const unbrace = ip => ip.replace(/^\[(.*)\]$/, '$1')
+const epoch   = text => {
+  const n = Number(String(text ?? '').trim())
+  return Number.isFinite(n) && n > 0 ? new Date(n * 1000).toISOString() : null
+}
+// The file is not there, said by the command that looked — a fact, where a
+// refusal is unknown. A spawn that never ran has a null exit and says nothing,
+// so ENOENT for the BINARY is never read as the file being absent.
+const absent  = r => r?.exitCode != null && r.exitCode !== 0 && /No such file/i.test(r.stderr ?? '')
+
+function readOs(r) {
+  if (!ok(r)) return null
+  const v = {}
+  for (const line of lines(r.stdout)) {
+    const m = /^([A-Z_]+)=(.*)$/.exec(line)
+    if (m) v[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2')
+  }
+  return { id: v.ID ?? null, version: v.VERSION_ID ?? null, codename: v.VERSION_CODENAME ?? v.UBUNTU_CODENAME ?? null }
+}
+
+function readKernel(running, installed) {
+  const now = ok(running) ? running.stdout.trim() : ''
+  if (!now) return null
+  return {
+    running:   now,
+    installed: ok(installed)
+      ? lines(installed.stdout).filter(l => /^ii\s/.test(l)).map(l => l.split(/\s+/).pop().replace(/^linux-image-/, ''))
+      : null,
+  }
+}
+
+function readReboot(stat, pkgs) {
+  if (ok(stat))     return { required: true, since: epoch(stat.stdout), pkgs: ok(pkgs) ? lines(pkgs.stdout) : [] }
+  if (absent(stat)) return { required: false, since: null, pkgs: [] }
+  return null
+}
+
+function readUpdates(r) {
+  if (!ok(r)) return null
+  const inst = lines(r.stdout).filter(l => l.startsWith('Inst '))
+  // The origin is the first parenthesis: `Inst pkg [old] (new Ubuntu:24.04/noble-security [amd64])`,
+  // comma-joined when a version is in several pockets.
+  const security = inst.filter(l => /-security\b/.test(/\(([^)]*)\)/.exec(l)?.[1] ?? ''))
+  return { pending: inst.length, security: security.length }
+}
+
+function readAutoUpdates(periodic, timer, lastRun) {
+  if (!ok(periodic)) return null
+  // `is-enabled` exits non-zero for `disabled`, which is still an answer; no
+  // output at all is the question going unasked.
+  const state = timer?.exitCode == null ? '' : String(timer.stdout ?? '').trim()
+  if (!state) return null
+  const days = /^APT::Periodic::Unattended-Upgrade\s+"([^"]*)";/m.exec(periodic.stdout)?.[1]
+  return {
+    enabled:  Number(days) > 0 && state === 'enabled',
+    last_run: ok(lastRun) ? epoch(lastRun.stdout) : null,
+  }
+}
+
+function readVersions(docker, caddy, bun) {
+  let server = null
+  // `docker version` exits 1 with the daemon down and still prints the client
+  // half, whose version is not the one running containers.
+  try { server = JSON.parse(docker?.stdout ?? '')?.Server?.Version ?? null } catch {}
+  const first = r => ok(r) ? (r.stdout.trim().split(/\s+/)[0]?.replace(/^v/, '') || null) : null
+  return { docker: server, caddy: first(caddy), bun: first(bun) }
+}
+
+function readListening(r) {
+  if (!ok(r)) return null
+  return lines(r.stdout).map(line => {
+    const local = line.split(/\s+/)[3] ?? ''
+    const at    = local.lastIndexOf(':')
+    let address = unbrace(local.slice(0, at)).replace(/%.*$/, '')
+    // `*` is ss for an IPv6 wildcard socket that also takes IPv4 — every
+    // interface, both families. A v6-only one prints `[::]`.
+    if (address === '*') address = '::'
+    return { address, port: Number(local.slice(at + 1)), process: /users:\(\("([^"]+)"/.exec(line)?.[1] ?? null }
+  }).filter(s => s.address && Number.isInteger(s.port))
+}
+
+/** `docker ps`'s Ports column is a human string —
+ *  `0.0.0.0:8090->80/tcp, [::]:8090->80/tcp` — and the IPv6 half is the same
+ *  app public a second time. `80/tcp` with no arrow is exposed and published
+ *  nowhere. */
+function parsePorts(text) {
+  const out = []
+  for (const part of String(text ?? '').split(',').map(s => s.trim())) {
+    const m = /^(.*):(\d+)(?:-(\d+))?->(\d+)(?:-\d+)?\/(\w+)$/.exec(part)
+    if (!m) continue
+    const [, ip, lo, hi = lo, container, proto] = m
+    for (let i = 0; i <= Number(hi) - Number(lo); i++)
+      out.push({ host_ip: unbrace(ip), host_port: Number(lo) + i, container_port: Number(container) + i, proto })
+  }
+  return out
+}
+
+function readContainers(r) {
+  if (!ok(r)) return null
+  return lines(r.stdout).map(line => JSON.parse(line)).map(c => ({ name: c.Names, published: parsePorts(c.Ports) }))
+}
+
+function readFirewall(ruleset) {
+  if (!ok(ruleset)) return null
+  const entries = JSON.parse(ruleset.stdout).nftables ?? []
+  const chains  = entries.map(e => e.chain).filter(c =>
+    c?.hook === 'input' && (c.type ?? 'filter') === 'filter' && (c.family === 'inet' || c.family === 'ip'))
+  // Every base chain on the hook sees the packet, so one dropping by default
+  // is the box dropping by default, whatever an `accept` beside it says.
+  const input_policy = !chains.length ? null : chains.some(c => c.policy === 'drop') ? 'drop' : 'accept'
+
+  // A published port is forwarded, so the input policy never reaches it. The
+  // install's forward chain drops a DNAT'd connection unless its host port is
+  // in the exposed set; a box without that rule lets every published port
+  // through, whatever the set holds.
+  const ours    = e => e?.family === 'inet' && e.table === 'basecamp'
+  const forward = entries.map(e => e.chain).find(c => ours(c) && c.hook === 'forward')
+  const dnatDrop = expr => expr?.length === 2 && expr[0]?.match?.left?.ct?.key === 'status'
+    && expr[0].match.right === 'dnat' && expr[1] && 'drop' in expr[1]
+  const forward_drop = Boolean(forward) && entries.some(e => ours(e.rule) && e.rule.chain === forward.name && dnatDrop(e.rule.expr))
+  const set     = entries.map(e => e.set).find(s => ours(s) && s.name === 'exposed')
+  const exposed = (set?.elem ?? []).filter(Number.isInteger).sort((a, b) => a - b)
+  return { input_policy, forward_drop, exposed }
+}
+
+function readSsh(r) {
+  if (!ok(r)) return null
+  const v = {}
+  for (const line of lines(r.stdout)) {
+    const at = line.indexOf(' ')
+    if (at > 0) v[line.slice(0, at).toLowerCase()] ??= line.slice(at + 1).trim()
+  }
+  return {
+    password_authentication: v.passwordauthentication ?? null,
+    permit_root_login:       v.permitrootlogin ?? null,
+    pubkey_authentication:   v.pubkeyauthentication ?? null,
+    max_auth_tries:          v.maxauthtries != null ? Number(v.maxauthtries) : null,
+  }
+}
+
+function readKeys(r, user) {
+  if (absent(r)) return []
+  if (!ok(r)) return null
+  return lines(r.stdout).map(line => {
+    const m = /^(\d+)\s+(\S+)\s+(.*?)\s*\(([^)]+)\)$/.exec(line)
+    return m && { user, type: m[4], bits: Number(m[1]), fingerprint: m[2], comment: m[3] }
+  }).filter(Boolean)
+}
+
+function readNopasswd(r) {
+  // grep exits 1 for no match, which is the answer; 2 is a file it could not read.
+  if (r?.exitCode === 1) return []
+  if (!ok(r)) return null
+  return lines(r.stdout).filter(l => !l.startsWith('#'))
+}
+
+function readTime(sync, tracking) {
+  if (!ok(sync)) return null
+  // `chronyc -c tracking`, field 5: the system clock's offset in seconds.
+  const offset = ok(tracking) ? Number(tracking.stdout.trim().split(',')[4]) : NaN
+  return { synced: /^NTPSynchronized=yes$/m.test(sync.stdout), offset_s: Number.isFinite(offset) ? offset : null }
+}
+
+function unitFromJson(r) {
+  if (!ok(r)) return null
+  let rows = null
+  try { rows = JSON.parse(r.stdout) } catch { return null }
+  // Only the overview table names a unit; the per-unit table is its settings.
+  const row = Array.isArray(rows) ? rows.find(x => /^outpost(\.service)?$/.test(x?.unit ?? '')) : null
+  const exposure = Number(row?.exposure)
+  return row && Number.isFinite(exposure) ? { exposure, predicate: row.predicate ?? null } : null
+}
+
+function unitFromText(r) {
+  if (!ok(r)) return null
+  const m = /Overall exposure level for \S+:\s*([\d.]+)\s+([A-Z]+)/.exec(r.stdout.replace(/\x1b\[[\d;]*m/g, ''))
+  return m ? { exposure: Number(m[1]), predicate: m[2] } : null
+}
+
+function readInspect(r) {
+  if (!ok(r)) return null
+  return lines(r.stdout).map(line => {
+    const m = /^("(?:[^"\\]|\\.)*")\s+(true|false)\s+(.*)$/.exec(line)
+    if (!m) return null
+    const sock = p => /(^|\/)docker\.sock$/.test(p ?? '')
+    return {
+      name:        JSON.parse(m[1]).replace(/^\//, ''),
+      privileged:  m[2] === 'true',
+      docker_sock: (JSON.parse(m[3]) ?? []).some(x => sock(x.Source) || sock(x.Destination)),
+    }
+  }).filter(Boolean)
+}
+
+function readFiles(r) {
+  if (!ok(r)) return null
+  return lines(r.stdout).map(line => {
+    const [mode, owner, group, ...path] = line.split(' ')
+    return { path: path.join(' '), mode, owner, group }
+  })
+}
+
+function readCert(r) {
+  if (!ok(r)) return null
+  const m = /notAfter=(.+)/.exec(r.stdout)
+  const at = m ? new Date(m[1].trim()) : null
+  return at && !Number.isNaN(at.getTime()) ? { expires_at: at.toISOString() } : null
 }
 
 /*
@@ -572,6 +895,51 @@ export function createInspector({ run = spawnRun } = {}) {
         if (exitCode === 0) removed.push(name)
       }
       return { removed }
+    },
+
+    /** The box's defenses, read and not graded — see § posture above. */
+    async posture() {
+      // Bun.spawn THROWS on a missing binary rather than exiting 127, so an
+      // uncaught one is a box without caddy failing the whole report.
+      const read = async (argv) => {
+        try { return await run(argv, { timeoutMs: POSTURE_TIMEOUT_MS }) }
+        catch { return { exitCode: null, stdout: '', stderr: '' } }
+      }
+      // A parser surprised by what a machine printed is unknown, the same as
+      // a command that failed.
+      const guard = async (fn) => { try { return (await fn()) ?? null } catch { return null } }
+
+      const keys = Object.keys(POSTURE)
+      const r    = Object.fromEntries(await Promise.all(keys.map(async k => [k, await read(POSTURE[k])])))
+
+      const readings = {
+        os:           await guard(() => readOs(r.os)),
+        kernel:       await guard(() => readKernel(r.kernelRunning, r.kernelInstalled)),
+        reboot:       await guard(() => readReboot(r.rebootRequired, r.rebootPkgs)),
+        updates:      await guard(() => readUpdates(r.aptPending)),
+        auto_updates: await guard(() => readAutoUpdates(r.aptPeriodic, r.aptTimer, r.aptLastRun)),
+        versions:     await guard(() => readVersions(r.dockerVersion, r.caddyVersion, r.bunVersion)),
+        listening:    await guard(() => readListening(r.listening)),
+        containers:   await guard(() => readContainers(r.containers)),
+        firewall:     await guard(() => readFirewall(r.ruleset)),
+        ssh:          await guard(() => readSsh(r.sshd)),
+        ssh_keys:     await guard(() => readKeys(r.rootKeys, 'root')),
+        uid0:         await guard(() => ok(r.uid0) ? lines(r.uid0.stdout) : null),
+        nopasswd:     await guard(() => readNopasswd(r.nopasswd)),
+        time:         await guard(() => readTime(r.timeSync, r.timeTracking)),
+        outpost_unit: await guard(async () => unitFromJson(r.unitJson) ?? unitFromText(await read(UNIT_TEXT))),
+        privileged:   await guard(async () => {
+          if (!ok(r.containerIds)) return null
+          const ids = lines(r.containerIds.stdout)
+          return ids.length ? readInspect(await read([...INSPECT, ...ids])) : []
+        }),
+        files:        await guard(() => readFiles(r.files)),
+        cert:         await guard(() => readCert(r.cert)),
+      }
+      // Each version is its own unknown, so the group is never null as a whole.
+      readings.versions ??= { docker: null, caddy: null, bun: null }
+
+      return { at: new Date().toISOString(), readings }
     },
   }
 }

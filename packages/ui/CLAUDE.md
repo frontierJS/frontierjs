@@ -30,10 +30,11 @@ components/
 stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
 dnd.js        dndzone — drag and drop between flow lists, an {@attach}
+drag.js       drag — one pointer drag, press to release or cancel, an {@attach}
 selection.js  createSelection — the ticked KEYS of a list, signal-backed; the
               screen composes it with Checkbox `indeterminate` and BulkBar,
               and Table stays out of it (FJS-D671)
-utils.js      shared helpers
+utils.js      shared helpers; `download(blob, filename)` saves a file
 test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
 test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
               coverage) · server.mjs (compiles .mesa on demand) · page.js

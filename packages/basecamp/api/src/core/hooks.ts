@@ -598,6 +598,10 @@ const OUTPOST_ENDPOINTS: Record<string, {
     fromRequest: req => addresses(req, 'report', 'cleanup', 1) ? serverIdInBody(req.body) : null,
     fromCall:    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
   },
+  'posture.report': {
+    fromRequest: req => addresses(req, 'report', 'posture', 1) ? serverIdInBody(req.body) : null,
+    fromCall:    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
+  },
 }
 
 /**

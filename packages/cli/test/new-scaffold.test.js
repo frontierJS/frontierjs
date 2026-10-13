@@ -69,3 +69,20 @@ test('an app with no queue gets no job it could not run', () => {
   expect(existsSync(join(app, 'api/src/jobs'))).toBe(false)
   expect(readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')).not.toContain('asSystem')
 }, 60_000)
+
+// FJS-2644 — a deploy mounts only the directory DATABASE_URL points at, so a
+// queue written as a literal beside the code stays inside the container and
+// every release starts with an empty one.
+test('the scaffolded queue sits beside DATABASE_URL, not beside the code', () => {
+  const app = scaffold('queue-volume', '--full')
+  const config = join(app, 'api/config/junction.config.js')
+  const probe = (url) => {
+    const r = spawnSync(process.execPath, ['-e', `const c = (await import(${JSON.stringify(config)})).default; console.log(c.caravan.db)`],
+      { cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, DATABASE_URL: url } })
+    expect(r.stderr).toBe('')
+    return r.stdout.trim()
+  }
+  expect(probe('/data/app.db')).toBe('/data/jobs.db')
+  expect(probe('./db/app.db')).toBe(join(app, 'db/jobs.db'))
+  expect(probe(':memory:')).toBe(join(app, 'db/jobs.db'))
+}, 60_000)

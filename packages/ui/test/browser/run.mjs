@@ -33,8 +33,9 @@
  * snapshot). What is left here is what makes it the KIT's drive: the server,
  * the fixture path, and coverage over the component tree.
  */
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { join, basename } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { createKitServer } from './server.mjs'
 import { runSpecs, dim } from '../../../mesa/test/browser/drive.mjs'
@@ -101,6 +102,30 @@ if (serveOnly) {
        *  page: a drag that reads the pointer once per frame, stepped faster
        *  than frames arrive, sees only the last position and never crosses
        *  the slots in between. */
+      /** The next file the page saves, once Chrome has written it —
+       *  `{ name, text }`. Arm it BEFORE the click that saves: the events
+       *  are not replayed. Downloads go to a fresh directory, never the
+       *  profile's, and the teardown puts the behavior back. */
+      nextDownload: async ({ timeout = 5000 } = {}) => {
+        const dir = mkdtempSync(join(tmpdir(), 'kit-download-'))
+        await browser.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir, eventsEnabled: true })
+        const names = new Map()
+        return new Promise((resolve, reject) => {
+          const done = (fn) => { offBegin(); offProgress(); clearTimeout(timer); fn() }
+          const timer = setTimeout(() => done(() => reject(new Error(`no download completed in ${timeout}ms`))), timeout)
+          const offBegin = browser.on('Browser.downloadWillBegin', (p) => names.set(p.guid, p.suggestedFilename))
+          const offProgress = browser.on('Browser.downloadProgress', (p) => {
+            if (p.state === 'canceled') return done(() => reject(new Error(`download ${names.get(p.guid)} was canceled`)))
+            if (p.state !== 'completed') return
+            const name = names.get(p.guid)
+            done(() => {
+              const text = readFileSync(join(dir, name), 'utf8')
+              rmSync(dir, { recursive: true, force: true })
+              resolve({ name, text })
+            })
+          })
+        })
+      },
       drag: async (from, to, { steps = 12, release = true, press = true } = {}) => {
         const at = async (p) => typeof p !== 'string' ? p : browser.evaluate(`
           const r = document.querySelector(${JSON.stringify(p)})?.getBoundingClientRect();
@@ -125,6 +150,7 @@ if (serveOnly) {
     }),
     teardown: async (browser) => {
       await browser.cmd('Emulation.setTimezoneOverride', { timezoneId: '' })
+      await browser.send('Browser.setDownloadBehavior', { behavior: 'default' })
       await browser.evaluate('return window.kitUnmount();')
     },
     coverage: { all: componentNames(), show: showGap, noun: 'components' },

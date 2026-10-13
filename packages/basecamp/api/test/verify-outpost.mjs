@@ -222,6 +222,17 @@ try {
   const { token } = await call('/auth/login', { body: { email: 'sam@example.com', password: 'hunter2hunter2' } })
   const auth = { token, workspace: first.workspaceId }
 
+  // The Outpost posts its posture once at start: signed, accepted, graded, kept
+  // (FJS-2713). This laptop is no fleet box, so what it grades is not asserted.
+  let posture = null
+  check('the machine\'s own posture report landed and was graded',
+    await until(async () => {
+      posture = await call(`/posture/${first.serverId}`, { ...auth, serviceMethod: 'latest' }).catch(() => null)
+      return posture?.reported === true
+    }, 60_000))
+  check('…every control answered, unknown where the box could not read',
+    posture?.controls?.length > 0 && posture.controls.every(c => [true, false, 'unknown'].includes(c.ok)))
+
   // Its own app rather than whichever one the seed put in this workspace:
   // the seed spreads its app kinds across workspaces by a counter.
   const environment = (await call('/environments', auth))?.data?.[0]

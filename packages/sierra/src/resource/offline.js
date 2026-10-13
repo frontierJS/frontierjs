@@ -68,7 +68,7 @@
  */
 
 import { listCache, listKey }              from './list-cache.js'
-import { writeRows, localDbConfigured }    from './local-db.js'
+import { writeRows, answeredWhole, localDbConfigured } from './local-db.js'
 import { getClient }                       from '@frontierjs/sierra/resource'
 
 /**
@@ -90,13 +90,16 @@ const _declared = new Map()
  * @param {string} [spec.model]     the model the rows belong to — what the device's
  *                                  tables are named for, and the only thing the
  *                                  cache half does not need
- * @param {Function} spec.find      `(query, directives) => rows` — the resource's own read
+ * @param {Function} spec.find      `(query, directives) => envelope | rows` — the resource's
+ *                                  own read; the envelope says whether it was WHOLE
+ * @param {string} [spec.idField]   the rows' key, which a whole answer takes the
+ *                                  device's other rows off by
  * @param {object} [spec.query]     filters (Invariant 10)
  * @param {object} [spec.directives] limit / offset / orderBy / select
  */
-export function declareOffline({ service, model, find, query, directives }) {
+export function declareOffline({ service, model, find, query, directives, idField }) {
   _declared.set(service, {
-    service, model: model ?? null, find,
+    service, model: model ?? null, find, idField: idField ?? null,
     query: query ?? {}, directives: directives ?? null,
   })
   _armWarm()
@@ -127,12 +130,14 @@ export function declareOffline({ service, model, find, query, directives }) {
 export async function warmOffline() {
   const out  = []
   const read = []
-  for (const { service, model, find, query, directives } of _declared.values()) {
+  for (const { service, model, find, query, directives, idField } of _declared.values()) {
     try {
-      const rows  = await find(query, directives)
-      const entry = { service, rows: Array.isArray(rows) ? rows.length : 0, kept: false }
+      const res   = await find(query, directives)
+      const rows  = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : []
+      const whole = idField && answeredWhole(res, directives) ? { where: query, idField } : null
+      const entry = { service, rows: rows.length, kept: false }
       out.push(entry)
-      read.push({ entry, service, model, query, directives, rows })
+      read.push({ entry, service, model, query, directives, rows, whole })
     } catch (err) {
       out.push({ service, error: err?.message ?? String(err) })
     }
@@ -147,7 +152,7 @@ export async function warmOffline() {
     const again = []
     for (const r of left) {
       try {
-        r.entry.kept = await writeRows(r.model, r.rows)
+        r.entry.kept = await writeRows(r.model, r.rows, r.whole)
         refused.delete(r)
       } catch (err) {
         refused.set(r, err)

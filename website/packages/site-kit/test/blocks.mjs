@@ -84,6 +84,14 @@ for (const [name, path] of files) {
   const nested = await render('<Block nested name="Item" template="grid"><p>x</p></Block>')
   check('a nested Block is an article carrying its template', /^<article class="item grid"[^>]*> <p>x<\/p> <\/article>/.test(nested.trim()), nested)
 
+  // A Band is 100vw, so one inside another's container overflowed the page
+  // sideways (FJS-2716); the inner Block knows where it sits without `nested`.
+  const inner = await render('<Block name="Outer"><Block name="Inner"><p>x</p></Block></Block>')
+  check('a Block inside a Block is an article, not a second Band',
+    (inner.match(/class="band/g) ?? []).length === 1 && /<article class="inner"[^>]*> <p>x<\/p> <\/article>/.test(inner), inner)
+  const bare = await render('<Block tag={false}><Block name="Inner"><p>x</p></Block></Block>')
+  check('a Block inside tag={false} still sits at the top', /^<section class="band inner"/.test(bare.trim()), bare)
+
   const link = await render('<Block url="/a"><p>x</p></Block>')
   check('a Block with a url is a link', /^<a href="\/a"|^<a [^>]*href="\/a"/.test(link.trim()) && !/band/.test(link), link)
 

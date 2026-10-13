@@ -29,6 +29,7 @@
 
 import { randomBytes, createHash, timingSafeEqual, X509Certificate } from 'node:crypto'
 import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
+import { OUTPOST_STATIC_PORT } from '../../core/posture.ts'
 
 /** What the install runs on a machine, held here so two machines provisioned a
  *  week apart run the same thing. The Outpost is pinned to the version this
@@ -179,13 +180,117 @@ esac
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -yqq curl ca-certificates openssl chrony
+apt-get install -yqq curl ca-certificates openssl chrony nftables unattended-upgrades
 
 # Every signed command is refused past 300 seconds of clock skew, so this
 # machine's clock is part of whether it takes commands. chrony replaces
 # systemd-timesyncd where the image ships it (the packages conflict), so there
 # is one daemon and never two disciplining the same clock.
+# posture: time.synced
 systemctl enable --now chrony.service
+
+# Each step below is graded by the control its marker names (core/posture.ts),
+# so the box this builds is the box the posture tab expects.
+
+# Security updates apply themselves and never reboot the machine: a reboot
+# takes down every app placed here, so it waits for a person. The origins are
+# cleared first because the image's own list also takes point releases, and
+# Docker and Caddy come from origins not named here, so neither moves alone.
+# posture: patch.auto-updates-on
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'APTEOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APTEOF
+cat > /etc/apt/apt.conf.d/52basecamp-unattended-upgrades <<'APTEOF'
+#clear Unattended-Upgrade::Allowed-Origins;
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+  "origin=Debian,codename=\${distro_codename}-security,label=Debian-Security";
+  "origin=Ubuntu,archive=\${distro_codename}-security";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+APTEOF
+systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+
+# sshd takes the first value it reads and the drop-ins are read in name order,
+# so 10- wins over the 50-cloud-init.conf that turns passwords back on. A box
+# no key can reach keeps its password rather than locking its owner out, and
+# its posture says so.
+# posture: ssh.password-off
+# posture: ssh.root-key-only
+if { cat /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null || true; } | grep -q '^[^#[:space:]]'; then
+  cat > /etc/ssh/sshd_config.d/10-basecamp.conf <<'SSHEOF'
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+MaxAuthTries 3
+SSHEOF
+  sshd -t
+  systemctl try-reload-or-restart ssh.service
+else
+  echo "no authorized ssh key on this machine: password login is left on" >&2
+fi
+
+# Inbound is dropped unless it is ssh, the web, or the Outpost's two ports. Its
+# own table, never a flush: Docker's rules share this nftables, and a flush
+# takes every container's networking with it. The ssh ports are read off sshd
+# rather than assumed, because an imported box may not listen on 22.
+#
+# A published container port is DNAT'd and forwarded, never input, so the input
+# policy does not reach it. The forward chain drops a DNAT'd connection unless
+# its host port is in the exposed set, which the Outpost refills from its
+# containers on every deploy and at start: the ports apps declare are not known
+# here. Its priority runs it before Docker's own chains, and a drop in any base
+# chain is final whatever another accepts. A container's own egress and a
+# loopback-published port are never DNAT'd from outside, so neither is touched.
+# posture: net.firewall-default-deny
+SSH_PORTS=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }' | paste -sd, -) || true
+[ -n "$SSH_PORTS" ] || SSH_PORTS=22
+install -d -m 0700 /etc/basecamp
+cat > /etc/basecamp/firewall.nft <<NFTEOF
+table inet basecamp
+delete table inet basecamp
+table inet basecamp {
+  set exposed {
+    type inet_service
+  }
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    ct state invalid drop
+    iif lo accept
+    meta l4proto { icmp, ipv6-icmp } accept
+    udp dport { 68, 546 } accept
+    tcp dport { $SSH_PORTS, 80, 443, $OUTPOST_PORT, ${OUTPOST_STATIC_PORT} } accept
+    udp dport 443 accept
+  }
+  chain forward {
+    type filter hook forward priority -1; policy accept;
+    ct state established,related accept
+    iifname "docker0" accept
+    iifname "br-*" accept
+    ct status dnat meta l4proto { tcp, udp } ct original proto-dst @exposed accept
+    ct status dnat drop
+  }
+}
+NFTEOF
+cat > /etc/systemd/system/basecamp-firewall.service <<UNITEOF
+[Unit]
+Description=Basecamp host firewall
+DefaultDependencies=no
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/basecamp/firewall.nft
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+systemctl daemon-reload
+systemctl enable --now basecamp-firewall.service
 
 # Docker, from the vendor's signed apt repository: apt verifies every package
 # against the key, where a piped script is whatever the site returns today. The

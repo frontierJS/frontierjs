@@ -782,6 +782,47 @@ export class BasecampSeeder extends Seeder {
           })
         }
 
+        // ── What the outposts said about their own security ─────────────
+        // Graded by the app's own grader, so the controls are what a real
+        // report would store. The first machine has drifted; the last has never
+        // reported, the state /security/ must not read as clean.
+        const { gradePosture, declaredFor } = await import('../api/src/core/posture.ts')
+        for (const [index, server] of servers.slice(0, Math.max(1, servers.length - 1)).entries()) {
+          const drifted  = index === 0
+          const at       = new Date(Date.now() - 2 * 3_600_000).toISOString()
+          const readings = {
+            os:           { id: 'ubuntu', version: '24.04', codename: 'noble' },
+            kernel:       { running: '6.8.0-45-generic', installed: ['6.8.0-45-generic'] },
+            reboot:       { required: false, since: null, pkgs: [] },
+            updates:      { pending: drifted ? 14 : 2, security: drifted ? 5 : 0 },
+            auto_updates: { enabled: !drifted, last_run: drifted ? null : at },
+            versions:     { docker: '27.3.1', caddy: '2.8.4', bun: '1.4.2' },
+            listening:    [
+              { address: '0.0.0.0', port: 22, process: 'sshd' },
+              { address: '0.0.0.0', port: 443, process: 'caddy' },
+              { address: '0.0.0.0', port: 8180, process: 'bun' },
+              ...(drifted ? [{ address: '0.0.0.0', port: 6379, process: 'redis-server' }] : []),
+            ],
+            containers:   [],
+            firewall:     { input_policy: drifted ? 'accept' : 'drop', forward_drop: !drifted, exposed: [] },
+            ssh:          { password_authentication: drifted ? 'yes' : 'no', permit_root_login: 'prohibit-password', pubkey_authentication: 'yes', max_auth_tries: 3 },
+            ssh_keys:     null,
+            uid0:         ['root'],
+            nopasswd:     [],
+            time:         { synced: true, offset_s: 0.001 },
+            outpost_unit: { exposure: 9.6, predicate: 'UNSAFE' },
+            privileged:   [],
+            files:        [],
+            cert:         { expires_at: new Date(Date.now() + 300 * 86_400_000).toISOString() },
+          }
+          const controls = gradePosture(readings, declaredFor({ sshPort: 22, apps: [] }), { at, now: Date.now() })
+          await sys.serverPosture.create({ data: {
+            serverId: server.id, at, readings, controls,
+            failing:  controls.filter(c => c.ok === false).length,
+            unknown:  controls.filter(c => c.ok === 'unknown').length,
+          } })
+        }
+
         // One sweep that already happened, so the history table and the
         // per-server "last swept" line have something true behind them.
         await sys.cleanupRun.create({
@@ -1077,7 +1118,7 @@ if (import.meta.main) {
       'wait', 'runStep', 'run', 'flowLayout', 'flowVersion', 'flow',
       'flowCredential', 'kvEntry',
       'jobRun', 'job', 'deploymentStep', 'deployment', 'appNetwork', 'appServer',
-      'dashboardWidget', 'dashboard', 'recipeRun', 'recipe', 'cleanupRun', 'diskUsage',
+      'dashboardWidget', 'dashboard', 'recipeRun', 'recipe', 'cleanupRun', 'diskUsage', 'serverPosture',
       'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
       'alertEvent', 'alertRuleChannel', 'alertRule', 'notificationChannel',
       'apiKey', 'secret', 'serverNetwork', 'network', 'volume', 'serverEvent',
@@ -1126,7 +1167,7 @@ if (import.meta.main) {
                        'server', 'volume', 'deployment', 'deploymentStep', 'job', 'jobRun',
                        'secret', 'apiKey', 'alertRule', 'notificationChannel',
                        'alertRuleChannel', 'dashboard', 'dashboardWidget',
-                       'recipe', 'recipeRun', 'diskUsage', 'cleanupRun',
+                       'recipe', 'recipeRun', 'diskUsage', 'serverPosture', 'cleanupRun',
                        'blueprint', 'blueprintParam', 'registryImage',
                        'dependency', 'dependencyUse', 'backup', 'hubConfig', 'notificationPreference',
                        'auditEvent']) {

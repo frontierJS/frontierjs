@@ -13,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, relative, resolve }             from 'node:path'
 
 import { buildRoutesSnapshot } from './routes-snapshot.js'
+import { FUNCTIONS_ENTRY }     from '../postbuild/functions.js'
 
 const argv = process.argv.slice(2)
 
@@ -189,12 +190,14 @@ async function cmdSite() {
   // that moved its outDir is served from where it actually lands. `--dir` is
   // for serving a build somebody else produced.
   let outDir = getFlag('dir')
+  let hasFunctions = false
   if (!outDir) {
     if (!existsSync(absConfig))
       fatal(`No Sierra config at ${rel(absConfig)} — name one with --config, or point at a build with --dir`)
     const mod    = await import(`file://${absConfig}`)
     const config = mod.default ?? mod
     outDir = config.outDir ?? 'dist'
+    hasFunctions = !!config.functions
   }
 
   const dir = resolve(outDir)
@@ -215,7 +218,10 @@ async function cmdSite() {
 
   const { serveSite } = await import('../site/serve.js')
   const port   = Number(getFlag('port') ?? 0) || 0
-  const server = await serveSite({ dir, port })
+  // The entry the last build wrote; a function a host would run is run here.
+  const entry  = hasFunctions ? resolve(FUNCTIONS_ENTRY) : undefined
+  if (entry && !existsSync(entry)) fatal(`No ${rel(entry)} — the build writes it; run \`vite build\` first.`)
+  const server = await serveSite({ dir, port, functions: entry, env: process.env })
   console.log(`\n  ·  serving ${rel(dir)} at ${server.url}\n`)
 }
 

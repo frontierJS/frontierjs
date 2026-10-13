@@ -49,6 +49,7 @@
  */
 
 import { getClient } from '@frontierjs/sierra/resource'
+import { dropRows }  from './local-db.js'
 
 const DB_NAME    = 'fjs-pending'
 const DB_VERSION = 1
@@ -152,7 +153,7 @@ export function createPendingQueue({ now = () => Date.now() } = {}) {
      * phase 2 and the resource refuses it by name rather than storing a blob
      * nothing will ever upload.
      */
-    async add({ service, model, method, id, data, base, callHeaders }) {
+    async add({ service, model, method, id, idField, data, base, callHeaders }) {
       const entry = {
         key:       crypto.randomUUID(),
         service, model, method,
@@ -167,6 +168,8 @@ export function createPendingQueue({ now = () => Date.now() } = {}) {
         // among them. A replay after the author switched workspace would
         // otherwise be graded and stamped in the one they are in now (FJS-1300).
         ...(callHeaders ? { callHeaders } : {}),
+        // What a replayed remove takes the row off the device by.
+        ...(method === 'remove' && idField ? { idField } : {}),
         createdAt: now(),
         attempts:  0,
         state:     'pending',
@@ -337,6 +340,7 @@ export async function drainPending(client) {
     try {
       await _send(client, entry)
       await q.settle(entry.key)
+      if (entry.method === 'remove') await dropRows(entry.model, entry.idField, [entry.id])
       settled++
       return 'settled'
     } catch (err) {

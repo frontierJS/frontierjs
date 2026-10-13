@@ -33,7 +33,7 @@ import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { treePaths } from './tree.js'
-import { readRegisters, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
+import { readRegisters, readOverviewRows, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -58,6 +58,7 @@ export const RULES = [
   { id: 'cross-register-id', level: 'error', what: 'an open decision QUESTION whose id already names a ruling — either the ruling landed and nothing closed the row, or the two are different subjects wearing one id' },
   { id: 'ruling-status',    level: 'error', what: 'a ruling declaring a status outside the vocabulary, or retiring itself without naming what replaced it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
+  { id: 'overview-status',  level: 'error', what: 'an `IDEAS/overview.md` row whose Status cell says the work is still open while its paper says `shipped` or `withdrawn`, or its only cited defects are closed' },
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
   { id: 'missing-anchor',   level: 'warn',  what: 'an open row with no anchor — nothing can link it' },
@@ -433,6 +434,75 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
     for (const [field, value] of [['dated', paper.dated], ['revised', paper.revised]]) {
       if (!value) continue
       if (!ISO.test(value)) add('malformed-date', paper, `${field} "${value}" is not YYYY-MM-DD`)
+    }
+  }
+
+  // ── the overview's ranked rows ──
+  //
+  // `overview.md` is derived and read by `ideaRanks`, the repo map and rings,
+  // and the frame loop; none of them says anything when a row is unreadable.
+  // A row with the wrong cell count is read into the wrong fields (or, past
+  // the header's width, dropped when rendered), a rank that two rows share
+  // answers for whichever came first, and a Status cell can go on saying
+  // `idea` after its paper shipped. The rows are read by `readOverviewRows`.
+
+  const OPEN_STATUS  = new Set(['idea', 'proposed', 'defect'])
+  const DONE_PAPER   = new Set(['shipped', 'withdrawn'])
+  const paperOf      = new Map(doc.ideas.map(p => [p.file.split(/[\\/]/).pop(), p]))
+  const issueOf      = new Map(doc.issues.filter(i => i.id).map(i => [i.id, i]))
+  const rankedAt     = new Map()
+
+  for (const row of readOverviewRows(resolve(doc.dir, 'IDEAS'))) {
+    const at = { ...row, file: relative(root, resolve(doc.dir, row.file)).split(sep).join('/'), kind: 'idea' }
+    at.id = row.rank
+
+    if (row.headWidth != null && row.cells.length !== row.headWidth) {
+      add('row-shape', at,
+        `has ${row.cells.length} cells where its table declares ${row.headWidth}`,
+        'a row with the wrong count is read into the wrong fields, and a cell past the header\'s width is dropped when the file is rendered — escape a `|` that is part of the prose')
+      continue
+    }
+    if (!row.rank) {
+      add('row-shape', at,
+        `opens with "${row.cells[0]}", which is not a rank`,
+        'every reader keys a row by its first cell (`0.1`, `4.12a`), so a row without one is in none of them')
+      continue
+    }
+
+    if (rankedAt.has(row.rank)) {
+      add('duplicate-id', at,
+        `rank ${row.rank} names more than one overview row`,
+        `also at ${at.file}:${rankedAt.get(row.rank)}`)
+    } else {
+      rankedAt.set(row.rank, row.line)
+    }
+
+    // Only a bare word is a claim that work is open. A struck cell, or one
+    // that goes on to say what remains, is the author already reconciling.
+    const word = (row.cells[6] ?? '').replace(/[*`]/g, '').trim().toLowerCase()
+    if (!OPEN_STATUS.has(word)) continue
+
+    const source = row.cells[row.cells.length - 1].match(/`([\w-]+\.md)`/)
+    const paper  = source && paperOf.get(source[1])
+    if (paper && DONE_PAPER.has(paper.status)) {
+      add('overview-status', at,
+        `Status says ${word} and ${source[1]} says ${paper.status}`,
+        'the paper wins over a derived index — move the cell to what the paper says')
+      continue
+    }
+
+    if (word === 'defect') {
+      // The opening claim is what the row IS; a later citation is history
+      // or the neighbor a remainder hangs off, and a row can cite a closed
+      // defect while three others are still open.
+      const claim = row.cells[1].match(/\*\*([\s\S]+?)\*\*/)?.[1] ?? ''
+      const cited = [...new Set(claim.match(new RegExp(`\\b${doc.prefix}-\\d+\\b`, 'g')) ?? [])]
+        .map(id => issueOf.get(id))
+      if (cited.length && cited.every(i => i?.closed)) {
+        add('overview-status', at,
+          `Status says defect and every row it cites is closed (${cited.map(i => i.id).join(', ')})`,
+          'a defect with nothing open behind it is shipped or settled — say which')
+      }
     }
   }
 

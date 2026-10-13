@@ -982,6 +982,7 @@ Everything in `sierra.config.js`:
 | `autoImport.modules` | `{}` | package → bindings that need no import |
 | `siteUrl` | `''` | absolute origin for the sitemap |
 | `llms` | `false` | `true` emits `llms.txt` unless `public/llms.txt` exists · `'auto'` always regenerates it |
+| `functions` | — | directory of host functions, relative to the root. A file answers its own path (`functions/api/event.js` is `/api/event`, `index.js` its directory) and is `export default (request, env) => Response`; `env` carries strings only, and a module importing `cloudflare:` or a `[param]` file name is refused. The build writes `.sierra/functions.js`, and `sierra site --serve` mounts it before the static answers |
 | `markdownPages` | `false` | `true` \| `'auto'` — emit `index.md` beside each page |
 | `speculationRules` | `true` | static build: prerender a same-origin link on hover (Speculation Rules, `moderate`); `rel="nofollow"` opts a link out |
 | `build.deferJS` | `false` | defer script tags in `index.html` |

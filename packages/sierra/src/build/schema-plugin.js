@@ -263,7 +263,16 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
     )
   }
 
-  const result = usable ? parseFile(schemaPath) : parse(source)
+  // Caught, because the tokenizer THROWS on some half-typed input (an
+  // unterminated backtick, a stray `/`) where the parser answers `valid:
+  // false`, and a throw here exits the dev server on a mid-edit save (`FJS-2706`).
+  let result
+  try {
+    result = usable ? parseFile(schemaPath) : parse(source)
+  } catch (err) {
+    warn?.(err.message)
+    return null
+  }
   if (!result?.valid) {
     for (const e of result?.errors ?? []) warn?.(`${schemaPath}: ${e}`)
     return null

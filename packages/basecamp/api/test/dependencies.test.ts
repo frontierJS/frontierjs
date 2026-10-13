@@ -76,7 +76,7 @@ const REGISTRY: Record<string, any> = {
 const VULNS: Record<string, string[]> = { 'lodash@4.17.15': ['GHSA-p6mc-m468-83gw'] }
 const seen: string[] = []
 
-let upstream: any, env: any, ws: any, owner: any, developer: any, viewer: any
+let upstream: any, env: any, ws: any, owner: any, developer: any, viewer: any, ownerUser: any
 
 beforeAll(async () => {
   upstream = Bun.serve({
@@ -109,8 +109,9 @@ beforeAll(async () => {
   const sys  = env.system as any
   const uniq = Math.random().toString(36).slice(2, 8)
   const acct = await sys.account.create({ data: { slug: `deps-${uniq}`, displayName: 'Deps' } })
-  const mk   = (role: string) => sys.user.create({ data: { email: `${role}-${uniq}@x.co`, accountId: acct.id } })
+  const mk   = (role: string) => sys.user.create({ data: { email: `${role}-${uniq}@x.co`, accountId: acct.id, status: 'active' } })
   const [o, d, v] = [await mk('owner'), await mk('dev'), await mk('viewer')]
+  ownerUser = o
   ws = await sys.workspace.create({ data: { accountId: acct.id, name: 'Deps', slug: `deps-${uniq}`, ownerId: o.id } })
   for (const [u, role] of [[o, 'owner'], [d, 'developer'], [v, 'viewer']] as const)
     await sys.workspaceMember.create({ data: {
@@ -196,6 +197,28 @@ describe('check', () => {
     expect(report.packages[0].name).toBe('lodash')
     expect(report.counts).toMatchObject({ vulnerable: 1, deprecated: 1, patch: 2, unknown: 1 })
     expect(report.projects).toHaveLength(1)
+  })
+
+  // FJS-2715 — the advisory is on /dependencies/ and nobody is told.
+  test('a version that gains an advisory tells the workspace once, not again each run', async () => {
+    const told = async () => (env.system as any).notification.findMany({
+      where: { userId: ownerUser.id, type: 'dependency_vulnerable' },
+    })
+    // The first run found lodash@4.17.15 vulnerable: that is the news.
+    const first = await told()
+    expect(first).toHaveLength(1)
+    expect(JSON.stringify(first[0])).toContain('lodash')
+
+    await refreshDependencies(env.app, env.system, { workspaceId: ws.id })
+    expect(await told()).toHaveLength(1)
+
+    VULNS['vite@8.3.2'] = ['GHSA-aaaa-bbbb-cccc']
+    await refreshDependencies(env.app, env.system, { workspaceId: ws.id })
+    const after = await told()
+    expect(after).toHaveLength(2)
+    expect(JSON.stringify(after.find((n: any) => n.id !== first[0].id))).toContain('vite')
+    expect(JSON.stringify(after.find((n: any) => n.id !== first[0].id))).not.toContain('lodash')
+    delete VULNS['vite@8.3.2']
   })
 
   test('a registry that is down keeps the previous answer and says why', async () => {

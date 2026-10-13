@@ -327,6 +327,10 @@ function runner(app: BasecampApp) {
         source:        ctx.config.source ?? service.source ?? {},
         hosts:         await routedHosts(app.db, deploy.appId),
         redirects:     await routedRedirects(app.db, deploy.appId),
+        // The live App, as the hosts are: a rollback puts back old bytes, never
+        // an exposure somebody has since withdrawn. The machine's firewall
+        // drops a forwarded port this does not declare (FJS-D930).
+        exposes_port:  service.exposesPort === true,
       }, { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }

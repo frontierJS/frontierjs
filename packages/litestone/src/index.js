@@ -10,6 +10,7 @@ export { createClient, ValidationError,
          CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
 export { Plugin, PluginRunner, AccessDeniedError } from './core/plugin.js'
+export { isNestedWrite }                         from './plugins/reach.js'
 export { GatePlugin, LEVELS, parseGateString,
          FrontierGateGetLevel }                        from './plugins/gate.js'
 export { parse, parseFile }                      from './core/parser.js'

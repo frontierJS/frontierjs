@@ -93,3 +93,33 @@ site's, so `site-kit`'s rather than the kit's.
     and memory and disk) built on `<progress>`, the element for task completion,
     so a screen reader announces a disk as a task. One component on the
     platform's element with the platform's word, and the drawing is a treatment.
+- **Does the kit ship an `Icon`?** Raised by `docs/mesa-usage-audit-2026-10-12.md`
+  § 3.12: five local `Icon.mesa`, in two lineages. One is a three-line `<svg>`
+  over an app's own Heroicons path table (ela, then copied into maidtech and
+  sstime); the other is a path table inline (serpgrid, quo). The parts that
+  fail silently are the size (an unsized `<svg>` draws at 300×150) and
+  `aria-hidden`, and `@frontierjs/css`'s `.icon` already handles the size. Its
+  README § Icons says the package ships no icons.
+  - **A** — no `Icon`. The set is each app's own.
+  - **B** — a wrapper only: `<Icon paths>` carrying `.icon` and `aria-hidden`,
+    with the set still the app's.
+  - **C** — a wrapper plus a shipped outline set (Heroicons, MIT).
+  - **Recommend A** — B saves three lines and adds a noun. C is *batteries vs.
+    smallness*, already decided for smallness in css § Icons, and a set the
+    kit picks is a set every app restyles around. The copies agree with each
+    other, so nothing is drifting.
+- **What does an app shell own, and is it the kit's?** Raised by the same
+  audit, § 3.11. Every app rewrites `_module.mesa`, and the nav table is
+  spelled six ways: sstime `lib/shell/nav.js`, serpgrid `NAV`, portal `MORE`,
+  ela and maidtech `nav.js` with `sectionFor`/`tabsFor`, and basecamp and
+  example, where the nav list is also the ⌘K palette. `frame.css` ships the
+  layout and has no Mesa component (§ Maybe, *Sidebar*).
+  - **A** — a paper first (`IDEAS/app-shell.md`). It surveys the six nav
+    shapes and proposes a `nav.js` contract (groups, section tabs, bare
+    prefixes, drawer copy), then a kit `Shell` over `frame.css` that reads it.
+  - **B** — the scaffold's `_module.mesa` and a `nav.js` become the contract,
+    and the kit gets no component.
+  - **C** — nothing. A shell is the app's.
+  - **Recommend A** — two apps already feed one table to both the nav and ⌘K,
+    so there is a real shared shape. It is too large to coin inside a kit
+    step, and B can follow A as the generator's half of the same contract.

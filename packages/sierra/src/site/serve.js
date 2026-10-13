@@ -34,11 +34,13 @@
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { isHashedAsset } from '../serve/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
 import { bodyAnswer, methodAnswer } from '../serve/http-answers.js'
 import { parseRedirects, redirectKey } from '../postbuild/redirects.js'
+import { functionHandler } from '../postbuild/functions.js'
 
 import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 
@@ -109,6 +111,26 @@ function resolveEntry(files, safe) {
   return null
 }
 
+// A function's request body: a beacon or a form post, never an upload. The cap
+// is what stops an open origin buffering whatever it is sent.
+const MAX_BODY = 1024 * 1024
+
+async function requestFrom(req) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > MAX_BODY) throw new Error('request body too large')
+    chunks.push(chunk)
+  }
+  const bodiless = req.method === 'GET' || req.method === 'HEAD'
+  return new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
+    method:  req.method,
+    headers: req.headers,
+    body:    bodiless ? undefined : Buffer.concat(chunks),
+  })
+}
+
 /**
  * Serve `dir` as a prerendered site origin.
  *
@@ -125,6 +147,12 @@ function resolveEntry(files, safe) {
  * @param {string[]} [opts.allowOutside]  directories a symlink inside `dir` may
  *                                     legitimately resolve into; see
  *                                     serve/served-path.js
+ * @param {string}  [opts.functions]   the entry the build wrote for the site's
+ *                                     host functions (`.sierra/functions.js`).
+ *                                     Mounted before every static answer, the
+ *                                     way a host runs them
+ * @param {Record<string, unknown>} [opts.env]  what a function reads as `env`;
+ *                                     only the strings reach it
  * @returns {Promise<{ port: number, url: string, close: () => Promise<void> }>}
  *
  * `_redirects` is read once, here, so a rule serveSite cannot answer throws
@@ -132,7 +160,12 @@ function resolveEntry(files, safe) {
  */
 export async function serveSite({
   dir, files, port = 0, host = '0.0.0.0', notFound = '404.html', allowOutside = [],
+  functions, env = {},
 } = {}) {
+  const fns = functions
+    ? functionHandler((await import(pathToFileURL(resolve(functions)).href)).routes, env)
+    : null
+
   const rootDir = files ? null : resolve(dir)
   const find    = files
     ? async (safe) => resolveEntry(files, safe)
@@ -153,6 +186,22 @@ export async function serveSite({
     // deleted file between the stat and the read has the identical shape, and
     // so does every line added here later.
     try {
+
+    // Before the verb check: a function answers POST, which a static answer
+    // refuses.
+    if (fns) {
+      const named = relativePathFor(req.url.split('#')[0].split('?')[0])
+      if (named !== null && fns.has('/' + named)) {
+        const response = await fns.handle(await requestFrom(req))
+        res.writeHead(response.status, {
+          ...headers,
+          ...Object.fromEntries(response.headers),
+          ...(response.headers.getSetCookie().length && { 'Set-Cookie': response.headers.getSetCookie() }),
+        })
+        res.end(req.method === 'HEAD' ? undefined : Buffer.from(await response.arrayBuffer()))
+        return
+      }
+    }
 
     // A wrong verb is 405 CARRYING `Allow` and an unclaimed OPTIONS is 204 —
     // the shape `FJS-753` settled for junction, and the same one a static host

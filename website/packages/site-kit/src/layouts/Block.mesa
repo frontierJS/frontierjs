@@ -5,7 +5,10 @@
   The element follows where the block sits, never its name (FJS-D654): a
   top-level block is a Band, `<section class="band">` holding a `.container`;
   a nested one is an `<article>`; one with a `url` is an `<a>`; and a caller
-  that states `tag` gets that element, or none with `tag={false}`.
+  that states `tag` gets that element, or none with `tag={false}`. A block is
+  nested when its caller says `nested` or when it renders inside another
+  Block's element, which that Block tells it through `$context`: a Band is
+  100vw, so a second one inside the first scrolls the page sideways (FJS-2716).
 
   Its look is six typed keys, each a word @frontierjs/css already ships
   (FJS-D621, FJS-D823): `template` is a Layout helper, `tone`, `treatment` and
@@ -52,7 +55,10 @@
   checkAxes(name, { template, tone, treatment, density, align })
 
   const kind = kebab(name)
-  const element = tag !== undefined ? tag : url ? 'a' : nested ? 'article' : 'section'
+  // `tag={false}` renders no element, so it passes on what it was told.
+  const inBlock = $context.inBlock
+  const element = tag !== undefined ? tag : url ? 'a' : nested || inBlock ? 'article' : 'section'
+  $context.inBlock = Boolean(element) || inBlock
   const band = element === 'section' && tag === undefined
   const look = { kind, template, tone, treatment, density, align }
   const { outer, inner: innerClass } = bandClasses(look)

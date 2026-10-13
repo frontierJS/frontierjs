@@ -640,18 +640,56 @@ function readIdeas({ root, dir: registerDir, ids }) {
  * filename, sometimes with a section number after it.
  */
 function ideaRanks(dir) {
-  const file = join(dir, 'overview.md')
-  const out  = new Map()
-  if (!existsSync(file)) return out
+  const out = new Map()
 
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    const cells = splitRow(line)
-    if (cells.length < 3) continue
-    if (!/^\d+\.\d+[a-z]?$/.test(cells[0].trim())) continue
-
-    const source = cells[cells.length - 1].match(/`([\w-]+\.md)`/)
-    if (source && !out.has(source[1])) out.set(source[1], cells[0].trim())
+  for (const row of readOverviewRows(dir)) {
+    if (!row.rank) continue
+    const source = row.cells[row.cells.length - 1].match(/`([\w-]+\.md)`/)
+    if (source && !out.has(source[1])) out.set(source[1], row.rank)
   }
+
+  return out
+}
+
+const RANK = /^\d+\.\d+[a-z]?$/
+
+/**
+ * Every table row of `overview.md` under a `| # |` header, in file order. The
+ * ranked rows are read by `ideaRanks`, `repo-map`, `repo-rings` and the frame
+ * loop, so the owner of what a row IS is here and the grader
+ * (`register-check.js`) asks it rather than splitting the file again.
+ *
+ * `rank` is null when the first cell is not one — such a row is invisible to
+ * every reader, which is what the grader reports. `headWidth` is the cell
+ * count of the `| # |` header the row sits under, null when it sits under none.
+ */
+export function readOverviewRows(dir) {
+  const file = join(dir, 'overview.md')
+  if (!existsSync(file)) return []
+
+  const out = []
+  let headWidth = null
+
+  readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+    if (!/^\s*\|/.test(line)) { headWidth = null; return }
+
+    const cells = splitRow(line)
+    if (cells[0] === '#') { headWidth = cells.length; return }
+    if (cells.every(c => /^:?-+:?$/.test(c))) return
+
+    // A ranked row outside any `| # |` table is still a row to the readers; a
+    // rankless one outside a table is some other table's.
+    const rank = RANK.test(cells[0]) ? cells[0] : null
+    if (headWidth == null && !rank) return
+
+    out.push({
+      rank,
+      cells,
+      headWidth,
+      file: join('IDEAS', 'overview.md'),
+      line: i + 1,
+    })
+  })
 
   return out
 }
