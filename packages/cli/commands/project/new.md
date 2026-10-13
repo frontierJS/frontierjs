@@ -1830,17 +1830,21 @@ ${sc}
 
   {#if session.awaitingCode}
     <p class="text-sm text-muted">Enter the code from your authenticator app, or one of your recovery codes.</p>
-    <input class="field" bind:value={code} autocomplete="one-time-code" inputmode="numeric" placeholder="123456" aria-label="Code" />
-    <button class="btn primary" on:click={handleCode} disabled={loading}>
-      {loading ? 'Checking…' : 'Verify'}
-    </button>
-    <button class="btn ghost" on:click={startOver} disabled={loading}>Start over</button>
+    <form class="stack gap-md" on:submit|preventDefault={handleCode}>
+      <input class="field" bind:value={code} autocomplete="one-time-code" inputmode="numeric" placeholder="123456" aria-label="Code" />
+      <button class="btn primary" type="submit" disabled={loading}>
+        {loading ? 'Checking…' : 'Verify'}
+      </button>
+      <button class="btn ghost" type="button" on:click={startOver} disabled={loading}>Start over</button>
+    </form>
   {:else}
-    <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
-    <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
-    <button class="btn primary" on:click={handleSubmit} disabled={loading}>
-      {loading ? 'Signing in…' : 'Sign in'}
-    </button>
+    <form class="stack gap-md" on:submit|preventDefault={handleSubmit}>
+      <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email"    autocomplete="username" />
+      <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" />
+      <button class="btn primary" type="submit" disabled={loading}>
+        {loading ? 'Signing in…' : 'Sign in'}
+      </button>
+    </form>
 
     <p class="text-sm text-muted">
       <a class="link" href="/reset/">Forgot your password?</a> · No account? <a class="link" href="/register/">Create one</a>
@@ -1936,11 +1940,13 @@ ${sc}
     </div>
     <a class="btn primary" href="/login/">Sign in</a>
   {:else if token()}
-    <input class="field" bind:value={password} type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
-    <input class="field" bind:value={again}    type="password" placeholder="The same again"   aria-label="The same again"   autocomplete="new-password" />
-    <button class="btn primary" on:click={confirm} disabled={busy}>
-      {busy ? 'Saving…' : 'Set password'}
-    </button>
+    <form class="stack gap-md" on:submit|preventDefault={confirm}>
+      <input class="field" bind:value={password} type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
+      <input class="field" bind:value={again}    type="password" placeholder="The same again"   aria-label="The same again"   autocomplete="new-password" />
+      <button class="btn primary" type="submit" disabled={busy}>
+        {busy ? 'Saving…' : 'Set password'}
+      </button>
+    </form>
   {:else if sent}
     <div class="alert success" role="status">
       <div class="alert-content">If <strong>{email}</strong> has an account, a reset link is on its way.</div>
@@ -1955,10 +1961,12 @@ ${sc}
     <a class="link text-sm" href="/login/">Back to sign in</a>
   {:else}
     <p class="text-sm text-muted">Enter the address you sign in with and we will send a link to set a new password.</p>
-    <input class="field" bind:value={email} type="email" placeholder="Email" aria-label="Email" autocomplete="email" />
-    <button class="btn primary" on:click={request} disabled={busy || !email.trim()}>
-      {busy ? 'Sending…' : 'Send reset link'}
-    </button>
+    <form class="stack gap-md" on:submit|preventDefault={request}>
+      <input class="field" bind:value={email} type="email" placeholder="Email" aria-label="Email" autocomplete="email" />
+      <button class="btn primary" type="submit" disabled={busy || !email.trim()}>
+        {busy ? 'Sending…' : 'Send reset link'}
+      </button>
+    </form>
     <a class="link text-sm" href="/login/">Back to sign in</a>
   {/if}
 </div>
@@ -2071,15 +2079,19 @@ ${sc}
         <dt>Email</dt>
         <dd>{session.user.email}</dd>
       </dl>
-${withName ? `      <input class="field" bind:value={name} placeholder="Your name" aria-label="Name" autocomplete="name" />
-      <button class="btn primary" on:click={saveName} disabled={busy}>Save name</button>
+${withName ? `      <form class="stack gap-sm" on:submit|preventDefault={saveName}>
+        <input class="field" bind:value={name} placeholder="Your name" aria-label="Name" autocomplete="name" />
+        <button class="btn primary" type="submit" disabled={busy}>Save name</button>
+      </form>
 ` : ``}    </section>
 
     <section class="card stack gap-sm">
       <h2 class="text-lg">Password</h2>
-      <input class="field" bind:value={current} type="password" placeholder="Current password" aria-label="Current password" autocomplete="current-password" />
-      <input class="field" bind:value={next}    type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
-      <button class="btn primary" on:click={changePassword} disabled={busy || !current || !next}>Change password</button>
+      <form class="stack gap-sm" on:submit|preventDefault={changePassword}>
+        <input class="field" bind:value={current} type="password" placeholder="Current password" aria-label="Current password" autocomplete="current-password" />
+        <input class="field" bind:value={next}    type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
+        <button class="btn primary" type="submit" disabled={busy || !current || !next}>Change password</button>
+      </form>
     </section>
   </div>
 
@@ -2157,12 +2169,14 @@ ${sc}
     <div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>
   {/if}
 
-  <input class="field" bind:value={name}     type="text"     placeholder="Name"     aria-label="Name" />
-  <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
-  <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
-  <button class="btn primary" on:click={handleSubmit} disabled={loading}>
-    {loading ? 'Creating…' : 'Create account'}
-  </button>
+  <form class="stack gap-md" on:submit|preventDefault={handleSubmit}>
+    <input class="field" bind:value={name}     type="text"     placeholder="Name"     aria-label="Name"     autocomplete="name" />
+    <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email"    autocomplete="username" />
+    <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" autocomplete="new-password" />
+    <button class="btn primary" type="submit" disabled={loading}>
+      {loading ? 'Creating…' : 'Create account'}
+    </button>
+  </form>
 
   <p class="text-sm text-muted">Already have one? <a class="link" href="/login/">Sign in</a></p>
 </div>
