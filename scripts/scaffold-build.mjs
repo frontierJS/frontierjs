@@ -376,6 +376,8 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
       return fail(`AGENTS.md points at files the installed packages do not carry: ${absent.join(', ')}`, agents)
     if (!readFileSync(join(app, 'CLAUDE.md'), 'utf8').split('\n').includes('@AGENTS.md'))
       return fail('the scaffolded CLAUDE.md does not import AGENTS.md', '')
+    if (!agents.split('\n').includes('@AGENTS.project.md') || !existsSync(join(app, 'AGENTS.project.md')))
+      return fail('the scaffolded AGENTS.md does not import an AGENTS.project.md that exists', agents)
 
     log(`  ✓ AGENTS.md's ${pointers.length} pointers resolve in the installed app`)
 

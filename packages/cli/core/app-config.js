@@ -230,16 +230,19 @@ jobs:
 `
 }
 
-// ─── AGENTS.md and CLAUDE.md ──────────────────────────────────────────────────
+// ─── AGENTS.md, AGENTS.project.md and CLAUDE.md ───────────────────────────────
 // Much of an app is now written by a program somebody asked, and that program
 // arrives knowing the ecosystem and not this framework: a role check in a hook,
 // `Decimal(10,2)`, a resource file named for its service. Each is a legal
 // spelling of something wrong, and nothing in a fresh scaffold says otherwise.
 //
-// `AGENTS.md` is the framework's half and `CLAUDE.md` is the app's. The second
-// imports the first, so what the developer writes about their own app is never
-// mixed into text the framework owns — and `AGENTS.md` is the name every other
-// agent tool converged on, which is why the framework's half is not CLAUDE.md.
+// `AGENTS.md` is the framework's half and `AGENTS.project.md` is the app's. The
+// first imports the second, so what the developer writes about their own app is
+// never mixed into text the framework owns. `AGENTS.md` is the name every other
+// agent tool converged on, so both halves reach any of them — Claude Code through
+// the `@` import, the rest through the sentence naming the file, since only Claude
+// Code expands one. `CLAUDE.md` only imports `AGENTS.md`, because Claude Code
+// never opens it on its own.
 //
 // It restates no package's reference (`FJS-D163`). Every line either points at
 // a file the installed tarball carries or names the `fli check` rule that grades
@@ -328,7 +331,8 @@ export function appAgentsMd({ name, packages }) {
   return `# ${name} — for agents
 
 A FrontierJS app. \`fli new\` wrote this file for a program writing code here;
-\`README.md\` is the same app for a person, and \`CLAUDE.md\` is the app's own.
+\`README.md\` is the same app for a person, and \`AGENTS.project.md\` is the app's
+own — read it before changing anything; where it and this file disagree, it wins.
 
 ## The model
 
@@ -392,16 +396,33 @@ bun run check     # fli check, then lint, then typecheck — the same gate CI ru
 
 Fix what it reports before moving on. \`fli check --list\` prints every rule, and
 \`fli check --fix\` applies the ones whose rewrite is the whole fix.
+
+## This project
+
+@AGENTS.project.md
 `
 }
 
-/** The app's own agent file. It imports the framework's and holds nothing else yet. */
+/** The app's own agent instructions, imported by AGENTS.md. Written once by
+ *  `fli new`; nothing the framework writes afterwards touches it. */
+export function appAgentsProjectMd({ name }) {
+  return `# ${name} — project instructions
+
+Instructions for an agent working in this app, read after the framework's
+\`AGENTS.md\`: what the app is for, who uses it, the conventions this team keeps
+and the decisions the schema does not hold. Where this file and \`AGENTS.md\`
+disagree, this file wins.
+`
+}
+
+/** Claude Code's entry point. It imports AGENTS.md, which imports the app's own. */
 export function appClaudeMd({ name }) {
   return `# ${name}
 
 @AGENTS.md
 
-\`AGENTS.md\` is the framework's guidance. This file is the app's: what it is for,
-who uses it, and the decisions the schema does not hold.
+\`AGENTS.md\` is the framework's guidance and imports \`AGENTS.project.md\`, this
+app's own instructions for every agent tool. Write project instructions there;
+this file is for what only Claude Code should read.
 `
 }
