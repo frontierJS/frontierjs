@@ -490,6 +490,9 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           bodyAttrs: config.document?.bodyAttrs,
           docHead:    config.document?.head,
           docBodyEnd: config.document?.bodyEnd,
+          docMeta:    config.document?.meta,
+          docLinks:   config.document?.links,
+          docJsonLd:  config.document?.jsonLd,
           htmlClass: resolveHtmlClass(config),
           lang:      config.document?.lang,
           // Compile temp modules inside the app so a layout's bare imports

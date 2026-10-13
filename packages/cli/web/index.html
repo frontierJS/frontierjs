@@ -611,6 +611,7 @@ button[data-health] {
       <form class="bar bordered dense stack gap-3xs" id="ask-form" hidden onsubmit="askClaude(event)">
         <div class="cluster gap-3xs">
           <input class="field text-xs gui-ask-q" id="ask-q" type="text" autocomplete="off">
+          <select class="field text-xs gui-pick" id="ask-effort" onchange="saveAskEffort()" title="How long Claude thinks before it answers"></select>
           <button class="btn text-xs" id="ask-send" type="submit">ask</button>
           <button class="btn ghost text-xs" id="ask-new" type="button" onclick="newAsk()" hidden title="Forget this conversation; the next ask starts fresh">new</button>
         </div>
@@ -1664,7 +1665,8 @@ let askSession  = null
 let askRunning  = false
 let askDefaults = null
 
-const ASK_RULES_KEY = 'fli-ask-rules'
+const ASK_RULES_KEY  = 'fli-ask-rules'
+const ASK_EFFORT_KEY = 'fli-ask-effort'
 
 // The defaults are the server's, so the help line and the instructions box
 // say what the argv actually allows rather than a copy that drifts from it.
@@ -1680,7 +1682,17 @@ async function loadAskDefaults() {
   try { saved = localStorage.getItem(ASK_RULES_KEY) } catch {}
   document.getElementById('ask-rules').value = saved || d.rules
   showAskRulesState()
+  let effort = null
+  try { effort = localStorage.getItem(ASK_EFFORT_KEY) } catch {}
+  const pick = document.getElementById('ask-effort')
+  pick.replaceChildren(...d.efforts.map(e => new Option(e === d.effort ? `${e} effort · default` : `${e} effort`, e)))
+  pick.value = d.efforts.includes(effort) ? effort : d.effort
   return d
+}
+
+function saveAskEffort() {
+  const v = document.getElementById('ask-effort').value
+  try { v === askDefaults?.effort ? localStorage.removeItem(ASK_EFFORT_KEY) : localStorage.setItem(ASK_EFFORT_KEY, v) } catch {}
 }
 
 function askRulesEdited() {
@@ -1770,7 +1782,7 @@ async function askClaude(event) {
   const input    = document.getElementById('ask-q')
   const send     = document.getElementById('ask-send')
   const question = input.value.trim()
-  const body     = { question, output: askOutput(), context: askContext(), rules: askSession ? null : askRulesEdited(), session: askSession }
+  const body     = { question, output: askOutput(), context: askContext(), rules: askSession ? null : askRulesEdited(), session: askSession, effort: document.getElementById('ask-effort').value || undefined }
 
   askRunning = true
   send.textContent = 'stop'

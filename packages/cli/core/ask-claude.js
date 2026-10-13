@@ -136,11 +136,21 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // A work run builds rather than answers; the operator sets it per checkout.
 export const WORK_BUDGET_USD = 10
 
+// How hard Claude thinks, as `--effort`. Thinking itself cannot be switched off
+// here: on Opus 5.5 and Sonnet 5.5 `claude -p` keeps it on through
+// `alwaysThinkingEnabled: false`, `MAX_THINKING_TOKENS=0` and
+// `CLAUDE_CODE_DISABLE_THINKING=1` alike (measured, 2.1.296), so a thinking
+// toggle would be a control that does nothing. Effort reaches every model.
+export const EFFORTS    = ['low', 'medium', 'high', 'xhigh', 'max']
+export const ASK_EFFORT = 'high'
+
 // `fork` resumes `session` under a NEW id filed under the run's own directory,
 // which is what lets `claude --resume` from a workbench branch's folder find it;
 // a plain resume from there answers but stays filed under the old directory.
-export function askArgv({ session = null, edit = null, work = null, fork = false, images = false } = {}) {
+// No `effort` leaves it to the account, which is what the workbench passes.
+export function askArgv({ session = null, edit = null, work = null, fork = false, images = false, effort = null } = {}) {
   const argv = askFlags({ session, edit, work, fork })
+  if (effort) argv.push('--effort', effort)
   if (images) argv.push('--input-format', 'stream-json')
   return argv
 }
@@ -336,15 +346,17 @@ export function readAskEvent(event) {
 }
 
 /**
- * Start one question. Returns `{ error }` for a session id that is not one, or
+ * Start one question. Returns `{ error }` for a session id or effort that is not one, or
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, images = [], bin = 'claude', onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, images = [], effort = ASK_EFFORT, bin = 'claude', onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
+  if (!EFFORTS.includes(effort))
+    return { error: `no such effort: ${JSON.stringify(String(effort).slice(0, 40))} — one of ${EFFORTS.join(', ')}` }
 
-  const child = spawn(bin, askArgv({ session, edit, images: images.length > 0 }), {
+  const child = spawn(bin, askArgv({ session, edit, effort, images: images.length > 0 }), {
     cwd: root, detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   })

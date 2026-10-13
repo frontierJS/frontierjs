@@ -1,0 +1,62 @@
+<script>
+  // form-saved-baseline.mesa — what reset() returns to once a save has landed.
+  //
+  // The service bumps the version on every write and keeps `note` at its stored
+  // value whatever is sent, which is what a boundary declining a column answers
+  // (`FJS-1071`). So a reset after a save has two things to get right at once:
+  // the revision it carries into the next write, and which of typed and stored
+  // it shows for a column the write did not take (`FJS-2584`).
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList, coerceToSchema, toFieldErrors } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    id:        { type: 'string', readOnly: true, title: 'Id' },
+    version:   { type: 'number', readOnly: true, title: 'Version' },
+    reference: { type: 'string', title: 'Reference' },
+    note:      { type: 'string', title: 'Note' },
+  }
+
+  const ROW = { id: 'o-7', version: 4, reference: 'Ada', note: 'stored' }
+
+  let calls   = []
+  let version = ROW.version
+
+  const RESOURCE = {
+    context: { model: 'Order', service: 'orders', idField: 'id' },
+    fields:  FIELDS,
+    versionField: 'version',
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ reference: '', note: '' }),
+    coerce:      (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: (err) => toFieldErrors(err),
+    save: (data, opts) => {
+      calls = [...calls, `${opts?.mode ?? '-'}:v${data?.version}:${data?.reference}`]
+      version += 1
+      return Promise.resolve({ id: ROW.id, version, reference: data?.reference, note: ROW.note })
+    },
+  }
+
+  // A hand-written write that answers nothing: no row to take a baseline from.
+  let handCalls = []
+  function handSubmit(record) { handCalls = [...handCalls, record.reference] }
+
+  let api  = null
+  let hand = null
+</script>
+
+<div id="saved">
+  <Form resource={RESOURCE} record={{ ...ROW }} onready={(a) => api = a} />
+</div>
+
+<div id="hand">
+  <Form resource={RESOURCE} record={{ ...ROW }} onsubmit={handSubmit} onready={(a) => hand = a} />
+</div>
+
+<button type="button" id="submit" on:click={() => api?.submit()}>submit</button>
+<button type="button" id="reset" on:click={() => api?.reset()}>reset</button>
+<button type="button" id="hand-submit" on:click={() => hand?.submit()}>hand submit</button>
+<button type="button" id="hand-reset" on:click={() => hand?.reset()}>hand reset</button>
+
+<output id="calls">{calls.join('|')}</output>
+<output id="hand-calls">{handCalls.join('|')}</output>

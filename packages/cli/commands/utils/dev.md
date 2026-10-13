@@ -1,6 +1,6 @@
 ---
 title: utils:dev
-description: Start the dev server on this app's own ports — refuses a taken one, warns on an empty database
+description: Start the dev server on this app's own ports — refuses a taken one, offers an install, warns on an empty database
 alias: dev
 examples:
   - fli dev
@@ -11,7 +11,7 @@ examples:
 flags:
   check:
     type: boolean
-    description: Skip both preflights — the ports and the database
+    description: Skip the preflights — the ports, the install and the database
     defaultValue: true
   host:
     type: boolean
@@ -20,7 +20,7 @@ flags:
 ---
 
 Runs the project's own `dev` script with the right runner, on this app's own
-ports, after two preflights.
+ports, after three preflights.
 
 **A `dev` that only runs surface scripts side by side is run by fli, one child
 per surface, each line behind its surface's name** (`api │`, `web │`) —
@@ -44,6 +44,16 @@ of fact. An empty database is the correct state for a first run, so saying so is
 a courtesy — but it is worth saying, because an app with no rows boots clean,
 serves every route, answers every request correctly and shows a person a blank
 screen, and the first thing anyone does is look for a bug in the app.
+
+**A declared package that is not installed is offered an install, between the
+two.** A fresh clone has no `node_modules`, and both surfaces start anyway and
+fail in words that do not say *install*: `vite: command not found` and `Cannot
+find module '@frontierjs/junction/…'`. Each package is looked for, not the
+directory, because a pull that added one dependency fails the same way with a
+`node_modules` present (`core/install-preflight.js`). A terminal is asked; a
+run with none is refused with the command. A `link:` dependency this machine
+never `bun link`ed is refused before the install, because the install itself
+fails on it — that is a `--source local` app opened somewhere else.
 
 A port that is already answering is not correct in any reading, and the two dev
 runners fail differently and badly: `bun --watch` prints EADDRINUSE and **keeps
@@ -101,6 +111,10 @@ const { claimSession, busyPorts, composedSurfaces } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
 const { runSurfaces } =
   await import(resolve(global.fliRoot, 'core/dev-run.js'))
+const { missingPackages, unregisteredLinks } =
+  await import(resolve(global.fliRoot, 'core/install-preflight.js'))
+const { plural } =
+  await import(resolve(global.fliRoot, 'core/text.js'))
 
 let manifest = {}
 try {
@@ -140,6 +154,30 @@ if (flag.check) {
       '',
     ], { indent: 2 })
     process.exit(1)
+  }
+
+  const missing = missingPackages(root)
+  if (missing.length && !flag.dry) {
+    const install = `${detectRunner(root)} install`
+    log.warn(`${plural(missing.length, 'declared package')} not installed — ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? ', …' : ''}`)
+    const links = unregisteredLinks(root)
+    if (links.length) {
+      log.error(`${install} will fail: no \`bun link\` on this machine for ${links.join(', ')}`)
+      echo.lines([chalk.dim('Run `bun link` in each of those packages, or point the manifest at published versions.')], { indent: 2 })
+      process.exit(1)
+    }
+    if (!tty.interactive) {
+      log.error(`Install first: ${install}`)
+      process.exit(1)
+    }
+    const answer = (await tty.line(`Run ${install} now? [Y/n]`)).trim().toLowerCase()
+    if (answer && answer !== 'y' && answer !== 'yes') process.exit(1)
+    $.exec({ command: `cd ${root} && ${install}` })
+    const still = missingPackages(root)
+    if (still.length) {
+      log.error(`still not installed after ${install}: ${still.join(', ')}`)
+      process.exit(1)
+    }
   }
 
   try {

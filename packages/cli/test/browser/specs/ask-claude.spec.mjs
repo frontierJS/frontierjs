@@ -31,7 +31,7 @@ export async function run(t) {
     };
     const lines = () => [...document.querySelectorAll('#output-lines .gui-line')];
     const stored = () => { try { return localStorage.getItem('fli-ask-rules') } catch { return 'unreadable' } };
-    try { localStorage.removeItem('fli-ask-rules') } catch {}
+    try { localStorage.removeItem('fli-ask-rules'); localStorage.removeItem('fli-ask-effort') } catch {}
     try {
       newAsk();
       clearOutput();
@@ -49,7 +49,12 @@ export async function run(t) {
         help:     document.getElementById('ask-help').textContent,
         rules:    rulesBox.value,
         state:    document.getElementById('ask-rules-state').textContent,
+        effort:   document.getElementById('ask-effort').value,
+        efforts:  [...document.getElementById('ask-effort').options].map(o => o.value),
       };
+      document.getElementById('ask-effort').value = 'low';
+      saveAskEffort();
+      const effortKept = localStorage.getItem('fli-ask-effort');
       document.getElementById('ask-q').value = 'why did this fail?';
       rulesBox.value = 'Answer in one sentence.';
       saveAskRules();
@@ -84,7 +89,11 @@ export async function run(t) {
       await askClaude();
       const refused = lines().at(-1).textContent.trim();
 
-      return { wasHidden, shown, offered, edited, reset, sent, first, refused };
+      document.getElementById('ask-effort').value = 'high';
+      saveAskEffort();
+      const effortForgot = localStorage.getItem('fli-ask-effort');
+
+      return { wasHidden, shown, offered, edited, reset, sent, first, refused, effortKept, effortForgot };
     } finally {
       window.fetch = realFetch;
       newAsk();
@@ -106,6 +115,10 @@ export async function run(t) {
   t.ok(/edited/.test(out.edited.state), 'an edit is labeled as one')
   t.is(out.edited.stored, 'Answer in one sentence.', 'and kept for the next visit')
   t.ok(/default/.test(out.reset.state) && out.reset.stored === null, 'reset goes back to the default and forgets the edit')
+  t.is(out.offered.effort, 'high', 'effort starts at the server\'s default')
+  t.is(out.offered.efforts.join(','), 'low,medium,high,xhigh,max', 'and offers every level claude takes')
+  t.is(out.effortKept, 'low', 'a chosen effort is kept for the next visit')
+  t.is(out.effortForgot, null, 'and choosing the default again forgets it')
 
   const [first, follow, fresh] = out.sent
   t.is(first.question, 'why did this fail?', 'the question typed is the question sent')
@@ -113,6 +126,8 @@ export async function run(t) {
   t.is(first.session, null, 'and starts a session')
   t.ok(first.context && first.context.panel, `with where the page is (${JSON.stringify(first.context)})`)
   t.is(first.rules, 'Answer in one sentence.', 'and the edited instructions')
+  t.is(first.effort, 'low', 'and the chosen effort')
+  t.is(follow.effort, 'low', 'which a follow-up carries too')
 
   t.is(out.first.answer, 'The snapshots are stale; rerun ws:atlas.', 'the reply is drawn in the panel')
   t.is(out.first.from, 'claude', 'and marked as Claude\'s')

@@ -87,11 +87,13 @@ const resource = ${service}
   export let submitId    = undefined   // when something has to find the button
   export let actions     = null        // snippet — replaces the whole button row
 
-  // Everything else — class, style, ondone, onerror, showError — rides
-  // $attributes onto <Form>, which is where those props are declared.
+  // Everything else — style, ondone, onerror, showError — rides $attributes
+  // onto <Form>, which is where those props are declared. \`class\` is not in
+  // $attributes, so it is handed on by name: without {class}, a page's
+  // \`class="card"\` on this tag drew a bare form.
 </script>
 
-<Form {resource} bind:record={record} {method} {actions} {...$attributes}>
+<Form {resource} bind:record={record} {method} {actions} {class} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
   <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

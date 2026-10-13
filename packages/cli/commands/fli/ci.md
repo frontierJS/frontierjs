@@ -62,14 +62,9 @@ if (!runner) {
 // Everything after the command name, forwarded untouched. Parsing it here would
 // put a second copy of the flag set in this file, which is the one thing the
 // alias must not become — `--help` is the script's, and so is the refusal of a
-// flag it does not know.
-// `--dry` is fli's own and the runner would refuse it by name, which is the
-// refusal working correctly on the wrong flag.
-let forwarded = process.argv.slice(3).filter(a => a !== '--dry' && a !== '-d')
-// `fli ci -- --help` is the way to reach the runner's own `--help`, because
-// bootstrap answers `--help` for every command before one loads. The separator
-// has done its job by the time we get here and the runner would refuse it.
-if (forwarded[0] === '--') forwarded = forwarded.slice(1)
+// flag it does not know. `fli ci -- --help` is the way to reach it, because
+// bootstrap answers `--help` for every command before one loads.
+const forwarded = $.forwarded
 
 if (flag.dry) {
   log.dry(`node ${runner} ${forwarded.join(' ')}`.trim())

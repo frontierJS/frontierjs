@@ -12,8 +12,9 @@ cleaning-company theme and content over the same engine.
 
 A site is its `content/` folder: `site-kit dev site`, `site-kit build site`,
 `site-kit preview site`. The shell, the dev entry and the build config live
-here; the site's own settings are `content/settings/site.js`. Blocks are
-exported as `@frontierjs/site-kit/blocks/<Name>.mesa`.
+here. `content/settings/site.js` is the site's Sierra config, and
+`content/settings/site.md` is its settings. Blocks are exported as
+`@frontierjs/site-kit/blocks/<Name>.mesa`.
 
 A content block names its wrapper with `layout: Block`, and site-kit ships
 `Block`. A top-level block renders as a Band (`<section class="band">` holding
@@ -42,8 +43,32 @@ A site can name a **preset**, a package that adds blocks, layouts, stylesheets
 and build plugins: `export default { preset: '@kobami/ksite' }` in
 `content/settings/site.js`. The package exports `./preset`, a function of the
 site returning `{ sierra, plugins, shell }`. A preset that does not load stops
-the build by name.
+the build by name. A `public/` directory at the preset's package root ships
+beneath the site's `content/public/`, so its fonts and images keep their URLs
+(`/theme/fonts/…`); a file the site's `public/` also has is the site's.
 
 Analytics is Sierra's `analytics` key in the same file — `analytics: {
 provider: 'plausible', domain: 'example.com' }` — and the build puts the
 vendor's tag in every page's `<head>`.
+
+**Settings** are `content/settings/site.md`'s front-matter, and every key is a
+name a page uses bare: `company_name: Acme` makes `{company_name}` in prose
+read *Acme*. A key that is not a JavaScript name stops the build by name. In
+`vite dev` an edited value shows on reload; a key added or removed needs the
+server restarted, and the log says so. A block reads the whole object as
+`import { frontmatter as settings } from '@content/settings/site.md'`.
+`@content` is the site's `content/` folder wherever the block renders, so a
+menu is `@content/menus/main-menu.md` the same way.
+
+**A collection** is a folder of Markdown under `content/collections/`, one
+item per file. A block lists one with an eager glob it writes itself, because
+the glob has to be a literal in the `.mesa` file for the prerender to expand it:
+
+```js
+import { collection } from '@frontierjs/site-kit/collection'
+const reviews = collection(import.meta.glob('/content/collections/reviews/*.md', { eager: true }))
+// [{ slug: '1-stacy', frontmatter: { rating: 5, … }, Body }, …] in file-name order
+```
+
+Items come in file-name order by code unit, so `9-grant.md` comes before
+`91-alison.md`. A folder that does not exist is an empty list.

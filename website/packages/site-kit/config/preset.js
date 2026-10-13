@@ -10,13 +10,17 @@
 //     shell:   { html, entry },                                   // the dev document and its entry
 //   })
 //
+// What a preset does not return is found: `public/` at its package root ships
+// beneath the site's own (config/public.js).
+//
 // `settings` is content/settings/site.md's front-matter (config/content.js),
 // the site's data rather than its Sierra config. A site that names a preset it cannot load would
 // build without its blocks and layouts, every page wrong, so each way of
 // failing to load one stops the build by name.
 
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const KEYS = new Set(['sierra', 'plugins', 'shell'])
@@ -24,7 +28,7 @@ const KEYS = new Set(['sierra', 'plugins', 'shell'])
 /**
  * @param {string} name — the package, as content/settings/site.js names it
  * @param {{ root: string, content: string, settings: Record<string, unknown> }} site
- * @returns {Promise<{ sierra?: object, plugins?: import('vite').PluginOption[], shell?: { html: string, entry: string } }>}
+ * @returns {Promise<{ sierra?: object, plugins?: import('vite').PluginOption[], shell?: { html: string, entry: string }, root: string }>}
  */
 export async function loadPreset(name, site) {
   if (typeof name !== 'string') throw new Error(`site-kit: the preset in content/settings/site.js is a ${typeof name}; it is a package name`)
@@ -48,5 +52,15 @@ export async function loadPreset(name, site) {
   const unknown = Object.keys(added).filter((k) => !KEYS.has(k))
   if (unknown.length) throw new Error(`site-kit: the preset '${name}' returned ${unknown.map((k) => `'${k}'`).join(', ')}; a preset returns sierra, plugins and shell`)
   if (added.shell && !(added.shell.html && added.shell.entry)) throw new Error(`site-kit: the preset '${name}' returned a shell without both html and entry`)
-  return added
+  return { ...added, root: packageRoot(file, name) }
+}
+
+// The `./preset` export can sit anywhere in the package, so its root is the
+// nearest package.json that names it.
+function packageRoot(file, name) {
+  for (let dir = dirname(file); dir !== dirname(dir); dir = dirname(dir)) {
+    const manifest = resolve(dir, 'package.json')
+    if (existsSync(manifest) && JSON.parse(readFileSync(manifest, 'utf8')).name === name) return dir
+  }
+  throw new Error(`site-kit: the preset '${name}' resolved to ${file}, under no package.json named '${name}'`)
 }

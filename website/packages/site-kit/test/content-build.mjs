@@ -6,6 +6,10 @@
  * bound bare through the module site-kit writes, a collection through the
  * eager glob Sierra expands and `collection()`, a menu through `@content`.
  * test/content.mjs pins the pieces; only a build proves the render reaches them.
+ * The site also names a preset whose `document` carries a body id and JSON-LD
+ * while the site states its own `document.head`: the two merge key by key, and
+ * a site's key never costs the preset's. Its public/ ships beneath the site's
+ * own, and a path both have is the site's.
  * The site is written under test/ so it resolves @frontierjs/* the way a
  * workspace site does.
  *
@@ -67,6 +71,16 @@ try {
     '  {/each}',
     '</ol>',
   ].join('\n'))
+  write(join(SITE, 'node_modules/demo-preset/package.json'),
+    JSON.stringify({ name: 'demo-preset', type: 'module', exports: { './preset': './preset.js' } }))
+  write(join(SITE, 'node_modules/demo-preset/preset.js'), `export default ({ settings }) => ({
+    sierra: { document: { bodyAttrs: { id: 'app' }, jsonLd: { '@type': 'Organization', name: settings.company_name } } },
+  })`)
+  write(join(SITE, 'node_modules/demo-preset/public/theme/mark.svg'), '<svg>preset</svg>')
+  write(join(SITE, 'node_modules/demo-preset/public/shared.txt'), 'preset')
+  write(join(SITE, 'content/public/shared.txt'), 'site')
+  write(join(SITE, 'content/settings/site.js'),
+    `export default { preset: 'demo-preset', document: { head: '<meta name="site-own" content="1">' } }\n`)
   write(join(SITE, 'content/routes/index.md'), ['---', 'render: static', 'layout: Steps', '---', '', 'Welcome to {company_name}.', ''].join('\n'))
 
   const built = spawnSync('bun', [join(ROOT, 'bin/site-kit.js'), 'build', SITE], { encoding: 'utf8' })
@@ -79,6 +93,14 @@ try {
     const slugs = [...html.matchAll(/data-slug="([^"]+)"/g)].map((m) => m[1])
     check('a collection lists in file-name order', slugs.join() === '1-call,2-book', slugs.join())
     check("each item renders its front-matter and its body", /<b[^>]*>Call<\/b>[\s\S]*Ring us\./.test(html))
+    const ld = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/)
+    check("a preset's document jsonLd reaches the page from the site's settings",
+      ld && JSON.parse(ld[1]).name === 'Acme Cleaning', ld?.[0])
+    check("a site's own document.head keeps the preset's body id and JSON-LD",
+      html.includes('<meta name="site-own" content="1">') && /<body[^>]* id="app"/.test(html) && !!ld)
+    const read = (path) => { try { return readFileSync(join(SITE, 'dist', path), 'utf8') } catch { return null } }
+    check("a preset's public/ file ships at its own path", read('theme/mark.svg') === '<svg>preset</svg>', read('theme/mark.svg'))
+    check("a path in both public/ directories ships the site's file", read('shared.txt') === 'site', read('shared.txt'))
   }
 } finally {
   rmSync(SITE, { recursive: true, force: true })

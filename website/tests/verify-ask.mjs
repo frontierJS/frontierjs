@@ -89,8 +89,10 @@ if (!process.argv.includes('-p')) {
   writeFileSync(${JSON.stringify(join(ROOT, 'bin', 'terminal.json'))}, JSON.stringify({ cwd: process.cwd(), argv: process.argv.slice(2) }))
   process.exit(0)
 }
-// Every spawn is counted, so a drive can say a change ran no model.
+// Every spawn is counted, so a drive can say a change ran no model, and the
+// last one's argv kept, so it can say how hard the panel asked it to think.
 const calls = ${JSON.stringify(join(ROOT, 'bin', 'calls'))}
+writeFileSync(${JSON.stringify(join(ROOT, 'bin', 'argv.json'))}, JSON.stringify(process.argv.slice(2)))
 writeFileSync(calls, (() => { try { return readFileSync(calls, 'utf8') } catch { return '' } })() + 'x')
 const say   = e => process.stdout.write(JSON.stringify(e) + '\\n')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -195,6 +197,7 @@ const undoOf = (run) => run == null
   : `document.querySelector('[data-run="${run}"] button:not(:disabled)')`
 const lastRun = () => evaluate(`return [...document.querySelectorAll('[data-run]')].at(-1)?.dataset.run ?? null`)
 const file = () => readFileSync(ROUTE, 'utf8')
+const effortRan = () => { try { const a = JSON.parse(readFileSync(join(ROOT, 'bin', 'argv.json'), 'utf8')); return a[a.indexOf('--effort') + 1] ?? null } catch { return null } }
 const rows = () => evaluate(`return [...document.querySelectorAll('[data-pick]')].map(r => r.innerText)`)
 
 // Real input: the inspector arms on a mousemove holding alt and picks on a
@@ -258,6 +261,7 @@ try {
     check('the panel reported the edit and the end of the run', /Edit .*index\.mesa/.test(log) && /^done\b/m.test(log), log.split('\n').slice(-4))
     check('the panel shows the diff, removed then added', /^- .*Hello from the drive.*\n\+ .*Changed by ask/m.test(log))
     check('a session id is kept for a follow-up', /^[0-9a-f-]{36}$/.test(await evaluate(`return sessionStorage.getItem('fli:ask:session') ?? ''`)))
+    if (!REAL) check('the run thought at the default effort', effortRan() === 'high', effortRan())
     await undo()
     if (await until(`document.querySelector('#title')?.textContent.trim() === ${JSON.stringify(BEFORE)}`, 10_000, 'the undo reached the page'))
       check('the undo reached the page', true)
@@ -300,12 +304,18 @@ try {
   // plugin undoes one particular shape, so they are asked of the fake only.
   if (!REAL) {
     // ── a replace-all: no single hunk to reverse ──────────────────────────
+    // Effort is a chip that outlives the ask, and its default is no stored value.
+    await evaluate(`${button('low')}.click(); return true`)
+    check('the low effort chip is pressed and kept', await evaluate(`return ${button('low')}.getAttribute('aria-pressed') === 'true' && localStorage.getItem('fli:ask:effort') === 'low'`))
     if (await ask('Rename every item to Thing')) {
+      check('and the next run thought at it', effortRan() === 'low', effortRan())
       await until(`[...document.querySelectorAll('#items li')].every(li => li.textContent === 'Thing')`, 10_000, 'the page shows both items renamed')
       check('the replace-all changed both items', (file().match(/Thing/g) || []).length === 2)
       await undo()
       check('the replace-all undo put the file back byte for byte', file() === SOURCE)
     }
+    await evaluate(`${button('high')}.click(); return true`)
+    check('choosing the default effort again forgets the choice', await evaluate(`return localStorage.getItem('fli:ask:effort') === null`))
 
     // ── a pasted screenshot goes with the ask ─────────────────────────────
     // A real paste needs a person at the keyboard, so the event is built: a PNG

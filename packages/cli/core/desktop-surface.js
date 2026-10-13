@@ -532,6 +532,10 @@ export function scaffoldDesktopSurface({
     ['shell/tauri.conf.json',     desktopTauriConf(names)],
     ['shell/src/main.rs',         desktopMainRs(names)],
     ['shell/icons/icon.png',      desktopIcon()],
+    // tauri-build tells cargo to rerun when `capabilities/` changes, and cargo
+    // reads a missing path as changed — so without it every `cargo build`
+    // recompiles the crate, 1.4s on a build that should take 0.2s.
+    ['shell/capabilities/.gitkeep', ''],
   ]
 
   const written = []
@@ -645,7 +649,8 @@ export async function ensureServer({ root, runner, script, port, env = {}, label
     cwd: root, stdio: 'inherit', detached: true,
     env: { ...process.env, ...env },
   })
-  const ready = await portAnswering({ port, retries: 60, everyMs: 500 })
+  // Every 100ms: a Vite that answers at 550ms is otherwise found at 1000.
+  const ready = await portAnswering({ port, retries: 300, everyMs: 100 })
   if (!ready.ok) {
     stopServer(child)
     throw new Error(`${label} did not answer at ${origin} within 30s.`)

@@ -63,6 +63,30 @@ try {
     check('the preset entry answers /@site-kit/main.js', shell?.resolveId('/@site-kit/main.js')?.endsWith('demo-preset/main.js'))
   }
 
+  {
+    const root = site('public', 'demo-preset', {
+      'package.json': PKG({ './preset': './preset.js' }),
+      'preset.js': 'export default () => ({})',
+      'public/theme/mark.svg': '<svg>preset</svg>',
+      'public/shared.txt': 'preset',
+    })
+    write(join(root, 'content/public/shared.txt'), 'site')
+    const config = await siteKit({ root })
+    const plugin = config.plugins.flat().find((p) => p?.name === 'site-kit:preset-public')
+    // Dev: the middleware answers a preset file and steps aside for the site's.
+    const serve = (url) => new Promise((done) => {
+      let handler
+      plugin?.configureServer({ middlewares: { use: (fn) => { handler = fn } } })
+      if (!handler) return done('no middleware')
+      const chunks = []
+      const res = { setHeader() {}, write: (c) => chunks.push(Buffer.from(c)), on() { return res }, once() { return res }, emit() {}, end: (c) => { if (c) chunks.push(Buffer.from(c)); done(Buffer.concat(chunks).toString()) } }
+      handler({ url, method: 'GET' }, res, () => done('next'))
+    })
+    check("dev serves a preset's public/ file", await serve('/theme/mark.svg') === '<svg>preset</svg>', await serve('/theme/mark.svg'))
+    check("dev leaves a path the site's public/ has to the site", await serve('/shared.txt') === 'next')
+    check('dev never serves outside the preset public/', await serve('/../preset.js') === 'next')
+  }
+
   await refuses('a preset that is not installed stops the build', site('missing', 'demo-preset'), /names the preset 'demo-preset', which does not resolve/)
   await refuses('a package with no ./preset export stops the build',
     site('no-export', 'demo-preset', { 'package.json': PKG({ '.': './index.js' }), 'index.js': '' }),

@@ -17,14 +17,9 @@ An ordinary command file — a shortcut that grows into a command is an edit
 here, not a migration.
 
 ```js
-// fli has already read the argv into `flag`, so forwarding `flag`
-// would send fli's own defaults (--dry, --test) to a command that never
-// asked for them. The raw tail is the only faithful copy of what was typed.
-const q     = (a) => "'" + a.split("'").join("'\\''") + "'"
-const extra = process.argv.slice(3).map(q).join(' ')
-
 $.exec({
-  command: `${$.fli} ws:atlas --as=rings --open${extra ? ' ' + extra : ''}`,
+  command: `${$.fli} ws:atlas --as=rings --open`,
+  args:    $.forwarded,
   cwd:     $.paths.root,
   dry:     flag.dry,
 })

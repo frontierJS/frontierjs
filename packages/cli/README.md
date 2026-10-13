@@ -354,6 +354,7 @@ $.git      // repo access — pkgState(name, dir), wsRepo(packages)
 $.exec     // a synchronous shell command
 $.stream   // an async streaming one
 $.execute  // several, in sequence
+$.forwarded // the words typed after the command name, fli's own --dry taken out
 $.wsRoot() // the workspace root, found from cwd
 
 // $ itself, as a tag — Bun's shell, under fli's rules:
@@ -416,6 +417,14 @@ end (git, a quick docker call, file manipulation):
 ```js
 $.exec({ command: `git push origin ${flag.branch}` })
 // --dry logs "[dry] git push origin main" and runs nothing
+```
+
+`args` appends words one shell word each, quoted, which is how a command hands
+what it was given to another one — a shortcut is exactly that:
+
+```js
+$.exec({ command: `${$.fli} dev:desktop`, args: $.forwarded })
+// fli basecamp --no-build → fli dev:desktop '--no-build'
 ```
 
 `$.stream` is async — for long work where live output is the point (a

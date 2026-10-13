@@ -1131,20 +1131,22 @@ function handleReleaseStepStop(req, res) {
 
 // ─── POST /api/ask-claude ────────────────────────────────────────────────────
 //
-// Body: { question, output, context: {label: value}, rules, session }. One at a time:
+// Body: { question, output, context: {label: value}, rules, session, effort }. One at a time:
 // a second press while one answers would be two agents reading one tree on one
 // account with nothing on the page saying which reply is which.
 
 let asking = null
 
 async function handleAskClaudeDefaults(req, res) {
-  const { ASK_BASH, ASK_BUDGET_USD, ASK_DEFAULT_QUESTION, ASK_RULES, ASK_TOOLS } = await import('./ask-claude.js')
+  const { ASK_BASH, ASK_BUDGET_USD, ASK_DEFAULT_QUESTION, ASK_EFFORT, ASK_RULES, ASK_TOOLS, EFFORTS } = await import('./ask-claude.js')
   json(res, 200, {
     question: ASK_DEFAULT_QUESTION,
     rules:    ASK_RULES,
     tools:    ASK_TOOLS.filter(t => t !== 'Bash'),
     bash:     ASK_BASH.map(p => p.replace(/:\*$/, '')),
     budget:   ASK_BUDGET_USD,
+    efforts:  EFFORTS,
+    effort:   ASK_EFFORT,
   })
 }
 
@@ -1181,7 +1183,7 @@ async function handleAskClaude(req, res) {
   })
 
   const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
-  const out  = runAsk({ root: global.projectRoot, prompt, session, onEvent: emit })
+  const out  = runAsk({ root: global.projectRoot, prompt, session, effort: body?.effort || undefined, onEvent: emit })
   if (out.error) return json(res, 400, { error: out.error })
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })

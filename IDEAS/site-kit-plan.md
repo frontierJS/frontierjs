@@ -139,9 +139,93 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
    its stylesheet and drops six divider words its theme never defines, which
    the check will refuse.
 3. Collections, and menus and settings back to `.md`, which FJS-D549 unblocked.
+   **Done 2026-10-12.** A site's settings are `content/settings/site.md`,
+   each key bound bare through a module site-kit writes to
+   `.sierra/settings.js`, since the prerender runs outside Vite and reaches
+   no virtual module. `site.js` keeps the Sierra config. `@content` is
+   site-kit's alias, and `@frontierjs/site-kit/collection` shapes a block's
+   eager glob into `{ slug, frontmatter, Body }` items in file-name order.
+   ksite's menus, `site.md` and `whats-included.md` are its legacy files
+   again. Graded by a byte diff of the built `dist/`: identical from the
+   workspace, and from a tarball install identical apart from the
+   stylesheet's hash, where one UnoCSS inspector rule no element uses comes
+   only from the workspace scan. Dev renders every route from both installs,
+   and an edited value reaches a bare `{company_name}` on reload.
 4. The head: what `config/site-scripts.js` rewrites after the build moves into
    Sierra as FJS-1539's fix.
+   **Done 2026-10-12.** Sierra's `document` gained `meta`, `links` and
+   `jsonLd`, head()'s keys for every page, escaped by the same owner. site-kit
+   merges `document` key by key, preset then site. ksite deleted
+   `site-scripts.js` and states `bodyAttrs`, `bodyEnd` and its Organization
+   graph in `document`. Graded by a byte diff of `dist/`: identical but for
+   the JSON-LD `<script>`, unchanged, moving ahead of the stylesheet link.
+   Playwright 4/4.
 5. Whatever else `FJS-D604`'s test places on the generic side.
+   **Measured 2026-10-12; first move done.** Every file left in
+   `@kobami/ksite`, against the test:
+   - **Moves.** (a) A preset's `public/`: **done.** site-kit finds `public/`
+     at the preset package's root and ships it beneath the site's own, the
+     site winning a path both have (`config/public.js`). ksite deleted
+     `config/theme-assets.js`; its `dist/` is byte-identical, from the
+     workspace and from a tarball install. (b) The check's generic half:
+     the built-stage rules (sitemap, canonical, titles, descriptions,
+     headings, social, links, images, JSON-LD against schema.org's
+     vocabulary) and the source-stage components, layouts, dividers, robots
+     and redirects rules. Every site-kit site has those, and ksite's
+     `config/names.js` restates site-kit's layout order for the components
+     rule, a second origin that only this move removes. The template
+     leftovers, `launch_date` and `ksite-checks.js` (its business graph)
+     stay, so the move needs a seam for a preset's rules. Next.
+   - **Waits on a ruling.** `document` in dev. Sierra applies it only to a
+     prerendered page, and README says `index.html` states the dev half.
+     For a site-kit site the dev `index.html` is the kit's or a preset's, so
+     ksite states its body id twice and its lead loader twice (`index.html`
+     and `src/main.js` beside `document`). **A** — Sierra's dev applies
+     `document` for a `static` target, so a static app states it once.
+     **B** — site-kit's shell applies it, for site-kit sites only.
+     **C** — leave the restatement. **Recommend A**: Sierra owns the
+     translation of `document` to HTML (Invariant 4), and a static app with
+     its own `index.html` restates the same keys there. Re-running the lead loader
+     after each client navigation stays ksite's: it mirrors how its widget
+     binds, and an analytics loader re-run would double-count.
+   - **Stays, by the test.** The theme, its Uno preset and `rehype-content.js`'s
+     heading and link classes (the look; a repo package ships no utility
+     classes, Invariant 13). The shell (`Page`, `Header`, `Footer`,
+     `PageHero`, `Nav`, `SiteMap`, `Logo`), whose markup is that stylesheet's
+     contract. The business blocks (reviews, stars, hours, services, the
+     lead, booking and phone buttons). The Organization graph and the
+     `siteUrl`/`name`/`description` mapping, which read ksite's setting
+     names (`company_name`, `seo_description`); they are generic only once
+     site-kit names a settings vocabulary, and no other site has a `site.md`.
+   - **Generic in function, moved on demand (`FJS-D607`).** `Image`, `Link`,
+     `Button`, `Spacer`, `Icon`. Their classes (`.image`, `.img`,
+     `.link-header`) are ksite's stylesheet hooks, so the first site that is
+     not ksite and names one decides what site-kit's emits (Phase 4).
+   - **Held to `site-hosting.md`** (`FJS-D919`–`D921`: Sierra owns the host
+     files, the function bundle and the adapters; site-kit presets them).
+     `presetPublic` refuses a preset's `_redirects` and `_headers` by name:
+     Sierra's postbuild writes both and overwrites a copied one in silence.
+     The check's `redirects` rule is not ported as ksite has it, because its
+     `redirects-file-replaced` warning restates a Sierra fact, which belongs
+     in Sierra once `site-hosting.md` step 1 lands. A preset's `functions/`
+     is found at the package root `loadPreset` returns, the way `public/` is,
+     so Sierra's functions option takes directories in order (the site's
+     first) rather than one. The `document`-in-dev ruling is the first case
+     of a wider rule: Vite dev runs what the static build ships, which later
+     includes host functions (ksite's lead loader posts to one) and
+     `_redirects`. One ruling should cover all three.
+6. Responsive images ([`FJS-2737`](../ISSUES.md#fjs-2737)), the first client's
+   largest gap: the Luminous Heart port ships 20 MB of photos at source size.
+   `site-kit-images.md` holds the measurement, the prior art and the design: a
+   postbuild step over the prerendered pages, a content-addressed cache, and
+   `Bun.Image` under `FJS-D311`'s seam. Its two forks (where images are found,
+   which codec) wait on a ruling. Ahead of Phase 4 so the second client is not
+   cut with the gap.
+   **Built 2026-10-12** (`FJS-D926`, `FJS-D932`): `config/images.js`. On the
+   Luminous Heart port a phone at 3x fetches 60% fewer image bytes and a
+   desktop 75% fewer; ksite grades 4/4. Left: `sizes` stated by the ksite blocks that know their
+   layout (logo, hero), art direction, and the `/_img/` cache header
+   (`site-kit-images.md` § Left).
 
 **Phase 4 — a second client** (ksite step 2). Cut one from the engine and
 count every file it writes that is not under `content/`. The target is zero,

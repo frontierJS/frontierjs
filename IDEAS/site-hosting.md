@@ -59,7 +59,10 @@ construction. The lead fallback posts to an FJS API rather than to KV.
 **The Bun adapter is what keeps the exit real.** `serveSite` mounts the same
 function entry before its static answers, so every drive runs the site the
 way a non-Cloudflare host would. A site that passes its drives under `serveSite`
-and fails on Cloudflare is an adapter defect, never a site defect.
+and fails on Cloudflare is an adapter defect, never a site defect. Sierra's
+Vite dev mounts the same entry, or else a page that posts to a function
+(ksite's lead loader) fails only in dev. This is the same gap as `document`,
+which dev does not apply either (`site-kit-plan.md` Phase 3 step 5).
 
 ### site-kit's pass-through
 
@@ -73,8 +76,10 @@ wants:
   into Cloudflare's two `assets` keys rather than a site stating them;
 - `_headers` emitted from `cacheFor`, the one cache rule, which `serveSite`
   keeps applying directly;
-- a Plausible proxy function **derived from `analytics:`** in
-  `content/settings/site.js`, so the first-party proxy is no file in the site;
+- the Plausible proxy switched on. Sierra derives the proxy from
+  `analytics:`, because `analytics/tag.js` already owns Plausible's URLs
+  (`apiHost`), and the tag has to point at the path the proxy answers. If
+  site-kit wrote the proxy, two owners would hold one URL;
 - a preset contributes functions the way it contributes `plugins`, which is
   where ksite's lead fallback goes;
 - `site-kit deploy <dir>` builds, runs the Cloudflare adapter, and calls
@@ -146,6 +151,12 @@ candidate host for that file's option A.
    - **Recommend A** — the domain is host-neutral and the settings file is the
      site's one file of its own; B keeps a Cloudflare file in every site, and C
      makes a deploy depend on basecamp being up.
+   - **The domain is already stated.** `siteUrl` in `site.js` names it
+     (`https://frontierjs.com`), and the adapter's `routes` can derive from
+     it. That leaves only the Worker's name, which can derive from the
+     domain too. Re-ask the question as *does anything remain*. Also,
+     `site.js` is now only the Sierra config, since the site's own settings
+     moved to `site.md` (site-kit Phase 3 step 3).
 
 ## The plan
 

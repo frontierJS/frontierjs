@@ -161,6 +161,13 @@
   // point away mid-keystroke.
   let text = showMoney(value, code)
 
+  // Whether the text is the person's or was drawn from `value`. Only typed text
+  // is an amount someone stated; drawn text is the value shown in whatever code
+  // was known at the time, which before a row's currency loads is the raw minor
+  // units — re-read as major units, 1250 cents was written back as 125000
+  // (`FJS-2582`).
+  var _typed = false
+
   // What the control itself refuses, as opposed to what the server said.
   let localError = ''
 
@@ -190,14 +197,20 @@
   $: value, () => {
     if (readMoney(text, code).value !== value) {
       text = showMoney(value, code)
+      _typed = false
       setLocalError('')
     }
   }
 
   // The currency changed under the text, which happens on a row that holds its
-  // own code. The amount on screen is what the person typed, so it is kept and
-  // the stored value re-derived: 12 dollars becomes 12 yen, never 1200 yen.
-  $: code, () => { commit() }
+  // own code. Typed text is kept and the stored value re-derived: 12 dollars
+  // becomes 12 yen, never 1200 yen. Drawn text is redrawn from the value, which
+  // nobody has changed.
+  $: code, () => {
+    if (_typed) { commit(); return }
+    text = showMoney(value, code)
+    if (localError) setLocalError('')
+  }
 </script>
 
 {#snippet control()}
@@ -220,7 +233,7 @@
       readonly={readonly}
       aria-invalid={!!displayError || null}
       data-currency={code || null}
-      on:input={(e) => { text = e.target.value; commit() }}
+      on:input={(e) => { text = e.target.value; _typed = true; commit() }}
       on:blur={onblur}
       on:focus={onfocus}
       {...$attributes}

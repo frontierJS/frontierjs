@@ -1,5 +1,26 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-12 — a preset's `public/` ships with it
+
+- **`public/` at a preset's package root** is served in dev and emitted in the build beneath the site's `content/public/`. A file at the same path in the site's `public/` wins, so a client replaces one theme image without copying the rest. It is found, not configured: a preset returns no key for it.
+
+`@kobami/ksite` deleted `config/theme-assets.js`, its own plugin for the same thing. Its built `dist/` is byte-identical to the build before, fonts and images included. From a tarball install of both packages the pages differ only in the stylesheet's hashed name, as before. Dev serves `/theme/…` from the preset.
+
+## 2026-10-12 — the head is Sierra's `document` (`FJS-1539`)
+
+- **`document` merges key by key**: the preset's, then the site's. Before, a site's `document` replaced the preset's whole, so a site stating its own `head` would have lost the preset's body id and JSON-LD.
+- Sierra's `document` now also takes `meta`, `links` and `jsonLd`, the keys a companion's `head()` answers, for every page. They are written before the page's own and escaped by the same owner, so a preset states a site-wide graph as data, not as HTML it escapes itself.
+
+`@kobami/ksite` deleted `config/site-scripts.js`, the post-build rewrite of every page. Its preset states `document: { bodyAttrs: { id: 'app' }, bodyEnd, jsonLd }`. The built `dist/` matches the build before apart from one line: the JSON-LD `<script>` is byte-identical but now sits before the stylesheet link rather than at the end of `<head>`. ksite's Playwright grade is 4/4.
+
+## 2026-10-12 — settings, menus and collections are Markdown again (`FJS-D549`)
+
+- **Settings.** A site's settings are `content/settings/site.md`'s front-matter, nesting included, and every key is a name a page uses bare (`{company_name}`). site-kit writes `.sierra/settings.js`, one named export per key, and binds those names through `autoImport.modules`. A key that is not a JavaScript name stops the build by name. `content/settings/site.js` keeps only the Sierra config: `preset` and any Sierra key. A preset's `settings` argument is now the front-matter object.
+- **`@content`.** The alias for the site's `content/` folder moved here from `@kobami/ksite`. A block reads a menu as `@content/menus/main-menu.md`'s `frontmatter`.
+- **Collections.** `@frontierjs/site-kit/collection` turns a block's eager glob into `[{ slug, frontmatter, Body }]` in file-name order. The glob stays in the block, because the prerender expands one only in a file it compiles.
+
+ksite gave up its JS copies. `site.md`, `whats-included.md` and the four menus are its legacy files again, and each parses to exactly what the `.js` it replaces exported (legacy's `site_fbPixel` keeps ksite's name, `site_metaPixel`). Its blocks import the `.md`, and its four collection readers call `collection()`. Its built `dist/` is byte-identical to the build before. From a tarball install of both packages, each page is identical apart from its stylesheet's hashed name, and that stylesheet lacks one UnoCSS inspector rule (`.\?, .where`) that no element uses, which only the workspace scan picks up. Dev renders every route with no console error of its own, from the workspace and the tarball, and an edit to `site.md` reaches a bare `{company_name}` on reload.
+
 ## 2026-10-12 — the Markdown dialect is site-kit's (`FJS-D918`, `FJS-D614`)
 
 Every site now compiles under site-kit's dialect, which runs ahead of a preset's own Markdown passes.

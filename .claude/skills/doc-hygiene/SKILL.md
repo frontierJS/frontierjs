@@ -1,6 +1,6 @@
 ---
 name: doc-hygiene
-description: How to write and prune a document an agent reads — a root or package `CLAUDE.md`, a `SKILL.md`, or anything reached by a pointer. Use when adding to one, when deciding whether material belongs inline or behind a pointer, or when a document has grown and needs cutting.
+description: How to write and prune a document an agent reads — a root or package `CLAUDE.md`, a `SKILL.md`, or anything reached by a pointer. Use when adding to one, when deciding whether material belongs inline or behind a pointer, when a document has grown and needs cutting, or when drafting a plan — a `PLAN.md`, an `IDEAS/` roadmap, or a gameplan in chat.
 ---
 
 # Doc hygiene
@@ -57,3 +57,25 @@ That is also the case the cache rule below gets wrong on first look. The drives 
 - **Sprawl.** A document simply too long, with every line live and unique. Attention thins across the excess, and every extra line is one more to keep true. The cure is the ladder rather than the blue pencil.
 
 **A restatement made at three sites is a word waiting to be coined.** This repo already does that well — *drive*, *realm*, *seam*, *pivot*, *residue*, *ladder* each carry a paragraph in one token — so the work is hunting the passages that have not collapsed yet, not adding vocabulary. A word too weak to beat the default is itself a no-op, and the fix is a stronger word rather than a different technique.
+
+## A plan's shape
+
+**A plan is Phases of Steps** (`FJS-D927`). This applies to a `PLAN.md`, to a roadmap in `IDEAS/`, and to a gameplan drafted in chat.
+
+```md
+### Phase 2 — Writes to pixels
+
+Goal: one line, the outcome.
+Done when: the command, drive or measurement that proves it.
+
+- [x] 2.1 Crop with handles and aspect
+- [ ] 2.2 Rotate and flip
+  - What the step found goes indented under it.
+- [~] 2.3 Touch drags — dropped: the reason
+```
+
+- **Phases count from 0.** Phase 0 is the groundwork: scaffolding, measuring the original, reading the source. Every phase ends in something checkable, and that check is its `Done when:` line.
+- **A step is about one commit of work and is cited `phase.step`**, so `2.3` means the same thing in a memory, a commit and a chat. Its box is `[ ]` open, `[x]` done or `[~]` dropped, and a dropped step says why. A phase with one piece of work has one step.
+- **A number is a citation key, issued once.** A step inserted later becomes `2.3a`, new work is added at the end, and a dropped step keeps its number. Open questions follow the same rule as `Q1`, `Q2` and so on, and a ruling cites a question by its `Q` number.
+- **The next step is the first open box.** Frontmatter `status:` holds § VII's lifecycle word, and the position is read off the boxes. A finished phase gets one paragraph after its steps, starting **Done <date>.**, that says what it found.
+- **Order is spelled Phase and Step.** *Tier* is priority: Tier 1 comes first, and the order inside a tier is free. *Wave* is a batch of independent items run in parallel. Outside its plan, a phase is named with the plan it belongs to, as in *darkroom Phase 2* (`FJS-D395`).

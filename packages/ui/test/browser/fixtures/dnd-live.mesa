@@ -1,0 +1,49 @@
+<script>
+  // dnd-live.mesa — a list replaced under a drag, the way a live push does it.
+  //
+  // `kitPushDone()` swaps `done` for the server's copy: a fresh array with no
+  // placeholder in it and a row nobody here added. The lists are written back
+  // from onconsider and onfinalize exactly as a host persisting from them
+  // would, so `#state` is what such a host would save (`FJS-2583`).
+  import { dndzone } from '@frontierjs/ui/dnd'
+
+  let todo = [{ id: 1, t: 'one' }, { id: 2, t: 'two' }, { id: 3, t: 'three' }, { id: 4, t: 'four' }]
+  let done = [{ id: 5, t: 'five' }]
+  let log  = []
+
+  window.kitPushDone = () => { done = [{ id: 5, t: 'five' }, { id: 6, t: 'six' }] }
+  // The push landing in the frame of the drop: a capture listener on window
+  // runs before dndzone's own, and the render it causes flushes before that
+  // listener is called, so the drop sees the pushed list and no hit test in
+  // between to repair it.
+  window.kitPushOnRelease = () =>
+    window.addEventListener('pointerup', () => window.kitPushDone(), { capture: true, once: true })
+
+  const record = (list, which) => ({ items, info }) => {
+    if (which === 'f') log = [...log, `${list}:f:${info.trigger}:${items.map(i => i.id).join(',')}`]
+    if (list === 'todo') todo = items
+    else done = items
+  }
+</script>
+
+<div class="board">
+  <ul id="todo" {@attach dndzone(() => ({ items: todo, type: 'task', onconsider: record('todo', 'c'), onfinalize: record('todo', 'f') }))}>
+    {#each todo as it (it.id)}
+      <li data-id={it.id}>{it.t}</li>
+    {/each}
+  </ul>
+  <ul id="done" {@attach dndzone(() => ({ items: done, type: 'task', onconsider: record('done', 'c'), onfinalize: record('done', 'f') }))}>
+    {#each done as it (it.id)}
+      <li data-id={it.id}>{it.t}</li>
+    {/each}
+  </ul>
+</div>
+
+<output id="state">{todo.map(i => i.id).join(',')}|{done.map(i => i.id).join(',')}</output>
+<output id="log">{log.join(' ')}</output>
+
+<style>
+  .board { display: flex; gap: 2rem; align-items: flex-start; }
+  ul { list-style: none; margin: 0; padding: 0.5rem; width: 10rem; min-height: 3rem; }
+  li { height: 2rem; line-height: 2rem; margin: 0 0 0.25rem; padding: 0 0.5rem; border: 1px solid var(--rule); }
+</style>

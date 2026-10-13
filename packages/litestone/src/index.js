@@ -5,7 +5,7 @@ export { createClient, ValidationError,
          TransitionNotFoundError, TransitionGateError, TransitionSystemError, BulkTransitionError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
-         LockExpiredError, SoftDeletedUniqueError,
+         LockExpiredError, SoftDeletedUniqueError, SoftDeleteWriteError,
          UniqueConflictError, ForeignKeyError, OverlapConflictError, SealedDocumentError,
          CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'

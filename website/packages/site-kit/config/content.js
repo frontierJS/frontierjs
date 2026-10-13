@@ -60,8 +60,9 @@ export function writeSettingsModule(root, settings) {
 /**
  * The `@content` alias, and in dev the settings module kept in step with
  * site.md. A changed value rewrites the module and Vite updates what imports
- * it; a key added or removed restarts the server, because the names Sierra
- * binds bare were fixed when the config was made.
+ * it. A key added or removed is said by name: the names Sierra binds bare were
+ * fixed when siteKit() made the config, and Vite's own `server.restart()`
+ * reuses that config rather than calling siteKit() again.
  *
  * @param {{ root: string, content: string, keys: string[] }} site
  * @returns {import('vite').Plugin}
@@ -82,9 +83,16 @@ export function siteContent({ root, content, keys }) {
           server.config.logger.error(err.message)
           return
         }
-        const now = Object.keys(settings)
-        if (now.length !== keys.length || now.some((k) => !keys.includes(k))) return void server.restart()
         writeSettingsModule(root, settings)
+        const now = Object.keys(settings)
+        const added = now.filter((k) => !keys.includes(k))
+        const removed = keys.filter((k) => !now.includes(k))
+        if (added.length || removed.length) {
+          server.config.logger.warn(`site-kit: ${SETTINGS} ${[
+            added.length && `added ${added.map((k) => `'${k}'`).join(', ')}`,
+            removed.length && `removed ${removed.map((k) => `'${k}'`).join(', ')}`,
+          ].filter(Boolean).join(' and ')}; stop and start \`site-kit dev\` for a page to name it bare`)
+        }
       })
     },
   }

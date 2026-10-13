@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { EDIT_KINDS, EDIT_MAX_HTML, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
+import { ASK_EFFORT, EDIT_KINDS, EDIT_MAX_HTML, EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
@@ -547,7 +547,7 @@ describe('the served client', () => {
 
   test('runs as served, with the token key the plugin was handed', () => {
     const src = askPlugin({ tokenKey: 'basecamp_token' }).load('\0@frontierjs/cli/ask-client')
-    expect(src.split('\n')[0]).toBe('const ASK = {"tokenKey":"basecamp_token"}')
+    expect(src.split('\n')[0]).toBe(`const ASK = ${JSON.stringify({ tokenKey: 'basecamp_token', efforts: EFFORTS, effort: ASK_EFFORT })}`)
     // No window here, so the module returns at its first line — after the
     // prepended one has run against whatever follows it.
     expect(() => new Function(src)()).not.toThrow()
@@ -669,6 +669,28 @@ process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_err
     const content = JSON.parse(seen.input).message.content
     expect(content[0].text).toContain('I pasted an image with this')
     expect(content[1]).toEqual({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: big } })
+  })
+
+  test('the panel\'s effort reaches claude, and one it does not name is refused', async () => {
+    const seenAt = join(dir, 'claude-effort.json')
+    const bin = join(dir, 'claude-effort')
+    writeFileSync(bin, `#!/usr/bin/env node
+const fs = require('fs')
+fs.writeFileSync(${JSON.stringify(seenAt)}, JSON.stringify({ argv: process.argv.slice(2) }))
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }) + '\\n')
+`)
+    chmodSync(bin, 0o755)
+    const post = await serve({ admit: null, bin })
+    await post('/__fjs/ask', { instruction: 'think less', effort: 'low' }).catch(() => {})
+    let argv = JSON.parse(readFileSync(seenAt, 'utf8')).argv
+    expect(argv[argv.indexOf('--effort') + 1]).toBe('low')
+    rmSync(seenAt)
+    await post('/__fjs/ask', { instruction: 'no effort named' }).catch(() => {})
+    argv = JSON.parse(readFileSync(seenAt, 'utf8')).argv
+    expect(argv[argv.indexOf('--effort') + 1]).toBe(ASK_EFFORT)
+    rmSync(seenAt)
+    await post('/__fjs/ask', { instruction: 'off', effort: 'none' }).catch(() => {})
+    expect(existsSync(seenAt)).toBe(false)
   })
 
   test('an undone change is nobody\'s to submit', async () => {

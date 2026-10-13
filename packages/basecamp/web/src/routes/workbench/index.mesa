@@ -1381,6 +1381,9 @@ title: Workbench
   .workbench-pane > * { margin-block-start: 0; }
   .workbench-pane[data-branch] { border-inline-start: 3px solid var(--rule-strong); }
   .workbench-meta { row-gap: 0; }
+  /* A narrow pane wraps the buttons under the name rather than clipping them. */
+  .workbench-head { flex-wrap: wrap; }
+  .workbench-head > .cluster { flex-shrink: 0; margin-inline-start: auto; }
   .workbench-tabs { flex-shrink: 0; }
   .workbench-folds {
     display: flex;

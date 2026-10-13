@@ -12,7 +12,10 @@
  * about the refusals.
  */
 
-import { describe, test, expect, afterEach } from 'bun:test'
+import { describe, test, expect, afterEach, beforeAll, afterAll } from 'bun:test'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 import {
   SHORTCUT_NAMESPACE,
@@ -25,7 +28,7 @@ import {
   renderShortcut,
 } from '../core/shortcuts.js'
 import { compileCli, extractFrontmatter } from '../core/compiler.js'
-import { getConfig } from '../core/runtime.js'
+import { getConfig, Command, forwardedArgs } from '../core/runtime.js'
 
 const transpiler = new Bun.Transpiler({ loader: 'js' })
 const parseEsm   = (src) => transpiler.transformSync(src)
@@ -164,6 +167,7 @@ describe('the file it writes', () => {
     const src = compileCli(render('fli ws:atlas --open --live'), '', '/tmp/shortcut.md')
     expect(src).toContain('${$.fli} ws:atlas --open --live')
     expect(src).toContain('$.paths.root')
+    expect(src).toContain('args:    $.forwarded')
   })
 
   test('the path is under the routes directory, in its own namespace', () => {
@@ -200,5 +204,70 @@ describe('mode: passthrough', () => {
     console.warn = () => {}
     expect(() => getConfig({ title: 't', mode: 'strict', args: [], flags: {} }, [], { offline: true }))
       .toThrow()
+  })
+})
+
+// What a shortcut forwards is the raw tail — and not all of it: `--dry` was
+// answered by not running, so a target that received it would be told twice.
+describe('$.forwarded', () => {
+  const argv = (...words) => ['/bun', '/fli.js', ...words]
+
+  test('is what was typed after the command name', () => {
+    expect(forwardedArgs(argv('basecamp', '--no-build', 'x y'))).toEqual(['--no-build', 'x y'])
+  })
+
+  test('starts after the name when a global flag comes first', () => {
+    expect(forwardedArgs(argv('--verbose', 'basecamp', '--no-build'))).toEqual(['--no-build'])
+  })
+
+  test("drops fli's own --dry in every spelling, and nothing beside it", () => {
+    expect(forwardedArgs(argv('ci', '--dry', '-d', '--dry=true', '--dryer'))).toEqual(['--dryer'])
+  })
+
+  test('drops a leading -- and keeps a later one', () => {
+    expect(forwardedArgs(argv('ci', '--', '--help', '--', 'x'))).toEqual(['--help', '--', 'x'])
+  })
+
+  test('is empty with nothing after the name, or no name at all', () => {
+    expect(forwardedArgs(argv('ci'))).toEqual([])
+    expect(forwardedArgs(argv('--version'))).toEqual([])
+  })
+})
+
+describe('$.exec args', () => {
+  let dir
+  beforeAll(() => {
+    global.fliRoot     = join(import.meta.dir, '..')
+    global.projectRoot = global.fliRoot
+    dir = mkdtempSync(join(tmpdir(), 'fli-args-'))
+  })
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  const run = async (body, flag = {}) => {
+    const file = join(dir, 'probe.md')
+    writeFileSync(file, ['---', 'title: probe:args', '---', '', '```js', body, '```', ''].join('\n'))
+    const events = []
+    await (await Command({ file, arg: [], flag, emit: (e) => { events.push(e); return Promise.resolve() } }))()
+    return events
+  }
+
+  test('each word reaches the child as one argument, quotes and all', async () => {
+    const out = join(dir, 'out')
+    await run(`fs.writeFileSync(${JSON.stringify(out)}, $.exec({
+      command: "printf '%s|'",
+      args:    ["it's", 'a b', '$HOME', '\`date\`'],
+      stdio:   ['ignore', 'pipe', 'inherit'],
+      encoding: 'utf8',
+    }))`)
+    expect(readFileSync(out, 'utf8')).toBe("it's|a b|$HOME|`date`|")
+  })
+
+  test('a dry run prints the command with its words quoted', async () => {
+    const events = await run(`$.exec({ command: 'echo', args: ['a b'] })`, { dry: true })
+    expect(events.find(e => e.level === 'dry')?.text).toBe("echo 'a b'")
+  })
+
+  test('args that is not an array is refused rather than stringified', async () => {
+    await expect(run(`$.exec({ command: 'echo', args: 'a b' })`)).rejects.toThrow('array of words')
   })
 })

@@ -1374,6 +1374,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d923"></a>2026-10-12 · `FJS-D923` — A `@@softDelete` column is written by `remove()` and `restore()` and by no patch; every update-family verb naming `deletedAt` is refused by name, `asSystem()` included
+
+`update({ data: { deletedAt } })` was `remove()` spelled as a patch and graded as one: at the UPDATE gate, with no cascade walked and no removal announced, so a caller the delete gate refused removed the row anyway (`FJS-2578`). `update`, `updateMany`, `upsert` and `upsertMany` (its `update:` list, or every key its rows carry when there is none) throw `SoftDeleteWriteError` — 400, because the verb is wrong rather than the caller, the shape `BulkTransitionError` already has. **`asSystem()` is refused too**: the cascade is integrity, not authority (`FJS-D502`), and `sys.<model>.remove()` already lifts the gate. **`create` may still state the column** — creating a row already deleted removes nothing, and it is the import shape. An omitted key (`undefined`) is not a write.
+
+Picked by the owner in session as **B** over **A** (grade a non-null patch at the delete gate and a null one at the update gate — a second, weaker `remove()` that walks no cascade) and **C** (reroute the patch through `remove()`/`restore()` — a patch that silently cascades). Junction's override path (`softDelete:` on a service over a model declaring none) already refused the column with *use remove()*; this puts the same refusal at the Data boundary for every caller. Proved by `packages/litestone/test/restore-access.test.ts` § *a soft-delete column is written only by remove() and restore()* — every refusal paired with the verb that removes and a write of another column that lands; with the check removed, 2 of its 3 tests fail. Graded on § V after the build, named as late: *ergonomics vs. strictness* decides it — the patch was the convenient spelling and the destructive one.
+
 ### <a id="fjs-d916"></a>2026-10-12 · `FJS-D916` — A key's scopes are refused by junction, against a scope each service DECLARES; a method naming none refuses a scoped key, and mcp's tool list reads the same answer
 
 An API key issued with scopes carried its issuer's whole standing everywhere but auth's own services (`FJS-2116`): no method could say what scope it needed, so nothing refused the rest. Three apps met it three ways — basecamp a 200-line hook and vocabulary, portal a plugin hooking auth's services, sstime a `bearerClaim` grant for a counterparty that is not a stranger. **The names stay the app's** (`FJS-D407`); **the refusal is junction's**, in `callService` beside the method policy, so one owner grades every wire caller (Invariant 4).
@@ -13167,6 +13173,71 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d931"></a>2026-10-12 · `FJS-D931` — Q5 — Pin the installs — Also pin a major for Docker and Caddy with an apt preference, keep every version beside `BUN_VERSION`, and report the installed versions in the heartbeat.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (As built: Bun and the Outpost pinned in `enrollment.ts` (`BUN_VERSION`, `OUTPOST_VERSION`), Docker and Caddy whatever their signed apt repositories serve on the day), **C** (Pin exact versions for all four).
+
+The paper's recommendation, taken as written: two machines enrolled a month apart should differ only by patches, and the heartbeat report is what lets the screen say which are behind. The versions belong in `enrollment.ts`, where the install script is and where the two pinned today already live, not in the Outpost's `config.js`. C makes every security patch a code change.
+
+### <a id="fjs-d930"></a>2026-10-12 · `FJS-D930` — Q4 — A no-hostname app on `0.0.0.0` (`FJS-D565`) — Every published port binds `127.0.0.1`, and exposure on a raw port is an explicit per-app declaration on `App` that the grader reads.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (Keep `FJS-D565` as ruled: an app with no hostname publishes its port on every interface, and the firewall allows that declared port).
+
+Amends FJS-D565's no-hostname clause: an app with no hostname no longer keeps its port on every interface; raw-port exposure is a declaration on App the grader reads.
+
+### <a id="fjs-d929"></a>2026-10-12 · `FJS-D929` — Q3 — fail2ban — No fail2ban: password auth off, `MaxAuthTries 3`, and the provider firewall.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **A** was picked over **B** (fail2ban on the sshd jail, installed by `installScript()` and graded as a control).
+
+The paper's recommendation, taken as written: with password auth off, a brute force cannot succeed, so B adds a daemon to install, grade and keep running against noise rather than risk.
+
+### <a id="fjs-d928"></a>2026-10-12 · `FJS-D928` — Q1 — Host firewall: nftables directly, or ufw — Nftables directly: one ruleset written by `installScript()`, read by the Outpost as `nft -j list ruleset`.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **A** was picked over **B** (ufw, whose rules the grader reads through `ufw status` and the iptables-nft tables beneath it).
+
+The paper's recommendation, taken as written: the grader reads one layer, not two, and `DOCKER-USER` is plain iptables-nft whichever is chosen, so ufw adds a translation the pairing test would have to grade as well.
+
+### <a id="fjs-d927"></a>2026-10-12 · `FJS-D927` — A plan is Phases of Steps: phases count from 0, a step is cited `2.3` and never reissued, and the next step is the first open box.
+
+Picked by the owner in session. Plans spelled one sequence six ways: *Phase*
+in most, then *Tier*, *Part*, *Wave*, *Step* and *Slice*. Phases started at 0
+in some plans and 1 in others, and steps were `1.`, `- [ ]`, `3b` and `Step 5`.
+Memory cited the same kind of position as "Phase 3 step 5", "slices 1-30" and
+"waves 1-5", so a citation could not be read without opening the plan it came
+from.
+
+**A plan phase is a third qualified use under `FJS-D395`**: *a named step of
+an ordered list something runs*, where a person or an agent does the running.
+Inside its own plan the heading qualifies it. Anywhere else it is *plan phase*
+or names the plan (`darkroom Phase 2`). *Step* is ordinary English. *Tier*
+keeps its meaning of priority and *Wave* keeps its meaning of a parallel batch,
+because neither says what comes next. *Slice*, *Part* and *Stage* are no longer
+used for order.
+
+**The position is derived, never written.** I proposed a `Next:` line at the
+top of each plan. The fifth question of § V cut it: the first open box already
+says the same thing, and a line that restates it is a second origin that
+drifts.
+Frontmatter `status:` carries § VII's lifecycle word.
+
+§ IV's *preservation vs. evolution* is answered with evolution. No plan is
+converted in bulk: each one converts when it is next worked on, and
+`darkroom/PLAN.md` is the worked example. Enforced by: none. A `fli check` rule over plan
+headings is held back until drift comes back.
+*Lives in:* `.claude/skills/doc-hygiene/SKILL.md` § A plan's shape.
+
+### <a id="fjs-d925"></a>2026-10-12 · `FJS-D925` — Q7 — How does the host's readings leave the box — The Outpost, installed by `fli deploy` with its command listener off, reporting over loopback.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **A** was picked over **B** (A full Outpost, enrolled as an ordinary server row with a hub flag), **C** (Bind-mount `/etc`, `/proc` and `docker.sock` into the API container and read in process).
+
+The paper's recommendation, taken as written: one implementation of the readings and nothing listening. B puts a signed command port on the box that holds the fleet's command key, and a server row invites the deploy and drain this record refuses on the host. C gives the control plane's own container root on its host to read a config file.
+
+### <a id="fjs-d924"></a>2026-10-12 · `FJS-D924` — Q6 — One Security route, or one per tier — Two routes on the existing tier split: `/security/` for a workspace's machines and code, `/hub/security/` for the installation's host and its `hub.*` controls.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (One `/security/`: the workspace's machines and code, plus a section for Basecamp's own host that renders for `isSystemAdmin` alone).
+
+The paper's recommendation, taken as written: every installation-level screen is under `/hub/` behind one guard, and the host's rows are hub-read at the Data boundary. A puts two audiences on one page, and a workspace admin who is not a system admin would get a section that is present for one person and absent for the next. A matches the ask word for word. B is two routes for the same reason the hub is a tier.
+
 ### <a id="fjs-d921"></a>2026-10-12 · `FJS-D921` — Where owner editing and preview deploys live — A module of `packages/basecamp`, the app that already holds the Cloudflare account, the DNS writes and the release record.
 
 Asked in [`IDEAS/site-hosting.md`](IDEAS/site-hosting.md) § Open questions. **A** was picked over **B** (a new FJS app for site editing alone), **C** (inside each site: an admin route and a host function that writes to git).
@@ -13700,7 +13771,7 @@ No adjudication in tension: keeping dominates. A record naming a dead machine is
 
 Asked in [`IDEAS/fleet-ingress.md`](IDEAS/fleet-ingress.md) D7. **A loopback bind** was picked over **leaving `-p port:containerPort` on every interface**, which answers the internet over plain HTTP around Caddy and its TLS. The recommendation, taken as written. The timing is part of the ruling: binding loopback before a route exists leaves the app unreachable.
 
-The 8181 static origin stays its own upstream and its own origin (`FJS-D345`). Caddy fronts it by host like any other route. **Adjudication in tension** (§ IV): *ergonomics vs. strictness*, resolved by cost. A reachable raw port quietly undoes every certificate this paper delivers. **§ V's ninth question**: *an app answers only through Caddy.* `packages/outpost/test/verify-docker.mjs` asserts that the published port refuses a connection from off the machine (`ingress.portRefusesOffLoopback`, which fails with the all-interfaces bind put back). **Enforced.** The bind is per app, keyed on the `/deploy` naming `hosts`: an app with no hostname keeps its port on every interface, which is this ruling's *not before* applied app by app. Where it lives: `packages/outpost/src/docker.js`.
+The 8181 static origin stays its own upstream and its own origin (`FJS-D345`). Caddy fronts it by host like any other route. **Adjudication in tension** (§ IV): *ergonomics vs. strictness*, resolved by cost. A reachable raw port quietly undoes every certificate this paper delivers. **§ V's ninth question**: *an app answers only through Caddy.* `packages/outpost/test/verify-docker.mjs` asserts that the published port refuses a connection from off the machine (`ingress.portRefusesOffLoopback`, which fails with the all-interfaces bind put back). **Enforced.** The bind is per app, keyed on the `/deploy` naming `hosts`: an app with no hostname keeps its port on every interface, which is this ruling's *not before* applied app by app. Where it lives: `packages/outpost/src/docker.js`. **Amended by [`FJS-D930`](#fjs-d930)**: the no-hostname clause is gone — every published port binds loopback, and raw-port exposure is a declaration on `App`.
 
 ### <a id="fjs-d564"></a>2026-09-30 · `FJS-D564` — Caddy runs on every fleet machine as a host service. Outpost installs it at enrollment and owns its configuration through Caddy's admin API on `localhost:2019`: it pushes a route (hostname → upstream) on deploy and removes it on teardown.
 
@@ -15786,6 +15857,52 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d932"></a>2026-10-12 · `FJS-D932` — Where a site-kit build finds the images to make responsive — In the built HTML: a postbuild step rewrites every local raster `<img>` in the prerendered pages.
+
+Asked in [`IDEAS/site-kit-images.md`](IDEAS/site-kit-images.md) § Open questions.
+Picked by the owner in session as **A** over **B** (the `Image` block emits a
+`srcset` from a manifest the build writes, so every block rendering a photo
+must use it, which is the Astro and enhanced-img model) and **C** (legacy
+ksite's regex scan of source plus a component that rebuilds the variant
+filenames).
+
+The rendered `<img>` is the one place every image ends up: a markdown line, a
+frontmatter list, a kit block or a client's own block. On the Luminous Heart
+port that is all 208 tags on 23 pages, and none of its photos are set as CSS
+backgrounds. B misses any block that writes its own `<img>`, and nothing would
+report it. C's two halves agree only through a filename convention, which is
+how legacy wrote two images with the same name to one file.
+
+What A gives up, accepted with it: `sizes` is derived from the rendered `width`
+unless a block states its own, dev serves the originals, and an image added in
+the browser after load is not reached. The last does not affect a site-kit
+page, which ships no app script, but it applies to any app the step serves once
+it moves into Sierra.
+
+Work: `FJS-2737`.
+*Lives in:* `website/packages/site-kit/config/images.js` · `website/packages/site-kit/test/images.mjs`.
+
+### <a id="fjs-d926"></a>2026-10-12 · `FJS-D926` — Which codec and which formats a site-kit build's responsive images use — `Bun.Image`, WebP only, on every host.
+
+Asked in [`IDEAS/site-kit-images.md`](IDEAS/site-kit-images.md) § Open questions.
+Picked by the owner in session as **A** over **B** (sharp as site-kit's
+transformer, adding AVIF for eager images, as legacy ksite does) and **C**
+(`Bun.Image`, adding AVIF wherever the build host can encode it).
+
+Measured on the Luminous Heart photos: WebP at 480/1080/1920 is 94–97% smaller
+than the source, and AVIF is a further 21–30% smaller than WebP, so resizing is
+nearly the whole saving. `Bun.Image` refuses AVIF encoding on Linux x64 because
+it relies on the OS codec, and `FJS-D311` does not mention this. C would make
+`dist/` depend on which machine built it. B adds a native dependency to win the
+last fraction.
+
+**B reopens on one measurement**: the LCP difference AVIF makes on a real
+client's hero. The step receives its transformer under `FJS-D311`'s seam, so
+adopting B later means passing sharp in, with no change to the step.
+
+Work: `FJS-2737`.
+*Lives in:* `IDEAS/site-kit-images.md` (unbuilt).
 
 ### <a id="fjs-d892"></a>2026-10-10 · `FJS-D892` — AWS Signature V4 has one owner, and it is `@frontierjs/toolbelt`.
 

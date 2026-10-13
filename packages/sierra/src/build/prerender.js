@@ -412,8 +412,11 @@ export async function prerenderRoutes(opts) {
     // carries. Both are per-BUILD, not per-route.
     stylesheets = [], bodyClass = '', htmlClass = '', lang = 'en',
     // The app's own HTML for every page: `head` and `bodyEnd` verbatim, and
-    // `bodyAttrs` (an object) beside the body class.
+    // `bodyAttrs` (an object) beside the body class. `docMeta`, `docLinks`
+    // and `docJsonLd` are head()'s keys for every page, escaped by the same
+    // owner rather than hand-escaped into `docHead`.
     docHead = '', docBodyEnd = '', bodyAttrs = {},
+    docMeta = [], docLinks = [], docJsonLd = [],
     // ── Static-safety inputs (FJS-081) ────────────────────────────────
     // `schemaDefs`/`schemaModels` come from schema-plugin, which has already
     // run in this build. `db` is a Litestone client the build can tap to see
@@ -614,9 +617,9 @@ export async function prerenderRoutes(opts) {
         bodyAttrs,
         head:    docHead,
         bodyEnd: docBodyEnd,
-        meta:    head?.meta,
-        links:   head?.links,
-        jsonLd:  head?.jsonLd,
+        meta:    [].concat(docMeta ?? [], head?.meta ?? []),
+        links:   [].concat(docLinks ?? [], head?.links ?? []),
+        jsonLd:  [].concat(docJsonLd ?? [], head?.jsonLd ?? []),
         lang:   node.meta?.lang ?? lang,
       })
 

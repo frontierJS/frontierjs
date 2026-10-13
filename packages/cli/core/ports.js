@@ -399,8 +399,19 @@ export function isPortInUse(p, address = '127.0.0.1') {
  *
  * Unix only. A platform with no lsof gets an empty list rather than a throw —
  * `isPortInUse` already answered the question this only decorates.
+ *
+ * Linux asks `ss` first: lsof walks every open descriptor on the machine, about
+ * a second once a bun API holds a thousand, and `ss` reads the socket table in
+ * a fifth of that. `fli dev:desktop` asks before every window. Where `ss` is
+ * missing, lsof answers as before.
  */
 export function pidsOnPort(p) {
+  if (process.platform === 'linux') {
+    try {
+      const out = execFileSync('ss', ['-ltnpH', `sport = :${p}`], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+      return [...new Set([...out.matchAll(/pid=(\d+)/g)].map(m => m[1]))]
+    } catch { /* no ss — lsof below */ }
+  }
   try {
     const out = execSync(`lsof -ti tcp:${p} -sTCP:LISTEN`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
     return [...new Set(out.split('\n').map(s => s.trim()).filter(Boolean))]

@@ -146,6 +146,7 @@ const WRITE_SCHEMA = `
     employeeId Int
     startsAt   DateTime
     endsAt     DateTime?
+    note       String?
     deletedAt  DateTime?
     @@softDelete
     @@exclude(person, range: [startsAt, endsAt])
@@ -348,7 +349,7 @@ describe('@@exclude on the write path — FJS-1528', () => {
     await raw`INSERT INTO "shift" ("employeeId", "startsAt", "endsAt") VALUES (1, ${at(9)}, ${at(17)}), (1, ${at(10)}, ${at(18)})`
     const sys = db.asSystem()
     const [first] = await sys.shift.findMany({ orderBy: { id: 'asc' } })
-    await sys.shift.update({ where: { id: first.id }, data: { deletedAt: null } })
+    await sys.shift.update({ where: { id: first.id }, data: { note: 'swapped' } })
     db.$close()
   })
 })

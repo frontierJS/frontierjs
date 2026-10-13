@@ -49,7 +49,7 @@ import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cros
 import {
   TransitionViolationError, TransitionConflictError, VersionRequiredError,
   VersionConflictError, SyncConflictError, TransitionGateError, TransitionSystemError,
-  TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError, SealedDocumentError,
+  TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError, SoftDeleteWriteError, SealedDocumentError,
   UniqueConflictError, uniqueConflictColumns, checkViolationExpr, isCheckViolation,
   datatypeMismatch, isDatatypeMismatch, isUniqueConflict, ForeignKeyError, isForeignKeyFailure, CapabilityNotDeclaredError, LockNotAcquiredError,
   LockReleasedByOtherError, LockExpiredError,
@@ -1495,6 +1495,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return field
     }
     return null
+  }
+
+  // `deletedAt` belongs to remove()/restore(), never to a patch (`FJS-2578`).
+  // `fields` is a payload, or the column list an upsertMany's update half
+  // names. An `undefined` value is an omitted key, as everywhere else.
+  function refuseSoftDeleteWrite(fields, verb) {
+    if (!softDelete || !fields) return
+    const named = Array.isArray(fields) ? fields.includes('deletedAt') : fields.deletedAt !== undefined
+    if (named) throw new SoftDeleteWriteError(modelName, verb)
   }
 
   // Where a row may START (`FJS-D470`): the column's @default and nowhere else,
@@ -5718,6 +5727,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   async function planUpdateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
     const _umMove = _bulkTransitionField(data, 'updateMany')
     if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
+    refuseSoftDeleteWrite(data, 'updateMany')
     refuseRankBulkMove(data, 'updateMany')
     const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
     refuseSystemEntries(system, ['update'])
@@ -6076,6 +6086,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // or enable policyDebug to see which policy blocked.
   async function prepareUpdate({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
                                  withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    refuseSoftDeleteWrite(data, 'update')
     refuseSystemEntries(system, ['update'])
     if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
     await enforceValueSets(modelName, [data], ctx, { where })
@@ -6391,6 +6402,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // to prevent.
     extractWriteOps(createData, { where: 'upsert' })
     extractWriteOps(updateData, { where: 'upsert' })
+    refuseSoftDeleteWrite(updateData, 'upsert')
     refuseSystemEntries(system, ['create', 'update'])
     // The fast path's two halves; the slow path is create() and update(),
     // which grade their own.
@@ -7932,6 +7944,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // against the entry below.
       const _upMove = _bulkTransitionField(updateFields, 'upsertMany')
       if (_upMove) throw new BulkTransitionError(modelName, _upMove, 'upsertMany')
+      // No `update:` list sets every key the rows carry on a conflict.
+      refuseSoftDeleteWrite(updateFields == null ? data?.find(d => d?.deletedAt !== undefined) : [updateFields].flat(), 'upsertMany')
       if (!data?.length) return { count: 0 }
       // Under row tenancy a `@unique` was built as (tenant, field) (`FJS-D310`),
       // so a target naming the field alone matches no index and SQLite refuses

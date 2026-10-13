@@ -1199,6 +1199,19 @@ export declare class SoftDeletedUniqueError extends Error {
 }
 
 /**
+ * An update, updateMany, upsert or upsertMany named `@@softDelete`'s column.
+ * A row leaves through remove() and comes back through restore(), which grade
+ * the delete and update gates and walk the cascade; `asSystem()` is refused too.
+ */
+export declare class SoftDeleteWriteError extends Error {
+  model:     string
+  field:     string
+  verb:      string
+  status:    400
+  retryable: false
+}
+
+/**
  * A row that is part of a sealed document. `@seals` on a move says the row
  * became a document; `@sealed` on a relation says which children it is made of.
  * After the seal those children may not be created, changed or removed, and the

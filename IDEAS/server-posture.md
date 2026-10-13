@@ -46,7 +46,7 @@ carries `outpost_version` and nothing about the OS.
 - **Docker gets around a host firewall.** A published port is DNAT'd in
   PREROUTING and forwarded through Docker's own chains. ufw's INPUT rules never
   see it. `docker.js` publishes an app with no hostname on every interface
-  (`FJS-D565`, deliberately), so adding ufw alone would leave that port open while
+  (`FJS-D565`, deliberately, until `FJS-D930` lands), so adding ufw alone would leave that port open while
   `ufw status` reads closed. Filtering belongs in `DOCKER-USER`, or at the provider.
 - **`outpost.service` runs as root with no sandboxing**: no `User=`, no
   `ProtectSystem`, no `NoNewPrivileges`. Docker access is root-equivalent anyway,
@@ -224,8 +224,10 @@ are refused on it: draining the plane drains the thing running the drain, and
 through ring 0. The screen shows the `fli deploy` command to run.
 
 **`/hub/security/`** shows the host's controls under the same grading and states as
-`/security/`, behind `isSystemAdmin` like every other `/hub/` screen. Whether that is
-a second route or a section of `/security/` is Q6.
+`/security/`, behind `isSystemAdmin` like every other `/hub/` screen. It is a second
+route, not a section of `/security/` ([`FJS-D924`](../DECISIONS.md#fjs-d924)), and
+the readings leave the box through the report-only Outpost
+([`FJS-D925`](../DECISIONS.md#fjs-d925)).
 
 ### Harden at install, each step paired with a control
 
@@ -235,11 +237,12 @@ Added to `installScript()`:
 | --- | --- |
 | `unattended-upgrades`, security origin only, **`Automatic-Reboot "false"`** | `patch.auto-updates-on` |
 | sshd drop-in `/etc/ssh/sshd_config.d/10-basecamp.conf`: password off, root `prohibit-password`, `MaxAuthTries 3` | `ssh.*` |
-| nftables: input default drop, allow the expected set, 8180 from Basecamp only; `DOCKER-USER` drop of non-established traffic to container ports not in the expected set | `net.*` |
+| nftables ([`FJS-D928`](../DECISIONS.md#fjs-d928)): input default drop, allow the expected set, 8180 from Basecamp only; `DOCKER-USER` drop of non-established traffic to container ports not in the expected set | `net.*` |
 | `chrony` | `time.synced` |
 | `outpost.service`: `NoNewPrivileges`, `ProtectSystem=strict` with `ReadWritePaths` for its own dirs, `PrivateTmp` | `outpost.sandbox` |
 | provider cloud firewall, created by `server-provision.job.ts` with the server | `net.reachable-unexpected` |
-| fail2ban: **open**, see below | — |
+| Docker and Caddy pinned to a major by apt preference; the versions beside `BUN_VERSION` in `enrollment.ts`, installed versions reported in the heartbeat ([`FJS-D931`](../DECISIONS.md#fjs-d931)) | — |
+| No fail2ban ([`FJS-D929`](../DECISIONS.md#fjs-d929)) | — |
 
 **The pairing is a test**: every control marked `hardenedAtInstall` names a marker
 the install script contains, and `installScript()` contains no hardening marker
@@ -300,7 +303,7 @@ Adjudications in tension: *ergonomics vs. strictness* (warn, not refuse; above),
 and *batteries vs. smallness*. The Outpost grows a read-only inspector method and
 two routes, which stays severable inside the one file that already runs commands.
 
-**Tier:** Assessment. Becomes rulings for Q1–Q4 before phase 4, and Q6–Q7 before phase 1.
+**Tier:** Assessment. Every question is ruled; nothing blocks a phase.
 
 ---
 
@@ -314,8 +317,9 @@ two routes, which stays severable inside the one file that already runs commands
 2. **Basecamp's own host**: report-only Outpost from `fli deploy`, the `hub.*`
    controls, and `/hub/security/`. *Proves:* the `bun run image:up` stack shows its
    host's readings, and `hub.backup-recent` fails on a stack with no backup.
-3. **The outside probe + cloud firewall read.** *Proves:* an app deployed with no
-   hostname is reported reachable on its port from outside, and the host is probed
+3. **The outside probe + cloud firewall read.** *Proves:* an app declaring raw-port
+   exposure (`FJS-D930`) is reported reachable on its port from outside and one that
+   does not is refused, and the host is probed
    from a fleet Outpost rather than from itself.
 4. **Harden at install + the Harden action**, with the pairing test. *Proves:* the
    phase-1 box after Harden grades clean, and the outside probe agrees.
@@ -326,7 +330,7 @@ two routes, which stays severable inside the one file that already runs commands
 
 ## Open questions (owner)
 
-- **Q1 — Host firewall: nftables directly, or ufw?** **Recommend nftables**: one ruleset
+- ~~**Q1 — Host firewall: nftables directly, or ufw?**~~ **Answered 2026-10-12 (`FJS-D928`): A — nftables directly: one ruleset written by `installScript()`, read by the Outpost as `nft -j list ruleset`.** **Recommend nftables**: one ruleset
   the Outpost reads as JSON, and `DOCKER-USER` is plain iptables-nft anyway. ufw is
   more familiar but adds a layer the grader would have to see through.
   - **A** — nftables directly: one ruleset written by `installScript()`, read by the
@@ -346,7 +350,7 @@ two routes, which stays severable inside the one file that already runs commands
   - **Recommend A** — a cleanup records bytes freed and a patch records versions, so
     B is one row type with two half-empty shapes and a `kind` every reader has to
     branch on. `RunStatus` is already shared, which is the part that is common.
-- **Q3 — fail2ban?** **Recommend no**: with password auth off, brute force cannot
+- ~~**Q3 — fail2ban?**~~ **Answered 2026-10-12 (`FJS-D929`): A — No fail2ban: password auth off, `MaxAuthTries 3`, and the provider firewall.** **Recommend no**: with password auth off, brute force cannot
   succeed, and `MaxAuthTries` plus the provider firewall cover the noise. One fewer
   daemon to grade.
   - **A** — No fail2ban: password auth off, `MaxAuthTries 3`, and the provider
@@ -355,7 +359,7 @@ two routes, which stays severable inside the one file that already runs commands
     a control.
   - **Recommend A** — with password auth off, a brute force cannot succeed, so B
     adds a daemon to install, grade and keep running against noise rather than risk.
-- **Q4 — A no-hostname app on `0.0.0.0` (`FJS-D565`).** Keep it and let the firewall
+- ~~**Q4 — A no-hostname app on `0.0.0.0` (`FJS-D565`).**~~ **Answered 2026-10-12 (`FJS-D930`): B — Every published port binds `127.0.0.1`, and exposure on a raw port is an explicit per-app declaration on `App` that the grader reads.** Keep it and let the firewall
   allow its declared port, or publish everything on loopback and make exposure an
   explicit per-app declaration? **Recommend the second**: exposure becomes a stated
   fact the grader reads, not a side effect of having no domain.
@@ -367,7 +371,7 @@ two routes, which stays severable inside the one file that already runs commands
     having no domain, and an app reachable around Caddy is exactly what `FJS-D565`
     exists to stop. It amends that ruling's no-hostname clause, so it lands as a
     ruling naming it.
-- **Q5 — Pin the installs?** Docker and Caddy from their apt repos with a pinned
+- ~~**Q5 — Pin the installs?**~~ **Answered 2026-10-12 (`FJS-D931`): B — Also pin a major for Docker and Caddy with an apt preference, keep every version beside `BUN_VERSION`, and report the installed versions in the heartbeat.** Docker and Caddy from their apt repos with a pinned
   major, and Bun by version. **Recommend yes**, with the versions in `config.js` and
   reported, so the screen can say which machines are behind.
   - **A** — As built: Bun and the Outpost pinned in `enrollment.ts`
@@ -382,7 +386,7 @@ two routes, which stays severable inside the one file that already runs commands
     the two pinned today already live, not in the Outpost's `config.js`. C makes
     every security patch a code change.
 
-- **Q6 — One Security route, or one per tier?**
+- ~~**Q6 — One Security route, or one per tier?**~~ **Answered 2026-10-12 (`FJS-D924`): B — Two routes on the existing tier split: `/security/` for a workspace's machines and code, `/hub/security/` for the installation's host and its `hub.*` controls.**
   - **A** — One `/security/`: the workspace's machines and code, plus a section for
     Basecamp's own host that renders for `isSystemAdmin` alone.
   - **B** — Two routes on the existing tier split: `/security/` for a workspace's
@@ -393,7 +397,7 @@ two routes, which stays severable inside the one file that already runs commands
     audiences on one page, and a workspace admin who is not a system admin would get a
     section that is present for one person and absent for the next. A matches the ask
     word for word. B is two routes for the same reason the hub is a tier.
-- **Q7 — How does the host's readings leave the box?**
+- ~~**Q7 — How does the host's readings leave the box?**~~ **Answered 2026-10-12 (`FJS-D925`): A — The Outpost, installed by `fli deploy` with its command listener off, reporting over loopback.**
   - **A** — The Outpost, installed by `fli deploy` with its command listener off,
     reporting over loopback.
   - **B** — A full Outpost, enrolled as an ordinary server row with a hub flag.

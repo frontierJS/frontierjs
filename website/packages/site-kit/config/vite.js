@@ -17,7 +17,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
 import { readSettings, siteContent, writeSettingsModule } from './content.js'
 import { siteDialect } from './dialect.js'
+import { siteImages } from './images.js'
 import { loadPreset } from './preset.js'
+import { presetPublic } from './public.js'
 import { siteShell } from './shell.js'
 
 const KIT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -45,6 +47,8 @@ export async function siteKit({ root, port, host = false }) {
     ? await loadPreset(presetName, { root, content, settings })
     : {}
   const dialect = siteDialect()
+  const publicDir = resolve(content, 'public')
+  const presetPublicDir = preset.root && resolve(preset.root, 'public')
   const mesa = { ...preset.sierra?.mesa, ...siteConfig.mesa }
   const autoImport = siteConfig.autoImport ?? preset.sierra?.autoImport
 
@@ -60,12 +64,13 @@ export async function siteKit({ root, port, host = false }) {
     // server ran stayed missing, even across reloads, until the cache was
     // cleared, and editing it updated nothing.
     routeTable: { output: '.sierra/routes.js' },
-    // No theme class here — a `theme` block puts it on <html>, where the
-    // switcher writes. On <body> it would shadow the switcher for every token
-    // both define (FJS-501).
-    document: {},
     ...preset.sierra,
     ...siteConfig,
+    // No theme class here — a `theme` block puts it on <html>, where the
+    // switcher writes. On <body> it would shadow the switcher for every token
+    // both define (FJS-501). Merged key by key, as `mesa` is: a site stating
+    // its own `document.head` keeps the preset's JSON-LD and body id.
+    document: { ...preset.sierra?.document, ...siteConfig.document },
     // Neither a preset nor a site moves these. Every site-kit site keeps its
     // pages in content/routes (FJS-D606). The browser's half of the config is
     // content/settings/site.js, imported whole (FJS-1544): a preset that
@@ -86,7 +91,9 @@ export async function siteKit({ root, port, host = false }) {
       remarkPlugins: [...dialect.remarkPlugins, ...(mesa.remarkPlugins ?? [])],
       rehypePlugins: [...dialect.rehypePlugins, ...(mesa.rehypePlugins ?? [])],
     },
-    plugins: [dialect.check, ...(preset.sierra?.plugins ?? [])],
+    // Images go last, so their srcsets are added to the pages a preset's
+    // steps leave behind rather than to pages those steps then replace.
+    plugins: [dialect.check, ...(preset.sierra?.plugins ?? []), siteImages()],
     // What `layout:` can name: the kit's own (Block), then the preset's, then
     // the site's content/layouts. A later directory wins a name, so a preset
     // or a site replaces a kit layout without copying the rest.
@@ -102,10 +109,11 @@ export async function siteKit({ root, port, host = false }) {
     ...base,
     configFile: false,
     root,
-    publicDir: resolve(content, 'public'),
+    publicDir,
     plugins: [
       ...(base.plugins ?? []),
       ...(preset.plugins ?? []),
+      ...(presetPublicDir && existsSync(presetPublicDir) ? [presetPublic({ dir: presetPublicDir, site: publicDir })] : []),
       siteContent({ root, content, keys }),
       siteShell({
         html:  preset.shell?.html ?? resolve(KIT, 'index.html'),

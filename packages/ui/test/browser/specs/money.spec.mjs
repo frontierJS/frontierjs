@@ -120,4 +120,20 @@ export async function run(t) {
   const perRow = await sent(t)
   t.is(perRow.currency, 'JPY', 'in its new currency')
   t.is(perRow.refund, 10, 'as 10 yen — never 1000, the cents the dollar amount was')
+
+  /* ── a currency that arrives after the value ──────────────────────────── */
+
+  // The other half of the rule above: text nobody typed is the VALUE drawn in
+  // the code known at the time, so a code arriving later redraws it rather
+  // than re-reading 1250 cents as 1250 dollars (FJS-2582).
+  await t.clickAt('#late-usd')
+  await t.eventually(`document.querySelector('#late').value`, '12.50',
+    'a stored amount is redrawn in the currency that arrived')
+  t.is(await t.evaluate(`return document.querySelector('#late-seen').textContent;`), '[]',
+    'and nothing is written back')
+  await t.clickAt('#late-jpy')
+  await t.eventually(`document.querySelector('#late').value`, '1250',
+    'a second change of code redraws the same stored value again')
+  t.is(await t.evaluate(`return document.querySelector('#late-seen').textContent;`), '[]',
+    'still without a write')
 }

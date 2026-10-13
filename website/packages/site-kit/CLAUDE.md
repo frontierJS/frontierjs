@@ -37,12 +37,31 @@ what they mean in any app.
   `routesDir`, `markdownLayouts` and `_configPath`, which neither a preset nor
   a site can move. `markdownLayouts` is site-kit's `src/layouts`, then the
   preset's, then the site's `content/layouts` when it exists; a later
-  directory wins a name.
+  directory wins a name. `autoImport` gains the settings module beside the
+  preset's or the site's own. `document` merges key by key, the preset's then
+  the site's, so a site's own `head` never costs the preset's `jsonLd`.
+- `config/content.js` — `content/settings/site.md` is the site's settings, the
+  data its pages and its preset read; `site.js` stays its Sierra config.
+  `readSettings()` parses the front-matter with `@frontierjs/toolbelt/frontmatter`
+  and refuses a key that is not a JavaScript name. `writeSettingsModule()`
+  writes `.sierra/settings.js`, one named export per key, which is what
+  `autoImport.modules` binds `{company_name}` to. It is a file and not a
+  virtual module, because the prerender imports outside Vite and only an alias
+  with an absolute target reaches it there. `siteContent()` is the `@content`
+  alias and, in dev, rewrites the module when site.md changes. A key added in
+  dev is logged, not bound: Vite's `server.restart()` reuses the inline config,
+  so `siteKit()` does not run again.
 - `config/preset.js` — `loadPreset(name, site)`: the default export's `preset`
   key names a package whose `./preset` export returns `{ sierra, plugins,
   shell }` (FJS-D648). It resolves from the site, and every way of failing to
   load one stops the build by name, because a site built without its preset
-  ships every page without its blocks.
+  ships every page without its blocks. It also returns the preset's package
+  root, the nearest `package.json` naming it.
+- `config/public.js` — `presetPublic({ dir, site })`: `public/` at the
+  preset's root, served in dev and emitted in the build beneath the site's
+  `content/public/`, which wins a path both have. Found, never a preset key.
+  The dev middleware runs ahead of Vite's own public one, so it checks the
+  site's file itself; the build skips a path Vite copies from the site.
 - `config/dialect.js` — `siteDialect()`, the Markdown dialect every site
   compiles under, ahead of a preset's own passes, and a post-build check.
   `config/dividers.js` (remark) turns `====` into a Band and `===` into an
@@ -53,6 +72,22 @@ what they mean in any app.
   when no stylesheet in the output defines it (`FJS-D918`). It runs as a
   Sierra config plugin's `closeBundle`, which Sierra calls once the pages are
   written; `vite dev` never checks.
+- `config/images.js` — `siteImages()`, responsive images (`FJS-2737`): every
+  local raster `<img>` in the built pages gets WebP variants in `dist/_img/`
+  and a `srcset` (`FJS-D932`, WebP only by `FJS-D926`). The last Sierra config
+  plugin, so it sees each page after the check and a preset's steps. The
+  transformer is handed in and `Bun.Image` by default, so it needs Bun; the
+  cache is `<site>/node_modules/.cache/site-kit/images`, keyed by the source's
+  hash. A block that knows its layout states `sizes`; otherwise the step
+  derives it from the rendered `width`. `data-original` opts a tag out. It
+  refuses a site with `offline` set: Sierra runs config plugins after the
+  offline shell digests the pages.
+- `src/collection.js` — `collection(glob)`, exported as
+  `@frontierjs/site-kit/collection`: an eager glob over a collection's `.md`
+  to `[{ slug, frontmatter, Body }]` in file-name order (code unit, as
+  ksite's sites are named). The glob stays a literal in the block, because
+  Sierra's prerender expands one only in a `.mesa` or `.md` it compiles; a
+  glob here would reach neither it nor a pre-bundled dependency.
 - `src/block-look.js` — the one owner of what a look word may be and where its
   class lands, imported by both `Block.mesa` and `config/dividers.js`.
 - `config/shell.js` — `siteShell({ html, entry })`, the kit's own pair or a
@@ -81,10 +116,17 @@ what they mean in any app.
   each one's render assertions. Renders pass `tmpDir: test/`, because Mesa
   otherwise writes its temp module inside mesa's own package, where
   `@frontierjs/css` does not resolve.
-- `test/preset.mjs` — a named preset is loaded, or `siteKit()` refuses by name.
+- `test/preset.mjs` — a named preset is loaded, or `siteKit()` refuses by name;
+  dev serves its `public/` and steps aside for the site's.
+- `test/content.mjs` — `collection()`, the settings module and its refusals.
+  `test/content-build.mjs` is a real `site-kit build` that binds a setting
+  bare, lists a collection and reads a nested menu, through the prerender,
+  and ships a preset's `public/` beneath the site's.
 - `test/dialect.mjs` — the dialect through Mesa's `compileMd`, and the check
   called by hand. `test/words-build.mjs` runs `site-kit build` on a site it
   writes under `test/`, which is the only proof Sierra calls the check.
+- `test/images.mjs` — the image step over a `dist/` it draws, with the real
+  `Bun.Image`, so `bun test/images.mjs` and never `node`.
 
 ## Proving a change
 

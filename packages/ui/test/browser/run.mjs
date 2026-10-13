@@ -94,13 +94,14 @@ if (serveOnly) {
       },
       /** Press at `from`, move in `steps` to `to`, and release unless
        *  `release: false` — both a selector (its center) or `{x, y}`.
+       *  `press: false` continues a drag left held by `release: false`.
        *
        *  Through the input pipeline, because a dispatched PointerEvent is not
        *  trusted and takes no pointer capture. Each step waits a frame in the
        *  page: a drag that reads the pointer once per frame, stepped faster
        *  than frames arrive, sees only the last position and never crosses
        *  the slots in between. */
-      drag: async (from, to, { steps = 12, release = true } = {}) => {
+      drag: async (from, to, { steps = 12, release = true, press = true } = {}) => {
         const at = async (p) => typeof p !== 'string' ? p : browser.evaluate(`
           const r = document.querySelector(${JSON.stringify(p)})?.getBoundingClientRect();
           if (!r) throw new Error('drag: no element for ' + ${JSON.stringify(p)});
@@ -111,7 +112,7 @@ if (serveOnly) {
           type, x, y, button: 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1,
         })
         const frame = () => browser.evaluate('await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return true;')
-        await mouse('mousePressed', a, 1)
+        if (press) await mouse('mousePressed', a, 1)
         for (let i = 1; i <= steps; i++) {
           await mouse('mouseMoved', { x: a.x + (b.x - a.x) * i / steps, y: a.y + (b.y - a.y) * i / steps }, 1)
           await frame()

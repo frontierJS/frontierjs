@@ -301,10 +301,13 @@ try {
   const depsFresh = await text('#dependencies-freshness')
   check('the header carries both clocks', /pushed .+ · checked /.test((depsFresh ?? '').replace(/\s+/g, ' ')), depsFresh)
 
-  const order = await evaluate(`[...document.querySelectorAll('#dependencies-list tbody tr')].map(r => r.dataset.package)`)
-  check('worst first — the advisory leads, current is last', order[0] === 'lodash' && order[4] === 'zod', order)
-
   const depRow = (name) => evaluate(`document.querySelector('#dependencies-list tr[data-package="${name}"]')?.textContent ?? ''`)
+  const inGroup = (g) => evaluate(`[...document.querySelectorAll('#dependencies-list [data-group="${g}"] tbody tr')].map(r => r.dataset.package)`)
+  const depRuntime = await inGroup('runtime'), depDev = await inGroup('dev')
+  check('runtime first, worst first — the advisory leads, on-latest is last', depRuntime.join() === 'lodash,request,zod', depRuntime)
+  check('a package declared only as dev is grouped apart', depDev.join() === 'typescript,vite', depDev)
+  check('the package on latest says so', (await depRow('zod')).includes('On latest'))
+
   check('the advisory is named on its row', (await depRow('lodash')).includes('GHSA-p6mc-m468-83gw'))
   check('a range that cannot reach latest says so', (await depRow('typescript')).includes('range excludes it'))
   check('a patch a reinstall reaches does not', !(await depRow('vite')).includes('range excludes'))

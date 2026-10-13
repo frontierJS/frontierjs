@@ -459,6 +459,41 @@ describe('prerenderRoutes', () => {
     expect(html.indexOf('/lead.js')).toBeLessThan(html.indexOf('</body>'))
   }, REAL_RENDER_TIMEOUT)
 
+  test('document meta, links and jsonLd reach every page beside the page\'s own head()', async () => {
+    const out = tmpDir('sierra-doc-tags-')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { scan } = await import('../src/scanner/index.js')
+    const tree = await scan('src/routes', { cwd: ROOT })
+    await prerenderRoutes({
+      tree, root: ROOT, outDir: out, renderComponent,
+      docMeta: [{ name: 'theme-color', content: '#fff' }],
+      docLinks: [{ rel: 'icon', href: '/favicon.svg' }],
+      docJsonLd: { '@type': 'WebSite', name: '</script>' },
+    })
+    const headOf = (file) => {
+      const html = readFileSync(resolve(out, file), 'utf8')
+      return html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
+    }
+    const ldOf = (head) => [...head.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g)]
+      .map((m) => JSON.parse(m[1]))
+
+    // /about/ has no companion, so everything in its head is the document's.
+    const about = headOf('about/index.html')
+    expect(about).toContain('<meta name="theme-color" content="#fff">')
+    expect(about).toContain('<link rel="icon" href="/favicon.svg">')
+    expect(ldOf(about)).toEqual([{ '@type': 'WebSite', name: '</script>' }])
+
+    // /blog/second-post/ answers head() too: the document's tags come first
+    // and neither side is dropped.
+    const post = headOf('blog/second-post/index.html')
+    expect(ldOf(post)).toEqual([
+      { '@type': 'WebSite', name: '</script>' },
+      { '@type': 'BlogPosting', headline: 'second-post' },
+    ])
+    expect(post).toContain('<link rel="icon" href="/favicon.svg">')
+    expect(post).toContain('<link rel="canonical" href="https://x.test/blog/second-post/">')
+  }, REAL_RENDER_TIMEOUT)
+
   test('a route with no head() keeps its frontmatter title', async () => {
     // The fallback is not the loser: a route whose pages genuinely share a
     // title says it once, and only a route that needs to vary writes the

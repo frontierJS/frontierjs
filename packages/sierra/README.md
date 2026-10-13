@@ -971,7 +971,7 @@ Everything in `sierra.config.js`:
 | `outDir` | `'dist/client'` | build output |
 | `base` | `'/'` | public base path |
 | `trailingSlash` | `'always'` | `'always'` \| `'never'` \| `'preserve'` |
-| `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, bodyAttrs, htmlClass, lang, head, bodyEnd }`. The build's own CSS assets are linked automatically |
+| `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, bodyAttrs, htmlClass, lang, head, bodyEnd, meta, links, jsonLd }`. The build's own CSS assets are linked automatically |
 | `routeTable.output` | `'config/routes.js'` | where the generated route table is written. A build writes `routes.build.js` beside it, so it never overwrites the table a running dev server serves |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, onConnect, … }` |
@@ -1154,8 +1154,12 @@ Sierra assembles it — Vite's HTML transform never runs on these files, so what
   defaults to `en`, and a route may override it with `lang:` in its frontmatter.
 - **`document: { head, bodyEnd, bodyAttrs }`** is what is the same on every page: `head` and
   `bodyEnd` are HTML strings written verbatim at the end of `<head>` and `<body>` (a
-  site-wide third-party loader, a `theme-color`, a WebSite JSON-LD), and `bodyAttrs`
+  site-wide third-party loader), and `bodyAttrs`
   (`{ id: 'app' }`) is attributes for `<body>` beside `bodyClass`.
+- **`document: { meta, links, jsonLd }`** are `head()`'s keys for every page — a
+  business's Organization graph, a `theme-color` — written before the page's own and
+  escaped the same way. Reach for these over `head` whenever the tag is data: `head` is
+  verbatim, so a value in it is the app's to escape.
 - **`head()` answers the per-page tags too:** `{ title, description, meta, links, jsonLd }`.
   `meta` and `links` are arrays of attribute objects
   (`meta: [{ property: 'og:title', content }]`, `links: [{ rel: 'canonical', href }]`) and
@@ -1366,7 +1370,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../presence` | `presence(channelId, opts)` |
 | `.../analytics` | `initAnalytics`, `configureAnalytics` (the provider alone, for a page whose tag is already in the HTML), `track` |
 | `.../devtools` | `initToolbar` |
-| `.../postbuild` | `runPostBuild` |
+| `.../postbuild` | `runPostBuild`, `htmlFiles` (every page a build emitted, for a config plugin's `closeBundle` that rewrites them) |
 | `.../site/serve` | `serveSite` — the prerendered-site origin |
 | `.../widget/serve` | `serveWidgets` — the widget origin |
 | `.../components/RouterView` | the router outlet component |

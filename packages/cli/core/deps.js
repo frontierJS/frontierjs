@@ -63,7 +63,7 @@ const isInternal = (range, memberNames, name) =>
 //     root, name,
 //     members: [{ path, name, version, private }],
 //     uses:    [{ name, member, kind, range, installed }],   sorted
-//     deps:    [{ name, installed: [...], ranges: [...], uses: [...] }],
+//     deps:    [{ name, runtime, installed: [...], ranges: [...], uses: [...] }],
 //   }
 //
 // Members come from the lock's `workspaces` keys (`""` is the root), so a
@@ -114,6 +114,9 @@ export function collectDeps(root) {
 
   const deps = [...byName].map(([name, list]) => ({
     name,
+    // Installed by anyone who installs the declaring package — a dependency,
+    // a peer or an optional one. Dev only when every declaration is dev.
+    runtime:   list.some(u => u.kind !== 'dev'),
     installed: [...new Set(list.map(u => u.installed).filter(Boolean))].sort(),
     ranges:    [...new Set(list.map(u => u.range))].sort(),
     uses:      list,
@@ -188,7 +191,7 @@ export function renderDepsSnapshot(report, { command = 'fli ws:deps' } = {}) {
   out.push('no commit, so they live in Basecamp, which `fli ws:deps --push` feeds.')
   out.push('')
   out.push('```')
-  out.push(`${report.deps.length} package(s) · ${report.uses.length} declaration(s) · ${report.members.length} member(s) · ${findings.length} finding(s)`)
+  out.push(`${report.deps.length} package(s) · ${report.deps.filter(d => d.runtime).length} runtime · ${report.deps.filter(d => !d.runtime).length} dev only · ${report.uses.length} declaration(s) · ${report.members.length} member(s) · ${findings.length} finding(s)`)
   out.push('```')
   out.push('')
 
@@ -201,15 +204,34 @@ export function renderDepsSnapshot(report, { command = 'fli ws:deps' } = {}) {
   }
   out.push('')
 
-  out.push('## Packages')
-  out.push('')
-  out.push('| Package | Installed | Declared by |')
-  out.push('| --- | --- | --- |')
-  for (const d of report.deps) {
-    const installed = d.installed.length ? d.installed.map(v => `\`${v}\``).join(' · ') : '—'
-    const by = d.uses.map(u => `${u.member} ${u.kind === 'dependency' ? '' : `(${u.kind}) `}\`${u.range}\``).join('<br>')
-    out.push(`| \`${d.name}\` | ${installed} | ${by} |`)
+  const table = (deps) => {
+    out.push('| Package | Installed | Declared by |')
+    out.push('| --- | --- | --- |')
+    for (const d of deps) {
+      const installed = d.installed.length ? d.installed.map(v => `\`${v}\``).join(' · ') : '—'
+      const by = d.uses.map(u => `${u.member} ${u.kind === 'dependency' ? '' : `(${u.kind}) `}\`${u.range}\``).join('<br>')
+      out.push(`| \`${d.name}\` | ${installed} | ${by} |`)
+    }
+    out.push('')
   }
 
-  return out.join('\n') + '\n'
+  const runtime = report.deps.filter(d => d.runtime)
+  const dev     = report.deps.filter(d => !d.runtime)
+
+  out.push(`## Runtime (${runtime.length})`)
+  out.push('')
+  out.push('Installed by anyone who installs the declaring package — a dependency, a peer')
+  out.push('or an optional one. A package also declared as dev somewhere is here, with')
+  out.push('that declaration listed beside the others.')
+  out.push('')
+  if (runtime.length) table(runtime); else { out.push('None.'); out.push('') }
+
+  out.push(`## Dev only (${dev.length})`)
+  out.push('')
+  out.push('Every declaration is a devDependency: building, testing and tooling, and')
+  out.push('never installed by a consumer.')
+  out.push('')
+  if (dev.length) table(dev); else { out.push('None.'); out.push('') }
+
+  return out.join('\n').replace(/\n+$/, '\n')
 }

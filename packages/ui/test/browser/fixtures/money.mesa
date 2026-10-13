@@ -15,6 +15,11 @@
   import { formFieldList } from '@frontierjs/sierra/field-rules'
 
   let seen      = undefined
+
+  // A row's currency loading after its amount: the value is the stored minor
+  // units and nobody has typed (`FJS-2582`).
+  let lateCurrency = undefined
+  let lateSeen     = []
   let seenCount = 0
 
   // What litestone emits for each `@money` shape.
@@ -47,6 +52,13 @@
 
 <output id="seen">{JSON.stringify(seen)}</output>
 <output id="seen-count">{seenCount}</output>
+
+<h2>a currency that arrives after the value</h2>
+<MoneyInput id="late" label="Deposit" name="deposit" currency={lateCurrency} value={1250}
+            onvalue={(v) => { lateSeen = [...lateSeen, v] }} />
+<button type="button" id="late-usd" on:click={() => lateCurrency = 'USD'}>USD</button>
+<button type="button" id="late-jpy" on:click={() => lateCurrency = 'JPY'}>JPY</button>
+<output id="late-seen">{JSON.stringify(lateSeen)}</output>
 
 <h2>generated — nothing here names a control</h2>
 <Form id="generated" resource={RESOURCE} bind:record={record}

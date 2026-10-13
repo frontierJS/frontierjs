@@ -14,6 +14,7 @@ import { chalk as colorChalk } from './color.js'
 import { lines } from './text.js'
 import { commandContext } from './shell.js'
 import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
+import { shQuote } from './machine.js'
 
 const env = process.env
 
@@ -279,6 +280,16 @@ export async function Command({ file, arg, flag, emit }) {
     if (!command) throw new Error(`${SNAPSHOT_BINS.get(name)} is not installed where ${from} can reach it — run bun install`)
     return command
   }
+
+  // ─── context.forwarded — what was typed after the command name ─────────────
+  //
+  // The raw argv tail, for a command that hands its arguments to another one:
+  // `flag` is fli's reading of the argv, defaults filled in, so forwarding it
+  // would send `--test` and friends to a target that never asked for them. A
+  // web run has no argv of its own — `process.argv` there is the server's.
+  //
+  //   context.exec({ command: `${context.fli} dev:desktop`, args: context.forwarded })
+  config.forwarded = emit ? [] : forwardedArgs(process.argv)
   config.env   = process.env
   config.env.browser ??= env.BROWSER || 'firefox'
 
@@ -328,7 +339,13 @@ export async function Command({ file, arg, flag, emit }) {
   // `describe` is what --dry prints when the command itself is not the
   // interesting part. A deploy step runs `ssh host sh -s` and pipes the real
   // script to it, so printing the command shows every step as the same line.
-  config.exec = ({ command, dry, describe, allowFailure, ...opts }) => {
+  // `args` is appended to `command` one shell word each, so a value carrying a
+  // space or a quote arrives as typed rather than as shell syntax.
+  config.exec = ({ command, args, dry, describe, allowFailure, ...opts }) => {
+    if (args !== undefined && !Array.isArray(args)) {
+      throw new Error(`context.exec takes args as an array of words, got ${typeof args}`)
+    }
+    if (args?.length) command = `${command} ${args.map(shQuote).join(' ')}`
     if (dry ?? config.flag.dry) return config.log.dry(describe ?? command)
     refuseUnknownExecOptions(opts)
     try {
@@ -936,6 +953,20 @@ export const EXEC_OPTIONS = new Set([
   'timeout', 'killSignal', 'maxBuffer', 'encoding', 'windowsHide',
 ])
 
+// fli's own flags are answered before the target runs — `--dry` by not running
+// it — so they are not the target's to receive. A leading `--` has done its
+// job by now: it is how `fli ci -- --help` gets past bootstrap's `--help`.
+const OWN_FLAGS = new Set(['--dry', '-d'])
+
+/** The argv after the command name, minus what fli answered itself. */
+export function forwardedArgs(argv) {
+  const words = argv.slice(2)
+  // Global flags may come before the command name: `fli --verbose ci`.
+  const at = words.findIndex(w => !w.startsWith('-'))
+  const tail = at === -1 ? [] : words.slice(at + 1).filter(w => !OWN_FLAGS.has(w) && !w.startsWith('--dry='))
+  return tail[0] === '--' ? tail.slice(1) : tail
+}
+
 export function refuseUnknownExecOptions(opts) {
   const unknown = Object.keys(opts).filter(k => !EXEC_OPTIONS.has(k))
   if (unknown.length === 0) return
@@ -944,7 +975,7 @@ export function refuseUnknownExecOptions(opts) {
     : ''
   throw new Error(
     `context.exec does not take ${unknown.map(k => `\`${k}\``).join(', ')}. ` +
-    `It takes command, dry and describe, plus what execSync understands ` +
+    `It takes command, args, dry, describe and allowFailure, plus what execSync understands ` +
     `(${[...EXEC_OPTIONS].join(', ')}).${hint}`
   )
 }

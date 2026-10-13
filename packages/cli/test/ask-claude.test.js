@@ -11,7 +11,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_BASH, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, WORK_BUDGET_USD, askArgv, askInput, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
+import { ASK_BASH, ASK_EFFORT, ASK_MAX_LINES, ASK_MAX_RULES, ASK_RULES, EFFORTS, WORK_BUDGET_USD, askArgv, askInput, askPrompt, readAskEvent, runAsk } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 const dir     = mkdtempSync(join(tmpdir(), 'fli-ask-claude-'))
@@ -68,6 +68,13 @@ describe('askArgv', () => {
     expect(askArgv({ work: {}, session: SESSION }).slice(-2)).toEqual(['--resume', SESSION])
     expect(askArgv({ work: {}, session: SESSION, fork: true }).slice(-3)).toEqual(['--resume', SESSION, '--fork-session'])
     expect(askArgv({ work: {}, fork: true })).not.toContain('--fork-session')
+  })
+
+  test('effort is passed when named and left to the account when not', () => {
+    expect(askArgv()).not.toContain('--effort')
+    expect(askArgv({ work: {} })).not.toContain('--effort')
+    const argv = askArgv({ edit: '/app', effort: 'low' })
+    expect(argv[argv.indexOf('--effort') + 1]).toBe('low')
   })
 
 })
@@ -160,13 +167,28 @@ describe('runAsk', () => {
     const seen = fake.seen()
     expect(seen.input).toBe('the prompt')
     expect(seen.cwd).toBe(dir)
-    expect(seen.argv).toEqual(askArgv())
+    expect(seen.argv).toEqual(askArgv({ effort: ASK_EFFORT }))
   })
 
   test('a follow-up passes the session through', async () => {
     const fake = fakeClaude([])
     await ask({ bin: fake.bin, session: SESSION })
-    expect(fake.seen().argv.slice(-2)).toEqual(['--resume', SESSION])
+    const argv = fake.seen().argv
+    expect(argv[argv.indexOf('--resume') + 1]).toBe(SESSION)
+  })
+
+  test('effort defaults to ASK_EFFORT, takes any of EFFORTS, and refuses anything else before starting', async () => {
+    const fake = fakeClaude([])
+    await ask({ bin: fake.bin })
+    let argv = fake.seen().argv
+    expect(argv[argv.indexOf('--effort') + 1]).toBe(ASK_EFFORT)
+    for (const effort of EFFORTS) {
+      await ask({ bin: fake.bin, effort })
+      argv = fake.seen().argv
+      expect(argv[argv.indexOf('--effort') + 1]).toBe(effort)
+    }
+    const { error } = await ask({ bin: '/nonexistent', effort: '--dangerously-skip-permissions' })
+    expect(error).toContain('no such effort')
   })
 
   test('a session id that is not one is refused before anything starts', async () => {
@@ -180,7 +202,7 @@ describe('runAsk', () => {
     const { code } = await ask({ bin: fake.bin, images })
     expect(code).toBe(0)
     const seen = fake.seen()
-    expect(seen.argv).toEqual(askArgv({ images: true }))
+    expect(seen.argv).toEqual(askArgv({ effort: ASK_EFFORT, images: true }))
     expect(seen.argv.slice(-2)).toEqual(['--input-format', 'stream-json'])
     expect(seen.input.endsWith('\n')).toBe(true)
     expect(JSON.parse(seen.input)).toEqual({ type: 'user', message: { role: 'user', content: [

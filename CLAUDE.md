@@ -73,6 +73,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 - **A comment inside a template literal uses plain words or `--` quoting** — a backtick there closes the literal and the file fails to parse.
 - **American spelling** in prose and identifiers (`FJS-D192`); `cancelled`, a persisted enum value, is the one exception, and `fli check` grades it.
 - **A document an agent reads is written by `doc-hygiene`** (`.claude/skills/`). **A section a parser reads moves only with its parser** — modules read this file's Invariants, Packages table and Bridge index by path.
+- **A plan is Phases of Steps**: Phase 0 comes first, a step is cited `2.3` and its number is never reused, and the next step is the first open box. This holds in a `PLAN.md`, in `IDEAS/` and in chat; the shape is `doc-hygiene` § A plan's shape (`FJS-D927`).
 - **A new defect gets an `FJS-###` in `ISSUES.md`**; a ruling closes an `FJS-D##` in `DECISIONS.md`. Check a new `.gitignore` rule against `git status --porcelain`.
 
 ---

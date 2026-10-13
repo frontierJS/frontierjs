@@ -90,6 +90,21 @@ describe('depsFindings', () => {
   })
 })
 
+test('runtime is any non-dev declaration; dev only is every declaration dev', () => {
+  const r  = collectDeps(ROOT)
+  const of = Object.fromEntries(r.deps.map(d => [d.name, d.runtime]))
+  // typescript is a root devDependency AND a peer of @x/kit — a consumer of the kit brings it.
+  expect(of).toEqual({ 'css-tree': true, 'left-pad': true, typescript: true, vite: true })
+
+  const solo = mkdtempSync(join(tmpdir(), 'fli-deps-dev-'))
+  writeFileSync(join(solo, 'package.json'), JSON.stringify({ name: 'solo', devDependencies: { vitest: '^5' }, dependencies: { zod: '^4' } }))
+  const md = renderDepsSnapshot(collectDeps(solo))
+  expect(md.indexOf('## Runtime (1)')).toBeLessThan(md.indexOf('| `zod`'))
+  expect(md.indexOf('## Dev only (1)')).toBeLessThan(md.indexOf('| `vitest`'))
+  expect(md.indexOf('| `zod`')).toBeLessThan(md.indexOf('## Dev only'))
+  rmSync(solo, { recursive: true, force: true })
+})
+
 test('the snapshot names its generator and carries no machine path', () => {
   const r  = collectDeps(ROOT)
   const md = renderDepsSnapshot(r)

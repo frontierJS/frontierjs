@@ -59,6 +59,9 @@ core/
                 clickable `file:line` (OSC 8), off wherever color is
   text.js       `echo.lines` — a block of output rows; false and null rows
                 dropped. `plural(n, word)`
+  install-preflight.js  `fli dev`'s third preflight — every declared package
+                installed, looked for by name walking up, and the `link:` targets
+                this machine's bun never registered, which fail `bun install` itself
   dev-run.js    `fli dev`'s surfaces as one labeled stream — each its own process
                 group, stopped as one on exit, so a launcher's child never keeps a port
   command-parse.js  does every command in a routes tree parse — each compiled

@@ -33,6 +33,10 @@ import { generateMarkdownPages } from './markdown-pages.js'
 import { gradeManifest } from './manifest.js'
 import { writeOfflineShell } from './offline-shell.js'
 
+// A config plugin's closeBundle that rewrites pages asks the same walk the
+// steps here do, rather than keeping a second idea of what a page is.
+export { htmlFiles } from './html-files.js'
+
 /**
  * Run the full post-build pipeline.
  *

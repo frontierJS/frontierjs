@@ -699,6 +699,10 @@ function finishDrag(skipAnimation) {
   const settle = () => {
     if (!session) return
     const finalItems = listOf(target).map((it) => (it[SHADOW_ITEM_MARKER] ? session.itemData : it))
+    // The last line of the same defense: a list replaced in the frame of the
+    // drop has had no chance to take the placeholder back.
+    if (!finalItems.includes(session.itemData) && !finalItems.some((it) => it[ITEM_ID_KEY] === session.itemId))
+      finalItems.splice(Math.min(target.placeholderIndex ?? Infinity, finalItems.length), 0, session.itemData)
     const trigger = session.outside ? TRIGGERS.DROPPED_OUTSIDE_OF_ANY : TRIGGERS.DROPPED_INTO_ZONE
 
     notify(target.node, 'onfinalize', finalItems, trigger)
@@ -960,7 +964,19 @@ export function dndzone(getOptions) {
         if (s !== meta.expectedSig) {
           meta.expectedSig = s
           meta.handed = null
+          // A list pushed without the placeholder has nowhere for the drop to
+          // land: the last index would name a real row as the placeholder, and
+          // a drop in place finalized a list missing the dragged item in BOTH
+          // zones — a host persisting from onfinalize deleted it (`FJS-2583`).
+          // Put it back where it was, clamped; the next hit test corrects it.
+          const was = meta.placeholderIndex
+          const lost = !config.items.some((it) => it[SHADOW_ITEM_MARKER])
+          if (lost) meta.placeholderIndex = null
           measureZone(meta)
+          if (lost && session.current === meta && !session.finalizing) {
+            considerWithShadowAt(meta, Math.min(was ?? Infinity, itemsWithoutShadow(meta).length), TRIGGERS.DRAGGED_OVER_INDEX)
+            scheduleRemeasure()
+          }
         }
       }
     }

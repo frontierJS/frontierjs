@@ -75,8 +75,15 @@
   const saved = keep('fli:ask:log')
   const foldKeep = keep('fli:ask:fold')
   const miniKeep = keep('fli:ask:mini')
+  // How hard Claude thinks is a preference rather than part of one ask, so it
+  // outlives the tab where the rest of the panel's state does not.
+  const EFFORT_KEY = 'fli:ask:effort'
+  const EFFORTS = (typeof ASK !== 'undefined' && ASK.efforts) || []
+  const EFFORT  = (typeof ASK !== 'undefined' && ASK.effort) || null
+  const effortOf = () => { try { const v = localStorage.getItem(EFFORT_KEY); return EFFORTS.includes(v) ? v : EFFORT } catch { return EFFORT } }
+  const setEffort = v => { try { v === EFFORT ? localStorage.removeItem(EFFORT_KEY) : localStorage.setItem(EFFORT_KEY, v) } catch {} }
 
-  let panel, tab, title, list, hint, chips, tray, input, send, stop, submit, fresh, log, rail, folds, latch
+  let panel, tab, title, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch
   let picks = [], sent = false, busy = false
   // Closed hides the panel and its tab; shrunk hides the panel behind the tab.
   let closed = false, shrunk = !!miniKeep.get()
@@ -115,6 +122,10 @@
   const BTN = 'font:13px/1 ui-sans-serif,system-ui;padding:6px 11px;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer'
   const CHIP = 'font:12px/1 ui-sans-serif,system-ui;padding:4px 9px;border-radius:999px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer'
   const CHIP_ON = ';background:#0369a1;border-color:#0369a1;color:#f8fafc'
+  // The kind, scope and effort groups are segmented controls: one tray per
+  // group, so a row reads as a label and a single choice rather than a pile of pills.
+  const SEG = 'font:12px/1 ui-sans-serif,system-ui;padding:5px 10px;border-radius:5px;border:0;background:transparent;color:#cbd5e1;cursor:pointer'
+  const SEG_ON = ';background:#0369a1;color:#f8fafc'
   // The panel floats over the page it edits, so it is glass: the page stays
   // in view behind it. The dimming in the filter is what keeps the light text
   // legible when the page behind is white, and why there is no third, dimmer
@@ -454,7 +465,7 @@
     rail.setAttribute('aria-label', 'Jump to a message')
     chat.append(log, rail)
 
-    chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:#94a3b8;padding-top:10px;border-top:1px solid #1e293b')
+    chips = make('div', 'display:flex;flex-direction:column;gap:8px;font-size:12px;color:#94a3b8;padding-top:10px;border-top:1px solid #1e293b')
 
     input = make('textarea', 'box-sizing:border-box;width:100%;resize:vertical;min-height:84px;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:' + WELL + ';color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
     input.placeholder = 'What should change? Paste a screenshot to show it. (⌘/Ctrl+Enter sends)'
@@ -463,7 +474,7 @@
     tray = make('div', 'display:none;flex-wrap:wrap;gap:6px')
 
     const row = make('div', 'display:flex;gap:6px;justify-content:flex-end')
-    submit = make('button', BTN + ';margin-right:auto', 'Submit for review')
+    submit = make('button', BTN, 'Submit for review')
     submit.title = 'Commit what the panel changed and open a pull request for the owner to review'
     submit.style.display = 'none'
     submit.onclick = submitAll
@@ -472,7 +483,8 @@
     stop.onclick = () => post('/__fjs/ask/stop', {}).catch(() => {})
     send = make('button', BTN + ';background:#0369a1;border-color:#0369a1', 'Send')
     send.onclick = ask
-    row.append(submit, stop, send)
+    effortBox = make('div', 'display:flex;align-items:center;gap:6px;margin-right:auto;font-size:11px;color:#64748b')
+    row.append(effortBox, submit, stop, send)
 
     panel.append(head, list, hint, folds, chat, chips, tray, input, row)
 
@@ -589,18 +601,42 @@
       ['component', 'Component', 'The whole component or section it belongs to'],
       ['page', 'Page', 'Wherever the same thing appears on the page'],
     ]
+    const row = (label, buttons) => {
+      const tray = make('div', 'display:flex;flex-wrap:wrap;gap:2px;padding:2px;border-radius:7px;background:#0f172a')
+      tray.append(...buttons)
+      const line = make('div', 'display:flex;align-items:center;gap:10px')
+      chips.appendChild(line)
+      line.append(make('span', 'flex:none;width:44px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#64748b', label), tray)
+    }
+    const seg = (text, tip, on, onclick) => {
+      const b = make('button', SEG + (on ? SEG_ON : ''), text)
+      b.type = 'button'
+      b.title = tip
+      b.setAttribute('aria-pressed', String(on))
+      b.onclick = onclick
+      return b
+    }
     const group = (label, options, current, pick) => {
-      chips.appendChild(make('span', label === 'Change' ? 'margin-right:2px' : 'margin:0 2px 0 8px', label))
-      for (const [key, text, tip] of options) {
-        const b = make('button', CHIP + (current === key ? CHIP_ON : ''), text)
-        b.title = tip
-        b.setAttribute('aria-pressed', String(current === key))
-        b.onclick = () => { pick(current === key ? null : key); drawChips() }
-        chips.appendChild(b)
-      }
+      row(label, options.map(([key, text, tip]) =>
+        seg(text, tip, current === key, () => { pick(current === key ? null : key); drawChips() })))
     }
     group('Change', KINDS, kind, v => { kind = v })
     group('Scope', scopes, scope, v => { scope = v })
+    if (!EFFORTS.length) return
+    // One effort is always on, so a second press on it keeps it rather than
+    // clearing it the way a Change or Scope chip clears.
+    const on = effortOf()
+    effortBox.textContent = ''
+    const tray = make('div', 'display:flex;gap:1px;padding:1px;border-radius:5px;background:#0f172a')
+    for (const key of EFFORTS) {
+      const b = make('button', SEG + ';font-size:10.5px;padding:3px 6px' + (on === key ? SEG_ON : ''), key)
+      b.type = 'button'
+      b.title = key === EFFORT ? 'How long Claude thinks before it edits — the default' : 'How long Claude thinks before it edits'
+      b.setAttribute('aria-pressed', String(on === key))
+      b.onclick = () => { setEffort(key); drawChips() }
+      tray.appendChild(b)
+    }
+    effortBox.append('Effort', tray)
   }
 
   function render() {
@@ -610,30 +646,32 @@
     list.textContent = ''
     list.style.display = picks.length ? 'flex' : 'none'
     for (const p of picks) {
-      const row = make('div', 'display:flex;align-items:center;gap:6px;padding:7px 8px 7px 11px;border:1px solid #1e293b;border-radius:8px;background:' + WELL + '')
+      const row = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 8px 7px 11px;border:1px solid #1e293b;border-radius:8px;background:' + WELL + '')
       row.dataset.pick = p.loc
-      const what = make('div', 'flex:1;min-width:0')
+      const what = make('div', 'flex:1 1 180px;min-width:0')
       what.appendChild(make('div', 'font:12.5px/1.4 ui-monospace,monospace;color:#38bdf8;word-break:break-all', p.loc))
       const text = words(p.el)
       what.appendChild(make('div', 'color:#94a3b8;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis',
         `<${p.el.localName}>${text ? ' ' + text.slice(0, 60) : ''}`))
       row.appendChild(what)
+      const acts = make('div', 'display:flex;flex:none;gap:6px;margin-left:auto')
       if (text && text.length <= MAX_TEXT) {
         const edit = make('button', BTN, 'Edit text')
         edit.title = 'Change the words in place, without asking Claude when it can'
         edit.onclick = () => editText(p)
-        row.appendChild(edit)
+        acts.appendChild(edit)
       }
       if (p.open) {
         const source = make('button', BTN, 'Open source')
         source.title = 'Open this line in your editor'
         source.onclick = p.open
-        row.appendChild(source)
+        acts.appendChild(source)
       }
       const drop = make('button', BTN, '×')
       drop.title = 'Leave this element out'
       drop.onclick = () => { picks = picks.filter(x => x !== p); render() }
-      row.appendChild(drop)
+      acts.appendChild(drop)
+      row.appendChild(acts)
       list.appendChild(row)
     }
   }
@@ -810,6 +848,7 @@
         picks:   wire(list),
         page:    location.href,
         session: store.get(),
+        effort:  effortOf() || undefined,
       })
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({}))

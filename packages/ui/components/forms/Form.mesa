@@ -640,10 +640,13 @@
     submitting = true
 
     try {
+      const asSent = { ...record }
+      const wasNew = _mode() === 'create'
       const sent   = _writable(record)
       const result = onsubmit ? await onsubmit(record) : await _send(sent)
       dirty = false
       _adoptVersion(result)
+      if (!wasNew) _rebaseline(asSent, result)
 
       // The write succeeded and the boundary may still have kept a column.
       // A field `@allow('write', …)` DROPS rather than refuses, because the
@@ -706,6 +709,29 @@
     if (!vf || !result || typeof result !== 'object') return
     if (result[vf] === undefined || record?.[vf] === result[vf]) return
     record = { ...record, [vf]: result[vf] }
+  }
+
+  /**
+   * Move what reset() returns to onto the row just saved.
+   *
+   * Left on the row as OPENED, a reset after a save put the pre-save values and
+   * the pre-save `@version` back, and the next save wrote the person's own edit
+   * away — or 409'd against a revision this screen had already passed
+   * (`FJS-2584`). The answer wins over what was sent where it speaks for the
+   * same row, as Sierra's patch baseline does: a column the boundary kept
+   * (`FJS-1071`) comes back holding the stored value, and resetting to the
+   * typed one would show a value that was never written. Columns the answer
+   * leaves out — a projection, a stripped column — keep what was sent, and an
+   * `onsubmit` that answers no row leaves the sent record alone, with the
+   * version this write minted.
+   */
+  function _rebaseline(asSent, result) {
+    const same = result && typeof result === 'object' && !Array.isArray(result)
+      && result[idField] != null && String(result[idField]) === String(asSent?.[idField])
+    const vf = resource?.versionField
+    pristine = same ? { ...asSent, ...result }
+      : vf && record?.[vf] !== undefined ? { ...asSent, [vf]: record[vf] }
+      : { ...asSent }
   }
 
   // ── Autosave ─────────────────────────────────────────────────────────

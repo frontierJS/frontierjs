@@ -48,7 +48,7 @@ title: Dependencies
     { key: 'patch',      label: 'Patch behind', tone: 'info',    sub: 'fixes only' },
     { key: 'unknown',    label: 'Unknown',     tone: 'muted',   sub: 'no comparable version' },
     { key: 'unchecked',  label: 'Unchecked',   tone: 'muted',   sub: 'no registry answer yet' },
-    { key: 'current',    label: 'Current',     tone: 'success', sub: 'on latest' },
+    { key: 'current',    label: 'On latest',   tone: 'success', sub: 'nothing newer published' },
   ]
   const STATUS_OF = Object.fromEntries(STATUS.map(s => [s.key, s]))
 
@@ -85,11 +85,23 @@ title: Dependencies
     (!search || p.name.toLowerCase().includes(search.toLowerCase())))
   const countOf = (key) => scoped.filter(p => p.status === key).length
 
+  const visibleUses = (p) => p.uses.filter(u => !publishedOnly || u.published)
+
   // Who declares it, folded to one line per member: a package three apps
   // declare is three lines, and the kind only when it is not a plain dependency.
-  const declaredBy = (p) => p.uses
-    .filter(u => !publishedOnly || u.published)
+  const declaredBy = (p) => visibleUses(p)
     .map(u => `${u.member}${u.kind === 'dependency' ? '' : ` (${u.kind})`} ${u.declared}`)
+
+  // Runtime is any declaration a consumer installs — a dependency, a peer or
+  // an optional one; dev only when every declaration on screen is dev. Read off
+  // the declarations SHOWN, so the published switch can move a package: one an
+  // app depends on and the framework only builds with is dev only for the
+  // framework.
+  const isRuntime = (p) => visibleUses(p).some(u => u.kind !== 'dev')
+  $: groups = [
+    { key: 'runtime', title: 'Runtime', sub: 'installed by anyone who installs the package', rows: shown.filter(isRuntime) },
+    { key: 'dev',     title: 'Dev only', sub: 'building, testing and tooling — never installed by a consumer', rows: shown.filter(p => !isRuntime(p)) },
+  ]
 
   const COLUMNS = [
     { name: 'name',      label: 'Package' },
@@ -170,38 +182,45 @@ title: Dependencies
     {#if !shown.length}
       <EmptyState title="No package matches">Clear the search or the status to see the rest.</EmptyState>
     {:else}
-      <Table columns={COLUMNS} rows={shown} striped hover={false} id="dependencies-list">
-        {#snippet row(p)}
-          <tr data-package={p.name}>
-            <td><code>{p.name}</code></td>
-            <td class="text-sm">
-              {#each p.installed as v}<code>{v}</code> {/each}
-              {#if !p.installed.length}<span class="text-muted">not installed</span>{/if}
-            </td>
-            <td class="text-sm">
-              {#if p.latest}<code>{p.latest}</code>{:else}<span class="text-muted">—</span>{/if}
-            </td>
-            <td>
-              <Pill tone={STATUS_OF[p.status]?.tone ?? 'muted'}>{STATUS_OF[p.status]?.label ?? p.status}</Pill>
-              {#if p.bump && p.bump !== 'current' && !p.inRange}
-                <!-- A reinstall will not reach latest; a manifest has to change. -->
-                <span class="text-sm text-muted">range excludes it</span>
-              {/if}
-              {#each p.advisories as a}
-                <div class="text-sm">
-                  <a href={`https://osv.dev/vulnerability/${a.id}`} target="_blank" rel="noreferrer">{a.id}</a>
-                  {a.severity ? `· ${a.severity.toLowerCase()}` : ''} {a.summary ? `· ${a.summary}` : ''}
-                </div>
-              {/each}
-              {#if p.deprecated}<div class="text-sm text-muted">{p.deprecated}</div>{/if}
-              {#if p.checkError}<div class="text-sm text-muted">{p.checkError}</div>{/if}
-            </td>
-            <td class="text-sm text-muted">
-              {#each declaredBy(p) as line}<div>{line}</div>{/each}
-            </td>
-          </tr>
-        {/snippet}
-      </Table>
+      <div class="stack" id="dependencies-list">
+        {#each groups.filter(g => g.rows.length) as g (g.key)}
+          <section class="stack" data-group={g.key}>
+            <h2 class="h4">{g.title} <span class="text-sm text-muted">{g.rows.length} · {g.sub}</span></h2>
+            <Table columns={COLUMNS} rows={g.rows} striped hover={false}>
+              {#snippet row(p)}
+                <tr data-package={p.name}>
+                  <td><code>{p.name}</code></td>
+                  <td class="text-sm">
+                    {#each p.installed as v}<code>{v}</code> {/each}
+                    {#if !p.installed.length}<span class="text-muted">not installed</span>{/if}
+                  </td>
+                  <td class="text-sm">
+                    {#if p.latest}<code>{p.latest}</code>{:else}<span class="text-muted">—</span>{/if}
+                  </td>
+                  <td>
+                    <Pill tone={STATUS_OF[p.status]?.tone ?? 'muted'}>{STATUS_OF[p.status]?.label ?? p.status}</Pill>
+                    {#if p.bump && p.bump !== 'current' && !p.inRange}
+                      <!-- A reinstall will not reach latest; a manifest has to change. -->
+                      <span class="text-sm text-muted">range excludes it</span>
+                    {/if}
+                    {#each p.advisories as a}
+                      <div class="text-sm">
+                        <a href={`https://osv.dev/vulnerability/${a.id}`} target="_blank" rel="noreferrer">{a.id}</a>
+                        {a.severity ? `· ${a.severity.toLowerCase()}` : ''} {a.summary ? `· ${a.summary}` : ''}
+                      </div>
+                    {/each}
+                    {#if p.deprecated}<div class="text-sm text-muted">{p.deprecated}</div>{/if}
+                    {#if p.checkError}<div class="text-sm text-muted">{p.checkError}</div>{/if}
+                  </td>
+                  <td class="text-sm text-muted">
+                    {#each declaredBy(p) as line}<div>{line}</div>{/each}
+                  </td>
+                </tr>
+              {/snippet}
+            </Table>
+          </section>
+        {/each}
+      </div>
     {/if}
   {:else}
     <p class="text-sm text-muted">Pick a project to see its packages.</p>

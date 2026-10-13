@@ -296,6 +296,33 @@ export class SoftDeletedUniqueError extends Error {
   }
 }
 
+/**
+ * An update-family write named `@@softDelete`'s column.
+ *
+ * Setting `deletedAt` is remove() spelled as a patch, and graded as a patch it
+ * was the UPDATE gate deciding a removal: a caller the delete gate refused
+ * stamped the row and it was gone, with no cascade walked and no removal
+ * announced (`FJS-2578`). Refused for `asSystem()` as for everyone — the
+ * cascade is integrity, not authority, and `sys.<model>.remove()` already lifts
+ * the gate. 400 rather than 403: the verb is wrong, not the caller.
+ */
+export class SoftDeleteWriteError extends Error {
+  constructor(model, verb = 'update', field = 'deletedAt') {
+    const accessor = String(model ?? '').charAt(0).toLowerCase() + String(model ?? '').slice(1)
+    super(`${verb}() cannot write ${model}.${field} — under @@softDelete a row leaves through remove() ` +
+          `and comes back through restore(), which grade the delete and update gates and walk the cascade:\n\n` +
+          `    db.${accessor}.remove({ where })\n` +
+          `    db.${accessor}.restore({ where })\n\n` +
+          `Every other column is still writable in the same call.`)
+    this.name      = 'SoftDeleteWriteError'
+    this.model     = model
+    this.field     = field
+    this.verb      = verb
+    this.status    = 400
+    this.retryable = false
+  }
+}
+
 // ─── A row that is part of a sealed document ─────────────────────────────────
 //
 // `@seals` on a move says the row became a document; `@sealed` on a relation
