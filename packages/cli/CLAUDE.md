@@ -62,6 +62,9 @@ core/
   install-preflight.js  `fli dev`'s third preflight — every declared package
                 installed, looked for by name walking up, and the `link:` targets
                 this machine's bun never registered, which fail `bun install` itself
+  env-preflight.js  `fli dev`'s key preflight — whether `.env` gives the API the
+                `ENCRYPTION_KEY` its `.env.example` names. Only that key: fli
+                can make random bytes and no other blank is fli's to fill
   dev-run.js    `fli dev`'s surfaces as one labeled stream — each its own process
                 group, stopped as one on exit, so a launcher's child never keeps a port
   command-parse.js  does every command in a routes tree parse — each compiled

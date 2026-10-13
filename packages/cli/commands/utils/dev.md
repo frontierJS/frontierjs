@@ -1,6 +1,6 @@
 ---
 title: utils:dev
-description: Start the dev server on this app's own ports — refuses a taken one, offers an install, warns on an empty database
+description: Start the dev server on this app's own ports — refuses a taken one, offers an install and an ENCRYPTION_KEY, warns on an empty database
 alias: dev
 examples:
   - fli dev
@@ -11,7 +11,7 @@ examples:
 flags:
   check:
     type: boolean
-    description: Skip the preflights — the ports, the install and the database
+    description: Skip the preflights — the ports, the install, the key and the database
     defaultValue: true
   host:
     type: boolean
@@ -20,7 +20,7 @@ flags:
 ---
 
 Runs the project's own `dev` script with the right runner, on this app's own
-ports, after three preflights.
+ports, after four preflights.
 
 **A `dev` that only runs surface scripts side by side is run by fli, one child
 per surface, each line behind its surface's name** (`api │`, `web │`) —
@@ -54,6 +54,14 @@ directory, because a pull that added one dependency fails the same way with a
 run with none is refused with the command. A `link:` dependency this machine
 never `bun link`ed is refused before the install, because the install itself
 fails on it — that is a `--source local` app opened somewhere else.
+
+**A blank `ENCRYPTION_KEY` is offered one, when `.env.example` names it.** The
+same clone has no `.env` — it is gitignored — so the API refuses at load while
+the web surface comes up beside it. With no `.env`, the example is copied first;
+the key is written by `fli keygen`, the generator `auth:install` uses. Only this
+key: it is random bytes, where every other blank names a credential somebody has
+to go and get (`core/env-preflight.js`). It is offered and never refused,
+because the API's own refusal already says what is wrong.
 
 A port that is already answering is not correct in any reading, and the two dev
 runners fail differently and badly: `bun --watch` prints EADDRINUSE and **keeps
@@ -98,7 +106,7 @@ workspace has no lockfile of its own — the one lockfile is at the workspace ro
 package in a bun monorepo, and then ran the wrong runner.
 
 <script>
-import { readFileSync } from 'fs'
+import { readFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
 </script>
 
@@ -115,6 +123,8 @@ const { missingPackages, unregisteredLinks } =
   await import(resolve(global.fliRoot, 'core/install-preflight.js'))
 const { plural } =
   await import(resolve(global.fliRoot, 'core/text.js'))
+const { encryptionKeyState, envValue, KEY } =
+  await import(resolve(global.fliRoot, 'core/env-preflight.js'))
 
 let manifest = {}
 try {
@@ -136,6 +146,7 @@ if (session.rows.length) {
   log.info(at ? `${at} — ${where}` : where)
 }
 
+let generatedKey = ''
 if (flag.check) {
   // Ports first. A refusal here is the whole point, and it must happen before
   // anything that takes time — including reading a database the ghost still
@@ -180,6 +191,25 @@ if (flag.check) {
     }
   }
 
+  const keyState = encryptionKeyState(root)
+  if ((keyState === 'no-env' || keyState === 'blank') && !flag.dry) {
+    const keygen = `fli keygen aes --format hex --name ${KEY} --env`
+    log.warn(keyState === 'no-env'
+      ? `no .env — the API refuses to start without ${KEY}`
+      : `${KEY} is blank in .env — the API refuses to start without it`)
+    const ask = keyState === 'no-env' ? `Create .env from .env.example with a new ${KEY}?` : `Generate ${KEY} into .env?`
+    const answer = tty.interactive ? (await tty.line(`${ask} [Y/n]`)).trim().toLowerCase() : 'n'
+    if (answer && answer !== 'y' && answer !== 'yes') {
+      echo.lines([chalk.dim(`${keyState === 'no-env' ? 'cp .env.example .env && ' : ''}${keygen}`)], { indent: 2 })
+    } else {
+      if (keyState === 'no-env') copyFileSync(resolve(root, '.env.example'), resolve(root, '.env'))
+      $.exec({ command: `cd ${root} && ${$.fli} keygen aes --format hex --name ${KEY} --env` })
+      // fli loaded the blank from .env at startup, and a child's own copy of the
+      // name wins over the file bun reads for it — so the new value travels on `env:`.
+      generatedKey = envValue(readFileSync(resolve(root, '.env'), 'utf8'), KEY)
+    }
+  }
+
   try {
     warnIfDatabaseEmpty($)
   } catch (err) {
@@ -195,6 +225,7 @@ const env = {
   ...session.vars,
   ...(flag.debug && { DEBUG: '1' }),
   ...(flag.host && { FLI_HOST: '1' }),
+  ...(generatedKey && { [KEY]: generatedKey }),
 }
 
 const composed = composedSurfaces(manifest.scripts, session.rows)
