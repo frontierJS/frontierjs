@@ -129,7 +129,7 @@ import { join } from 'path'
 // scripts, tsconfig, biome.json, .editorconfig, the workflow. One module, so
 // the framework's opinion about tooling is written down once and can be read.
 const { EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, appTsconfig, appBiomeJson, appCheckScripts, appWorkflow,
-        appAgentsMd, appClaudeMd } =
+        appAgentsMd, appAgentsProjectMd, appClaudeMd } =
   await import(resolve(global.fliRoot, 'core/app-config.js'))
 
 // The widgets/ surface — one owner, shared with `fli make:widget`, so an app
@@ -501,7 +501,8 @@ ${name}/
 ├── .editorconfig
 ├── README.md
 ├── AGENTS.md                   # for an AI agent writing code here — written by fli new
-├── CLAUDE.md                   # this app's own agent notes; imports AGENTS.md
+├── AGENTS.project.md           # this app's own agent instructions; imported by AGENTS.md
+├── CLAUDE.md                   # Claude Code's entry; imports AGENTS.md
 ├── .github/workflows/ci.yml    # runs \`bun run check\`
 ├── db/
 │   └── schema.lite             # Single source of truth — data + auth
@@ -1846,8 +1847,8 @@ ${sc}
     </button>
     <button class="btn ghost" type="button" on:click={startOver} disabled={loading}>Start over</button>
   {:else}
-    <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
-    <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
+    <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email"    autocomplete="username" />
+    <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" />
     <button class="btn primary" type="submit" disabled={loading}>
       {loading ? 'Signing in…' : 'Sign in'}
     </button>
@@ -2169,9 +2170,9 @@ ${sc}
     <div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>
   {/if}
 
-  <input class="field" bind:value={name}     type="text"     placeholder="Name"     aria-label="Name" />
-  <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
-  <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
+  <input class="field" bind:value={name}     type="text"     placeholder="Name"     aria-label="Name"     autocomplete="name" />
+  <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email"    autocomplete="username" />
+  <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" autocomplete="new-password" />
   <button class="btn primary" type="submit" disabled={loading}>
     {loading ? 'Creating…' : 'Create account'}
   </button>
@@ -2529,6 +2530,7 @@ const filesToWrite = [
   // For the program somebody asks to write code here. Pointed at the packages
   // this manifest names, so an api-only app is not sent to a stylesheet.
   ['AGENTS.md',                   appAgentsMd({ name: appName, packages: neededPkgs })],
+  ['AGENTS.project.md',           appAgentsProjectMd({ name: appName })],
   ['CLAUDE.md',                   appClaudeMd({ name: appName })],
   ['db/schema.lite',              makeSchemaLiteEmpty()],
 ]
@@ -2867,8 +2869,8 @@ echo('  New to FrontierJS? `fli tutor` — thirteen lessons against a running ap
 log.detail('  They run the real commands and then ask the running world whether they')
 log.detail('  worked. They build their own app and leave this one alone.')
 echo('  Writing it with an AI agent? AGENTS.md is written for it.')
-log.detail('  Claude Code reads it through CLAUDE.md, and your own notes about the app')
-log.detail('  go there.')
+log.detail('  Claude Code reads it through CLAUDE.md, and your own instructions about')
+log.detail('  the app go in AGENTS.project.md, which it imports.')
 echo('')
 echo('  bun run check           the gate CI runs')
 echo('  fli scaffold <Model>    model + service + resource + routes')

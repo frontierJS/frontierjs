@@ -45,7 +45,7 @@ core/
                 declared twice in one scope — real lexical scopes over the unit
                 the runtime loads, with the PROJECT's TypeScript as the parser.
                 `command-resolves` and `test/scope.test.js` both read it
-  tty.js        `$.tty` — single-key prompts, a typed line, a footer line, the
+  tty.js        `$.tty` — single-key prompts, a typed line, a hidden one, a footer line, the
                 screen lent to an editor, onExit. It patches stdout and stderr while it
                 holds the terminal, and the runtime's SIGINT/SIGTERM handlers
                 await `settleTtys()` before exiting. The terminal is put back

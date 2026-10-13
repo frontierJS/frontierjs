@@ -282,6 +282,18 @@ export async function run(process) {
     line('')
     line(`  ${amber('fli')}  ${dim('v' + (fliVersion() ?? '?'))}  ${dim('·  frontier cli')}`)
     line('')
+    line(`  ${dim('Start a new app:')}`)
+    line(
+      `    ${cyan('fli')} ${green('new')} ${green('<name>')}             ${dim(
+        'scaffold db/ api/ web/, deploy and CI into ./<name>/'
+      )}`
+    )
+    line(
+      `    ${cyan('fli')} ${green('new')} ${dim('--help')}             ${dim(
+        'templates and surfaces: --template, --site, --widgets, --extension'
+      )}`
+    )
+    line('')
     line(`  ${dim('Usage:')}`)
     line(`    ${cyan('fli')} ${green('<command>')} ${dim('[args] [--flags]')}`)
     line(

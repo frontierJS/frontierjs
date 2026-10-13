@@ -11,7 +11,7 @@ import { fileURLToPath }          from 'node:url'
 
 import {
   EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, AGENT_DOCS,
-  appTsconfig, appBiomeJson, appCheckScripts, appWorkflow, appAgentsMd, appClaudeMd,
+  appTsconfig, appBiomeJson, appCheckScripts, appWorkflow, appAgentsMd, appAgentsProjectMd, appClaudeMd,
 } from '../core/app-config.js'
 import { RULES }                             from '../core/checks.js'
 import { extensionDevDeps }                  from '../core/extension-surface.js'
@@ -417,5 +417,14 @@ describe('the agent guidance', () => {
     // The import is the whole mechanism: Claude Code reads CLAUDE.md and never
     // opens AGENTS.md on its own, and an import inside backticks is not one.
     expect(appClaudeMd({ name: 'demo' }).split('\n')).toContain('@AGENTS.md')
+  })
+
+  test('AGENTS.md imports AGENTS.project.md on a line of its own', () => {
+    // The app's instructions reach Claude Code only through this chain:
+    // CLAUDE.md -> AGENTS.md -> AGENTS.project.md.
+    expect(full.split('\n')).toContain('@AGENTS.project.md')
+    expect(apiOnly.split('\n')).toContain('@AGENTS.project.md')
+    expect(appAgentsProjectMd({ name: 'demo' })).toStartWith('# demo')
+    expect(appAgentsProjectMd({ name: 'demo' })).not.toContain('@AGENTS.md')
   })
 })
