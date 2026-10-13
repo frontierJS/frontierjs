@@ -152,6 +152,13 @@ core/
                 which reads this file's argv and event reader by import. Its
                 REVIEWER is the read-only default with `reviewPrompt`, a fresh
                 session rather than the builder's resumed one
+  tldr.js       `fli tldr` — a question answered as a tldr page: the prompt
+                and the renderer. The session is `runAsk` above, read-only
+                with the same budget; a reply that strays from the shape
+                still prints, line for line. `VOCABULARY.md` (through
+                `authoredVocabulary`) goes into the prompt and colors the
+                page, matched CASE-SENSITIVE and never at a sentence start,
+                since Run, Call, Page and Move are terms and English both
   vite-ask.js   the browser's half: a dev-only Vite plugin serving the panel
                 (`vite-ask-client.js`) and `POST /__fjs/ask`, `/stop`, `/undo`,
                 which run `ask-claude.js` in EDIT mode scoped to the Vite root,

@@ -12,6 +12,15 @@ read them before writing code:
 - `FJS-D889`: when a connector is named for a protocol instead of a vendor
 - `FJS-D891`: how a vendor's auth reaches conduit, through a `signed` target
 
+## Where it stands
+
+**Every connector below already exists as a prototype** in the sibling workspace
+`../conduit-connectors/` (own repo; `IDEAS/conduit-connectors.md` § Prototyped
+has the state table, verified by running every drive 2026-10-12). The lane's
+job is now PROMOTION: move a prototype into `packages/conduit-<vendor>/` with its
+sink and drive, swap the two relative imports for workspace dependencies, and
+add the row. Start from the prototype, not from the references below.
+
 ## Order
 
 1. **google-maps**: runs on today's `api_key` auth. Four apps want it

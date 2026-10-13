@@ -148,9 +148,10 @@ export const ASK_EFFORT = 'high'
 // which is what lets `claude --resume` from a workbench branch's folder find it;
 // a plain resume from there answers but stays filed under the old directory.
 // No `effort` leaves it to the account, which is what the workbench passes.
-export function askArgv({ session = null, edit = null, work = null, fork = false, images = false, effort = null } = {}) {
+export function askArgv({ session = null, edit = null, work = null, fork = false, images = false, effort = null, model = null } = {}) {
   const argv = askFlags({ session, edit, work, fork })
   if (effort) argv.push('--effort', effort)
+  if (model)  argv.push('--model', model)
   if (images) argv.push('--input-format', 'stream-json')
   return argv
 }
@@ -350,13 +351,13 @@ export function readAskEvent(event) {
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, images = [], effort = ASK_EFFORT, bin = 'claude', onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, images = [], effort = ASK_EFFORT, model = null, bin = 'claude', onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
   if (!EFFORTS.includes(effort))
     return { error: `no such effort: ${JSON.stringify(String(effort).slice(0, 40))} — one of ${EFFORTS.join(', ')}` }
 
-  const child = spawn(bin, askArgv({ session, edit, effort, images: images.length > 0 }), {
+  const child = spawn(bin, askArgv({ session, edit, effort, model, images: images.length > 0 }), {
     cwd: root, detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
