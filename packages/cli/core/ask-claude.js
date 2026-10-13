@@ -108,7 +108,6 @@ export const EDIT_KINDS = {
 }
 
 export const EDIT_SCOPES = {
-  one:       'the picked element only, not its siblings and not other places that use the same component.',
   every:     'every item its loop draws. Edit the loop body once, not one item.',
   component: 'the whole component or section the element belongs to.',
   page:      'the whole page, wherever the same thing appears on it.',
@@ -143,6 +142,9 @@ export const WORK_BUDGET_USD = 10
 // toggle would be a control that does nothing. Effort reaches every model.
 export const EFFORTS    = ['low', 'medium', 'high', 'xhigh', 'max']
 export const ASK_EFFORT = 'high'
+// The page panel offers three: the steps between them are too fine to choose
+// from a glance.
+export const PANEL_EFFORTS = ['low', 'high', 'max']
 
 // `fork` resumes `session` under a NEW id filed under the run's own directory,
 // which is what lets `claude --resume` from a workbench branch's folder find it;

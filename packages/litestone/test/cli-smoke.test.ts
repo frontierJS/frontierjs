@@ -1703,6 +1703,10 @@ describe('backup / replicate — the rest of db/', () => {
     expect(existsSync(join(dir, 'db', 'app.db-wal'))).toBe(false)
     const back = new Database(join(dir, 'db', 'app.db'), { readonly: true })
     expect(back.query('SELECT * FROM post').all()).toEqual([])
+    // The instant it was rewound to travels with it, so a relay reading the
+    // restored file holds what the backup had not delivered (FJS-D665).
+    const stamp = back.query(`SELECT value FROM _litestone_meta WHERE key = 'backup.takenAt'`).get() as any
+    expect(Date.parse(stamp.value)).toBeGreaterThan(0)
     back.close()
     const queue = new Database(join(dir, 'db', 'jobs.db'), { readonly: true })
     expect(queue.query('SELECT id FROM jobs').all()).toEqual([{ id: 'pending-1' }])

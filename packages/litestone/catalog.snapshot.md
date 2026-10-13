@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**119 words** — 13 declarations · 68 field attributes · 35 model attributes · 3 move words.
+**121 words** — 13 declarations · 70 field attributes · 35 model attributes · 3 move words.
 
 ## Declarations
 
@@ -89,6 +89,8 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@date` | Refuse a bad value | [(message)] |  |  |  |
 | `@datetime` | Refuse a bad value | [(message)] |  |  |  |
 | `@time` | Refuse a bad value | [(seconds: true[, message: "..."])] |  |  |  |
+| `@zone` | Refuse a bad value | [(message)] |  |  |  |
+| `@zoned` | Shape the table | (<field> \| <relation>.<field>) |  |  |  |
 | `@regex` | Refuse a bad value | ("pattern"[, message]) |  |  |  |
 | `@length` | Refuse a bad value | (min[, max][, message]) |  |  |  |
 | `@startsWith` | Refuse a bad value | ("text"[, message]) |  |  |  |

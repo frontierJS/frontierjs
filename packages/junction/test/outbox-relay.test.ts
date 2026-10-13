@@ -32,7 +32,7 @@ import { join }   from 'node:path'
 
 import { createClient, createTenantRegistry } from '../../litestone/src/index.js'
 import { deliverOutbox, sweepOutbox, outboxCounts, outboxPass,
-         assertOutboxShape } from '../src/plugins/outbox/engine.ts'
+         assertOutboxShape, heldOutbox, releaseOutbox, dropOutbox } from '../src/plugins/outbox/engine.ts'
 import type { App } from '../src/core/app.ts'
 
 const OUTBOX = await Bun.file(new URL('../db/outbox.lite', import.meta.url)).text()
@@ -137,7 +137,7 @@ describe('a row that cannot be delivered stops being tried', () => {
       await rewind(db, 10_000)
     }
     expect((await only(db)).attempts).toBe(2)
-    expect(await outboxCounts(dead, { maxAttempts: 2 })).toEqual({ pending: 0, dead: 1 })
+    expect(await outboxCounts(dead, { maxAttempts: 2 })).toEqual({ pending: 0, dead: 1, held: 0 })
 
     // The handler is fixed and the operator raises the number. Nothing was
     // written to the row to undo, which is the whole point of not stamping it.
@@ -224,7 +224,7 @@ describe('pending and dead are separate numbers', () => {
     // from *the count is broken*.
     await enqueue(db, 'ordinary')
 
-    expect(await outboxCounts(app, { maxAttempts: 2 })).toEqual({ pending: 1, dead: 1 })
+    expect(await outboxCounts(app, { maxAttempts: 2 })).toEqual({ pending: 1, dead: 1, held: 0 })
     db.$close()
   })
 
@@ -233,7 +233,7 @@ describe('pending and dead are separate numbers', () => {
     const app = { db, jobs: deadQueue() } as unknown as App
     await enqueue(db)
     await deliverOutbox(app, { maxAttempts: 0, retryBackoffMs: 1 })
-    expect(await outboxCounts(app, { maxAttempts: 0 })).toEqual({ pending: 1, dead: 0 })
+    expect(await outboxCounts(app, { maxAttempts: 0 })).toEqual({ pending: 1, dead: 0, held: 0 })
     db.$close()
   })
 })
@@ -363,5 +363,82 @@ describe('the walk does not evict the tenants being served', () => {
 
     db.$close()
     for (const d of dbs.values()) d.$close()
+  })
+})
+
+// ─── after a restore ──────────────────────────────────────────────────────────
+// `FJS-1927`, ruled `FJS-D665`: the outbox is a table in the app database, so
+// a restore rewinds a delivered mark with everything else, and the relay would
+// send that mail or webhook a second time. Litestone stamps a backup copy with
+// the time it was taken; the relay holds every undelivered row older than the
+// stamp until an operator releases or drops it.
+
+describe('a restored database holds what its backup had not delivered', () => {
+
+  async function restored() {
+    const dir  = mkdtempSync(join(tmpdir(), 'outbox-restore-'))
+    const live: any = await createClient({ db: join(dir, 'app.db'), schema: SCHEMA })
+    const sent = await enqueue(live, 'mail.welcome')
+    await live.$backup(join(dir, 'backup.db'))
+    // Delivered after the backup was taken — the mark the restore rewinds.
+    await deliverOutbox({ db: live, jobs: goodQueue() } as unknown as App)
+    live.$close()
+
+    const db: any = await createClient({ db: join(dir, 'backup.db'), schema: SCHEMA })
+    return { db, sent }
+  }
+
+  test('the row the backup recorded undelivered is not sent again', async () => {
+    const { db, sent } = await restored()
+    const app = { db, jobs: goodQueue() } as unknown as App
+
+    expect(await deliverOutbox(app)).toEqual({ delivered: 0, failed: 0 })
+    expect((await only(db)).deliveredAt).toBeNull()
+    expect(await outboxCounts(app)).toEqual({ pending: 0, dead: 0, held: 1 })
+    expect((await heldOutbox(app)).map(r => r.id)).toEqual([sent.id])
+    db.$close()
+  })
+
+  test('…while a row written after the restore goes — the pair, or this proves nothing', async () => {
+    const { db } = await restored()
+    const app = { db, jobs: goodQueue() } as unknown as App
+    await Bun.sleep(2)
+    await enqueue(db, 'mail.receipt')
+
+    expect(await deliverOutbox(app)).toEqual({ delivered: 1, failed: 0 })
+    expect(await outboxCounts(app)).toEqual({ pending: 0, dead: 0, held: 1 })
+    db.$close()
+  })
+
+  test('a released row is sent, and the hold does not come back', async () => {
+    const { db } = await restored()
+    const app = { db, jobs: goodQueue() } as unknown as App
+
+    expect(await releaseOutbox(app)).toBe(1)
+    expect(await deliverOutbox(app)).toEqual({ delivered: 1, failed: 0 })
+    expect(await outboxCounts(app)).toEqual({ pending: 0, dead: 0, held: 0 })
+    db.$close()
+  })
+
+  test('a dropped row is gone and never sent; the rest stay held', async () => {
+    const { db, sent } = await restored()
+    const app = { db, jobs: goodQueue() } as unknown as App
+    await enqueue(db, 'mail.other')
+    await db.asSystem().outboxMessage.updateMany({ where: {}, data: { createdAt: new Date(0) } })
+
+    expect(await dropOutbox(app, [sent.id])).toBe(1)
+    expect(await deliverOutbox(app)).toEqual({ delivered: 0, failed: 0 })
+    expect(await outboxCounts(app)).toEqual({ pending: 0, dead: 0, held: 1 })
+    expect(await db.asSystem().outboxMessage.count({ where: { id: sent.id } })).toBe(0)
+    db.$close()
+  })
+
+  test('a database that was never restored holds nothing', async () => {
+    const db  = await mkDb()
+    const app = { db, jobs: goodQueue() } as unknown as App
+    await enqueue(db)
+    expect(await deliverOutbox(app)).toEqual({ delivered: 1, failed: 0 })
+    expect(await outboxCounts(app)).toEqual({ pending: 0, dead: 0, held: 0 })
+    db.$close()
   })
 })

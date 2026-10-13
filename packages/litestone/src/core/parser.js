@@ -1400,6 +1400,11 @@ class Parser {
       case 'accept':     return { kind: 'accept', types: this.parseParenString() }   // e.g. @accept("image/*")
       case 'date':       return { kind: 'date',       ...this.parseOptMessage() }
       case 'datetime':   return { kind: 'datetime',   ...this.parseOptMessage() }
+      // `@zone` — the column holds an IANA zone name. `@zoned(path)` — this
+      // `@date` or `@time` is a wall clock read in the zone at `path`: a column
+      // of this row, or one relation away (`customer.timeZone`), `FJS-D512`.
+      case 'zone':       return { kind: 'zone',       ...this.parseOptMessage() }
+      case 'zoned':      return this.parseZoned()
       case 'time': {
         // @time                       — HH:MM, 24-hour, leading zeros required
         // @time(seconds: true)        — also accepts HH:MM:SS
@@ -2822,6 +2827,17 @@ class Parser {
     const symbol = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
     this.eat(TK.RPAREN)
     return { kind: 'unit', symbol: String(symbol) }
+  }
+
+  parseZoned() {
+    const t = this.peek()
+    if (!this.check(TK.LPAREN))
+      throw new ParseError('@zoned names the zone column — @zoned(timeZone), @zoned(customer.timeZone)', { line: t.line, col: t.col })
+    this.eat(TK.LPAREN)
+    const path = [this.eat(TK.IDENT).value]
+    while (this.check(TK.DOT)) { this.eat(TK.DOT); path.push(this.eat(TK.IDENT).value) }
+    this.eat(TK.RPAREN)
+    return { kind: 'zoned', path }
   }
 
   // ── @@commitment's `on:` ────────────────────────────────────────────────────
@@ -7323,6 +7339,59 @@ function validate(schema) {
       // about where the point sits rather than about what is counted.
       if (field.attributes.some(a => a.kind === 'money'))
         errors.push(`${at}: @unit and @money together — a currency is already the unit, so state one`)
+    }
+  }
+
+  // ── @zone / @zoned validation ───────────────────────────────────────────────
+  // A day or a wall-clock time names the instant it means only with a zone, and
+  // `@zoned` is the declaration a reader resolves it by (`FJS-D512`). The path
+  // is one hop at most, the `FJS-499` precedent: a zone two relations away is a
+  // join every read of the column would pay. The zone column must be `@zone`,
+  // because a row holding `banana` throws inside every read that resolves it —
+  // a sweep over `due()` included, for every row and not only that one.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const at = `Model '${model.name}', field '${field.name}'`
+      if (field.attributes.some(a => a.kind === 'zone')) {
+        if (field.type.name !== 'String' || field.type.array)
+          errors.push(`${at}: @zone requires a String field, got ${field.type.name}${field.type.array ? '[]' : ''} — a zone is one IANA name`)
+      }
+      const zoned = field.attributes.find(a => a.kind === 'zoned')
+      if (!zoned) continue
+      const label = `@zoned(${zoned.path.join('.')})`
+      const isWall = field.attributes.some(a => a.kind === 'date' || a.kind === 'time')
+      if (field.type.name !== 'String' || field.type.array || !isWall) {
+        errors.push(`${at}: @zoned requires a String @date or @time — an instant already names its moment, and only a wall clock needs a zone to`)
+        continue
+      }
+      if (zoned.path.length > 2) {
+        errors.push(`${at}: ${label} — a zone is read on this row or one relation away, not further`)
+        continue
+      }
+      let owner = model
+      let zoneField
+      if (zoned.path.length === 2) {
+        const rel = model.fields.find(f => f.name === zoned.path[0])
+        const target = rel && schema.models.find(m => m.name === rel.type.name)
+        if (!target || rel.type.array) {
+          errors.push(`${at}: ${label} — '${zoned.path[0]}' must be a to-one relation of '${model.name}'`)
+          continue
+        }
+        owner = target
+        zoneField = target.fields.find(f => f.name === zoned.path[1])
+        if (!zoneField) {
+          errors.push(`${at}: ${label} — '${target.name}' has no field '${zoned.path[1]}'`)
+          continue
+        }
+      } else {
+        zoneField = model.fields.find(f => f.name === zoned.path[0])
+        if (!zoneField) {
+          errors.push(`${at}: ${label} — no field '${zoned.path[0]}' on this model`)
+          continue
+        }
+      }
+      if (zoneField.type.name !== 'String' || !zoneField.attributes.some(a => a.kind === 'zone'))
+        errors.push(`${at}: ${label} — '${owner.name}.${zoneField.name}' must be a String @zone, so a value it cannot resolve is refused at its write`)
     }
   }
 

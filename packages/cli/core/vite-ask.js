@@ -43,7 +43,7 @@ import { fileURLToPath } from 'node:url'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
-import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, EFFORTS, IMAGE_TYPES, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, PANEL_EFFORTS, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
 import { askContext } from './ask-context.js'
 import { previewScope } from './preview.js'
 
@@ -795,7 +795,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     resolveId(id) { return id === CLIENT_ID ? RESOLVED_ID : null },
     load(id) {
       if (id !== RESOLVED_ID) return null
-      return `const ASK = ${JSON.stringify({ tokenKey, efforts: EFFORTS, effort: ASK_EFFORT })}\n` + readFileSync(CLIENT_FILE, 'utf8')
+      return `const ASK = ${JSON.stringify({ tokenKey, efforts: PANEL_EFFORTS, effort: ASK_EFFORT })}\n` + readFileSync(CLIENT_FILE, 'utf8')
     },
 
     transformIndexHtml() {

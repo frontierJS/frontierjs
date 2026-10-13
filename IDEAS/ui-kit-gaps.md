@@ -93,7 +93,7 @@ site's, so `site-kit`'s rather than the kit's.
     and memory and disk) built on `<progress>`, the element for task completion,
     so a screen reader announces a disk as a task. One component on the
     platform's element with the platform's word, and the drawing is a treatment.
-- **Does the kit ship an `Icon`?** Raised by `docs/mesa-usage-audit-2026-10-12.md`
+- ~~**Does the kit ship an `Icon`?**~~ **Answered 2026-10-13 (`FJS-D951`): A — no `Icon`. The set is each app's own.** Raised by `docs/mesa-usage-audit-2026-10-12.md`
   § 3.12: five local `Icon.mesa`, in two lineages. One is a three-line `<svg>`
   over an app's own Heroicons path table (ela, then copied into maidtech and
   sstime); the other is a path table inline (serpgrid, quo). The parts that
@@ -108,7 +108,7 @@ site's, so `site-kit`'s rather than the kit's.
     smallness*, already decided for smallness in css § Icons, and a set the
     kit picks is a set every app restyles around. The copies agree with each
     other, so nothing is drifting.
-- **What does an app shell own, and is it the kit's?** Raised by the same
+- ~~**What does an app shell own, and is it the kit's?**~~ **Answered 2026-10-13 (`FJS-D952`): A — a paper first (`IDEAS/app-shell.md`), then a kit `Shell` over `frame.css` reading a `nav.js` contract.** Raised by the same
   audit, § 3.11. Every app rewrites `_module.mesa`, and the nav table is
   spelled six ways: sstime `lib/shell/nav.js`, serpgrid `NAV`, portal `MORE`,
   ela and maidtech `nav.js` with `sectionFor`/`tabsFor`, and basecamp and

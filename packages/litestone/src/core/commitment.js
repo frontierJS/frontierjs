@@ -67,6 +67,8 @@ export function buildCommitmentMap(schema) {
         on:         d.on.field,
         onColumn:   col(d.on.field),
         kind, offset,
+        // The `@zoned` path a day is read in, per row (`FJS-D512`).
+        zone:       kind === 'day' ? onField.attributes.find(a => a.kind === 'zoned')?.path ?? null : null,
         while:      d.while ?? null,
       }
     })
@@ -118,7 +120,11 @@ export function dueSql(c) {
 // An instant is compared as ISO text. A day kind is owed on a DAY, and *which
 // day is it* is an instant read in a zone (`FJS-D143`), so `timeZone` is asked
 // for there and defaults to UTC — the reading `@@expires` over days already
-// takes, stated rather than hidden.
+// takes, stated rather than hidden. A `@zoned` day is read in its row's zone,
+// which one bound cannot be: `due()` filters by `LATEST_DAY`'s, the day no zone
+// is past, and grades each candidate in its own.
+
+export const LATEST_DAY = 'Pacific/Kiritimati'
 
 export function readBy(kind, by, timeZone) {
   const at = by instanceof Date ? by : new Date(by)

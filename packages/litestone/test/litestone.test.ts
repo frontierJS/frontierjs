@@ -3624,6 +3624,26 @@ describe('client — $backup', () => {
     expect(rows.n).toBe(1)  // backup still has only 1 row
     backup.close()
   })
+
+  // FJS-D665: a restored database names the instant it was rewound to, and the
+  // live one names none — the pair, or a stamp written everywhere would pass.
+  test('the copy carries the instant it holds; the live database carries none', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const before = new Date().toISOString()
+    const vPath  = join(TMP, 'backup-stamped.db')
+    await db.$backup(vPath, { vacuum: true })
+
+    expect(db.$backupStamp()).toBeNull()
+    const restored: any = await createClient({ db: vPath, schema: SCHEMA })
+    const stamp = restored.$backupStamp()
+    expect(stamp.takenAt >= before && stamp.takenAt <= new Date().toISOString()).toBe(true)
+    expect(restored.asSystem().$backupStamp()).toEqual(stamp)
+
+    restored.$clearBackupStamp()
+    expect(restored.$backupStamp()).toBeNull()
+    restored.$close()
+    unlinkSync(vPath)
+  })
 })
 
 // ─── 11. Client — $attach ─────────────────────────────────────────────────────

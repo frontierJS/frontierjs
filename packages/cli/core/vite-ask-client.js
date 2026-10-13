@@ -83,7 +83,7 @@
   const effortOf = () => { try { const v = localStorage.getItem(EFFORT_KEY); return EFFORTS.includes(v) ? v : EFFORT } catch { return EFFORT } }
   const setEffort = v => { try { v === EFFORT ? localStorage.removeItem(EFFORT_KEY) : localStorage.setItem(EFFORT_KEY, v) } catch {} }
 
-  let panel, tab, title, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch
+  let panel, tab, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch
   let picks = [], sent = false, busy = false
   // Closed hides the panel and its tab; shrunk hides the panel behind the tab.
   let closed = false, shrunk = !!miniKeep.get()
@@ -120,6 +120,31 @@
   const css = (el, s) => { el.style.cssText = s; return el }
   const make = (tag, s, text) => { const el = css(document.createElement(tag), s || ''); if (text) el.textContent = text; return el }
   const BTN = 'font:13px/1 ui-sans-serif,system-ui;padding:6px 11px;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#e2e8f0;cursor:pointer'
+  // A control is an icon, so the header and a pick's row stay one line. Its
+  // word is the aria-label and its title says what it does.
+  const ICON = BTN + ';padding:6px;display:inline-flex;align-items:center;justify-content:center'
+  const ICONS = {
+    pick:  ['M14 4.1 12 6', 'm5.1 8-2.9-.8', 'm6 12-1.9 2', 'M7.2 2.2 8 5.1', 'M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z'],
+    term:  ['m4 17 6-6-6-6', 'M12 19h8'],
+    clear: ['m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21', 'M22 21H7', 'm5 11 9 9'],
+    fresh: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', 'M12 7v6', 'M9 10h6'],
+    shrink: ['M5 12h14'],
+    close: ['M18 6 6 18', 'm6 6 12 12'],
+    edit:  ['M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'm15 5 4 4'],
+    open:  ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
+  }
+  const SVG = 'http://www.w3.org/2000/svg'
+  const iconButton = (name, label, title) => {
+    const b = make('button', ICON)
+    b.type = 'button'
+    b.title = title
+    b.setAttribute('aria-label', label)
+    const svg = document.createElementNS(SVG, 'svg')
+    for (const [k, v] of [['width', 16], ['height', 16], ['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', 2], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(k, v)
+    for (const d of ICONS[name]) { const path = document.createElementNS(SVG, 'path'); path.setAttribute('d', d); svg.appendChild(path) }
+    b.appendChild(svg)
+    return b
+  }
   const CHIP = 'font:12px/1 ui-sans-serif,system-ui;padding:4px 9px;border-radius:999px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer'
   const CHIP_ON = ';background:#0369a1;border-color:#0369a1;color:#f8fafc'
   // The kind, scope and effort groups are segmented controls: one tray per
@@ -410,37 +435,28 @@
   }
 
   function build() {
-    panel = make('div', `position:fixed;right:12px;bottom:12px;z-index:2147483646;box-sizing:border-box;width:min(580px,calc(100vw - 24px));max-height:85vh;display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
+    panel = make('div', `position:fixed;right:12px;bottom:12px;z-index:2147483646;box-sizing:border-box;width:min(680px,calc(100vw - 24px));max-height:85vh;display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.5 ui-sans-serif,system-ui;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
     const head = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px')
-    title = make('strong', 'flex:1')
-    head.appendChild(title)
-    fresh = make('button', BTN, 'New chat')
-    fresh.title = 'Forget the conversation; the next ask starts a new session'
+    fresh = iconButton('fresh', 'New chat', 'New chat: forget the conversation; the next ask starts a new session')
     // The log stays: its Undo buttons still undo, whichever conversation ran them.
     fresh.onclick = () => { store.set(null); line('New conversation.', 'meta') }
-    const wipe = make('button', BTN, 'Clear')
-    wipe.title = 'Hide the messages so far; the conversation and its Undos are kept'
+    const wipe = iconButton('clear', 'Clear', 'Clear: hide the messages so far; the conversation and its Undos are kept')
     wipe.onclick = () => {
       for (const e of entries) e.hid = true
       unhide = false
       save()
       drawSoon()
     }
-    const term = make('button', BTN, 'Continue in terminal')
-    term.title = 'Copy a command that resumes this conversation in a terminal, or, before there is one, this ask for any agent'
+    const term = iconButton('term', 'Continue in terminal', 'Continue in terminal: copy a command that resumes this conversation, or, before there is one, this ask for any agent')
     term.onclick = handoff
-    latch = make('button', BTN, 'Pick mode')
-    latch.title = 'Click elements to pick them, without holding shift+alt (Esc leaves)'
+    latch = iconButton('pick', 'Pick mode', 'Pick mode: click elements to pick them, without holding shift+alt (Esc leaves)')
     latch.onclick = () => { const i = inspector(); if (i) i.pickMode(!i.pickMode()) }
     drawLatch()
-    const shrink = make('button', BTN, '–')
-    shrink.title = 'Shrink to a tab in the corner (the conversation is kept)'
-    shrink.setAttribute('aria-label', 'Shrink to a tab')
+    const shrink = iconButton('shrink', 'Shrink to a tab', 'Shrink to a tab in the corner (the conversation is kept)')
     shrink.onclick = () => fit(true)
-    const close = make('button', BTN, '×')
-    close.title = 'Close (the conversation is kept)'
+    const close = iconButton('close', 'Close', 'Close (the conversation is kept)')
     close.onclick = () => { closed = true; shown.set(null); layout() }
-    head.append(latch, term, wipe, fresh, shrink, close)
+    head.append(latch, term, wipe, fresh, make('span', 'flex:1'), shrink, close)
 
     list = make('div', 'display:flex;flex-direction:column;gap:6px;max-height:24vh;overflow:auto')
     hint = make('div', 'margin-top:-6px;color:#94a3b8;font-size:12.5px')
@@ -465,7 +481,7 @@
     rail.setAttribute('aria-label', 'Jump to a message')
     chat.append(log, rail)
 
-    chips = make('div', 'display:flex;flex-direction:column;gap:8px;font-size:12px;color:#94a3b8;padding-top:10px;border-top:1px solid #1e293b')
+    chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;font-size:12px;color:#94a3b8')
 
     input = make('textarea', 'box-sizing:border-box;width:100%;resize:vertical;min-height:84px;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:' + WELL + ';color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
     input.placeholder = 'What should change? Paste a screenshot to show it. (⌘/Ctrl+Enter sends)'
@@ -473,7 +489,7 @@
     input.onpaste = paste
     tray = make('div', 'display:none;flex-wrap:wrap;gap:6px')
 
-    const row = make('div', 'display:flex;gap:6px;justify-content:flex-end')
+    const row = make('div', 'display:flex;gap:6px;justify-content:flex-end;padding-top:12px;border-top:1px solid #1e293b')
     submit = make('button', BTN, 'Submit for review')
     submit.title = 'Commit what the panel changed and open a pull request for the owner to review'
     submit.style.display = 'none'
@@ -486,9 +502,9 @@
     effortBox = make('div', 'display:flex;align-items:center;gap:6px;margin-right:auto;font-size:11px;color:#64748b')
     row.append(effortBox, submit, stop, send)
 
-    panel.append(head, list, hint, folds, chat, chips, tray, input, row)
+    panel.append(head, list, hint, folds, chat, tray, input, chips, row)
 
-    tab = make('button', `position:fixed;right:12px;bottom:12px;z-index:2147483646;display:none;align-items:center;gap:10px;box-sizing:border-box;width:min(580px,calc(100vw - 24px));padding:9px 14px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.2 ui-sans-serif,system-ui;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
+    tab = make('button', `position:fixed;right:12px;bottom:12px;z-index:2147483646;display:none;align-items:center;gap:10px;box-sizing:border-box;width:min(680px,calc(100vw - 24px));padding:9px 14px;border:1px solid rgba(148,163,184,.22);border-radius:10px;background:rgba(15,23,42,.5);-webkit-backdrop-filter:${GLASS};backdrop-filter:${GLASS};color:#e2e8f0;font:14px/1.2 ui-sans-serif,system-ui;cursor:pointer;box-shadow:0 8px 30px rgba(0,0,0,.35)`)
     tab.type = 'button'
     tab.title = 'Open the Ask Claude panel'
     tab.onclick = () => fit(false)
@@ -536,7 +552,7 @@
     if (!latch) return
     const i = inspector()
     const on = !!(i && i.pickMode())
-    latch.style.cssText = BTN + (on ? ';background:#0369a1;border-color:#0369a1' : '') + (i ? '' : ';display:none')
+    latch.style.cssText = ICON + (on ? ';background:#0369a1;border-color:#0369a1' : '') + (i ? '' : ';display:none')
     latch.setAttribute('aria-pressed', String(on))
     drawHint()
   }
@@ -596,7 +612,6 @@
     const most = Math.max(0, ...picks.map(p => p.repeats))
     if (scope === 'every' && most < 2) scope = null
     const scopes = [
-      ['one', 'Just this', 'This element only, not its siblings or other uses of its component'],
       ...(most > 1 ? [['every', `All ×${most}`, 'Every item its loop draws']] : []),
       ['component', 'Component', 'The whole component or section it belongs to'],
       ['page', 'Page', 'Wherever the same thing appears on the page'],
@@ -606,7 +621,7 @@
       tray.append(...buttons)
       const line = make('div', 'display:flex;align-items:center;gap:10px')
       chips.appendChild(line)
-      line.append(make('span', 'flex:none;width:44px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#64748b', label), tray)
+      line.append(make('span', 'flex:none;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#64748b', label), tray)
     }
     const seg = (text, tip, on, onclick) => {
       const b = make('button', SEG + (on ? SEG_ON : ''), text)
@@ -642,7 +657,6 @@
   function render() {
     drawChips()
     drawTab()
-    title.textContent = picks.length > 1 ? `Ask Claude to change these ${picks.length}` : picks.length ? 'Ask Claude to change this' : 'Ask Claude'
     list.textContent = ''
     list.style.display = picks.length ? 'flex' : 'none'
     for (const p of picks) {
@@ -656,19 +670,16 @@
       row.appendChild(what)
       const acts = make('div', 'display:flex;flex:none;gap:6px;margin-left:auto')
       if (text && text.length <= MAX_TEXT) {
-        const edit = make('button', BTN, 'Edit text')
-        edit.title = 'Change the words in place, without asking Claude when it can'
+        const edit = iconButton('edit', 'Edit text', 'Edit text: change the words in place, without asking Claude when it can')
         edit.onclick = () => editText(p)
         acts.appendChild(edit)
       }
       if (p.open) {
-        const source = make('button', BTN, 'Open source')
-        source.title = 'Open this line in your editor'
+        const source = iconButton('open', 'Open source', 'Open source: open this line in your editor')
         source.onclick = p.open
         acts.appendChild(source)
       }
-      const drop = make('button', BTN, '×')
-      drop.title = 'Leave this element out'
+      const drop = iconButton('close', 'Leave out', 'Leave this element out')
       drop.onclick = () => { picks = picks.filter(x => x !== p); render() }
       acts.appendChild(drop)
       row.appendChild(acts)

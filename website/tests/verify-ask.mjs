@@ -190,7 +190,7 @@ const until = async (expr, ms, what) => {
 const panelText = `[...document.querySelectorAll('body > div')].map(d => d.innerText).join('\\n')`
 
 const count = (re) => evaluate(`return (${panelText}.match(${re}) || []).length`)
-const button = (label) => `[...document.querySelectorAll('button')].find(b => b.textContent === ${JSON.stringify(label)} && b.style.display !== 'none')`
+const button = (label) => `[...document.querySelectorAll('button')].find(b => (b.textContent === ${JSON.stringify(label)} || b.getAttribute('aria-label') === ${JSON.stringify(label)}) && b.style.display !== 'none')`
 // Every run that changed a file ends in a row carrying its own Undo.
 const undoOf = (run) => run == null
   ? `[...document.querySelectorAll('[data-run] button')].filter(b => !b.disabled).at(-1)`
@@ -371,7 +371,6 @@ try {
     await evaluate(`[...document.querySelectorAll('[data-pick]')].find(r => r.innerText.includes('<p>')).querySelector('button[title^="Leave"]').click(); return true`)
     const picked = await rows()
     check('a pick can be left out again', picked.length === 2 && picked[0].includes('content/routes/index.mesa:') && picked[1].includes('content/parts/Lede.mesa:'), picked)
-    check('the panel counts what it will change', (await evaluate(`return ${panelText}`)).includes('Ask Claude to change these 2'))
     if (await ask('Change both headings')) {
       if (await until(`document.querySelector('#title')?.textContent.trim() === ${JSON.stringify(AFTER)} && document.querySelector('#lede')?.textContent.trim() === ${JSON.stringify(LEDE_AFTER)}`, 10_000, 'the page shows both headings changed'))
         check('one instruction changed both files', true)
@@ -413,7 +412,7 @@ try {
     async function editText(selector, next) {
       await pickAt(selector)
       const row = `[...document.querySelectorAll('[data-pick]')].at(-1)`
-      await evaluate(`${row}.querySelector('button[title^="Change the words"]').click(); return true`)
+      await evaluate(`${row}.querySelector('button[aria-label="Edit text"]').click(); return true`)
       if (!await until(`document.activeElement?.matches('textarea[data-fjs-text-edit]')`, 3000, 'Edit text opened an input over the element')) return false
       await type(next)
       const before = await count('/^done\\b/gm')

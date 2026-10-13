@@ -575,3 +575,118 @@ describe('@@commitment — a Boolean machine beside the status one', () => {
     expect(errors.join('\n')).toContain("the move 'settle' is declared on @@transitions(status) and @@transitions(reminded)")
   })
 })
+
+// FJS-2170 · FJS-D512: a day is a day in the zone its row declares. Lago's
+// grace period ends at midnight in the CUSTOMER's zone, and one sweep reads
+// customers in Tokyo and Los Angeles — a zone per call fires one of them hours
+// off. 2026-10-04 starts at 2026-10-03T15:00Z in Tokyo and 2026-10-04T07:00Z in
+// Los Angeles.
+const ZONED = `
+enum CloseStatus { open closed }
+
+model Customer {
+  id       Int       @id
+  name     String
+  timeZone String?   @zone
+  invoices Invoice[]
+}
+
+model Invoice {
+  id         Int         @id
+  label      String
+  status     CloseStatus @default(open)
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  customerId Int
+  periodEnd  String      @date @zoned(customer.timeZone)
+  graceDays  Int         @unit(d) @immutable
+  @@transitions(status, close: open -> closed @system)
+  @@commitment(close, on: periodEnd + graceDays)
+}
+`
+
+describe('@@commitment — a day read in its row’s own zone (FJS-2170)', () => {
+  const seed = async () => {
+    const env = await createTestEnv({ schema: ZONED, now: '2026-10-01T00:00:00.000Z' })
+    const db  = env.db.asSystem()
+    const make = async (name, timeZone) => {
+      const c = await db.customer.create({ data: { name, timeZone } })
+      return db.invoice.create({ data: { label: name, customerId: c.id, periodEnd: '2026-10-01', graceDays: 3 } })
+    }
+    return { env, db, make }
+  }
+  const owed = async (db, by, opts = {}) =>
+    (await labels(db, 'invoice', (await db.invoice.due({ by, ...opts })).map(d => d.id))).sort()
+
+  test('one sweep closes Tokyo at Tokyo’s midnight and Los Angeles at its own', async () => {
+    const { env, db, make } = await seed()
+    await make('tokyo', 'Asia/Tokyo')
+    await make('la',    'America/Los_Angeles')
+
+    expect(await owed(db, '2026-10-03T14:59:00.000Z')).toEqual([])
+    expect(await owed(db, '2026-10-03T15:00:00.000Z')).toEqual(['tokyo'])
+    // The call's zone does not override a row that states its own.
+    expect(await owed(db, '2026-10-04T00:00:00.000Z', { timeZone: 'UTC' })).toEqual(['tokyo'])
+    expect(await owed(db, '2026-10-04T06:59:00.000Z')).toEqual(['tokyo'])
+    expect(await owed(db, '2026-10-04T07:00:00.000Z')).toEqual(['la', 'tokyo'])
+    expect((await db.invoice.due({ by: '2026-10-05T00:00:00.000Z' })).map(d => d.dueAt))
+      .toEqual(['2026-10-04', '2026-10-04'])
+    env.close?.()
+  })
+
+  test('a row with no zone is read in the call’s, then UTC', async () => {
+    const { env, db, make } = await seed()
+    await make('none', null)
+    expect(await owed(db, '2026-10-03T15:00:00.000Z')).toEqual([])
+    expect(await owed(db, '2026-10-03T15:00:00.000Z', { timeZone: 'Asia/Tokyo' })).toEqual(['none'])
+    expect(await owed(db, '2026-10-04T00:00:00.000Z')).toEqual(['none'])
+    env.close?.()
+  })
+
+  test('a same-row zone is read the same way', async () => {
+    const schema = `
+enum CloseStatus { open closed }
+model Period {
+  id        Int         @id
+  label     String
+  status    CloseStatus @default(open)
+  timeZone  String      @zone
+  endsOn    String      @date @zoned(timeZone)
+  @@transitions(status, close: open -> closed @system)
+  @@commitment(close, on: endsOn + 1d)
+}`
+    const env = await createTestEnv({ schema, now: '2026-10-01T00:00:00.000Z' })
+    const db  = env.db.asSystem()
+    await db.period.create({ data: { label: 'tokyo', timeZone: 'Asia/Tokyo',          endsOn: '2026-10-03' } })
+    await db.period.create({ data: { label: 'la',    timeZone: 'America/Los_Angeles', endsOn: '2026-10-03' } })
+    const ids = async (by) => (await labels(db, 'period', (await db.period.due({ by })).map(d => d.id))).sort()
+    expect(await ids('2026-10-03T15:00:00.000Z')).toEqual(['tokyo'])
+    expect(await ids('2026-10-04T07:00:00.000Z')).toEqual(['la', 'tokyo'])
+    env.close?.()
+  })
+
+  test('@zone refuses a value that is not an IANA zone', async () => {
+    const { env, db } = await seed()
+    await expect(db.customer.create({ data: { name: 'x', timeZone: 'banana' } })).rejects.toThrow(/time zone/)
+    expect((await db.customer.create({ data: { name: 'y', timeZone: 'Europe/Lisbon' } })).timeZone).toBe('Europe/Lisbon')
+    env.close?.()
+  })
+
+  test('@zoned is refused where it cannot be read', () => {
+    const errs = (src) => parse(src).errors.join('\n')
+    expect(errs(ZONED.replace('@zoned(customer.timeZone)', '@zoned(customer.nope)')))
+      .toContain("@zoned(customer.nope) — 'Customer' has no field 'nope'")
+    expect(errs(ZONED.replace('@zoned(customer.timeZone)', '@zoned(zone)')))
+      .toContain("@zoned(zone) — no field 'zone' on this model")
+    expect(errs(ZONED.replace('@zoned(customer.timeZone)', '@zoned(customer.name)')))
+      .toContain("'Customer.name' must be a String @zone")
+    expect(errs(ZONED.replace('graceDays  Int         @unit(d) @immutable', 'graceDays  Int @unit(d) @immutable @zoned(customer.timeZone)')))
+      .toContain('@zoned requires a String @date or @time')
+    expect(parse(ZONED).valid).toBe(true)
+  })
+
+  test('x-zoned reaches the JSON Schema', () => {
+    const doc = generateJsonSchema(parse(ZONED).schema)
+    const inv = doc.$defs?.Invoice ?? doc.definitions?.Invoice ?? doc.Invoice
+    expect(inv.properties.periodEnd['x-zoned']).toBe('customer.timeZone')
+  })
+})

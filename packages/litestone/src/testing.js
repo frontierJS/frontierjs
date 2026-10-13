@@ -2098,6 +2098,8 @@ function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(),
         value = _timeSample(seq, attrs.find(a => a.kind === 'time').seconds === true)
       } else if (attrs.some(a => a.kind === 'date')) {
         value = _dateSample(seq)
+      } else if (attrs.some(a => a.kind === 'zone')) {
+        value = ['UTC', 'America/Los_Angeles', 'Asia/Tokyo', 'Europe/Lisbon'][seq % 4]
       } else if (attrs.some(a => a.kind === 'datetime')) {
         value = `${_dateSample(seq)}T${_timeSample(seq, true)}Z`
       } else {
@@ -2407,6 +2409,11 @@ export function generateValidationCases(schema, modelName) {
         case 'datetime':
           invalid.push({ field: name, value: 'not-a-datetime', rule: '@datetime',
             expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.datetime()) })
+          break
+
+        case 'zone':
+          invalid.push({ field: name, value: 'Not/A_Zone', rule: '@zone',
+            expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.zone()) })
           break
 
         case 'phone':
@@ -3098,7 +3105,7 @@ function _fitsFieldRules(def, value) {
   for (const a of def.attributes) {
     if (a.kind === 'length' && (value.length < (a.min ?? 0) || value.length > (a.max ?? Infinity))) return false
     if (a.kind === 'email' || a.kind === 'url' || a.kind === 'phone' ||
-        a.kind === 'date'  || a.kind === 'datetime' || a.kind === 'time' || a.kind === 'regex') return false
+        a.kind === 'date'  || a.kind === 'datetime' || a.kind === 'time' || a.kind === 'zone' || a.kind === 'regex') return false
   }
   return true
 }

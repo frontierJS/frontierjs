@@ -298,6 +298,9 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 @datetime                        ISO-8601 datetime string
 @time                            HH:MM, 24-hour, leading zeros required
 @time(seconds: true)             HH:MM:SS accepted as well — named args only
+@zone                            an IANA zone name (America/Denver, UTC)
+@zoned(timeZone)                 this @date/@time is read in that @zone column's zone
+@zoned(customer.timeZone)        …or one to-one relation away, never further
 @regex("pattern")                regex validation
 @length(min, max)                string length (either bound optional)
 @gt(n)  @gte(n)  @lt(n)  @lte(n)
@@ -310,8 +313,14 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 as `<input type="time">` — carried by a `pattern` rather than by JSON Schema's
 `format: 'time'`, which means RFC 3339 full-time and would demand seconds and an
 offset this rule does not accept. The seconds flag WIDENS what may be stored; it
-does not make a finer value mandatory. What a zoned time would look like is not
-settled — `IDEAS/time-and-recurrence.md`.
+does not make a finer value mandatory.
+
+`@zoned(path)` names the zone a `@date` or `@time` is read in (`FJS-D512`); the
+column at the path must be `@zone`, so a value no zone resolves is refused at
+its own write rather than inside every read that resolves it. Litestone
+describes the pairing (`x-zoned`, the path as written) and reads it in one place,
+a `@@commitment` on a zoned day; the instant a wall clock resolves to stays a
+column the application writes.
 
 An array column also carries two rules that come from its TYPE rather than an
 attribute: the value must be an array, and on `Int[]` / `String[]` the elements
@@ -1056,7 +1065,12 @@ returns may have moved before anybody acts, which is why a fire asks again with
 `DateTime` (a month needs a zone the expression does not have) and the sub-day
 units on a `String @date`. A month lands on the same day or the month's last,
 as `addToDate` does — SQLite's own `+1 months` overflows January 31st into March,
-so the SQL spells the clamp out. `while:` reads this row alone; `auth()`, `now()`
+so the SQL spells the clamp out. **A day is owed at midnight in a zone**:
+`due({ timeZone })` for every row, or the row's own where the anchor is
+`@zoned` — `on: periodEnd + graceDays` over `periodEnd String @date
+@zoned(customer.timeZone)` closes a Tokyo customer's invoice at Tokyo's midnight
+and a Los Angeles one's at its own, from one sweep, and a row whose zone is null
+is read in the call's. `while:` reads this row alone; `auth()`, `now()`
 and a relation are refused by name. It emits no DDL, and nothing in the schema
 names a job: the sweep is the API realm's, and Caravan owns the clock.
 

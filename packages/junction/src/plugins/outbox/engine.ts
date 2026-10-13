@@ -39,6 +39,8 @@ export const OUTBOX_ACCESSOR = 'outboxMessage'
 interface OutboxClient {
   $schema?:        { models?: Array<{ name: string }> }
   $inTransaction?: boolean
+  $backupStamp?():      { takenAt: string } | null
+  $clearBackupStamp?(): void
   asSystem():      OutboxClient
   [accessor: string]: unknown
 }
@@ -331,15 +333,28 @@ function backoffFor(attempts: number, base: number): number {
  * folded: a stale claim and an elapsed backoff are two different ways a row
  * became available again.
  */
-function owedWhere(now: Date, stale: Date, maxAttempts: number): Record<string, unknown> {
+function owedWhere(now: Date, stale: Date, maxAttempts: number, heldBefore: string | null): Record<string, unknown> {
   return {
     deliveredAt: null,
     ...(maxAttempts > 0 ? { attempts: { lt: maxAttempts } } : {}),
+    ...(heldBefore ? { createdAt: { gt: heldBefore } } : {}),
     AND: [
       { OR: [{ claimedAt:     null }, { claimedAt:     { lt:  stale } }] },
       { OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now   } }] },
     ],
   }
+}
+
+/**
+ * Rows created at or before this instant are HELD (`FJS-D665`) — at, since a row
+ * the copy holds can share the stamp's millisecond. The database came out
+ * of a backup taken then, and a row it recorded as undelivered may have been
+ * delivered after the backup and before whatever the restore replaced. A mail,
+ * webhook or charge sent twice cannot be taken back, so such a row waits for an
+ * operator to `release()` or `drop()` it rather than for the relay.
+ */
+function heldBefore(db: OutboxClient): string | null {
+  return '$backupStamp' in db ? db.$backupStamp!()?.takenAt ?? null : null
 }
 
 interface JobDispatcher {
@@ -401,7 +416,7 @@ async function deliverFrom(
   const stale  = new Date(now.getTime() - timeout)
 
   const owed = await table.findMany({
-    where:   owedWhere(now, stale, maxTry),
+    where:   owedWhere(now, stale, maxTry, heldBefore(db)),
     orderBy: { createdAt: 'asc' },
     limit:   batch,
   })
@@ -492,6 +507,8 @@ export interface OutboxCounts {
   pending: number
   /** Past `maxAttempts`: still here, with its `lastError`, and untouched. */
   dead:    number
+  /** Older than the backup a restored database came out of; waits for an operator. */
+  held:    number
 }
 
 /** Rows owed, across every database this app writes them to. */
@@ -515,16 +532,74 @@ export async function outboxCounts(app: App, opts: DeliverOptions = {}): Promise
   return each.reduce<OutboxCounts>((sum, one) => ({
     pending: sum.pending + one.pending,
     dead:    sum.dead    + one.dead,
-  }), { pending: 0, dead: 0 })
+    held:    sum.held    + one.held,
+  }), { pending: 0, dead: 0, held: 0 })
 }
 
+// A held row is counted as held whatever its attempts, so the three numbers
+// partition the undelivered rows.
 async function countFrom(db: OutboxClient, maxTry: number): Promise<OutboxCounts> {
-  const table = outboxTable(db)
-  const owed  = await table.count({ where: { deliveredAt: null } })
-  const dead  = maxTry > 0
-    ? await table.count({ where: { deliveredAt: null, attempts: { gte: maxTry } } })
+  const table  = outboxTable(db)
+  const before = heldBefore(db)
+  const fresh  = before ? { createdAt: { gt: before } } : {}
+  const owed   = await table.count({ where: { deliveredAt: null } })
+  const held   = before ? await table.count({ where: { deliveredAt: null, createdAt: { lte: before } } }) : 0
+  const dead   = maxTry > 0
+    ? await table.count({ where: { deliveredAt: null, attempts: { gte: maxTry }, ...fresh } })
     : 0
-  return { pending: owed - dead, dead }
+  return { pending: owed - dead - held, dead, held }
+}
+
+// ─── after a restore ──────────────────────────────────────────────────────────
+
+/**
+ * Every held row, across every database the relay walks, with the tenant it
+ * belongs to — what an operator reads before choosing to release or drop.
+ */
+export async function heldOutbox(app: App): Promise<Array<OutboxRow & { tenant: string | null }>> {
+  const each = await forEachOutboxDatabase(app, async (db, tenant) => {
+    const before = heldBefore(db)
+    if (!before) return []
+    const rows = await outboxTable(db).findMany({
+      where:   { deliveredAt: null, createdAt: { lte: before } },
+      orderBy: { createdAt: 'asc' },
+    })
+    return rows.map(r => ({ ...r, tenant }))
+  })
+  return each.flat()
+}
+
+/**
+ * Hand every held row back to the relay: the operator has checked that none of
+ * them reached the outside world. Answers how many were released.
+ */
+export async function releaseOutbox(app: App): Promise<number> {
+  const each = await forEachOutboxDatabase(app, async db => {
+    const before = heldBefore(db)
+    if (!before) return 0
+    const n = await outboxTable(db).count({ where: { deliveredAt: null, createdAt: { lte: before } } })
+    db.$clearBackupStamp!()
+    return n
+  })
+  return each.reduce((n, one) => n + one, 0)
+}
+
+/**
+ * Delete held rows the operator knows were delivered — those named by `ids`,
+ * or all of them. Dropping all of them settles the restore; dropping some
+ * leaves the rest held for a `release()`. Answers how many went.
+ */
+export async function dropOutbox(app: App, ids?: string[]): Promise<number> {
+  const each = await forEachOutboxDatabase(app, async db => {
+    const before = heldBefore(db)
+    if (!before) return 0
+    const { count } = await outboxTable(db).removeMany({
+      where: { deliveredAt: null, createdAt: { lte: before }, ...(ids ? { id: ids } : {}) },
+    })
+    if (!ids) db.$clearBackupStamp!()
+    return count
+  })
+  return each.reduce((n, one) => n + one, 0)
 }
 
 /**
@@ -559,7 +634,8 @@ export async function outboxPass(
     failed:    sum.failed    + one.failed,
     pending:   sum.pending   + one.pending,
     dead:      sum.dead      + one.dead,
-  }), { delivered: 0, failed: 0, pending: 0, dead: 0 })
+    held:      sum.held      + one.held,
+  }), { delivered: 0, failed: 0, pending: 0, dead: 0, held: 0 })
 }
 
 // ─── What the plugin claims ───────────────────────────────────────────────────
@@ -590,6 +666,12 @@ export interface OutboxApi extends OutboxRelay {
    * nothing but the clock can produce the state those two surfaces report.
    */
   pass(): Promise<DeliverResult & OutboxCounts>
+  /** The rows a restore left held (`FJS-D665`), each with its tenant. */
+  held(): Promise<Array<OutboxRow & { tenant: string | null }>>
+  /** Send every held row: none of them reached the outside world. */
+  release(): Promise<number>
+  /** Delete held rows that were delivered — `ids`, or all of them. */
+  drop(ids?: string[]): Promise<number>
 }
 
 // ─── The shipped schema fragment ──────────────────────────────────────────────

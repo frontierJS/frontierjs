@@ -17,7 +17,7 @@
 
 import type { App, Plugin }  from '../../core/app.ts'
 import { enqueueOutbox, deliverOutbox, sweepOutbox, outboxCounts, outboxPass, assertOutboxShape,
-         hasOutboxModel, OUTBOX_MODEL, DEFAULT_MAX_ATTEMPTS,
+         heldOutbox, releaseOutbox, dropOutbox, hasOutboxModel, OUTBOX_MODEL, DEFAULT_MAX_ATTEMPTS,
          DEFAULT_RETRY_BACKOFF_MS } from './engine.ts'
 import type { OutboxApi, OutboxCounts, DeliverOptions, DeliverResult } from './engine.ts'
 
@@ -105,6 +105,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
   let failed     = 0
   let pending    = 0
   let dead       = 0
+  let held       = 0
   let lastPassAt: string | null = null
 
   return {
@@ -140,9 +141,20 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
           failed    += result.failed
           pending    = result.pending
           dead       = result.dead
+          // Said once when a hold appears: a restored app owes these effects and
+          // nothing in this process will send them until an operator says so.
+          if (result.held > 0 && held === 0)
+            app.logger?.warn?.('[Junction] outbox: rows older than the backup this database was restored from are held', {
+              held: result.held, next: 'app.outbox.held(), then release() or drop(ids)',
+            })
+          held       = result.held
           lastPassAt = new Date().toISOString()
           return result
         },
+
+        held:    () => heldOutbox(app),
+        release: () => releaseOutbox(app),
+        drop:    (ids?: string[]) => dropOutbox(app, ids),
       }
 
       // claim() refuses to overwrite, which is what stops two relays over one
@@ -158,7 +170,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // A source must be SYNCHRONOUS — `/metrics` assigns `fn()` straight into
       // the body, so a promise would serialize as `{}`.
       if (typeof app.registerMetricsSource === 'function')
-        app.registerMetricsSource('outbox', () => ({ pending, dead, delivered, failed, lastPassAt }))
+        app.registerMetricsSource('outbox', () => ({ pending, dead, held, delivered, failed, lastPassAt }))
 
       // A relay that has stopped passing is an app that still answers every
       // request and quietly owes an unbounded number of effects, which is

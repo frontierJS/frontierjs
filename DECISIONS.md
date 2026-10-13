@@ -12653,6 +12653,18 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d952"></a>2026-10-13 · `FJS-D952` — What does an app shell own, and is it the kit's — A paper first: `IDEAS/app-shell.md` surveys the six nav shapes and proposes a `nav.js` contract (groups, section tabs, bare prefixes, drawer copy), then a kit `Shell` over `frame.css` that reads it.
+
+Asked in [`IDEAS/ui-kit-gaps.md`](IDEAS/ui-kit-gaps.md) § Open questions, raised by [`docs/mesa-usage-audit-2026-10-12.md`](docs/mesa-usage-audit-2026-10-12.md) § 3.11. **A** was picked over **B** (the scaffold's `_module.mesa` and a `nav.js` become the contract, and the kit gets no component), **C** (nothing; a shell is the app's).
+
+The paper's recommendation, taken as written: two apps already feed one table to both the nav and ⌘K, so there is a real shared shape. It is too large to coin inside a kit step, and B can follow A as the generator's half of the same contract.
+
+### <a id="fjs-d951"></a>2026-10-13 · `FJS-D951` — Does the kit ship an `Icon` — No. The icon set is each app's own, and `@frontierjs/css`'s `.icon` is what sizes it.
+
+Asked in [`IDEAS/ui-kit-gaps.md`](IDEAS/ui-kit-gaps.md) § Open questions, raised by [`docs/mesa-usage-audit-2026-10-12.md`](docs/mesa-usage-audit-2026-10-12.md) § 3.12. **A** was picked over **B** (a wrapper only: `<Icon paths>` carrying `.icon` and `aria-hidden`, with the set still the app's), **C** (a wrapper plus a shipped outline set, Heroicons, MIT).
+
+The paper's recommendation, taken as written: B saves three lines and adds a noun. C is *batteries vs. smallness*, already decided for smallness in css § Icons, and a set the kit picks is a set every app restyles around. The copies agree with each other, so nothing is drifting.
+
 ### <a id="fjs-d918"></a>2026-10-12 · `FJS-D918` — What may a word after a divider (`====|.duo.reverse`, `===|.featured`) name — Checked: a css look word (a Layout helper, a tone, treatment or density, `align-*`), placed where Block places it, or a class the site's built stylesheets define; any other word stops `site-kit build` naming the file, the divider and the word.
 
 Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (typed only: css look words plus one segment name the site stylesheet keys on, as a block's `name`; every client's divider lines and stylesheet are rewritten), **C** (free, as ksite had it).

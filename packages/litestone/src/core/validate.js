@@ -63,6 +63,19 @@ export const TIME_PATTERNS = {
 // E.164 international format + common local formats
 const PHONE_RE    = /^\+?[\d\s\-().]{7,20}$/
 
+// An IANA name, spelled as the host's ICU table spells it. `Intl` alone also
+// takes an offset (`+05:00`) and folds case (`utc`), and neither is a zone a
+// day can be read in the same way on every runtime. An alias the canonical
+// list omits (`Asia/Calcutta`) passes when the host resolves it to itself.
+let ZONES = null
+function isZone(v) {
+  if (typeof v !== 'string' || !/^[A-Za-z]/.test(v)) return false
+  ZONES ??= new Set(Intl.supportedValuesOf?.('timeZone') ?? [])
+  if (ZONES.has(v)) return true
+  try { return new Intl.DateTimeFormat('en-US', { timeZone: v }).resolvedOptions().timeZone === v }
+  catch { return false }
+}
+
 // The largest whole number a JS number carries exactly. A scaled column's whole
 // promise is that what goes in comes back, and the round trip goes through a
 // `number` at both ends — so this, and not SQLite's 64-bit INTEGER, is the range
@@ -115,6 +128,7 @@ const VALIDATORS = {
                                  ? TIME_RE_HMS.test(String(v))
                                  : TIME_RE_HM.test(String(v)),
   phone:       (v)          => PHONE_RE.test(String(v)),
+  zone:        (v)          => isZone(v),
   // A key ending in '0' has no room below it that a shorter key could take,
   // and a non-base-62 byte sorts differently in a browser than in SQLite.
   rank:        (v)          => isRankKey(v),
@@ -199,7 +213,8 @@ export const DEFAULT_MESSAGES = {
   phone:      () => 'must be a valid phone number',
   date:       () => 'must be a valid date in YYYY-MM-DD format (e.g. 2026-04-06)',
   datetime:   () => 'must be a valid ISO 8601 datetime',
-  time:       (seconds) => seconds
+  zone:       () => 'must be an IANA time zone name (e.g. America/Denver or UTC)',
+  time:     (seconds) => seconds
                             ? 'must be a 24-hour time in HH:MM or HH:MM:SS format (e.g. 09:30 or 09:30:45)'
                             : 'must be a 24-hour time in HH:MM format (e.g. 09:30)',
   regex:      (p) => `must match pattern ${p}`,
@@ -601,6 +616,7 @@ export function validateField(fieldName, value, attributes) {
       case 'phone':
       case 'date':
       case 'datetime':
+      case 'zone':
         pass       = VALIDATORS[kind](value)
         defaultMsg = DEFAULT_MESSAGES[kind]()
         break
@@ -799,7 +815,7 @@ export function validate(data, model, computedFns, typeMap, enums = null) {
 // decide whether a model needs the pass at all, and by `advise` to ask
 // whether a rule declared on a column can ever be reached.
 export const VALIDATOR_KINDS = new Set([
-  'email','url','phone','date','datetime','time','regex','length','startsWith','endsWith',
+  'email','url','phone','date','datetime','time','zone','regex','length','startsWith','endsWith',
   'contains','lt','lte','gt','gte','trim','lower','upper',
   'minItems','maxItems','uniqueItems',
   // A scaled column's rule is *a whole number of minor units*, and without it

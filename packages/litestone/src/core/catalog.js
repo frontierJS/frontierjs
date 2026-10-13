@@ -851,6 +851,23 @@ const FIELD = [
     'opensAt String @time(seconds: true)'
   ),
   t(
+    'zone',
+    'field',
+    'validate',
+    '[(message)]',
+    "Must be an IANA time zone name as the host's ICU table spells it — America/Denver, UTC. An offset (+05:00) and a case-folded name (utc) are refused, since a day read in one is not the same day on every runtime. The column @zoned names must carry it, because a value no zone resolves would throw inside every read that resolves it.",
+    'timeZone String @zone'
+  ),
+  t(
+    'zoned',
+    'field',
+    'shape',
+    '(<field> | <relation>.<field>)',
+    "This String @date or @time is a wall clock, read in the zone held at the path: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. A @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written.",
+    'endsOn String @date @zoned(timeZone)',
+    { seeAlso: ['zone', 'date', 'time', 'commitment'], extraFields: 'timeZone String @zone' }
+  ),
+  t(
     'regex',
     'field',
     'validate',
@@ -1551,6 +1568,8 @@ export const DOCS = {
   'field:date': 'schema.md',
   'field:datetime': 'schema.md',
   'field:time': 'schema.md',
+  'field:zone': 'schema.md',
+  'field:zoned': 'schema.md',
   'field:regex': 'schema.md',
   'field:length': 'schema.md',
   'field:check': 'schema.md',
@@ -1720,6 +1739,8 @@ export const TIERS = {
     'move:seals'
   ],
   situational: [
+    'field:zone',
+    'field:zoned',
     // declarations
     'schema:import',
     'schema:extend',
@@ -1814,7 +1835,7 @@ export const AXES = {
     'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:trim',
     'field:lower', 'field:upper', 'field:slug', 'field:values', 'field:label', 'field:required',
     'field:email', 'field:url', 'field:phone', 'field:syntax', 'field:accept', 'field:date',
-    'field:datetime', 'field:time', 'field:regex', 'field:length', 'field:startsWith',
+    'field:datetime', 'field:time', 'field:zone', 'field:zoned', 'field:regex', 'field:length', 'field:startsWith',
     'field:endsWith', 'field:contains', 'field:lt', 'field:lte', 'field:gt', 'field:gte',
     'field:minItems', 'field:maxItems', 'field:uniqueItems', 'field:type', 'model:index',
     'model:id', 'model:unique', 'model:exclude', 'model:check', 'model:arc', 'model:relator',

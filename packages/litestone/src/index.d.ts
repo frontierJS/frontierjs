@@ -771,6 +771,10 @@ export interface LitestoneClient {
   $retain(): Promise<RetainResult[]>
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
+  /** When a database this client opened came out of a backup, the instant the backup holds; otherwise null (`FJS-D665`). */
+  $backupStamp(): { takenAt: string } | null
+  /** Forget the stamp: what the restore rewound has been settled. */
+  $clearBackupStamp(): void
   /** True while every SQLite connection answers; throws when one does not, a closed client included. */
   $ping(): true
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>

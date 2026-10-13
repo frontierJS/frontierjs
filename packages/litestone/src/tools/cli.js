@@ -28,7 +28,7 @@ import { create, apply, status, verify,
          baseline, historyGap, driftAgainstLive,
          unacceptedLoss, unresolvedBlocks, renameCandidates } from '../core/migrations.js'
 import { parseRenameFlag, readOperations, askRenames } from '../core/operations.js'
-import { backupSqliteTo }                              from '../core/backup.js'
+import { backupSqliteTo, writeBackupStamp }            from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
 import { modelToAccessor }           from '../core/ddl.js'
@@ -4287,11 +4287,19 @@ async function cmdRestore(cfg) {
   console.log()
 
   // ── Fetch everything beside its destination ───────────────────────────────
+  // A replica carries no stamp of its own, so each file is stamped with the
+  // instant asked for, or with the start of the restore when the latest was:
+  // a row older than that may have been handed off and rewound (`FJS-D665`).
+  const takenAt = at ? new Date(at).toISOString() : new Date().toISOString()
   for (const j of jobs.filter(j => !j.staged)) {
     mkdirSync(dirname(j.dest), { recursive: true })
     const got = restoreFile(binary, { url: j.url, out: stage(j.dest), at })
     staging.push(stage(j.dest))
     if (!got.ok) { discard(); fatal(`${cyan(j.name)} failed after the others were reached — nothing was restored.\n     ${got.error}`) }
+  }
+  for (const j of jobs) {
+    const copy = openDatabase(stage(j.dest))
+    try { writeBackupStamp(copy, takenAt) } finally { copy.close() }
   }
 
   // ── Then move it all into place ───────────────────────────────────────────

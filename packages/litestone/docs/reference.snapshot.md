@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**119 words** — 13 declarations · 68 field attributes · 35 model attributes · 3 move words.
+**121 words** — 13 declarations · 70 field attributes · 35 model attributes · 3 move words.
 
 ## Index
 
@@ -33,8 +33,8 @@ and shows you the diff first.
 - *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@trail`](#trail-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
-- *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
-- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field)
+- *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
+- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field) · [`@zoned`](#zoned-field)
 - *Decide who may* — [`@allow`](#allow-field)
 
 **Model attributes**
@@ -1049,6 +1049,19 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 
+#### `@zone` `[(message)]` <a id="zone-field"></a>
+
+Must be an IANA time zone name as the host's ICU table spells it — America/Denver, UTC. An offset (+05:00) and a case-folded name (utc) are refused, since a day read in one is not the same day on every runtime. The column @zoned names must carry it, because a value no zone resolves would throw inside every read that resolves it.
+
+```lite
+model Example {
+  id Int @id
+  timeZone String @zone
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+
 #### `@regex` `("pattern"[, message])` <a id="regex-field"></a>
 
 Must match the pattern.
@@ -1315,6 +1328,21 @@ model Example {
 
 - **Deeper** — [vectors.md](vectors.md)
 - **See also** — [`@point`](#point-field)
+
+#### `@zoned` `(<field> | <relation>.<field>)` <a id="zoned-field"></a>
+
+This String @date or @time is a wall clock, read in the zone held at the path: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. A @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written.
+
+```lite
+model Example {
+  id Int @id
+  timeZone String @zone
+  endsOn String @date @zoned(timeZone)
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@zone`](#zone-field) · [`@date`](#date-field) · [`@time`](#time-field) · [`@@commitment`](#commitment-model)
 
 ### Decide who may
 

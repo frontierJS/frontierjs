@@ -41,7 +41,7 @@ import {
   encryptField, decryptField, encryptDeterministic, hashField, normalizeKey,
   comparisonEncoderFor, parseEnvelope, verifiesAs, makeKeyring, legacyForm,
 } from './encryption.js'
-import { backupSqliteTo } from './backup.js'
+import { backupSqliteTo, readBackupStamp, clearBackupStamp } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { isServerAssignedId, isServerFilled } from './ids.js'
@@ -56,7 +56,7 @@ import {
   LockReleasedByOtherError, LockExpiredError,
 } from './errors.js'
 import { threeWay } from './three-way.js'
-import { buildCommitmentMap, dueSql, readBy } from './commitment.js'
+import { buildCommitmentMap, dueSql, readBy, LATEST_DAY } from './commitment.js'
 import { dueAt, offsetSpans, partsIn, plainDateIn } from '@frontierjs/toolbelt/datetime'
 import { after as rankAfter, isRankKey, spread as rankSpread } from '@frontierjs/toolbelt/rank'
 import { REDACTED } from '@frontierjs/toolbelt/redact'
@@ -9035,7 +9035,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
       const out = []
       for (const d of chosen) {
-        const limit = readBy(d.kind, at, timeZone)
+        const limit = readBy(d.kind, at, d.zone ? LATEST_DAY : timeZone)
         if (limit == null) throw new ValidationError([{ path: ['by'], message:
           `by must be an instant — a Date or an ISO date-time. Got '${by}'` }])
         // The from-state is the TARGET's. Across a relation it is a relation
@@ -9059,15 +9059,22 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const select = Object.fromEntries(keep.map(k => [k, true]))
         if (d.via) select[d.via] = { select: { [targetId]: true } }
         if (tenantRel) graft(select, nest(tenantRel))
+        if (d.zone) graft(select, d.zone.length === 1
+          ? { [d.zone[0]]: true }
+          : { [d.zone[0]]: { select: { [d.zone[1]]: true } } })
         const rows = await this.findMany({ where: { AND: cond }, select })
-        for (const row of rows) out.push({
-          transition: d.name,
-          id:         row[idField],
-          dueAt:      dueAt(d, row),
-          ...(tenantRel ? { tenant: [...tenantRel, t.column].reduce((v, k) => v?.[k], row) ?? null } : {}),
-          target:     { model: d.target, accessor: modelToAccessor(d.target), transition: d.transition,
-                        id: d.via ? row[d.via][targetId] : row[idField] },
-        })
+        for (const row of rows) {
+          // A row with no zone of its own is read in the call's.
+          if (d.zone && dueAt(d, row) > readBy(d.kind, at, d.zone.reduce((v, k) => v?.[k], row) ?? timeZone)) continue
+          out.push({
+            transition: d.name,
+            id:         row[idField],
+            dueAt:      dueAt(d, row),
+            ...(tenantRel ? { tenant: [...tenantRel, t.column].reduce((v, k) => v?.[k], row) ?? null } : {}),
+            target:     { model: d.target, accessor: modelToAccessor(d.target), transition: d.transition,
+                          id: d.via ? row[d.via][targetId] : row[idField] },
+          })
+        }
       }
       return out
     },
@@ -12250,6 +12257,29 @@ function makeLockPrimitive(rawWriteDb) {
     return keys.length === 1 ? result[keys[0]] : result
   }
 
+  // `{ takenAt }` when a database this client opened came out of a backup
+  // (`FJS-D665`), otherwise null. A restore rewinds every row written after
+  // `takenAt`, so a row older than it that records an unfinished handoff to
+  // the outside world may already have been handed off. The latest stamp
+  // across the client's databases answers, since a restore puts back the set.
+  function $backupStamp() {
+    let latest = null
+    for (const conn of Object.values(dbRegistry)) {
+      if (conn.driver !== 'sqlite' || !conn.rawWriteDb) continue
+      const stamp = readBackupStamp(conn.rawWriteDb)
+      if (stamp && (!latest || stamp.takenAt > latest.takenAt)) latest = stamp
+    }
+    return latest
+  }
+
+  // The operator has settled what the stamp was holding: the database is
+  // nobody's backup any more, and a row older than the stamp is ordinary.
+  function $clearBackupStamp() {
+    for (const conn of Object.values(dbRegistry)) {
+      if (conn.driver === 'sqlite' && conn.rawWriteDb) clearBackupStamp(conn.rawWriteDb)
+    }
+  }
+
   // `only` narrows to named databases. Without it a caller wanting ONE database
   // out of several had to open a client per database — and `createClient({ db })`
   // names MAIN, so each of those clients backed up main under a different
@@ -12388,7 +12418,7 @@ function makeLockPrimitive(rawWriteDb) {
     }
 
     const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
-    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12523,7 +12553,7 @@ function makeLockPrimitive(rawWriteDb) {
     }
 
     const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12603,7 +12633,7 @@ function makeLockPrimitive(rawWriteDb) {
       // Hands the callback THIS proxy — the dimension bindings and the auth on
       // it are what the body was asking for. See $transaction.
       $transaction: (fn) => $transaction(fn, scopedProxy),
-      asSystem, $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb,
+      asSystem, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb,
       $lock: lockPrimitive, $locks: lockPrimitive.$locks,
     }
     const scopedProxy = new Proxy(target, {
@@ -12817,7 +12847,7 @@ function makeLockPrimitive(rawWriteDb) {
   }
 
   const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
-  clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
+  clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
       if (prop === 'then')            return undefined

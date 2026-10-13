@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from 
 import { resolve, join } from 'path'
 import { slug } from '@frontierjs/toolbelt/inflect'
 import { openDatabase } from './engine.js'
+import { META_TABLE } from './backup.js'
 import {
   introspect, buildPristineForDatabase, diffSchemas,
   generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl,
@@ -853,7 +854,7 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
 //
 // For production use the file-based migration system (create / apply / status).
 
-const AUTO_META_TABLE  = '_litestone_meta'
+const AUTO_META_TABLE  = META_TABLE
 const AUTO_HASH_KEY    = 'autoMigrate.ddlHash'
 const AUTO_RESIDUE_KEY = 'autoMigrate.residue'
 

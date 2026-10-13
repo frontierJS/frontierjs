@@ -1290,6 +1290,11 @@ function applyValidators(schema, attributes) {
       case 'datetime':
         schema.format = 'date-time'
         break
+      // The path to the zone this wall clock is read in, as the schema spells
+      // it, so a browser grading a day's commitment reads the row's zone.
+      case 'zoned':
+        schema['x-zoned'] = attr.path.join('.')
+        break
       // A wall-clock time, and it is a `pattern` rather than `format: 'time'`
       // on purpose: that format means RFC 3339 full-time, which requires
       // seconds AND an offset, where `@time` requires neither and admits no

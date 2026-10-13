@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_EFFORT, EDIT_KINDS, EDIT_MAX_HTML, EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
+import { ASK_EFFORT, EDIT_KINDS, EDIT_MAX_HTML, PANEL_EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
@@ -554,7 +554,7 @@ describe('the served client', () => {
 
   test('runs as served, with the token key the plugin was handed', () => {
     const src = askPlugin({ tokenKey: 'basecamp_token' }).load('\0@frontierjs/cli/ask-client')
-    expect(src.split('\n')[0]).toBe(`const ASK = ${JSON.stringify({ tokenKey: 'basecamp_token', efforts: EFFORTS, effort: ASK_EFFORT })}`)
+    expect(src.split('\n')[0]).toBe(`const ASK = ${JSON.stringify({ tokenKey: 'basecamp_token', efforts: PANEL_EFFORTS, effort: ASK_EFFORT })}`)
     // No window here, so the module returns at its first line — after the
     // prepended one has run against whatever follows it.
     expect(() => new Function(src)()).not.toThrow()
