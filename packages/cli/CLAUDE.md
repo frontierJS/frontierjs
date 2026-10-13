@@ -562,6 +562,10 @@ core/
                 `Bun.markdown.ansi`; this owns what is handed to it (frontmatter
                 and a column-0 `<script>` as fences, a relative link as a
                 `file://` URL) and reads a section through `outline.js`
+  file-tree.js  a folder drawn as a tree — `fli tree`. The listing is
+                `tree.js`'s, so ignored files are absent with no skip list;
+                icons are emoji with DEFAULT emoji presentation only, since one
+                needing U+FE0F is one cell in some terminals and two in others
   guarded-write.js the policy of `.claude/hooks/guarded-write.mjs` — decision-rules
                 hinted in front of a WRITE to `DECISIONS.md`, `IDEAS/` or
                 litestone's parser/catalog. A Bash command counts only where
