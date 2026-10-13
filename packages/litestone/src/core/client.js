@@ -2031,19 +2031,83 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   function fireRowEvent(event, operation, result, transition = null) {
     if (!hasAudience()) return
+    const tenants = result ? tenantsOf([result]) : null
     fireEvent(event, {
       model: modelName, operation, result, scope: 'row', count: 1,
       ...(transition ? { transition } : {}),
+      ...(tenants ? { tenants } : {}),
       schema: shape.model,
     })
   }
 
-  function fireCollectionEvent(event, operation, where, count) {
+  function fireCollectionEvent(event, operation, where, count, tenants) {
     // Nothing matched, so nothing changed. A filter that hit no rows must not
     // send every open tab back to the server.
     if (!count) return
     if (!hasAudience()) return
-    fireEvent(event, { model: modelName, operation, result: null, scope: 'collection', count, where, schema: shape.model })
+    fireEvent(event, {
+      model: modelName, operation, result: null, scope: 'collection', count, where, schema: shape.model,
+      ...(tenants ? { tenants } : {}),
+    })
+  }
+
+  // ── The tenants a write touched ─────────────────────────────────────────
+  //
+  // Under row tenancy every event says which tenants its rows belong to. A
+  // count names no row, so a subscriber routing per tenant -- Junction's
+  // function channel on `agency:<id>` -- had nowhere to send it and sent
+  // nothing; and a row of a model scoped through its parent (`@@tenant(via:)`,
+  // a Share under a Page) carries no column to route by (`FJS-1741`).
+  //
+  // A model that carries the column reads it off its rows. One scoped through
+  // a parent follows the relation its generated tenancy deny follows, one
+  // `SELECT DISTINCT` per hop, from the foreign keys on the rows -- which a
+  // delete still has, since the parent outlives the child. Resolved on first
+  // use: the schema's tenancy is not settled when the table is built. The
+  // commitment sweep reads the same path to fire a row in its own tenant.
+  let _tenantPath
+  function tenantPath() {
+    if (_tenantPath !== undefined) return _tenantPath
+    const t = ctx.schema?.tenancy
+    if (t?.strategy !== 'row') return _tenantPath = null
+    const carries = (m) => !!ctx.shapes[m]?.model.fields.some(f => f.name === t.column)
+    const walk = (m, seen) => {
+      if (carries(m)) return []
+      for (const a of ctx.shapes[m]?.model.attributes ?? []) {
+        const ref = a.generated === 'tenancy' && a.expr?.type === 'not' && a.expr.expr?.type === 'check' ? a.expr.expr : null
+        const rel = ref && ctx.shapes[m].relations?.[ref.field]
+        if (!rel?.foreignKey || seen.has(rel.targetModel)) continue
+        const rest = walk(rel.targetModel, new Set([...seen, rel.targetModel]))
+        if (rest) return [{ field: ref.field, fk: rel.foreignKey, target: rel.targetModel, ref: rel.referencedKey ?? 'id' }, ...rest]
+      }
+      return null
+    }
+    return _tenantPath = walk(modelName, new Set([modelName]))
+  }
+
+  function tenantsOf(rows) {
+    const path = tenantPath()
+    if (!path || !rows?.length) return null
+    const distinct = (vs) => [...new Set(vs.filter(v => v != null))]
+    const column = ctx.schema.tenancy.column
+    if (!path.length) return distinct(rows.map(r => r?.[column]))
+    let values = distinct(rows.map(r => r?.[path[0].fk]))
+    try {
+      for (let i = 0; i < path.length && values.length; i++) {
+        const hop  = path[i]
+        const tmap = ctx.shapes[hop.target]?.columnMap ?? {}
+        const out  = i + 1 < path.length ? path[i + 1].fk : column
+        const sql  = `SELECT DISTINCT ${ident(tmap[out] ?? out).sql} AS v FROM ${ident(_modelToTable(hop.target)).sql} ` +
+          `WHERE ${ident(tmap[hop.ref] ?? hop.ref).sql} IN `
+        const next = []
+        for (let j = 0; j < values.length; j += 500) {
+          const chunk = values.slice(j, j + 500)
+          for (const r of readDb.query(sql + `(${chunk.map(() => '?').join(', ')})`).all(...chunk)) next.push(r.v)
+        }
+        values = distinct(next)
+      }
+    } catch { return null }   // a parent in another database: the tenant stays unnamed
+    return values
   }
 
   /**
@@ -2056,7 +2120,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
    */
   function announceFor(option) {
     const mode = checkAnnounce(option, `${modelName}`) ?? ctx.announce ?? 'collection'
-    return { mode, wantRows: mode === 'rows' && hasAudience() }
+    const rowsFor = mode === 'rows' || (mode === 'collection' && !!tenantPath())
+    return { mode, wantRows: rowsFor && hasAudience() }
   }
 
   /**
@@ -2073,7 +2138,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       for (const r of rows) fireRowEvent(event, operation, read(r, { mode: 'single', hydrateFrom: true }))
       return
     }
-    fireCollectionEvent(event, operation, where, count)
+    fireCollectionEvent(event, operation, where, count, tenantsOf(rows))
   }
 
   // ── Query event emitter ───────────────────────────────────────────────────
@@ -8247,7 +8312,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         announceBulk({ mode: 'rows', event: 'create', operation: 'upsertMany', count: _usCreated.length, rows: _usCreated })
         announceBulk({ mode: 'rows', event: 'update', operation: 'upsertMany', count: _usUpdated.length, rows: _usUpdated })
       } else {
-        announceBulk({ mode: _usMode, event: 'update', operation: 'upsertMany', count })
+        announceBulk({ mode: _usMode, event: 'update', operation: 'upsertMany', count, rows: _usCreated ? [..._usCreated, ..._usUpdated] : null })
       }
       return { count }
     },
@@ -9006,22 +9071,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // Under row tenancy every tenant's rows share this table, so the sweep
       // has no tenant to fire in but the row's own; without it the fire's
       // principal holds no claim and the tenancy deny hides the row it moves.
-      const t = ctx.schema?.tenancy
       // A model scoped through its parent carries no column; its tenant is the
       // parent's, read along the relation its generated tenancy deny follows.
-      const carries = (m) => t?.strategy === 'row' && ctx.models?.[m]?.fields?.some(f => f.name === t.column)
-      const tenantPath = (m, seen = new Set([m])) => {
-        if (carries(m)) return []
-        for (const a of ctx.models?.[m]?.attributes ?? []) {
-          const ref = a.generated === 'tenancy' && a.expr?.type === 'not' && a.expr.expr?.type === 'check' ? a.expr.expr : null
-          const target = ref && ctx.models[m].fields.find(f => f.name === ref.field)?.type.name
-          if (!target || seen.has(target)) continue
-          const rest = tenantPath(target, new Set([...seen, target]))
-          if (rest) return [ref.field, ...rest]
-        }
-        return null
-      }
-      const tenantRel = t?.strategy === 'row' ? tenantPath(modelName) : null
+      const t = ctx.schema?.tenancy
+      const tenantRel = tenantPath()?.map(hop => hop.field) ?? null
       const nest = (path) => path.length
         ? { [path[0]]: { select: nest(path.slice(1)) } }
         : { [t.column]: true }

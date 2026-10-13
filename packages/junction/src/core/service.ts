@@ -202,7 +202,9 @@ function buildCacheHooks(
  * service from having one. A noun cannot collide with a verb-shaped method.
  *
  *   'posts'        a channel name — the common case
- *   (rows, ctx) => a channel, an array of channels, or null to skip this one
+ *   (rows, ctx) => a channel, an array of channels, or null to skip this one;
+ *                  `ctx` is null for a write outside any service call, so read
+ *                  the target off the row (`FJS-1741`)
  *   false          declared opt-out (documents intent; same effect as omitting)
  *
  * Omitted means no broadcast. See announceToChannels() for why the default is
@@ -211,7 +213,7 @@ function buildCacheHooks(
 export type ChannelDeclaration =
   | string
   | false
-  | ((data: unknown, ctx: ServiceContext) => unknown)
+  | ((data: unknown, ctx: ServiceContext | null) => unknown)
 
 /**
  * A service, described. Everything a reader outside the core needs, and nothing
@@ -2528,7 +2530,8 @@ export interface ServiceDefinition {
    * Broadcast this service's mutations to a WebSocket channel.
    *
    *   channel: 'posts'                              a channel name
-   *   channel: (rows, ctx) => app.channel(`w:${…}`)  dynamic target
+   *   channel: (row, ctx) => app.channel(`w:${row.workspaceId}`)  dynamic target;
+   *                                                 ctx is null outside a service call
    *   channel: false                                declared opt-out
    *
    * Replaces the three-step wiring this used to require — import announce(),

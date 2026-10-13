@@ -40,8 +40,7 @@ test.failing('runChecks refuses an --only id that names no rule in this scope', 
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-// FJS-2377: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-test.failing('vite-strict-port fires on strictPort: false and on strictPort only in a comment', () => {
+test('vite-strict-port fires on strictPort: false and on strictPort only in a comment', () => {
   const root = tree({
     'db/schema.lite':                 'model A {\n  id Int @id\n}\n',
     'web/config/vite.config.js':      'export default { server: { strictPort: false } }\n',

@@ -9,9 +9,8 @@
 import { writeFileSync, statSync } from '#host'
 import { openDatabase } from './engine.js'
 
-/** Litestone's own key/value table, inside every database it has written to. */
-export const META_TABLE = '_litestone_meta'
-
+// The stamp is a row of `_litestone_meta`, the key/value table autoMigrate
+// keeps its hash in (`migrations.js`).
 const TAKEN_AT_KEY = 'backup.takenAt'
 
 // Returns the size of the written file. `vacuum` compacts on the way out —
@@ -38,21 +37,21 @@ export async function backupSqliteTo(rawDb, destPath, { vacuum = false } = {}) {
 /** `{ takenAt }` when this database came out of a backup, otherwise null. */
 export function readBackupStamp(rawDb) {
   try {
-    const takenAt = rawDb.query(`SELECT value FROM "${META_TABLE}" WHERE key = ?`).get(TAKEN_AT_KEY)?.value
+    const takenAt = rawDb.query(`SELECT value FROM "_litestone_meta" WHERE key = ?`).get(TAKEN_AT_KEY)?.value
     return takenAt ? { takenAt } : null
   } catch { return null }   // no meta table: never written by a backup
 }
 
 export function writeBackupStamp(rawDb, takenAt) {
-  rawDb.run(`CREATE TABLE IF NOT EXISTS "${META_TABLE}" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+  rawDb.run(`CREATE TABLE IF NOT EXISTS "_litestone_meta" (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
   rawDb.run(
-    `INSERT INTO "${META_TABLE}" (key, value) VALUES (?, ?)
+    `INSERT INTO "_litestone_meta" (key, value) VALUES (?, ?)
      ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
     TAKEN_AT_KEY, takenAt
   )
 }
 
 export function clearBackupStamp(rawDb) {
-  try { rawDb.run(`DELETE FROM "${META_TABLE}" WHERE key = ?`, TAKEN_AT_KEY) }
+  try { rawDb.run(`DELETE FROM "_litestone_meta" WHERE key = ?`, TAKEN_AT_KEY) }
   catch { /* no meta table: nothing stamped */ }
 }

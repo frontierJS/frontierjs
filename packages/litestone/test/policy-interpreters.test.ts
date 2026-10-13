@@ -549,9 +549,9 @@ model Kid {
 model Doc {
   id  String @id
   qty Int?
-  big Boolean? @derived(qty > 5)
+  dbl Int? @generated("qty * 2")
   @@allow('create', qty > 0)
-  @@deny('create',  big == true)
+  @@deny('create',  dbl > 10)
 }
 `
     await expect(createClient({ schema, db: ':memory:' })).rejects.toThrow(/can never fire, so it refuses nothing/)

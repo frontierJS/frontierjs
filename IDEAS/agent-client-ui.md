@@ -153,7 +153,7 @@ owed to `mesa-ir.md`, not here.
 
 ## Open questions
 
-- **Does `FJS-D38`'s *nothing is scheduled before alpha* cover this?** Step 0.1
+- ~~**Does `FJS-D38`'s *nothing is scheduled before alpha* cover this?**~~ **Answered 2026-10-13 (`FJS-D38`): `FJS-D38`'s own price paragraph is the test, and this design pays none of it: no second emit, no forked runtime, the same `.mesa` file compiled by the same compiler. B mints a ruling to exempt a thing the line never covered, and every later markup wrapper (a `print-kit` document is already one) would need its own. C holds a line against the one kind of target the ruling priced at zero. *Doctrine vs. discovery* (§ IV): the doctrine's word is *target* and the tree now holds three markup ones built without a ruling; A fixes the doctrine's reading, not the tree.** Step 0.1
   of § *The plan*. The deferral is written against a *target*, and `FJS-D38`
   prices a target as *a second compiler backend emitting a cell tree* — the
   runtime restated. Nothing in Phases 1–4 restates the runtime: the view is the
@@ -187,6 +187,72 @@ owed to `mesa-ir.md`, not here.
     discovery* (§ IV): the doctrine's word is *target* and the tree now holds
     three markup ones built without a ruling; A fixes the doctrine's reading,
     not the tree.
+- **Where the built views live, and what the plugin option and the Sierra
+  command are called** (steps 0.2 and 2.4). Probed 2026-10-13. The API image
+  `fli make:deploy` writes COPYs `api/` and `db/` and its `.dockerignore` drops
+  `web/`, so nothing under `web/dist/` exists where `mcpPlugin()` boots in
+  production. `vite build` empties the SPA's own `dist/`
+  (`packages/cli/core/desktop-surface.js` records a wrapped build deleting it),
+  so a second loop writing beside it is the `FJS-D127` hazard by another path.
+  And the plugin's silent downgrade (§ *The nine* 8) would turn a directory
+  missing from the image into *no views in production* with nothing said.
+  `desktop/ wraps web` is the precedent that decides it: **the output belongs
+  to the surface that SHIPS it.** On the names: `plugin.ts` already calls its
+  schema audiences `views: SchemaViews`, and *view* is an open Page-tier word
+  in `VOCABULARY.md`, so `mcpPlugin({ views })` would collide inside one file
+  and bless a noun by the side door.
+  - **A** — `api/dist/mcp/<Model>.html`, written by `sierra mcp` run from
+    `web/` with `--out <absolute dir>` and refused without it; `fli mcp:build`
+    supplies `$.paths.api/dist/mcp`, because fli is the one thing that knows
+    the app's layout and a relative default crossing a surface is the derived
+    path Invariant 3 forbids. The plugin is told once, as `static` is told its
+    `root`: `mcpPlugin({ ui: { root } })` — `ui` is the extension's own key
+    (`capabilities.extensions['io.modelcontextprotocol/ui']`, `_meta.ui`) and
+    leaves room for `csp` and `permissions` beside `root`. Absent, the plugin
+    registers text-only tools. Declared and missing at boot, it REFUSES to
+    start, naming the directory and `fli mcp:build`: that amends 1.5's *never
+    a boot failure* to per-file (a model with no view is no pointer; a surface
+    with no directory is a deploy defect). The image carries API and views
+    from one commit, so 1.5's `x-fjs-build` key is unneeded — agreement by
+    construction, not by check.
+  - **B** — `web/dist/mcp/`, emitted INSIDE the SPA build as a postbuild step
+    (the islands' shape: a second Vite build, `emptyOutDir: false`), switched
+    on by `sierra.config.js` `mcp: true`. The Dockerfile template gains
+    `COPY web/dist/mcp` and `.dockerignore` an exception for it; the plugin
+    reads `../web/dist/mcp` and keeps the `x-fjs-build` key, because web and
+    API release separately (deploy steps 03 and 08) and can be two commits.
+    Every SPA build of an opted-in app grows by N library builds.
+  - **C** — no files in the image: the SPA release serves
+    `/mcp/<Model>.html` and the plugin's `resources/read` fetches it from the
+    web origin and relays the bytes. The API must then be told the web origin,
+    a tool answer gains a network hop, and a down SPA host empties the agent's
+    screen.
+  - **Recommend A** — the nine: *origin* — the path is written once, in fli's
+    layout, and read by `--out` and `ui.root`; *concept* — zero nouns, `mcp`
+    already names the battery and `fli mcp:*` follows `fli outbox:*` and
+    `fli notifications:*`, the battery namespaces that exist; *complexity* —
+    N builds is the widget loop's cost and the problem's (a host cannot load a
+    shared chunk), A adds one required flag; *predictability* — output under
+    the shipping surface's `dist/` as desktop does, a plugin told a `root` as
+    `static` is, a battery namespace as outbox has; *derived* — the image
+    carries the views through the `COPY api` it already has, nothing restated;
+    *owner* — fli owns the layout, Sierra the build, the plugin the serving,
+    and the Dockerfile template is untouched; *boundary* — `sierra mcp` takes
+    one absolute `--out`, `mcpPlugin` one absolute `ui.root`, both refused
+    when relative; *failure* — a declared directory missing at boot refuses
+    loudly, because the mistake it hides is the whole surface gone in
+    production, and a model with no file stays silent, because text is not
+    wrong; *silence* — what must stay true is that the image serves the views
+    its commit built, and what fails is `example`'s `verify:mcp` reading one
+    view through `resources/read` after `fli mcp:build` — until that drive
+    lands the answer is `none`. B fails *derived* (a Dockerfile exception
+    restating the layout) and *silence* (two commits, one key, a stale view
+    nothing reports). C fails *boundary* (the API learns the web origin).
+    *Batteries vs. smallness* (§ IV): `fli mcp:*`, `api/dist/mcp/` and
+    `ui.root` are the battery's and go with it. *Familiarity vs. precision*:
+    `ui` is taken from the spec because it fits whole; `views` is refused
+    because it half-fits and collides. Tier: Register — the ruling closes 0.2,
+    names 2.4 and amends 1.5.
 - **Sign-in inside the iframe.** The host's standing is whatever the MCP
   session resolved. Whether a resource may ask the host to elevate (OAuth back
   to the app) is a protocol question with no stable answer yet.
@@ -227,13 +293,16 @@ resource's `_meta.ui` carries `csp` (`connectDomains`, `resourceDomains`,
 Goal: every judgment call below has an owner's answer before a line is written.
 Done when: each step cites the ruling or the probe's result.
 
-- [ ] 0.1 `FJS-D38`'s *nothing is scheduled before alpha* — ask whether a markup
+- [x] 0.1 `FJS-D38`'s *nothing is scheduled before alpha* — ask whether a markup
   target plus a relay adapter is covered, the exemption `FJS-D689` gave mobile.
-  Options and the recommendation are in § *Open questions*; `fli decisions`
-  lists it. Closed by the owner's pick, not by this plan.
-- [ ] 0.2 Where the built views live and what the plugin option is called
-  (`mcpPlugin({ views })` is the placeholder spelling). An option, so
-  `decision-rules`; the same ruling names the Sierra command (2.4).
+  Settled 2026-10-13 by `FJS-D38` itself, option A in § *Open questions*: the
+  line defers a compiler backend, and a markup wrapper over the DOM backend is
+  not one. No new ruling; the plan runs from 0.2.
+- [ ] 0.2 Where the built views live and what the plugin option is called.
+  An option, so `decision-rules`; the same ruling names the Sierra command
+  (2.4) and amends 1.5. Asked in § *Open questions* (*Where the built views
+  live*), options A–C, recommend A: `api/dist/mcp/`, `sierra mcp --out`,
+  `fli mcp:build`, `mcpPlugin({ ui: { root } })`.
 - [ ] 0.3 `toolName` — `<service>_<method>`, owned by `projection.ts` — must be
   ONE spelling on both sides of the iframe. Move to `@frontierjs/toolbelt`
   (a pure function, `FJS-D26`); `@frontierjs/mcp` and Sierra both import it.

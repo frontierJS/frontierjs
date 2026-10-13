@@ -156,7 +156,7 @@ describe('broadcasting is opt-in', () => {
     const h = harness()
     const seen: unknown[] = []
     const s = svc({
-      channel: (rows: unknown, c: ServiceContext) => { seen.push([rows, c.service]); return { name: 'scoped' } },
+      channel: (rows: unknown, c: ServiceContext | null) => { seen.push([rows, c?.service]); return { name: 'scoped' } },
     })
     await callService(s, ctx(h, 'create'), undefined, h.events)
 

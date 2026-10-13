@@ -732,6 +732,10 @@ no parent is built. `verifyGateLadder`'s create row reads the same set. A compos
 references: [id, teamId])` — fills every column of its key from the one parent, and
 a single-column relation over one of those columns (`team` beside `project`) is not
 wired separately, because it would point the column at a second, unrelated row.
+Two composites sharing a column — `day` over `[scheduleId, dayId]` and `location`
+over `[scheduleId, locationId]` — are both wired, and the second parent is built
+under the `scheduleId` the first one fixed. A key column passed to `createOne()`
+fixes it the same way, and a relation whose every column is passed builds no parent.
 
 ```js
 import { createTestEnv } from '@frontierjs/litestone/testing'

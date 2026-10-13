@@ -97,6 +97,7 @@ Detail: `references/jobs-and-the-clock.md`
 - **A background job runs as whoever asked for it, and a job nobody asked for runs as the app.**
 - **A job attempt has no bound unless one is declared, and `oldestRunningMs` is how you see the ones that do not.**
 - **Caravan's `unique` is a lock on work IN FLIGHT, not an idempotency key.**
+- **A restored database's outbox sends nothing it already held until an operator says so** (`FJS-D665`).
 - **A job in `jobsDir` is named by its file and declares its own schedule.**
 - **A cache value is JSON, and what JSON would LOSE is refused at `set()`.**
 - **The docs page is hand-written HTML with two caller-supplied values in it.**

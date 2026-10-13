@@ -226,6 +226,34 @@ describe('withParents() builds what the schema insists on', () => {
     expect(project.teamId).toBe(d.teamId)
   })
 
+  // FJS-2783: the first composite claimed scheduleId and the second was skipped,
+  // so locationId held a placeholder that names no Location.
+  test('two composite relations sharing a column build the second parent under the first one’s value', async () => {
+    const { factories, db } = await makeTestClient(`
+      model Schedule { id String @id @default(uuid()); name String; days Day[]; locations Location[]; events Event[] }
+      model Day { id String @id @default(uuid()); scheduleId String; label String
+        schedule Schedule @relation(fields: [scheduleId], references: [id]); events Event[]
+        @@unique([scheduleId, id]) }
+      model Location { id String @id @default(uuid()); scheduleId String; name String
+        schedule Schedule @relation(fields: [scheduleId], references: [id]); events Event[]
+        @@unique([scheduleId, id]) }
+      model Event { id String @id @default(uuid()); scheduleId String; dayId String; locationId String; title String
+        schedule Schedule @relation(fields: [scheduleId], references: [id])
+        day      Day      @relation(fields: [scheduleId, dayId],      references: [scheduleId, id])
+        location Location @relation(fields: [scheduleId, locationId], references: [scheduleId, id])
+        shifts Shift[] }
+      model Shift { id String @id @default(uuid()); eventId String; label String
+        event Event @relation(fields: [eventId], references: [id]) }`, { autoFactories: true })
+    const e = await factories.event.withParents().createOne()
+    const loc = await db.location.findUnique({ where: { id: e.locationId } })
+    expect(loc.scheduleId).toBe(e.scheduleId)
+    expect((await db.day.findUnique({ where: { id: e.dayId } })).scheduleId).toBe(e.scheduleId)
+
+    const shifts = await factories.shift.withParents({ fresh: true }).createMany(2)
+    expect(new Set(shifts.map((s: any) => s.eventId)).size).toBe(2)
+    expect(await db.schedule.count()).toBe(3)
+  })
+
   test('@@arc — exactly one of two nullable keys is wired', async () => {
     const { factories } = await makeTestClient(`
       model Order   { id Int @id @default(autoincrement()); ref String; attachments Attachment[] }

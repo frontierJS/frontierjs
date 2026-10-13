@@ -404,3 +404,86 @@ describe('onEvent sees the same two shapes', () => {
     expect(got[0]!.count).toBe(2)
   })
 })
+
+describe('a count names its tenants under row tenancy (FJS-1741)', () => {
+
+  // A count-only event names no row, so a subscriber routing per tenant --
+  // Junction's function channel on `agency:<id>` -- had nowhere to send it and
+  // sent nothing. The statement's own rows say which tenants it touched.
+  const TENANTED = `
+    claim agencyId
+    tenancy { strategy row  column agencyId  claim agencyId }
+    model Agency { id String @id  legs Leg[]  @@tenant(none) }
+    model Leg {
+      id       String @id
+      agencyId String
+      agency   Agency @relation(fields: [agencyId], references: [id])
+      status   String @default("ringing")
+      notes    Note[]
+    }
+    model Note {
+      id    String @id
+      legId String
+      leg   Leg    @relation(fields: [legId], references: [id])
+      body  String @default("")
+      @@tenant(via: leg)
+    }
+  `
+
+  async function tenanted() {
+    const client = await createClient({ db: ':memory:', schema: TENANTED }) as never as { asSystem(): typeof db } & typeof db
+    const sys = client.asSystem()
+    await sys.agency.createMany({ data: [{ id: 'a1' }, { id: 'a2' }] })
+    await sys.leg.createMany({ data: [
+      { id: 'l1', agencyId: 'a1' }, { id: 'l2', agencyId: 'a1' }, { id: 'l3', agencyId: 'a2' },
+    ] })
+    await settle()
+    const got: Ev[] = []
+    ;(client as never as { $tapEvents(f: (e: Ev) => void): void }).$tapEvents((e) => { got.push(e) })
+    return { sys, got }
+  }
+
+  test('updateMany: each distinct tenant once', async () => {
+    const { sys, got } = await tenanted()
+    await sys.leg.updateMany({ where: {}, data: { status: 'ended' } })
+    await settle()
+    expect(got).toHaveLength(1)
+    expect(got[0]).toMatchObject({ scope: 'collection', count: 3 })
+    expect([...(got[0] as { tenants: string[] }).tenants].sort()).toEqual(['a1', 'a2'])
+  })
+
+  test('deleteMany and createMany carry them too', async () => {
+    const { sys, got } = await tenanted()
+    await sys.leg.deleteMany({ where: { agencyId: 'a2' } })
+    await sys.leg.createMany({ data: [{ id: 'l9', agencyId: 'a1' }] })
+    await settle()
+    expect(got.map(e => (e as { tenants?: string[] }).tenants)).toEqual([['a2'], ['a1']])
+  })
+
+  test('a row names its tenant too', async () => {
+    const { sys, got } = await tenanted()
+    await sys.leg.update({ where: { id: 'l3' }, data: { status: 'answered' } })
+    await settle()
+    expect(got.map(e => (e as { tenants?: string[] }).tenants)).toEqual([['a2']])
+  })
+
+  // A Note carries no agencyId: its tenant is its Leg's, read along the
+  // relation its generated tenancy deny follows -- a row and a count alike,
+  // and a delete too, since the parent outlives the child.
+  test('a model scoped through its parent names the parent\'s tenant', async () => {
+    const { sys, got } = await tenanted()
+    await sys.note.create({ data: { id: 'n1', legId: 'l1' } })
+    await sys.note.createMany({ data: [{ id: 'n2', legId: 'l2' }, { id: 'n3', legId: 'l3' }] })
+    await sys.note.deleteMany({ where: { legId: 'l3' } })
+    await settle()
+    const tenants = got.map(e => [...((e as { tenants?: string[] }).tenants ?? [])].sort())
+    expect(tenants).toEqual([['a1'], ['a1', 'a2'], ['a2']])
+  })
+
+  test('a model that carries no tenant column says nothing', async () => {
+    const { sys, got } = await tenanted()
+    await sys.agency.updateMany({ where: {}, data: {} })
+    await settle()
+    for (const e of got) expect('tenants' in e).toBe(false)
+  })
+})

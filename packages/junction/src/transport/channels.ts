@@ -81,6 +81,16 @@ export type AnnounceFn<T = unknown> = (
   ctx:  ServiceContext
 ) => Channel | Channel[] | null | false
 
+/**
+ * A service's `channel:` function, or the app's `announceDefault`. Also called
+ * for a write outside any service call -- a job, a webhook, `asSystem()` --
+ * with `ctx` null, so the target is read off the row (`FJS-1741`).
+ */
+export type ChannelFn<T = unknown> = (
+  data: T,
+  ctx:  ServiceContext | null
+) => Channel | Channel[] | null | false
+
 export interface WSMessage {
   type:     string
   event?:   string
@@ -718,7 +728,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
 
   // The app-level fallback publisher — see announceDefault() below. Null until
   // an app registers one, which is what keeps broadcasting opt-in.
-  let _default: AnnounceFn | null = null
+  let _default: ChannelFn | null = null
 
   // ── Send primitives ─────────────────────────────────────────────────
   function broadcastToChannel(channelId: string, excludeConnId: string | null, event: string, data: unknown): void {
@@ -952,17 +962,25 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
     // job, a webhook, a cron, a bulk write — put whole rows on every subscribed
     // socket, whatever the schema said (`FJS-672`). Measured: 100 anonymous
     // sockets, `asSystem().create` on a policied model, 100 of 100 received it.
+    //
+    // A target is a channel's NAME (a string `channel:`) or the channel a
+    // function `channel:` answered with (`FJS-1741`). A name nobody has joined
+    // is skipped rather than created.
     async sendGraded(
-      channelId: string,
+      target:    string | Channel | ReadonlyArray<string | Channel>,
       event:     string,
       payload:   unknown,
       src:       GradingSource,
       mode:      'row' | 'gate' = 'row',
     ): Promise<void> {
-      const ch = channels.get(channelId)
-      if (!ch) return
-      const graded = await gradeRecipients([ch], event, payload, src, mode, claimsFor, channelsOf)
-      if (!graded) { ch.send(event, payload); return }
+      const targets: Channel[] = []
+      for (const t of (Array.isArray(target) ? target : [target]) as Array<string | Channel>) {
+        const ch = typeof t === 'string' ? channels.get(t) : t
+        if (ch && !targets.includes(ch)) targets.push(ch)
+      }
+      if (!targets.length) return
+      const graded = await gradeRecipients(targets, event, payload, src, mode, claimsFor, channelsOf)
+      if (!graded) { for (const ch of targets) ch.send(event, payload); return }
       for (const { conns, frame } of graded)
         for (const conn of conns)
           if (conn.socket.readyState === 1) wsSend(conn.socket, frame)
@@ -1137,15 +1155,15 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
     //
     // Returns an unsubscribe, like on() — a test that registers one must be
     // able to take it back.
-    announceDefault<T = unknown>(fn: AnnounceFn<T>): () => void {
-      _default = fn as AnnounceFn
-      return () => { if (_default === (fn as AnnounceFn)) _default = null }
+    announceDefault<T = unknown>(fn: ChannelFn<T>): () => void {
+      _default = fn as ChannelFn
+      return () => { if (_default === (fn as ChannelFn)) _default = null }
     },
 
     // Read by announceToChannels (core/service.ts) for a service that declares
     // no channel:. A getter rather than a field so the manager stays the one
     // owner of when it is null.
-    get defaultAnnouncer(): AnnounceFn | null {
+    get defaultAnnouncer(): ChannelFn | null {
       return _default
     },
 

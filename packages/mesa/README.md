@@ -579,6 +579,7 @@ replaced was out of date in both columns without ever rendering wrong:
 | `parse-diagnostics` | What a parse failure tells the author — the position it happened at, where the still-open construct was OPENED, and the rule an author who wrote valid HTML broke |
 | `reserved-names` | The `$$` prefix an author may not declare — graded against the names the emitter still generates, so a refusal protecting nothing goes red |
 | `snippet-through-slot` | A snippet argument that reaches its render site through another component's slot or `{@render}`, including the `<table>` shape it was found in |
+| `snippet-parent-state` | A snippet the parent passes to a child, whose body reads the parent's state — its own `let` and an imported object — tracking as the parent's own template would, in a copy the child mounts later and in one it rebuilds |
 | `repl` | REPL module graph, example compile + coverage, interactivity |
 
 `test/spec-check.mjs` is separate — a plain `node test/spec-check.mjs` script that

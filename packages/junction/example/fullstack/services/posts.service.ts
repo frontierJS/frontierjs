@@ -25,7 +25,9 @@ export function createPostsService() {
     // Scope this before you ship: every connection in the channel receives
     // every row, and @@allow policies are enforced on READ, not on broadcast.
     // For per-tenant delivery use the function form:
-    //   channel: (rows, ctx) => app.channel(`workspace:${ctx.auth.user.workspaceId}`)
+    //   channel: (row) => app.channel(`workspace:${row.workspaceId}`)
+    // Read the target off the row: a write outside any service call -- a job,
+    // a webhook -- calls it with ctx null.
     channel: 'posts',
 
     // Bulk writes are opt-in — POSTing an array

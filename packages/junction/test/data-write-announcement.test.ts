@@ -301,11 +301,14 @@ describe('the socket half', () => {
     expect('where' in wire[1].data).toBe(false)
   })
 
-  // A function resolver takes (rows, ctx) and an orphan write has no
-  // ServiceContext to give it. The bus still fires; inventing a ctx would hand
-  // the app's own resolver a principal nobody authenticated.
-  test('a function channel: falls back to the bus alone', async () => {
-    const { db, app, seen } = await mkApp({ channel: () => app.channels!.channel('orders') })
+  // FJS-1741. A function resolver is called with the row and `ctx` null:
+  // there is no request, and inventing one would hand the app's resolver a
+  // principal nobody authenticated. One that reads the row needs none.
+  test('a function channel: is called with the row and a null ctx', async () => {
+    const calls: unknown[][] = []
+    const { db, app, seen } = await mkApp({
+      channel: (row: unknown, ctx: unknown) => { calls.push([row, ctx]); return app.channels!.channel('orders') },
+    })
     const frames: string[] = []
     app.channels!.channel('orders').join({
       socket: { readyState: 1, send: (f: string) => { frames.push(f); return 1 } },
@@ -313,10 +316,148 @@ describe('the socket half', () => {
 
     await (db as never as { asSystem(): { order: { create(a: unknown): Promise<unknown> } } })
       .asSystem().order.create({ data: { status: 'from-job' } })
-    await tick()
+    await tick(); await tick()
 
     expect(seen).toEqual(['orders:created#1'])
-    expect(frames).toEqual([])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]![0]).toMatchObject({ id: 1, status: 'from-job' })
+    expect(calls[0]![1]).toBeNull()
+    expect(frames.map(f => JSON.parse(f).event)).toEqual(['orders created'])
+  })
+
+  // A resolver written against a request -- `ctx.auth.user.workspaceId` --
+  // throws on null. The write is not failed by it, the bus still hears it,
+  // and the warning names the fix.
+  test('a resolver that reads ctx throws, and the bus alone hears it', async () => {
+    const { db, app, seen } = await mkApp({
+      channel: ((_row: unknown, ctx: { auth: { user: { w: string } } }) => app.channels!.channel(`w:${ctx.auth.user.w}`)) as never,
+    })
+    const warn = console.warn, said: string[] = []
+    console.warn = (m: string) => { said.push(String(m)) }
+    try {
+      await (db as never as { asSystem(): { order: { create(a: unknown): Promise<unknown> } } })
+        .asSystem().order.create({ data: { status: 'from-job' } })
+      await tick(); await tick()
+    } finally { console.warn = warn }
+
+    expect(seen).toEqual(['orders:created#1'])
+    expect(said.join('\n')).toContain('ctx is null')
+  })
+})
+
+describe('a count reaches a per-tenant function channel (FJS-1741)', () => {
+
+  // A bulk write names no row, so a resolver routing off the row had nothing
+  // to read. Litestone names the tenants the statement touched, and each is
+  // handed over as `{ agencyId }` -- the shape `agency:<row.agencyId>` reads.
+  const TENANTED = `
+    claim agencyId
+    tenancy { strategy row  column agencyId  claim agencyId }
+    model Agency { id String @id  legs Leg[]  @@tenant(none) }
+    model Leg {
+      id       String @id
+      agencyId String
+      agency   Agency @relation(fields: [agencyId], references: [id])
+      status   String @default("ringing")
+    }
+  `
+
+  test('updateMany sends one count to each tenant it touched, and none to the rest', async () => {
+    const db  = await createClient({ db: ':memory:', schema: TENANTED })
+    const app = createApp({ db: db as never })
+    const routed: unknown[] = []
+    app.services.register(createService({
+      name: 'legs', model: 'Leg', db: db as never,
+      channel: ((row: { agencyId?: string }, ctx: unknown) => {
+        routed.push([row, ctx])
+        return row?.agencyId ? app.channels!.channel(`agency:${row.agencyId}`) : null
+      }) as never,
+    }))
+    app.configure(channels(() => {}))
+    await app._startForTest()
+
+    const sys = (db as never as { asSystem(): Record<string, { createMany(a: unknown): Promise<unknown>; updateMany(a: unknown): Promise<unknown> }> }).asSystem()
+    await sys.agency.createMany({ data: [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }] })
+    await sys.leg.createMany({ data: [
+      { id: 'l1', agencyId: 'a1' }, { id: 'l2', agencyId: 'a1' }, { id: 'l3', agencyId: 'a2' },
+    ] })
+    await tick(); await tick()
+
+    const heard: Record<string, string[]> = { a1: [], a2: [], a3: [] }
+    for (const a of Object.keys(heard)) app.channels!.channel(`agency:${a}`).join({
+      socket: { readyState: 1, send: (f: string) => { heard[a]!.push(f); return 1 } },
+    } as never)
+    routed.length = 0
+
+    await sys.leg.updateMany({ where: { agencyId: 'a1' }, data: { status: 'ended' } })
+    await tick(); await tick()
+
+    expect(routed).toEqual([[{ agencyId: 'a1' }, null]])
+    expect(heard.a1.map(f => JSON.parse(f)).map(w => [w.event, w.data])).toEqual([
+      ['legs changed', { model: 'Leg', operation: 'updateMany', count: 2 }],
+    ])
+    expect(heard.a2).toEqual([])
+    expect(heard.a3).toEqual([])
+  })
+
+  // A Note is scoped through its Leg and carries no agencyId. The resolver is
+  // handed the row with the parent's tenant stamped on; the frame carries the
+  // row as written. And `legs` -- plural, no `model:` -- is regraded by a Note
+  // write its read policy reaches: Litestone's accessor index is exact, and
+  // asking it `legs` alone reached nothing.
+  test('a child scoped through its parent routes by the parent\'s tenant, and regrades a plural service', async () => {
+    const VIA = `
+      claim agencyId
+      tenancy { strategy row  column agencyId  claim agencyId }
+      model Agency { id String @id  legs Leg[]  @@tenant(none) }
+      model Leg {
+        id       String @id
+        agencyId String
+        agency   Agency @relation(fields: [agencyId], references: [id])
+        notes    Note[]
+        @@allow('read', notes.some(body != 'hidden'))
+      }
+      model Note {
+        id    String @id
+        legId String
+        leg   Leg    @relation(fields: [legId], references: [id])
+        body  String @default("")
+        @@tenant(via: leg)
+      }
+    `
+    const db  = await createClient({ db: ':memory:', schema: VIA })
+    const app = createApp({ db: db as never })
+    const byRow = (row: { agencyId?: string }) => row?.agencyId ? app.channels!.channel(`agency:${row.agencyId}`) : null
+    const routed: unknown[] = []
+    app.services.register(createService({
+      name: 'notes', model: 'Note', db: db as never,
+      channel: ((row: { agencyId?: string }) => { routed.push(row); return byRow(row) }) as never,
+    }))
+    app.services.register(createService({ name: 'legs', db: db as never, channel: byRow as never }))
+    // A row frame is graded as its recipient, and the agency claim is the
+    // channel's to answer (FJS-D191): a member of agency:a1 holds a1.
+    app.configure(channels(() => {}, { claims: (name: string) => ({ agencyId: name.slice('agency:'.length) }) }))
+    await app._startForTest()
+
+    const sys = (db as never as { asSystem(): Record<string, { create(a: unknown): Promise<unknown>; createMany(a: unknown): Promise<unknown> }> }).asSystem()
+    await sys.agency.createMany({ data: [{ id: 'a1' }, { id: 'a2' }] })
+    await sys.leg.createMany({ data: [{ id: 'l1', agencyId: 'a1' }, { id: 'l2', agencyId: 'a2' }] })
+    await tick(); await tick()
+
+    const heard: Record<string, string[]> = { a1: [], a2: [] }
+    for (const a of Object.keys(heard)) app.channels!.channel(`agency:${a}`).join({
+      socket: { readyState: 1, send: (f: string) => { heard[a]!.push(f); return 1 } },
+    } as never)
+    routed.length = 0
+
+    await sys.note.create({ data: { id: 'n1', legId: 'l1' } })
+    await tick(); await tick()
+
+    expect(routed).toEqual([expect.objectContaining({ id: 'n1', legId: 'l1', agencyId: 'a1' })])
+    const wire = heard.a1.map(f => JSON.parse(f))
+    expect(wire.map(w => w.event).sort()).toEqual(['legs changed', 'notes created'])
+    expect('agencyId' in wire.find(w => w.event === 'notes created').data).toBe(false)
+    expect(heard.a2).toEqual([])
   })
 })
 

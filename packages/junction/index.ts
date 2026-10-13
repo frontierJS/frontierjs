@@ -133,7 +133,7 @@ export type { LitestoneServiceOptions, ParsedQuery,
 
 // ─── Channels ─────────────────────────────────────────────────────────────
 export { createChannelManager, Channel, channels, announce } from './src/transport/channels.ts'
-export type { Connection, AnnounceFn, WSMessage, PresenceMember, ChannelClaimsFn }                         from './src/transport/channels.ts'
+export type { Connection, AnnounceFn, ChannelFn, WSMessage, PresenceMember, ChannelClaimsFn }                         from './src/transport/channels.ts'
 
 // ─── Middleware plugins ───────────────────────────────────────────────────
 export { cors, helmet, rateLimit, requestLogger, bodyLimit, correlationId, csrf, combineOrigins } from './src/transport/middleware.ts'

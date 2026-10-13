@@ -27,7 +27,7 @@
 //   Cycle-safe: visited set prevents infinite recursion.
 
 import { AccessDeniedError }   from './plugin.js'
-import { modelToTableName, sqlType, columnMapFor } from './ddl.js'
+import { modelToTableName, sqlType, columnMapFor, isStoredField } from './ddl.js'
 import { sqlFragment, inList } from './query.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
@@ -246,6 +246,17 @@ export function authClaimsUsed(schema) {
 // decidable from the schema is therefore decided here, where the answer is a
 // refusal naming the model and the expression, and not on a query nobody has
 // run yet.
+const VIRTUAL_KINDS = ['from', 'computed', 'derived', 'transient', 'edge']
+
+// What a field with no column is, for the refusal — null when it has one. A
+// view's fields carry no attributes, and every one of them is a column.
+function noColumn(f) {
+  if (!f.attributes) return null
+  if (isStoredField(f)) return null
+  const kind = VIRTUAL_KINDS.find(k => f.attributes.some(a => a.kind === k))
+  return kind ? '@' + kind : 'not a stored column'
+}
+
 function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = null, schema = null) {
   const known = (name) => {
     const rel = relationMap?.[model.name]?.[name]
@@ -280,6 +291,16 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
         `${model.name}: '${n.name}' is not a field on this model — in ${what} ` +
         `'${policyExprToString(expr)}'. Fields: ${cols.join(', ')}`)
     }
+    // The same string-constant fallback for a field with no column: a SELECT
+    // resolves `"adults"` to its alias and a COUNT or an UPDATE does not, so
+    // `@@allow('update', adults > 0)` admitted every row to updateMany.
+    if (n.type === 'field' && !relationMap?.[model.name]?.[n.name]) {
+      const f = model.fields.find(x => x.name === n.name)
+      const none = f && noColumn(f)
+      if (none) throw new Error(
+        `${model.name}: '${n.name}' is ${none}, so there is no column to compare — ` +
+        `in ${what} '${policyExprToString(expr)}'`)
+    }
     // One hop across a relation (`FJS-D221`). Everything refused here is a case
     // whose alternative is a SILENT wrong answer rather than an error, which is
     // the whole reason a policy gets checked at startup: a bad predicate does
@@ -313,9 +334,8 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
           say(`'${n.name}' is not a field on ${rel.targetModel} — reached as '${n.rel}.${n.name}'. ` +
               `Fields: ${cols.join(', ')}`)
         }
-        for (const kind of ['computed', 'transient'])
-          if (f.attributes?.some(a => a.kind === kind))
-            say(`'${n.rel}.${n.name}' is @${kind} on ${rel.targetModel}, so there is no column to correlate on`)
+        const none = noColumn(f)
+        if (none) say(`'${n.rel}.${n.name}' is ${none} on ${rel.targetModel}, so there is no column to correlate on`)
         // A crossed encoded column would compare ciphertext against the
         // plaintext operand and match nothing — an empty screen with a 200,
         // which is this feature's own failure mode arriving through the fix
@@ -498,6 +518,16 @@ export function compileDerived(model, fieldName, node) {
           bad(`'${n.name}' is @derived — one derived field cannot read another yet`)
         if (f.attributes?.some(a => a.kind === 'transient'))
           bad(`'${n.name}' is @transient — the API accepts it and nothing stores it, so there is no column here`)
+        // The SELECT emits this as a bare name, which SQLite cannot resolve
+        // against a sibling alias and reads as a string literal, while a WHERE
+        // resolves it — so the row and the filter disagree. And an aggregate
+        // is recomputed under the caller's policy after the read, which a
+        // value compiled into SQL would not be.
+        if (f.attributes?.some(a => a.kind === 'from'))
+          bad(`'${n.name}' is @from — a read across a relation, with no column on this row. ` +
+              `Compare it in a where (where: { ${n.name}: { lt: 1 } }), or use @from(…, exists: true) for a Boolean`)
+        if (noColumn(f))
+          bad(`'${n.name}' is not a stored column — relation and @edge fields have none`)
         return `"${n.name}"`
       }
       case 'literal':

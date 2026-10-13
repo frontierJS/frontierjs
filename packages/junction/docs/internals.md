@@ -168,6 +168,15 @@ and not here. Read the section for a path before changing code under it.
   declared opt-out (from `announceDefault` too), and a function `(data, ctx) =>
   app.channel(…)` picks the target per write — the shape for a workspace or a
   room, where the name is on the row.
+  **A function is called for a background write too, with `ctx` null**
+  (`FJS-1741`) — so it reads the target off the ROW and falls back to `ctx` only
+  when there is one; one that throws on null warns once and the write reaches
+  the bus alone. Under row tenancy every Litestone event carries `tenants`: a
+  count is routed by calling the function once per tenant with
+  `{ [column]: id }`, and a row of a `@@tenant(via:)` model, which has no column,
+  is handed over with its parent's tenant stamped on (the frame carries the row
+  as written). A count on a model with no tenant still reaches no function
+  channel, and says so once.
 - **`changed` is the announcement for a write that cannot name its row.**
   `announceDataWrites` used to drop every event whose `result` was null, which is
   a bulk statement answering `{count}` and a `select: false` write, both — so a

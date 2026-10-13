@@ -450,15 +450,21 @@ export function sessionScope(app: BasecampApp, opts: { except?: string[] } = {})
 // name, which no per-service hook list can do for itself. Declaring both is
 // refused at construction rather than broadcasting twice.
 
-export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction').AnnounceFn {
-  return (_data, ctx) => {
-    const wsId    = ctx.locals.workspaceId as string | undefined
+//
+// The ROW's workspace first: a write outside any service call -- a job, an
+// outpost report, `asSystem()` -- calls this with ctx null, and reading only
+// the request's workspace sent it nowhere (`FJS-1741`).
+export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction').ChannelFn {
+  return (data, ctx) => {
+    const row     = (Array.isArray(data) ? data[0] : data) as { workspaceId?: unknown } | null | undefined
+    const wsId    = (typeof row?.workspaceId === 'string' ? row.workspaceId : undefined)
+      ?? ctx?.locals.workspaceId as string | undefined
     if (!wsId) return null
-    // Typed as what an AnnounceFn may answer, rather than `unknown`: the manager
+    // Typed as what a ChannelFn may answer, rather than `unknown`: the manager
     // is reached through a cast because `app.channels` is the plugin's, and a
     // cast that lands on `unknown` makes the return type unassignable to the
     // very signature this function declares.
-    type Channel  = ReturnType<import('@frontierjs/junction').AnnounceFn> & object
+    type Channel  = ReturnType<import('@frontierjs/junction').ChannelFn> & object
     const manager = channelManager(app) as { channel: (name: string) => Channel } | undefined
     if (!manager?.channel) return null
     return manager.channel(workspaceChannelName(wsId))

@@ -156,6 +156,10 @@ export interface LitestoneWriteEvent {
   count?:  number
   /** The caller's filter, on a collection event. In-process only — see below. */
   where?:  unknown
+  /** Under row tenancy: each tenant the write's rows belong to, read along the
+   *  parent for a model scoped through one. What a function channel routes a
+   *  count by, and a row with no tenant column of its own (`FJS-1741`). */
+  tenants?: unknown[]
   /** `transition` only: the move's own name (`pay`), which is what it
    *  announces under — the same name the service call would have used. */
   transition?: string
@@ -4847,43 +4851,95 @@ export function announceDataWrites(
   // the service's declared `model:` first and its name only as a fallback, so a
   // service whose name maps to no model still grades rather than refusing
   // everybody (`FJS-700`).
-  const sendToChannel = (name: string, event: string, payload: unknown, mode: 'row' | 'gate' = 'row'): void => {
+  //
+  // A function `channel:` is called here too, with the row and `ctx` null:
+  // there is no request, and a function that reads the target off the row --
+  // `agency:<row.agencyId>` -- needs none. It used to be skipped, so under
+  // row tenancy, where `FJS-D191` makes a per-tenant function channel the only
+  // shape that grades, no job, webhook or `asSystem()` write on a tenanted
+  // model reached a socket (`FJS-1741`). A write with no row is routed by the
+  // tenants Litestone says it touched, each handed over as `{ [column]: id }`.
+  type Target = string | { name?: string; send?: (event: string, data: unknown) => void }
+  type ChannelFn = (data: unknown, ctx: null) => Target | Target[] | null | false | undefined
+  const tenantColumn = (): string | null => {
+    try { return (db as { $tenancy?: { strategy?: string; column?: string } | null }).$tenancy?.column ?? null }
+    catch { return null }
+  }
+  const warnOnce = (name: string, message: string): void => {
+    if (warned.has(name)) return
+    warned.add(name)
+    console.warn(`[Junction] '${name}' ${message}`)
+  }
+  const sendToChannel = (
+    name: string, event: string, payload: unknown,
+    mode: 'row' | 'gate' = 'row', tenants: readonly unknown[] | null = null,
+  ): void => {
     const svc = app.services.get(name) as { channel?: unknown; model?: string | null } | undefined
-    const decl = svc?.channel
-    if (decl === undefined || decl === false) return
-    if (typeof decl !== 'string') {
-      if (!warned.has(name)) {
-        warned.add(name)
-        console.warn(
-          `[Junction] '${name}' declares a function channel: and a write reached it outside any ` +
-          `service call. The resolver takes (rows, ctx) and there is no request context here, so ` +
-          `this write went to the event bus but not to any socket. Declare a channel NAME to have ` +
-          `background writes broadcast, or route the write through the service.`
-        )
-      }
-      return
-    }
     const manager = app.channels as {
       channel?:    (n: string) => { send?: (event: string, data: unknown) => void }
       sendGraded?: (
-        channelId: string, event: string, payload: unknown,
+        targets: Target | Target[], event: string, payload: unknown,
         src: { db: unknown; accessor: string; label?: string }, mode?: 'row' | 'gate'
       ) => Promise<void>
+      defaultAnnouncer?: unknown
     } | undefined
+    // Resolved as `announceToChannels` resolves it: a declaration, else the
+    // app's default, and `false` is the opt-out from both.
+    const decl = svc?.channel === undefined ? manager?.defaultAnnouncer ?? undefined : svc.channel
+    if (decl === undefined || decl === null || decl === false) return
+
+    let targets: Target[]
+    if (typeof decl === 'string') targets = [decl]
+    else if (typeof decl === 'function') {
+      // A row of a model scoped through its parent carries no tenant column;
+      // the function is handed it with the parent's tenant stamped on, and
+      // the frame still carries the row as written.
+      const column = tenantColumn()
+      const row    = payload as Record<string, unknown> | null
+      const rows   = mode === 'row'
+        ? (column && row && typeof row === 'object' && !(column in row) && tenants?.length
+          ? tenants.map(id => ({ ...row, [column]: id }))
+          : [payload])
+        : column ? (tenants ?? []).map(id => ({ [column]: id })) : []
+      if (!rows.length) {
+        warnOnce(name, 'declares a function channel: and a write with no row and no tenant reached it ' +
+          'outside any service call, so it went to the event bus but not to any socket. A bulk write on ' +
+          'a model that carries the tenancy column names its tenants; one scoped through its parent does not.')
+        return
+      }
+      const found = new Set<Target>()
+      for (const row of rows) {
+        let got: ReturnType<ChannelFn>
+        try { got = (decl as ChannelFn)(row, null) }
+        catch (err) {
+          warnOnce(name, `has a channel: function that threw for a write outside any service call, where ` +
+            `ctx is null: ${(err as Error)?.message ?? err}. Read the channel off the row, the way ` +
+            `agency:<row.agencyId> does, and fall back to ctx only when there is one.`)
+          return
+        }
+        for (const t of Array.isArray(got) ? got : [got]) if (t) found.add(t)
+      }
+      targets = [...found]
+      if (!targets.length) return
+    }
+    else return
+
     if (typeof manager?.sendGraded === 'function') {
       // Duck-typed like every other reach into the manager here, so a channel
       // implementation predating grading still receives the announcement.
-      manager.sendGraded(decl, `${name} ${event}`, payload, {
+      manager.sendGraded(targets, `${name} ${event}`, payload, {
         db:       db,
         accessor: serviceAccessor({ name, model: svc?.model }) ?? '',
         label:    name,
       }, mode).catch(() => { /* a dead socket is not a background job's problem */ })
       return
     }
-    const ch = manager?.channel?.(decl)
-    if (!ch?.send) return
-    try { ch.send(`${name} ${event}`, payload) }
-    catch { /* a dead socket is not a background job's problem */ }
+    for (const t of targets) {
+      const ch = typeof t === 'string' ? manager?.channel?.(t) : t
+      if (!ch?.send) continue
+      try { ch.send(`${name} ${event}`, payload) }
+      catch { /* a dead socket is not a background job's problem */ }
+    }
   }
 
   // Covered only for a ROW the call announces. A write with no row -- a
@@ -4924,10 +4980,17 @@ export function announceDataWrites(
         const svc      = app.services.get(name) as { model?: string | null } | undefined
         const accessor = serviceAccessor({ name, model: svc?.model })
         if (!accessor) continue
+        // Every spelling, as `servicesFor` does: Litestone's accessor index is
+        // exact, and a service named `pages` with no `model:` asked `pages` and
+        // reached nothing, so no Share or PageAccess write ever regraded it.
         let reach: string[] = []
         try {
           const fn = (db as { $readReach?: (a: string) => string[] }).$readReach
-          if (typeof fn === 'function') reach = fn(accessor)
+          if (typeof fn === 'function')
+            for (const candidate of accessorCandidates(accessor)) {
+              reach = fn(candidate)
+              if (reach.length) break
+            }
         } catch { /* a client predating $readReach, or a name it does not know */ }
         const spellings = new Set(accessorCandidates(accessor).map(c => c.toLowerCase()))
         for (const reached of reach) {
@@ -4945,28 +5008,42 @@ export function announceDataWrites(
     return [...hit].filter(name => !own.has(name))
   }
 
-  let pending: Set<string> | null = null
-  const regrade = (model: string): void => {
-    const names = dependentsOf(model)
+  // The tenants a write touched: its row's column, or the list a count carries.
+  // A dependent is in the written row's tenant, so its regrade is routed there.
+  const tenantsOf = (e: LitestoneWriteEvent): unknown[] => {
+    if (e.tenants) return e.tenants
+    const column = tenantColumn()
+    const row = (e.event === 'transition' ? e.record : e.result) as Record<string, unknown> | null | undefined
+    return column && row && row[column] != null ? [row[column]] : []
+  }
+
+  let pending: Map<string, Set<unknown>> | null = null
+  const regrade = (e: LitestoneWriteEvent): void => {
+    const names = dependentsOf(e.model)
     if (!names.length) return
     if (!pending) {
-      pending = new Set()
+      pending = new Map()
       setImmediate(() => {
         const due = pending!
         pending = null
-        for (const name of due) {
+        for (const [name, tenants] of due) {
           const detail = { model: modelOf.get(name) ?? name, operation: 'regrade', count: null }
           app.events?.emit(`${name}:changed`, detail)
-          sendToChannel(name, 'changed', detail, 'gate')
+          sendToChannel(name, 'changed', detail, 'gate', [...tenants])
         }
       })
     }
-    for (const name of names) pending.add(name)
+    const tenants = tenantsOf(e)
+    for (const name of names) {
+      let set = pending.get(name)
+      if (!set) pending.set(name, set = new Set())
+      for (const t of tenants) set.add(t)
+    }
   }
 
   return tap((e) => {
     if (!e.model) return
-    if (e.event === 'transition' || PAST[e.event as string]) regrade(e.model)
+    if (e.event === 'transition' || PAST[e.event as string]) regrade(e)
 
     // ── A state move ──────────────────────────────────────────────────────
     // A transition is a row change and announces like one. It arrives under
@@ -4988,7 +5065,7 @@ export function announceDataWrites(
         const rowless = record === null || record === undefined
         const announce = () => {
           app.events?.emit(`${name}:${e.transition}`, record)
-          sendToChannel(name, e.transition!, record)
+          sendToChannel(name, e.transition!, record, 'row', e.tenants ?? null)
         }
         if (!rowless && coveredByCall(name, record, announce)) continue
         // No row to hand over — the same position a `select: false` write is in
@@ -4996,7 +5073,7 @@ export function announceDataWrites(
         if (rowless) {
           const detail = { model: e.model, operation: e.transition, count: e.count ?? 1 }
           app.events?.emit(`${name}:changed`, detail)
-          sendToChannel(name, 'changed', detail, 'gate')
+          sendToChannel(name, 'changed', detail, 'gate', e.tenants ?? null)
           continue
         }
         announce()
@@ -5032,7 +5109,7 @@ export function announceDataWrites(
     for (const name of servicesFor(e.model)) {
       const announce = () => {
         app.events?.emit(`${name}:${past}`, row)
-        sendToChannel(name, past, row)
+        sendToChannel(name, past, row, 'row', e.tenants ?? null)
       }
       if (row !== null && row !== undefined && coveredByCall(name, row, announce)) continue
 
@@ -5052,7 +5129,7 @@ export function announceDataWrites(
         // `where` stops at the bus, which is in-process. A channel goes to every
         // subscribed browser and a filter is made of the caller's own values —
         // `deleteMany({ where: { resetToken } })` would put one on the wire.
-        sendToChannel(name, 'changed', detail, 'gate')
+        sendToChannel(name, 'changed', detail, 'gate', e.tenants ?? null)
         continue
       }
 

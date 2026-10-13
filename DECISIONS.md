@@ -3746,6 +3746,24 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d950"></a>2026-10-13 · `FJS-D950` — Is a ratio between two counts a refusal, or a state the data may be in — A flag the row carries: `underRatio Boolean @derived(adults * eventRatioAttendees < eventEnrolled * eventRatioAdults)` on Shift, the event's three values brought on by `FJS-D911`'s to-one `@from`. Every read says it, `where: { underRatio: true }` lists the rooms to fix, and SRC's badge is that field. No new word, once the three rows above close; it refuses nothing, and *answering for the room on the day* (a `@@commitment` at the shift's start, or a report) is a later question. **Owes its artefact, because B is wrong in silence exactly as `FJS-2778` measured** (a `@derived` over a `@from` reads one answer and filters another): `ratio.test.ts` flips to read `underRatio` off every shift and through `where: { underRatio: true }`, and asserts both agree with SRC's `ratioInfo`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (refuse on both writes: `@minItems` takes an expression over the parent's columns (`assignments Assignment[] @minItems(ceil(event.enrolled * event.ratioAdults / event.ratioAttendees))`), graded at the outermost commit as `FJS-D347` grades a literal, and an Enrollment write re-grades every Shift of its Event. The price: SRC's sample cannot be loaded, a roster cannot be built one write at a time, and D347's *only parents a write touched* grows a second hop), **C** (a validation warn: the write lands and the result carries a warning. Litestone has no warning channel on a write result, so this is a new mechanism, and it reaches whoever made the write rather than whoever answers for the room, and is gone by the next read).
+
+The paper's recommendation, taken as written: strictness follows what a mistake destroys (`PHILOSOPHY.md` § IV): a plan under ratio harms nobody until the day, and refusing it at plan time makes a plan impossible to write — SRC's own sample is the evidence. B adds no word, closes three filed gaps that other apps already want (ELA's totals, linear's state category), and puts the rule where every surface reads it. If the owner wants a refusal, it belongs at the moment the shift starts, which is a commitment, not a commit.
+
+### <a id="fjs-d571"></a>2026-10-13 · `FJS-D571` — Does a CSV extract neutralize a text cell that starts with `= + - @`, tab or CR, at the cost of what a re-import reads back — Always guard, one owner: a `csvCell` in `@frontierjs/toolbelt/cells` beside `parseCell`, which prefixes `'` to a TEXT cell whose first character is `= + - @`, tab or CR unless the whole string reads as a number by `parseCell`'s own number rule, not a second regex (`-12.50` is left alone). `export.js`, Studio's dump and Transit call it and their copies are deleted, and the export manifest records that the guard ran. CSV becomes the format a person opens, and `ndjson` stays the round-trip format, already exact.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (guard on request: `@@export(csv, guard: formulas)` or a run option, default off. It keeps CSV byte-exact by default, so the unsafe extract is the one nobody asked for, and it adds an option), **C** (no guard: document that a CSV extract is data, not a spreadsheet, and point a spreadsheet reader at a sanitizing import. No code changes, and every app that hands staff the file must remember).
+
+The paper's recommendation, taken as written: a CSV extract is opened in a spreadsheet far more often than it is parsed back, a reader that needs fidelity already has `ndjson`, and one writer in toolbelt removes three copies of the rule instead of adding a fourth. *Ergonomics vs. strictness*: an evaluated formula is destructive and a stray `'` is cosmetic, so the guard is the default. *Paved road vs. the workaround*: Transit's copy measures the road, and B is the flag that widens the shoulder. Artefact: the red test above plus a toolbelt test over `= + - @`, tab, CR and numeric text; a fourth hand-rolled writer stays silent (`none`). Tier: Register (a `DECISIONS.md` ruling).
+
+### <a id="fjs-d588"></a>2026-10-13 · `FJS-D588` — Does a copy derived from other rows (an inherited tree grant) get a write hook that hears every write with its rows inside the transaction, does the framework own the tree grant so no copy exists, or does the writing service keep the copy — Complete the hooks: `createMany`/`updateMany` fire `onAfterWrite` once per row (rows by `RETURNING *` only when a plugin listens, the `deleteMany` prefetch precedent), and nothing more yet: the in-transaction timing is not built, and it and B (the framework owns the tree grant) are decided after notion Q1's B is measured.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the framework owns the tree grant (notion PLAN Q1 spelling B, a `@@tree` closure table it maintains, or C, a recursive policy, or D, a materialized path). No copy exists, so nothing goes stale. B–D are not measured yet; Q1 parked them), **C** (neither: the copy is a convention the writing service keeps (what the stressor's passing run did), documented in the litestone hazards. No code, and every writer that forgets it fails open silently.).
+
+The paper's recommendation, A's first half: a bulk write that no hook hears is a predictability defect whatever Q1 answers (its siblings are heard), and fixing it coins no noun. The in-transaction timing is a new concept that B would make unnecessary here, so it waits for B's numbers. `FJS-D581` ruled A (the proxy), so the option's `$guardWrites` clause no longer applies.
+
 ### <a id="fjs-d665"></a>2026-10-13 · `FJS-D665` — **FJS-D665 — After a restore, may the outbox relay send a row the backup recorded — Litestone stamps a restored database with the time its backup was taken, a generic fact on the client. The relay holds every undelivered row created before that time until an operator releases or drops it, and B's `--dry-run` list stays as the read surface. Restoring after a disaster, with the live files gone, is safe under this option.
 
 Asked in [`IDEAS/time-travel.md`](IDEAS/time-travel.md) § Open questions. **A** was picked over **B** (the paper's B and nothing more: the list is printed, the relay resends, and handlers stay idempotent (the `deliverOutbox` contract already says so)), **C** (restore carries the live database's `deliveredAt` marks forward into the restored copy, through a schema attribute that names the table to keep at present. It has nothing to carry when the live file is the thing that was lost).
@@ -7205,6 +7223,24 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d602"></a>2026-10-13 · `FJS-D602` — When `outpost.service` is sandboxed, does the sandbox cover `/exec`'s recipe scripts too, or do they run outside it — Sandbox the unit as the row says, and have `exec` leave it: the command is run as `systemd-run --pipe --wait --collect -- sh -c …`, a transient unit with the manager's own (unsandboxed) environment. A flaw in `/static/publish` or any other route is bounded by the sandbox; `/exec` is root over the box by design and the screen's wording stays true. Adds one call shape to `docker.js`'s runner (the one place a command runs), and the sandbox is a seatbelt rather than a wall for anyone who can already reach `/exec`, since that route is root. Never run on a machine (`FJS-257`): `systemd-run` from inside the namespace is the thing to prove first.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (sandbox the whole unit, recipes included, and say so on the recipe screen: a recipe can write only the Outpost's own directories and run docker. The strongest unit by `systemd-analyze security`, but host-administration recipes (patching, `systemctl`) stop working, and `server-posture.md`'s patching phase would need its own door anyway), **C** (a weaker unit that keeps every recipe working: `NoNewPrivileges`, `PrivateTmp`, `ProtectKernelModules`, `ProtectControlGroups`, `RestrictSUIDSGID`, and no `ProtectSystem`. Nothing written by a route bug is confined, which is the row's named risk, so `outpost.sandbox` would grade a unit that still writes anywhere).
+
+The paper's recommendation, taken as written: it is the only one that narrows the routes a flaw would live in without taking away the thing `/exec` is for; B trades a feature for a number, and C leaves the row's risk standing.
+
+### <a id="fjs-d679"></a>2026-10-13 · `FJS-D679` — Where does an app's backup live and what takes it: an Outpost route that returns the archive to Basecamp, an Outpost route that keeps it on the machine, or a command run in the container — Outpost route `POST /backup` runs the capture in the container (`docker exec … litestone backup` for a sqlite app, a `tar` of the named volume otherwise) and stays on the machine. Basecamp records a row per app (`Backup` gains an `appId` and loses `@@tenant(none)`, or a sibling `AppBackup` is coined) with `location` a path on that machine. Smallest wire: no bytes cross the command port. A lost machine takes its backups with it, which is the `local` destination's own comment ("a backup of a disk onto the same disk").
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the same capture, but Outpost streams or uploads the archive to the `s3` destination `BackupDestination` already names, and returns only the key and size. This is the only form that survives the machine, but it needs an S3 credential on every machine, which `fleet-ingress.md` D6 refused for a DNS token on the same reasoning), **C** (no new route: Basecamp calls the existing `POST /exec` with the app's own backup command (what `fli` runs today). No Outpost change, but the capture is an unsigned-shape shell string built in Basecamp, and a volume app with no tool in its image cannot be backed up).
+
+The noun the option left open: `Backup` widens with an optional `appId` rather than coining `AppBackup`. A null `appId` is the installation's own backup, so there is one noun and one list, and the gate splits by row policy (the installation's rows stay admin-only). `s3` is added later as an upload step on the same route, without changing it.
+
+### <a id="fjs-d580"></a>2026-10-13 · `FJS-D580` — Do error mappers and the service-cache override become per-app, stay process-global with a one-app guard, or stay as they are — Per-app: `createApp({ errorMappers: [...] })` / `app.errorMapper(fn)` and `app.serviceCache = cache` (claimed), and `toFrameworkError(err, app)` takes the mapper list from the app; the module-level `registerErrorMapper`/`setServiceCache` are deleted and basecamp moves in the same change. Isolates apps, but every `toFrameworkError` caller must thread the app, and `hooks.ts:215` and `plugins/export` have only a ctx.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep the globals, add a guard: a second `createApp()` in one process while a mapper or override is registered throws or warns by name. One owner stays one owner and no signature changes, but it forbids two apps in a process, which `createTestEnv` and embedders do), **C** (keep as is and state the process-global contract in the JSDoc and the junction `CLAUDE.md` (the cache JSDoc already says "prefer it only when one process runs one app"). No code, and the cross-app leak stays for the next test suite that boots two apps).
+
+The paper's recommendation, taken as written: the cache already resolves per app and only the override leaks, so A finishes a move the file's own comment began, and deleting the global spelling is free pre-alpha. Thread the app through `ctx.app`, which every caller except a bare `toFrameworkError(err)` already has.
 
 ### <a id="fjs-d947"></a>2026-10-13 · `FJS-D947` — Cross-origin — Bearer over CORS with `origins: ['*']`, the token scoped to one review by its invite link, and the client attaching it only to the store's configured origin.
 
@@ -11060,6 +11096,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d954"></a>2026-10-13 · `FJS-D954` — Q2 — How does a page opt out of the frame — `reset: true` on the page, and Sierra makes it reach every page under a `_module.mesa` that declares it — a few lines in `parseRouteFile`. It is what a reader predicts, since every other layout frontmatter key reaches the pages beneath; it is also unsettled whether the declaring layout itself still renders, and no caller exists to settle it.
+
+Asked in [`IDEAS/app-shell.md`](IDEAS/app-shell.md) § Open questions. **B** was picked over **A** (`reset: true` on the page, and Sierra REFUSES it on a `_module.mesa` by name rather than dropping it. A bare directory is one line per page), **C** (a `bare` list of prefixes in `nav.js`, as four shells do today).
+
+what a reader predicts: every other _module.mesa frontmatter key reaches the pages beneath it, and reset alone does not. Picked for now, ahead of a second bare page under one directory.
+
 ### <a id="fjs-d946"></a>2026-10-13 · `FJS-D946` — If B: how does a module-block signal cross an import — An exported reactive value is refused by name; only functions export. Half 1 is then the whole feature, and pillar 1 stays mixed across files.
 
 Asked in [`IDEAS/review-solid-octane.md`](IDEAS/review-solid-octane.md) § Open questions. **C** was picked over **A** (An exported reactive value is emitted as an accessor function, and an importer writes `canEdit()`. The template already tracks it; RULE 2 grows one case: a `const` calling an import from a `.mesa` file can move. It costs a name spelled `x` in its own file and `x()` everywhere else), **B** (The compiler reads the imported `.mesa` file's module block and learns which exports are signals: the `externalSignals` map, derived instead of written, which retires the drift that map was criticized for. It needs the Vite plugin to hand the compiler a resolver. A barrel re-export is blind to it, so a re-exported `.mesa` name needs a warning).
@@ -12652,6 +12694,20 @@ hash is the only thing keeping one component's rules off another's markup.
 ---
 
 ## Design system (`@frontierjs/css`)
+
+### <a id="fjs-d953"></a>2026-10-13 · `FJS-D953` — What does a function `channel:` get for a write no service call made — The row and `ctx` null. Under row tenancy every write event names its tenants, and a count or a parent-scoped row is routed by them.
+
+Asked in [`FJS-1741`](ISSUES.md#fjs-1741). **A** (call `fn(row, null)`, typed `ServiceContext | null`) was picked over **B** (a stand-in ctx, `{ auth: null, background: true }`) and **C** (the framework sends a tenanted row to a channel it names itself, `channels({ tenantChannel })`).
+
+`FJS-D191` makes a per-tenant function channel the only shape that grades under row tenancy, and Junction skipped every function channel outside a service call. So no job, webhook, carrier write or `asSystem()` cascade on a tenanted model reached a socket. Serpgrid's phone polled every 1.5 s for a ring, and notion's revoke left six pages on the reader's screen. **C** moves the channel's name out of the app, which is what `FJS-D191` refused. **B** keeps old code from throwing, but it makes a missing request look like an anonymous one. With **A**, the type change has TypeScript flag every function that reads `ctx` without a guard. A function that throws on null warns once, and the write reaches the bus alone.
+
+A row was not enough. A carrier marks a leg answered with a compare-and-set `updateMany`, which answers a count, and a revoke rewrites `PageAccess`, which is scoped through `Page` and has no tenant column. **Litestone owns the fact of which tenants a write touched:** the column off the rows for a model that carries it, and one `SELECT DISTINCT` per hop along the relation the generated `@@tenant(via:)` deny follows for one that does not. This was picked over announcing rows only, which leaves the phone polling for an answer, and over changing each app to stop bulk-writing, which leaves the gap for every other app. The cost: under row tenancy, with a subscriber, a bulk write fetches its rows, as `announce: 'rows'` already does.
+
+Found on the way and fixed with it: the `FJS-D597` re-check asked `$readReach` for a service's own spelling only, and Litestone's accessor index is exact. So a service named `pages` with no `model:` was never re-checked, which covers all of notion. It now asks under every spelling `accessorCandidates` gives, as `servicesFor` does (`FJS-2786`). The commitment sweep walked the same via-parent path with its own copy; it now reads `tenantPath`.
+
+*The nine were answered after the code, not before* — named late per `decision-rules`. The owner question failed on the first draft (the second walker) and was fixed rather than overridden.
+
+*Lives in:* `packages/litestone/src/core/client.js` (`tenantPath`, `tenantsOf`, `announceFor`) · `packages/junction/src/core/litestone.ts` (`sendToChannel`, `regrade`, `dependentsOf`) · `packages/junction/src/transport/channels.ts` (`ChannelFn`, `sendGraded`) · `write-events.test.ts` § FJS-1741 · `data-write-announcement.test.ts` § FJS-1741 · serpgrid `api/test/live.test.ts` · notion `probes/q2/out.txt` run 7.
 
 ### <a id="fjs-d952"></a>2026-10-13 · `FJS-D952` — What does an app shell own, and is it the kit's — A paper first: `IDEAS/app-shell.md` surveys the six nav shapes and proposes a `nav.js` contract (groups, section tabs, bare prefixes, drawer copy), then a kit `Shell` over `frame.css` that reads it.
 
@@ -14666,7 +14722,11 @@ name on it.
 
 **Nothing is scheduled and `FJS-D37` §6 is unchanged** — no interface target is
 built before core leaves alpha, on `FJS-D14`'s reasoning. *Amended 2026-10-09 by
-[`FJS-D689`](#fjs-d689): mobile starts now and is not gated on alpha.* What is settled is the
+[`FJS-D689`](#fjs-d689): mobile starts now and is not gated on alpha.* *Read
+2026-10-13 for `IDEAS/agent-client-ui.md`: the line defers a BACKEND — a second
+emit of the runtime — and never a wrapper over the DOM backend's own output;
+`email`, the widget build and an MCP App view are markup and were never
+deferred.* What is settled is the
 shape, so that the tone table, the two output owners and every surface decision
 after them are made against one answer rather than against an open question.
 

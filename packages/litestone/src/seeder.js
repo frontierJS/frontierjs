@@ -368,6 +368,10 @@ export class Factory {
     // relation over one of those columns — Deployment.team beside
     // Deployment.project over [projectId, teamId] — would point the column at a
     // second, unrelated parent. Composites are wired first and claim their columns.
+    // A relation with a column left unclaimed is still wired: Event.day over
+    // [scheduleId, dayId] beside Event.location over [scheduleId, locationId]
+    // left locationId a placeholder naming no row, and createOne() builds the
+    // Location under the scheduleId the Day fixed.
     const rels = []
     for (const field of def.fields) {
       if (field.type.kind !== 'relation' || field.type.array) continue
@@ -385,7 +389,7 @@ export class Factory {
       const fkDefs   = fks.map(fk => def.fields.find(f => f.name === fk))
       const nullable = fkDefs.some(f => f?.type.optional)
       if (nullable && !optional && !fks.some(fk => insisted.has(fk))) continue
-      if (fks.some(fk => claimed.has(fk))) continue
+      if (fks.every(fk => claimed.has(fk))) continue
       if (clone._relations[field.name]) {           // already wired explicitly
         for (const fk of fks) claimed.add(fk)
         continue
@@ -492,22 +496,38 @@ export class Factory {
   // ── Create (with DB) ─────────────────────────────────────────────────────────
 
   async createOne(overrides = {}) {
-    // Resolve relations — auto-create parents, collect FK values
-    const fkOverrides = {}
-    for (const [, rel] of Object.entries(this._relations)) {
-      let parentRow = rel.fresh ? null : rel.row
-      if (!parentRow && rel.factory) {
-        parentRow = await rel.factory.createOne()
-        // cache — createMany shares one parent per relation unless { fresh: true }
-        if (!rel.fresh) rel.row = parentRow
-        else            rel.row = parentRow   // still exposed on the returned row
-      }
-      if (parentRow) for (const [fk, pk] of _keyPairs(rel.fk, rel.pk)) fkOverrides[fk] = parentRow[pk]
-    }
-
     const resolvedOverrides = typeof overrides === 'function'
       ? overrides(this._seq.n + 1, this._rng)
       : overrides
+
+    // Resolve relations — auto-create parents, collect FK values. A key column
+    // the caller or an earlier parent already fixed is shared by two relations,
+    // so the later parent is built under that value: built on its own, it
+    // carries an unrelated one and the composite key names no row. A relation
+    // whose every column is fixed needs no parent at all.
+    const fkOverrides = {}
+    const unbuilt     = new Set()
+    for (const [name, rel] of Object.entries(this._relations)) {
+      const pairs = _keyPairs(rel.fk, rel.pk)
+      let parentRow = rel.fresh ? null : rel.row
+      if (rel.factory) {
+        const fixed = {}
+        for (const [fk, pk] of pairs) {
+          if (resolvedOverrides[fk] !== undefined) fixed[pk] = resolvedOverrides[fk]
+          else if (fk in fkOverrides)              fixed[pk] = fkOverrides[fk]
+        }
+        const under = Object.entries(fixed)
+        if (under.length === pairs.length) { unbuilt.add(name); continue }
+        if (parentRow && under.some(([pk, v]) => parentRow[pk] !== v)) parentRow = null
+        if (!parentRow) {
+          parentRow = await rel.factory.createOne(fixed)
+          // cache — createMany shares one parent per relation unless { fresh: true };
+          // a fresh one is still exposed on the returned row
+          rel.row = parentRow
+        }
+      }
+      if (parentRow) for (const [fk, pk] of pairs) fkOverrides[fk] = parentRow[pk]
+    }
 
     // Generated values carry a short seq token, so a @unique column is unique by
     // construction — but the token pool is finite and the value catalog is small,
@@ -538,7 +558,7 @@ export class Factory {
 
     // Attach resolved relation rows for convenience (no extra query)
     for (const [name, rel] of Object.entries(this._relations)) {
-      if (rel.row) row[name] = rel.row
+      if (rel.row && !unbuilt.has(name)) row[name] = rel.row
     }
 
     await this._createChildren(row)

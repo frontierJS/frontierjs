@@ -13,7 +13,7 @@ import { expandCapabilityType } from './capabilities.js'
 // validator's, so a refusal here and a refusal at the boundary name one number.
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
-import { pointColumnNames, isStoredField } from './ddl.js'
+import { pointColumnNames, isStoredField, mapIdentifiers } from './ddl.js'
 import { inferFromFk } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
@@ -5347,6 +5347,25 @@ function validate(schema) {
         if (dep === fieldName) {
           errors.push(`Model '${model.name}', field '${fieldName}': @generated cannot reference itself`)
         }
+      }
+    }
+
+    // The same refusal for a CHECK, which is emitted verbatim into the DDL: a
+    // name with no column parsed valid and the build died on a raw
+    // `no such column`, naming neither the model nor the check.
+    const checks = [
+      ...model.attributes.filter(a => a.kind === 'check').map(a => ({ a, at: `Model '${model.name}': @@check` })),
+      ...model.fields.flatMap(f => f.attributes.filter(a => a.kind === 'check' && a.expr)
+        .map(a => ({ a, at: `Model '${model.name}', field '${f.name}': @check` }))),
+    ]
+    for (const { a, at } of checks) {
+      const named = new Set()
+      mapIdentifiers(a.expr, id => { named.add(id); return null })
+      for (const id of named) {
+        const f = model.fields.find(x => x.name === id)
+        if (f && !isStoredField(f))
+          errors.push(`${at}(${JSON.stringify(a.expr)}) names '${id}', which is not a stored column — ` +
+                      `@computed, @transient, @from, @derived, @edge and relation fields have none, and a CHECK reads only this row`)
       }
     }
 

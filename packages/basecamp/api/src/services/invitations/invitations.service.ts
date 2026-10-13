@@ -170,8 +170,8 @@ export function createInvitationsService(app: BasecampApp) {
     // so an accept would have gone unrecorded. Two different statements —
     // "nobody needs to hear this" and "nobody may hear this" — and only one of
     // them belongs on the publish side.
-    channel: (data: unknown, ctx: ServiceContext) =>
-      $.method === 'accept' ? null : workspaceChannel(app)(data, ctx),
+    channel: (data: unknown, ctx: ServiceContext | null) =>
+      ctx && $.method === 'accept' ? null : workspaceChannel(app)(data, ctx),
 
     reservedQuery: WORKSPACE_QUERY,
 
