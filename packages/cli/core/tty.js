@@ -9,6 +9,9 @@
 //   line(q, {default}) one typed line, Enter ends it. Raw mode is handed back
 //                     for the line and taken again after, so a keys() that
 //                     follows still hears its key (FJS-1406).
+//   secret(q)         one typed line that never reaches the screen — a
+//                     password. Raw mode, read a key at a time, because cooked
+//                     mode is what echoes.
 //   live(render)      one footer line. stdout, stderr and console are patched
 //                     while it shows, so echo, log and console print ABOVE it;
 //                     every write would otherwise land on the footer's own line.
@@ -119,6 +122,7 @@ export function createTty({
   const held   = []
   let raw      = false
   let lent     = false // raw mode handed to aside, taken back after
+  let hiding   = null  // secret()'s teardown, so an exit mid-answer restores the terminal
   let titled   = false
   const hooks  = []
   let restored = false
@@ -324,6 +328,47 @@ export function createTty({
     },
 
     /**
+     * One typed line with nothing echoed, resolved without its newline.
+     * Backspace and Ctrl-U edit it, Ctrl-C interrupts. `yes` answers '', since
+     * a secret has no default to take.
+     */
+    secret(question) {
+      if (yes) return Promise.resolve('')
+      if (!interactive) return Promise.reject(new Error(refusal(question, 'secret')))
+      if (restored) return new Promise(() => {})
+      return new Promise((resolve) => {
+        enlist()
+        erase()
+        const wasRaw = raw
+        if (wasRaw) unlisten()
+        let typed = ''
+        const onKey = (buf) => {
+          for (const ch of buf.toString()) {
+            if (ch === '\x03') { hiding(); return interrupt() }
+            if (ch === '\r' || ch === '\n') { outWrite('\n'); hiding(); return resolve(typed) }
+            if (ch === '\x7f' || ch === '\b') typed = [...typed].slice(0, -1).join('')
+            else if (ch === '\x15') typed = ''
+            else if (ch >= ' ') typed += ch
+          }
+        }
+        hiding = () => {
+          hiding = null
+          input.off('data', onKey)
+          input.setRawMode(false)
+          input.pause()
+          lineOpen = false
+          if (wasRaw && !restored) listen()
+          draw()
+        }
+        outWrite(`${question} `)
+        lineOpen = true
+        input.setRawMode(true)
+        input.resume()
+        input.on('data', onKey)
+      })
+    },
+
+    /**
      * A footer from `render()`: a string, or an array whose parts drop from the
      * right to fit (`sep` joins them). null hides it. Redrawn on `update()` and
      * after every write, and only when it changed.
@@ -376,6 +421,7 @@ export function createTty({
       render = null
       waiting.length = 0
       erase()
+      hiding?.()
       unlisten()
       if (titled) outWrite('\x1b]0;\x07')
       unpatch()

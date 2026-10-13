@@ -113,12 +113,12 @@ if (!encKey) {
 let password = flag.password
 
 if (!password) {
-  password = await tty.line('Password: ')
+  password = await tty.secret('Password:')
   if (!password) {
     log.error('Password is required')
     return
   }
-  const confirm = await tty.line('Confirm password: ')
+  const confirm = await tty.secret('Confirm password:')
   if (password !== confirm) {
     log.error('Passwords do not match')
     return

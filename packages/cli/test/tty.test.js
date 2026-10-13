@@ -174,6 +174,60 @@ describe('line', () => {
   })
 })
 
+describe('secret', () => {
+  test('the answer never reaches the screen, and backspace and Ctrl-U edit it', async () => {
+    const t = terminal(), tty = make(t)
+    const asked = tty.secret('Password:')
+    expect(t.text()).toContain('Password: ')
+    expect(t.input.rawMode).toBe(true)
+    t.press('hunter3')
+    t.press('\x7f2')
+    t.press('\x15')
+    t.press('s3cret\r')
+    expect(await asked).toBe('s3cret')
+    expect(t.text()).not.toContain('s3cret')
+    expect(t.text()).not.toContain('hunter')
+    expect(t.input.rawMode).toBe(false)
+    await tty.close()
+  })
+
+  test('a keys() listening before is listening after', async () => {
+    const t = terminal(), tty = make(t)
+    const first = tty.keys('Go?', { y: 'yes', n: 'no' })
+    t.press('n')
+    expect(await first).toBe('n')
+    const asked = tty.secret('Password:')
+    t.press('pw\n')
+    expect(await asked).toBe('pw')
+    expect(t.input.rawMode).toBe(true)
+    const again = tty.keys('Sure?', { y: 'yes', n: 'no' })
+    t.press('y')
+    expect(await again).toBe('y')
+    await tty.close()
+  })
+
+  test('Ctrl-C interrupts, and a restore mid-answer hands the keyboard back', async () => {
+    const t = terminal()
+    let interrupted = 0
+    const tty = make(t, { interrupt: () => interrupted++ })
+    tty.secret('Password:')
+    t.press('ab\x03')
+    expect(interrupted).toBe(1)
+    expect(t.input.rawMode).toBe(false)
+    tty.secret('Again:')
+    expect(t.input.rawMode).toBe(true)
+    tty.restore()
+    expect(t.input.rawMode).toBe(false)
+    expect(t.input.listenerCount('data')).toBe(0)
+  })
+
+  test('--yes answers empty, and no terminal refuses by name', async () => {
+    expect(await make(terminal(), { yes: true }).secret('Password:')).toBe('')
+    await expect(make(terminal({ tty: false })).secret('Password:'))
+      .rejects.toThrow('tty.secret("Password:") needs a person at a terminal')
+  })
+})
+
 describe('live', () => {
   test('output prints above the footer, which is redrawn after it', async () => {
     const t = terminal(), tty = make(t)
