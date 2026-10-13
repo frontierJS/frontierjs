@@ -406,7 +406,7 @@ function ideaRow(r){
 // \`fli decide\` is the one writer, so the page hands out its exact command.
 function decideCmd(x,letter){
   const sec=$('section')?.value||''
-  const rec=x.recommend&&x.recommend.letter===letter
+  const rec=x.recommend&&x.recommend.letter===letter&&!x.recommend.qualifier
   return 'fli decide '+x.id+' '+letter+(sec?' --section "'+sec.replace(/"/g,'\\\\"')+'"':'')+(rec?'':' --why ""')
 }
 
@@ -423,7 +423,7 @@ function questionRow(x){
       esc(x.paper||x.source))
     +'<div class="ra-body">'
     +(opts?'<ul class="ra-opts dense">'+opts+'</ul>':'<p class="text-sm text-muted">No lettered options yet — write **A** / **B** sub-bullets and a **Recommend X** line to make it pickable.</p>')
-    +(x.recommend?'<p class="text-sm">★ Recommend '+esc(x.recommend.letter)+' — '+esc(x.recommend.why)+'</p>':'')
+    +(x.recommend?'<p class="text-sm">★ Recommend '+esc(x.recommend.qualifier||x.recommend.letter)+' — '+esc(x.recommend.why)+'</p>':'')
     +'<input class="field ra-cmd hidden" readonly>'
     +source(x.at)+'</div></details>'
 }

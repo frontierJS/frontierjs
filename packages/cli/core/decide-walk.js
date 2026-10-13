@@ -75,8 +75,10 @@ export async function walk({ root, tty, echo, edit, view, today = new Date() }) 
       if (key === 's' && !q.options.some(o => o.letter === 'S')) return 'skip'
 
       const pick = key.toUpperCase()
+      // A qualified recommendation is not Enter-and-done: which part of the
+      // option is ruled is a sentence `decide` refuses to guess.
       let why = ''
-      if (pick !== rec) {
+      if (pick !== rec || q.recommend.qualifier) {
         why = readWhy(await edit(whyTemplate(q, pick)))
         if (!why) { echo('  No reason saved, so nothing was written — a pick against the recommendation says why.\n'); return 'skip' }
       }
@@ -114,7 +116,7 @@ function show(echo, q, n, of) {
   echo(`  [${n}/${of}] ${q.id}   ${q.file}:${q.line}`)
   echo(`  ${q.question}`)
   for (const o of q.options) echo(`    ${q.recommend?.letter === o.letter ? '★' : ' '} ${o.letter} — ${o.text}`)
-  if (q.recommend?.why) echo(`      why ${q.recommend.letter}: ${q.recommend.why}`)
+  if (q.recommend?.why) echo(`      why ${q.recommend.qualifier ?? q.recommend.letter}: ${q.recommend.why}`)
   if (q.by) echo(`      settled by ${q.by} — confirming strikes it citing that ruling, and mints no new one`)
   echo('')
 }
@@ -123,10 +125,12 @@ function show(echo, q, n, of) {
 function whyTemplate(q, pick) {
   return [
     '',
-    `# Why ${pick} and not ${q.recommend?.letter ?? 'the recommendation'}? One paragraph; it becomes the ruling's reason.`,
+    q.recommend?.letter === pick
+      ? `# What of ${pick} is ruled? The recommendation is "${q.recommend.qualifier}". One paragraph; it becomes the ruling's reason.`
+      : `# Why ${pick} and not ${q.recommend?.letter ?? 'the recommendation'}? One paragraph; it becomes the ruling's reason.`,
     `# ${q.question}`,
     ...q.options.map(o => `#   ${o.letter} — ${o.text}`),
-    q.recommend ? `# Recommended ${q.recommend.letter}: ${q.recommend.why}` : '# No recommendation was written.',
+    q.recommend ? `# Recommended ${q.recommend.qualifier ?? q.recommend.letter}: ${q.recommend.why}` : '# No recommendation was written.',
     '# Save an empty file to go back without ruling.',
     '',
   ].join('\n')

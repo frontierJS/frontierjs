@@ -71,11 +71,18 @@ function decideUnguarded({ root, id, pick, why = '', section, today = new Date()
     return refuse(`DECISIONS.md has no section named ${JSON.stringify(section ?? '')}`)
   }
 
-  const reason   = oneParagraph(why)
-  const followed = q.recommend?.letter === letter
+  // A qualified recommendation (`A's first half now`) rules part of its option,
+  // and which part is prose only a person can restate. Taken as written, the
+  // pick recorded all of A — the half held back included (`FJS-2792`).
+  const reason    = oneParagraph(why)
+  const qualified = q.recommend?.letter === letter ? q.recommend.qualifier : null
+  const followed  = q.recommend?.letter === letter && !qualified
+  if (!reason && qualified) {
+    return refuse(`the recommendation is "${qualified}", not ${letter} whole, so --why has to say what of ${letter} is ruled`)
+  }
   if (!reason && !followed) {
     return refuse(q.recommend
-      ? `${letter} is not the recommendation (${q.recommend.letter}), so the ruling has to say why`
+      ? `${letter} is not the recommendation (${q.recommend.qualifier ?? q.recommend.letter}), so the ruling has to say why`
       : `${id} carries no recommendation, so the ruling has to say why`)
   }
   if (reason.length > WHY_MAX) return refuse(`the reason is ${reason.length} characters; ${WHY_MAX} is the limit`)
@@ -90,12 +97,13 @@ function decideUnguarded({ root, id, pick, why = '', section, today = new Date()
   const paperAbs = join(root, q.file)
   const before   = { dec: readFileSync(decPath, 'utf8'), paper: readFileSync(paperAbs, 'utf8') }
 
-  const struck = strikeQuestion(before.paper, q, { date, ruling, answer: `${option.letter} — ${trimStop(option.text)}` })
+  const answer = qualified ? trimStop(qualified) : `${option.letter} — ${trimStop(option.text)}`
+  const struck = strikeQuestion(before.paper, q, { date, ruling, answer })
   if (!struck) return refuse(`${q.file}:${q.line} no longer starts with the question's bold lead — reread it`)
 
   // The link is written INTO `DECISIONS.md`, so it is relative to that file.
   const link  = relative(dir, paperAbs)
-  const entry = rulingEntry({ q, link, option, ruling, date, reason: reason || q.recommend.why, followed: !reason })
+  const entry = rulingEntry({ q, link, option, qualified, ruling, date, reason: reason || q.recommend.why, followed: !reason })
   const dec   = insertRuling(before.dec, section, entry)
   const close = row && closeRow(root, row, `Ruled [\`${ruling}\`](DECISIONS.md#${ruling.toLowerCase()}): **${letter}** — ${trimStop(option.text)}.`, today)
   if (close?.reason) return refuse(close.reason)
@@ -212,13 +220,14 @@ function strikeQuestion(src, q, { date, ruling, answer }) {
   return lines.join('\n')
 }
 
-function rulingEntry({ q, link, option, ruling, date, reason, followed }) {
+function rulingEntry({ q, link, option, qualified, ruling, date, reason, followed }) {
   const others = q.options.filter(o => o !== option)
     .map(o => `**${o.letter}** (${trimStop(o.text)})`).join(', ')
+  const picked = qualified ? `**${option.letter}** was picked as the recommendation qualifies it (*${trimStop(qualified)}*)` : `**${option.letter}** was picked`
   return [
-    `### <a id="${ruling.toLowerCase()}"></a>${date} · \`${ruling}\` — ${trimStop(q.question.replace(LEAD_ID, ''))} — ${capitalize(trimStop(option.text))}.`,
+    `### <a id="${ruling.toLowerCase()}"></a>${date} · \`${ruling}\` — ${trimStop(q.question.replace(LEAD_ID, ''))} — ${capitalize(trimStop(qualified ?? option.text))}.`,
     '',
-    `Asked in [\`${q.file}\`](${link}) § Open questions. **${option.letter}** was picked over ${others || 'no other option'}.`,
+    `Asked in [\`${q.file}\`](${link}) § Open questions. ${picked} over ${others || 'no other option'}.`,
     '',
     `${followed ? `The paper's recommendation, taken as written: ` : ''}${trimStop(reason)}.`,
     '',

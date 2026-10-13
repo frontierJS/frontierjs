@@ -52,7 +52,7 @@ for (const q of decidable) {
     const mark = q.recommend?.letter === o.letter ? '★' : ' '
     echo(`    ${mark} ${o.letter} — ${o.text}`)
   }
-  if (q.recommend?.why) echo(`      why ${q.recommend.letter}: ${q.recommend.why}`)
+  if (q.recommend?.why) echo(`      why ${q.recommend.qualifier ?? q.recommend.letter}: ${q.recommend.why}`)
   echo('')
 }
 
@@ -89,7 +89,9 @@ or a row of `ISSUES.md` § Needs a decision. It becomes something the owner can
 answer on sight once its bullet carries lettered options and a recommendation:
 indented sub-bullets under the question, each opening on a bold letter — `**A** —
 omit them`, `**B** — expose them` — and one opening on `**Recommend A** —` with
-the reason after the dash.
+the reason after the dash. The bold may say more than the letter (`**Recommend
+A, same-row zone only**`); it must START with one, and `register:check` fails a
+`**Recommend` line that does not (`unread-recommendation`).
 
 Writing those lines is the work that turns an open question into a
 decision; an issue row's cell cannot hold them, so its options go in the paper

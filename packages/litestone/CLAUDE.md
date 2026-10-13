@@ -29,8 +29,12 @@ Each names its pin. The failure behind each is `docs/internals.md`.
 - **A row is shaped only by `read()`.** Anything assembling one itself leaks
   `@guarded` and `@encrypted` values (`FJS-223`); a write path re-reads `@from`
   with `read(row, { hydrateFrom: true })`, since RETURNING cannot carry one.
-- **A `@from` correlates on every column of its relation's key**, in three
-  places (`FJS-377`). `test/from-correlation.test.ts`.
+- **A relation joins on every column of its key.** A relation entry carries
+  `foreignKeys`/`referencedKeys`, index-aligned, and `pairsOn`/`keyIn`/`tupleOf`
+  in `query.js` are the spellings; joined on the first pair, `(scheduleId,
+  personId)` answers whichever row shares a scheduleId — in an include, a
+  cascade, and a policy path grading the wrong row (`FJS-377`, `FJS-2790`).
+  `test/from-correlation.test.ts`, `test/composite-relation.test.ts`.
 - **A protected column cannot be named in a `where` or `orderBy`** by a
   non-system caller; a strip alone is recovered one `startsWith` at a time
   (`FJS-393`). `test/guarded-filter.test.ts`.

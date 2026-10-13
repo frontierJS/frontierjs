@@ -33,6 +33,7 @@ import { existsSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { treePaths } from './tree.js'
+import { ideaQuestions } from './decisions.js'
 import { readRegisters, readOverviewRows, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -57,6 +58,7 @@ export const RULES = [
   { id: 'id-section',       level: 'error', what: 'an id filed under a section its prefix does not belong to — a `<PREFIX>-D##` is a ruling and a `<PREFIX>-###` is a defect, so neither needs judgment to place' },
   { id: 'cross-register-id', level: 'error', what: 'an open decision QUESTION whose id already names a ruling — either the ruling landed and nothing closed the row, or the two are different subjects wearing one id' },
   { id: 'ruling-status',    level: 'error', what: 'a ruling declaring a status outside the vocabulary, or retiring itself without naming what replaced it' },
+  { id: 'unread-recommendation', level: 'error', what: 'an open question\'s `**Recommend …**` line naming no option letter — the queue shows no recommendation, and the line was once read as the words of the option above it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
   { id: 'overview-status',  level: 'error', what: 'an `IDEAS/overview.md` row whose Status cell says the work is still open while its paper says `shipped` or `withdrawn`, or its only cited defects are closed' },
   { id: 'ruling-order',     level: 'warn',  what: 'a ruling dated later than the one above it — a section runs newest first, so the top of one is the current thinking' },
@@ -157,6 +159,20 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
     add('unparsed-record', row,
       'has a record\'s shape and produced no record — the reader takes an id it did not find here',
       row.text)
+  }
+
+  // ── a recommendation the queue could not read ──
+  //
+  // `fli decide` compares a pick against the recommendation's letter, so a line
+  // with none leaves every pick looking like one against no recommendation.
+
+  for (const q of ideaQuestions(root)) {
+    if (q.state === 'ruled') continue
+    for (const u of q.unread) {
+      add('unread-recommendation', { id: q.id, kind: 'question', file: q.file, line: u.line },
+        `"${truncate(q.question)}" has a recommendation naming no option — write \`**Recommend X**\` or \`**Recommend X, <qualifier>**\``,
+        u.text)
+    }
   }
 
   // ── one id, one record ──

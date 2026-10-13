@@ -30,7 +30,7 @@ export type Ruling = {
 }
 export type Question = {
   id: string, source: string, question: string, state: 'ruled' | 'decidable' | 'open',
-  options: { letter: string, text: string }[], recommend: { letter: string, why: string } | null,
+  options: { letter: string, text: string }[], recommend: { letter: string, qualifier: string | null, why: string } | null,
   paper: string | null, at: At,
 }
 export type Idea = {
@@ -46,7 +46,7 @@ export type Atlas = {
 type Decided = { ok: true, ruling: string, pick: string, closed: string | null, files: string[] } | { ok: false, reason: string }
 
 type Option    = { letter: string, text: string }
-type Recommend = { letter: string, why: string }
+type Recommend = { letter: string, qualifier: string | null, why: string }
 type Asked = {
   id: string, file: string, line: number, question: string, body: string,
   options: Option[], recommend: Recommend | null, paper: { id: string, status: string } | null,
@@ -186,7 +186,7 @@ export function explainPrompt(q: Queued): string {
     `${q.id} — ${q.file}:${q.line}`,
     `**${q.question}** ${q.body}`.trim(),
     ...q.options.map(o => `- **${o.letter}** — ${o.text}`),
-    q.recommend ? `- **Recommend ${q.recommend.letter}** — ${q.recommend.why}` : '- No recommendation is written.',
+    q.recommend ? `- **Recommend ${q.recommend.qualifier ?? q.recommend.letter}** — ${q.recommend.why}` : '- No recommendation is written.',
     '',
     'You are read-only: Read, Grep, Glob, and git, rg and ls in Bash. Read the question where it is argued and what it cites — rulings in DECISIONS.md, rows in ISSUES.md, the code it names. Then explain, for someone choosing in the next minute:',
     '1. What is actually being decided, in two or three plain sentences.',

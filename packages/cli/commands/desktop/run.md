@@ -45,7 +45,7 @@ that is said; a window showing the wrong data with that line above it is a
 stale server of this app, and `fli ps` names it.
 
 ```js
-const { desktopBinary, desktopApiTarget, ensureServer, stopServer, surfaceRow } =
+const { desktopBinary, desktopApiTarget, offerDesktopSurface, ensureServer, stopServer, surfaceRow } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { detectRunner }  = await import(resolve(global.fliRoot, 'core/db-preflight.js'))
 
@@ -53,10 +53,7 @@ const root       = $.paths.root
 const surface    = $.paths.desktop
 const configFile = join(surface, 'config', 'desktop.config.js')
 
-if (!existsSync(configFile)) {
-  log.error(`There is no ${relative(root, configFile)}. fli make:desktop --wraps web creates the surface.`)
-  process.exit(1)
-}
+if (!await offerDesktopSurface({ root, configFile, tty, exec: $.exec, fli: $.fli, log, dry: flag.dry })) process.exit(1)
 
 // fli runs under bun, and build.mjs is a bun script, so the running bun builds
 // it rather than whichever one PATH finds first.

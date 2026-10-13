@@ -113,7 +113,51 @@ describe('the read', () => {
         { letter: 'A', text: 'omit them, and report the omission' },
         { letter: 'B', text: 'expose the ciphertext as it is stored on disk' },
       ])
-      expect(q.recommend).toEqual({ letter: 'A', why: 'a view that leaks nothing is what a caller expects' })
+      expect(q.recommend).toEqual({ letter: 'A', qualifier: null, why: 'a view that leaks nothing is what a caller expects' })
+    } finally { cleanup() }
+  })
+
+  test('a recommendation saying more than its letter keeps the letter and the qualifier, and leaves the option above it alone', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- **Hook the bulk writes?** Prose.',
+      '  - **A** — fire the hook per row, inside the transaction',
+      '  - **B** — own the tree', '  - **C** — neither',
+      "  - **Recommend A's first half now, B after Q1 is measured** — a bulk write no hook hears is a defect",
+      '- **Which one?** Prose.',
+      '  - **A** — this', '  - **B** — that',
+      '  - **Recommend B.** The full stop is inside the bold.',
+      '- **Which variant?** Prose.',
+      '  - **A** — this', '  - **C** — that, spelled **C1** or **C2**',
+      '  - **Recommend C1.** C, spelled the first way.',
+      '',
+    ].join('\n')
+    const { root, cleanup } = fixture({ paper })
+    try {
+      const [hook, which, variant] = readDecisions(root).filter(q => q.paper?.id === 'views')
+      expect(hook.recommend).toEqual({ letter: 'A', qualifier: "A's first half now, B after Q1 is measured", why: 'a bulk write no hook hears is a defect' })
+      expect(hook.options.find(o => o.letter === 'C').text).toBe('neither')
+      expect(which.recommend).toEqual({ letter: 'B', qualifier: null, why: 'The full stop is inside the bold.' })
+      expect(variant.recommend).toEqual({ letter: 'C', qualifier: 'C1', why: 'C, spelled the first way.' })
+      expect(runRegisterCheck({ root, today: TODAY }).errors).toEqual([])
+    } finally { cleanup() }
+  })
+
+  test('a recommendation line naming no option is an error, not text on the option above it', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- **Hook the bulk writes?** Prose.',
+      '  - **A** — yes', '  - **B** — no',
+      '  - **Recommend neither yet** — measure first',
+      '',
+    ].join('\n')
+    const { root, cleanup } = fixture({ paper })
+    try {
+      const q = readDecisions(root).find(d => d.paper?.id === 'views')
+      expect(q.recommend).toBe(null)
+      expect(q.options.find(o => o.letter === 'B').text).toBe('no')
+      const found = runRegisterCheck({ root, today: TODAY }).errors.filter(f => f.rule === 'unread-recommendation')
+      expect(found.map(f => [f.file, f.line])).toEqual([['IDEAS/views.md', 11]])
     } finally { cleanup() }
   })
 
@@ -261,6 +305,34 @@ describe('the pick', () => {
       expect(argued.ok).toBe(true)
       // A reason is one paragraph; a newline in it cannot open a heading.
       expect(readFileSync(join(root, 'DECISIONS.md'), 'utf8')).toContain('\nan operator reads ciphertext ### on purpose.\n')
+    } finally { cleanup() }
+  })
+
+  test('a pick of a qualified recommendation says what it rules, and the ruling keeps the qualifier', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- **Hook the bulk writes?** Prose.',
+      '  - **A** — fire the hook per row, inside the transaction',
+      '  - **B** — own the tree',
+      "  - **Recommend A's first half now** — a bulk write no hook hears is a defect",
+      '',
+    ].join('\n')
+    const { root, cleanup } = fixture({ paper })
+    try {
+      const id   = 'views:hook-the-bulk-writes'
+      const bare = decide({ root, id, pick: 'A', section: 'Naming & vocabulary', today: TODAY })
+      expect(bare.ok).toBe(false)
+      expect(bare.reason).toMatch(/A's first half now/)
+      expect(bare.reason).toMatch(/not A whole/)
+
+      const out = decide({ root, id, pick: 'A', why: 'per row now; the in-transaction timing waits', section: 'Naming & vocabulary', today: TODAY })
+      expect(out.ok).toBe(true)
+      const dec = readFileSync(join(root, 'DECISIONS.md'), 'utf8')
+      expect(dec).toContain(`\`${out.ruling}\` — Hook the bulk writes — A's first half now.`)
+      expect(dec).not.toContain('— Fire the hook per row, inside the transaction.')
+      expect(dec).toContain("**A** was picked as the recommendation qualifies it (*A's first half now*) over **B** (own the tree).")
+      expect(dec).toContain('\nper row now; the in-transaction timing waits.\n')
+      expect(readFileSync(join(root, 'IDEAS', 'views.md'), 'utf8')).toContain(`(\`${out.ruling}\`): A's first half now.**`)
     } finally { cleanup() }
   })
 

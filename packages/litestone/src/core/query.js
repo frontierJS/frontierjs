@@ -115,15 +115,17 @@ export function inList(lhs, values, params, { not = false, affinity = true } = {
 // and group on every pair. Joined on the first alone, a key of
 // `(scheduleId, personId)` answers every row sharing a scheduleId.
 
-// `fk = ref AND …` for each pair. Each qualifier is the prefix written before a
-// quoted column — `t.`, `"orders".` or `''` — and each `col` maps a field name
-// to its column, for a caller under `@map`.
-export function pairsOn(fkCols, fkQual, refCols, refQual, fkCol = c => c, refCol = c => c) {
-  return fkCols.map((fk, i) => `${fkQual}"${fkCol(fk)}" = ${refQual}"${refCol(refCols[i])}"`).join(' AND ')
+// `a = b AND …` for each index-aligned pair. Each qualifier is the prefix
+// written before a quoted column — `t.`, `"orders".` or `''` — and each `col`
+// maps a field name to its column, for a caller under `@map`.
+/** @param {string[]} aCols @param {string} aQual @param {string[]} bCols @param {string} bQual @param {(c: string) => string} [aCol] @param {(c: string) => string} [bCol] */
+export function pairsOn(aCols, aQual, bCols, bQual, aCol = c => c, bCol = c => c) {
+  return aCols.map((a, i) => `${aQual}"${aCol(a)}" = ${bQual}"${bCol(bCols[i])}"`).join(' AND ')
 }
 
 // One value per row for a key that may span columns, for a Map or a Set. A key
 // with a NULL in it references nothing — SQLite's MATCH SIMPLE — and answers null.
+/** @param {Record<string, any> | null | undefined} row @param {string[]} cols */
 export function tupleOf(row, cols) {
   if (cols.length === 1) return row?.[cols[0]] ?? null
   const vals = cols.map(c => row?.[c])
@@ -131,7 +133,9 @@ export function tupleOf(row, cols) {
 }
 
 // The distinct non-null keys of `rows` over `cols`, each an array of values.
+/** @param {Record<string, any>[]} rows @param {string[]} cols @returns {any[][]} */
 export function tuplesOf(rows, cols) {
+  /** @type {Map<unknown, any[]>} */
   const out = new Map()
   for (const r of rows) {
     const k = tupleOf(r, cols)
@@ -143,6 +147,7 @@ export function tuplesOf(rows, cols) {
 // `inList` over a key of one or more columns: `cols` are quoted SQL names with
 // any qualifier, `tuples` arrays index-aligned with them. A composite key is a
 // row value, which SQLite compares pair by pair.
+/** @param {string[]} cols @param {any[][]} tuples @param {unknown[]} params */
 export function keyIn(cols, tuples, params) {
   if (cols.length === 1) return inList(cols[0], tuples.map(t => t[0]), params)
   if (!tuples.length) return '0 = 1'

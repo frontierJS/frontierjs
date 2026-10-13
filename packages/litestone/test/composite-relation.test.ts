@@ -137,3 +137,118 @@ describe('a policy path over a composite relation grades the row by its own rela
     expect(ids(await sys.asSystem().assignment.findMany({ where: { scheduleId: 's1' } }))).toEqual(['a1', 'a2', 'a3'])
   })
 })
+
+describe('the policy forms that cross a composite relation', () => {
+  const withPolicy = (model: string, rule: string, src = SRC) =>
+    src.replace(new RegExp(`model ${model} \\{([\\s\\S]*?)\\n\\}`), `model ${model} {$1\n  ${rule}\n}`)
+
+  async function asUser(schema: string) {
+    const db: any = await createClient({ schema, db: ':memory:' })
+    await seed(db.asSystem())
+    return db.$setAuth({ id: 'u1' })
+  }
+
+  it('check(person) delegates to the row\'s own person', async () => {
+    const schema = withPolicy('Person', `@@allow('read', role == 'organizer')`,
+      withPolicy('Assignment', `@@allow('read', check(person))`))
+    const me = await asUser(schema)
+    expect(ids(await me.assignment.findMany({ where: { scheduleId: 's1' } }))).toEqual(['a1', 'a3'])
+  })
+
+  it('assignments.some(…) tests the shift\'s own assignments', async () => {
+    const me = await asUser(withPolicy('Shift', `@@allow('read', assignments.some(personId == 'bob'))`))
+    expect(ids(await me.shift.findMany({}))).toEqual(['am'])
+  })
+
+  it('a create is graded by the person the payload names, not the first in its schedule', async () => {
+    const me = await asUser(withPolicy('Assignment',
+      `@@allow('read', true)\n  @@allow('create', person.role == 'organizer')`))
+    await expect(me.assignment.create({ data: { id: 'b1', scheduleId: 's1', shiftId: 'pm', personId: 'bob' } }))
+      .rejects.toThrow()
+    expect(await me.assignment.create({ data: { id: 's9', scheduleId: 's1', shiftId: 'pm', personId: 'sam' } }))
+      .toMatchObject({ id: 's9' })
+  })
+
+  it('a composite relation compared as ONE value is refused by name', async () => {
+    await expect(createClient({ schema: withPolicy('Assignment', `@@allow('read', person == auth())`), db: ':memory:' }))
+      .rejects.toThrow(/'person' relates over \(scheduleId, personId\)/)
+  })
+})
+
+describe('a select that names a composite relation carries every key column', () => {
+  it('and hands back only what was asked for', async () => {
+    const db: any = await createClient({ schema: SRC, db: ':memory:' })
+    await seed(db)
+    const rows = await db.assignment.findMany({ where: { scheduleId: 's1' }, select: { id: true, person: { select: { name: true } } }, orderBy: { id: 'asc' } })
+    expect(rows).toEqual([
+      { id: 'a1', person: { name: 'Sam' } },
+      { id: 'a2', person: { name: 'Bob' } },
+      { id: 'a3', person: { name: 'Sam' } },
+    ])
+  })
+})
+
+describe('the soft-delete cascade follows every column of the key', () => {
+  const CASCADE = `
+model Shift {
+  id          String @id
+  scheduleId  String
+  deletedAt   DateTime?
+  assignments Assignment[]
+  @@unique([scheduleId, id])
+  @@softDelete(cascade)
+}
+
+model Assignment {
+  id          String @id
+  scheduleId  String
+  shiftId     String
+  shift       Shift @relation(fields: [scheduleId, shiftId], references: [scheduleId, id])
+  deletedAt   DateTime?
+  notes       Note[]
+  @@unique([scheduleId, id])
+  @@softDelete(cascade)
+}
+
+model Note {
+  id           String @id
+  scheduleId   String
+  assignmentId String
+  assignment   Assignment @relation(fields: [scheduleId, assignmentId], references: [scheduleId, id])
+  deletedAt    DateTime?
+  @@softDelete
+}
+`
+  it('removes and restores the removed shift\'s own subtree, and no sibling\'s', async () => {
+    const db: any = await createClient({ schema: CASCADE, db: ':memory:' })
+    for (const id of ['am', 'pm']) await db.shift.create({ data: { id, scheduleId: 's1' } })
+    await db.assignment.create({ data: { id: 'a1', scheduleId: 's1', shiftId: 'am' } })
+    await db.assignment.create({ data: { id: 'a2', scheduleId: 's1', shiftId: 'pm' } })
+    await db.note.create({ data: { id: 'n1', scheduleId: 's1', assignmentId: 'a1' } })
+    await db.note.create({ data: { id: 'n2', scheduleId: 's1', assignmentId: 'a2' } })
+
+    await db.shift.remove({ where: { id: 'am' } })
+    expect(ids(await db.assignment.findMany({}))).toEqual(['a2'])
+    expect(ids(await db.note.findMany({}))).toEqual(['n2'])
+
+    await db.shift.restore({ where: { id: 'am' } })
+    expect(ids(await db.assignment.findMany({}))).toEqual(['a1', 'a2'])
+    expect(ids(await db.note.findMany({}))).toEqual(['n1', 'n2'])
+  })
+})
+
+describe('a tree walk over a composite self-relation', () => {
+  it('is refused by name', async () => {
+    const db: any = await createClient({ schema: `
+model Node {
+  id          String @id
+  scheduleId  String
+  parentId    String?
+  parent      Node?  @relation(fields: [scheduleId, parentId], references: [scheduleId, id])
+  children    Node[]
+  @@unique([scheduleId, id])
+}`, db: ':memory:' })
+    await expect(db.node.findMany({ recursive: true }))
+      .rejects.toThrow(/'Node\.parent' relates over \(scheduleId, parentId\), and a tree walk follows a single column/)
+  })
+})

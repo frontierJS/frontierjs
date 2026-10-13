@@ -133,6 +133,10 @@ error in is put back and refused, so neither file is left half answered.
 A pick that follows the paper's recommendation takes its reason from the
 recommendation. A pick against it needs `--why`, because a ruling that
 overrides the written argument without saying why is one nobody can reread.
+So does a pick of a QUALIFIED recommendation's letter — `**Recommend A's first
+half now**` — because which part of A is ruled is prose `decide` will not
+guess; the ruling's heading and the struck answer carry the qualifier rather
+than the whole option.
 
 With no id it walks the queue: every question an existing ruling settles, then
 every one with options, one at a time. A key answers each — the option's

@@ -47,7 +47,13 @@ const MOOT_STATUS = new Set(['superseded-by', 'withdrawn'])
 
 const TOP_BULLET  = /^(?:[-*]|\d+\.)\s+(.*)$/
 const OPTION      = /^\s+[-*]\s+\*\*([A-Z])\*\*\s*[—–:-]\s*(.+)$/
-const RECOMMEND   = /^\s+[-*]\s+\*\*Recommend(?:ed)?:?\s*([A-Z])\*\*\s*(?:[—–:-]\s*)?(.*)$/
+// A recommendation's bold says more than its letter as often as not — `A's
+// first half now`, `C, then A`, `C1`. Read narrower, the line failed this and
+// was folded into the option above it as a wrapped line, so the question showed
+// no recommendation and a pick of `A` ruled all of A (`FJS-2792`). The letter is
+// what a pick is compared against; the qualifier is what the ruling must keep.
+const RECOMMEND   = /^\s+[-*]\s+\*\*Recommend(?:ed)?\b:?\s*(.*?)\*\*\s*(?:[—–:-]\s*)?(.*)$/
+const REC_LETTER  = /^([A-Z])(?![A-Za-z])/
 export const QUESTION_ID = /\b[A-Z][A-Z0-9]*-D\d+\b/g
 
 // ─── the read ─────────────────────────────────────────────────────────────────
@@ -58,7 +64,10 @@ export const QUESTION_ID = /\b[A-Z][A-Z0-9]*-D\d+\b/g
  * Each is `{ id, source, file, line, question, body, state, options,
  * recommend, paper }` where `body` is the bullet's prose after the question,
  * `state` is `ruled` · `decidable` · `open`, `options` is `[{ letter, text }]`
- * and `recommend` is `{ letter, why }` or null.
+ * and `recommend` is `{ letter, qualifier, why }` or null — `qualifier` is the
+ * whole bold when it says more than the letter (`A's first half now`), null
+ * when it does not. `unread` lists the `**Recommend` lines naming no letter,
+ * which `register:check` fails.
  */
 export function readDecisions(root) {
   const ideas  = ideaQuestions(root)
@@ -114,7 +123,8 @@ export function rulingSections(root) {
 
 // ─── IDEAS ────────────────────────────────────────────────────────────────────
 
-function ideaQuestions(root) {
+/** Every question the IDEAS papers argue, ruled ones included — `readDecisions` without the issue rows. */
+export function ideaQuestions(root) {
   const ideas = join(registerLayout(root).dir, 'IDEAS')
 
   // A paper that shipped can still hold a question nobody ruled, and moving the
@@ -168,6 +178,7 @@ function ideaQuestions(root) {
           text:      [lead.rest],
           options:   [],
           recommend: null,
+          unread:    [],
           paper,
         }
         return
@@ -175,7 +186,15 @@ function ideaQuestions(root) {
       if (!current) return
 
       const rec = line.match(RECOMMEND)
-      if (rec) { current.recommend = { letter: rec[1], why: rec[2].trim() }; current.last = current.recommend; return }
+      if (rec) {
+        const bold   = rec[1].trim().replace(/[.,;:]+$/, '')
+        const letter = bold.match(REC_LETTER)?.[1]
+        // Its wrapped lines go nowhere: on the option above, they are that option's words.
+        if (!letter) { current.unread.push({ line: i + 1, text: line.trim() }); current.last = { why: '' }; return }
+        current.recommend = { letter, qualifier: bold === letter ? null : bold, why: rec[2].trim() }
+        current.last = current.recommend
+        return
+      }
 
       const opt = line.match(OPTION)
       if (opt) { const o = { letter: opt[1], text: opt[2].trim() }; current.options.push(o); current.last = o; return }
@@ -236,6 +255,7 @@ function issueQuestions(root) {
       state:     'open',
       options:   [],
       recommend: null,
+      unread:    [],
       paper:     null,
     }))
 }

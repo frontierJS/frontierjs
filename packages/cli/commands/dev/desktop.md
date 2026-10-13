@@ -45,7 +45,7 @@ half is built — a no-op after the first time — unless `desktop/dist` is miss
 which the shell's compile needs, and then the whole of `deploy/build.mjs` runs.
 
 ```js
-const { desktopBinary, desktopApiTarget, ensureServer, movedShellBuild, stopServer, surfaceRow } =
+const { desktopBinary, desktopApiTarget, offerDesktopSurface, ensureServer, movedShellBuild, stopServer, surfaceRow } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 const { detectRunner } = await import(resolve(global.fliRoot, 'core/db-preflight.js'))
 
@@ -53,10 +53,7 @@ const root       = $.paths.root
 const surface    = $.paths.desktop
 const configFile = join(surface, 'config', 'desktop.config.js')
 
-if (!existsSync(configFile)) {
-  log.error(`There is no ${relative(root, configFile)}. fli make:desktop --wraps web creates the surface.`)
-  process.exit(1)
-}
+if (!await offerDesktopSurface({ root, configFile, tty, exec: $.exec, fli: $.fli, log, dry: flag.dry })) process.exit(1)
 
 const { default: config } = await import(pathToFileURL(configFile).href)
 const screens = config.wraps ?? 'desktop'

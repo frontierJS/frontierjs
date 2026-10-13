@@ -85,7 +85,7 @@ describe('explainPrompt', () => {
   const q: Queued = {
     id: 'paper:cross-origin', question: 'Cross-origin.', body: 'The store is on another origin.',
     options: [{ letter: 'A', text: 'a list of origins' }, { letter: 'B', text: 'any origin, a scoped token' }],
-    recommend: { letter: 'B', why: 'a wildcard grants nothing without a credential' },
+    recommend: { letter: 'B', qualifier: null, why: 'a wildcard grants nothing without a credential' },
     paper: 'paper', status: 'proposed', file: 'IDEAS/paper.md', line: 12,
   }
 
@@ -95,6 +95,9 @@ describe('explainPrompt', () => {
     expect(p).toContain('**Cross-origin.** The store is on another origin.')
     expect(p).toContain('- **A** — a list of origins')
     expect(p).toContain('- **Recommend B** — a wildcard grants nothing without a credential')
+    // A qualified recommendation reaches the agent whole, or it argues for all of B.
+    const narrowed = explainPrompt({ ...q, recommend: { ...q.recommend!, qualifier: 'B, read-only' } })
+    expect(narrowed).toContain('- **Recommend B, read-only** — a wildcard')
     expect(p).toContain('You are read-only')
   })
 

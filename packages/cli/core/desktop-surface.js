@@ -609,6 +609,33 @@ export function desktopApiTarget(api) {
   }
 }
 
+// ─── the surface a window needs ───────────────────────────────────────────────
+
+/**
+ * Whether `desktop/config/desktop.config.js` exists once this returns. Absent,
+ * a person at a terminal is offered `make:desktop` — `--wraps web` when the app
+ * has a `web/` to bundle — and the scaffold runs in a child, so its prompts and
+ * output are the command's own. With no terminal it refuses with the command
+ * to type: a scaffold nobody approved is a tree somebody did not ask for.
+ */
+export async function offerDesktopSurface({ root, configFile, tty, exec, fli, log, dry = false }) {
+  if (existsSync(configFile)) return true
+  const wraps   = existsSync(resolve(root, 'web', 'config', 'vite.config.js')) ? 'web' : null
+  const command = `make:desktop${wraps ? ` --wraps ${wraps}` : ''}`
+  if (!tty.interactive) {
+    log.error(`There is no ${relative(root, configFile)}. fli ${command} creates the surface.`)
+    return false
+  }
+  const answer = await tty.keys(
+    `There is no desktop/ surface. Create one${wraps ? ` wrapping ${wraps}/` : ''} (fli ${command})?`,
+    { y: 'yes', n: 'no' },
+  )
+  if (answer !== 'y') return false
+  if (dry) { log.dry(`fli ${command}`); return false }
+  exec({ command: `${fli} ${command}`, cwd: root })
+  return existsSync(configFile)
+}
+
 // ─── the servers a window needs ───────────────────────────────────────────────
 
 /**

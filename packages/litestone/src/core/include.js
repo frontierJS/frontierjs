@@ -441,14 +441,15 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         // Grouped by every column of the key, and matched back by the parent's
         // own referenced columns, which need not be its id.
         const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
-        const fks   = rel.foreignKeys.map(f => `"${f}"`)
+        const fks   = rel.foreignKeys.map((/** @type {string} */ f) => `"${f}"`)
+        /** @type {unknown[]} */
         const fkBinds = []
         const fkIn  = keyIn(fks, tuplesOf(rows, rel.referencedKeys), fkBinds)
-        sql = `SELECT ${fks.map((f, i) => `${f} as __k${i}`).join(', ')}, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" ` +
+        sql = `SELECT ${fks.map((/** @type {string} */ f, /** @type {number} */ i) => `${f} as __k${i}`).join(', ')}, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" ` +
           `WHERE ${fkIn}${sdExtra}${htExtra}${effExtra}${whereExtra}${polExtra} GROUP BY ${fks.join(', ')}`
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,
           [...fkBinds, ...cntBinds, ...whereParams, ...(countPolicy?.params ?? [])])
-        const kCols = fks.map((_, i) => `__k${i}`)
+        const kCols = fks.map((/** @type {string} */ _, /** @type {number} */ i) => `__k${i}`)
         for (const r of results) r.__pk = tupleOf(r, kCols)
       }
 
@@ -664,7 +665,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       /** @type {unknown[]} */
       const sdParams = []
       let sdWhere = ''
-      const keyMatch = keyIn(rel.referencedKeys.map(r => `"${tcol(r)}"`), fkValues, sdParams)
+      const keyMatch = keyIn(rel.referencedKeys.map((/** @type {string} */ r) => `"${tcol(r)}"`), fkValues, sdParams)
       if (targetSoftDelete && nestedMode !== 'withDeleted') {
         sdWhere = `"${tcol('deletedAt')}" IS ${nestedMode === 'onlyDeleted' ? 'NOT NULL' : 'NULL'} AND ${keyMatch}`
       } else {
@@ -799,7 +800,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       /** @type {unknown[]} */
       const keyBinds = []
-      const keyMatch = keyIn(rel.foreignKeys.map(f => `"${tcol(f)}"`), pkValues, keyBinds)
+      const keyMatch = keyIn(rel.foreignKeys.map((/** @type {string} */ f) => `"${tcol(f)}"`), pkValues, keyBinds)
       let sdWhere
       if (targetSoftDelete && nestedMode !== 'withDeleted') {
         const sdClause = nestedMode === 'onlyDeleted'

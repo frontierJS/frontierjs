@@ -1406,8 +1406,8 @@ function pathSql(node, ctx, modelName) {
   // Every pair of the key: joined on the first alone, a composite relation
   // reads whichever row shares it (`FJS-2790`).
   return `(SELECT "${targetTable}"."${col}" FROM "${targetTable}" ` +
-         `WHERE ${pairsOn(rel.foreignKeys, `"${selfTable}".`, rel.referencedKeys, `"${targetTable}".`,
-           f => policyColumn(schema, modelName, f), r => policyColumn(schema, rel.targetModel, r))})`
+         `WHERE ${pairsOn(rel.referencedKeys, `"${targetTable}".`, rel.foreignKeys, `"${selfTable}".`,
+           r => policyColumn(schema, rel.targetModel, r), f => policyColumn(schema, modelName, f))})`
 }
 
 // Does ANY row of a to-many relation satisfy the condition (`FJS-D566`) — a
