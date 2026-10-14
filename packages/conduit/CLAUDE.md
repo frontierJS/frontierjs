@@ -277,7 +277,13 @@ src/
   secret — not a signer registered per value (`FJS-2725`). **A resolver or signer
   that throws has sent nothing**, so `beforeDispatch` makes any throw a
   `CredentialError` — `auth_failed`, never `indeterminate`, never a remint
-  (`FJS-2723`, `FJS-2726`).
+  (`FJS-2723`, `FJS-2726`). **A mint that calls a third party is a send through
+  its own `auth: 'none'` target**, and a failed one is thrown as `MintError`:
+  still `auth_failed`, but `retryable` and `retry_after_ms` are the mint's, so a
+  token endpoint's 503 does not tell a job to drop the work. The ladder never
+  replays an `auth_failed`, or every mint retry is multiplied by this target's
+  (`FJS-2722`, `mint.test.ts`). Credentials with different lifetimes are
+  `byRef({ ref: resolver })`, one `withCache` each (`FJS-2724`).
 - **A credential that belongs to the caller is `per_caller`, and it never goes
   through `get(ref)`** (`FJS-D848`). One target and one ref, a login per
   tenant: the transport asks `getFor(ref, who)` with

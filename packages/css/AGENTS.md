@@ -139,6 +139,7 @@ the authority where the two disagree.
 | `circle` `text` | `.skeleton` *(not `.avatar`)* — `text` is a line of placeholder text |
 | `narrow` `wide` | `.container` — and separately `.bar` |
 | `viewport` `sidebar-first` | `.shell` |
+| `rail` | `.sidebar` — its labels go in `.navlink-text` |
 | `menu` | `.items` *(not `.popover`)* |
 | `start` `center` `end` | `.bar` / `.toolbar` — justification |
 | `start` `end` `bottom` `wrap` | `.tooltip` — placement |
@@ -176,7 +177,7 @@ they share `surface-header` / `surface-body` / `surface-footer`.
 | Field | `field-group` `field-hint` `field-row` `field-addon` `field-check` |
 | Dialog | `dialog-close` *(plus Surface parts)* |
 | Tabs | `tablist` `tab` |
-| Nav | `navlink` `navlist-label` |
+| Nav | `navlink` `navlink-text` `navlist-label` |
 | Pagination | `pagination-link` `pagination-gap` |
 | Pill | `pill-close` *(needs `removable` on the Pill)* |
 | Divider | `divider-label` |

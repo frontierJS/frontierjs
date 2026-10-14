@@ -18,7 +18,7 @@
  * The documented ladder, bottom to top. Read from tokens.css at runtime,
  * so a rung renamed or deleted there fails here rather than in an app.
  */
-var LADDER = ['--z-topbar', '--z-popover', '--z-tooltip', '--z-toast', '--z-skip-link'];
+var LADDER = ['--z-topbar', '--z-sidebar', '--z-popover', '--z-tooltip', '--z-toast', '--z-skip-link'];
 
 test('tokens: no component or pattern declares a literal stacking rung', function () {
   /*

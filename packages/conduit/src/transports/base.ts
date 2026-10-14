@@ -4,7 +4,7 @@
 // ============================================================
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
-import { CredentialError } from '../types.ts'
+import { CredentialError, MintError } from '../types.ts'
 import type {
   ConduitRequest,
   ConduitResult,
@@ -290,7 +290,20 @@ export abstract class BaseTransport {
     catch (err) {
       if (err instanceof CredentialError) throw err
       const why = (err as Error)?.message ?? String(err)
-      throw new CredentialError(this.descriptor.id, ref, stage ? `${stage}: ${why}` : why)
+      throw new CredentialError(this.descriptor.id, ref, stage ? `${stage}: ${why}` : why,
+        err instanceof MintError ? err.error : undefined)
+    }
+  }
+
+  // The `auth_failed` a CredentialError answers. Permanent, unless it carries
+  // a mint that failed transiently: then the layer above may send again later.
+  protected credentialFailure(err: CredentialError): Partial<ConduitError> {
+    const mint = err.mint
+    if (!mint) return { retryable: false }
+    return {
+      retryable: mint.retryable,
+      raw:       mint,
+      ...(mint.retry_after_ms !== undefined ? { retry_after_ms: mint.retry_after_ms } : {}),
     }
   }
 

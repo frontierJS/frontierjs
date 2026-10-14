@@ -31,13 +31,14 @@ stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
 dnd.js        dndzone — drag and drop between flow lists, an {@attach}
 drag.js       drag — one pointer drag, press to release or cancel, an {@attach}
-nav.js        the `src/nav.js` contract (typedefs) and sectionFor · visible ·
+nav.js        the `src/lib/nav.js` contract (typedefs) and sectionFor · visible ·
               paletteItems; never decides CURRENT, which is Sierra's isActive
 selection.js  createSelection — the ticked KEYS of a list, signal-backed; the
               screen composes it with Checkbox `indeterminate` and BulkBar,
               and Table stays out of it (FJS-D671)
 utils.js      shared helpers; `download(blob, filename)` saves a file
-test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
+test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs ·
+              nav.mjs (the nav.js contract)
 test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
               coverage) · server.mjs (compiles .mesa on demand) · page.js
               (mounts a fixture) · fixtures/*.mesa · specs/*.spec.mjs.
@@ -369,6 +370,15 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     in `formError` once its `[name]` is gone from the form. Guard
     a `reportInvalid` on no-change: it rebuilds `$context.form`, which
     re-derives the control that called it.
+- **A large component reached only on some paths loads lazily, the way
+  `display/Cell.mesa` loads `Json`.** A `<script module>` loader shared by
+  every instance — `View ?? (loading ??= import('./X.mesa').then(...))` —
+  handed to `{#await}`, which renders a VALUE with no pending frame, so only the
+  first instance on a page waits. The pending branch and `{:catch}` both render
+  the value as text, not a spinner: SSR never waits, so the pending branch is
+  all a server render shows, and a failed import keeps the text rather than
+  blanking the cell. Proved by the build, not the suite: the component gets its
+  own chunk and the importer's chunk reaches it by `import()`.
 - **`CodeInput` is a transparent `<textarea>` over glow's paint in one grid
   cell, and every way it breaks is a caret beside its character.** One rule,
   `.fjs-code-input-layer`, sets the metrics for both layers; glow runs with

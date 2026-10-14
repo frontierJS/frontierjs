@@ -7,9 +7,9 @@ reranked: 2026-10-10
 
 # Idea — which Conduit connectors FrontierJS should maintain, and in which order
 
-**Status: PROPOSAL, prototyped.** All nineteen are built as prototypes in the
+**Status: PROPOSAL, prototyped.** All twenty are built as prototypes in the
 sibling workspace `../conduit-connectors/`, none promoted into `packages/` —
-§ *Prototyped 2026-10-11* is the state of each. Dated 2026-08-29. `FJS-D153` settled
+§ *Prototyped 2026-10-11* is the state of each (20 built, all 10 conduit rows closed). Dated 2026-08-29. `FJS-D153` settled
 *where* an official connector lives — its own package, `@frontierjs/conduit-<vendor>`,
 promoted out of `example/` once a second one exists to argue with the first. It did
 not settle **which ones**, and it did not settle what a connector package actually
@@ -235,7 +235,7 @@ workspace `conduit-connectors/` (its own git repo, beside `frontierjs/`; nothing
 is under `packages/` here). Each follows `FJS-D890` — target builder, payload
 types, error mapping, sink, drive, verifier where the vendor sends webhooks —
 against a `CONTRACT.md` written after Tier A and amended by Tier B and C.
-**Audited 2026-10-12 by running every drive: 19 of 19 green**, every one against
+**Audited 2026-10-13 by running every drive: 20 of 20 green**, every one against
 its own sink only. No vendor was called, no key exists, no docker, so a row
 that names a fixture names one wired to `FIXTURE_URL` and never run.
 
@@ -243,35 +243,41 @@ that names a fixture names one wired to `FIXTURE_URL` and never run.
 | --- | --- | --- | --- | --- | --- |
 | stripe | A | extracted from `example/api/src/providers/stripe/` | 16 rows | — | nothing; the shape the others copied |
 | resend | A | extracted from junction's mail battery | 12 | — | nothing; closes the `FJS-D153` inversion |
-| s3 | A | extracted from litestone `storage/`; SigV4 imported, not copied | 12 | MinIO, SeaweedFS **unproved** | `FJS-2543` SigV4 to toolbelt; `FJS-2725`; a docker run |
+| s3 | A | extracted from litestone `storage/`; SigV4 imported, not copied; region is `auth.params` | 12 | MinIO, SeaweedFS **unproved** | `FJS-2543` SigV4 to toolbelt; a docker run |
 | telnyx | A | written new (quo not on this machine) | 10 | — | error codes checked against an account; `FJS-2571` |
 | cloudflare | A | extracted from basecamp edge | 12 | — | nothing; purge-cache has no caller so is not built |
 | digitalocean | A | extracted from basecamp compute | 11 | — | nothing; promote with hetzner |
 | hetzner | A | extracted from basecamp compute | 12 | — | nothing |
-| google-maps | B | new; two hosts, one key | 19 | — | `FJS-2727` for `?key=` Geocoding, or header-auth surfaces only; Nominatim named, not built |
-| oidc | B | new | 36 | **panva oidc-provider proved in-process (44 rows)**; Dex unproved | `FJS-2729`, `FJS-2730`, or the second-target convention; Apple `client_secret_basic` unverified |
-| push | B | new (APNs + FCM) | 23 | — | `FJS-2721`, `FJS-2722`; APNs h2 unmeasured |
+| google-maps | B | new; two hosts, one key; `?key=` via `query` on `api_key` (`FJS-D940`) | 22 | — | Google wording unverified; Nominatim named, not built |
+| oidc | B | new; `origins` on the target (`FJS-D939`), two targets for two credentials (`FJS-D933`) | 38 | **panva oidc-provider proved in-process**; Dex unproved | Apple `client_secret_basic` unverified |
+| push | B | new (APNs + FCM); APNs 403 is a refusal predicate (`FJS-D941`); the FCM exchange is a send through its own target | 23 | — | APNs h2 unmeasured |
+| gmail | B | new; per-user OAuth over `per_caller` | 41 | — | after oidc; batch endpoint waits on `FJS-2700` |
 | anthropic | C | new | 22 | — | nothing; streams through `conduit.stream()` (`FJS-D934`) |
-| openai | C | new, protocol connector | 23 | Ollama, llama.cpp **unproved** | a local model server |
-| twilio | C | new; Basic over the signer seam | 12 | — | nothing |
+| openai | C | new, protocol connector; streams | 23 | Ollama, llama.cpp **unproved** | a local model server |
+| twilio | C | new; the built-in Basic signer (`FJS-D933`) | 12 | — | nothing |
 | postmark | C | new; inbound over a URL credential | 10 | — | nothing |
-| turnstile | C | new; secret-in-body signer | 12 | — | nothing (`FJS-2726` asserted as-is) |
+| turnstile | C | new; secret-in-body signer | 12 | — | nothing |
 | slack | C | new; bot token + incoming webhook | 26 | — | nothing; `files.uploadV2`, `conversations.history` not built |
 | plausible | C | new; the replayable read | 8 | Plausible CE **unproved** | a docker run |
 | tax | C | new over conduit-stripe by relative import | 10 | — | promote after stripe |
 | shipping | C | new (EasyPost) | 15 | — | nothing |
 
-**What the prototypes found in conduit** — ten rows, `FJS-2721`–`FJS-2730`, all
-open: a credential replays on 401 only, a minting resolver is a send conduit
-never sees, a throwing resolver or signer reports `connection_failed`, one
-`credentials` slot, no signer parameters, no URL rewrite from a signer, no
-http `stream()`, one credential and one address per target. `FJS-2245` gained a
-measurement. The contract clauses they bent are `CONTRACT.md` § Amendments there.
+**What the prototypes found in conduit** — ten rows, `FJS-2721`–`FJS-2730`.
+Eight are closed by rulings of 2026-10-12/13: `FJS-D933` (Basic is the one
+built-in signer; two credentials are two targets; a throwing resolver or signer
+is `auth_failed`; a per-target signing fact is `auth.params`), `FJS-D934` (http
+`stream()` is the body as it arrives), `FJS-D939` (`origins` on a target),
+`FJS-D940` (`query` on `api_key`), `FJS-D941` (a signer names its own refusal).
+Nine connectors were moved onto those seams. The last two closed 2026-10-13:
+`FJS-2722` (a mint through a second target throws `MintError`, so its failure
+keeps its own `retryable`) and `FJS-2724` (`byRef()` beside `withCache`). The
+contract clauses they bent are `CONTRACT.md` § Amendments there.
 
 **Promotion order** (the reasoning is `REPORT.md` there): stripe · resend ·
 turnstile · twilio · cloudflare · digitalocean + hetzner · postmark · slack,
-plausible, shipping, tax · then the ones with a framework row in front of them —
-telnyx, google-maps, push, oidc, s3, anthropic + openai. Promotion turns the two
+plausible, shipping, tax · anthropic + openai · google-maps · oidc · gmail ·
+push · then the ones with something still in front of them — telnyx
+(`FJS-2571`), s3 (`FJS-2543`, docker). Promotion turns the two
 relative imports (s3 → litestone's `sigv4.js`, tax → conduit-stripe) into
 workspace dependencies and adds each package's row to the root `CLAUDE.md`
 Packages table with ring `batteries`. `alongside/conduit-connectors.md` is the

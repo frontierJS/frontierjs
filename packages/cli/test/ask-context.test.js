@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { askContext, enclosingLoops, findAppRoot, findGuides, resourceImports } from '../core/ask-context.js'
+import { GUIDES, askContext, enclosingLoops, findAppRoot, findGuides, resourceImports } from '../core/ask-context.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'fli-ask-context-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -87,8 +87,8 @@ describe('findGuides', () => {
     for (const p of ['css', 'mesa', 'sierra']) symlinkSync(join(dir, 'pkgs', p), join(dir, 'node_modules', '@frontierjs', p))
     const real = realpathSync(dir)
     expect(findGuides(web)).toEqual([
-      { pkg: 'css',  file: join(real, 'pkgs/css/AGENTS.md'),  dir: join(real, 'pkgs/css') },
-      { pkg: 'mesa', file: join(real, 'pkgs/mesa/AGENTS.md'), dir: join(real, 'pkgs/mesa') },
+      { pkg: 'css',  file: join(real, 'pkgs/css/AGENTS.md'),  dir: join(real, 'pkgs/css'),  about: GUIDES.css },
+      { pkg: 'mesa', file: join(real, 'pkgs/mesa/AGENTS.md'), dir: join(real, 'pkgs/mesa'), about: GUIDES.mesa },
     ])
   })
 

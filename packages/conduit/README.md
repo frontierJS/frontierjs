@@ -244,6 +244,17 @@ token is what the resolver's `get(ref)` returns — mint it there, and
 `invalidate` and the send replays once on a fresh one, as for any credential.
 The signer sees only the string.
 
+**A mint that calls a third party sends through conduit too.** An OAuth token
+exchange is a request to someone else's endpoint, so it gets its own `auth:
+'none'` target and the resolver sends through it (`FJS-D933`) — the endpoint
+then has a breaker, an observer and a timeout. When that send fails, the
+resolver throws `new MintError(r.error)`: the send that needed the token is
+`auth_failed` with nothing sent, but with the mint's `retryable` and
+`retry_after_ms`, and the mint's error as `raw`. Thrown as anything else, a
+token endpoint's 503 reads as a permanent `auth_failed` and a job drops the
+work. Conduit never replays a failed mint itself; the token target ran its own
+retries.
+
 #### WebSocket auth
 
 Credentials go on the **upgrade request**, using Bun's `headers` option on the `WebSocket` constructor. For an `hmac` target the upgrade is signed with method `CONNECT` and the address path.
@@ -287,7 +298,7 @@ interface CredentialResolver {
 }
 ```
 
-Four are built in:
+Five are built in:
 
 ```ts
 import {
@@ -295,12 +306,15 @@ import {
   createStaticResolver,  // fixed { ref: secret } map, for the composition root and tests
   createNullResolver,    // resolves nothing; every ref fails closed
   withCache,             // TTL cache around any resolver
+  byRef,                 // one resolver per ref — credentials with different lifetimes
 } from '@frontierjs/conduit'
 
 app.configure(conduit({
   credentials: withCache(createVaultResolver(), { ttl_ms: 300_000 }),
 }))
 ```
+
+`byRef({ APNS_KEY: withCache(apns, { ttl_ms: 50 * 60_000 }), FCM_SA: withCache(fcm, { ttl_ms: 55 * 60_000 }), STRIPE_KEY: createEnvResolver() })` gives each ref its own resolver and its own cache; `invalidate` reaches the entry that answered. A ref the table does not name resolves to nothing.
 
 **Unresolvable refs fail closed.** If `get()` returns `null` or an empty string, the request is not sent — `send()` returns `error.kind === 'auth_failed'` with `retryable: false`. The error names the target and the ref, never the value.
 

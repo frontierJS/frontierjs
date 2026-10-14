@@ -13,7 +13,7 @@
 // takes the whole app down at the last startup phase, after the port is open.
 
 import { describe, it, expect } from 'bun:test'
-import { describeDataRealm } from '../src/core/litestone.ts'
+import { describeDataRealm, dataRealmFacts } from '../src/core/litestone.ts'
 
 const litestoneLike = (over: Record<string, unknown> = {}) => ({
   $schema: {
@@ -85,5 +85,22 @@ describe('describeDataRealm', () => {
       $databases: { main: {}, other: null },
     }))
     expect(out?.databases).toBe('main → ? (?), other → ? (?)')
+  })
+})
+
+// The same reading as the one row `fli dev` prints. What it may drop is what a
+// person cannot act on; the path is not one of those (`FJS-449`).
+describe('dataRealmFacts', () => {
+  it('names gated only when a model is not, and keeps every path', () => {
+    expect(dataRealmFacts(litestoneLike())).toEqual([
+      '3 models', '2/3 gated', 'main ./db/shop.db', 'audit ./db/audit (trail)',
+    ])
+    const allGated = litestoneLike({ $schema: { models: [{ name: 'A', attributes: [{ kind: 'gate' }] }] } })
+    expect(dataRealmFacts(allGated)).toEqual(['1 models', 'main ./db/shop.db', 'audit ./db/audit (trail)'])
+  })
+
+  it('says nothing for a client that is not Litestone', () => {
+    expect(dataRealmFacts({})).toBeNull()
+    expect(dataRealmFacts(new Proxy({}, { get() { throw new Error('not a table') } }))).toBeNull()
   })
 })

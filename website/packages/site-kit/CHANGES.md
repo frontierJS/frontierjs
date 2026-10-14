@@ -1,5 +1,13 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-13 — `site-kit check` (`FJS-D962`)
+
+- **`site-kit check <dir>`** is the pre-ship check every site-kit site has: content/ without a build (unknown `<Tag>` or `layout:`, a `{merge_field}` no setting holds, dividers, front-matter, robots.txt, the redirects) and dist/ when there is one (sitemap, canonicals, titles, descriptions, headings, og:image, links, images, JSON-LD against schema.org). Exits 1 on an error. Exported as `@frontierjs/site-kit/check`.
+- **A preset returns `rules`**, a fourth key beside `sierra`, `plugins` and `shell`: `[{ id, group, stage, run }]`. A rule with a kit rule's id replaces it. Any `--flag` the command does not read reaches a preset's rules.
+- **The check reads the resolved site**, not a copy of its directories: `resolveSite({ root })` is what `siteKit()` now builds from.
+
+`@kobami/ksite` deleted its `ksite-check` bin, runner, context and the forked auditor, and `config/names.js`, which restated the layout order; it keeps the template's rules (leftovers under `launch_date`, `buildoutOnly` pages) and its structured-data rule, which replaces the kit's with ksite's fix hints. `bun run check:site` there is `site-kit check site` and reports the same 9 errors, 16 warnings and 2 notes, finding for finding. On frontierjs.com the first run reports 50 pages without a canonical and 48 without an `og:image` (`FJS-2829`).
+
 ## 2026-10-13 — a site's own redirects (`FJS-D961`)
 
 - **`content/settings/_redirects`** reaches the build again, where every legacy ksite client keeps its campaign links. Sierra merges it with every route's `redirect:` into `dist/_redirects`, the routes' rules first, and stops the build when one path is sent two places. Before, site-kit never read the file, and Sierra overwrote any `_redirects` in the output as soon as one route redirected.

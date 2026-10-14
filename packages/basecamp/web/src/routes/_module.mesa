@@ -340,10 +340,11 @@ siteName: Basecamp
 <!--
   Every class here comes from @frontierjs/css and every control from
   @frontierjs/ui: the frame (shell / topbar / sidebar / screen) and the nav
-  (navlist / navlink / navlist-label) are vocabulary; the badges, pills,
-  buttons, switcher, drawer and account menu are components. The one <style>
-  block below is layout only — the notice rail, the collapsed sidebar and what
-  the topbar drops below 767px, which the vocabulary has no word for. No color,
+  (navlist / navlink / navlink-text / navlist-label, and the collapsed
+  sidebar's .rail) are vocabulary; the badges, pills, buttons, switcher,
+  drawer and account menu are components. The one <style> block below is
+  layout only — the notice rail and what the topbar drops below 767px, which
+  the vocabulary has no word for. No color,
   no utility classes (repo invariant 13).
 -->
 <!-- The skip link is the first focusable thing on the page and is invisible
@@ -375,7 +376,7 @@ siteName: Basecamp
         <a class="navlink" href={link.href}
            aria-current={(page.route, current(link)) ? 'page' : null}
            title={rail ? link.label : null}
-        ><NavIcon name={link.icon} /><span class="nav-text">{link.label}</span></a>
+        ><NavIcon name={link.icon} /><span class="navlink-text">{link.label}</span></a>
       </li>
     {/each}
   </ul>
@@ -389,7 +390,7 @@ siteName: Basecamp
   {#each navGroups() as group}
     <details class="nav-group" open={group.open || group.links.some(current) ? true : null}>
       <summary class="navlist-label" title={rail ? group.label : null}>
-        <NavIcon name={group.icon} /><span class="nav-text">{group.label}</span>
+        <NavIcon name={group.icon} /><span class="navlink-text">{group.label}</span>
         <span class="nav-chevron"><NavIcon name="chevron" /></span>
       </summary>
       {@render navlinks(group.links)}
@@ -644,24 +645,10 @@ siteName: Basecamp
     margin-inline-start: auto;
   }
 
-  /* The rail keeps every label in the accessibility tree — a link whose only
-     content is an aria-hidden glyph has no name at all. */
-  .sidebar.rail {
-    inline-size:    auto;
-    padding-inline: var(--space-sm);
-  }
-  .sidebar.rail .nav-text {
-    position:    absolute;
-    inline-size: 1px;
-    block-size:  1px;
-    overflow:    hidden;
-    clip-path:   inset(50%);
-    white-space: nowrap;
-  }
+  /* The rail is the kit's .sidebar.rail; what is basecamp's is the chevron,
+     which would sit in the closed rail as a second glyph, and the toggle. */
   .sidebar.rail .nav-chevron { display: none; }
   .sidebar.rail .rail-toggle { margin-inline: auto; }
-  .sidebar.rail .navlink,
-  .sidebar.rail .nav-group > summary { justify-content: center; }
   .sidebar.rail .nav-group + .nav-group {
     margin-block-start: var(--space-sm);
     border-block-start: var(--border-width) solid var(--rule);

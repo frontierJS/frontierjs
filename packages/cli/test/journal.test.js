@@ -128,7 +128,7 @@ describe('resume, or a new attempt', () => {
 
   // deploy R2 → revert to R1 → deploy R2 again is three operations, and the
   // third is not a replay of the first. This is the term `--plan` could not
-  // answer (core/plan.js).
+  // answer (core/deploy-plan.js).
   test('a finished transition means the next run is a NEW attempt', () => {
     expect(attemptDecision([{ status: 'succeeded' }])).toMatchObject({ attempt: 2, resume: null })
     expect(attemptDecision([{ status: 'succeeded' }, { status: 'failed' }]))

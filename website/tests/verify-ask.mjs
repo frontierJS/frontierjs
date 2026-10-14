@@ -222,7 +222,9 @@ async function ask(instruction) {
 async function undo(run = null) {
   const before = await count('/^(not )?undone: /gm')
   await evaluate(`${undoOf(run)}.click(); return true`)
-  return until(`(${panelText}.match(/^(not )?undone: /gm) || []).length > ${before}`, 5_000, 'the undo answered')
+  const ok = await until(`(${panelText}.match(/^(not )?undone: /gm) || []).length > ${before}`, 5_000, 'the undo answered')
+  if (!ok) console.log('    panel ends:', JSON.stringify((await evaluate(`return ${panelText}`)).split('\n').slice(-80)))
+  return ok
 }
 
 try {

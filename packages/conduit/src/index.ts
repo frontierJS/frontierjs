@@ -19,6 +19,7 @@ export {
   createStaticResolver,
   createNullResolver,
   withCache,
+  byRef,
 } from './credentials.ts'
 
 // Trace context propagation
@@ -88,4 +89,4 @@ export type {
 } from './types.ts'
 
 // Exported as values (classes, not just types)
-export { ConduitStreamError, CredentialError, CONDUIT_ERROR_KINDS } from './types.ts'
+export { ConduitStreamError, CredentialError, MintError, CONDUIT_ERROR_KINDS } from './types.ts'

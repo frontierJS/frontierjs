@@ -1057,7 +1057,7 @@ var OUTCOMES = {
     lead: 'The primary navigation column.',
     markup: function (c) { return '<nav class="' + c + '" aria-label="Main">\n  …\n</nav>' },
     tones: false,
-    treatments: ['glass'],
+    treatments: ['glass', 'rail'],
     states: [],
     instead: [{ term: 'Drawer', when: 'it is temporary and slides over the page' }],
   },

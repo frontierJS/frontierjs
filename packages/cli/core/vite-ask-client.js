@@ -75,16 +75,22 @@
   const saved = keep('fli:ask:log')
   const foldKeep = keep('fli:ask:fold')
   const miniKeep = keep('fli:ask:mini')
-  // How hard Claude thinks is a preference rather than part of one ask, so it
-  // outlives the tab where the rest of the panel's state does not.
+  // How hard Claude thinks follows the Change chip unless one is pressed; a
+  // pressed one is a preference rather than part of one ask, so it outlives
+  // the tab where the rest of the panel's state does not, until the kind's own
+  // is pressed again.
   const EFFORT_KEY = 'fli:ask:effort'
   const EFFORTS = (typeof ASK !== 'undefined' && ASK.efforts) || []
   const EFFORT  = (typeof ASK !== 'undefined' && ASK.effort) || null
-  const effortOf = () => { try { const v = localStorage.getItem(EFFORT_KEY); return EFFORTS.includes(v) ? v : EFFORT } catch { return EFFORT } }
-  const setEffort = v => { try { v === EFFORT ? localStorage.removeItem(EFFORT_KEY) : localStorage.setItem(EFFORT_KEY, v) } catch {} }
+  const KIND_EFFORTS = (typeof ASK !== 'undefined' && ASK.kinds) || {}
+  const kindEffort = () => KIND_EFFORTS[kind] || EFFORT
+  const pressedEffort = () => { try { const v = localStorage.getItem(EFFORT_KEY); return EFFORTS.includes(v) ? v : null } catch { return null } }
+  const setEffort = v => { try { v === kindEffort() ? localStorage.removeItem(EFFORT_KEY) : localStorage.setItem(EFFORT_KEY, v) } catch {} }
 
   let panel, tab, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch
   let picks = [], sent = false, busy = false
+  // The reply entry still streaming, and what the run said it is doing.
+  let draft = null, doing = 'working'
   // Closed hides the panel and its tab; shrunk hides the panel behind the tab.
   let closed = false, shrunk = !!miniKeep.get()
   // Pasted images waiting for the next send: `{ type, data, thumb }`.
@@ -206,13 +212,20 @@
   function remember(entry) {
     entries.push(entry)
     if (entries.length > MAX_ENTRIES) entries = entries.slice(-MAX_ENTRIES)
-    save()
   }
   const save = () => saved.set(entries.length ? JSON.stringify(entries) : null)
 
   function line(text, tone, imgs) {
     remember({ k: 'line', text, tone, at: Date.now(), ...(imgs?.length ? { imgs } : {}) })
     if (tone === 'you') toBottom = true
+    drawSoon()
+  }
+
+  // Reply text as it streams: one entry grown in place, which the whole
+  // block replaces when it lands.
+  function streamed(text) {
+    if (!draft) { line(''); draft = entries[entries.length - 1] }
+    draft.text += text
     drawSoon()
   }
 
@@ -240,9 +253,11 @@
   // a row above it growing shrinks the log, and only this says to follow.
   let drawing = 0, toBottom = false, stuck = true
 
+  // The save rides the same tick: the whole log, diffs and thumbnails, is
+  // one stringify, and a run streams a tool call every few hundred ms.
   function drawSoon() {
-    if (!log || drawing) return
-    drawing = setTimeout(draw, 16)
+    if (drawing) return
+    drawing = setTimeout(() => { drawing = 0; save(); if (log) draw() }, 16)
   }
 
   // A run is mostly tool calls; a row of them is one block showing the last
@@ -367,7 +382,6 @@
   // A reader who scrolled up to an earlier turn stays there; one at the
   // bottom, or one who just sent, follows the run.
   function draw() {
-    drawing = 0
     const top = log.scrollTop
     log.textContent = ''
     const hidden = entries.filter(e => e.hid).length
@@ -379,7 +393,7 @@
       log.appendChild(more)
     }
     grouped(unhide ? entries : entries.filter(e => !e.hid)).forEach((g, i) => log.appendChild(node(g, i)))
-    if (busy) log.appendChild(make('div', 'align-self:flex-start;padding:0 11px;color:#94a3b8;font-size:12.5px;font-style:italic', 'Claude is working…'))
+    if (busy) log.appendChild(make('div', 'align-self:flex-start;padding:0 11px;color:#94a3b8;font-size:12.5px;font-style:italic', `Claude is ${doing}…`))
     log.scrollTop = stuck || toBottom ? log.scrollHeight : top
     toBottom = false
     drawTab()
@@ -427,6 +441,8 @@
 
   function setBusy(on) {
     busy = on
+    doing = 'working'
+    draft = null
     send.disabled = on
     submit.disabled = on
     stop.style.display = on ? '' : 'none'
@@ -640,13 +656,14 @@
     if (!EFFORTS.length) return
     // One effort is always on, so a second press on it keeps it rather than
     // clearing it the way a Change or Scope chip clears.
-    const on = effortOf()
+    const auto = kindEffort()
+    const on = pressedEffort() || auto
     effortBox.textContent = ''
     const tray = make('div', 'display:flex;gap:1px;padding:1px;border-radius:5px;background:#0f172a')
     for (const key of EFFORTS) {
       const b = make('button', SEG + ';font-size:10.5px;padding:3px 6px' + (on === key ? SEG_ON : ''), key)
       b.type = 'button'
-      b.title = key === EFFORT ? 'How long Claude thinks before it edits — the default' : 'How long Claude thinks before it edits'
+      b.title = key === auto ? `How long Claude thinks before it edits — the default for ${kind ? 'this kind of change' : 'an ask with no Change chip'}` : 'How long Claude thinks before it edits'
       b.setAttribute('aria-pressed', String(on === key))
       b.onclick = () => { setEffort(key); drawChips() }
       tray.appendChild(b)
@@ -859,7 +876,7 @@
         picks:   wire(list),
         page:    location.href,
         session: store.get(),
-        effort:  effortOf() || undefined,
+        effort:  pressedEffort() || undefined,
       })
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({}))
@@ -879,8 +896,10 @@
           try { e = JSON.parse(l) } catch { continue }
           if (e.type === 'run') run = e.id
           else if (e.type === 'session') store.set(e.id)
-          else if (e.type === 'text') line(e.text)
-          else if (e.type === 'tool') line('· ' + e.text, 'tool')
+          else if (e.type === 'delta') streamed(e.text)
+          else if (e.type === 'text') { if (draft) { draft.text = e.text; draft = null; drawSoon() } else line(e.text) }
+          else if (e.type === 'status') { doing = e.text; drawSoon() }
+          else if (e.type === 'tool') { draft = null; line('· ' + e.text, 'tool') }
           else if (e.type === 'error') line(e.text, 'error')
           else if (e.type === 'diff') diff(e.files)
           else if (e.type === 'result') {

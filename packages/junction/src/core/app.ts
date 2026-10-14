@@ -9,9 +9,10 @@ import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { bridge, errorResponse, readTransportFlags, refuseBadDirectives } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
+import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
+import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, dataRealmFacts, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
 import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
@@ -2178,7 +2179,9 @@ export function createApp(opts: AppOptions = {}): App {
       { name: 'log-listening', needsHost: true, run: () => {
         events.emit('app:ready', { port: config.port })
 
-        const _base   = `http://${config.hostname}:${config.port}`
+        // The bound port, which is not `config.port` when that was 0.
+        const _port   = http.port ?? config.port
+        const _base   = `http://${config.hostname}:${_port}`
         const _prefix = config.apiPrefix ?? ''
 
         // hasExactRoute, not hasRoute: hasRoute asks "would this path match
@@ -2206,6 +2209,31 @@ export function createApp(opts: AppOptions = {}): App {
 
         const _healthPath = _mountedAt('/health')
         const _docsPath   = _mountedAt('/docs')
+
+        // Under `fli dev` the banner is one marked line and fli lays it out
+        // beside the web surface's; `--verbose` there starts this process
+        // without the variable and the banner below prints instead.
+        if (process.env[DEV_ENV]) {
+          const _host = ['0.0.0.0', '::', ''].includes(config.hostname) ? 'localhost' : config.hostname
+          // A declared directory that is missing has its own warning above.
+          const _servicesMissed = _servicesDir.source === 'none' && services.list().length === 0
+          console.log(formatDevLine({ ready: {
+            url:  `http://${_host}:${_port}${_prefix}`,
+            rows: [
+              { name: 'Junction', facts: [
+                `${http.router.routeCount} routes`,
+                `${services.list().length} services`,
+                ...(_servicesMissed ? [`autoload ${describeServicesDir(_servicesDir)}`] : []),
+                ...(app._devtools.status === 'on' ? [`devtools ${app._devtools.url}`] : []),
+                ...(app._devtools.status === 'refused' ? [`devtools refused — ${app._devtools.reason}`] : []),
+                ...(config.debug ? ['debug'] : []),
+              ] },
+              ...(dataRealmFacts(db) ? [{ name: 'Litestone', facts: dataRealmFacts(db)! }] : []),
+              ...[...app._devServices.values()].map(svc => ({ name: svc.name, facts: [svc.url, svc.note].filter(Boolean) as string[] })),
+            ],
+          } }))
+          return
+        }
 
         logger.info(`🚀 ${config.name} v${config.version}`, {
           url:      _base,

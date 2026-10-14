@@ -13,10 +13,11 @@ import { parseFrontmatter } from '../scanner/parse-frontmatter.js'
 import { warnUnexportedSnippets, extractLayoutProps, positionless, holdHints, recordChunks } from './warnings.js'
 import { injectAutoImports } from './auto-import-plugin.js'
 import { rewriteMesaSlots, rewriteLayoutSlots } from './slot-rewrite.js'
-import { resolve, dirname } from 'path'
+import { resolve, dirname, relative } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { existsSync } from 'fs'
 import { createRequire } from 'module'
+import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
 // The HMR boundary and its browser client are MESA'S — this package
 // reimplements the plugin, never the boundary (`FJS-D16`). Loaded the way every
 // other mesa file here is loaded, off the filesystem via findMesaFile: a bare
@@ -501,14 +502,20 @@ export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = 
         const echoed = new Set(analysed.map((w) => `Warning: ${w}`))
         const held = hold && !isDev && sierraContext ? new Set(ctx.analysis?.reactivityHints ?? []) : new Set()
         if (held.size) holdHints(sierraContext, id, [...held])
-        for (const w of analysed) if (!held.has(w)) this.warn(positionless(`[Mesa] ${w}`))
+        // Under `fli dev` a warning is a marked line naming its file, which fli
+        // prints as one; Vite's own form is the message plus a Plugin and a
+        // File line.
+        const warn = isDev && process.env[DEV_ENV]
+          ? (msg) => console.warn(formatDevLine({ warn: { file: relative(root, id), text: msg } }))
+          : (msg) => this.warn(positionless(msg))
+        for (const w of analysed) if (!held.has(w)) warn(`[Mesa] ${w}`)
         for (const m of direct) {
-          if (!echoed.has(m)) this.warn(positionless(`[Mesa] ${m.replace(/^Warning: /, '')}`))
+          if (!echoed.has(m)) warn(`[Mesa] ${m.replace(/^Warning: /, '')}`)
         }
 
         // Warning 1: snippets defined in route files but not exported
         if (id.startsWith(absRoutesDir) && !isLayoutFile(id)) {
-          warnUnexportedSnippets(source, id, absRoutesDir, (msg) => this.warn(positionless(msg)))
+          warnUnexportedSnippets(source, id, absRoutesDir, warn)
         }
 
         // Declare an HMR boundary in dev so Vite stops escalating every .mesa

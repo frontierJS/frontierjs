@@ -135,80 +135,90 @@ export function ideaQuestions(root) {
 
   const out = []
   for (const path of papers) {
-    const name  = basename(path)
-    const rel   = relative(root, path)
-    const text  = readFileSync(path, 'utf8')
-    const lines = text.split('\n')
-    const meta  = extractFrontmatter(text, path)
+    const rel  = relative(root, path)
+    const text = readFileSync(path, 'utf8')
+    const meta = extractFrontmatter(text, path)
     if (MOOT_STATUS.has(meta.status)) continue
+    const paper = { id: meta.id || basename(path).replace(/\.md$/, ''), status: meta.status || '', file: rel }
+    out.push(...paperQuestions(text, { paper, rel }))
+  }
+  return out
+}
 
-    const paper = { id: meta.id || name.replace(/\.md$/, ''), status: meta.status || '', file: rel }
-    const seen  = new Map()
-    let inside  = false
-    let fence   = false
-    let current = null
+/**
+ * The questions one paper's `## Open questions` holds, in order — the per-file
+ * half of `ideaQuestions`, exported so a plan (`plan.js`) reads its `Q` bullets
+ * through the same parse rather than a second one. `paper` is
+ * `{ id, status, file }`; `rel` is the path the questions are reported at.
+ */
+export function paperQuestions(text, { paper, rel = paper.file } = {}) {
+  const lines = text.split('\n')
+  const out   = []
+  const seen  = new Map()
+  let inside  = false
+  let fence   = false
+  let current = null
 
-    const close = () => {
-      if (!current) return
-      out.push(finish(current))
-      current = null
+  const close = () => {
+    if (!current) return
+    out.push(finish(current))
+    current = null
+  }
+
+  lines.forEach((line, i) => {
+    if (/^\s*```/.test(line)) { fence = !fence; return }
+    if (fence) return
+
+    if (/^##\s/.test(line)) { close(); inside = QUESTIONS_HEADING.test(line); return }
+    if (!inside) return
+
+    const top = line.match(TOP_BULLET)
+    if (top && !/^\s/.test(line)) {
+      close()
+      const lead = questionLead(top[1])
+      const base = `${paper.id}:${slug(lead.question)}`
+      const n    = (seen.get(base) ?? 0) + 1
+      seen.set(base, n)
+      current = {
+        id:        n === 1 ? base : `${base}-${n}`,
+        source:    'idea',
+        file:      rel,
+        line:      i + 1,
+        question:  lead.question,
+        struck:    lead.struck,
+        text:      [lead.rest],
+        options:   [],
+        recommend: null,
+        unread:    [],
+        paper,
+      }
+      return
+    }
+    if (!current) return
+
+    const rec = line.match(RECOMMEND)
+    if (rec) {
+      const bold   = rec[1].trim().replace(/[.,;:]+$/, '')
+      const letter = bold.match(REC_LETTER)?.[1]
+      // Its wrapped lines go nowhere: on the option above, they are that option's words.
+      if (!letter) { current.unread.push({ line: i + 1, text: line.trim() }); current.last = { why: '' }; return }
+      current.recommend = { letter, qualifier: bold === letter ? null : bold, why: rec[2].trim() }
+      current.last = current.recommend
+      return
     }
 
-    lines.forEach((line, i) => {
-      if (/^\s*```/.test(line)) { fence = !fence; return }
-      if (fence) return
+    const opt = line.match(OPTION)
+    if (opt) { const o = { letter: opt[1], text: opt[2].trim() }; current.options.push(o); current.last = o; return }
 
-      if (/^##\s/.test(line)) { close(); inside = QUESTIONS_HEADING.test(line); return }
-      if (!inside) return
-
-      const top = line.match(TOP_BULLET)
-      if (top && !/^\s/.test(line)) {
-        close()
-        const lead = questionLead(top[1])
-        const base = `${paper.id}:${slug(lead.question)}`
-        const n    = (seen.get(base) ?? 0) + 1
-        seen.set(base, n)
-        current = {
-          id:        n === 1 ? base : `${base}-${n}`,
-          source:    'idea',
-          file:      rel,
-          line:      i + 1,
-          question:  lead.question,
-          struck:    lead.struck,
-          text:      [lead.rest],
-          options:   [],
-          recommend: null,
-          unread:    [],
-          paper,
-        }
-        return
-      }
-      if (!current) return
-
-      const rec = line.match(RECOMMEND)
-      if (rec) {
-        const bold   = rec[1].trim().replace(/[.,;:]+$/, '')
-        const letter = bold.match(REC_LETTER)?.[1]
-        // Its wrapped lines go nowhere: on the option above, they are that option's words.
-        if (!letter) { current.unread.push({ line: i + 1, text: line.trim() }); current.last = { why: '' }; return }
-        current.recommend = { letter, qualifier: bold === letter ? null : bold, why: rec[2].trim() }
-        current.last = current.recommend
-        return
-      }
-
-      const opt = line.match(OPTION)
-      if (opt) { const o = { letter: opt[1], text: opt[2].trim() }; current.options.push(o); current.last = o; return }
-
-      // A wrapped line belongs to whatever it is indented under: the last option
-      // or recommendation when there is one, the question's own prose otherwise.
-      if (/^\s+\S/.test(line)) {
-        if (current.last?.text !== undefined)     current.last.text += ' ' + line.trim()
-        else if (current.last?.why !== undefined) current.last.why  += ' ' + line.trim()
-        else current.text.push(line.trim())
-      }
-    })
-    close()
-  }
+    // A wrapped line belongs to whatever it is indented under: the last option
+    // or recommendation when there is one, the question's own prose otherwise.
+    if (/^\s+\S/.test(line)) {
+      if (current.last?.text !== undefined)     current.last.text += ' ' + line.trim()
+      else if (current.last?.why !== undefined) current.last.why  += ' ' + line.trim()
+      else current.text.push(line.trim())
+    }
+  })
+  close()
   return out
 }
 

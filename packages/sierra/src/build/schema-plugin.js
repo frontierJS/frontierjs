@@ -17,6 +17,7 @@
 import { resolve, dirname, isAbsolute } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { gzipSync } from 'zlib'
+import { DEV_ENV } from '@frontierjs/toolbelt/devline'
 import { pathToFileURL } from 'url'
 import { diffSchemaModes } from '../resource/schema-registry.js'
 import { wantsLocalDb }    from './local-db-plugin.js'
@@ -459,10 +460,15 @@ export function schemaPlugin(config, sierraContext) {
         // measurement rather than a discovery. Refusing to project the table is
         // a ruling (`FJS-D204`), and a ruling that hides its own cost is the
         // shape that gets quietly reversed.
-        console.log(
-          `  [Sierra] schema: ${generated.models.length} models from ` +
-          `${schemaPath.replace(root + '/', '')} · ${emittedSize(generated)} to the client`
-        )
+        // Under `fli dev` the same two numbers ride the ready line instead.
+        if (viteConfig.command === 'serve' && process.env[DEV_ENV]) {
+          sierraContext.devFacts = [`${generated.models.length} models`, `schema ${emittedSize(generated)}`]
+        } else {
+          console.log(
+            `  [Sierra] schema: ${generated.models.length} models from ` +
+            `${schemaPath.replace(root + '/', '')} · ${emittedSize(generated)} to the client`
+          )
+        }
       }
     },
 

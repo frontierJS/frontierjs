@@ -168,3 +168,154 @@ test('controls: one token moves both, so they cannot drift apart again', functio
 
   cleanup();
 });
+
+/* ── The rail ─────────────────────────────────────────────────────── */
+
+/*
+ * A rail in a sidebar-first Shell, transitions off so a read straight after
+ * focus() sees the end state rather than the first frame of the move. Opened
+ * by focus, because :hover cannot be driven from a page; the two states share
+ * every declaration. :focus-visible matches a programmatic focus() here — see
+ * focus.spec.js.
+ */
+function rail() {
+  var shell = el(
+    '<div class="shell sidebar-first" style="inline-size:1000px">' +
+      '<style>.t-rail, .t-rail * { transition: none !important; }</style>' +
+      '<header class="topbar">Leads</header>' +
+      '<nav class="sidebar rail t-rail" aria-label="Main">' +
+        '<div class="navlist-label">Workspace</div>' +
+        '<ul class="navlist">' +
+          '<li><a class="navlink" href="#a"><span class="icon" aria-hidden="true"></span>' +
+            '<span class="navlink-text">Leads and their long label</span></a></li>' +
+          '<li><a class="navlink" href="#b"><span class="icon" aria-hidden="true"></span>' +
+            '<span class="navlink-text">Jobs</span></a></li>' +
+        '</ul>' +
+      '</nav>' +
+      '<main class="screen">The page.</main>' +
+    '</div>'
+  );
+  return {
+    shell:  shell,
+    rail:   shell.querySelector('.rail'),
+    screen: shell.querySelector('.screen'),
+    link:   shell.querySelector('.navlink'),
+    icon:   shell.querySelector('.icon'),
+    text:   shell.querySelector('.navlink-text'),
+    label:  shell.querySelector('.navlist-label'),
+  };
+}
+
+function railPx(node, token) {
+  /* The frame tokens are rem; a length on an element is how to read one in px. */
+  var probe = document.createElement('div');
+  probe.style.inlineSize = 'var(' + token + ')';
+  node.appendChild(probe);
+  var w = probe.getBoundingClientRect().width;
+  probe.remove();
+  return w;
+}
+
+test('frame: a closed rail is --rail-width, and the Screen starts where it ends', function () {
+  var r    = rail();
+  var want = railPx(r.shell, '--rail-width');
+  var box  = r.rail.getBoundingClientRect();
+
+  assert.ok(Math.abs(box.width - want) < 1,
+    'a closed rail should be --rail-width (' + want + 'px), got ' + box.width + 'px');
+  assert.ok(Math.abs(r.screen.getBoundingClientRect().left - box.right) < 1,
+    'the Screen should start at the rail\'s edge');
+
+  cleanup();
+});
+
+test('frame: the icon sits centred in the closed rail', function () {
+  /*
+   * The navlink's padding is computed from --rail-width rather than read
+   * off its box, so this is the check that the calc's terms are the rail's
+   * real padding and border. One term wrong and the icon is a few px off
+   * centre, which nobody sees until two apps' rails sit side by side.
+   */
+  var r      = rail();
+  var box    = r.rail.getBoundingClientRect();
+  var icon   = r.icon.getBoundingClientRect();
+  var inside = box.left + (box.width - parseFloat(style(r.rail, 'border-inline-end-width'))) / 2;
+  var mid    = icon.left + icon.width / 2;
+
+  assert.ok(icon.width > 0, 'the fixture icon should have a size');
+  /* Chrome lays out in 1/64px, and the border term alone is half a pixel. */
+  assert.ok(Math.abs(mid - inside) < 0.25,
+    'icon centre ' + mid.toFixed(1) + 'px, rail centre ' + inside.toFixed(1) + 'px');
+
+  cleanup();
+});
+
+test('frame: closed, the labels are transparent and still there', function () {
+  /*
+   * Opacity, not display. A navlink whose label is display:none has an
+   * aria-hidden glyph for its only content and therefore no name.
+   */
+  var r = rail();
+
+  assert.equal(style(r.text, 'opacity'), '0', 'a closed rail hides .navlink-text');
+  assert.equal(style(r.label, 'opacity'), '0', 'and .navlist-label');
+  assert.notEqual(style(r.text, 'display'), 'none', 'by opacity, never by display');
+  assert.ok(r.link.textContent.indexOf('Leads') !== -1, 'the label is the link\'s text');
+
+  cleanup();
+});
+
+test('frame: an open rail is --sidebar-width over the page, and the page does not move', function () {
+  var r      = rail();
+  var before = r.screen.getBoundingClientRect().left;
+  var iconX  = r.icon.getBoundingClientRect().left;
+
+  r.link.focus();
+
+  var want = railPx(r.shell, '--sidebar-width');
+  var box  = r.rail.getBoundingClientRect();
+
+  assert.ok(Math.abs(box.width - want) < 1,
+    'an open rail should be --sidebar-width (' + want + 'px), got ' + box.width + 'px');
+  assert.ok(Math.abs(r.screen.getBoundingClientRect().left - before) < 1,
+    'the Screen moved from ' + before + 'px to ' + r.screen.getBoundingClientRect().left + 'px — ' +
+    'the end margin must give back what the open width takes');
+  assert.ok(Math.abs(r.icon.getBoundingClientRect().left - iconX) < 1,
+    'the icon should stay where it was as the rail opens');
+  assert.equal(style(r.text, 'opacity'), '1', 'and the labels show');
+  assert.equal(style(r.rail, 'z-index'), style(document.documentElement, '--z-sidebar'),
+    'and it sits on the --z-sidebar rung, above a sticky Topbar');
+
+  r.link.blur();
+  cleanup();
+});
+
+test('frame: a group label carrying an icon keeps it in the closed rail, centred', function () {
+  /*
+   * A <summary> that opens its group is a .navlist-label with a glyph, and
+   * that glyph is the group's only mark while the rail is closed. Fading the
+   * whole label, as a bare-text one is faded, left an invisible control.
+   */
+  var nav = el(
+    '<div class="shell sidebar-first" style="inline-size:1000px">' +
+      '<nav class="sidebar rail" aria-label="Main" style="transition:none">' +
+        '<details open><summary class="navlist-label" style="display:flex;gap:var(--space-sm)">' +
+          '<span class="icon" aria-hidden="true"></span><span class="navlink-text">Fleet</span>' +
+        '</summary></details>' +
+      '</nav>' +
+      '<main class="screen">The page.</main>' +
+    '</div>',
+    '.rail'
+  );
+  var label = nav.querySelector('.navlist-label');
+  var box   = nav.getBoundingClientRect();
+  var icon  = nav.querySelector('.icon').getBoundingClientRect();
+  var mid   = box.left + (box.width - parseFloat(style(nav, 'border-inline-end-width'))) / 2;
+
+  assert.equal(style(label, 'opacity'), '1', 'the label itself stays opaque');
+  assert.equal(style(nav.querySelector('.navlink-text'), 'opacity'), '0', 'and its words fade');
+  assert.ok(Math.abs(icon.left + icon.width / 2 - mid) < 0.25,
+    'its icon sits where a navlink\'s does — off by ' + Math.abs(icon.left + icon.width / 2 - mid).toFixed(2) + 'px');
+
+  cleanup();
+});

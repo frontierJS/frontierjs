@@ -84,6 +84,15 @@ src/
     serve.js             the static server the surface deploys with — CORS, and
                          a cache answer per file kind
 
+  mcp/                   — the runtime inside an MCP App view (`@frontierjs/sierra/mcp`)
+    index.js             `mountView`; `resourceIn(module, name)`, the file's
+                         Resource picked off its exports for the generated form
+                         (known by `save` + `formFields`, two objects refused);
+                         and `mcpApp()` — the relay handle, NOT built: it
+                         refuses by name until plan step 3.1, so a built view
+                         mounts nothing rather than a form whose every call
+                         fails in a sandbox no console shows
+
   router/                — the runtime router
     index.js, match.js, internals.js (used by RouterView.mesa),
     signals.js, prefetch.js, page-fields.js (the fields the router owns on `page`),
@@ -131,6 +140,18 @@ src/
                          site's build, spent on chunks the prune deletes. The
                          prune refuses if that prediction kept a chunk.
     widget-build.js      one self-contained IIFE per widget in src/Embeds/
+    mcp-build.js         one HTML document per resource file in src/resources/ —
+                         an MCP App view, the widget loop one host over: a boot
+                         (schemas + relay client) imported FIRST by a generated
+                         entry, the stylesheet and the script folded into the
+                         document at generateBundle, the output pruned to agree
+                         with src/resources/ (`IDEAS/agent-client-ui.md` § The
+                         plan, 2.1; `FJS-D955` for where it lands). A file
+                         with no markup half gets a generated `.mesa` — the
+                         kit's `<Form>` over the file's own Resource — mounted
+                         in its place; `hasMarkupHalf` asks Mesa's parser, not
+                         a regex, since a `'</script>'` literal in a script
+                         reads as the end of it and the rest as markup
     static-safety.js     proves a prerendered page is publishable
     refusal.js           an error that prints as its message alone — for a
                          build verdict about the APP, where a stack is noise
@@ -817,7 +838,9 @@ rather than picking a service method.
 `bun run test` + `bun run test:safety`, then in `example/`: `verify` and
 `verify:build` for router/resource/build; `verify:site` for anything touching
 prerender, islands or static-safety. **`bun run test:widgets` for anything
-touching `src/widget/` or `build/widget-build.js`** — it builds the fixture and
+touching `src/widget/` or `build/widget-build.js`**; `test/mcp-build.test.js` runs a
+REAL build of one resource file for `build/mcp-build.js`, and no drive loads a
+view in a host yet (plan step 4.3) — it builds the fixture and
 drives a plain host page in Chrome, which is the only place shadow isolation,
 custom element upgrade and a delegated click inside a shadow root are decidable.
 **`bun run test:installable` for `postbuild/manifest.js`** — the grader restates

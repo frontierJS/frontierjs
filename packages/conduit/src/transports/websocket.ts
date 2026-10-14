@@ -75,7 +75,7 @@ export class WebSocketTransport extends BaseTransport {
       ws = await this.getConnection()
     } catch (err) {
       if (err instanceof CredentialError) {
-        return this.fail('auth_failed', err.message, { retryable: false })
+        return this.fail('auth_failed', err.message, this.credentialFailure(err))
       }
       throw err
     }
@@ -148,6 +148,7 @@ export class WebSocketTransport extends BaseTransport {
           protocol:  this.protocol,
           message:   err.message,
           retryable: false,
+          ...this.credentialFailure(err),
         })
       }
       throw err

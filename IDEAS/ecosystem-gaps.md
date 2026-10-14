@@ -227,6 +227,10 @@ are `FJS-1588`.
 No image resizing, thumbnails, or format conversion. Common in almost every real
 application, and paired with item 3.
 
+**The video half is assessed 2026-10-13** in `calls-and-media.md`: capture, compose,
+record and a resumable upload as a browser kit, with a server-side participant for
+the work a browser cannot do. Images remain the open half of this row.
+
 ### 10. Automated upgrades — a Laravel Shift equivalent
 
 **Missing entirely, and the one where this project has the biggest structural

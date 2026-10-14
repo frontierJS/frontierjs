@@ -519,16 +519,106 @@ per model, with nothing written by hand.
 Done when: the loop emits a document per resource file over `example`, and a
 file with no markup half emits the model's default form.
 
-- [ ] 2.1 A build loop beside `build/widget-build.js`, same shape: a generated
+- [x] 2.1 A build loop beside `build/widget-build.js`, same shape: a generated
   entry per resource file imports the Resource and mounts its view over
   `mcpApp()` (3.1); the Mesa runtime and the stylesheet are inlined into one
   `<script>` and one `<style>` of an HTML5 document. N builds for N views, for
   the reason the widget file states — a bundler's shared chunk is the one thing
   this host cannot load.
-- [ ] 2.2 What the view IS: the resource file's markup half when it has one,
+  Done 2026-10-13: `packages/sierra/src/build/mcp-build.js` (`discoverResources`,
+  `viewBootSource`, `viewEntrySource`, `viewDocument`, `viewDocumentPlugin`,
+  `buildViews`) and `src/mcp/index.js` as `@frontierjs/sierra/mcp` (`mountView`,
+  and `mcpApp()` as a STUB that throws by name until 3.1 — a built view mounts
+  nothing rather than a form whose every call fails in a sandbox no console
+  shows). Over `example`: 36 documents, 460–475 kB each, 12.5 s, one file per
+  resource and nothing beside. **Two things the step did not know.** (1) A
+  resource file calls `createResource()` at IMPORT and reads the registry and
+  the page's client right then, so the schemas and `mcpApp()` are a separate
+  BOOT module every entry imports first — an entry registering them in its own
+  body would do so after an empty read, every form empty, nothing failing.
+  (2) Two files the host cannot load rode along and the refusal caught both:
+  the device database's worker chunk (`new Worker(new URL(…))` is emitted
+  wherever the pattern appears, so `localDbPlugin` stubs it unconditionally —
+  a view has no device to persist to, whatever the app's `offline` says) and
+  `public/favicon.svg`, which Vite copies into every outDir, library build or
+  not (`publicDir: false`). The stylesheet is `@frontierjs/css`, imported by
+  the boot (Invariant 13: the default form is the kit's), resolved from the
+  app's own `node_modules`; an app's extra CSS is not read, and that is the
+  one sibling difference from the SPA this step adds, stated here rather than
+  given a key. The nine, answered LATE (after green): origin — the view set is `src/resources/` read once,
+  the theme class is the build's `resolveHtmlClass` (now exported), the schema
+  tables are `generateSchemas()`'s, nothing restated; concept — no noun, *view*
+  as 1.2 already uses it, `./mcp` beside `./widget` as the surface's runtime;
+  complexity — N library builds and one `generateBundle` fold, the widget
+  loop's cost; predictability — a document a prerendered page would carry
+  (`resolveHtmlClass`, `.app` on body), generated entries written to
+  `node_modules/.sierra` as the widget's are, and ONE departure from the
+  widget sibling: a document no resource file built is REMOVED, not reported,
+  because nothing outside the directory names a view and `mcpPlugin()` serves
+  whatever is there; derived — the boot is the four tables `virtual:sierra`
+  registers, by the same call; owner — the loop in `build/`, the runtime in
+  `mcp/` (classified on the Build axis in `test/edge.test.js`), the theme
+  class from the build's one function; boundary — the loop takes `outDir`
+  and refuses without it, and `fli mcp:build` supplies it (2.4); failure —
+  a second chunk or asset FAILS the build by name (a view that half works has
+  no console), a failed build withdraws that model's document and leaves the
+  others, a missing schema is said in the page as `virtual:sierra` says it;
+  silence — must stay true: *a built view is one file with the runtime, the
+  schema, the stylesheet and the component inside, and a `</script>` it
+  carries cannot end the element* — fails in `test/mcp-build.test.js` § a
+  real build, over a fixture resource file through the app's own compiler.
+  Adjudication: *paved road vs. workaround*, twice — `localDbPlugin`'s own stub
+  over a hand alias, and the stylesheet STATED rather than keyed, since a flag
+  added in answer to one app's CSS would widen the shoulder and record nothing. Tier: Assessment; `FJS-D955` is the citation and nothing is
+  overridden. `exports.snapshot.md` regenerated for `./mcp`.
+- [x] 2.2 What the view IS: the resource file's markup half when it has one,
   else the generated `<Form record>` — the file already carries the model's
-  default form (Invariant 18). A save is `resource.save(data, { mode: 'patch' })`
-  and leaves through the relay.
+  default form (Invariant 18). A save is `resource.save()` and leaves through
+  the relay.
+  Done 2026-10-13: `hasMarkupHalf(source, parseHTML)` reads the file with
+  Mesa's own parser (found through `findMesaFile`, the compiler's own locator)
+  — script, style, comment and whitespace are not markup, anything else is;
+  a file with none gets a THIRD generated module, `mcp-<Model>.form.mesa`,
+  which `viewEntrySource` mounts in the file's place. The form is the kit's
+  `<Form {resource} bind:record>` with one submit, over the file's Resource
+  picked at RUNTIME by `resourceIn(module, name)` (`@frontierjs/sierra/mcp`):
+  known by the two methods `<Form>` calls on it, two names for one object is
+  one, two objects is refused (Invariant 19), none is refused by name. The log
+  says `generated form` beside the size, and `buildViews` answers `generated`
+  per view. Over `example`: 36 views, 25 generated, 11 the file's own markup —
+  the eleven with an instance script — 460–462 kB, 22 s.
+  **The nine, answered before the edit.** Origin — the generated form and
+  `cli/core/resource-template.js` share three tokens (`<Form {resource}>`, a
+  submit); the rest of the template is page props a view has no page for, and
+  sierra may not import cli. Pricing the simpler cut — the kit's `<Form>`
+  drawing its own submit when handed no actions, so the entry mounts `Form`
+  with props and no module is generated — refused: a button-less autosave form
+  is a shape the kit documents (`FJS-D257`), and the change would reach every
+  app's form to save one generated file. Concept — none; *the generated form*
+  is Invariant 18's own phrase. Complexity — the problem's: a file with no
+  markup compiles to a component rendering nothing, so the view would be an
+  empty document that built clean. Predictability — a bare file gets the form
+  `fli make:resource` would have written, which is what a page's `<Model />`
+  gets. Derived — from the file's name and its exports; nothing is typed in.
+  Owner — `<Form>` owns the field list, `save()` owns create-against-patch
+  (`FJS-D114`, which is why `method` is NOT stated although this step's text
+  said `mode: 'patch'` — *doctrine vs. discovery*, the ruling outranks the
+  plan and the line above is amended), the build owns the entry (2.1).
+  Boundary — three named functions, each tested. Failure — no Resource or two
+  throws by name at import; a view that mounts nothing is 2.1's own answer
+  until the relay (3.1) can say it in the page. Silence — a bare file read as
+  having markup mounts an empty component with nothing failing, so the probe
+  is Mesa's parser and not a regex (a `'</script>'` literal in a script is the
+  case, and the fixture carries one), and `test/mcp-build.test.js` § a real
+  build asserts the bare fixture's document holds the kit form and the
+  markup fixture's does not. Adjudications: *doctrine vs. discovery* (above)
+  and *paved road vs. workaround* — the runtime pick over a build-time scan of
+  `createResource(` like `extractResourceMeta`, since here the object exists
+  when the question is asked. Tier: Assessment; nothing overridden.
+  **Seen, not fixed:** `CreditNote` declares `methods: ['find', 'get']` and now
+  has a form whose every save the service refuses — a generated form over a
+  read-only service is the gate's question (`resource.can`), and the step that
+  seeds the record (3.3) is where a view learns what it may do.
 - [ ] 2.3 Theme: `hostContext.theme` from `ui/initialize` becomes the class on
   `<html>`, since Sierra owns the switch (Bridge index). Mapping
   `hostContext.styles.variables` onto `@frontierjs/css` tokens is later work,

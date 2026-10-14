@@ -82,7 +82,7 @@ export const GUIDES = {
   litestone: 'db/schema.lite: models, fields, gates',
 }
 
-/** `[{ pkg, file, dir }]`, each guide's AGENTS.md as installed above `root`, symlinks resolved. */
+/** `[{ pkg, file, dir, about }]`, each guide's AGENTS.md as installed above `root`, symlinks resolved. */
 export function findGuides(root) {
   const out = []
   for (const pkg of Object.keys(GUIDES)) {
@@ -90,7 +90,7 @@ export function findGuides(root) {
       const file = join(dir, 'node_modules', '@frontierjs', pkg, 'AGENTS.md')
       if (!existsSync(file)) continue
       const real = realpathSync(file)
-      out.push({ pkg, file: real, dir: dirname(real) })
+      out.push({ pkg, file: real, dir: dirname(real), about: GUIDES[pkg] })
       break
     }
   }

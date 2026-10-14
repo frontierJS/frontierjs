@@ -32,6 +32,7 @@
 //   // 3. Client receives:
 //   //   { type: 'event', event: 'deployments created', data: { id: '...', ... } }
 
+import { DEV_ENV }            from '@frontierjs/toolbelt/devline'
 import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
@@ -2002,6 +2003,8 @@ function reportAnnounceReach(app: App): void {
     .filter(d => (!d.driver || d.driver === 'sqlite') && d.announce !== 'crossProcess')
     .map(d => d.name)
   if (inProcess.length === 0) return
+  // `fli dev` starts one API process, which inProcess reaches whole.
+  if (process.env[DEV_ENV]) return
 
   console.warn(
     `[Junction] channels: ${inProcess.join(', ')} announce inProcess, so another process's writes ` +

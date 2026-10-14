@@ -163,13 +163,15 @@ One line: the pick's `w×h`, its `display` (grid / flex / block) and the
 viewport width, from `getBoundingClientRect` and `getComputedStyle` the client
 already has. *Smaller* and *narrower* are relative; this is what to.
 
-### P6 — Model from the kind chip
+### P6 — Effort from the kind chip — BUILT
 
-`runAsk` passes no `--model`, so a copy tweak runs on the model a redesign
-does. Text and Style run on Sonnet; Layout, Behavior, Data and no chip run on
-the default. **Derived from P1, not a new toggle** — a quick/think switch
-beside the kind chip would be a second control stating the same choice. Run
-`decision-rules` if an override control is wanted later.
+Measured on one Style ask (n=1 per cell): Opus at `low` made the same edit as
+at `high` in half the time, and beat Sonnet at `high`; $0.07 of each $0.10 run
+was the guides it read, not its thinking. So the lever is effort, not the
+model. `EDIT_KINDS` is one row per kind — `{ says, guides, effort }` — Text and
+Style at `low`, Layout, Behavior and Data at `high`, no chip at `ASK_EFFORT`.
+The panel's effort chip lights the kind's effort and a press overrides it until
+the kind's own is pressed again. **Derived from P1, not a new toggle.**
 
 ### P7 — Routes for a Behavior ask
 
@@ -213,17 +215,21 @@ Screenshots are step 4 above.
 No § IV adjudication is in tension. Tier: Assessment (`IDEAS/`).
 
 **P5–P8, answered after the section was written** (late, named as late):
-origin — one kind → sentence + model table in `ask-claude.js`, so P6's model
-is a column beside `EDIT_KINDS` rather than a second map; concept — none, P8 is
-a pick ROLE; complexity — the problem's; predictability — P6 runs one panel on
-two models, so the run's log line names the model; derived — P5 measured at
+origin — one kind → sentence, guides and effort in `ask-claude.js`, so P6's
+effort is a column of `EDIT_KINDS` rather than a second map; concept — none, P8 is
+a pick ROLE; complexity — the problem's; predictability — P6 runs one panel at
+several efforts, and the effort chip shows which; derived — P5 measured at
 pick time, P6 from the chip, P7 from Sierra's route table, never a copy;
-owner — `editPrompt()`, `ask-context.js`, `inspect-client.js`; boundary — the
-page sends a kind key and never a model name; failure — no route table means
-no route line, not a refusal; silence — *stays true:* a Text ask spawns with
-`--model` set and a Behavior ask carries the routes; *what fails:* a
-`vite-ask.test.js` case on the spawned args and an `ask-context.test.js`
-case on the route line, each written with its step. No § IV adjudication.
+owner — `editPrompt()` and `editEffort()`, `ask-context.js`,
+`inspect-client.js`; the panel's per-kind efforts are `panelConfig()`'s
+serialization of `EDIT_KINDS`, not a copy; boundary — the page sends a kind key
+and at most an effort from `EFFORTS`, never a model name; failure — an effort
+not in `EFFORTS` is refused before spawning, no route table means no route
+line, not a refusal; silence — *stays true:* a Style ask spawns with
+`--effort low`, every kind's effort is one the panel offers, and a Behavior ask
+carries the routes; *what fails:* `vite-ask.test.js` cases on the spawned args
+and on `PANEL_EFFORTS`, and an `ask-context.test.js` case on the route line,
+each written with its step. No § IV adjudication.
 
 ## Not in this file
 

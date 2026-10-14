@@ -98,7 +98,7 @@ no owner. Which is which, per `conversion-ksite.md` § *Already answered here*:
 | `scripts/make-images.js`, `imageMaker.js` (480/1080/1920 WebP, AVIF, `-mobile`) | none | plain `<picture><img>` |
 | `scripts/gfont.js`, `purge-css.js`, `find-large-files.js` | none (`css-delivery.md` is nearest for purge) | unported |
 | `scripts/deploy-site.js`, `config/master-sitemap.js` | none for a static host (FJS-1540) | unported |
-| `scripts/check` | none | ported as `ksite-check`, minus site-status, `deploy_check` and `generator.test.js` |
+| `scripts/check` | `site-kit check` (`FJS-D962`) | the generic rules are site-kit's; ksite keeps its template and structured-data rules; minus site-status, `deploy_check` and `generator.test.js` |
 | the markdown dialect beyond `===` (`==mark==`, `:icon:`, `\|>` split, kicker detection, autolinks) | `mesa.remarkPlugins` / `rehypePlugins` | only `===` and the heading/link classes |
 
 ## 5. The move itself (PLAN.md Phase 4, steps 2–3)

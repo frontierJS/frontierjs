@@ -202,6 +202,15 @@ core/
                 § Needs a decision and every IDEAS paper's `## Open questions`,
                 each ruled · decidable (lettered options) · open. A READ of
                 where the questions are argued, never a third list of them
+  plan.js       a plan read off its boxes — `fli plan`, and basecamp's
+                workbench Plan tab by import. Phases of steps (`FJS-D927`):
+                `next` is the FIRST OPEN BOX and is written nowhere, the `Q`
+                bullets come through `decisions.js`'s `paperQuestions` rather
+                than a second parse, and an unruled one is `blocking`. The
+                three prompts a plan runs under — Build, Go (`stepPrompt`) and
+                Next (`nextHandoff`, which ends in `stepPrompt`) — are
+                `ask-claude.js`'s, beside `reviewPrompt`, and the test asserts
+                each guardrail sentence is still there
   decide.js     the ONE writer behind `register:decide` and the GUI panel: the
                 ruling, the struck question, and a put-back when
                 `register:check` finds a new error. A pick against the
@@ -491,7 +500,7 @@ core/
   journal-runner.mjs  copied to the target and run with bun. Imports
                 `bun:sqlite` and nothing else, because a deploy target has no
                 node_modules — the build is inside Docker
-  plan.js       the journal rows a transition WOULD write — `Transition` +
+  deploy-plan.js  the journal rows a transition WOULD write — `Transition` +
                 `TransitionStep`, built once and either printed (1d) or inserted
                 (1e). The step list is READ off `_steps-docker/` with the
                 runner's own filter and sort, and each `skip:` is evaluated the

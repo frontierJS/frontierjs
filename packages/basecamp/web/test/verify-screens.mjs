@@ -439,6 +439,49 @@ try {
   check('at 1024px they stack above it', narrow.rB <= narrow.bT, JSON.stringify(narrow))
   await send('Emulation.clearDeviceMetricsOverride')
 
+  // The collapsed sidebar is the kit's .sidebar.rail. Basecamp's own styles
+  // are unlayered and beat the kit's, so a local width or padding left behind
+  // wins over the rail's while the rail's negative end margin still lands —
+  // the Screen then slides under the open rail. Measured, because every
+  // element renders either way.
+  const railGeometry = `(() => {
+    const n = document.querySelector('.sidebar.rail')
+    if (!n) return null
+    const probe = document.createElement('div')
+    probe.style.inlineSize = 'var(--rail-width)'
+    n.append(probe)
+    const want = probe.getBoundingClientRect().width
+    probe.remove()
+    const r = n.getBoundingClientRect()
+    const icon = n.querySelector('.navlink .icon').getBoundingClientRect()
+    const border = parseFloat(getComputedStyle(n).borderInlineEndWidth)
+    return {
+      w: r.width, want, left: r.left, top: r.top, h: r.height,
+      screen: document.querySelector('.screen').getBoundingClientRect().left,
+      offCentre: Math.abs(icon.left + icon.width / 2 - (r.left + (r.width - border) / 2)),
+      text: getComputedStyle(n.querySelector('.navlink .navlink-text')).opacity,
+      group: getComputedStyle(n.querySelector('.nav-group > summary')).opacity,
+      groupText: getComputedStyle(n.querySelector('.nav-group > summary .navlink-text')).opacity,
+    }
+  })()`
+  await click('#rail-toggle')
+  const shut = await until(railGeometry, v => v && Math.abs(v.w - v.want) < 1,
+    'the collapsed sidebar never settled at --rail-width')
+  check('a collapsed sidebar is the kit\'s rail, --rail-width wide', true, JSON.stringify(shut))
+  check('its icons sit centred in it', shut.offCentre < 0.5, `${shut.offCentre.toFixed(2)}px off`)
+  check('the labels fade and the group glyphs stay',
+    shut.text === '0' && shut.groupText === '0' && shut.group === '1', JSON.stringify(shut))
+
+  // The rail is the document's height, so its middle can be below the fold.
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: shut.left + shut.w / 2, y: shut.top + 120 })
+  const opened = await until(railGeometry, v => v && v.w > v.want + 100 && v.text === '1',
+    'the rail never opened under the pointer')
+  check('under the pointer it opens over the page, and the page does not move',
+    Math.abs(opened.screen - shut.screen) < 1, `screen ${shut.screen} → ${opened.screen}`)
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1200, y: 600 })
+  await click('#rail-toggle')
+  await until(`!document.querySelector('.sidebar.rail')`, v => v, 'the sidebar never expanded again')
+
   const kindsText = await text('#settings-notifications')
   // Two are seeded chosen and the rest have never been touched. A screen that
   // flattened the two states would show one identical row per kind.

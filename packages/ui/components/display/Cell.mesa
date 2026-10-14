@@ -1,3 +1,15 @@
+<script module>
+  // Json is the largest component in the kit and a table reaches it only for a
+  // document column, so it loads with the first such cell rather than with
+  // every page that renders a table. Once it has loaded the answer is the
+  // component itself, which {#await} renders with no pending frame.
+  let JsonView = null
+  let loading  = null
+  function jsonView() {
+    return JsonView ?? (loading ??= import('./Json.mesa').then((m) => (JsonView = m.default)))
+  }
+</script>
+
 <script>
   // Cell.mesa
   // One value of one row, rendered for READING.
@@ -33,7 +45,6 @@
   import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
   import { cx } from '../../utils.js'
   import { displayComponent, defaultDisplayProps } from '../../controls.js'
-  import Json from './Json.mesa'
   import Badge from './Badge.mesa'
 
   // The value from the record. `undefined` and `null` are both "nothing here".
@@ -131,6 +142,14 @@
     return `${lat}, ${lng}`
   }
 
+  // What a document cell shows before the viewer has loaded, and all a
+  // server render of one shows. A cycle or a BigInt makes stringify throw.
+  function brief(v) {
+    let text
+    try { text = JSON.stringify(v) } catch { text = String(v) }
+    return text.length > 80 ? `${text.slice(0, 79)}…` : text
+  }
+
   function fileLabel(v) {
     if (typeof v === 'string') return v.split('/').pop()
     return v?.name ?? v?.key?.split('/').pop() ?? 'file'
@@ -153,6 +172,16 @@
      below contributes the CONTENT and never the box, so a table putting
      `class="right"` on a money cell reaches the same place whatever the column
      turned out to be — including a column an app's own display claimed. -->
+{#snippet json()}
+  {#await jsonView()}
+    <code class="muted">{brief(value)}</code>
+  {:then Json}
+    <Json {value} expand={0} />
+  {:catch}
+    <code>{brief(value)}</code>
+  {/await}
+{/snippet}
+
 <span
   class={cx('cell', column?.display ? `cell-${column.display}` : null, numeric ? 'tabular' : null)}
   {class}
@@ -185,7 +214,7 @@
          markup — a block editor's worth of paint does not fit in a row. -->
     <code>{String(value)}</code>
   {:else if column?.display === 'json'}
-    <Json {value} expand={0} />
+    {@render json()}
   {:else if column?.display === 'relation'}
     <!-- The id is what the row HOLDS; a label needs the related row, which this
          component does not have. Rendering the id is honest, and a `relation`
@@ -200,7 +229,7 @@
     <!-- A display name this table has no branch for, holding a document.
          `String()` of it is `[object Object]` in every row, which is how a
          `@point` column shipped; the document viewer is at least the value. -->
-    <Json {value} expand={0} />
+    {@render json()}
   {:else}
     {String(value)}
   {/if}

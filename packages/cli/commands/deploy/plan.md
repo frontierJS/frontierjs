@@ -1,7 +1,6 @@
 ---
 title: deploy:plan
 description: Print the journal rows this deploy would write — executes nothing
-alias: plan
 examples:
   - fli deploy:plan
   - fli deploy:plan --production

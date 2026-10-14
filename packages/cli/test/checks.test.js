@@ -103,6 +103,17 @@ const resource = (service, opts = '') => `<script module>
 </script>
 `
 
+// `src/lib/nav.js` with these entries in one group, and sierra's committed route
+// table in its own shape — the sections around § Routes hold paths too, which
+// the rule must not read as routes.
+const NAV = (...entries) =>
+  `export const groups = [\n  { label: null, entries: [\n    ${entries.join(',\n    ')},\n  ] },\n]\n`
+const ROUTES = (...paths) =>
+  '# Route table snapshot\n\n## Publishes\n\n| `/drafts/` | x |\n\n## Routes\n\n' +
+  '| Route | File | Layout | Params |\n| --- | --- | --- | --- |\n' +
+  paths.map(p => `| \`${p}\` | \`src/routes${p}index.mesa\` | — | — |\n`).join('') +
+  '\n## Layouts\n\n| `/orphan/` | x |\n'
+
 /** The shape a passing app has — every rule runs, nothing fires. */
 const CLEAN = {
   // The schema PLUS a trail database, so `log-db-unbound` RUNS on the clean
@@ -179,6 +190,10 @@ const CLEAN = {
                                         "  const LABELS = { ssh_key: 'SSH key' }\n" +
                                         '</script>\n<Table {columns} rows={[]} />\n',
   'web/src/routes/leads/_leads.Row.mesa': '<tr></tr>\n',
+  // A nav table and the route table it is graded against, so `nav-href-routes`
+  // RUNS over the clean tree rather than skipping, and finds nothing.
+  'web/src/lib/nav.js':                 NAV("{ href: '/leads/', label: 'Leads' }"),
+  'web/routes.snapshot.md':             ROUTES('/', '/leads/', '/leads/:id/'),
   // A browser drive, so `drive-opens-chrome` RUNS over the clean tree rather
   // than skipping — a rule that only ever skips is what this file exists to
   // catch — and finds nothing, because the driver opens the browser.
@@ -783,6 +798,88 @@ describe('a co-located part that names a folder (FJS-D250)', () => {
   test('an app with no dotted prefix anywhere skips', () => {
     const root = tree('rpp-none', { 'db/schema.lite': SCHEMA, 'web/src/routes/index.mesa': '<div></div>\n' })
     expect(only(root, 'route-part-prefix').skipped.length).toBe(1)
+  })
+})
+
+describe('a nav link names a route (nav-href-routes)', () => {
+  const app = (name, nav, routes = ROUTES('/', '/leads/', '/leads/:id/', '/settings/team/')) =>
+    tree(name, { 'web/src/lib/nav.js': nav, 'web/routes.snapshot.md': routes })
+  const run = (root) => only(root, 'nav-href-routes').findings
+
+  test('an href with no route is a warning on its line', () => {
+    const root = app('nhr-dead', NAV("{ href: '/leads/', label: 'Leads' }", "{ href: '/contacts/', label: 'Contacts' }"))
+    const findings = run(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].line).toBe(4)
+    expect(findings[0].message).toContain('/contacts/')
+  })
+
+  test('a param, a query, a hash and a missing trailing slash all resolve', () => {
+    const root = app('nhr-ok', NAV(
+      "{ href: '/', label: 'Today', exact: true }",
+      "{ href: '/leads/?kind=customer', label: 'Clients' }",
+      "{ href: '/leads/42/#notes', label: 'Lead 42' }",
+      "{ href: '/leads', label: 'Leads' }"))
+    expect(run(root)).toEqual([])
+  })
+
+  test('a match is case-sensitive, as the router is (FJS-D210)', () => {
+    expect(run(app('nhr-case', NAV("{ href: '/Leads/', label: 'Leads' }")))).toHaveLength(1)
+  })
+
+  test('only § Routes is read — a path in another section is no route', () => {
+    // The fixture's § Publishes and § Layouts each hold one path in the row shape.
+    const root = app('nhr-sections', NAV("{ href: '/drafts/', label: 'D' }", "{ href: '/orphan/', label: 'O' }"))
+    expect(run(root)).toHaveLength(2)
+  })
+
+  test('a root catch-all vouches for nothing; a nested spread answers beneath itself', () => {
+    const routes = ROUTES('/', '/docs/*', '*')
+    expect(run(app('nhr-spread', NAV("{ href: '/docs/intro/', label: 'Docs' }"), routes))).toEqual([])
+    expect(run(app('nhr-404', NAV("{ href: '/nowhere/', label: 'X' }"), routes))).toHaveLength(1)
+  })
+
+  test('a section path needs a route at or beneath it, and `/` only itself', () => {
+    const nav = (path) => NAV("{ href: '/leads/', label: 'Leads' }") +
+      `export const sections = [{ path: '${path}', tabs: [{ href: '/leads/', label: 'Open' }] }]\n`
+    expect(run(app('nhr-sec-under', nav('/settings/')))).toEqual([])
+    expect(run(app('nhr-sec-dead', nav('/billing/')))).toHaveLength(1)
+    expect(run(app('nhr-sec-root', nav('/'), ROUTES('/leads/')))).toHaveLength(1)
+  })
+
+  test('an action href is graded like any other', () => {
+    const nav = NAV("{ href: '/leads/', label: 'Leads' }") +
+      "export const sections = [{ path: '/leads/', tabs: [], action: { href: '/contacts/create/', label: 'New' } }]\n"
+    expect(run(app('nhr-action', nav)).map(f => f.message)).toEqual([expect.stringContaining('/contacts/create/')])
+  })
+
+  test('a relative href is reported; an external one, a template and a match predicate are not', () => {
+    const root = app('nhr-shapes', NAV(
+      "{ href: 'leads/', label: 'Rel' }",
+      "{ href: 'https://example.com/help', label: 'Help' }",
+      "{ href: 'mailto:help@example.com', label: 'Mail' }",
+      "{ href: `/leads/${id}/`, label: 'Tpl' }",
+      "{ href: '/leads/', label: 'Leads', match: (path, query) => path.startsWith('/nowhere/') }"))
+    const findings = run(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toContain('relative')
+  })
+
+  test('a commented-out entry is not graded', () => {
+    const root = app('nhr-comment', NAV("{ href: '/leads/', label: 'Leads' }") + "// { href: '/gone/' }\n")
+    expect(run(root)).toEqual([])
+  })
+
+  test('a nav with no committed route table skips and names the surface', () => {
+    const root = tree('nhr-unread', { 'web/src/lib/nav.js': NAV("{ href: '/x/', label: 'X' }") })
+    const res = only(root, 'nav-href-routes')
+    expect(res.findings).toEqual([])
+    expect(res.skipped[0].why).toContain('web/')
+  })
+
+  test('an app with no nav skips', () => {
+    expect(only(tree('nhr-none', { 'web/routes.snapshot.md': ROUTES('/') }), 'nav-href-routes').skipped).toHaveLength(1)
   })
 })
 

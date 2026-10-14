@@ -293,7 +293,7 @@ const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = 
   const { readdirSync, readFileSync } = await import('fs')
 
   const { configurationSet, schemaSurfaceHash, mintRelease, ConfigurationError } = await core('release.js')
-  const { stepFilesIn, stepNameOf, planSteps, planTransition, formatPlan } = await core('plan.js')
+  const { stepFilesIn, stepNameOf, planSteps, planTransition, formatPlan } = await core('deploy-plan.js')
   const { extractFrontmatter } = await core('compiler.js')
 
   let configuration
@@ -768,7 +768,7 @@ const restoreStepNote = ($, output) => {
 const openDeployJournal = async ($, flag, opts) => {
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { JournalError, preconditionVerdict, formatDrift, resumeDecision } = await core('journal.js')
-  const { planTransition } = await core('plan.js')
+  const { planTransition } = await core('deploy-plan.js')
   const { occurrenceKey } = await import('@frontierjs/toolbelt/history')
 
   const { host, serverPath, log } = opts
@@ -935,7 +935,7 @@ const openPauseJournal = async ($, flag, opts) => {
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { readdirSync, readFileSync } = await import('fs')
   const { JournalError, resumeDecision } = await core('journal.js')
-  const { stepFilesIn, stepNameOf, planSteps, planTransition } = await core('plan.js')
+  const { stepFilesIn, stepNameOf, planSteps, planTransition } = await core('deploy-plan.js')
   const { extractFrontmatter } = await core('compiler.js')
   const { occurrenceKey } = await import('@frontierjs/toolbelt/history')
 

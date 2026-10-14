@@ -707,11 +707,16 @@
       ]
     },
     "Nav": {
-      "markup": "<nav class=\"sidebar\">\n  <div class=\"navlist-label\">Workspace</div>\n  <ul class=\"navlist\">\n    <li><a class=\"navlink\" href=\"#\" aria-current=\"page\">Invoices</a></li>\n    <li><a class=\"navlink\" href=\"#\">Clients <span class=\"badge\">4</span></a></li>\n  </ul>\n</nav>",
+      "markup": "<nav class=\"sidebar\">\n  <div class=\"navlist-label\">Workspace</div>\n  <ul class=\"navlist\">\n    <li><a class=\"navlink\" href=\"#\" aria-current=\"page\"><span class=\"navlink-text\">Invoices</span></a></li>\n    <li><a class=\"navlink\" href=\"#\"><span class=\"navlink-text\">Clients</span> <span class=\"badge\">4</span></a></li>\n  </ul>\n</nav>",
       "parts": [
         [
           ".navlink",
           "One destination. The active one carries aria-current=\"page\""
+        ],
+        [
+          ".navlink-text",
+          "The label beside an icon. One line, and what a .sidebar.rail fades rather than removes, so it stays the link’s name",
+          "optional"
         ],
         [
           ".navlist-label",
@@ -950,6 +955,7 @@
       "narrow",
       "pills",
       "removable",
+      "rail",
       "square",
       "start",
       "stretch",

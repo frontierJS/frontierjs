@@ -3770,6 +3770,18 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d970"></a>2026-10-13 · `FJS-D970` — Does search span models — Yes, over ONE shared index: `db.$search(q, { models, limit, offset, prefix })` reads `_search`, graded per model inside the query, ranked on one bm25 scale.
+
+Asked in [`IDEAS/cross-model-search.md`](IDEAS/cross-model-search.md). **E** was picked over **A** (each app composes N per-model `search()` calls and groups by kind — linear's `search.service.ts`), **B** (`@@searchable(title, subtitle, link)`), **C** (a junction route fanning out N per-model calls) and **D** (a sierra function making N graded `find({ $search })` calls and grouping).
+
+linear's Q4 measured that bm25 is not comparable across indexes (−0.981 as an issue title, −3.287 as a comment body for the same text) and that both shorter spellings leak or starve. Both findings held, and both were about PER-MODEL indexes. The paper's gate rebuilt the same rows into one `_search(model UNINDEXED, rid UNINDEXED, title, body)` and the pair scored −6.925 and −6.925: one vocabulary, one scale. So the premise moved and the finding is kept — the policy still goes INSIDE the query, before the limit — which is why the owner is litestone and not sierra: each model's branch is the `visibleWhere` + correlated `EXISTS` its own `search()` already builds (`FJS-262`, `FJS-1692`), composed with `OR` under one `MATCH`. `FJS-D333` stands: `search()` keeps its verb because FTS5 is another engine on another table, and `_search` is one more of those. The three fixed by this ruling, so a second builder cannot re-derive them:
+
+- **Membership and title are derived, never declared.** A model is in `_search` because it declares `@@fts`; its `title` is the column `@@label` names, its `body` the `@@fts` columns joined. A `@@fts` model with no `@@label` is refused at parse with the fix in the message. B was refused for restating both and for `-able` (`FJS-D249`).
+- **`models` names accessors (`['issue', 'comment']`) and the default is every `@@fts` model.** Which models a palette holds is the call site's — junction's `search` service names them at its mount — so *should ELA's mail be in ⌘K* is answered where the app is, with no schema word. A hit is `{ model, id, title, sub, _rank, _snippet }`, `model` the accessor, `sub` from `x-identify`.
+- **`_search` is `trigram` whatever the models' own tokenizers, and the title weight is 3**, placed by column index — `bm25()` weights are positional over every declared column, `UNINDEXED` included, so `bm25(_search, 3, 1)` weights `model` and changes nothing; the gate's first run did exactly that. The measurement ranked the same under `trigram` and `unicode61`; `trigram` is chosen because a short word is then a match rather than `FJS-2332`'s scan, except below three characters where the scan fallback is still owed.
+
+Costs taken knowingly: text is indexed twice while the per-model `_fts` tables stay (step 4.3 prices reading them from `_search`), and the differ learns a table no model owns. Lives in `packages/litestone/src/core/ddl.js` (the table and triggers), `client.js` (`$search`), junction's `search` service and sierra's `paletteSource`; the plan is the paper's § Plan.
+
 ### <a id="fjs-d950"></a>2026-10-13 · `FJS-D950` — Is a ratio between two counts a refusal, or a state the data may be in — A flag the row carries: `underRatio Boolean @derived(adults * eventRatioAttendees < eventEnrolled * eventRatioAdults)` on Shift, the event's three values brought on by `FJS-D911`'s to-one `@from`. Every read says it, `where: { underRatio: true }` lists the rooms to fix, and SRC's badge is that field. No new word, once the three rows above close; it refuses nothing, and *answering for the room on the day* (a `@@commitment` at the shift's start, or a report) is a later question. **Owes its artefact, because B is wrong in silence exactly as `FJS-2778` measured** (a `@derived` over a `@from` reads one answer and filters another): `ratio.test.ts` flips to read `underRatio` off every shift and through `where: { underRatio: true }`, and asserts both agree with SRC's `ratioInfo`.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (refuse on both writes: `@minItems` takes an expression over the parent's columns (`assignments Assignment[] @minItems(ceil(event.enrolled * event.ratioAdults / event.ratioAttendees))`), graded at the outermost commit as `FJS-D347` grades a literal, and an Enrollment write re-grades every Shift of its Event. The price: SRC's sample cannot be loaded, a roster cannot be built one write at a time, and D347's *only parents a write touched* grows a second hop), **C** (a validation warn: the write lands and the result carries a warning. Litestone has no warning channel on a write result, so this is a new mechanism, and it reaches whoever made the write rather than whoever answers for the room, and is gone by the next read).
@@ -13415,6 +13427,48 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d962"></a>2026-10-13 · `FJS-D962` — Who owns the pre-ship site check, and how a preset adds to it — `site-kit check <dir>` is the check every site-kit site has, and a preset's `./preset` export returns a fourth key, `rules`, a list of `{ id, group, stage, run }`; a preset rule whose id a kit rule has replaces it.
+
+Asked in `IDEAS/site-kit-plan.md` Phase 3 step 5(b). **A** was picked over **B** (the whole check stays in `@kobami/ksite`, and a second preset or the website copies it) and **C** (a second `check` key holding `{ rules, launched }`, so the launch mode is a preset hook of its own).
+
+The check's two halves were already named in the plan, and the test is `FJS-D604`'s: a site that is not a cleaning company runs every built-stage rule (sitemap, canonical, titles, descriptions, headings, social, links, images, JSON-LD against schema.org) and every source-stage rule but the template leftovers unchanged, so they are site-kit's, and `@kobami/ksite`'s `config/names.js`, which restated site-kit's layout order for the components rule, goes with them. The nine, answered before the move:
+
+- **Origin.** It removes one: `names.js` restated what `siteKit()` composes, and the check now reads the resolved site (`resolveSite()`), the same object the build is made from. The check's own rules read `dist/`, which the build wrote.
+- **Concept.** One key, `rules`, in a noun the check already used (`rules/*.js`, "Adding a rule" in its README) and `fli check` uses for the same shape. No *Check* noun: a preset's rule is a Rule.
+- **Complexity.** Lint, pre-commit and `fli check` all name the same shape — a list of rules each with an id, a group and a run; nothing here is new to the field.
+- **Predictability.** A later rule wins a name, which is how `markdownLayouts` and a preset's `public/` already behave: the preset's `schema` rule replaces the kit's, so ksite keeps its per-setting fix hints without a second rule beside the kit's. A preset's rules sort after the kit's groups, so a report reads kit then preset.
+- **Derived.** The component and layout directories, `siteUrl` and `description` are read from the resolved Sierra config, never restated. The template leftovers (`mycompany.com`, the 555 phone, the MaidTech pid, `launch_date`, `buildoutOnly`) are ksite's and stay in its rules, which read `ctx.settings` and `ctx.opts` for them; site-kit has no launch mode and no tool-page notion, because no second site has those words.
+- **Owner.** site-kit's `check/` is the one runner, and the bin is the one `site-kit` already has (`FJS-D605`'s one command). `ksite-check` is deleted. C would have made the launch mode a second seam when a rule reading `ctx.settings.launch_date` already states it.
+- **Boundary.** `loadPreset` refuses a key it does not read, a `rules` that is not an array, and a rule without `id`, `group`, `stage` and `run`, each by the preset's name; `runCheck(opts)` is `@frontierjs/site-kit/check`, and the finding shape is `finding.js`.
+- **Failure.** The check itself exits 1 on an error and 0 otherwise, as before; a preset rule that throws is one `check-crashed` error naming the rule, never a run that dies.
+- **Silence.** A kit rule that stops firing is caught by `test/check.mjs`, which builds a fixture site and asserts each group's findings; a preset's replacement rule is caught by ksite's `check:site` reading the same 9 errors as before the move. The one thing nothing grades is a preset rule that returns nothing on a site where it should fire — that is the preset's own test to write, and ksite's `checks.test.js` is it for the schema rule.
+
+Adjudication: *batteries vs. smallness* — the check is a battery of site-kit and stays severable from Sierra, which has no site check and gains none here (`FJS-D608`: a Sierra owner is earned by a second consumer that is not a site-kit site). Tier: Map — `site-kit/README.md` and its `CLAUDE.md` state the key and the command; this ruling is the why.
+
+### <a id="fjs-d969"></a>2026-10-14 · `FJS-D969` — Q4 — Who ticks the box — The session, by instruction; the UI reparses and offers a manual tick when the box did not move.
+
+Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (the UI, on the result event).
+
+The paper's recommendation, taken as written: the findings under the step need the session anyway, and a box the UI ticks can tick a step that was not done.
+
+### <a id="fjs-d968"></a>2026-10-14 · `FJS-D968` — Q3 — Does a step commit — Never; the step prompt says so, and the owner commits off the Diff tab.
+
+Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (a pin option, *commit each step*).
+
+The paper's recommendation, taken as written: no option, and it matches the rule that a session commits only when asked.
+
+### <a id="fjs-d967"></a>2026-10-14 · `FJS-D967` — Q2 — What is Next: a fresh session, or a fork of the last one — A fresh chat; the plan file is the carry.
+
+Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (`--fork-session`, which keeps the context and its cost).
+
+The paper's recommendation, taken as written: a fresh session is the flow being replaced, and Fork stays as the escape hatch when the context is worth paying for.
+
+### <a id="fjs-d966"></a>2026-10-14 · `FJS-D966` — Q1 — Where does a plan live — A markdown file in the checkout, at a path the owner gives: `IDEAS/<slug>.md` in this repo, `PLAN.md` at an app's root.
+
+Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (a file under `WORKBENCH_DIR`, beside the pin's logs).
+
+The paper's recommendation, taken as written: the session edits it natively, it diffs and commits with the work, and a plan already is a file in this repo.
 
 ### <a id="fjs-d961"></a>2026-10-13 · `FJS-D961` — Where a site's hand-written redirects live, and who reads them — Sierra merges the app's own `_redirects` (what reaches the output from its public directory, or from a site-kit site's `content/settings/_redirects`) with every route's `redirect:`, the routes' rules first; one path sent two places stops the build.
 

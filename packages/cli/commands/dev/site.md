@@ -27,7 +27,7 @@ const port = flag.port ? `SITE_PORT=${flag.port} ` : ''
 $.exec({
   // `bun --bun` and the app's own `.env` — same reasons as site:build, and the
   // dev server needs the first one too because it RUNS a static route's loader.
-  command: `${port}bun --bun --env-file=../.env vite -c config/vite.config.js`,
+  command: `${port}bun --bun --env-file=../.env vite -c config/vite.config.js --configLoader native`,
   cwd:     $.paths.site,
   dry:     flag.dry,
 })

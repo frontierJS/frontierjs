@@ -20,7 +20,7 @@ writing loop, not the proof.
 ```js
 const port = flag.port ? `WIDGET_PORT=${flag.port} ` : ''
 $.exec({
-  command: `${port}bunx vite -c config/vite.config.js`,
+  command: `${port}bunx vite -c config/vite.config.js --configLoader native`,
   cwd:     $.paths.widgets,
   dry:     flag.dry,
 })

@@ -185,6 +185,19 @@
   font-weight: 600;
 }
 
+/*
+ * The label, when the link carries an icon beside it. One line and
+ * shrinkable, so a long label ellipses before it pushes a trailing badge
+ * out of the link — and so it does not reflow while a .sidebar.rail opens
+ * around it.
+ */
+.navlink-text {
+  min-inline-size: 0;
+  overflow:        hidden;
+  text-overflow:   ellipsis;
+  white-space:     nowrap;
+}
+
 /* A trailing count or badge sits at the far end. */
 .navlink > .pill,
 .navlink > .badge {
@@ -198,4 +211,44 @@
  */
 .navlist-label {
   padding: var(--space-lg) var(--space-md) var(--space-2xs);
+}
+
+/*
+ * ── Nav in a rail ───────────────────────────────────────────────────
+ *
+ * frame.css owns .sidebar.rail, what it is and when it opens; what it does
+ * to the links inside is here, because `patterns` is the later layer and
+ * the .navlink padding above beats any rule frame.css could write.
+ *
+ * The padding is computed from --rail-width, not from the box it is in, so
+ * the icon sits centred in the closed rail and stays where it is as the
+ * rail opens. --icon-size falls back to the .icon default; an app with
+ * bigger glyphs sets it on the rail, where this calc reads it too.
+ *
+ * A group label is padded the same way, because a label can carry an icon
+ * of its own — a <summary> that opens its group — and that icon is then
+ * the group's only mark in the closed rail. Such a label puts its words in
+ * a .navlink-text and only those fade; a label of bare text fades whole.
+ */
+.sidebar.rail :is(.navlink, .navlist-label) {
+  padding-inline: calc(
+    (var(--rail-width) - var(--border-width) - 2 * var(--space-3xs) - var(--icon-size, 1.15em)) / 2
+  );
+}
+.sidebar.rail .navlist-label {
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+.sidebar.rail :is(.navlink-text, .navlist-label:not(:has(.navlink-text))) {
+  opacity:    0;
+  transition: opacity var(--motion-base);
+}
+.sidebar.rail:has(:focus-visible) :is(.navlink-text, .navlist-label) {
+  opacity: 1;
+}
+@media (hover: hover) {
+  .sidebar.rail:hover :is(.navlink-text, .navlist-label) {
+    opacity: 1;
+  }
 }

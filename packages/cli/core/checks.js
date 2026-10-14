@@ -81,6 +81,8 @@ export const RULES = [
     title: 'a resource file is named for its model' },
   { id: 'route-part-prefix',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a co-located part whose prefix names a folder names ITS folder' },
+  { id: 'nav-href-routes',      scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'every href and section path in src/lib/nav.js names a route' },
   { id: 'resource-one-per-file', scope: 'app', severity: 'error', invariant: 19,
     title: 'one Resource per file' },
   { id: 'vite-strict-port',     scope: 'app',  severity: 'error', invariant: null,
@@ -731,6 +733,56 @@ const CHECKS = {
       })
     }
     if (!looked && !findings.length) return { skipped: 'no _prefix.Part.mesa files' }
+    return { findings }
+  },
+
+  // A nav link restates a URL the route tree already decided, and the two drift
+  // in silence: a renamed folder moves the page, the link keeps the old URL, and
+  // the click is a 404 no build reports. The authority is the surface's
+  // committed `routes.snapshot.md`, not a walk of src/routes — it carries the
+  // routes a `*.mount.js` brings in from another package, and the `snapshots`
+  // phase fails it when stale. A warning, because a dead link loses no data.
+  'nav-href-routes': ({ root }) => {
+    const findings = []
+    const unread   = []
+    let graded = 0
+
+    for (const name of safeRead(root)) {
+      const nav = join(root, name, 'src', 'lib', 'nav.js')
+      if (!existsSync(nav)) continue
+      const routes = committedRoutes(join(root, name))
+      if (!routes.length) { unread.push(`${name}/`); continue }
+      graded++
+
+      const code = readCode(nav)
+      for (const m of code.matchAll(NAV_TARGET)) {
+        const [, key, , value] = m
+        // A template with a hole names a URL only at runtime.
+        if (value.includes('${') || /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(value)) continue
+        const line = lineOf(code, m.index)
+        if (!value.startsWith('/')) {
+          findings.push({ file: nav, line,
+            message: `\`${key}: '${value}'\` is relative, so it resolves against whichever page is ` +
+                     'showing. A nav link and a section path start with `/`.' })
+          continue
+        }
+        const segs = value.replace(/[?#].*$/, '').split('/').filter(Boolean)
+        // A section claims every page beneath its path, so it needs a route at
+        // or under it; `/` matches only `/`, as `sectionFor` reads it.
+        const beneath = key === 'path' && segs.length > 0
+        if (routes.some(r => routeAnswers(r, segs, beneath))) continue
+        findings.push({ file: nav, line,
+          message: key === 'path'
+            ? `section path \`${value}\` has no route at or beneath it in ${name}/routes.snapshot.md, ` +
+              'so its tabs can never be current. Fix the path, or run `sierra routes` if the pages are new.'
+            : `\`${value}\` names no route in ${name}/routes.snapshot.md, so the link opens a 404. ` +
+              'Fix the href, or run `sierra routes` if the page is new.' })
+      }
+    }
+
+    if (!graded && unread.length) return { skipped: `src/lib/nav.js in ${unread.join(', ')} with no ` +
+      'routes.snapshot.md beside it — `sierra routes` writes one' }
+    if (!graded) return { skipped: 'no src/lib/nav.js' }
     return { findings }
   },
 
@@ -4183,6 +4235,38 @@ function routeDirs(root) {
     try { if (statSync(s.routes).isDirectory()) out.push(s.routes) } catch { /* declared, not written */ }
   }
   return out
+}
+
+// `href: '/x/'` and `path: '/x/'` in a nav table — a quoted literal only. A
+// `match` predicate's `path` parameter is never followed by a colon.
+const NAV_TARGET = /\b(href|path)\s*:\s*(['"`])([^'"`\n]*)\2/g
+
+// The URL patterns a surface's committed route tables list, as segments — every
+// `routes*.snapshot.md` beside it, since a second target writes a second file.
+// The rows are read from § Routes alone; the sections around it hold other paths.
+function committedRoutes(surface) {
+  const out = []
+  for (const name of safeRead(surface)) {
+    if (!/^routes(\.[\w-]+)?\.snapshot\.md$/.test(name)) continue
+    let text = ''
+    try { text = readFileSync(join(surface, name), 'utf8') } catch { continue }
+    const section = text.split(/^## /m).find(s => s.startsWith('Routes\n')) ?? ''
+    for (const m of section.matchAll(/^\| `(\/[^`]*)` \|/gm)) out.push(m[1].split('/').filter(Boolean))
+  }
+  return out
+}
+
+// Does a route pattern answer these path segments — or, with `beneath`, any URL
+// under them? `:param` takes one segment and a spread (`*`) the rest. A ROOT
+// spread is the app's catch-all 404, which answers every URL and so vouches for
+// none of them.
+function routeAnswers(pattern, segs, beneath) {
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern[i] === '*') return i > 0
+    if (i >= segs.length) return beneath
+    if (pattern[i][0] !== ':' && pattern[i] !== segs[i]) return false
+  }
+  return pattern.length === segs.length
 }
 
 function resourceFiles(root) {

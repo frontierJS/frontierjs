@@ -271,6 +271,7 @@
   /* ── App frame ────────────────────────────────────────────── */
   --topbar-height:  3.5rem;
   --sidebar-width:  15rem;
+  --rail-width:     3.5rem;
   --screen-pad:     1.5rem;
 
   /*
@@ -281,7 +282,7 @@
    * component file. Each rung is named for the term that occupies it.
    *
    * The gaps are for an app: a consumer with a sticky sub-header puts it
-   * at 30 without touching a rung, and one with a full-screen loader puts
+   * at 25 without touching a rung, and one with a full-screen loader puts
    * it between toast and skip link.
    *
    * A component that creates its own stacking context and orders two of
@@ -296,6 +297,7 @@
    * nothing.
    */
   --z-topbar:     20;
+  --z-sidebar:    30;
   --z-popover:    50;
   --z-tooltip:    60;
   --z-toast:     100;

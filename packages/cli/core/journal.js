@@ -277,7 +277,7 @@ export function readState({ app, environment }) {
 
 /**
  * Every transition already recorded for one intent — the term `--plan` could not
- * answer (`core/plan.js`, `transitionId`).
+ * answer (`core/deploy-plan.js`, `transitionId`).
  *
  * Queried by COLUMNS rather than by id, because the attempt number is inside the
  * id: asking by id could only ever find the attempt you already guessed.

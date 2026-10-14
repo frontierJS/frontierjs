@@ -339,12 +339,37 @@ export interface CredentialCaller {
 export class CredentialError extends Error {
   readonly target: string
   readonly ref:    string
+  // The mint's own failure, when the resolver threw a MintError: what the
+  // `auth_failed` answer takes its `retryable` and `retry_after_ms` from.
+  readonly mint?:  ConduitError
 
-  constructor(target: string, ref: string, why?: string) {
+  constructor(target: string, ref: string, why?: string, mint?: ConduitError) {
     super(`Credential '${ref}' for target '${target}' could not be resolved${why ? ` — ${why}` : ''}`)
     this.name   = 'CredentialError'
     this.target = target
     this.ref    = ref
+    if (mint) this.mint = mint
+  }
+}
+
+// What a resolver throws when its mint — a token exchange sent through a
+// second target (`FJS-D933`) — came back an error. Thrown as anything else it
+// is `auth_failed, retryable: false`, so a token endpoint's 503 tells a job
+// the credential is wrong and the job drops the work for good (`FJS-2722`).
+// Carried, the send is still `auth_failed` — this target was never reached,
+// so its breaker is untouched — with the mint's `retryable`, its
+// `retry_after_ms`, and the mint's error as `raw`, which names the target that
+// failed.
+//
+//   const r = await conduit.send(tokenTarget, { method: 'POST', path: '/token', body, replayable: true })
+//   if (r.error) throw new MintError(r.error)
+export class MintError extends Error {
+  readonly error: ConduitError
+
+  constructor(error: ConduitError) {
+    super(`mint through '${error.target}' failed: ${error.kind} — ${error.message}`)
+    this.name  = 'MintError'
+    this.error = error
   }
 }
 

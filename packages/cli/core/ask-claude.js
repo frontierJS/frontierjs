@@ -64,6 +64,77 @@ export function reviewPrompt({ request = '' } = {}) {
   return [REVIEW_RULES, asked ? `The builder was asked:\n\n${asked.slice(0, 4000)}` : null].filter(Boolean).join('\n\n')
 }
 
+// ─── a plan run from the workbench ───────────────────────────────────────────
+//
+// Three prompts, one per button (`IDEAS/workbench-plans.md`). The plan FILE is
+// the handoff: a step ends by writing what it found under its box, so Next is
+// a fresh session told to read the file. The sentences are constants because
+// the test asserts each guardrail is still in the prompt — a prompt that loses
+// *do only this step* runs the whole plan in one session, which is the flow
+// this replaces.
+
+/** The ruled shape (`FJS-D927`), as the builder is told it. */
+export const PLAN_SHAPE = [
+  'A plan is Phases of Steps. A phase is a `### Phase N — title` heading, counting from 0: Phase 0 is the groundwork — scaffolding, measuring the original, reading the source.',
+  'Under each phase heading: a `Goal:` line, the outcome in one sentence, and a `Done when:` line naming the command, drive or measurement that proves it. Every phase ends in something checkable.',
+  'A step is `- [ ] N.M title`, about one commit of work, cited `2.3`. A number is issued once and never reused: a step inserted later is `2.3a`, new work goes at the end.',
+  'Open questions the owner must rule on go under `## Open questions (owner)` as `- **Q1 — the question?**` bullets, each with lettered `- **A** — …` options and a `- **Recommend A** — why` line. Do not answer them.',
+  'Frontmatter: `id:` (the file name without `.md`), `status: proposed`, `dated:` today.',
+].join('\n\n')
+
+export const BUILD_PLAN_RULES = [
+  'You are writing a plan, not carrying it out. Build nothing, edit no source file; the one file you write is the plan.',
+  'Before writing Phase 0, read the `CLAUDE.md` of each package the goal touches and the realm hazards skill under `.claude/skills/` that covers it, and check `DECISIONS.md` for a ruling that already settles part of the goal.',
+  'Each step names the files it touches and the test or drive that proves it. A step that cannot name its proof is not a step yet.',
+].join('\n\n')
+
+/** Build plan: the goal, the shape, and the one path the session may write. */
+export function buildPlanPrompt({ goal, path, today = new Date().toISOString().slice(0, 10) } = {}) {
+  const asked = String(goal ?? '').trim().slice(0, 8000)
+  return [
+    `Write a plan at \`${path}\` for the goal below. Today is ${today}.`,
+    BUILD_PLAN_RULES,
+    PLAN_SHAPE,
+    `The goal:\n\n${asked}`,
+  ].join('\n\n')
+}
+
+export const STEP_RULES = [
+  'Say the step\'s id and title before doing anything else.',
+  'Do ONLY this step. Do not start the next one, however small it looks; the owner says Go for each.',
+  'A judgment call — an option, a flag, a new noun, a choice between two designs — runs the `decision-rules` skill. Where a genuine choice is left, undo your edits to source files, write the question as the next `Q` bullet under the plan\'s `## Open questions (owner)` with lettered options and a recommendation, and stop: the session\'s job ends at the question.',
+  'A defect you find that this step does not fix is filed with `fli file --sev S3 --area <package> --title "…" --detail "…"` and left alone.',
+  'Commit nothing. The owner commits.',
+  'Run `fli done` before calling the step finished, and clear what it lists or say in a sentence why an item stays.',
+  'Finish by editing the plan: tick the box to `[x]`, write what the step found as bullets indented under it, and when this was the phase\'s last open box add the phase\'s `**Done <date>.**` paragraph after its steps. A step that should not be done is `[~]` with ` — dropped: why` after its title.',
+  'Reply in a few lines: what the step found, what the next step is, and anything the owner must decide. The reply is handed to the next session.',
+].join('\n\n')
+
+/** Go: one step of the plan, in a session that may already hold the plan's context. */
+export function stepPrompt({ path, step, phase = null, today = new Date().toISOString().slice(0, 10) } = {}) {
+  const where = phase ? `Phase ${phase.n}${phase.title ? ` — ${phase.title}` : ''}${phase.doneWhen ? `, done when: ${phase.doneWhen}` : ''}` : null
+  return [
+    `Carry out step ${step.id} of the plan at \`${path}\`: ${step.title}${where ? `\n(${where})` : ''}. Today is ${today}.`,
+    STEP_RULES,
+  ].join('\n\n')
+}
+
+export const HANDOFF_MAX = 4000
+
+/** Next: a fresh session handed the plan, the last reply and the open questions, then the step. */
+export function nextHandoff({ path, step, phase = null, lastResult = '', questions = [], today } = {}) {
+  const tail = String(lastResult ?? '').trim()
+  const open = questions.filter(q => q.state !== 'ruled')
+  return [
+    `This is a fresh session continuing the plan at \`${path}\`. Read it first: the next step is the first open box, and what earlier steps found is written under their boxes.`,
+    tail ? `The last session's reply:\n\n${tail.length > HANDOFF_MAX ? '…' + tail.slice(-HANDOFF_MAX) : tail}` : null,
+    open.length
+      ? `Open questions the owner has not ruled on — do not answer them, and do not build what depends on one:\n${open.map(q => `- ${q.question}`).join('\n')}`
+      : null,
+    stepPrompt({ path, step, phase, today }),
+  ].filter(Boolean).join('\n\n')
+}
+
 // The tail is what was just run and what failed; a CI log's head is setup.
 export const ASK_MAX_LINES = 1500
 
@@ -102,12 +173,17 @@ export const EDIT_RULES = [
 // request cannot put words of its own into the prompt through them. "every" is
 // the one a looped element needs: an ask about one card of twelve is otherwise
 // read as a change to that card, edited in with a condition.
+//
+// A kind also names the guides to read first and the effort it runs at. The
+// cost of a run is the guides it reads, not its thinking: a Style ask at low
+// made the same edit as at high in half the time, so effort is the lever and
+// not the model, and the panel's effort chip overrides it.
 export const EDIT_KINDS = {
-  text:     'the words only. Leave markup, classes and script alone.',
-  style:    'how it looks: classes, and @frontierjs/css tones and treatments rather than colors. Leave the markup structure and the script alone.',
-  layout:   'arrangement and size: markup structure and layout classes. Leave the data and the behavior alone.',
-  behavior: 'what it does: event handlers and script. Keep how it looks.',
-  data:     'what it shows: which fields, records, order or filter. Reach the data through the resource the page already reads.',
+  text:     { says: 'the words only. Leave markup, classes and script alone.', guides: [], effort: 'low' },
+  style:    { says: 'how it looks: classes, and @frontierjs/css tones and treatments rather than colors. Leave the markup structure and the script alone.', guides: ['css', 'ui'], effort: 'low' },
+  layout:   { says: 'arrangement and size: markup structure and layout classes. Leave the data and the behavior alone.', guides: ['css', 'ui', 'mesa'], effort: 'high' },
+  behavior: { says: 'what it does: event handlers and script. Keep how it looks.', guides: ['mesa', 'sierra', 'junction'], effort: 'high' },
+  data:     { says: 'what it shows: which fields, records, order or filter. Reach the data through the resource the page already reads.', guides: ['sierra', 'junction', 'litestone'], effort: 'high' },
 }
 
 export const EDIT_SCOPES = {
@@ -149,12 +225,9 @@ export const ASK_EFFORT = 'high'
 // from a glance.
 export const PANEL_EFFORTS = ['low', 'high', 'max']
 
-// Which framework guides a kind of change needs read first. Text needs none.
-export const KIND_GUIDES = {
-  style:    ['css', 'ui'],
-  layout:   ['css', 'ui', 'mesa'],
-  behavior: ['mesa', 'sierra', 'junction'],
-  data:     ['sierra', 'junction', 'litestone'],
+/** The effort an edit runs at: the one asked for, else its kind's, else `ASK_EFFORT`. */
+export function editEffort(kind, asked = null) {
+  return asked || (Object.hasOwn(EDIT_KINDS, kind ?? '') ? EDIT_KINDS[kind].effort : ASK_EFFORT)
 }
 
 // `fork` resumes `session` under a NEW id filed under the run's own directory,
@@ -196,6 +269,9 @@ function askFlags({ session, edit, reads, work, fork }) {
       '--allowedTools',    `Edit(/${String(edit).replace(/\/+$/, '')}/**)`, ...reads.map(d => `Read(/${String(d).replace(/\/+$/, '')}/**)`),
       '--max-budget-usd',  String(ASK_BUDGET_USD),
     ]
+    // The reply streams as it is written, and a block's start says what the
+    // run is doing — seconds pass before the first tool call otherwise.
+    argv.push('--include-partial-messages')
     if (session) argv.push('--resume', session)
     return argv
   }
@@ -268,25 +344,25 @@ export function askPrompt({ question, output = '', context = {}, git = null, rul
 /**
  * The prompt for one ask: the picked elements, where each one's source is, what
  * to do. `picks` is `[{ loc, html, size }]`, where `size` is the outerHTML's
- * whole length when the page already cut `html`. The rules travel only on a
- * first question, as in `askPrompt`.
+ * whole length when the page already cut `html`; a pick may carry what
+ * `core/ask-context.js` read off the source — `loops` around it, `inner` loops
+ * and `files` under it — and `data` is the resources those files read, one
+ * line each. `kind` and `scope` are `EDIT_KINDS`/`EDIT_SCOPES` keys. The rules
+ * and the guide list travel only on a first question, as in `askPrompt`;
+ * `rules: false` keeps the guides and drops the rules, for a prompt handed to
+ * an agent the panel does not run.
  */
-/**
- * The prompt for one ask. `kind` and `scope` are `EDIT_KINDS`/`EDIT_SCOPES`
- * keys. A pick may carry what `core/ask-context.js` read off the source —
- * `loops` around it, `inner` loops and `files` under it — and `data` is the
- * resources those files read, one line each.
- */
-export function editPrompt({ instruction, picks = [], page = null, followUp = false, kind = null, scope = null, data = [], images = 0, guides = [] }) {
+export function editPrompt({ instruction, picks = [], page = null, followUp = false, rules = !followUp, kind = null, scope = null, data = [], images = 0, guides = [] }) {
+  const known = Object.hasOwn(EDIT_KINDS, kind ?? '')
   const parts = []
-  if (!followUp) parts.push(EDIT_RULES)
+  if (rules) parts.push(EDIT_RULES)
   if (!followUp && guides.length) parts.push(['The framework this app is built on, one guide per package — read the one a change touches before you make it, and follow it over the habits of other frameworks:', ...guides.map(g => `- ${g.file} — ${g.about}`)].join('\n'))
-  const first = guides.filter(g => KIND_GUIDES[kind]?.includes(g.pkg))
+  const first = known ? guides.filter(g => EDIT_KINDS[kind].guides.includes(g.pkg)) : []
   if (first.length) parts.push(`Before this change, read: ${first.map(g => g.file).join(', ')}`)
   const change = String(instruction ?? '').trim()
   if (change) parts.push(`Change: ${change}`)
   if (images > 0) parts.push(`I pasted ${images === 1 ? 'an image' : `${images} images`} with this; ${images === 1 ? 'it comes' : 'they come'} after this text.`)
-  if (Object.hasOwn(EDIT_KINDS, kind ?? ''))   parts.push(`What to change: ${EDIT_KINDS[kind]}`)
+  if (known) parts.push(`What to change: ${EDIT_KINDS[kind].says}`)
   if (Object.hasOwn(EDIT_SCOPES, scope ?? '')) parts.push(`How far: ${EDIT_SCOPES[scope]}`)
   if (page) parts.push(`The page: ${String(page).slice(0, 300)}`)
   const htmls = picks.map(p => String(p.html ?? ''))
@@ -321,11 +397,31 @@ const CREATED = /^File created successfully/
 const resultText = part => typeof part.content === 'string' ? part.content
   : (part.content ?? []).map(c => c?.text ?? '').join('')
 
-/** One parsed stream-json event → the events the page draws (often none). */
+// What a block starting means to somebody waiting on it.
+const BLOCK_DOING = { thinking: 'thinking', redacted_thinking: 'thinking', text: 'writing' }
+const TOOL_DOING  = { Read: 'reading', Grep: 'reading', Glob: 'reading', Edit: 'editing', Write: 'editing' }
+
+/**
+ * One parsed stream-json event → the events the page draws (often none). A
+ * `delta` is reply text as it streams; the `text` after it is the same block
+ * whole, and replaces it.
+ */
 export function readAskEvent(event) {
   if (!event || typeof event !== 'object') return []
   if (event.type === 'system' && event.subtype === 'init' && event.session_id)
     return [{ type: 'session', id: event.session_id }]
+  if (event.type === 'system' && event.subtype === 'status' && event.status === 'requesting')
+    return [{ type: 'status', text: 'thinking' }]
+  if (event.type === 'stream_event') {
+    const e = event.event ?? {}
+    if (event.parent_tool_use_id) return []
+    if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta' && e.delta.text)
+      return [{ type: 'delta', text: e.delta.text }]
+    if (e.type !== 'content_block_start') return []
+    const block = e.content_block ?? {}
+    const doing = block.type === 'tool_use' ? TOOL_DOING[block.name] ?? 'working' : BLOCK_DOING[block.type]
+    return doing ? [{ type: 'status', text: doing }] : []
+  }
   if (event.type === 'assistant') {
     const out = []
     for (const part of event.message?.content ?? []) {

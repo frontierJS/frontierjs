@@ -131,6 +131,13 @@ export async function run(t) {
   t.ok(unknown && !unknown.includes('[object Object]'),
     'a display with no branch, holding a document, does not print [object Object]')
 
+  // Cell imports the document viewer only when a cell needs it, so the table
+  // ships without it. The viewer must still ARRIVE, in both branches that use it.
+  await t.eventually(`!!document.querySelector('#json [class*="fjs-json"]')`, true,
+    'a json column renders the document viewer once it has loaded')
+  await t.eventually(`!!document.querySelector('#unknown [class*="fjs-json"]')`, true,
+    'and so does a document under a display name with no branch')
+
   /* ── a column the table could not place ───────────────────────────────── */
   //
   // `displayFor` answers `display: null` WITH a reason rather than dropping the

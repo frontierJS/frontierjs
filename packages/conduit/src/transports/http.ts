@@ -321,6 +321,10 @@ export class HttpTransport extends BaseTransport {
 
       if (result.error === null)        return result  // success
       if (!result.error.retryable)      return result  // permanent failure
+      // A retryable auth_failed is a mint that failed, and the mint's target
+      // ran its own ladder: replaying here multiplies the calls at the token
+      // endpoint by this target's retries.
+      if (result.error.kind === 'auth_failed') return result
       // Retryable in itself, but the caller has gone — no replay is wanted.
       if (result.error.kind === 'aborted')
         return replayable ? result : this.declineReplay(result)
@@ -623,7 +627,7 @@ export class HttpTransport extends BaseTransport {
       // A target whose credential ref does not resolve fails closed and
       // permanently — retrying will not conjure the secret.
       if (err instanceof CredentialError) {
-        return this.fail('auth_failed', err.message, { retryable: false })
+        return this.fail('auth_failed', err.message, this.credentialFailure(err))
       }
 
       // Caller's fault, not the target's — retrying sends the same bad request.

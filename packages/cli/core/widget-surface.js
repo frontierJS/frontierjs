@@ -341,7 +341,7 @@ export function scaffoldWidgetSurface({
  */
 export function widgetScripts({ dir = 'widgets', servePort = 8300 } = {}) {
   return {
-    'dev:widgets':   `cd ${dir} && vite -c config/vite.config.js`,
+    'dev:widgets':   `cd ${dir} && vite -c config/vite.config.js --configLoader native`,
     'build:widgets': `cd ${dir} && sierra widgets --config config/sierra.config.js`,
     'serve:widgets': `cd ${dir} && sierra widgets --config config/sierra.config.js --serve --port ${servePort}`,
   }

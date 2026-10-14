@@ -556,15 +556,8 @@ const serveProjectMap = async ($, initialMap, { port = 8501, open = true, atlas 
   // the argv parser reads `--no-open` as { open: false }, so the flag is declared as
   // `open` — declared as `no-open` it never bound, and the browser opened anyway.
   if (open) {
-    const opener = {
-      linux:  `xdg-open ${url}`,
-      darwin: `open ${url}`,
-      win32:  `start ${url}`,
-    }[process.platform] || `xdg-open ${url}`
-
-    setTimeout(() => {
-      try { execSync(opener, { stdio: 'ignore' }) } catch {}
-    }, 400)
+    const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
+    setTimeout(() => openUrl(url), 400)
   }
 
   log.info('Ctrl+C to stop')

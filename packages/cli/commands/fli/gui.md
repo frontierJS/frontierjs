@@ -20,7 +20,6 @@ flags:
 ---
 
 <script>
-import { execSync, spawn } from 'child_process'
 import { resolve } from 'path'
 </script>
 
@@ -46,15 +45,8 @@ if (flag.dry) {
 
 // Open browser if requested (non-blocking)
 if (flag.open) {
-  const opener = {
-    linux:  `xdg-open ${url}`,
-    darwin: `open ${url}`,
-    win32:  `start ${url}`,
-  }[process.platform] || `xdg-open ${url}`
-
-  setTimeout(() => {
-    try { execSync(opener, { stdio: 'ignore' }) } catch {}
-  }, 800)
+  const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
+  setTimeout(() => openUrl(url), 800)
 }
 
 // Start the server — import from fliRoot so it always finds core/server.js

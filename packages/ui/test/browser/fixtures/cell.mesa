@@ -40,6 +40,7 @@
   const where    = { name: 'where',   display: 'geo', geo: { lat: 'lat', lng: 'lng' } }
   const whereLong = { name: 'where',  display: 'geo', geo: { lat: 'latitude', lng: 'longitude' } }
   const unknown  = { name: 'thing',   display: 'someday' }
+  const doc      = { name: 'meta',    display: 'json' }
   const hours    = { name: 'hours',   display: 'number', rule: { type: 'number', 'x-unit': { symbol: 'h' } } }
   const tenths   = { name: 'hours',   display: 'scale', scale: 1, rule: { type: 'integer', 'x-unit': { symbol: 'h' } } }
 </script>
@@ -78,6 +79,9 @@
 
 <!-- a display name with no branch, holding a document -->
 <div id="unknown"><Cell value={{ a: 1 }} column={unknown} /></div>
+
+<!-- a document column: the viewer is loaded on first use, not with the table -->
+<div id="json"><Cell value={{ a: 1, b: [2] }} column={doc} /></div>
 
 <!-- a column the table could not place, and the reason riding with it -->
 <div id="unplaced"><Cell value={{ a: 1 }} column={unplaced} /></div>

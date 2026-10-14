@@ -75,12 +75,12 @@ definition.
 
 ## The contract
 
-`src/nav.js` exports one table. Each field is used by at least two apps in the
+`src/lib/nav.js` exports one table. Each field is used by at least two apps in the
 survey. A field only one app uses stays in that app's own shell.
 
 ```js
-// web/src/nav.js
-import { accounts } from './resources/Account.mesa'
+// web/src/lib/nav.js
+import { accounts } from '../resources/Account.mesa'
 
 export const groups = [
   { label: null, entries: [
@@ -233,17 +233,50 @@ grades `nav-href-routes` over every app it reads.
   cannot offer an entry the nav hides — a caller composing the two could forget,
   and nothing would say so (`decision-rules` Q7, answered after the first draft);
   every entry lands in one `Navigate` group, the name both palette apps use
-- [ ] 1.2 The spec: longest prefix wins, `/` matches only `/`, `exact`, `match`, a
-  throwing `show` counts as true, the palette's item shape
-- [ ] 1.3 `fli check` rule `nav-href-routes` (warn): every `href` and `path` in
-  `src/nav.js` resolves in the route table
+- [x] 1.2 The spec: longest prefix wins, `/` matches only `/`, `exact`, `match`, a
+  throwing `show` counts as true, the palette's item shape. **`packages/ui/test/nav.mjs`,
+  16 checks, in `bun run test`.** It also pins that the palette's rows are exactly
+  `visible`'s entries for every session tried. `exact` and `match` are pinned only as
+  fields `visible` and `sectionFor` pass through unchanged, because nav.js never
+  decides which entry is current; what they mean is tested with the Shell (2.2).
+  **It found one defect:** `CommandPalette` keys its keyboard index and row ids on
+  `id`, so an href listed in two groups made two rows with one id. `paletteItems`
+  now keeps the first visible listing of each href: one destination, one row. Listing
+  an href twice is a legitimate table, so it is neither refused nor warned
+  (`decision-rules`, answered after the code)
+- [x] 1.3 `fli check` rule `nav-href-routes` (warn): every `href` and `path` in
+  `src/lib/nav.js` resolves in the route table. **Built, in `core/checks.js`.**
+  The route table it reads is the surface's committed `routes.snapshot.md` rather than a
+  walk of `src/routes`, because the snapshot includes the routes a `*.mount.js` brings in
+  (example's `/automations/`), and the `snapshots` phase fails it when stale. A `:param`
+  takes one segment. A nested spread answers everything beneath it. A ROOT spread is
+  the catch-all 404, which would vouch for every link, so it vouches for none. A
+  section `path` needs a route at or beneath it, and `/` only itself. A query, a
+  hash and a trailing slash are ignored, and the match is case-sensitive
+  (`FJS-D210`). A relative href is reported, and external ones and templates are
+  skipped. **The file moved to `src/lib/`:** `FJS-D625` puts every module that is
+  not a route, resource or component in `web/src/lib/`, and `app-layout` warned on
+  a loose `src/nav.js`. A ruling outranks this paper, so the paper moved
+  (`decision-rules`, answered after the first draft of the rule). It skips in
+  every app today, because none has a nav table yet; 3.1 is the first app it grades
 
 ### Phase 2 — The Shell
 
 Goal: the kit draws a working shell from the contract.
 Done when: the ui drive opens it in Chrome at 1280 and 375 wide, signed in and out.
 
-- [ ] 2.1 frame.css `.sidebar.rail`, which closes `FJS-2559`
+- [x] 2.1 frame.css `.sidebar.rail`, which closes `FJS-2559`. **Built.** Closed it is
+  a new `--rail-width`; under the pointer or while focus is visible in it, it opens to
+  `--sidebar-width` over the Screen, and a negative end margin keeps the Shell column
+  at the rail width, so the page does not reflow. The open width IS the sidebar
+  width, so maidtech's `--sidebar-open-width` has no kit twin. It sits on a new
+  `--z-sidebar` rung only while open. The labels go in a new optional Nav part,
+  `.navlink-text`, faded by opacity so each stays its link's name. The rail's
+  navlink rules are in nav.css, because `patterns` is the later layer. Collapsing
+  for good is toggling the class, which is how basecamp and serpgrid already do it
+  (`decision-rules`, answered before the first edit). Touch screens at md and up
+  never open it, because there is no hover and a tap is not `:focus-visible`;
+  2.3 decides whether the Shell gives a rail a `title` per entry for them
 - [ ] 2.2 `Shell.mesa`, `layout="sidebar"`: the checked wait, the signed-out frame,
   the sidebar and `Drawer`, the section bar
 - [ ] 2.3 `layout="rail"` and `layout="topbar"` (Q3)
@@ -254,7 +287,7 @@ Done when: the ui drive opens it in Chrome at 1280 and 375 wide, signed in and o
 Goal: the in-repo apps run on the Shell; the prototypes follow.
 Done when: example's and basecamp's drives pass, and basecamp's ⌘K offers `/security/`.
 
-- [ ] 3.1 example: `src/nav.js`, the Shell, `paletteItems` for `Navigate`
+- [ ] 3.1 example: `src/lib/nav.js`, the Shell, `paletteItems` for `Navigate`
 - [ ] 3.2 basecamp: same, with `PRIMARY` kept in its own topbar snippet
 - [ ] 3.3 ela, maidtech, sstime, serpgrid. Ask the owner first: `fjs-prototypes` is
   not a git repository, so an edit there cannot be undone
@@ -263,11 +296,11 @@ Done when: example's and basecamp's drives pass, and basecamp's ⌘K offers `/se
 
 Goal: `FJS-D952`'s option B, done after A as the ruling said: a new app starts on
 the contract.
-Done when: `fli new` writes `src/nav.js` and a `_module.mesa` on the Shell, and the
+Done when: `fli new` writes `src/lib/nav.js` and a `_module.mesa` on the Shell, and the
 app it writes builds.
 
 - [ ] 4.1 `makeRouteModule` in `new.md`
-- [ ] 4.2 `make:scaffold` appends its model's entry to `src/nav.js`
+- [ ] 4.2 `make:scaffold` appends its model's entry to `src/lib/nav.js`
 
 ## Open questions
 

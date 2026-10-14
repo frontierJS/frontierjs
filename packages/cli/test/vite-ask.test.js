@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_EFFORT, EDIT_KINDS, EDIT_MAX_HTML, PANEL_EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
+import { ASK_EFFORT, EDIT_KINDS, editEffort, EDIT_MAX_HTML, PANEL_EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
@@ -72,6 +72,22 @@ describe('editPrompt', () => {
     expect(p).toContain('Before this change, read: /r/mesa/AGENTS.md')
   })
 
+  test('a prompt for another agent lists the guides and leaves the panel\'s rules out', () => {
+    const p = editPrompt({ instruction: 'x', guides, kind: 'style', rules: false })
+    expect(p).not.toContain(EDIT_RULES)
+    expect(p).toContain('- /r/css/AGENTS.md — the styling language')
+    expect(p).toContain('Before this change, read: /r/css/AGENTS.md')
+  })
+
+  test('a kind runs at its own effort unless one is asked for, and every kind\'s is one the panel offers', () => {
+    expect(editEffort('style')).toBe('low')
+    expect(editEffort('behavior')).toBe('high')
+    expect(editEffort('style', 'max')).toBe('max')
+    expect(editEffort(null)).toBe(ASK_EFFORT)
+    expect(editEffort('toString')).toBe(ASK_EFFORT)
+    for (const k of Object.values(EDIT_KINDS)) expect(PANEL_EFFORTS).toContain(k.effort)
+  })
+
   test('a first pick carries the rules, the change, the page, the source and the HTML', () => {
     const p = editPrompt({ instruction: 'make it bold', picks: [{ loc: 'content/routes/index.mesa:4:3', html: '<h1>Hi</h1>' }], page: 'http://localhost:8690/' })
     expect(p.startsWith(EDIT_RULES)).toBe(true)
@@ -111,7 +127,7 @@ describe('editPrompt', () => {
 
   test('a chip is its sentence, and a key that is not one adds nothing', () => {
     const p = editPrompt({ instruction: 'x', kind: 'style', scope: 'every', followUp: true })
-    expect(p).toContain(`What to change: ${EDIT_KINDS.style}`)
+    expect(p).toContain(`What to change: ${EDIT_KINDS.style.says}`)
     expect(p).toContain(`How far: ${EDIT_SCOPES.every}`)
     const q = editPrompt({ instruction: 'x', kind: 'toString', scope: '__proto__', followUp: true })
     expect(q).toBe('Change: x')
@@ -270,6 +286,19 @@ describe('locateText', () => {
 })
 
 describe('readAskEvent — edits', () => {
+
+  test('a streamed reply is deltas, and a block starting says what the run is doing', () => {
+    expect(askArgv({ edit: '/app' })).toContain('--include-partial-messages')
+    expect(askArgv({})).not.toContain('--include-partial-messages')
+    const stream = e => ({ type: 'stream_event', event: e, parent_tool_use_id: null })
+    expect(readAskEvent({ type: 'system', subtype: 'status', status: 'requesting' })).toEqual([{ type: 'status', text: 'thinking' }])
+    expect(readAskEvent(stream({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Made it ' } }))).toEqual([{ type: 'delta', text: 'Made it ' }])
+    expect(readAskEvent(stream({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }))).toEqual([{ type: 'status', text: 'thinking' }])
+    expect(readAskEvent(stream({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', name: 'Edit', input: {} } }))).toEqual([{ type: 'status', text: 'editing' }])
+    expect(readAskEvent(stream({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{' } }))).toEqual([])
+    expect(readAskEvent({ ...stream({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } }), parent_tool_use_id: 't' })).toEqual([])
+    expect(readAskEvent(stream({ type: 'message_stop' }))).toEqual([])
+  })
 
   test('an Edit call is reported with its hunk, and a refused result names the call', () => {
     const call = readAskEvent({ type: 'assistant', message: { content: [
@@ -581,7 +610,8 @@ describe('the served client', () => {
 
   test('runs as served, with the token key the plugin was handed', () => {
     const src = askPlugin({ tokenKey: 'basecamp_token' }).load('\0@frontierjs/cli/ask-client')
-    expect(src.split('\n')[0]).toBe(`const ASK = ${JSON.stringify({ tokenKey: 'basecamp_token', efforts: PANEL_EFFORTS, effort: ASK_EFFORT })}`)
+    const kinds = Object.fromEntries(Object.entries(EDIT_KINDS).map(([k, v]) => [k, v.effort]))
+    expect(src.split('\n')[0]).toBe(`const ASK = ${JSON.stringify({ tokenKey: 'basecamp_token', efforts: PANEL_EFFORTS, effort: ASK_EFFORT, kinds })}`)
     // No window here, so the module returns at its first line — after the
     // prepended one has run against whatever follows it.
     expect(() => new Function(src)()).not.toThrow()
@@ -723,8 +753,57 @@ process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_err
     argv = JSON.parse(readFileSync(seenAt, 'utf8')).argv
     expect(argv[argv.indexOf('--effort') + 1]).toBe(ASK_EFFORT)
     rmSync(seenAt)
+    await post('/__fjs/ask', { instruction: 'bluer', kind: 'style' }).catch(() => {})
+    argv = JSON.parse(readFileSync(seenAt, 'utf8')).argv
+    expect(argv[argv.indexOf('--effort') + 1]).toBe(EDIT_KINDS.style.effort)
+    rmSync(seenAt)
+    await post('/__fjs/ask', { instruction: 'bluer, harder', kind: 'style', effort: 'max' }).catch(() => {})
+    argv = JSON.parse(readFileSync(seenAt, 'utf8')).argv
+    expect(argv[argv.indexOf('--effort') + 1]).toBe('max')
+    rmSync(seenAt)
     await post('/__fjs/ask', { instruction: 'off', effort: 'none' }).catch(() => {})
     expect(existsSync(seenAt)).toBe(false)
+  })
+
+  test('a run can be undone from its result, before claude has exited', async () => {
+    const bin = join(dir, 'claude-linger')
+    writeFileSync(bin, `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }) + '\\n')
+setTimeout(() => {}, 1500)
+`)
+    chmodSync(bin, 0o755)
+    const post = await serve({ admit: null, bin })
+    const at = servers.at(-1).address().port
+    const res = await fetch(`http://localhost:${at}/__fjs/ask`, {
+      method: 'POST',
+      headers: { origin: `http://localhost:${at}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ instruction: 'and back' }),
+    })
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+    let text = ''
+    while (!text.includes('"result"')) text += (await reader.read()).value
+    const run = JSON.parse(text.split('\n')[0]).id
+    expect(await post('/__fjs/ask/undo', { run })).toMatchObject({ status: 200 })
+    while (!(await reader.read()).done) {}
+  })
+
+  test('a tool line names an app file from the Vite root, not from /', async () => {
+    const bin = join(dir, 'claude-tool')
+    const call = { type: 'assistant', message: { content: [{ type: 'tool_use', id: 't', name: 'Read', input: { file_path: join(app, 'Page.mesa') } }] } }
+    writeFileSync(bin, `#!/usr/bin/env node
+process.stdout.write(${JSON.stringify(JSON.stringify(call))} + '\\n')
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }) + '\\n')
+`)
+    chmodSync(bin, 0o755)
+    await serve({ admit: null, bin })
+    const at = servers.at(-1).address().port
+    const res = await fetch(`http://localhost:${at}/__fjs/ask`, {
+      method: 'POST',
+      headers: { origin: `http://localhost:${at}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ instruction: 'read it' }),
+    })
+    const events = (await res.text()).split('\n').filter(Boolean).map(l => JSON.parse(l))
+    expect(events.find(e => e.type === 'tool')).toEqual({ type: 'tool', text: 'Read Page.mesa' })
   })
 
   test('an undone change is nobody\'s to submit', async () => {
@@ -766,9 +845,75 @@ process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_err
       expect(r.text).toContain(`- inside: {#each items as it} at ${join(app, 'List.mesa')}:2`)
       expect(r.text).toContain('- drawn 3 times')
       expect(r.text).not.toContain('x.mesa')
+      expect(r.text).not.toContain(EDIT_RULES)
       expect(await post('/__fjs/ask/handoff', { instruction: 'x', kind: 'rewrite' })).toMatchObject({ status: 400, error: 'no such kind of change: rewrite' })
       expect(await post('/__fjs/ask', { instruction: 'x', scope: 'site' })).toMatchObject({ status: 400, error: 'no such scope: site' })
     } finally { rmSync(join(app, 'List.mesa')) }
   })
 
+})
+
+// ─── the plan prompts ─────────────────────────────────────────────────────────
+// Each guardrail is a sentence the prompt must keep: losing *do only this step*
+// runs the plan in one session, losing *commit nothing* commits for the owner.
+
+import { buildPlanPrompt, stepPrompt, nextHandoff, HANDOFF_MAX } from '../core/ask-claude.js'
+
+describe('plan prompts', () => {
+  const step  = { id: '2.2', title: 'Rotate and flip', box: 'open', phase: '2' }
+  const phase = { n: '2', title: 'Writes to pixels', doneWhen: 'the drive is green' }
+
+  test('buildPlanPrompt names the one path, forbids building, and states the shape', () => {
+    const p = buildPlanPrompt({ goal: 'crop images', path: 'IDEAS/crop.md', today: '2026-10-13' })
+    expect(p).toContain('Write a plan at `IDEAS/crop.md`')
+    expect(p).toContain('Build nothing, edit no source file')
+    expect(p).toContain('counting from 0')
+    expect(p).toContain('`Done when:`')
+    expect(p).toContain('- **Recommend A** — why')
+    expect(p).toContain('Do not answer them')
+    expect(p).toContain('The goal:\n\ncrop images')
+    expect(p).toContain('dated:` today')
+  })
+
+  test('stepPrompt carries the step, its phase and every guardrail', () => {
+    const p = stepPrompt({ path: 'IDEAS/crop.md', step, phase, today: '2026-10-13' })
+    expect(p).toContain('Carry out step 2.2 of the plan at `IDEAS/crop.md`: Rotate and flip')
+    expect(p).toContain('Phase 2 — Writes to pixels, done when: the drive is green')
+    for (const rule of [
+      'Say the step\'s id and title before doing anything else',
+      'Do ONLY this step',
+      '`decision-rules`',
+      'undo your edits to source files',
+      'the session\'s job ends at the question',
+      'fli file --sev S3',
+      'Commit nothing',
+      'Run `fli done`',
+      'tick the box to `[x]`',
+      '`**Done <date>.**`',
+      '` — dropped: why`',
+      'The reply is handed to the next session',
+    ]) expect(p).toContain(rule)
+  })
+
+  test('nextHandoff reads the file first, carries the last reply capped, lists open questions, then the step', () => {
+    const long = 'x'.repeat(HANDOFF_MAX + 50)
+    const p = nextHandoff({
+      path: 'IDEAS/crop.md', step, phase, lastResult: long, today: '2026-10-13',
+      questions: [{ question: 'Q1 — Which axis?', state: 'decidable' }, { question: 'Q2 — Settled?', state: 'ruled' }],
+    })
+    expect(p.indexOf('Read it first')).toBeLessThan(p.indexOf('The last session\'s reply'))
+    expect(p).toContain('…' + 'x'.repeat(HANDOFF_MAX))
+    expect(p).not.toContain('x'.repeat(HANDOFF_MAX + 1))
+    expect(p).toContain('- Q1 — Which axis?')
+    expect(p).not.toContain('Q2 — Settled?')
+    expect(p.indexOf('Open questions')).toBeLessThan(p.indexOf('Carry out step 2.2'))
+    expect(p).toContain('Do ONLY this step')
+  })
+
+  test('nextHandoff with nothing to carry is the read line and the step', () => {
+    const p = nextHandoff({ path: 'PLAN.md', step, today: '2026-10-13' })
+    expect(p).not.toContain('last session')
+    expect(p).not.toContain('Open questions the owner')
+    expect(p).toContain('Carry out step 2.2 of the plan at `PLAN.md`')
+  })
 })

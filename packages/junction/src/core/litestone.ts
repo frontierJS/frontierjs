@@ -5825,6 +5825,38 @@ function resolveType(prop: LiJsonProp): FieldDef['type'] {
  *               always the file that was passed.
  */
 export function describeDataRealm(db: unknown): Record<string, unknown> | null {
+  const realm = readDataRealm(db)
+  if (!realm) return null
+  const stores = realm.stores.map(d => `${d.name} → ${d.path} (${d.driver})`)
+  return {
+    models:    realm.models,
+    enums:     realm.enums || undefined,
+    gated:     `${realm.gated}/${realm.models}`,
+    databases: stores.length ? stores.join(', ') : undefined,
+    cwd:       realm.cwd,
+  }
+}
+
+/**
+ * The same reading as `describeDataRealm`, as the facts `fli dev` prints on one
+ * row. `gated` appears only when a model is not, since 16/16 says nothing a
+ * person acts on; a database keeps its path, for `FJS-449`'s reason, and drops
+ * the driver only where it is the default.
+ */
+export function dataRealmFacts(db: unknown): string[] | null {
+  const realm = readDataRealm(db)
+  if (!realm) return null
+  return [
+    `${realm.models} models`,
+    ...(realm.gated < realm.models ? [`${realm.gated}/${realm.models} gated`] : []),
+    ...realm.stores.map(d => `${d.name} ${d.path}${d.driver === 'sqlite' ? '' : ` (${d.driver})`}`),
+  ]
+}
+
+function readDataRealm(db: unknown): {
+  models: number, enums: number, gated: number, cwd: string,
+  stores: { name: string, path: string, driver: string }[],
+} | null {
   try {
     const client = db as {
       $schema?: { models?: unknown[]; enums?: unknown[] }
@@ -5856,15 +5888,12 @@ export function describeDataRealm(db: unknown): Record<string, unknown> | null {
     const short = (p?: string) =>
       !p ? '?' : p.startsWith(cwd + '/') ? '.' + p.slice(cwd.length) : p
 
-    const stores = Object.entries(dbs)
-      .map(([name, d]) => `${name} → ${short(d?.path)} (${d?.driver ?? '?'})`)
-
     return {
-      models:    models.length,
-      enums:     Array.isArray(enums) && enums.length ? enums.length : undefined,
-      gated:     `${gated}/${models.length}`,
-      databases: stores.length ? stores.join(', ') : undefined,
+      models: models.length,
+      enums:  Array.isArray(enums) ? enums.length : 0,
+      gated,
       cwd,
+      stores: Object.entries(dbs).map(([name, d]) => ({ name, path: short(d?.path), driver: d?.driver ?? '?' })),
     }
   } catch {
     return null           // not a Litestone client — say nothing rather than throw

@@ -17,7 +17,7 @@ it is the outcome this package exists to prevent.
 ## Layout
 
 A site is a directory holding `content/` and nothing else; `site-kit
-dev|build|preview <dir>` runs it. The site directory stays the Vite root, so
+dev|build|preview|check <dir>` runs it. The site directory stays the Vite root, so
 `dist/` lands beside `content/` and Sierra's root-relative paths keep meaning
 what they mean in any app.
 
@@ -29,8 +29,11 @@ what they mean in any app.
   (`@frontierjs/sierra/site/compile`) for `<dir>/bin/site`; `fli site:build
   --binary` cannot, because it runs the `config/vite.config.js` a site-kit site
   has none of (FJS-2756).
-- `config/vite.js` — `siteKit({ root, port, host })`, the whole Vite + Sierra config.
-  Owns `target`, `routesDir: 'content/routes'`, `outDir`, `trailingSlash`, and
+- `config/vite.js` — `resolveSite({ root })`, the site as one object: its
+  settings, its `site.js`, its preset and the Sierra config the three compose;
+  and `siteKit({ root, port, host, site? })`, the whole Vite + Sierra config
+  over it. The check reads the same resolved site, so the directories it
+  searches are the build's (`FJS-D962`). `siteKit` owns `target`, `routesDir: 'content/routes'`, `outDir`, `trailingSlash`, and
   the route table's home in `<site>/.sierra/` (never `node_modules/`, which
   the browser caches `immutable`); the site's
   `content/settings/site.js` default export is spread over it, and is also
@@ -57,10 +60,29 @@ what they mean in any app.
   so `siteKit()` does not run again.
 - `config/preset.js` — `loadPreset(name, site)`: the default export's `preset`
   key names a package whose `./preset` export returns `{ sierra, plugins,
-  shell }` (FJS-D648). It resolves from the site, and every way of failing to
+  shell, rules }` (FJS-D648, FJS-D962). A rule is `{ id, group, stage, run }`
+  with `stage` `source` or `built`; anything else in the list is refused by
+  the preset's name. It resolves from the site, and every way of failing to
   load one stops the build by name, because a site built without its preset
   ships every page without its blocks. It also returns the preset's package
   root, the nearest `package.json` naming it.
+- `check/` — `site-kit check <dir>`, exported as `@frontierjs/site-kit/check`
+  (`runCheck`, the finding helpers, `withSchema`, `healthFindings`). `run.js`
+  merges a preset's rules into the kit's (a shared id replaces, the rest
+  append after the kit's groups), runs each, and turns a throw into one
+  `check-crashed` finding. `context.js` is what a rule reads: `resolveSite()`'s
+  `settings`, `sierra` and `preset`, the content files, and for the built
+  stage `dist/` (or the live site), with a note when `dist/` is older than
+  `content/`, the kit or the preset. `html.js` reads a page with regexes.
+  `rules/` is one file per group: `content` (components, merge-fields,
+  dividers, frontmatter), `crawl` (robots, redirects, sitemap, canonical),
+  `meta`, `links` (`distOnly`: resolving a live site's links means crawling
+  it), `schema`. `schema/` is the JSON-LD auditor forked from
+  `WEBSITE-TOOLS/site-auditor/val/`, exported as
+  `@frontierjs/site-kit/check/schema/*` so a preset's own checks build on it;
+  it is lint-excluded so a re-sync stays a diff. The kit has no launch mode
+  and no tool-page notion: a preset's rule grades its own leftovers
+  (`atLaunch` is the one field the printer reads for it).
 - `config/public.js` — `presetPublic({ dir, site })`: `public/` at the
   preset's root, served in dev and emitted in the build beneath the site's
   `content/public/`, which wins a path both have. Found, never a preset key.
@@ -136,6 +158,10 @@ what they mean in any app.
 - `test/dialect.mjs` — the dialect through Mesa's `compileMd`, and the check
   called by hand. `test/words-build.mjs` runs `site-kit build` on a site it
   writes under `test/`, which is the only proof Sierra calls the check.
+- `test/check.mjs` — a site written and built under `test/`: each kit group
+  fires on the defect planted for it, a preset rule runs with the settings
+  and flags, one replaces `headings` by id, a throwing one is `check-crashed`,
+  the command exits 1 and `--json` parses. `bun`, for `Bun.YAML`.
 - `test/images.mjs` — the image step over a `dist/` it draws, with the real
   `Bun.Image`, so `bun test/images.mjs` and never `node`.
 

@@ -57,6 +57,49 @@ export function createNullResolver(): CredentialResolver {
   }
 }
 
+// One resolver per ref, for a conduit whose credentials do not share a
+// lifetime: an APNs JWT good for fifty minutes beside an FCM access token
+// good for fifty-five, beside a key read from the environment. Each entry
+// keeps its own `withCache`, and a refusal reaches the entry that answered.
+// A ref the table does not name resolves to nothing and the send fails
+// closed, so a typo is `auth_failed` naming the ref, never another entry's
+// secret (`FJS-2724`).
+//
+//   credentials: byRef({
+//     STRIPE_KEY: createEnvResolver(),
+//     FCM_SA:     withCache(fcmTokenResolver(sa, { send }), { ttl_ms: FCM_TOKEN_TTL_MS }),
+//   })
+//
+// The table is copied on construction, as createStaticResolver's map is.
+export function byRef(table: Record<string, CredentialResolver>): CredentialResolver {
+  const entries = new Map(Object.entries(table))
+
+  const routed: CredentialResolver = {
+    async get(ref) {
+      return (await entries.get(ref)?.get(ref)) ?? null
+    },
+
+    invalidate(ref, value) {
+      entries.get(ref)?.invalidate?.(ref, value)
+    },
+  }
+
+  // Offered only when some entry can answer per caller, so put() still
+  // refuses a per-caller target against a table that has none. A per-caller
+  // ref routed to an entry without getFor fails the send by name.
+  if ([...entries.values()].some(r => r.getFor)) {
+    routed.getFor = async (ref, who) => {
+      const entry = entries.get(ref)
+      if (!entry) return null
+      if (!entry.getFor) throw new Error(`byRef: the resolver for '${ref}' has no getFor, and its target is per_caller`)
+      return entry.getFor(ref, who)
+    }
+    routed.invalidateFor = (ref, value, who) => entries.get(ref)?.invalidateFor?.(ref, value, who)
+  }
+
+  return routed
+}
+
 // Wraps a resolver with a TTL cache. Transports resolve once per
 // attempt, so a retried request hits the underlying resolver up to
 // retry_limit + 1 times — worth avoiding for anything networked.

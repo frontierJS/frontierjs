@@ -175,7 +175,16 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
      `config/names.js` restates site-kit's layout order for the components
      rule, a second origin that only this move removes. The template
      leftovers, `launch_date` and `ksite-checks.js` (its business graph)
-     stay, so the move needs a seam for a preset's rules. Next.
+     stay, so the move needs a seam for a preset's rules.
+     **Done 2026-10-13 (`FJS-D962`).** `site-kit check <dir>` on the one
+     bin; a preset returns `rules`, and one with a kit rule's id replaces
+     it. The check reads `resolveSite()`, the object the build is made from,
+     so `names.js` is gone. ksite keeps a `Template` group and its
+     structured-data rule over the kit's auditor; `check:site` reports the
+     same findings as before, one for one. Learned: a peer on the
+     unpublished site-kit fails `bun install` (as Phase 5 says), so ksite
+     imports `@frontierjs/site-kit/check` without declaring it until Phase 5.
+     The first run on frontierjs.com found `FJS-2829`.
    - **Waits on a ruling.** `document` in dev. Sierra applies it only to a
      prerendered page, and README says `index.html` states the dev half.
      For a site-kit site the dev `index.html` is the kit's or a preset's, so

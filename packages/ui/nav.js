@@ -1,7 +1,7 @@
 /*
  * nav.js — the app's navigation table, read by the shell and by ⌘K.
  *
- *   // web/src/nav.js
+ *   // web/src/lib/nav.js
  *   export const groups   = [{ label: null, entries: [{ href: '/leads/', label: 'Leads' }] }]
  *   export const sections = [{ path: '/leads/', tabs: [{ href: '/leads/', label: 'Open', exact: true }] }]
  *
@@ -118,14 +118,20 @@ export function visible(groups, session) {
  * @returns {PaletteItem[]}
  */
 export function paletteItems(groups, session, go) {
+  // CommandPalette keys its keyboard index and its row ids on `id`, so one
+  // href listed in two groups made two rows the arrow keys could not tell
+  // apart. The first one listed is the row.
+  const seen = new Set()
   return visible(groups, session).flatMap((group) =>
-    group.entries.map((e) => ({
-      id: 'nav:' + e.href,
-      group: 'Navigate',
-      label: e.label,
-      ...(e.sub ? { sub: e.sub } : {}),
-      action: () => go(e.href),
-    })),
+    group.entries
+      .filter((e) => !seen.has(e.href) && seen.add(e.href))
+      .map((e) => ({
+        id: 'nav:' + e.href,
+        group: 'Navigate',
+        label: e.label,
+        ...(e.sub ? { sub: e.sub } : {}),
+        action: () => go(e.href),
+      })),
   )
 }
 

@@ -169,6 +169,75 @@
   border-inline-end: var(--border-width) solid var(--rule);
 }
 
+/*
+ * ── Rail — the Sidebar collapsed to its icons ────────────────────────
+ *
+ *   <nav class="sidebar rail" aria-label="Main">
+ *     <ul class="navlist">
+ *       <li><a class="navlink" href="/leads">
+ *         <svg class="icon" aria-hidden="true">…</svg>
+ *         <span class="navlink-text">Leads</span>
+ *       </a></li>
+ *     </ul>
+ *   </nav>
+ *
+ * Closed it is --rail-width; under the pointer, or while the keyboard's
+ * focus is in it, it opens to --sidebar-width OVER the Screen rather than
+ * pushing it. The negative end margin gives back what the open width
+ * takes, so the Shell's `auto` column stays --rail-width and the page does
+ * not reflow on every pass of the mouse. The two must move together.
+ *
+ * :focus-visible, not :focus-within — a click focuses the link too, and
+ * the rail stayed open after the pointer had left. :hover is gated on
+ * (hover: hover) because a tap on a touch screen leaves a sticky :hover
+ * behind and opens the rail over the page it just navigated to.
+ *
+ * The labels fade rather than leave: a .navlink-text at opacity 0 is
+ * still the link's name, where `display: none` would leave a link whose
+ * only content is an aria-hidden glyph. A navlink without one shows its
+ * text in the closed rail, which is the mistake made visible.
+ *
+ * The z-index is only on the open rail. Closed, it scrolls under a sticky
+ * Topbar like any Sidebar; open, it is an overlay and sits above it.
+ * `position: relative` is what keeps it above the static Screen for the
+ * moment it is closing, after the z-index has already gone.
+ *
+ * Collapsing and expanding a rail for good is the class itself — an app
+ * that persists the choice toggles `.rail`, and the Drawer below md shows
+ * the same nav without it.
+ */
+.sidebar.rail {
+  position:        relative;
+  inline-size:     var(--rail-width);
+  padding:         var(--space-sm) var(--space-3xs);
+  /*
+   * clip, not hidden: one overflow axis set to `hidden` promotes the other
+   * to `auto`, and the rail would become a scroller in every Shell. In
+   * .shell.viewport it is one anyway, and a scrollbar would take its width
+   * out of a column the icons are centred in.
+   */
+  overflow-x:      clip;
+  scrollbar-width: none;
+  transition:
+    inline-size       var(--motion-base),
+    margin-inline-end var(--motion-base),
+    box-shadow        var(--motion-base);
+}
+.sidebar.rail:has(:focus-visible) {
+  inline-size:       var(--sidebar-width);
+  margin-inline-end: calc(var(--rail-width) - var(--sidebar-width));
+  box-shadow:        var(--shadow-lg);
+  z-index:           var(--z-sidebar);
+}
+@media (hover: hover) {
+  .sidebar.rail:hover {
+    inline-size:       var(--sidebar-width);
+    margin-inline-end: calc(var(--rail-width) - var(--sidebar-width));
+    box-shadow:        var(--shadow-lg);
+    z-index:           var(--z-sidebar);
+  }
+}
+
 /* ── Screen — the routed page body ───────────────────────────────────
  * Owns the space between its children, as Card, Container and Pane do;
  * that rule is in cards.css, one rule for the four of them. */

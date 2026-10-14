@@ -299,7 +299,8 @@ result wants Uno's `text-sm` as the body class.
 ## What's in the box
 
 **Frame** `app` `shell` `topbar` `sidebar` `screen` `pane` `view`
-&nbsp;&nbsp;— the application grid, with `sidebar-first` and `viewport` variants
+&nbsp;&nbsp;— the application grid, with `sidebar-first` and `viewport` variants,
+and `rail` — the Sidebar collapsed to its icons, opening over the page
 
 **Inline** `btn` (+ `square`, `outlined`, `ghost`, `raised`, `glass`, `link`) ·
 `pill` `badge` `link` `chip` `page` `tooltip` `avatar` `kbd` `icon`

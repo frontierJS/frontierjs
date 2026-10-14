@@ -43,7 +43,7 @@ changes at a breakpoint, goes in the site's own stylesheet under the block's
 A site can name a **preset**, a package that adds blocks, layouts, stylesheets
 and build plugins: `export default { preset: '@kobami/ksite' }` in
 `content/settings/site.js`. The package exports `./preset`, a function of the
-site returning `{ sierra, plugins, shell }`. A preset that does not load stops
+site returning `{ sierra, plugins, shell, rules }`. A preset that does not load stops
 the build by name. A `public/` directory at the preset's package root ships
 beneath the site's `content/public/`, so its fonts and images keep their URLs
 (`/theme/fonts/…`); a file the site's `public/` also has is the site's.
@@ -53,6 +53,19 @@ per line, the format Cloudflare and Netlify read. The build merges them with
 every route's `redirect:` into `dist/_redirects`, and one path sent two places
 stops it. A `_redirects` in `content/public/`, or a `_redirects` or `_headers`
 in a preset's `public/`, stops the build by name (`FJS-D961`).
+
+`site-kit check site` says what is broken or unfinished before a site ships,
+and where: `file:line` for content, the page path for built output. It reads
+`content/` (an unknown `<Tag>` or `layout:`, a `{merge_field}` no setting
+holds, a divider with no blank line above, front-matter that is not YAML,
+`robots.txt`, the redirects) and `dist/` when there is one (the sitemap,
+canonicals, titles, descriptions, headings, `og:image`, every internal link
+and image, and the JSON-LD against schema.org). It exits 1 on an error;
+warnings and notes never block. `--source` skips the build, `--live` reads the
+deployed site at its `siteUrl`, `--only schema` runs one group or rule,
+`--json` is for scripts, and `--all` lists every location. A preset's `rules`
+run beside the kit's, and one with a kit rule's id replaces it (`FJS-D962`);
+any other `--flag` reaches those rules (`@kobami/ksite` reads `--launch`).
 
 Analytics is Sierra's `analytics` key in the same file — `analytics: {
 provider: 'plausible', domain: 'example.com' }` — and the build puts the

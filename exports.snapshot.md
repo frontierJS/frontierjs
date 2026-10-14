@@ -342,6 +342,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./devtools` | `src/devtools/index.js` | yes |
 | exports | `./widget` | `src/widget/index.js` | yes |
 | exports | `./widget/serve` | `src/widget/serve.js` | yes |
+| exports | `./mcp` | `src/mcp/index.js` | yes |
 | exports | `./site/serve` | `src/site/serve.js` | yes |
 | exports | `./site/compile` | `src/site/compile.js` | yes |
 | exports | `./check` | `src/build/mesa-check.js` | yes |

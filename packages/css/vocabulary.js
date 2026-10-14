@@ -199,7 +199,7 @@ const NOT_A_TERM = {
   modifier: [
     'bottom', 'circle', 'compact', 'complete', 'disabled', 'divided', 'end',
     'focusable', 'hover', 'menu', 'narrow', 'pills', 'removable',
-    'square', 'start', 'stretch', 'striped', 'text', 'vertical', 'viewport',
+    'rail', 'square', 'start', 'stretch', 'striped', 'text', 'vertical', 'viewport',
     'wide', 'wrap',
   ],
 
@@ -517,12 +517,13 @@ const ANATOMY = {
     markup: `<nav class="sidebar">
   <div class="navlist-label">Workspace</div>
   <ul class="navlist">
-    <li><a class="navlink" href="#" aria-current="page">Invoices</a></li>
-    <li><a class="navlink" href="#">Clients <span class="badge">4</span></a></li>
+    <li><a class="navlink" href="#" aria-current="page"><span class="navlink-text">Invoices</span></a></li>
+    <li><a class="navlink" href="#"><span class="navlink-text">Clients</span> <span class="badge">4</span></a></li>
   </ul>
 </nav>`,
     parts: [
       ['.navlink', 'One destination. The active one carries aria-current="page"'],
+      ['.navlink-text', 'The label beside an icon. One line, and what a .sidebar.rail fades rather than removes, so it stays the link’s name', 'optional'],
       ['.navlist-label', 'A group heading above a run of links', 'optional'],
     ],
   },

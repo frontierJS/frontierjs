@@ -27,6 +27,7 @@ const AXES = {
   'postbuild':  'Build — what a build owes its own output (FJS-D608 holds the site half below)',
   'islands':    'Build — mounting the islands a prerender left',
   'widget':     'Build — the embed runtime',
+  'mcp':        'Build — the MCP App view runtime, the embed runtime one host over (IDEAS/agent-client-ui.md)',
   'resource':   'Resource — createResource, the field rules, the session, the list, offline',
   'virtual':    'host — virtual:sierra, the boot',
   'theme':      'host — the theme switch (FJS-D453)',

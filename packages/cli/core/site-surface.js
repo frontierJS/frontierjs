@@ -420,7 +420,7 @@ export function siteScripts({ dir = 'site', servePort = 8700 } = {}) {
     // bun auto-loads `.env` from the working directory, so the app's own one is
     // not read, and a client that validates a required variable refuses to load
     // at all. A missing file here is silently fine.
-    'dev:site':   `cd ${dir} && bun --bun --env-file=../.env vite -c config/vite.config.js`,
+    'dev:site':   `cd ${dir} && bun --bun --env-file=../.env vite -c config/vite.config.js --configLoader native`,
     'build:site': `cd ${dir} && bun --bun --env-file=../.env vite build -c config/vite.config.js`,
     'serve:site': `cd ${dir} && sierra site --serve --port ${servePort}`,
   }

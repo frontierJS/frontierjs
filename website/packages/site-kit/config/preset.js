@@ -8,6 +8,7 @@
 //     sierra:  { autoImport, markdownLayouts, mesa, plugins, … },  // over site-kit's, under the site's own
 //     plugins: [UnoCSS(…)],                                       // Vite plugins, after Sierra's
 //     shell:   { html, entry },                                   // the dev document and its entry
+//     rules:   [{ id, group, stage, run }],                       // what `site-kit check` runs beside its own (FJS-D962)
 //   })
 //
 // What a preset does not return is found: `public/` at its package root ships
@@ -23,12 +24,13 @@ import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const KEYS = new Set(['sierra', 'plugins', 'shell'])
+const KEYS = new Set(['sierra', 'plugins', 'shell', 'rules'])
+const RULE = ['id', 'group', 'stage', 'run']
 
 /**
  * @param {string} name — the package, as content/settings/site.js names it
  * @param {{ root: string, content: string, settings: Record<string, unknown> }} site
- * @returns {Promise<{ sierra?: object, plugins?: import('vite').PluginOption[], shell?: { html: string, entry: string }, root: string }>}
+ * @returns {Promise<{ sierra?: object, plugins?: import('vite').PluginOption[], shell?: { html: string, entry: string }, rules?: object[], root: string }>}
  */
 export async function loadPreset(name, site) {
   if (typeof name !== 'string') throw new Error(`site-kit: the preset in content/settings/site.js is a ${typeof name}; it is a package name`)
@@ -50,8 +52,16 @@ export async function loadPreset(name, site) {
 
   const added = (await preset(site)) ?? {}
   const unknown = Object.keys(added).filter((k) => !KEYS.has(k))
-  if (unknown.length) throw new Error(`site-kit: the preset '${name}' returned ${unknown.map((k) => `'${k}'`).join(', ')}; a preset returns sierra, plugins and shell`)
+  if (unknown.length) throw new Error(`site-kit: the preset '${name}' returned ${unknown.map((k) => `'${k}'`).join(', ')}; a preset returns sierra, plugins, shell and rules`)
   if (added.shell && !(added.shell.html && added.shell.entry)) throw new Error(`site-kit: the preset '${name}' returned a shell without both html and entry`)
+  if (added.rules !== undefined) {
+    if (!Array.isArray(added.rules)) throw new Error(`site-kit: the preset '${name}' returned rules that are not a list`)
+    for (const [i, rule] of added.rules.entries()) {
+      const missing = RULE.filter((k) => !(k in (rule ?? {})))
+      if (missing.length) throw new Error(`site-kit: the preset '${name}' returned a rule (index ${i}${rule?.id ? `, '${rule.id}'` : ''}) without ${missing.join(', ')}; a rule is { id, group, stage, run }`)
+      if (!['source', 'built'].includes(rule.stage)) throw new Error(`site-kit: the preset '${name}' returned the rule '${rule.id}' with stage '${rule.stage}'; a stage is source or built`)
+    }
+  }
   return { ...added, root: packageRoot(file, name) }
 }
 

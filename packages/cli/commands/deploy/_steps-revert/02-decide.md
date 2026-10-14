@@ -102,7 +102,7 @@ if (refusals.length) log.warn(`Proceeding with ${refusals.length} refusal(s) ove
 // 'revert'`. Without it the next revert would read the deploy that preceded this
 // one as still serving, and offer to go back to a release this command just left.
 const { readdirSync, readFileSync } = await import('fs')
-const { stepFilesIn, stepNameOf, planSteps, planTransition } = await core('plan.js')
+const { stepFilesIn, stepNameOf, planSteps, planTransition } = await core('deploy-plan.js')
 const { extractFrontmatter } = await core('compiler.js')
 
 const dir   = new URL('file://' + global.fliRoot + '/commands/deploy/_steps-revert').pathname

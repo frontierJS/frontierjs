@@ -25,7 +25,7 @@ an import.
 
 | | |
 |---|---|
-| Tests | **1146 pass, 0 fail**, 60 files (`bun run test`, vitest, 7.2s) — verified |
+| Tests | **2167 pass, 0 fail**, 142 files (`bun run test`, vitest, 23s) — verified 2026-10-13 |
 | Static safety | **5/5 pass** (`bun run test:safety`) — a real Litestone client, a gated read that fails the build end to end and an acknowledged route that publishes deliberately — verified |
 | Widget drive | **25/25 assertions pass** (`bun run test:widgets`) — the fixture built, both servers up, Chrome cross-origin against the server the surface deploys with — verified |
 | Typecheck | **clean, 0 errors, no baseline** (`bun run typecheck`) — verified; sierra is absent from `scripts/typecheck-baselines.json`, which means 0 |
@@ -43,6 +43,14 @@ the resource layer are proven by `example`'s browser drives (`verify`,
 them off a diff.
 
 ## What is NOT built
+
+- **An MCP App view a host can run.** `build/mcp-build.js` builds one document
+  per resource file and `test/mcp-build.test.js` proves the shape with a real build; what is not
+  there is everything that makes it a screen: `mcpApp()` in `src/mcp/index.js`
+  refuses by name until the relay lands (plan step 3.1), there is no `sierra mcp`
+  command and no `fli mcp:build` (2.4), the host's theme does not reach the
+  document (2.3), and no drive loads a view in a host (4.3).
+  `IDEAS/agent-client-ui.md` § The plan is the order.
 
 - **A detail-view generator.** The table and filter bar are generated —
   `resource.columns()` / `.filters()`, `display/Cell.mesa`, `display/FilterBar.mesa`,

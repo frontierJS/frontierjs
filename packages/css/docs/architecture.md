@@ -139,6 +139,7 @@ shell               the grid — topbar spans, sidebar + screen beneath
   + .fixed          shell is one viewport; screen scrolls internally
 topbar              sticky, --topbar-height
 sidebar             --sidebar-width, collapses below md
+  + .rail           --rail-width of icons, opens over the screen
 screen              the routed body (min-inline-size:0 — see below)
 pane                labeled subdivision, 2rem rhythm
 view                switchable panel, [hidden] restated
@@ -162,7 +163,7 @@ breadcrumb          hierarchy trail, separator via ::before   (NEW v0.6)
 pagination          page links, current = solid fill          (NEW v0.6)
   + pagination-link / pagination-gap        (renamed from .page v0.14.6)
 navlist / navlink   sidebar links, current = tinted           (NEW v0.6)
-  + navlist-label
+  + navlist-label / navlink-text
 steps / step        multi-stage flow, current = aria-current  (NEW v0.8)
   + step-marker / step-label / step-hint, + .complete, + .vertical
 facts               <dl> label/value pairs, no Anatomy classes (NEW v0.8)

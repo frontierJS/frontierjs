@@ -33,6 +33,7 @@ import { staticDataPlugin } from './static-data-plugin.js'
 import { fsAllowPlugin } from './fs-allow-plugin.js'
 import { envFlagsPlugin } from './env-flags-plugin.js'
 import { askPlugin } from './ask-plugin.js'
+import { devlinePlugin } from './devline-plugin.js'
 import { explainModuleInitFailure, shippedHints } from './warnings.js'
 import { beginBuildImports, importAppModule } from './app-import.js'
 
@@ -178,6 +179,10 @@ export function createSierraViteConfig(config = {}) {
   // Dev only, when the app has @frontierjs/cli: shift+alt-click asks Claude.
   if (inspectOn(mesaOptions)) sierraPlugins.push(askPlugin({ tokenKey: config.junction?.tokenKey }))
 
+  // Dev only, under `fli dev`: the boot banner as the line fli lays out.
+  const devline = devlinePlugin(sierraContext)
+  if (devline) sierraPlugins.push(devline)
+
   // Build the base Vite config per target
   const baseConfig = buildBaseConfig(config, sierraPlugins, userPlugins)
 
@@ -251,8 +256,11 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       // only what the browser asks for compiles the whole first page on demand:
       // 1.7 s on a cold `fli dev` against 0.4 s once warm. Warming the entry
       // alone buys 300 ms; the routes and resources are the other second.
+      // The entry is written as a pattern because vite warms a LITERAL path
+      // whether it exists or not, and a surface with no `src/main.js` (widgets)
+      // logged a pre-transform error on every start.
       warmup: {
-        clientFiles: ['src/main.js', `${routesDir}/**/*.mesa`, 'src/resources/*.mesa'],
+        clientFiles: ['src/main.[j]s', `${routesDir}/**/*.mesa`, 'src/resources/*.mesa'],
       },
     },
     build: {
@@ -787,6 +795,10 @@ function flattenTree(node) {
 
 // Named exports for unit testing
 export { deepMerge as _deepMerge }
+// The theme class a document built outside `vite build` carries on `<html>` —
+// an MCP App view (`build/mcp-build.js`) is one such document, and it must say
+// the same thing a prerendered page says.
+export { resolveHtmlClass }
 
 // What `connectApp({ schema })` takes, made on the server for the OTHER app's
 // `db/schema.lite` — the same tables this build registers for its own.

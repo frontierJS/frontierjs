@@ -26,13 +26,14 @@ import { siteShell } from './shell.js'
 const KIT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
- * @param {object} opts
- * @param {string} opts.root — the site directory, the one holding `content/`
- * @param {number} [opts.port] — dev port; `SITE_PORT` / `FLI_PORT_SITE` otherwise
- * @param {boolean} [opts.host] — listen on every interface, not just localhost
- * @returns {Promise<import('vite').InlineConfig>}
+ * The site as the build and the check both read it: its settings, its Sierra
+ * config, its preset, and the Sierra config the three compose. Resolved once
+ * and handed on, so the check grades the directories the build reads rather
+ * than a restatement of them (FJS-D962).
+ *
+ * @param {{ root: string }} opts
  */
-export async function siteKit({ root, port, host = false }) {
+export async function resolveSite({ root }) {
   root = resolve(root)
   const content = resolve(root, 'content')
   if (!existsSync(content)) throw new Error(`site-kit: no content/ in ${root}`)
@@ -47,11 +48,60 @@ export async function siteKit({ root, port, host = false }) {
   const preset = presetName
     ? await loadPreset(presetName, { root, content, settings })
     : {}
+  const autoImport = siteConfig.autoImport ?? preset.sierra?.autoImport
+
+  const sierra = {
+    ...preset.sierra,
+    ...siteConfig,
+    // No theme class here — a `theme` block puts it on <html>, where the
+    // switcher writes. On <body> it would shadow the switcher for every token
+    // both define (FJS-501). Merged key by key, as `mesa` is: a site stating
+    // its own `document.head` keeps the preset's JSON-LD and body id.
+    document: { ...preset.sierra?.document, ...siteConfig.document },
+    mesa: { ...preset.sierra?.mesa, ...siteConfig.mesa },
+    plugins: [...(preset.sierra?.plugins ?? []), ...(siteConfig.plugins ?? [])],
+    // Neither a preset nor a site moves these. Every site-kit site keeps its
+    // pages in content/routes (FJS-D606). The browser's half of the config is
+    // content/settings/site.js, imported whole (FJS-1544): a preset that
+    // named its own would hide the site's `theme` from the switcher. Without
+    // that file it is an empty module, never Sierra's guess at
+    // config/sierra.config.js (FJS-1709).
+    routesDir: 'content/routes',
+    // Every key in site.md is a bare name in a page, beside whatever the
+    // preset or the site auto-imports; Sierra refuses a name two modules bind.
+    autoImport: keys.length
+      ? { ...autoImport, modules: { [writeSettingsModule(root, settings)]: keys, ...autoImport?.modules } }
+      : autoImport,
+    // What `layout:` can name: the kit's own (Block), then the preset's, then
+    // the site's content/layouts. A later directory wins a name, so a preset
+    // or a site replaces a kit layout without copying the rest.
+    markdownLayouts: [
+      resolve(KIT, 'src/layouts'),
+      ...(preset.sierra?.markdownLayouts ?? []),
+      ...(siteConfig.markdownLayouts ?? (existsSync(resolve(content, 'layouts')) ? ['content/layouts'] : [])),
+    ],
+    _configPath: existsSync(configPath) ? configPath : resolve(KIT, 'config/no-settings.js'),
+  }
+
+  return { root, content, settings, keys, siteConfig, preset, presetName, sierra }
+}
+
+/**
+ * @param {object} opts
+ * @param {string} opts.root — the site directory, the one holding `content/`
+ * @param {number} [opts.port] — dev port; `SITE_PORT` / `FLI_PORT_SITE` otherwise
+ * @param {boolean} [opts.host] — listen on every interface, not just localhost
+ * @param {Awaited<ReturnType<typeof resolveSite>>} [opts.site] — already resolved, by the check
+ * @returns {Promise<import('vite').InlineConfig>}
+ */
+export async function siteKit({ root, port, host = false, site }) {
+  site ??= await resolveSite({ root })
+  const { content, keys, preset, sierra } = site
+  root = site.root
   const dialect = siteDialect()
   const publicDir = resolve(content, 'public')
   const presetPublicDir = preset.root && resolve(preset.root, 'public')
-  const mesa = { ...preset.sierra?.mesa, ...siteConfig.mesa }
-  const autoImport = siteConfig.autoImport ?? preset.sierra?.autoImport
+  const mesa = sierra.mesa ?? {}
 
   const base = createSierraViteConfig({
     target:    'static',
@@ -65,25 +115,7 @@ export async function siteKit({ root, port, host = false }) {
     // server ran stayed missing, even across reloads, until the cache was
     // cleared, and editing it updated nothing.
     routeTable: { output: '.sierra/routes.js' },
-    ...preset.sierra,
-    ...siteConfig,
-    // No theme class here — a `theme` block puts it on <html>, where the
-    // switcher writes. On <body> it would shadow the switcher for every token
-    // both define (FJS-501). Merged key by key, as `mesa` is: a site stating
-    // its own `document.head` keeps the preset's JSON-LD and body id.
-    document: { ...preset.sierra?.document, ...siteConfig.document },
-    // Neither a preset nor a site moves these. Every site-kit site keeps its
-    // pages in content/routes (FJS-D606). The browser's half of the config is
-    // content/settings/site.js, imported whole (FJS-1544): a preset that
-    // named its own would hide the site's `theme` from the switcher. Without
-    // that file it is an empty module, never Sierra's guess at
-    // config/sierra.config.js (FJS-1709).
-    routesDir: 'content/routes',
-    // Every key in site.md is a bare name in a page, beside whatever the
-    // preset or the site auto-imports; Sierra refuses a name two modules bind.
-    autoImport: keys.length
-      ? { ...autoImport, modules: { [writeSettingsModule(root, settings)]: keys, ...autoImport?.modules } }
-      : autoImport,
+    ...sierra,
     // The kit's dialect runs first, so a preset's passes see a page already
     // split into bands and articles. The check runs before a preset's
     // post-build steps rewrite the output.
@@ -94,16 +126,7 @@ export async function siteKit({ root, port, host = false }) {
     },
     // Images go last, so their srcsets are added to the pages a preset's
     // steps leave behind rather than to pages those steps then replace.
-    plugins: [dialect.check, ...(preset.sierra?.plugins ?? []), siteImages()],
-    // What `layout:` can name: the kit's own (Block), then the preset's, then
-    // the site's content/layouts. A later directory wins a name, so a preset
-    // or a site replaces a kit layout without copying the rest.
-    markdownLayouts: [
-      resolve(KIT, 'src/layouts'),
-      ...(preset.sierra?.markdownLayouts ?? []),
-      ...(siteConfig.markdownLayouts ?? (existsSync(resolve(content, 'layouts')) ? ['content/layouts'] : [])),
-    ],
-    _configPath: existsSync(configPath) ? configPath : resolve(KIT, 'config/no-settings.js'),
+    plugins: [dialect.check, ...(sierra.plugins ?? []), siteImages()],
   })
 
   return {

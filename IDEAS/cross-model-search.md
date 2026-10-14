@@ -208,7 +208,7 @@ what changed, so this is a hearing on the measurement, not a reopening of the
 ruling.
 
 **§ VII tier:** Assessment, so this paper. Building E is a ruling: an
-`FJS-D##` recording that `$search` spans models over one index, citing Q4's
+`FJS-D970` records that `$search` spans models over one index, citing Q4's
 measurement and its premise.
 
 ## Open, for whoever builds it
@@ -251,7 +251,7 @@ twice. Scores are bm25, lower is better.
   the grade (one query with a policy branch per model). The grade is
   construction, and its test is § nine, 9.
 
-Verdict: **build E.** The ruling is owed with it.
+Verdict: **build E.** The ruling is `FJS-D970`.
 
 ## Plan
 
@@ -260,8 +260,9 @@ Verdict: **build E.** The ruling is owed with it.
 Goal: the decision is written and the leak test exists before any index does.
 Done when: `fli decisions` lists nothing for this paper and the new test fails for want of `$search`.
 
-- [ ] 0.1 `FJS-D##` in `DECISIONS.md`: `$search` spans models over one shared index; cites Q4's premise and the gate table above. Records `_search` is `trigram` whatever the models' own tokenizers, and the title weight 3 by column index.
-- [ ] 0.2 Litestone fixture under `packages/litestone/test/`: two `@@fts` models with a row policy, a caller who may read half, Q4's planted pair. Asserts: no hit the caller may not read; the limit is spent only on readable rows; a title outranks a body; a short-word-only query sorts last with `_rank` null.
+- [x] 0.1 `FJS-D970` in `DECISIONS.md`: `$search` spans models over one shared index; cites Q4's premise and the gate table above. Records `_search` is `trigram` whatever the models' own tokenizers, and the title weight 3 by column index.
+- [x] 0.2 `packages/litestone/test/search-spanning.test.ts`: two `@@fts` models with a row policy, a caller who may read half, Q4's planted pair. Asserts: no hit the caller may not read; the limit is spent only on readable rows; a title outranks a body; a short-word-only query sorts last with `_rank` null.
+  - Red on 7 of 7 for want of `$search`; the schema (`@@fts` + `@@label` on two policied models) builds.
 
 ### Phase 1 — Data
 

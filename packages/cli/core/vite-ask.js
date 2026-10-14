@@ -38,13 +38,13 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
-import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, PANEL_EFFORTS, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
-import { GUIDES, askContext, findAppRoot, findGuides } from './ask-context.js'
+import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, PANEL_EFFORTS, editEffort, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { askContext, findAppRoot, findGuides } from './ask-context.js'
 import { previewScope } from './preview.js'
 
 const CLIENT_ID   = '/@frontierjs/cli/ask-client'
@@ -476,6 +476,12 @@ function readChips(body) {
   return { kind, scope }
 }
 
+/** What the panel is told before it draws: the efforts it offers, and the one each kind runs at unless one is pressed. */
+export function panelConfig(tokenKey) {
+  const kinds = Object.fromEntries(Object.entries(EDIT_KINDS).map(([k, v]) => [k, v.effort]))
+  return { tokenKey, efforts: PANEL_EFFORTS, effort: ASK_EFFORT, kinds }
+}
+
 /** `[{ type, data }]`, data base64 with no `data:` prefix, or `{ error }`. */
 export function readImages(list) {
   if (list == null) return []
@@ -578,15 +584,23 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     const chips = readChips(body)
     if (chips.error) return reply(res, 400, { error: chips.error })
     const { picks, data } = askContext(root, readPicks(body.picks))
-    const guides = findGuides(root).map(g => ({ ...g, about: GUIDES[g.pkg] }))
+    const guides = findGuides(root)
     // The schema, and never the rest of the app root: api/.env sits there, and
     // on a shared dev server the person asking is not always the owner.
     const app = findAppRoot(root)
     const reads = [...guides.map(g => g.dir), ...(app ? [resolve(app, 'db')] : [])]
+    // The log is a narrow column: a guide is named by its package and an app
+    // file from the Vite root, as the prompt names them.
+    const prefixes = [
+      ...guides.map(g => [g.dir + sep, `@frontierjs/${g.pkg}/`]),
+      [root + sep, ''],
+      ...(app && app !== root ? [[app + sep, relative(root, app) + sep]] : []),
+    ]
+    const shortPaths = text => prefixes.reduce((t, [from, to]) => t.replaceAll(from, to), text)
 
     const run = `${boot}.${++seq}`
     const ledger = createLedger(root)
-    let session = null
+    let session = null, held = false
     res.statusCode = 200
     res.setHeader('content-type', 'application/x-ndjson')
     res.setHeader('cache-control', 'no-store')
@@ -598,16 +612,21 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
       edit:    root,
       reads,
       session: body.session || null,
-      effort:  body.effort || undefined,
+      effort:  editEffort(chips.kind, body.effort),
       images,
       prompt:  editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: !!body.session, images: images.length, guides }),
       onEvent: e => {
         if (e.type === 'read' || e.type === 'edit' || e.type === 'write') return ledger.see(e)
         if (e.type === 'session') session = e.id
+        if (e.type === 'tool') e.text = shortPaths(e.text)
         if (e.type === 'landed' || e.type === 'refused') return ledger.result(e)
+        // Held at the result, which is when the panel offers Undo: the
+        // process takes most of a second more to exit, and an Undo pressed
+        // in that gap found no run.
         if (e.type === 'result') {
           e.edits = ledger.count
           if (e.edits) send({ type: 'diff', files: ledger.diff() })
+          if (!held) { held = true; hold(run, ledger, { instruction, session }) }
         }
         send(e)
       },
@@ -618,7 +637,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     res.on('close', () => { if (current?.run === run) stop() })
     await out.done
     if (current?.run === run) current = null
-    hold(run, ledger, { instruction, session })
+    if (!held) hold(run, ledger, { instruction, session })
     res.end()
   }
 
@@ -691,7 +710,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     const { picks, data } = askContext(root, readPicks(body.picks), { absolute: true })
     const instruction = String(body.instruction ?? '').trim()
     if (!instruction && !picks.length) return reply(res, 400, { error: 'pick an element or say what to change' })
-    return reply(res, 200, { text: editPrompt({ instruction, picks, data, ...chips, page: body.page, followUp: true }) })
+    return reply(res, 200, { text: editPrompt({ instruction, picks, data, ...chips, page: body.page, rules: false, guides: findGuides(root) }) })
   }
 
   async function branch() {
@@ -801,7 +820,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     resolveId(id) { return id === CLIENT_ID ? RESOLVED_ID : null },
     load(id) {
       if (id !== RESOLVED_ID) return null
-      return `const ASK = ${JSON.stringify({ tokenKey, efforts: PANEL_EFFORTS, effort: ASK_EFFORT })}\n` + readFileSync(CLIENT_FILE, 'utf8')
+      return `const ASK = ${JSON.stringify(panelConfig(tokenKey))}\n` + readFileSync(CLIENT_FILE, 'utf8')
     },
 
     transformIndexHtml() {

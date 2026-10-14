@@ -7882,7 +7882,8 @@ function feedbackPage() {
 function framePage() {
   const tokens = [
     ["--topbar-height", "3.5rem", "Topbar height"],
-    ["--sidebar-width", "15rem", "Sidebar column width"],
+    ["--sidebar-width", "15rem", "Sidebar column width, and an open rail's"],
+    ["--rail-width", "3.5rem", "A closed rail's column width"],
     ["--screen-pad", "1.5rem", "Screen padding (1rem below md)"],
   ];
 
@@ -7982,6 +7983,31 @@ function framePage() {
             <p>
               <strong>Renamed in v0.10.1</strong> — it was <code>.shell.fixed</code>,
               which is a name UnoCSS already owns. See <strong>Install</strong>.
+            </p>
+          </article>
+          <article class="card">
+            <strong><code>.sidebar.rail</code></strong>
+            <p>
+              The Sidebar collapsed to its icons, <code>--rail-width</code> wide.
+              Under the pointer, or while the keyboard&rsquo;s focus is in it, it
+              opens to <code>--sidebar-width</code> over the Screen rather than
+              pushing it, so the page does not reflow. Wrap each label in
+              <code>.navlink-text</code>: the rail fades it rather than removing
+              it, so it stays the link&rsquo;s name.
+            </p>
+            ${code(`<nav class="sidebar rail" aria-label="Main">
+  <ul class="navlist">
+    <li><a class="navlink" href="/leads">
+      <svg class="icon" aria-hidden="true">…</svg>
+      <span class="navlink-text">Leads</span>
+    </a></li>
+  </ul>
+</nav>`, "html")}
+            <p>
+              Collapsing it for good is the class: an app that remembers the
+              choice toggles <code>.rail</code>. Below <code>768px</code> it is
+              hidden like any Sidebar, and the Drawer shows the same nav without
+              the class.
             </p>
           </article>
         </div>`,
