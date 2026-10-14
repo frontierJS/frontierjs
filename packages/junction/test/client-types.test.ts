@@ -186,3 +186,89 @@ describe('the generated types reach the browser client', () => {
     expect(out).toContain('use.ts')
   }, 30_000)
 })
+
+// FJS-2656: a method's declared `output:` reaches `invoke()`/`call()` once the
+// app says which service answers it. The map is app code -- `litestone types`
+// reads the seed and the seed holds no `methods:` -- so the fixture states it.
+describe('a declared method answer reaches invoke() and call()', () => {
+  const SEARCH_SCHEMA = `
+    type SearchResult { total Int }
+    model Post { id Int @id  title String }
+  `
+
+  function compileMethods(usage: string, augmentMethods: boolean): { ok: boolean; out: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'junction-client-methods-'))
+    try {
+      const dts = generateTypeScript(parse(SEARCH_SCHEMA).schema, { augment: 'junction' })
+      writeFileSync(join(dir, 'db.d.ts'), dts)
+      writeFileSync(join(dir, 'methods.d.ts'), augmentMethods ? `
+        import type { SearchResult } from './db'
+        declare module '@frontierjs/junction/client' {
+          interface ServiceMethods { posts: { search: SearchResult } }
+        }
+        export {}
+      ` : 'export {}\n')
+      writeFileSync(join(dir, 'use.ts'), usage)
+      writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({
+        compilerOptions: {
+          strict: true, target: 'ESNext', module: 'Preserve', moduleResolution: 'bundler',
+          lib: ['ESNext', 'DOM', 'DOM.Iterable'], types: [], skipLibCheck: true,
+          allowImportingTsExtensions: true, noEmit: true,
+          paths: { '@frontierjs/junction/client': [CLIENT_SRC] },
+        },
+        files: ['db.d.ts', 'methods.d.ts', 'use.ts'],
+      }, null, 2))
+      const proc = Bun.spawnSync([TSC, '--noEmit', '-p', dir], { cwd: dir })
+      const out  = new TextDecoder().decode(proc.stdout) + new TextDecoder().decode(proc.stderr)
+      return { ok: proc.exitCode === 0, out }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  test('a declared method answers its type, and a field it lacks is refused', () => {
+    const { ok, out } = compileMethods(`
+      import { createJunctionClient } from '@frontierjs/junction/client'
+
+      const client = createJunctionClient({ url: 'http://localhost:3400' })
+
+      export async function run() {
+        const posts = client.service('posts')
+        const viaInvoke = await posts.invoke('search', 1, { q: 'x' })
+        const viaCall   = await posts.call('search', 1, { q: 'x' })
+        const a: number = viaInvoke.total
+        const b: number = viaCall.total
+        // @ts-expect-error -- 'hits' is not a field of SearchResult
+        const c = viaInvoke.hits
+        return [a, b, c]
+      }
+    `, true)
+
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  }, 30_000)
+
+  test('an undeclared method, and an app that declares nothing, answer unknown as before', () => {
+    const declared = compileMethods(`
+      import { createJunctionClient } from '@frontierjs/junction/client'
+      const client = createJunctionClient({ url: 'http://localhost:3400' })
+      export async function run() {
+        const r: unknown = await client.service('posts').invoke('archive', 1)
+        return r
+      }
+    `, true)
+    expect(declared.out).toBe('')
+    expect(declared.ok).toBe(true)
+
+    const bare = compileMethods(`
+      import { createJunctionClient } from '@frontierjs/junction/client'
+      const client = createJunctionClient({ url: 'http://localhost:3400' })
+      export async function run() {
+        const r: unknown = await client.service('posts').invoke('search', 1)
+        return r
+      }
+    `, false)
+    expect(bare.out).toBe('')
+    expect(bare.ok).toBe(true)
+  }, 30_000)
+})

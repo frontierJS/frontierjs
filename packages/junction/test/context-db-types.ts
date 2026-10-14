@@ -30,3 +30,9 @@ export async function usesTheClient(ctx: ServiceContext) {
 
   return { sys, rows, one, count, actor, page }
 }
+
+// FJS-2619 — `$transaction` always exists on a Litestone client, so a service
+// calls it without a guard.
+export async function scopesWritesInATransaction(ctx: ServiceContext) {
+  return ctx.locals.db!.$transaction(async tx => tx.post.count())
+}

@@ -554,6 +554,26 @@ describe('?search= — a search box over a name, which answered 400 on every use
   })
 })
 
+describe('apps.find — the caller\'s $orderBy (FJS-2832)', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  test('an app list sorts by the directive, and still answers without one', async () => {
+    const sys     = env.system as any
+    const tag     = uniq()
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Sort', slug: `sort-${tag}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'E', slug: `e-${tag}` } })
+    for (const name of ['mm', 'aa', 'zz']) {
+      await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name, slug: `${name}-${tag}` } })
+    }
+    const mine  = (r: any) => (r.data ?? r).filter((a: any) => a.environmentId === e.id).map((a: any) => a.name)
+    const apps  = () => env.as(owner).service('apps')
+
+    expect(mine(await apps().find({ environmentId: e.id }, { directives: { orderBy: 'name' } }))).toEqual(['aa', 'mm', 'zz'])
+    expect(mine(await apps().find({ environmentId: e.id }, { directives: { orderBy: '-name' } }))).toEqual(['zz', 'mm', 'aa'])
+    expect(mine(await apps().find({ environmentId: e.id })).sort()).toEqual(['aa', 'mm', 'zz'])
+  })
+})
+
 // ─── The application trail ───────────────────────────────────────────────────
 // `AuditEvent.diff` is `Json?` and nothing wrote it, so the trail could say a
 // server was drained and not what state it was in (FJS-154). The row-level
@@ -1869,7 +1889,7 @@ describe('snoozing a rule silences it for a while, and the server keeps the cloc
 
   test('a developer cannot silence the pager, and a patch cannot write the column', async () => {
     await expect(env.as(developer).service('alerts').call('snooze', rule.id, { minutes: 5 }))
-      .rejects.toThrow(/admin or owner/)
+      .rejects.toThrow(/Requires admin role in this workspace/)
     // `@system`: the ordinary edit is not a second door to the same silence.
     // It carries the version it read, so the refusal is the column's and not
     // the compare-and-swap's.
@@ -1992,7 +2012,7 @@ describe('an app made from a blueprint', () => {
       .rejects.toThrow(/withdrawn/)
     await expect(make(viewer, { blueprintId: bp.id, environmentId: environment.id, name: 'V',
       values: { KV_PASSWORD: 'x' } }))
-      .rejects.toThrow(/you have: viewer/)
+      .rejects.toThrow(/Requires developer role in this workspace/)
   })
 
   test('where an app came from is not a column its editor writes', async () => {
@@ -2687,6 +2707,34 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
     expect((await env.as(owner).service('portal').call('ping', id)).id).toBe(id)
   })
 
+  // FJS-2566: the app's error mapper turns the method gate's refusal into a
+  // role. An in-process call never meets the mapper (an around hook's throw
+  // is raw there), so only the wire shows it.
+  test('over HTTP the same refusal names the role, and a level no role reaches keeps its level', async () => {
+    const sys   = env.system as any
+    const email = `wire-${Math.random().toString(36).slice(2, 8)}@x.co`
+    const made  = await (env as any).app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Wire' })
+    const uid   = made.id ?? made.userId
+    await sys.user.update({ where: { id: uid }, data: { accountId: ws.accountId, status: 'active' } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: ws.id, userId: uid, role: 'developer',
+      capabilities: grantsFor('developer'), acceptedAt: new Date().toISOString(),
+    } })
+    const login = await (env as any).app.auth.login(email, 'hunter2hunter2')
+    const token = login.token ?? login.accessToken
+
+    const id   = (await env.as(viewer).service('portal').find()).data[0].id
+    const ping = await env.http.post(`/portal/${id}`).set('x-service-method', 'ping')
+      .set('Authorization', `Bearer ${token}`).set('X-Workspace-Id', ws.id).send({})
+    expect(ping.status).toBe(403)
+    expect(JSON.stringify(ping.body)).toMatch(/Requires admin role in this workspace to ping/)
+
+    const hub = await env.http.post('/hub').set('x-service-method', 'flags')
+      .set('Authorization', `Bearer ${token}`).set('X-Workspace-Id', ws.id).send({})
+    expect(hub.status).toBe(403)
+    expect(JSON.stringify(hub.body)).toMatch(/requires level 7/)
+  })
+
   test('the portal and infra read at READER: a viewer reads, a signed-in stranger to the workspace does not', async () => {
     expect((await env.as(viewer).service('portal').find()).data.length).toBeGreaterThan(0)
     await expect(env.as(viewer).service('infra').call('graph')).resolves.toBeDefined()
@@ -2815,7 +2863,7 @@ describe('a custom method grades its caller before a system read or a guarded wr
     await sys.project.remove({ where: { id: proj.id } })
     const deleted = async () => Boolean((await sys.project.findFirst({ where: { id: proj.id }, withDeleted: true })).deletedAt)
 
-    await expect(env.as(viewer).service('projects').call('restore', proj.id)).rejects.toThrow(/level 4/)
+    await expect(env.as(viewer).service('projects').call('restore', proj.id)).rejects.toThrow(/Requires developer role/)
     expect(await deleted()).toBe(true)
     await env.as(developer).service('projects').call('restore', proj.id)
     expect(await deleted()).toBe(false)
@@ -2908,7 +2956,7 @@ describe('the trash lists what was deleted, and each service brings its own back
     expect(seen.some((i: any) => i.kind === 'Secret')).toBe(false)
     expect((await trash(owner)).some((i: any) => i.ref === secret.id)).toBe(true)
 
-    await expect(env.as(viewer).service('projects').restore(proj.id)).rejects.toThrow(/level 4/)
+    await expect(env.as(viewer).service('projects').restore(proj.id)).rejects.toThrow(/Requires developer role/)
     await expect(env.as(outsider).service('trash').find()).rejects.toThrow()
   })
 

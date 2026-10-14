@@ -539,6 +539,11 @@ function _makeNode(fn) {
     // creates carry no `_fn` and are managed by that block instead.
     _selfOwned: true,
     _notify() {
+      // A `$:` body is woken by what it reads from OUTSIDE itself. A call it
+      // makes (`const mine = ++seq`) reads the counter it then writes, which
+      // subscribes the body to its own bookkeeping and re-runs it until the
+      // cycle guard abandons the update (`FJS-2652`).
+      if (this._running && this._isUserEffect) return
       if (_devOn) this._cause = _devCause
       _queue.add(this)
       _scheduleFlush()
@@ -587,6 +592,7 @@ function _makeNode(fn) {
       _listener = this
       _owner = this
       const run = (this._runs = (this._runs ?? 0) + 1)
+      this._running = true
       try {
         const result = this._fn()
         // Return-based cleanup: if the effect fn returns a function, register it
@@ -609,6 +615,7 @@ function _makeNode(fn) {
           })
         }
       } finally {
+        this._running = false
         _listener = prevL
         _owner = prevO
       }
@@ -4419,6 +4426,37 @@ function _warnDerivedWrite(key, pathPrefix) {
 
 /** Test seam: the derivation-write warning is once per path per process. */
 export function resetDerivedWriteWarnings() { _warnedDerivedWrites.clear() }
+
+// `const { rows, loading } = r.list()` reads each key once, at setup, and a
+// resource handle's keys are getters over signals: the screen stays on the
+// first answer. The compiler cannot see the handle's shape, so a dev build
+// reads the descriptors of the one value the destructure was bound to (FJS-D667).
+// Once per site, since a component mounts many times.
+const _warnedDestructures = new Set()
+
+function _accessorDescriptor(obj, key) {
+  for (let o = obj; o != null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+    const d = Object.getOwnPropertyDescriptor(o, key)
+    if (d) return d
+  }
+  return undefined
+}
+
+export function warnDestructuredAccessors(source, keys, site) {
+  if (source == null || typeof source !== 'object' || _warnedDestructures.has(site)) return
+  const getters = keys.filter((k) => _accessorDescriptor(source, k)?.get)
+  if (!getters.length) return
+  _warnedDestructures.add(site)
+  console.warn(
+    `[Mesa] \`${site}\` reads ${getters.join(', ')} once, when the component is set up, ` +
+    `and ${getters.length > 1 ? 'they are getters' : 'it is a getter'} on what the call handed back, ` +
+    `so the value will not follow. Read through the handle in the markup, or write ` +
+    `$: ${getters[0]} = … to follow it.`
+  )
+}
+
+/** Test seam: the destructure warning is once per site per process. */
+export function resetDestructureWarnings() { _warnedDestructures.clear() }
 
 function _frozenWriteError(cause, key, pathPrefix) {
   const at = pathPrefix ? `${pathPrefix}.${String(key)}` : String(key)

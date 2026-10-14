@@ -28,7 +28,7 @@
 // so the scope is the join, the same one `volumes` and `servers.feed` make.
 
 import { createService, NotFound, BadRequest, $, seriesKey } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor }  from '../../core/resource.ts'
 import {
   RECLAIM_TARGETS, RECLAIM_TARGET_NAMES, RECLAIM_TARGET_BY_NAME, estimateTarget,
@@ -507,8 +507,8 @@ export function createCleanupService(app: BasecampApp) {
         // A sweep deletes data on a machine, but it deletes only what the
         // vocabulary allows, which is why it sits at the developer bar rather
         // than at the admin one `recipes.create` needs. Unused volumes are the
-        // sharp edge and they are off by default.
-        run:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // sharp edge and they are off by default. `run` creates a `CleanupRun`
+        // through the caller's client, so that gate is the bar.
         // The engine's two. The standing that matters was graded when `run`
         // queued the work; the queue runs as that same actor.
         startRun:  [internalOnly()],

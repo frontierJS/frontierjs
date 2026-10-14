@@ -273,7 +273,7 @@ export function createJobsService(app: BasecampApp) {
         trigger: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         startRun:  [internalOnly()],
         finishRun: [internalOnly()],
-        cancel:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // `cancel` is a `Job` update through the caller's client, graded by the gate.
       },
     },
   })

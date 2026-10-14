@@ -1301,7 +1301,12 @@ export function labelFieldInfo(fields, fallback = 'id', declared = null) {
   // from a create-mode registry, and a picker reads it off a row.
   if (typeof declared === 'string' && declared) return { field: declared, source: 'declared' }
 
-  for (const name of _LABEL_FIELDS) if (plain(rules[name])) return { field: name, source: 'conventional' }
+  // `alt` is the conventional columns BELOW the chosen one: a row whose `name`
+  // is empty (a User who never gave one) is still identified by its `email`.
+  // Only this tier has any — a declaration is the author's word and a scan
+  // has no order to fall down.
+  const found = _LABEL_FIELDS.filter(name => plain(rules[name]))
+  if (found.length) return { field: found[0], source: 'conventional', alt: found.slice(1) }
   for (const [name, rule] of Object.entries(rules)) if (plain(rule)) return { field: name, source: 'scan' }
   return { field: fallback, source: 'fallback' }
 }

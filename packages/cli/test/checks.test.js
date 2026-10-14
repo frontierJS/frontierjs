@@ -4676,3 +4676,36 @@ describe('connector-contract', () => {
     expect(skipped).toHaveLength(1)
   })
 })
+
+// FJS-2512: a component's own `.item` takes the kit's `.item { display: flex }`
+// too, since Mesa's scope hash narrows the component's rule and not the kit's.
+describe('a .mesa <style> names no class the kit already owns (FJS-2512)', () => {
+  const VOCAB = JSON.stringify({
+    terms: [{ term: 'Button', class: 'btn' }, { term: 'Item', class: 'item' }, { term: 'Bar', class: 'bar' }, { term: 'Heading', class: null }],
+    notATerm: { tone: ['danger'] },
+  })
+  const styled = (name, css) => tree(name, {
+    ...CLEAN,
+    'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*', '@frontierjs/css': '*' } }),
+    'node_modules/@frontierjs/css/package.json':
+      JSON.stringify({ name: '@frontierjs/css', exports: { './vocabulary.json': './vocabulary.json' } }),
+    'node_modules/@frontierjs/css/vocabulary.json': VOCAB,
+    'web/src/pages/panel.mesa': `<div class="item">x</div>\n<style>\n${css}\n</style>\n`,
+  })
+
+  test('a selector naming a term\'s class is reported once, at its line, naming the term', () => {
+    const root = styled('collide-bad', '  .item { gap: var(--gap) }\n  .item:hover { color: red }\n  @media (max-width: 40rem) { .bar > span { display: block } }')
+    const { findings } = only(root, 'css-class-collision')
+    expect(findings.map(f => [f.line, f.message.split(' ')[0]])).toEqual([[3, '.item'], [5, '.bar']])
+    expect(findings[0].message).toMatch(/Item/)
+  })
+
+  test('an own name, a :global reach, a declaration value and a null-class term are not', () => {
+    const root = styled('collide-ok', '  .queue-item { gap: var(--gap); animation: item 1s }\n  :global(.item) { gap: var(--gap) }\n  .btn-row { margin: 0 }\n  .heading { margin: 0 }')
+    expect(only(root, 'css-class-collision').findings.map(f => f.message)).toEqual([])
+  })
+
+  test('an app without @frontierjs/css is skipped', () => {
+    expect(only(tree('collide-skip', CLEAN), 'css-class-collision').skipped).toBeTruthy()
+  })
+})

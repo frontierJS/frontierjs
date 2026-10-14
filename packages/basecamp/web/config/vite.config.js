@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
 import sierraConfig from './sierra.config.js'
-import { API_PATHS, WS_PATH } from './api-paths.js'
+import { API_PATHS, NAVIGATED_API_PATHS, WS_PATH } from './api-paths.js'
 import { ssoFromEnv } from '../../api/src/core/sso-env.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -43,6 +43,7 @@ const proxy = Object.fromEntries(API_PATHS.map(path => [path, {
   bypass(req) {
     // Returning a path serves it from Vite instead of proxying; returning
     // undefined proxies. A navigation gets the shell, everything else the API.
+    if (NAVIGATED_API_PATHS.some(p => req.url?.startsWith(p))) return undefined
     if (req.headers.accept?.includes('text/html')) return '/index.html'
     return undefined
   },

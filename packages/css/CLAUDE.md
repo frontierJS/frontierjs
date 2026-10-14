@@ -393,7 +393,10 @@ test/run.js        the harness
   is unregistered there, with no initial value and with inheritance on.
   `tokens.css` § *Inside a shadow tree* restores each by hand on `:host` /
   `:host *`. A new `@property` token needs its line there, and
-  `shadow.spec.js` is what catches a missing one (`FJS-1989`).
+  `shadow.spec.js` is what catches a missing one (`FJS-1989`). A token the kit
+  only READS inherits the host page's value through the boundary, so each is
+  reset to `initial` on `:host` as well (`FJS-2080`); the spec collects every
+  `var()` name from the CSSOM, so a new read token fails it until it has a line.
 - **`--align` is unregistered, and that is what lets a Bar split.** A
   registered property needs an initial value, and then `var(--align,
   space-between)` could never fall back. `.align-start` writes `normal`, not

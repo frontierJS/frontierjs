@@ -1,0 +1,5 @@
+# ripgrep reads this on top of .gitignore. rg 13 matches .gitignore's anchored
+# `!packages/*/src/build/` against the path relative to where it walks, so a
+# search in packages/sierra/src or inside sierra skipped the whole build pipeline
+# with no message. git itself is unaffected; scripts/ci.mjs checks this holds.
+!**/src/build/

@@ -89,6 +89,15 @@ const PUBLIC_OWNED = { entities: [{
   access: { public: ['create'], why: 'the booking page' },
 }] }
 
+// Charter's dog grooming salon, 2026-10-10: a visitor files the request and
+// every staff member reads it.
+const BOOKING = { entities: [{
+  name: 'BookingRequest', rung: 'novel', why: 'a visitor asks for an appointment',
+  fields: [{ name: 'petName', type: 'text', required: true }],
+  links: [{ name: 'handler', to: 'User', actor: 'coordinator' }],
+  access: { public: ['create'], shared: 'every staff member sees every request', why: 'the salon\'s booking page' },
+}] }
+
 describe('emit', () => {
   test('the hiring answer emits a schema that parses', () => {
     const out = emit(hiring, { scaffold: SCAFFOLD })
@@ -185,7 +194,30 @@ describe('emit', () => {
     const bare = clone(TIMETABLE)
     bare.entities[0].links = []
     expect(emit(bare, { scaffold: SCAFFOLD }).text).toContain('@@gate("4.5.5.5")')
-    expect(checkAnswer(TIMETABLE).findings.map(f => f.message)).toEqual(['Every signed-in user reads every YogaClass, and its instructor or an administrator writes one: the timetable every member books from'])
+    expect(checkAnswer(TIMETABLE).findings.map(f => f.message)).toEqual(['Every signed-in user reads every YogaClass, and its instructor creates or updates one, and an administrator deletes one: the timetable every member books from'])
+    // FJS-2552: a link that holds every write leaves the administrator none, and the finding says so.
+    const owned = clone(TIMETABLE)
+    owned.entities[0].links[0].actor = 'owner'
+    expect(checkAnswer(owned).findings.map(f => f.message)).toEqual(['Every signed-in user reads every YogaClass, and its instructor writes one: the timetable every member books from'])
+    const bareFinding = clone(TIMETABLE)
+    bareFinding.entities[0].links = []
+    expect(checkAnswer(bareFinding).findings.map(f => f.message)).toEqual(['Every signed-in user reads every YogaClass, and only an administrator writes one: the timetable every member books from'])
+  })
+
+  // FJS-2550: a public create and a shared read were refused as "public or
+  // shared, not both", so the staff never saw a visitor's request.
+  test('a public create may sit beside a shared read; a public read may not', () => {
+    const r = checkAnswer(BOOKING)
+    expect(r.refusals).toEqual([])
+    const said = r.findings.map(f => f.message).join('\n')
+    expect(said).toContain('Anyone, signed in or not, creates a BookingRequest')
+    expect(said).toContain('Every signed-in user reads every BookingRequest')
+    const text = emit(BOOKING, { scaffold: SCAFFOLD }).text
+    expect(parses(text)).toBe(true)
+    expect(text).toContain('@@gate("4.0.4.5")')
+    const both = clone(BOOKING)
+    both.entities[0].access.public = ['read']
+    expect(checkAnswer(both).refusals.map(x => x.message).join('\n')).toContain('already covers every signed-in user')
   })
 
   test('public is the gate at 0, and a condition narrows it', () => {
@@ -243,6 +275,18 @@ describe('emitted access, on a real client', () => {
       expect((await env.system.yogaClass.findUnique({ where: { id: row.id } })).title).toBe('Flow')
       await env.actingAs(teacher).yogaClass.update({ where: { id: row.id }, data: { title: 'Slow flow' } })
       expect((await env.system.yogaClass.findUnique({ where: { id: row.id } })).title).toBe('Slow flow')
+    } finally {
+      env.close()
+    }
+  })
+
+  test('a visitor files a shared row and every signed-in user reads it (FJS-2550)', async () => {
+    const env = await createTestEnv({ schema: emit(BOOKING, { scaffold: SCAFFOLD }).text })
+    try {
+      const staff = await env.system.user.create({ data: { email: 's@example.com' } })
+      const row = await env.actingAs(null).bookingRequest.create({ data: { petName: 'Rex' } })
+      expect((await env.actingAs(staff).bookingRequest.findMany({})).map(r => r.id)).toEqual([row.id])
+      expect(await env.actingAs(null).bookingRequest.findMany({}).then(r => r.length, () => 'refused')).not.toBe(1)
     } finally {
       env.close()
     }

@@ -19,6 +19,10 @@ API_PORT=7120 UI_PORT=7020 bun run verify:screens  # …beside a dev server on
 bun run db:reset     # stops the servers, deletes the databases
 bun run dev:outpost  # after `dev`: this laptop enrolled as a fleet machine, a
                      # real Outpost on 8180/8181, waits until it is ONLINE
+bun run verify:sso   # provider sign-in in a browser, against an OIDC stand-in;
+                     # a navigation to /auth/oauth/* must reach the API, not the shell
+bun run verify:caddy   # the image's Caddyfile run by caddy:2 (docker) over a stub API:
+                       # /auth/oauth/* as a document reaches the API, other pages get the shell
 bun run verify:outpost # the launcher + API + Outpost as processes, no browser
 bun run verify:mcp     # /mcp at four roles over a real MCP client, no browser
 bun run cli servers status   # the app on a command line — login --api-key - first
@@ -309,8 +313,13 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   before the Data boundary scopes the client from it (`FJS-D113`). Two things
   stay this app's: `restandingFor()`, for the workspaces service, which
   addresses `ctx.id` rather than the header and would otherwise carry an admin's
-  standing into any other workspace they can name; and the role hooks, because a
-  gate refuses with a level and a person needs the sentence.
+  standing into any other workspace they can name; and the role hooks, kept
+  only where no gate grades the work — a method writing through `asSystem()`,
+  one acting on a machine or provider before any write, the workspaces
+  service. A method writing through the caller's own client takes no hook:
+  the model's gate refuses and `app.ts`'s error mapper says it as a role. The
+  mapper reads the method gate's refusal only on the wire; an in-process call
+  gets junction's level prose.
 - **`Server`, `Environment` and `Variable` are graded on TWO axes.**
   `@@capabilities` on all three, ANDed with the gate (`FJS-D146`): a caller needs the
   level AND the grant. `WorkspaceMember.capabilities` holds the grant and
@@ -605,7 +614,9 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   row's current state (`FJS-D502`) — so an engine answering after a cancel has
   to leave the cancelled row alone, as `finishRun` does. And a refusal arrives in litestone's
   vocabulary — *requires level 5* — which is why `app.ts` registers one error
-  mapper turning it back into a role; add to that mapper, never beside it.
+  mapper turning it back into a role, for `TransitionGateError` and
+  `AccessDeniedError` alike (CRUD and a method's declared `gate:`); add to that
+  mapper, never beside it.
 - **A placement is written by `apps.place`, through `asSystem()`.** `AppServer`
   is `@@gate("2.8")` — a member may read it, only the system may write it — so
   the authority check is against the WORKSPACE in the service and the write is a

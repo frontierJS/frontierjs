@@ -45,10 +45,11 @@ export function createHavenAuth (db: Db, opts: HavenAuthOptions): HavenAuth {
   const ttl    = (opts.ttlDays ?? 30) * DAY
   const digest = (token: string) => fingerprint(token, { key: opts.key, purpose: PURPOSE })
 
+  // No `role`: the ladder ranks a role's presence, and a member is CREATOR(3)
+  // until the standing read off the row per call (`principal.ts`) says `mod`.
   const sessionOf = (memberId: number | string, extra: Partial<SessionContext> = {}): SessionContext => ({
     userId:     String(memberId),
     userType:   'user',
-    role:       'user',
     scopes:     [],
     authMethod: 'session',
     ...extra,

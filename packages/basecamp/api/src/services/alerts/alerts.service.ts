@@ -263,17 +263,10 @@ export function createAlertsService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'admin', 'owner')],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        // Where a rule delivers is part of authoring it — changing it decides
-        // who gets woken up, which is the same call as writing the rule.
-        attachChannel: [requireWorkspaceRole(app, 'admin', 'owner')],
-        detachChannel: [requireWorkspaceRole(app, 'admin', 'owner')],
-        // Silencing a rule decides who is NOT woken up, which is the same call
-        // as writing it — and the same level `isActive` already takes.
-        snooze:        [requireWorkspaceRole(app, 'admin', 'owner')],
-        unsnooze:      [requireWorkspaceRole(app, 'admin', 'owner')],
-        // Acknowledging is not authoring — anyone carrying a pager can do it.
-        acknowledge: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        resolve:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // No hook on the custom methods: each writes through the caller's own
+        // client, so the model's gate grades it. Delivery and silencing are
+        // `AlertRule`/`AlertRuleChannel` writes (admin), acknowledging and
+        // resolving an `AlertEvent` update (developer, anyone carrying a pager).
       },
     },
   })

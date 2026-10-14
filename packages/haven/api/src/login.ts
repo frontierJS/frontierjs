@@ -22,11 +22,14 @@ type Db = { asSystem: () => any }
 
 export interface LoginOptions {
   /** Seconds, the receiver's clock. Injectable for tests. */
-  now?: () => number
+  now?:  () => number
+  /** The nicks that are mods. Applied at every login, both ways. */
+  mods?: string[]
 }
 
 export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
-  const now = opts.now ?? (() => Math.floor(Date.now() / 1000))
+  const now  = opts.now ?? (() => Math.floor(Date.now() / 1000))
+  const mods = new Set((opts.mods ?? []).map(n => n.trim().toLowerCase()))
 
   // Without it a captured login replays for the whole window and the replayer
   // is handed a fresh session for somebody else's key. TWICE the window, since
@@ -57,17 +60,23 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     if (!verdict.ok) return ctx.json({ message: `The login signature does not verify: ${verdict.reason}.` }, 401)
 
     const sys = db.asSystem()
-    let member = await sys.member.findFirst({ where: { publicKey }, select: { id: true, nick: true } })
+    let member = await sys.member.findFirst({ where: { publicKey }, select: { id: true, nick: true, role: true } })
     if (!member) {
       if (typeof body.nick !== 'string' || !body.nick) return ctx.json({ message: 'A first login names the nick this key will walk in as.' }, 400)
       const taken = await sys.member.findFirst({ where: { nick: body.nick.trim().toLowerCase() }, select: { id: true } })
       if (taken) return ctx.json({ message: `The nick '${body.nick}' is taken. Choose another.` }, 409)
-      member = await sys.member.create({ data: { nick: body.nick, publicKey }, select: { id: true, nick: true } })
+      member = await sys.member.create({ data: { nick: body.nick, publicKey }, select: { id: true, nick: true, role: true } })
     }
+
+    // The standing is the list's, applied on every login so a nick struck from
+    // it is a member again on their next run. A nick is held by its member
+    // (`@unique`), so the list names a person once they have walked in.
+    const role = mods.has(member.nick) ? 'mod' : null
+    if (member.role !== role) await sys.member.update({ where: { id: member.id }, data: { role } })
 
     // A banned member is minted a session like anyone: the ban is a policy, so
     // they walk into an empty Haven rather than being told when to make a key.
     const { token, expiresAt } = await auth.mint(member.id)
-    return ctx.json({ token, expiresAt, member }, 200)
+    return ctx.json({ token, expiresAt, member: { id: member.id, nick: member.nick, role } }, 200)
   }
 }

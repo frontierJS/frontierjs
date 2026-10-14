@@ -7,7 +7,7 @@ import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature
 
 import { LOGIN_PATH } from '../src/login.ts'
 
-export interface Walker { id: number, nick: string, token: string, keys: { publicKey: string, privateKey: string } }
+export interface Walker { id: number, nick: string, role: string | null, token: string, keys: { publicKey: string, privateKey: string } }
 
 let nonces = 0
 
@@ -30,5 +30,5 @@ export async function signIn (port: number, nick: string, keys?: Walker['keys'])
   const k = keys ?? await generateSigningKeys()
   const { status, json } = await postLogin(port, await signedLogin(k, { nick }))
   if (status !== 200) throw new Error(`login as ${nick}: ${status} ${JSON.stringify(json)}`)
-  return { id: json.member.id, nick: json.member.nick, token: json.token, keys: k }
+  return { id: json.member.id, nick: json.member.nick, role: json.member.role, token: json.token, keys: k }
 }

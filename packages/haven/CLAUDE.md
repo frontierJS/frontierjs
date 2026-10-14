@@ -11,15 +11,15 @@ box, is `IDEAS/haven.md`.
 
 | Path | What |
 | --- | --- |
-| `db/schema.lite` | Member · Room · Message · Session — gates, the `bannedAt` policy, the audit trail |
+| `db/schema.lite` | Member · Room · Message · Session — gates, the `bannedAt` policy, the mod standing (`role`, `@guarded`, and the two predicates that say what a mod may do — `FJS-D998`), the audit trail |
 | `db/test/schema.test.js` | each access rule admitted once and refused once through a real scoped client |
 | `api/index.ts` | starts the app on `PORT`, else 5505 (the global tooling block's `haven` slot), after creating any of `ROOMS` the database lacks |
 | `api/src/app.ts` | builds the app, never starts it; the session key is `HAVEN_SESSION_KEY` or `sessionKey` |
-| `api/src/login.ts` | `POST /haven/login` — an Ed25519-signed `{ publicKey, nick }`; the first login makes the member (`FJS-D981`) |
+| `api/src/login.ts` | `POST /haven/login` — an Ed25519-signed `{ publicKey, nick }`; the first login makes the member (`FJS-D981`), and every login writes `role` from `HAVEN_MODS`, both ways |
 | `api/src/client.ts` | `GET /haven/client` — the package and version this server runs, read from `package.json`; what `fli haven` installs on a machine with no checkout (`FJS-D982`) |
 | `api/src/auth.ts` | Haven's `IAuth`: mints a `Session` (Grant) and reads a token back to its member |
 | `api/src/rooms.ts` | the room channel's one spelling, `ROOMS` (a row per scene), the `{ x, y }` move, the join at the upgrade — the frame shapes `web/` imports |
-| `api/src/principal.ts` | the one read of `bannedAt`, for a call (`principal:`) and a socket frame (`channels({ claims })`) |
+| `api/src/principal.ts` | the one read of the standing — `bannedAt` and `role` — for a call (`principal:`) and a socket frame (`channels({ claims })`) |
 | `api/src/services/` | `messages` (find/get/create, rate-limited per member), `rooms`, `members` |
 | `api/test/room.test.ts` | real sockets: two members see each other, a door moves a figure between rooms, a banned one sees and is seen by nothing |
 | `api/test/login.test.ts` | the signed login — forged, tampered, replayed and stale make nothing; a dead session closes 4001 |
@@ -27,7 +27,7 @@ box, is `IDEAS/haven.md`.
 | `api/test/sign-in.ts` | a test's machine walking in, with the signed request's parts kept for a test that tampers with them |
 | `web/src/routes/` | `index.mesa` the square, `tavern.mesa` the tavern — each one `WalkIn` around its scene |
 | `web/src/components/WalkIn.mesa` | a route's body: asks the socket for the scene's room, reads its Room row, then provides it as `$context.room` and lets the scene in |
-| `web/src/components/Scene.mesa` | one room drawn (`FJS-D997`): makes a stage, provides it as `$context.scene`, paints it with `#paint`; and with a `$context.room`, a figure per `presence()` member, a bubble per member's newest line, the input line; a step onto a door is `goto`. With no room it is a picture |
+| `web/src/components/Scene.mesa` | one room drawn (`FJS-D997`): makes a stage, provides it as `$context.scene`, paints it with `#paint`; and with a `$context.room`, a figure per `presence()` member, a bubble per member's newest line, the input line — a line beginning `/` is a command, `/ban <nick>` and `/unban <nick>`, an ordinary patch of `bannedAt`; a step onto a door is `goto`. With no room it is a picture |
 | `web/src/components/Piece.mesa` · `Row.mesa` · `Door.mesa` · `Pacer.mesa` | what a scene is made of — each claims cells on the stage it is inside and draws nothing itself: a piece at `x, y`, a piece `n` times `step` apart, a door that replaces the wall cell under it, a sprite pacing a row |
 | `web/src/stage.js` | `createStage()`: the cells a scene's pieces claim, one owner per cell (two pieces on one cell throw naming both), `walkable`, `doorAt`, `look()` — how a cell is painted at a tick — `pacerAt()`, `picture()`, and `marks`, every placed thing in order, which the editor moves; `stages` by slug, for a test or a drive |
 | `web/src/scenes/Square.mesa` · `Tavern.mesa` | each scene as a tree: its one-off piece blocks and palette in `<script>`, its `<Scene>` of placed tags after |
@@ -66,7 +66,17 @@ box, is `IDEAS/haven.md`.
   assert the rows an unbanned member still sees beside it.
 - **A member grades 3 (CREATOR), not 4.** A member has no `role`, and the
   stock grader reads `role` for presence (`FJS-D197`). A gate written `4` locks
-  every member out.
+  every member out. A mod has `role = 'mod'` and so grades 4 — but what a mod
+  MAY DO is said by predicate (`auth().role == 'mod'`), never by a `4` in a gate.
+- **A mod is a nick in `HAVEN_MODS`, read when the app is built and written at
+  every login** (`FJS-D998`). A nick added to the list is a mod on their next
+  `fli haven`, not at once, and a nick struck from it keeps the standing until
+  theirs; the session carries no `role`, so there is nothing to revoke.
+- **A member's `/ban` is not refused — it writes nothing.** A field
+  `@allow('write')` drops the key (`FJS-D22`) and the row policy filters another
+  member's row to no row, so the patch resolves either way. The client reads
+  the answered row's `bannedAt` to say *only a mod bans*; a test asserts the
+  column, never the promise.
 - **`Message.update` is `9`**, so no client — `asSystem()` included — can
   rewrite a line. A fixture that needs to is `asSystem().sql`.
 - **A move is a presence update, so it is never answered.** Past 10 a second
@@ -165,7 +175,9 @@ box, is `IDEAS/haven.md`.
 
 **By hand:** `bun run api` (or `fli dev`) here, then `fli haven` anywhere in the
 checkout. The script supplies a dev session key; `bun run start`, which a
-deploy runs, refuses to boot without `HAVEN_SESSION_KEY`.
+deploy runs, refuses to boot without `HAVEN_SESSION_KEY`. `HAVEN_MODS=<nick>`
+before either makes that nick a mod on its next login, so `/ban` and
+`/unban` can be tried on a second terminal.
 
 `bun run test` from this directory — `scenes.test.js` pins each scene's
 picture, and `bun run frames` rewrites the pictures when a scene was meant to

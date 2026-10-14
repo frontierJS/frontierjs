@@ -28,7 +28,7 @@
   display:     block;
   inline-size: var(--field-inline-size, 100%);
   /* Vertical padding is shared with .btn — see --control-padding-block. */
-  padding:     var(--control-padding-block) var(--space-lg);
+  padding:     var(--control-padding-block, var(--space-sm)) var(--space-lg);
   font-size:   var(--text-md);
   line-height: 1.25rem;
 
@@ -116,7 +116,7 @@ select.field {
  */
 input[type="file"]::file-selector-button {
   margin-inline-end: var(--space-md);
-  padding:           var(--control-padding-block) var(--space-lg);
+  padding:           var(--control-padding-block, var(--space-sm)) var(--space-lg);
   border:            var(--border-width) solid var(--rule-strong);
   border-radius:     var(--btn-radius);
   background:        var(--surface);

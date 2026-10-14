@@ -227,12 +227,12 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
 //
 // Role hierarchy: viewer(1) = billing(1) < developer(2) < admin(3) < owner(4)
 //
-// A SECOND ladder, and it is not the gate's. This one exists to answer with a
-// sentence — *requires admin or owner role in this workspace (you have:
-// developer)* — which a 403 out of the Data boundary cannot say, since @@gate
-// knows levels and not the words a person picked in a members screen. It is
-// derived from the same WorkspaceMember row, so the two cannot disagree about
-// WHO the caller is; they can only differ in what they say when refusing.
+// A SECOND ladder, and it is not the gate's. The sentence a person needs —
+// *Requires admin role in this workspace* — is app.ts's error mapper turning
+// the gate's two numbers back into a role, so a method whose write goes
+// through the caller's own client needs no hook. This one is for what no gate
+// grades: a method that writes through `asSystem()`, or acts on a machine or a
+// provider before any write, and a service that addresses another workspace.
 //
 // Reads the membership row `membershipClaim()` already resolved — no extra query.
 

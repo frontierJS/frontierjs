@@ -73,6 +73,13 @@
     return hit?.label ?? String(v)
   }
 
+  // The related row's label, when the row was read with the relation included.
+  // A label that is null or empty is not a name, so the id shows instead.
+  function relationLabel() {
+    const label = record?.[column?.relation]?.[column?.labelField]
+    return label === null || label === undefined || label === '' ? null : label
+  }
+
   // Money is the reason this component exists, and the conversion is the whole
   // of it. A `@money` column holds MINOR UNITS — the form control writes
   // through `toMinor` and reads back through `fromMinor` — so handing the
@@ -216,10 +223,10 @@
   {:else if column?.display === 'json'}
     {@render json()}
   {:else if column?.display === 'relation'}
-    <!-- The id is what the row HOLDS; a label needs the related row, which this
-         component does not have. Rendering the id is honest, and a `relation`
-         display bound by the app is how it becomes a name. -->
-    {value}
+    <!-- The id is what the row HOLDS. The related row is here only when the
+         query included it, so its label is shown when it came and the id
+         when it did not. -->
+    {relationLabel() ?? value}
   {:else if column?.display === null}
     <!-- displayFor could not place this column and said why. The cell shows the
          nothing it has rather than pretending, and the reason rides the entry

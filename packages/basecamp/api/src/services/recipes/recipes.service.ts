@@ -344,8 +344,8 @@ export function createRecipesService(app: BasecampApp) {
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         // Running is the ordinary act, and the separation is the point: a
-        // developer runs a script an admin vetted, and the run says who.
-        run:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // developer runs a script an admin vetted, and the run says who. No
+        // hook: `run` creates a `RecipeRun` through the caller's client.
         // The engine's two. No role hook: the standing that matters was graded
         // when `run` queued the work, and the caller here is the queue running
         // as that same actor.

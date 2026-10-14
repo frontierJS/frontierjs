@@ -569,13 +569,34 @@ async function handleProves(req, res) {
 //
 // Not cached and not polled: both walk the tree, and the page asks on load and
 // on a button. A findings list that refreshed every three seconds would cost
-// more than the findings are worth.
+// more than the findings are worth. Requests that overlap share one run.
+
+// One scope on its own thread. `runChecks` is synchronous and the repo scope
+// alone is several seconds: run in this thread the scopes queue behind each
+// other and freeze the state poll, and run one after another on workers they
+// still take their sum. The grade is read there too (the app's own ratchet,
+// which `fli check` exits on), so the panel and the command cannot disagree
+// about whether an app carrying declared debt is failing.
+let inFlightCheck = null
+
+function checkScope(s) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./check-worker.js', import.meta.url))
+    worker.onmessage = ({ data }) => {
+      worker.terminate()
+      if (data.error) reject(new Error(`${s.label}: ${data.error}`))
+      else resolve(data)
+    }
+    worker.onerror = (e) => { worker.terminate(); reject(new Error(`${s.label}: ${e.message}`)) }
+    worker.postMessage({ root: s.root, scope: s.scope })
+  })
+}
 
 async function handleCheck(req, res) {
   try {
     const root = global.projectRoot
-    const { runChecks, findApps, readBaseline, gradeBaseline, BASELINE_FILE } = await import('./checks.js')
-    const { relative }            = await import('path')
+    const { findApps, BASELINE_FILE } = await import('./checks.js')
+    const { relative }                = await import('path')
 
     // Per app, then the workspace's own rules — the same two passes the
     // `structure` CI phase makes, so a rule loosened for one is loosened for
@@ -584,23 +605,17 @@ async function handleCheck(req, res) {
     const scopes = findApps(root).map(dir => ({ label: relative(root, dir) || '.', root: dir, scope: 'app' }))
     scopes.push({ label: 'packages', root, scope: 'repo' })
 
-    const out = []
-    for (const s of scopes) {
-      // `runChecks` is synchronous and one scope is ~half a second, so five in
-      // a row freeze this server — the state poll misses, every badge on the
-      // page empties, and a start button does nothing for a second and a half.
-      // Yielding between them does not make it faster; it makes the server
-      // answerable while it runs.
-      await new Promise(setImmediate)
-      const r = runChecks({ root: s.root, scope: s.scope })
+    // One run answers every request that arrives while it is going: the panel
+    // and the page's own reload each ask for the whole set, and a second full
+    // run queued behind the first doubles the wait a drive already times out on.
+    inFlightCheck ??= Promise.all(scopes.map(checkScope))
+      .then(ran => ({ at: new Date().toISOString(), scopes, ran }))
+      .finally(() => { inFlightCheck = null })
+    const { at, scopes: asked, ran } = await inFlightCheck
 
-      // The app's own ratchet, read here too. `fli check` exits on the baseline
-      // and this panel used to count raw findings, so an app carrying declared
-      // debt read as failing on the one surface whose job is to say how it is
-      // doing — while its own `bun run check` was green. Two owners of one
-      // question is how a report stops being believed.
-      const baseline = readBaseline(s.root)
-      const grade    = baseline.present ? gradeBaseline(r, baseline) : null
+    const out = []
+    for (const [i, s] of asked.entries()) {
+      const { result: r, grade } = ran[i]
 
       out.push({
         label:    s.label,
@@ -626,7 +641,7 @@ async function handleCheck(req, res) {
     }
 
     json(res, 200, {
-      at: new Date().toISOString(),
+      at,
       scopes: out,
       errors: out.reduce((n, s) => n + s.findings.filter(f => f.severity === 'error').length, 0),
       warns:  out.reduce((n, s) => n + s.findings.filter(f => f.severity !== 'error').length, 0),

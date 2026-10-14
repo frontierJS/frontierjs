@@ -239,7 +239,7 @@ ${idFieldLine(o.res)}
   // answers a search at all -- a search box is drawn only where the schema
   // declares the full-text index, since below one the Data boundary refuses.
   // Same ranking as the table, so the filters are over the columns you can see.
-  const { filters, search } = ${o.res}.filters()
+  const { filters, search } = ${o.res}.filters(${only})
 
   // ── The list ─────────────────────────────────────────────────────────────
   //

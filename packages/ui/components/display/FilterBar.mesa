@@ -99,6 +99,8 @@
     if (at === undefined || at === null) return undefined
     if (f.kind === 'range') return { gte: at.gte, lte: at.lte }
     const op = Array.isArray(f.op) ? f.op[0] : f.op
+    // Through a to-many the operator sits under `some` and the join's key.
+    if (f.through) return at?.some?.[f.through.field]?.[op]
     return at?.[op] ?? at
   }
 
@@ -203,7 +205,8 @@
       if (next.lte !== undefined && next.lte !== '') range.lte = next.lte
       query[f.name] = range
     } else {
-      query[f.name] = { [Array.isArray(f.op) ? f.op[0] : f.op]: next }
+      const asked = { [Array.isArray(f.op) ? f.op[0] : f.op]: next }
+      query[f.name] = f.through ? { some: { [f.through.field]: asked } } : asked
     }
 
     delete query.$offset
@@ -226,6 +229,16 @@
   function optionsFor(f) {
     if (options?.[f.name]?.length) return options[f.name]
     return f.rule?.options ?? f.rule?.enum ?? []
+  }
+
+  /**
+   * A MultiSelect reports its picks as strings; the offered options hold the
+   * values the column holds. Handed back as typed, an integer key travels as
+   * `"1"`, which the Data boundary may refuse where it takes `1`.
+   */
+  function backToValues(f, picked) {
+    const offered = optionsFor(f)
+    return (picked ?? []).map(p => offered.find(o => String(o.value) === String(p))?.value ?? p)
   }
 
   const entryFor = (f) => (f.display ? filterComponent(f.display) : null)
@@ -255,7 +268,7 @@
         options={optionsFor(f)}
         placeholder={f.label}
         aria-label={f.label}
-        onchange={(next) => write(f, next)}
+        onchange={(next) => write(f, backToValues(f, next))}
       />
     {:else if f.kind === 'exact'}
       <Select

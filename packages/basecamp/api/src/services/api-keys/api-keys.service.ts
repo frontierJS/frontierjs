@@ -354,7 +354,8 @@ export function createApiKeysService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'admin', 'owner'), stampKey],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        revoke: [requireWorkspaceRole(app, 'admin', 'owner')],
+        // `revoke` is an `ApiKey` update through the caller's client; `owners`
+        // reads through `asSystem()`, so the hook is its only grade.
         owners: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },

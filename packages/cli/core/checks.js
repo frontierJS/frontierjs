@@ -173,6 +173,8 @@ export const RULES = [
     title: 'a .mesa <style> holds no raw color, size or spacing value' },
   { id: 'css-raw-utility',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'an app\'s markup holds more raw color utilities than semantic classes' },
+  { id: 'css-class-collision', scope: 'app',  severity: 'warn',  invariant: 13,
+    title: 'a .mesa <style> names no class the kit already owns' },
   { id: 'preview-ui-only',      scope: 'app',  severity: 'error', invariant: null,
     title: 'a preview branch changes web/ and nothing else' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
@@ -3658,6 +3660,54 @@ const CHECKS = {
                  `${worst.map(([f, n]) => `${relative(root, f)} (${n})`).join(', ')}.`,
       }],
     }
+  },
+
+  'css-class-collision': ({ root }) => {
+    let doc
+    try { doc = JSON.parse(readFileSync(join(root, 'node_modules/@frontierjs/css/vocabulary.json'), 'utf8')) }
+    catch { return { skipped: '@frontierjs/css is not installed' } }
+
+    // class → term. A component's `.item` is scoped by a hash class, which
+    // narrows its own rule and leaves the kit's `.item { display: flex }`
+    // applying to the same element all the same (FJS-2512).
+    const owned = new Map((doc.terms ?? []).filter(t => t.class).map(t => [t.class, t.term]))
+    const findings = []
+    for (const surface of CLIENT_SURFACES) {
+      walk(join(root, surface), 6, (dir) => {
+        for (const name of safeRead(dir)) {
+          if (!name.endsWith('.mesa')) continue
+          const file = join(dir, name)
+          let text
+          try { text = readFileSync(file, 'utf8') } catch { continue }
+          const scan = text.replace(/<!--[\s\S]*?-->/g, s => s.replace(/[^\n]/g, ' '))
+
+          const seen = new Set()
+          for (const block of scan.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)) {
+            const start = block.index + block[0].indexOf('>') + 1
+            const css = block[1].replace(/\/\*[\s\S]*?\*\//g, s => s.replace(/[^\n]/g, ' '))
+            // A selector is what precedes a `{`; a declaration value never does.
+            for (const rule of css.matchAll(/([^{};]+)\{/g)) {
+              if (rule[1].trimStart().startsWith('@')) continue
+              // `:global(.item)` reaches the kit's rule on purpose.
+              const selector = rule[1].replace(/:global\([^)]*\)/g, s => ' '.repeat(s.length))
+              for (const m of selector.matchAll(/\.([A-Za-z_][\w-]*)/g)) {
+                const term = owned.get(m[1])
+                if (!term || seen.has(m[1])) continue
+                seen.add(m[1])
+                findings.push({
+                  file,
+                  line: lineOf(text, start + rule.index + m.index),
+                  message: `.${m[1]} in a <style> — @frontierjs/css's ${term} owns that class, so this element ` +
+                           `takes the kit's rules as well as this one. Rename the component's own class, or use ` +
+                           `the ${term} as the kit ships it.`,
+                })
+              }
+            }
+          }
+        }
+      })
+    }
+    return { findings }
   },
 
   'package-root-md': ({ root }) => {

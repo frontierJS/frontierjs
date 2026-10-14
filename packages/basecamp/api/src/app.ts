@@ -250,12 +250,18 @@ export async function buildBasecampApp(
   built = app
 
   // ── One error, translated ─────────────────────────────────────────────
-  // A gated transition refuses in litestone's own vocabulary: "Transition
-  // 'drain' on Server.status requires level 5, user has level 4". That is the
-  // right sentence for the package that owns the scale and the wrong one for
-  // an operator, who has a ROLE and has never seen a level. The gate is still
-  // this app's rule — declared in this app's schema — so the way back to the
-  // word a person recognizes is this app's too.
+  // A gated move refuses in litestone's own vocabulary: "Transition 'drain' on
+  // Server.status requires level 5, user has level 4". That is the right
+  // sentence for the package that owns the scale and the wrong one for an
+  // operator, who has a ROLE and has never seen a level. The gate is still
+  // this app's rule — declared in this app's schema or on a method — so the
+  // way back to the word a person recognizes is this app's too.
+  //
+  // Three refusals carry the two numbers and all three are answered here: a
+  // transition (`TransitionGateError`), a CRUD verb at the Data boundary and a
+  // custom method's declared `gate:` (both `AccessDeniedError`, the latter
+  // thrown by junction in litestone's shape). A capability refusal carries no
+  // `required` and keeps its own sentence.
   //
   // A mapper rather than a hook, and app-wide rather than per service: every
   // gated move in the seed goes through it, including the ones nothing has
@@ -266,15 +272,16 @@ export async function buildBasecampApp(
   // (litestone throws it, junction catches it) and this app resolves its own
   // copy of neither.
   app.errorMapper((err: unknown) => {
-    const e = err as { name?: string; transition?: string; required?: number }
-    if (e?.name !== 'TransitionGateError') return null
+    const e = err as { name?: string; transition?: string; operation?: string; required?: number }
+    if (e?.name !== 'TransitionGateError' && e?.name !== 'AccessDeniedError') return null
+    if (typeof e.required !== 'number') return null
 
-    const role = roleForLevel(e.required ?? 0)
+    const role = roleForLevel(e.required)
     // No role reaches it — 7 is standing, 8 is the machine tier. Litestone's
     // own sentence is then the honest one: there is no role to ask for.
     if (!role) return null
 
-    return new Forbidden(`Requires ${role} role in this workspace to ${e.transition ?? 'make this change'}`)
+    return new Forbidden(`Requires ${role} role in this workspace to ${e.transition ?? e.operation ?? 'make this change'}`)
   })
 
   // Attach the Basecamp-specific subsystems. Every one of them is a claim —

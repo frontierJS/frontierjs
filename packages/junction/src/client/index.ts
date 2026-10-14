@@ -82,6 +82,33 @@ export type KnownService = Extract<keyof ServiceTypes, string>
  */
 export type ServiceRow<K extends KnownService> = { [P in keyof ServiceTypes[K]]: ServiceTypes[K][P] }
 
+// ─── The method answer registry ───────────────────────────────────────────
+//
+// A custom method's declared `output:` names a `type` in the seed, but WHICH
+// service answers WHICH method is in the app's `methods:` arrays, and
+// `litestone types` reads only the seed. So the map is the app's to state, in
+// the same slot shape as ServiceTypes (Invariant 5):
+//
+//   declare module '@frontierjs/junction/client' {
+//     interface ServiceMethods { posts: { search: SearchResult } }
+//   }
+//
+// after which `client.service('posts').invoke('search')` answers a
+// `SearchResult`. A method not listed, and every app that lists nothing, keeps
+// answering `unknown`: with nothing augmented `KnownMethod` is `never`, so the
+// typed overload matches no call and each falls to the open one.
+export interface ServiceMethods {}
+
+/** The methods a service has a declared answer for. `never` until one is. */
+export type KnownMethod<N extends string> =
+  N extends keyof ServiceMethods ? Extract<keyof ServiceMethods[N], string> : never
+
+/** What `method` on service `N` answers; `unknown` when the app declared none. */
+export type MethodAnswer<N extends string, M extends string> =
+  N extends keyof ServiceMethods
+    ? M extends keyof ServiceMethods[N] ? ServiceMethods[N][M] : unknown
+    : unknown
+
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export interface JunctionClientOptions {
@@ -392,7 +419,8 @@ export interface CallOptions {
 // Usage: client.service<Lead>('leads')
 
 export class ServiceProxy<
-  T extends Record<string, unknown> = Record<string, unknown>
+  T extends Record<string, unknown> = Record<string, unknown>,
+  N extends string = string
 > extends EventEmitter {
   readonly name: string
   private _client: JunctionClient
@@ -640,6 +668,20 @@ export class ServiceProxy<
   // as the object (`FJS-D937`). Only the bulk partial-write protocol
   // `{ data, errors }` arrives as the list envelope.
 
+  invoke<M extends KnownMethod<N>>(
+    name: M,
+    id?: string | number | null,
+    data?: Record<string, unknown> | null,
+    query?: Record<string, unknown>,
+    opts?: CallOptions
+  ): Promise<MethodAnswer<N, M>>
+  invoke(
+    name: string,
+    id?: string | number | null,
+    data?: Record<string, unknown> | null,
+    query?: Record<string, unknown>,
+    opts?: CallOptions
+  ): Promise<unknown>
   async invoke(
     name: string,
     id?: string | number | null,
@@ -681,6 +723,18 @@ export class ServiceProxy<
 
   // ── Explicit WS call ─────────────────────────────────────────────────
 
+  call<M extends KnownMethod<N>>(
+    method: M,
+    id?: string | number | null,
+    data?: Record<string, unknown> | null,
+    opts?: CallOptions
+  ): Promise<MethodAnswer<N, M>>
+  call(
+    method: string,
+    id?: string | number | null,
+    data?: Record<string, unknown> | null,
+    opts?: CallOptions
+  ): Promise<unknown>
   call(
     method: string,
     id?: string | number | null,
@@ -1553,7 +1607,8 @@ export class JunctionClient extends EventEmitter {
   // has. The order matters — the inferring overload has to be offered first,
   // and an explicit `service<Foo>('x')` fails its constraint and falls through
   // to the second rather than erroring.
-  service<K extends KnownService>(name: K): ServiceProxy<ServiceRow<K>>
+  service<K extends KnownService>(name: K): ServiceProxy<ServiceRow<K>, K>
+  service<K extends Extract<keyof ServiceMethods, string>>(name: K): ServiceProxy<Record<string, unknown>, K>
   service<T extends Record<string, unknown> = Record<string, unknown>>(name: string): ServiceProxy<T>
   service<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string

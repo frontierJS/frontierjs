@@ -3647,6 +3647,13 @@ export function analyzeScript(raw, ast) {
           // Pattern declarator — attempt to expand into flat identifier vars.
           if (d.id.type === 'ObjectPattern' || d.id.type === 'ArrayPattern') {
             const initExpr = d.init ? patternSource(d.init, { snapshot: node.kind === 'var' }, node) : 'undefined'
+            // The bound temporary is what a dev build inspects for getters (FJS-D667).
+            if (d.id.type === 'ObjectPattern' && vars[initExpr] && !vars[initExpr].destructured) {
+              const keys = d.id.properties
+                .filter((p) => p.type === 'Property' && !p.computed)
+                .map((p) => p.key.name ?? String(p.key.value))
+              vars[initExpr].destructured = { keys, site: raw.slice(node.start, node.end).replace(/\s+/g, ' ').trim() }
+            }
             expandPattern(d.id, initExpr, node.kind, node)
           } else {
             passthroughDeclStarts.add(node.start)
@@ -8851,6 +8858,11 @@ export function emitScript(ctx) {
     } else if (v.kind === 'const') {
       // Static const — no reactive wrapper, emitted as-is.
       mod.code.push(xNode.raw(`const ${v.name} = ${init};`))
+      if (ctx.config?.dev && v.destructured) {
+        mod.code.push(xNode.raw(
+          `$$runtime.warnDestructuredAccessors(${v.name}, ${JSON.stringify(v.destructured.keys)}, ${JSON.stringify(v.destructured.site)});`
+        ))
+      }
       // No accessor entry — template references the plain name directly.
 
       // If this const has $: path watches, emit the proxy setup HERE (after the

@@ -4,6 +4,10 @@
     "test-port-literal:web/test/verify-tui.mjs": "7999 is a port nothing holds, on purpose: the drive proves the frame renders with the API unreachable.",
     "test-port-literal:web/test/verify-widget.mjs": "The buy-button HTML names the dev origins, and this drive rewrites each to the port it started (replaceAll on the three strings).",
     "test-port-literal:extension/test/verify.mjs": "7710 is in the extension manifest's host permissions, a file the build emits, so the drive cannot pick its port at run time.",
-    "test-port-literal:site/test/verify-account.mjs": "8112 is the example API's own provider sink, bound from a literal there (FJS-2496); the drive follows it until that moves."
+    "test-port-literal:site/test/verify-account.mjs": "8112 is the example API's own provider sink, bound from a literal there (FJS-2496); the drive follows it until that moves.",
+    "css-class-collision:widgets/src/Embeds/BuyButton.mesa": "The widget renders in a shadow root on a stranger's page, where no @frontierjs/css reaches (see the style block), so .link is its own.",
+    "css-class-collision:extension/src/dock/App.mesa": "The popup page loads no @frontierjs/css (see the style block), so .bar and .empty are its own.",
+    "css-class-collision:site/src/routes/_module.mesa": "The .topbar IS the kit's Topbar; the rule restyles the storefront's header on purpose.",
+    "css-class-collision:site/src/islands/Account.mesa": "A button wearing the kit's Link on purpose; the rule resets the button chrome the Link does not mean to carry."
   }
 }

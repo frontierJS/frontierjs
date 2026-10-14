@@ -57,6 +57,7 @@ Detail: `references/mesa.md`
 - **Replacing a value notifies; mutating one does not — and `o = o` is the deliberate exception.**
 - **An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that.**
 - **A function hides its reads from the compiler, which costs a subscription and an ordering.**
+- **A `$:` block is woken by what it reads from outside itself, never by its own writes.** A called function that does `++seq` subscribes the block to `seq`; the write is ignored while the block runs (`FJS-2652`), so a state change made BY the block is not a trigger for it.
 - **A `$: dep, handler` does not run at mount, and its `prev` is the same object when the change was a mutation.**
 - **A watched object cannot be cloned or spread out of its proxy — `unproxy()` it.**
 - **An unkeyed `{#each}` is keyed by INDEX, so a row's DOM state stays with the position after a reorder.**

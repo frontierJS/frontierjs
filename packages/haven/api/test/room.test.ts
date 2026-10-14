@@ -1,8 +1,9 @@
 // api/test/room.test.ts
 // Two members in one room see each other's moves and lines; a banned member
-// sees nothing and is seen by nobody. Real sockets on a real app over the
-// env's own Litestone client — a broadcast graded to nobody reads exactly like
-// one that was never sent, so every refusal sits beside a delivery.
+// sees nothing and is seen by nobody; a mod bans over the socket and a member
+// cannot. Real sockets on a real app over the env's own Litestone client — a
+// broadcast graded to nobody reads exactly like one that was never sent, so
+// every refusal sits beside a delivery.
 //
 // Every member walks in through the signed login, so the token on each socket
 // is a minted session and not a stub.
@@ -22,14 +23,14 @@ const sleep  = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 interface Sock { ws: WebSocket, frames: any[], callId: number }
 
-let env: any, sys: any, square: any, tavern: any, sam: any, ana: any, rex: any
+let env: any, sys: any, square: any, tavern: any, sam: any, ana: any, rex: any, mod: any
 const open: Sock[] = []
 
 beforeEach(async () => {
   env = await createTestEnv({
     schema: SCHEMA,
     listen: true,
-    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0 }),
+    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0, mods: ['mod'] }),
   })
   sys    = env.system
   square = await sys.room.create({ data: { slug: 'square', name: 'The square' } })
@@ -37,6 +38,7 @@ beforeEach(async () => {
   sam    = await signIn(env.port, 'sam')
   ana    = await signIn(env.port, 'ana')
   rex    = await signIn(env.port, 'rex')
+  mod    = await signIn(env.port, 'mod')
   await sys.member.update({ where: { id: rex.id }, data: { bannedAt: new Date().toISOString() } })
 })
 
@@ -61,9 +63,9 @@ const events = (s: Sock, name: string) => s.frames.filter(f => f.type === 'event
 const move   = (s: Sock, roomId: number, x: number, y: number) =>
   send(s, { type: 'subscribe', channel: roomChannelName(roomId), meta: { x, y } })
 
-async function say (s: Sock, roomId: number, body: string, extra: Record<string, unknown> = {}): Promise<any> {
+async function call (s: Sock, service: string, method: string, frame: Record<string, unknown>): Promise<any> {
   const id = String(++s.callId)
-  send(s, { type: 'service_call', id, service: 'messages', method: 'create', data: { roomId, body, ...extra } })
+  send(s, { type: 'service_call', id, service, method, ...frame })
   for (let i = 0; i < 200; i++) {
     const answer = s.frames.find(f => f.id === id && (f.type === 'service_result' || f.type === 'service_error'))
     if (answer) return answer
@@ -71,6 +73,13 @@ async function say (s: Sock, roomId: number, body: string, extra: Record<string,
   }
   throw new Error(`no answer to call ${id}`)
 }
+
+const say = (s: Sock, roomId: number, body: string, extra: Record<string, unknown> = {}) =>
+  call(s, 'messages', 'create', { data: { roomId, body, ...extra } })
+
+/** What the client's `/ban` and `/unban` send: an ordinary patch of the column. */
+const ban = (s: Sock, memberId: number, bannedAt: string | null) =>
+  call(s, 'members', 'patch', { meta: { id: memberId }, data: { bannedAt } })
 
 describe('two members in the square', () => {
   test('each sees the other move and speak', async () => {
@@ -195,11 +204,14 @@ describe('a banned member', () => {
     expect(roster).toContain(String(sam.id))
   })
 
-  test('banned while standing in the room is taken out of it on the next write', async () => {
+  test('banned by a mod while standing in the room is taken out of it on the next write', async () => {
     const s = await enter(sam)
     const a = await enter(ana)
+    const m = await enter(mod)
 
-    await sys.member.update({ where: { id: ana.id }, data: { bannedAt: new Date().toISOString() } })
+    const banned = await ban(m, ana.id, new Date().toISOString())
+    expect(banned).toMatchObject({ type: 'service_result', result: { id: ana.id } })
+    expect(banned.result.bannedAt).toBeTruthy()
     await sleep(150)
     const before = a.frames.length
 
@@ -209,6 +221,28 @@ describe('a banned member', () => {
 
     expect(events(a, 'presence:sync').at(-1)?.data.members).toEqual([])
     expect(a.frames.slice(before).filter(f => f.event === 'messages created' || f.event === 'presence:update')).toEqual([])
+  })
+
+  test('is back in the room once the mod lifts the ban, and a member can do neither', async () => {
+    const s = await enter(sam)
+    const m = await enter(mod)
+
+    // A member's patch of another row is filtered to nothing and answers no
+    // row; of their own, the column is dropped (`FJS-D22`) and the row comes
+    // back unchanged. Neither is an error, so the column is what is asserted,
+    // and the client reads the answer the same way (`Scene.mesa`).
+    expect((await ban(s, ana.id, new Date().toISOString())).result ?? null).toBeNull()
+    expect((await sys.member.findFirst({ where: { id: ana.id } })).bannedAt).toBeNull()
+    const r = await enter(rex)
+    expect((await ban(r, rex.id, null)).result?.bannedAt).toBeTruthy()
+    expect((await sys.member.findFirst({ where: { id: rex.id } })).bannedAt).toBeTruthy()
+
+    expect((await ban(m, rex.id, null)).result.bannedAt).toBeNull()
+    const back = await enter(rex)
+    move(back, square.id, 1, 1)
+    await sleep(150)
+    expect(events(back, 'presence:sync').at(-1)?.data.members.map((x: any) => String(x.userId))).toContain(String(rex.id))
+    expect(events(s, 'presence:update').map(f => f.data.meta)).toContainEqual({ x: 1, y: 1 })
   })
 })
 

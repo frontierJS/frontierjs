@@ -114,7 +114,7 @@ interface LitestoneClientApi {
   asSystem(): LitestoneClient
   $setAuth(user: unknown): LitestoneClient
   $tapQuery(fn: (event: LitestoneQueryEvent) => void): () => void
-  $transaction?: <T>(fn: (tx: LitestoneClient) => Promise<T>) => Promise<T>
+  $transaction: <T>(fn: (tx: LitestoneClient) => Promise<T>) => Promise<T>
   $schema?: unknown
   $claimsFor?: (principal: unknown) => Promise<Record<string, unknown>>
   $search?: (q: string, opts?: { models?: string[]; limit?: number; offset?: number; prefix?: boolean }) => Promise<Array<Record<string, unknown>>>

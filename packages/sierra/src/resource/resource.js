@@ -388,6 +388,18 @@ export function createStore(service, opts = {}) {
 // model whose display column came from either has not said which one it is.
 const WEAK_LABEL = new Set(['scan', 'fallback'])
 
+// What a row is called: its display column, then the conventional columns below
+// it, skipping a blank one. `??` alone passes `''` through, and a picker
+// labelled with an empty string is an option nobody can find. Undefined when
+// none is readable, so each caller keeps its own last resort.
+function labelOf(row, shown, alt = []) {
+  for (const col of [shown, ...alt]) {
+    const v = row?.[col]
+    if (v != null && v !== '') return v
+  }
+  return undefined
+}
+
 // ── the order a picker offers ────────────────────────────────────────────────
 //
 // One owner for a question three call sites answered separately with the same
@@ -1945,10 +1957,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // it wrong on one screen out of six.
     return {
       ...answer,
-      columns: answer.columns.map(c => ({
-        ...c, ...displayFor(c.rule, { field: c.name, model }),
-      })),
+      columns: answer.columns.map(c => {
+        const shown = displayFor(c.rule, { field: c.name, model })
+        return { ...c, ...shown, ...relationLabel(shown) }
+      }),
     }
+  }
+
+  // A cell holds a foreign key and nobody recognizes one. Which column of the
+  // related row a person does is that model's own `labelField`, the one a
+  // picker shows; without it on the answer `<Cell>` cannot read a loaded
+  // `row[relation]` and prints the id. A registered display that claims
+  // `relation` is handed the same field.
+  function relationLabel(shown) {
+    if (shown.display !== 'relation' || !shown.model) return null
+    return { labelField: relatedResource(serviceNameFor(shown.model) ?? shown.model, shown.model).labelField }
   }
 
   /**
@@ -1967,9 +1990,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * A bar renders the ones with an `op`; anything else has an answer for why
    * it is not there.
    *
-   * Ranked and labelled by `columns()`, so the bar offers what the table shows
-   * and in the same order — two lists derived from one is what stops a filter
-   * appearing for a column nobody can see.
+   * Ranked and labelled by `columns()` under the same limit, so the bar offers
+   * what the table shows and in the same order — two lists derived from one is
+   * what stops a filter appearing for a column nobody can see. A page that pins
+   * its table with `columns({ only })` passes the same `only` here; a caller
+   * wanting a wider bar says `{ limit }`.
    *
    * **`search` is the third answer and it is the model's, not a column's.**
    * `$search` is served by `table.search()`, which a Litestone client offers
@@ -1981,7 +2006,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * answered `null`, for the same rule as a column with no `op`.
    */
   function filters(opts = {}) {
-    const { columns: cols, omitted } = columns({ limit: 99, ...opts })
+    const { columns: cols, omitted } = columns(opts)
+    const joined = throughFilters()
 
     const ftsFields = readModel?.['x-search']
     const search    = ftsFields?.length
@@ -2014,9 +2040,50 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // A declared key is filtered through the column its slot generated,
         // since the boundary takes no where on a key inside a Json blob.
         return { ...c, ...f, ...(c.rule?.['x-slot'] ? { queryKey: c.rule['x-slot'] } : {}) }
-      }),
+      }).concat(joined),
       omitted,
     }
+  }
+
+  /**
+   * The to-manys this list can be filtered THROUGH — one entry per `hasMany`
+   * whose child is a join: a model with exactly one `belongsTo` back here and
+   * exactly one to somewhere else (a `@@relator`'s shape). *Contacts carrying
+   * any of these tags* is `{ tags: { some: { tagId: { in } } } }`, which the
+   * Data boundary answers and `list.apply()` carries in the URL; what a screen
+   * lacked was the offer.
+   *
+   * What to offer is the join's other end, and it is declared there already:
+   * `entry.rule` is the child's rule for that key, so a `@values` binding or a
+   * foreign key is read by `options(name)` exactly as it is for a column. A
+   * child that is not a join, or whose schema is not registered, offers nothing
+   * rather than a filter the bar could not populate.
+   */
+  function throughFilters() {
+    const out = []
+
+    for (const rel of Object.values(relations)) {
+      if (rel.type !== 'hasMany') continue
+
+      const childDef = registry.schemaFor(rel.model)
+      if (!childDef) continue
+
+      const kids = Object.values(buildRelations(childDef, registry.modelNameFor)).filter(r => r.type === 'belongsTo')
+      const back = kids.filter(r => r.model === model)
+      const away = kids.filter(r => r.model !== model)
+      if (kids.length !== 2 || back.length !== 1 || away.length !== 1 || away[0].foreignKeys?.length !== 1) continue
+
+      const field = away[0].foreignKeys[0]
+      const rule  = buildFieldRules(childDef, registry.resolveRef, registry.modelNameFor)[field]
+      if (!rule) continue
+
+      out.push({
+        name: rel.field, label: columnLabel(rel.field), display: 'relation',
+        op: 'in', kind: 'set', rule, through: { field, model: rel.model },
+      })
+    }
+
+    return out
   }
 
   /**
@@ -2391,7 +2458,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * an id falls through to the id, because `17 (unavailable)` is worse than the
    * bug being fixed.
    */
-  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, isArray, strength = 'required', within = null, scope }) {
+  function withUnavailable(answer, { fieldName, record, service, valueField, labelField: shown, labelAlt: alt = [], isArray, strength = 'required', within = null, scope }) {
     const held = record?.[fieldName]
     if (held == null) return answer
     const wanted = (isArray ? (Array.isArray(held) ? held : [held]) : [held]).filter(v => v != null)
@@ -2413,7 +2480,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         .getOptions({ ...(within ?? {}), [valueField]: { in: missing } }, { limit: missing.length, ...(scope ? { scope } : {}) })
         .then(res => {
           const rows = Array.isArray(res) ? res : (res?.data ?? [])
-          return new Map(rows.map(r => [r?.[valueField], r?.[shown]]))
+          return new Map(rows.map(r => [r?.[valueField], labelOf(r, shown, alt)]))
         })
         // Unknown is not a member: the judgement below is the one that cannot
         // pass a refused value.
@@ -2425,14 +2492,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
             ...members.map(v => ({ value: v, label: listed.get(v) ?? v })),
             ...(answer.options ?? []),
           ] }
-          return rest.length ? judgeMissing(withMembers, rest, { service, valueField, shown, strength }) : withMembers
+          return rest.length ? judgeMissing(withMembers, rest, { service, valueField, shown, alt, strength }) : withMembers
         })
     }
-    return judgeMissing(answer, missing, { service, valueField, shown, strength })
+    return judgeMissing(answer, missing, { service, valueField, shown, alt, strength })
   }
 
   /** The held values that are NOT in the list, shown and marked by strength. */
-  function judgeMissing(answer, missing, { service, valueField, shown, strength = 'required' }) {
+  function judgeMissing(answer, missing, { service, valueField, shown, alt = [], strength = 'required' }) {
 
     // Whether a held value outside the list is REFUSED is the binding's
     // strength, not the list's (`FJS-2501`). `required` refuses it. `open`
@@ -2454,7 +2521,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       .getOptions({ [valueField]: { in: missing } }, { limit: missing.length })
       .then(res => {
         const rows = Array.isArray(res) ? res : (res?.data ?? [])
-        const byValue = new Map(rows.map(r => [r?.[valueField], r?.[shown]]))
+        const byValue = new Map(rows.map(r => [r?.[valueField], labelOf(r, shown, alt)]))
         // Pinned at the FRONT: it is the value in the box, and a person should
         // not have to scroll a capped list to find out why it reads oddly.
         return { ...answer, options: [
@@ -2494,7 +2561,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   }
 
   function options(fieldName, { labelField, query, search, directives, limit = 100, reload = false, record } = {}) {
-    const rule = fields?.[fieldName]
+    // A to-many the list filters through is asked for by its relation name, and
+    // the picker is the join's other end.
+    const rule = fields?.[fieldName] ?? throughFilters().find(f => f.name === fieldName)?.rule
 
     // An enum's members are already on the rule, so this answers without a
     // request — but it answers a PROMISE, like the relation branch below.
@@ -2631,6 +2700,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const relatedService = serviceNameFor(ref.model) ?? ref.model
     const related        = relatedResource(relatedService, ref.model)
     const shown          = labelField ?? related.labelField
+    const alt            = labelField ? [] : (related.labelAlt ?? [])
 
     // A guessed display column is the failure this cannot fix and can stop
     // hiding: *Ada, Ada, Ada* down a list of people, or `1, 2, 3`, both of
@@ -2662,9 +2732,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         const rows = Array.isArray(res) ? res : (res?.data ?? [])
         const opts = rows.map(row => ({
           value: row?.[ref.field],
-          // The id is the honest fallback: a blank option is unpickable and a
-          // guessed label is worse than a number.
-          label: row?.[shown] ?? row?.[ref.field],
+          // The id is the honest last resort: a blank option is unpickable and
+          // a guessed label is worse than a number.
+          label: labelOf(row, shown, alt) ?? String(row?.[ref.field]),
         }))
 
         // An array answer carries no envelope, so there is no total to read —
@@ -2674,7 +2744,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
         return withUnavailable(
           { options: opts, total, truncated: total == null ? null : total > opts.length },
-          { fieldName, record, service: related.service, valueField: ref.field, labelField: shown,
+          { fieldName, record, service: related.service, valueField: ref.field, labelField: shown, labelAlt: alt,
             isArray: rule?.type === 'array', within: query ?? null },
         )
       })
@@ -3067,7 +3137,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     version, versionField: versionOf, conflict,
     formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, declined,
     withheld: withheldFor,
-    labelField: labelInfo.field, labelSource: labelInfo.source,
+    labelField: labelInfo.field, labelSource: labelInfo.source, labelAlt: labelInfo.alt,
     fieldErrors, context, hooks: addHooks,
   }
 }
@@ -3117,6 +3187,7 @@ function _emptyResource(name) {
     options:    () => Promise.resolve({ options: [], total: 0, truncated: false }),
     labelField:  'id',
     labelSource: 'fallback',
+    labelAlt:    [],
     gate:        null,
     // Not routed through `canAtLevel`, and not because the answer for *no gate*
     // is in doubt. That function answers *does the declared gate admit this

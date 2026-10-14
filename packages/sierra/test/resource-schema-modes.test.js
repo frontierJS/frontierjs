@@ -556,6 +556,33 @@ describe('a search box is offered only where the boundary will answer', () => {
     expect(articles.filters.find(f => f.name === 'slug').op).toBe('contains')
   })
 
+  test('the bar offers the columns the table shows, not every column (FJS-2329)', async () => {
+    // Ranked at 99 the bar drew a control for all of a wide model's columns
+    // over a six-column table, with a text box for a page's whole body.
+    await build(`
+      model Wide {
+        id Int @id @default(autoincrement())
+        name String
+        a1 String
+        a2 String
+        a3 String
+        a4 String
+        a5 String
+        a6 String
+        a7 String
+        a8 String
+        @@gate("0.0.0.0")
+      }
+    `)
+    const wide  = createResource('wides', { model: 'Wide' })
+    const shown = wide.columns().columns.map(c => c.name)
+
+    expect(wide.filters().filters.map(f => f.name)).toEqual(shown)
+    expect(wide.filters({ only: ['a7', 'a8'] }).filters.map(f => f.name)).toEqual(['a7', 'a8'])
+    // The wider ask stays available to a caller that makes it.
+    expect(wide.filters({ limit: 99 }).filters.length).toBeGreaterThan(shown.length)
+  })
+
   test('a per-row currency offers no range, and a stated one does', async () => {
     // Amounts in each row's own currency share no scale, so one range over
     // them compares cents with yen (`FJS-D556`). Asserted as a PAIR: a table
@@ -574,5 +601,33 @@ describe('a search box is offered only where the boundary will answer', () => {
     expect(amount.op).toBe(null)
     expect(amount.reason).toMatch(/share no range/)
     expect(filters.find(f => f.name === 'fee').op).toEqual(['gte', 'lte'])
+  })
+})
+
+describe('a relation column names the label of the row it points at', () => {
+  const RELATED = `
+    model Customer {
+      id    Int    @id @default(autoincrement())
+      email String
+      name  String
+      @@gate("0.0.0.0")
+    }
+
+    model Order {
+      id         Int      @id @default(autoincrement())
+      customerId Int
+      customer   Customer @relation(fields: [customerId], references: [id])
+      ref        String
+      @@gate("0.0.0.0")
+    }
+  `
+
+  // FJS-1973: a cell given only the foreign key can render nothing but the id.
+  test('columns() carries the related model\'s label field on the relation answer', async () => {
+    await build(RELATED)
+    const orders = createResource('orders', { model: 'Order' })
+    const column = orders.columns({ limit: 99 }).columns.find(c => c.name === 'customerId')
+
+    expect(column).toMatchObject({ display: 'relation', model: 'Customer', relation: 'customer', labelField: 'name' })
   })
 })

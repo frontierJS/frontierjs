@@ -108,7 +108,9 @@ test('space: density reaches real components, not just the tokens', function () 
   [
     ['card',  '<div class="card">x</div>', '.card'],
     ['alert', '<div class="alert info"><div class="alert-content">x</div></div>', '.alert'],
-    ['table cell', '<table class="table"><tbody><tr><td>x</td></tr></tbody></table>', 'td']
+    ['table cell', '<table class="table"><tbody><tr><td>x</td></tr></tbody></table>', 'td'],
+    ['button', '<button class="btn">x</button>', '.btn'],
+    ['field', '<input class="field">', '.field']
   ].forEach(function (row) {
     var name = row[0], html = row[1], sel = row[2];
     var loose = el('<div>' + html + '</div>', sel);

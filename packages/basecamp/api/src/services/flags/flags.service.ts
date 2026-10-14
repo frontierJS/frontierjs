@@ -435,10 +435,8 @@ export function createFlagsService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), stampFlag],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        // Overriding is the same bar as authoring: it is how a flag is rolled
-        // out, which is the normal working use of the feature.
-        setOverride:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        clearOverride: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // Overriding is the same bar as authoring, and `FlagOverride`'s gate
+        // says so for the caller's client.
       },
     },
   })

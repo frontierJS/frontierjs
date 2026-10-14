@@ -20,15 +20,22 @@ const KEY    = 'test-session-key'
 
 let env: any, sys: any
 
-beforeEach(async () => {
+// The list is read when the app is built, as `HAVEN_MODS` is: a test that
+// changes it restarts the server.
+let mods: string[] = []
+
+async function start () {
+  await env?.close?.()
   env = await createTestEnv({
     schema: SCHEMA,
     listen: true,
-    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: KEY, port: 0 }),
+    api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: KEY, port: 0, mods }),
   })
   sys = env.system
   await sys.room.create({ data: { slug: 'square', name: 'The square' } })
-})
+}
+
+beforeEach(async () => { mods = []; await start() })
 
 afterEach(async () => { await env?.close?.() })
 
@@ -55,7 +62,7 @@ describe('a key walks in', () => {
     const first = await signIn(env.port, 'sam')
     const { status, json } = await postLogin(env.port, await signedLogin(first.keys, {}))
     expect(status).toBe(200)
-    expect(json.member).toEqual({ id: first.id, nick: 'sam' })
+    expect(json.member).toEqual({ id: first.id, nick: 'sam', role: null })
     expect(json.token).not.toBe(first.token)
     expect(await sessions()).toBe(2)
   })
@@ -88,6 +95,42 @@ describe('a key walks in', () => {
     const { status } = await postLogin(env.port, await signedLogin(keys, {}))
     expect(status).toBe(400)
     expect(await members()).toEqual([])
+  })
+})
+
+describe('a mod', () => {
+  const roleOf = async (nick: string) => (await sys.member.findFirst({ where: { nick }, select: { role: true } })).role
+
+  test('is a nick the server lists, read at every login both ways', async () => {
+    mods = ['Sam ', 'ana']
+    await start()
+    const sam = await signIn(env.port, 'sam')
+    expect(sam.role).toBe('mod')
+    expect(await roleOf('sam')).toBe('mod')
+    expect((await signIn(env.port, 'rex')).role).toBeNull()
+
+    // The list is the standing: struck from it, the next login is a member's.
+    // The database outlives the restart, as it does across a deploy.
+    const again = await buildHavenApp({ db: env.db, sessionKey: KEY, port: 0, mods: ['ana'] })
+    await (again as any)._startForTest()
+    ;(again as any).http.start(0)
+    try {
+      const { json } = await postLogin((again as any).http.port, await signedLogin(sam.keys, {}))
+      expect(json.member.role).toBeNull()
+      expect(await roleOf('sam')).toBeNull()
+    } finally { await (again as any).http.stop() }
+  })
+
+  test('is appointed by the list and by nothing a member can send', async () => {
+    const rex = await signIn(env.port, 'rex')
+    const res = await fetch(`http://localhost:${env.port}/members/${rex.id}`, {
+      method: 'PATCH', headers: { authorization: `Bearer ${rex.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ role: 'mod' }),
+    })
+    // `@guarded` is not in the client's schema, so the key is refused as unknown
+    // before the column's own refusal is reached; either way nothing is written.
+    expect([400, 403]).toContain(res.status)
+    expect(await roleOf('rex')).toBeNull()
   })
 })
 

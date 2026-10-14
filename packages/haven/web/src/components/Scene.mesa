@@ -13,6 +13,11 @@
   // figures are `at()` boxes in the same box the stage is painted in, so a
   // figure's cell is the stage's cell.
   //
+  // A line beginning `/` is a command and never a Message: `/ban <nick>` and
+  // `/unban <nick>` are an ordinary patch of the member's `bannedAt`, which the
+  // schema admits a mod to and drops for anyone else (`FJS-D22`) — so the
+  // answer, not the call, says whether it happened.
+  //
   // Arrows walk while the input line is empty and edit it while it is not, so
   // a line being typed is never walked away from by a Left meant for it. In
   // the terminal shell's NORMAL mode h j k l arrive as the arrows, and a step
@@ -111,13 +116,32 @@
     here.updateMeta({ x, y })
   }
 
+  const COMMANDS = {
+    ban:   { bannedAt: () => new Date().toISOString(), done: 'is banned',  refused: 'only a mod bans' },
+    unban: { bannedAt: () => null,                     done: 'is back',    refused: 'only a mod lifts a ban' },
+  }
+
+  async function command(line) {
+    const [word, nick] = line.slice(1).split(/\s+/)
+    const cmd = COMMANDS[word]
+    if (!cmd) return `no command /${word} — /ban <nick>, /unban <nick>`
+    if (!nick) return `/${word} <nick>`
+    const who = (await members.service.find({ nick: nick.toLowerCase() })).data?.[0]
+    if (!who) return `nobody here is called ${nick}`
+    const after = await members.service.patch(who.id, { bannedAt: cmd.bannedAt() })
+    const set = (after?.bannedAt ?? null) !== null
+    return set === (word === 'ban') ? `${who.nick} ${cmd.done}` : cmd.refused
+  }
+
   async function say() {
     const body = draft.trim()
     if (!body) return
     draft = ''
     note  = ''
-    try { await messages.save({ roomId: room.id, body }) }
-    catch (e) { note = e.message }
+    try {
+      if (body.startsWith('/')) note = await command(body)
+      else await messages.save({ roomId: room.id, body })
+    } catch (e) { note = e.message }
   }
 </script>
 

@@ -13482,6 +13482,34 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d998"></a>2026-10-14 · `FJS-D998` — A Haven mod is a nick the server lists — `HAVEN_MODS`, read at every login both ways; the standing is `Member.role = 'mod'`, `@guarded`, and what a mod may do is two predicates in the schema, never a method or a hook.
+
+`IDEAS/haven.md` 3.2 asked for a mod standing a ban is exercised through. The
+standing is a column the login writes from the list and nothing below the
+system touches: `role` is `@guarded`, so a member cannot appoint themselves,
+and the ladder reads a role's presence (`FJS-D197`), so a mod grades USER(4)
+and a member CREATOR(3) — the session carries no `role` any more, which is what
+Haven's `CLAUDE.md` said all along. What a mod may do is said where the
+Data boundary reads it (Invariant 6): `@@allow('update', id == auth().id ||
+auth().role == 'mod')` for whose row, `@allow('write', auth().role == 'mod')` on
+`bannedAt` for which column, and the read policy admits a mod to the banned
+rows so a ban is lifted by naming the member. The ban is therefore an ordinary
+`members.patch`, and the client's `/ban <nick>` and `/unban <nick>` send one.
+A member sending the same patch is not refused: the row is filtered to nothing
+and the column is dropped (`FJS-D22`), so the client reads the answered row and
+says *only a mod bans*.
+
+Over **B**, public keys in the list: unforgeable, but an operator has to find a
+key in `~/.fli/haven/key.json` to type it, and a nick is what they see on the
+screen. The window B closes is a stranger taking the owner's nick before the
+owner's own first login on a server the owner just deployed, which is theirs to
+walk through first; a nick held is `@unique`, so it cannot be taken after. Over
+**C**, a `members.ban` method with a declared gate: that puts the standing in a
+service declaration, one more place than the schema, for no row the schema
+cannot say. The list is read when the app is built, as the session key is, so a
+change to it is a restart; a nick struck from it is a member again on their
+next login, not at once — a mod's session outlives their standing by one run.
+
 ### <a id="fjs-d997"></a>2026-10-14 · `FJS-D997` — A Haven scene is a component tree, and its picture is a generated file — A scene is a `.mesa` file: `<Scene>` provides `$context.scene` and every piece, door and pacer is a child component that stamps its cells and claims its footprint through it, the shape Threlte gives a Three.js scene in Svelte. The art is no longer typed: `src/scenes/<Name>.frame.txt` is rendered from the tree, committed beside it and pinned by `scenes.test.js`, so a scene is still read as a picture in a diff. Recognition (`compose()`) leaves the runtime and stays only as the editor's paste-art importer.
 
 Ruled by the owner, over the hybrid (art stays the source, only live things become components) and over leaving it. Amends `IDEAS/haven.md` Phase 5's goal and Done-when, the 2026-10-13 *doors stay text* ruling inside 5.3 (a door is now `<Door x y to>` or a house's `door=`, placed; it REPLACES the wall cell under it, the one overlap a stage allows), and `FJS-D995` (a member's scene row holds placements and a palette, never a stranger's glyphs).

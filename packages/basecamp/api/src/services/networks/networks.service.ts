@@ -161,10 +161,9 @@ export function createNetworksService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'admin', 'owner'), deriveSlug],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        // Attaching a server to a network changes what can reach what, so it is
-        // held at the same bar as authoring the network.
-        attach: [requireWorkspaceRole(app, 'admin', 'owner')],
-        detach: [requireWorkspaceRole(app, 'admin', 'owner')],
+        // Attaching a server changes what can reach what, so it is held at the
+        // bar of authoring the network: `ServerNetwork`'s gate, which the
+        // caller's client grades.
       },
     },
   })

@@ -113,6 +113,21 @@ export async function run(t) {
   await t.eventually(held(`q.total?.gte ?? null`), '500',
     'a bound with more decimals than the currency has is not written')
 
+  // A to-many is filtered through its join: the operator sits under `some` and
+  // the join's key, which is the shape the Data boundary takes.
+  await t.evaluate(`
+    document.querySelector('${BAR} input[placeholder="Tags"]').focus();
+    await waitSettled('body');
+  `)
+  await t.evaluate(`
+    const opt = document.querySelector('${BAR} .fjs-multiselect-panel .fjs-multiselect-option');
+    opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    opt.click();
+    await waitSettled('body');
+  `)
+  await t.eventually(held(`JSON.stringify(q.tags ?? null)`), '{"some":{"tagId":{"in":[1]}}}',
+    'a to-many writes its set under some and the join key')
+
   await t.clickAt(`${BAR} input[placeholder="Rate from"]`)
   await t.type('5')
   await t.eventually(held(`q.rate?.gte ?? null`), '5',
@@ -173,7 +188,7 @@ export async function run(t) {
   // which is why this row reads across both halves: a Clear that emptied the
   // directives too would take the sort and the page size with it.
 
-  await t.clickAt(`${BAR} button.btn`)
+  await t.clickAt(`${BAR} .filter-bar > button.btn`)
   await t.eventually(held(`[d.search ?? '-', q.title ?? '-', d.orderBy ?? '-', d.limit ?? '-'].join('|')`),
     '-|-|title|20', 'Clear drops the search and the filters, and keeps the reading')
   // Every directive but the search and the paging is part of the reading, not

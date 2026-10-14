@@ -95,6 +95,15 @@ describe('transform logs', () => {
     expect(thrown.log.message).toContain('__Probe.mesa:7:')
   })
 
+  test('a forwarded warning names its file (FJS-2796)', async () => {
+    const ctx = viteCtx()
+    await plugin.transform.call(ctx, WARNS, ID)
+
+    const mine = ctx.warnings.filter((w) => w.message.includes('cfg.title'))
+    expect(mine).toHaveLength(1)
+    expect(mine[0].message).toContain('src/components/__Probe.mesa')
+  })
+
   test('a warning is said once, to Vite, and not to the console', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {

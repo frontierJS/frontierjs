@@ -1956,6 +1956,20 @@ An app that generates nothing is unaffected — the registry is empty, so
 `Record<string, unknown>` it always did. `service<Post>('posts')` still works,
 declared or not.
 
+A custom method's declared `output: 'SearchResult'` reaches `invoke()` and
+`call()` the same way, through a second registry the app fills — which service
+answers which method is in its `methods:` arrays, and the generator reads only
+the seed:
+
+```typescript
+declare module '@frontierjs/junction/client' {
+  interface ServiceMethods { posts: { search: SearchResult } }
+}
+
+const found = await client.service('posts').invoke('search', null, { q })
+found.total        // number — a method not listed still answers `unknown`
+```
+
 **Service proxy** — CRUD methods prefer WebSocket when connected, fall back to HTTP automatically. File uploads always use HTTP (multipart/form-data):
 
 ```typescript

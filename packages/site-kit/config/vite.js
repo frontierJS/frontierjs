@@ -37,6 +37,14 @@ export async function resolveSite({ root }) {
   root = resolve(root)
   const content = resolve(root, 'content')
   if (!existsSync(content)) throw new Error(`site-kit: no content/ in ${root}`)
+  // Sierra builds a site with no routes green and blames frontmatter, so a
+  // legacy ksite (content/pages) would publish as an empty shell (FJS-D606).
+  if (!existsSync(resolve(content, 'routes'))) {
+    throw new Error(
+      `site-kit: no content/routes in ${root}` +
+      (existsSync(resolve(content, 'pages')) ? ' — its pages are in content/pages, which is the legacy ksite folder; move them to content/routes' : ''),
+    )
+  }
 
   // site.js is the site's Sierra config, which the browser imports whole;
   // site.md is its settings, the data its pages and its preset read.

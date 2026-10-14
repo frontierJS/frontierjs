@@ -241,8 +241,6 @@ export function createDomainsService(app: BasecampApp) {
         create:      [requireWorkspaceRole(app, 'admin', 'owner')],
         patch:       [requireWorkspaceRole(app, 'admin', 'owner')],
         remove:      [requireWorkspaceRole(app, 'admin', 'owner')],
-        uploadCert:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        makePrimary: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

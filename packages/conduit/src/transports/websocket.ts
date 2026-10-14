@@ -5,7 +5,10 @@
 // ============================================================
 
 import { BaseTransport } from './base.ts'
-import { DEFAULT_MAX_BYTES, DEFAULT_TIMEOUT_MS, IDEMPOTENT_METHODS } from './http.ts'
+import {
+  DEFAULT_DEADLINE_MS, DEFAULT_MAX_BYTES, DEFAULT_RETRY_LIMIT, DEFAULT_TIMEOUT_MS, IDEMPOTENT_METHODS,
+  backoffWithJitter, declineReplay, sleep,
+} from './http.ts'
 import { ConduitStreamError, CredentialError } from '../types.ts'
 import type {
   ConduitRequest,
@@ -63,32 +66,43 @@ export class WebSocketTransport extends BaseTransport {
   private connecting:     Promise<WebSocket | null> | null = null
   private pending         = new Map<string, PendingRequest>()
   private streamListeners = new Map<string, (event: StreamEvent) => void>()
+  private lastSeq         = new Map<string, number>()
   private pingTimer:      ReturnType<typeof setInterval> | null = null
-  private reconnecting    = false
+  private heard           = true
+  private reconnecting   = false
   private destroyed       = false
   private reconnectCount  = 0
 
   onReconnect?: (target: string) => void
 
-  // The same two numbers an http target declares. `max_response_bytes` bounds
-  // one inbound frame; retry and deadline are not applied here.
+  // The numbers an http target declares. `max_response_bytes` bounds one
+  // inbound frame; `retry_limit` and `deadline_ms` bound `send()` only, since a
+  // stream that died mid-way cannot be resumed from where it stopped.
   constructor(
     descriptor:  TargetDescriptor,
     credentials: CredentialResolver,
-    private opts: { timeout_ms?: number; max_response_bytes?: number } = {},
+    private opts: {
+      timeout_ms?:         number
+      retry_limit?:        number
+      deadline_ms?:        number
+      max_response_bytes?: number
+      onRetry?:            (req: ConduitRequest, err: ConduitError, attempt: number) => void
+    } = {},
   ) {
     super(descriptor, credentials)
   }
 
-  // The envelope's headers, query and idempotency key, built once per send so
-  // a stream and a one-shot request say the same thing.
-  private frameFor(req: ConduitRequest): Pick<WireMessage, 'method' | 'path' | 'headers' | 'query' | 'body'> {
-    // Minted per send, never per frame, for the same reason http mints it once:
-    // a caller replaying the send must present the key the first one did.
+  // Minted per send, never per frame, for the same reason http mints it once:
+  // a replay must present the key the first attempt did.
+  private keyFor(req: ConduitRequest): string | undefined {
     const auto = this.descriptor.idempotency?.auto === true
-    const key  = req.idempotency_key
+    return req.idempotency_key
       ?? (auto && !IDEMPOTENT_METHODS.has(req.method.toUpperCase()) ? crypto.randomUUID() : undefined)
+  }
 
+  // The envelope's headers, query and idempotency key, built the same way for
+  // a stream and a one-shot request.
+  private frameFor(req: ConduitRequest, key: string | undefined): Pick<WireMessage, 'method' | 'path' | 'headers' | 'query' | 'body'> {
     const headers = this.mergeHeaders(
       key ? { [this.idempotencyHeader()]: key } : undefined,
       this.descriptor.headers,
@@ -110,7 +124,45 @@ export class WebSocketTransport extends BaseTransport {
     }
   }
 
+  // The ladder http runs, minus what a socket has no use for: a remint (the
+  // credential authenticates the upgrade) and `Retry-After` (a frame has no
+  // headers back). A reply that never came is a `timeout`, and whether it was
+  // applied is unknown, so the same `declineReplay` judges it.
   async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
+    const retries  = this.opts.retry_limit ?? DEFAULT_RETRY_LIMIT
+    const deadline = performance.now() + (this.opts.deadline_ms ?? DEFAULT_DEADLINE_MS)
+    const key      = this.keyFor(req)
+    const sent: ConduitRequest = key === req.idempotency_key ? req : { ...req, idempotency_key: key }
+    const replayable = IDEMPOTENT_METHODS.has(req.method.toUpperCase()) || key !== undefined || req.replayable === true
+    let   attempt  = 0
+
+    while (true) {
+      if (req.signal?.aborted) {
+        return this.fail('aborted', `Canceled by the caller before attempt ${attempt + 1}`, { retryable: true })
+      }
+      const remaining = deadline - performance.now()
+      if (remaining <= 0) {
+        return this.fail('timeout', 'Total deadline exceeded before the request completed', { retryable: true })
+      }
+
+      const result = await this.sendOnce<T>(sent, key, remaining)
+
+      if (result.error === null || !result.error.retryable) return result
+      if (result.error.kind === 'auth_failed')              return result
+      if (result.error.kind === 'aborted')                  return replayable ? result : declineReplay(result)
+      if (!replayable)                                      return declineReplay(result)
+      if (attempt === retries)                              return result
+
+      attempt++
+      this.opts.onRetry?.(sent, result.error, attempt)
+
+      const wait = backoffWithJitter(attempt)
+      if (performance.now() + wait >= deadline) return result
+      await sleep(wait, req.signal)
+    }
+  }
+
+  private async sendOnce<T>(req: ConduitRequest, key: string | undefined, budgetMs: number): Promise<ConduitResult<T>> {
 
     let ws: WebSocket | null
     try {
@@ -123,8 +175,9 @@ export class WebSocketTransport extends BaseTransport {
     }
 
     if (!ws) {
+      // Nothing was written to a socket that never opened, so a replay is safe.
       return this.fail('connection_failed', `Cannot connect to ${this.descriptor.id}`, {
-        retryable: true
+        retryable: true, raw: { code: 'ConnectionRefused' }
       })
     }
 
@@ -145,7 +198,7 @@ export class WebSocketTransport extends BaseTransport {
         req.signal?.removeEventListener('abort', cancel)
         this.pending.delete(id)
         resolve(this.fail('timeout', 'WS request timed out', { retryable: true }))
-      }, req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS)
+      }, Math.min(req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS, budgetMs))
       req.signal?.addEventListener('abort', cancel, { once: true })
 
       this.pending.set(id, {
@@ -174,7 +227,7 @@ export class WebSocketTransport extends BaseTransport {
         timer
       })
 
-      this.sendWire(ws, { id, type: 'request', ...this.frameFor(req) })
+      this.sendWire(ws, { id, type: 'request', ...this.frameFor(req, key) })
     })
   }
 
@@ -223,7 +276,7 @@ export class WebSocketTransport extends BaseTransport {
     })
 
     // The body passes through untouched.
-    this.sendWire(ws, { id, type: 'request', ...this.frameFor(req), stream: true })
+    this.sendWire(ws, { id, type: 'request', ...this.frameFor(req, this.keyFor(req)), stream: true })
 
     try {
       while (!done) {
@@ -248,6 +301,7 @@ export class WebSocketTransport extends BaseTransport {
       }
     } finally {
       this.streamListeners.delete(id)
+      this.lastSeq.delete(id)
     }
   }
 
@@ -392,6 +446,8 @@ export class WebSocketTransport extends BaseTransport {
       return
     }
 
+    // Any frame proves the peer is there; a pong is only the one sent for it.
+    this.heard = true
     if (msg.type === 'pong') return
 
     // The cap is on the frame, the unit this transport reads. A frame over it
@@ -415,7 +471,33 @@ export class WebSocketTransport extends BaseTransport {
     }
 
     if (msg.type === 'stream_chunk') {
-      this.streamListeners.get(msg.id)?.({
+      const listener = this.streamListeners.get(msg.id)
+      if (!listener) return
+
+      // A stream's seq counts up by one from wherever the far side starts it.
+      // A skipped number is a chunk this consumer never sees, and nothing else
+      // would say so. A frame with no seq is not checked.
+      const last = this.lastSeq.get(msg.id)
+      if (typeof msg.seq === 'number') {
+        if (last !== undefined && msg.seq !== last + 1) {
+          this.streamListeners.delete(msg.id)
+          this.lastSeq.delete(msg.id)
+          listener({
+            done:  true,
+            error: {
+              kind:      'invalid_response',
+              target:    this.descriptor.id,
+              protocol:  this.protocol,
+              message:   `Stream sequence gap: expected ${last + 1}, received ${msg.seq}`,
+              retryable: false,
+            }
+          })
+          return
+        }
+        this.lastSeq.set(msg.id, msg.seq)
+      }
+
+      listener({
         done:  false,
         chunk: {
           data:      msg.body,
@@ -441,10 +523,21 @@ export class WebSocketTransport extends BaseTransport {
     // interval, which pings a dead socket forever and keeps the event loop
     // alive at shutdown.
     this.clearPing()
+    this.heard = true
     this.pingTimer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        this.sendWire(ws, { id: crypto.randomUUID(), type: 'ping' })
+      if (ws.readyState !== WebSocket.OPEN) return
+      // A whole interval with no frame of any kind after a ping: the peer is
+      // gone without a FIN, and every pending send would wait out its own
+      // timeout against a socket that can never answer. Terminating fires the
+      // close handler, which fails them as `connection_failed` at once.
+      if (!this.heard) {
+        // Bun's client socket has it; the DOM type does not.
+        const bunSocket = ws as WebSocket & { terminate(): void }
+        bunSocket.terminate()
+        return
       }
+      this.heard = false
+      this.sendWire(ws, { id: crypto.randomUUID(), type: 'ping' })
     }, PING_INTERVAL_MS)
   }
 
@@ -462,10 +555,6 @@ export class WebSocketTransport extends BaseTransport {
   private sendWire(ws: WebSocket, msg: WireMessage) {
     ws.send(JSON.stringify(msg))
   }
-}
-
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 // The path component of a ws:// address, for signature binding.

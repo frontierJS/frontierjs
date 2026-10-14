@@ -343,7 +343,7 @@ export function checkAnswer(answer) {
     const pub = a.public == null ? [] : a.public
     if (!Array.isArray(pub) || pub.some(op => !['read', 'create'].includes(op))) refuse('access', at, '`public` is a list of `read` and `create`.')
     if (a.shared != null && (typeof a.shared !== 'string' || !a.shared.trim())) refuse('access', at, '`shared` is the reason every signed-in user reads every row.')
-    if (a.shared && pub.length) refuse('access', at, 'An entity is public or shared, not both.')
+    if (a.shared && pub.includes('read')) refuse('access', at, 'A public read already covers every signed-in user; `shared` adds nothing. A visitor who files a row every signed-in user reads is `public: ["create"]` with `shared`.')
     if (pub.length && !(typeof a.why === 'string' && a.why.trim())) refuse('access', at, 'Public access says `why` — it is the fact most likely to be wrong.')
     if (a.publicWhen != null) {
       if (!pub.includes('read')) refuse('access', at, '`publicWhen` narrows a public read; declare `public: ["read"]`.')
@@ -386,8 +386,17 @@ export function checkAnswer(answer) {
     if (pub.includes('create')) find('access', m.name, `Anyone, signed in or not, creates ${an(m.name)}: an unauthenticated write${because}.`)
     if (pub.includes('read')) find('access', m.name, `Anyone, signed in or not, reads ${a.publicWhen ? `${an(m.name)} where ${Object.entries(a.publicWhen).map(([k, v]) => `${k} is ${v}`).join(' and ')}` : `every ${m.name}`}${because}.`)
     if (a.shared) {
-      const writers = m.links.filter(l => l.to === 'User' && ACTORS[l.actor]?.may.some(op => op !== 'read')).map(l => `its ${l.name}`)
-      find('access', m.name, `Every signed-in user reads every ${m.name}, and ${writers.length ? `${writers.join(' or ')} or an administrator` : 'only an administrator'} writes one: ${a.shared}`)
+      // emit gives a write a link holds to gate 4 under an @@allow naming only
+      // that link, and no gate level is exempt from a row policy: the
+      // administrator holds the ops no link does, and no others.
+      const who = new Map()
+      for (const op of ['create', 'update', 'delete']) {
+        const holders = m.links.filter(l => l.to === 'User' && ACTORS[l.actor]?.may.includes(op)).map(l => `its ${l.name}`)
+        const key = pub.includes(op) ? 'anyone' : holders.length ? holders.join(' or ') : 'an administrator'
+        who.set(key, [...(who.get(key) ?? []), op])
+      }
+      const clauses = [...who].map(([key, ops]) => who.size === 1 ? `${key} writes one` : `${key} ${ops.map(op => `${op}s`).join(' or ')} one`)
+      find('access', m.name, `Every signed-in user reads every ${m.name}, and ${who.size === 1 && who.has('an administrator') ? 'only ' : ''}${clauses.join(', and ')}: ${a.shared}`)
     }
     if (a.system) find('access', m.name, `Only the application writes ${an(m.name)}.`)
   }

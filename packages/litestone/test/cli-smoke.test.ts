@@ -1576,9 +1576,12 @@ describe('studio refuses a non-loopback bind that carries no token', () => {
     const dir = await studioDir('studio-host-loopback')
     for (const args of [[], ['--host=127.0.0.1'], ['--host=localhost']]) {
       const { proc, port } = await serve(dir, args)
+      // Fetch the name that was bound: where localhost resolves to ::1 the
+      // server listens there only, and 127.0.0.1 is refused.
+      const host = args.length ? args[0].slice('--host='.length) : '127.0.0.1'
       try {
         expect(port).toBeGreaterThan(0)
-        const res = await fetch(`http://127.0.0.1:${port}/api/info`)
+        const res = await fetch(`http://${host}:${port}/api/info`)
         expect(res.status).toBe(200)
       } finally { await killProc(proc) }
     }

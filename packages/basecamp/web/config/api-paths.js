@@ -111,5 +111,16 @@ function derive(md) {
 
 export const API_PATHS = derive(readSnapshot())
 
+/**
+ * API paths a browser reaches by NAVIGATION, which therefore ask for text/html
+ * and would be answered with the shell. The provider sign-in starts with
+ * `location.assign('/auth/oauth/<provider>')` and the provider returns to
+ * `/auth/oauth/<provider>/callback`: both are redirects the API answers, and
+ * neither has a page of the same name. Always proxied, whatever `Accept` says.
+ * The provider routes are mounted only when a provider is configured, so the
+ * snapshot above never names them.
+ */
+export const NAVIGATED_API_PATHS = ['/auth/oauth/']
+
 /** The WebSocket. No HTML ambiguity to resolve — always proxied, never served. */
 export const WS_PATH = '/ws'

@@ -59,14 +59,19 @@ function shadowSheetText() {
   throw new Error('index.css is not on the page');
 }
 
-/* A shadow root inside a document with nothing registered. Built once per page. */
-function shadowRoot(kind) {
+/*
+ * A shadow root inside a document with nothing registered. Built once per
+ * page. `pageCss` replaces SHADOW_PAGES[kind] for a page built from the
+ * stylesheet itself, which `SHADOW_PAGES` cannot be because the other tests
+ * run every kind in it.
+ */
+function shadowRoot(kind, pageCss) {
   if (shadowFrames[kind]) return shadowFrames[kind];
   var frame = document.createElement('iframe');
   frame.style.cssText = 'position:absolute;inset-inline-start:-10000px;inline-size:1200px;block-size:800px;border:0';
   document.body.appendChild(frame);
   var doc = frame.contentDocument;
-  doc.documentElement.style.cssText = SHADOW_PAGES[kind];
+  doc.documentElement.style.cssText = pageCss != null ? pageCss : SHADOW_PAGES[kind];
   var host = doc.body.appendChild(doc.createElement('div'));
   var root = host.attachShadow({ mode: 'open' });
   var sheet = new frame.contentWindow.CSSStyleSheet();
@@ -212,4 +217,30 @@ test('shadow: a focus ring is drawn', function () {
     assert.equal(shadowStyle(sh.node, 'outline-style'), 'solid', 'the ring style, ' + sh.kind + ' page');
   });
   shadowCleanup();
+});
+
+test('shadow: no custom property the kit reads takes the host page\'s value', function () {
+  /*
+   * A custom property inherits through a shadow boundary, so a token the
+   * kit only READS — `var(--align, space-between)`, `var(--ring, …)` — takes
+   * whatever the page around the widget set on <html>. Driven off the
+   * stylesheet: every name inside a var() anywhere in it is set to a
+   * sentinel on a page's <html>, and none may arrive in the shadow root, so
+   * a token read tomorrow is covered without an edit here.
+   */
+  var names = {};
+  allRules().forEach(function (r) {
+    if (!r.parentStyleSheet || !r.parentStyleSheet.href || !r.cssText) return;
+    r.cssText.replace(/var\(\s*(--[A-Za-z0-9-][A-Za-z0-9_-]*)/g, function (m, n) { names[n] = true; });
+  });
+  names = Object.keys(names);
+  assert.atLeast(names.length, 100, 'found too few var() reads to mean anything');
+
+  var f = shadowRoot('sealed', names.map(function (n) { return n + ': HOSTILE'; }).join(';'));
+  var wrap = f.doc.createElement('div');
+  wrap.innerHTML = '<div class="stack"><p>x</p></div>';
+  var node = f.root.appendChild(wrap.firstElementChild);
+  var leaked = names.filter(function (n) { return shadowStyle(node, n) === 'HOSTILE'; });
+  shadowCleanup();
+  assert.equal(leaked.join(' '), '', 'host-page values reached into the shadow root');
 });

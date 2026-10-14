@@ -9,6 +9,9 @@
 ///   0 STRANGER   no principal: sees nothing of Haven
 ///   3 CREATOR    a signed-in Member. A member carries no `role`, so the stock
 ///                grader puts every one of them here (`FJS-D197`)
+///   4 USER       a mod: a member whose `role` is `mod`. The ladder ranks a
+///                role's presence and not its value, so what a mod may do is
+///                said by predicate (`auth().role == 'mod'`), never by level
 ///   8 SYSTEM     asSystem(): the login that verified a signature, the seed
 ///                that lays out the rooms, retention, the session a login mints
 ///   9 LOCKED     nothing — a said line is never rewritten
@@ -17,7 +20,9 @@
 /// claim off the `@@auth` model, so a banned member's reads filter to nothing —
 /// an empty room — and everyone else stops seeing them and what they said. A
 /// gate would have refused with a 403 instead, which tells a spammer exactly
-/// when to make a new key.
+/// when to make a new key. A mod sets it through an ordinary `members.patch`:
+/// the row policy admits a mod to any member's row and the field policy admits
+/// a mod to that column, so no service method and no hook holds the standing.
 ///
 /// `auth().bannedAt == null` is the IS NULL form and answers a boolean, so an
 /// absent claim admits. Spelled `auth().bannedAt != null` inside a `@@deny` it
@@ -41,10 +46,15 @@ model Member {
   /// person tomorrow because the key is, so it never moves.
   publicKey String    @unique @immutable
 
-  /// Set by a mod — today only `asSystem()`, since the mod standing is 3.2.
-  /// `@guarded` because the caller being graded must never write the column
-  /// the grade is read from.
-  bannedAt  DateTime? @guarded
+  /// The standing: `mod`, or none. Read off the row on every call and every
+  /// socket frame (`api/src/principal.ts`), written by the login from
+  /// `HAVEN_MODS` and by nothing below the system: the caller being graded
+  /// must never write the column the grade is read from.
+  role      String?   @guarded @regex("^mod$", "a role is mod")
+
+  /// Set by a mod, cleared by a mod (`null` lifts the ban). Never by the member
+  /// it names, since that would be a caller writing their own grade.
+  bannedAt  DateTime? @allow('write', auth().role == 'mod')
 
   createdAt DateTime  @default(now())
 
@@ -54,10 +64,11 @@ model Member {
   @@auth
 
   /// Created by the login after the signature verifies; a member edits their
-  /// own nick and nothing else.
+  /// own nick and nothing else. A mod reaches every row, the banned included —
+  /// a ban is lifted by naming the member, who is otherwise nobody's row.
   @@gate("3.8.3.8")
-  @@allow('read', auth().bannedAt == null && bannedAt == null)
-  @@allow('update', id == auth().id)
+  @@allow('read', auth().bannedAt == null && (bannedAt == null || auth().role == 'mod'))
+  @@allow('update', id == auth().id || auth().role == 'mod')
 
   @@trail(audit)
 }

@@ -114,8 +114,12 @@
    *
    * The horizontal padding stays per-component — a button is wider than its
    * text on purpose and an input is not.
+   *
+   * Not declared here: `--control-padding-block: var(--space-sm)` at `:root`
+   * resolves once against <html>'s density and inherits past every `.dense`.
+   * The three use sites read `var(--control-padding-block, var(--space-sm))`,
+   * so an app that sets the token still retunes both.
    */
-  --control-padding-block: var(--space-sm);
 
   /* ── Component radii ──────────────────────────────────────── */
   --btn-radius:   6px;
@@ -593,11 +597,9 @@
  * on that element's descendants — set the base instead.
  *
  * `:host` is on the list because `*` inside a shadow tree does not match the
- * host, and `--control-padding-block` is declared on `:root, :host` FROM a
- * rung. In a page `*` matches `<html>`, so the rung is there when that
- * declaration resolves; at a host it was not, and the token took the HOST
- * PAGE's `--space-sm` through inheritance (40px on ela's hostile test page)
- * or nothing.
+ * host, so without it the host element would take the HOST PAGE's
+ * `--space-sm` through inheritance (40px on ela's hostile test page) or
+ * nothing.
  */
 *,
 *::before,
@@ -663,6 +665,119 @@
   --bg-mix:     initial;
   --on-bg-mix:  initial;
   --ring-color: initial;
+}
+
+/*
+ * ── Inside a shadow tree, the page's custom properties come in ──
+ *
+ * A custom property inherits through a shadow boundary, so a token the kit
+ * only READS — `var(--align, space-between)`, `var(--ring, …)` — takes
+ * whatever the page around the widget set on its `<html>`: `html { --align:
+ * center }` re-aligned every Bar in a widget. The declarations above and at
+ * the top of this file seal the tokens the kit declares; these are the ones it
+ * reads and never declares at `:host`.
+ *
+ * `initial` is the guaranteed-invalid value, so each `var(--x, fallback)` below
+ * falls back exactly as it does in a page that set nothing, and a theme, tone
+ * or component rule on an element inside the tree still wins. A rule on the
+ * host element itself, from the page, still wins over this one — that is the
+ * hook a widget's embedder has.
+ *
+ * `test/specs/shadow.spec.js` collects every name the stylesheet reads and
+ * fails on one that reaches the shadow root, so a new token's line goes here.
+ * A `--_` name is not listed: its owner derives it on the element that reads
+ * it, and `tokens.spec.js` allows one file to mention a private name.
+ */
+:host {
+  --space-3xs-base: initial;
+  --space-2xs-base: initial;
+  --space-xs-base:  initial;
+  --space-sm-base:  initial;
+  --space-md-base:  initial;
+  --space-lg-base:  initial;
+  --space-xl-base:  initial;
+  --space-2xl-base: initial;
+  --space-3xl-base: initial;
+  --space-4xl-base: initial;
+  --space-5xl-base: initial;
+  --space-6xl-base: initial;
+
+  --tone-fill:           initial;
+  --surface-tint-bg:     initial;
+  --surface-tint-border: initial;
+  --surface-tint-color:  initial;
+  --surface-ground:      initial;
+  --surface-bg:          initial;
+
+  --align:                initial;
+  --grid-min:             initial;
+  --app-bg:               initial;
+  --topbar-bg:            initial;
+  --sidebar-bg:           initial;
+  --dialog-bg:            initial;
+  --font-display:         initial;
+  --heading-font-weight:  initial;
+  --heading-letter-spacing: initial;
+  --measure:              initial;
+
+  --code-bg:        initial;
+  --code-text:      initial;
+  --code-ink:       initial;
+  --code-comment:   initial;
+  --code-punct:     initial;
+  --code-name:      initial;
+  --code-value:     initial;
+  --code-keyword:   initial;
+  --code-special:   initial;
+  --code-marked:    initial;
+  --code-pad:       initial;
+  --code-line-rule: initial;
+  --code-line-bg:   initial;
+  --code-ins:       initial;
+  --code-del:       initial;
+  --code-note:      initial;
+  --code-gutter:    initial;
+
+  --icon-size:       initial;
+  --accent-ink:      initial;
+  --btn-ink:         initial;
+  --badge-radius:    initial;
+  --tile-min:        initial;
+  --avatar-size:     initial;
+  --avatar-radius:   initial;
+  --avatar-ring:     initial;
+  --avatar-overlap:  initial;
+
+  --overlay-time:    initial;
+  --overlay-ease:    initial;
+  --overlay-from:    initial;
+
+  --control-padding-block: initial;
+  --field-inline-size:   initial;
+  --field-bg:            initial;
+  --field-color:         initial;
+  --field-border-width:  initial;
+  --field-border:        initial;
+  --ring:                initial;
+  --check-accent:        initial;
+
+  --table-bg:            initial;
+  --table-border-width:  initial;
+  --table-border:        initial;
+  --table-head-bg:       initial;
+  --row-base:            initial;
+  --row-tint:            initial;
+
+  --dialog-header-bg:     initial;
+  --dialog-header-color:  initial;
+  --dialog-header-border: initial;
+  --item-lead-size:       initial;
+  --fact-label-max:       initial;
+  --step-marker-size:     initial;
+  --step-accent:          initial;
+  --tab-indicator-width:  initial;
+  --tab-accent:           initial;
+  --breadcrumb-separator: initial;
 }
 
 /*

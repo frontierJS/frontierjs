@@ -387,10 +387,8 @@ export function createDashboardsService(app: BasecampApp) {
         create:       [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), stampDashboard],
         patch:        [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove:       [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        addWidget:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        updateWidget: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        removeWidget: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        reorder:      [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // The widget methods write `DashboardWidget` through the caller's
+        // client, whose gate is the same developer bar.
       },
     },
   })

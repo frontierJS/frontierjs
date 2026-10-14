@@ -339,6 +339,31 @@ function searchableSource() {
     )
   }
   if (!blind.length) ok(`${tracked.length} source file(s) are searchable`)
+  rgSeesSubPaths(tracked)
+}
+
+// ripgrep 13 matches `.gitignore`'s anchored `!packages/*/src/build/` against the
+// path relative to where it WALKS, so `rg x packages/sierra/src` finds nothing in
+// Sierra's build pipeline while `rg x .` from the root finds all of it. The root
+// `.ignore` re-includes it for rg alone; a tracked file rg cannot list from its
+// own `src/` is that file going missing again.
+function rgSeesSubPaths(tracked) {
+  const srcDirs = new Set(tracked.filter(p => /^packages\/[^/]+\/src\/build\//.test(p)).map(p => p.split('/').slice(0, 3).join('/')))
+  if (!srcDirs.size) return
+  const probe = spawnSync('rg', ['--version'], { encoding: 'utf8' })
+  if (probe.error) return
+  const missing = []
+  for (const dir of srcDirs) {
+    const listed = new Set(spawnSync('rg', ['--files', dir], { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER }).stdout.split('\n'))
+    for (const path of tracked) if (path.startsWith(`${dir}/`) && !listed.has(path)) missing.push(path)
+  }
+  if (missing.length) {
+    fail(
+      `rg walking a sub-path does not list a tracked source file: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? `, +${missing.length - 3} more` : ''}\n` +
+      `      \`rg x packages/sierra/src\` would skip it with no message. The root .ignore re-includes\n` +
+      `      src/build/ for ripgrep; a new .gitignore rule hiding a src/ directory needs the same line there.`
+    )
+  } else ok(`rg lists every tracked file of ${srcDirs.size} src/ dir(s) with a build/ pipeline`)
 }
 
 // ─── phase 1b · substrate purity ────────────────────────────

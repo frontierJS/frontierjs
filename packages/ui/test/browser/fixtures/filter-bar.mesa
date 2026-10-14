@@ -29,7 +29,10 @@
     col('seenAt', 'Seen',   'time', { time: { kind: 'instant' } }),
     col('dueOn',  'Due',    'time', { time: { kind: 'date' } }),
     col('opens',  'Opens',  'time', { time: { seconds: false } }),
+    // A to-many filtered through its join (`resource.filters()` adds `through`).
+    col('tags',   'Tags',   'relation', { through: { field: 'tagId', model: 'ContactTag' } }),
   ]
+  const options = { tags: [{ value: 1, label: 'vip' }, { value: 2, label: 'lapsed' }] }
 
   // `resource.filters().search` — the two answers it gives.
   const searchable = { fields: ['body', 'title'], labels: ['Body', 'Title'] }
@@ -57,7 +60,7 @@
 </script>
 
 <div id="searchable">
-  <FilterBar {filters} search={searchable} value={query} directives={directives} onchange={apply} />
+  <FilterBar {filters} {options} search={searchable} value={query} directives={directives} onchange={apply} />
 </div>
 
 <div id="unsearchable">

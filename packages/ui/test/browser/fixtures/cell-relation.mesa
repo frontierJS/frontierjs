@@ -1,0 +1,19 @@
+<script>
+  // cell-relation.mesa — the built-in `relation` branch. cell.mesa registers an
+  // app display over that name and the registry outlives a fixture, so it is
+  // released here or the claimed display answers instead of the branch.
+  import Cell from '../../../components/display/Cell.mesa'
+  import { unregisterDisplayComponent } from '../../../controls.js'
+
+  unregisterDisplayComponent('relation')
+
+
+  const rel = { name: 'authorId', display: 'relation', model: 'User', relation: 'author', labelField: 'name' }
+  const bare = { name: 'authorId', display: 'relation' }
+</script>
+
+<div id="named"><Cell value={'u_7'} column={rel} record={{ authorId: 'u_7', author: { id: 'u_7', name: 'Ada' } }} /></div>
+<div id="notloaded"><Cell value={'u_7'} column={rel} record={{ authorId: 'u_7' }} /></div>
+<div id="blankname"><Cell value={'u_7'} column={rel} record={{ authorId: 'u_7', author: { id: 'u_7', name: '' } }} /></div>
+<div id="nolabel"><Cell value={'u_7'} column={bare} record={{ authorId: 'u_7', author: { name: 'Ada' } }} /></div>
+<div id="none"><Cell value={null} column={rel} record={{ authorId: null, author: null }} /></div>

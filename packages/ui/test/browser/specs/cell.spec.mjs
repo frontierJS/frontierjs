@@ -182,4 +182,23 @@ export async function run(t) {
     return document.querySelector('#null > *')?.classList.contains('tabular') ?? null;
   `)
   t.is(plain, false, 'a name does not — tabular is a property of the KIND, not the cell')
+
+  /* ── a relation, named when the row carries the related one (FJS-1973) ── */
+  //
+  // The foreign key is what a row holds and nobody recognizes it. Asserted as
+  // a set, since a cell that always printed the id and one that always
+  // printed the label each satisfy half of it.
+
+  await t.mount('cell-relation')
+
+  t.is(await t.evaluate(`return ${text('named')}`), 'Ada',
+    'a relation renders the related row’s label when the row includes it')
+  t.is(await t.evaluate(`return ${text('notloaded')}`), 'u_7',
+    'and the id when the row does not')
+  t.is(await t.evaluate(`return ${text('blankname')}`), 'u_7',
+    'an empty label is not a name, so the id shows')
+  t.is(await t.evaluate(`return ${text('nolabel')}`), 'u_7',
+    'an answer naming no label field falls back to the id')
+  t.is(await t.evaluate(`return ${text('none')}`), '—',
+    'and a null key is still the dash')
 }

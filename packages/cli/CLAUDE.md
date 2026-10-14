@@ -363,6 +363,10 @@ core/
                 output. The health probe is HERE and not in the page: 5500
                 fetching 8110 is cross-origin, and a CORS failure reads exactly
                 like the app being down
+  check-worker.js  one scope of `/api/check` on its own thread, so the scopes
+                overlap (wall time is the repo scope, not the sum) and the server
+                stays answerable; `handleCheck` shares one run among overlapping
+                requests
   proxy.js      one listener, so a dev surface has a NAME — `example.localhost`
                 for `localhost:8010`. TCP and not `node:http`, because bun's
                 emits `upgrade` and hands over a socket nothing written to ever

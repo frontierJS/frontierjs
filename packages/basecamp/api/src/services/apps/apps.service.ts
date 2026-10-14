@@ -21,7 +21,8 @@
 // `environment_name` / `environment_tier` columns.
 
 import { randomBytes } from 'node:crypto'
-import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, normalizeOrderBy, $ } from '@frontierjs/junction'
+import type { SortParam } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
          slugify, }
@@ -229,6 +230,10 @@ export function createAppsService(app: BasecampApp) {
     async find() {
       const { limit, offset } = getPagination()
       const serverId = $.reserved.serverId as string | undefined
+      // The caller's `$orderBy` wins over newest-first; autoSort has validated
+      // the key but left the value raw, and junction refuses a directive the
+      // body never read (the jobs form sorts its app picker by name).
+      const sort = $.directives?.orderBy
       // Every filter the caller sent, not a chosen few. autoFilter has already
       // refused a key that is not a column, so a key it admitted and this body
       // skipped answered every row as a match: `?name=` or `?status=` came back
@@ -240,7 +245,7 @@ export function createAppsService(app: BasecampApp) {
           ...(serverId ? { appServers: { some: { serverId } } } : {}),
         },
         include: WITH_DETAIL,
-        orderBy: { createdAt: 'desc' },
+        orderBy: sort ? normalizeOrderBy(sort as SortParam) : { createdAt: 'desc' },
         limit, offset,
       })
       // See `summarizeSource`: a list says what each app's source is, the
@@ -475,9 +480,8 @@ export function createAppsService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        // Making an app, which is create's authority.
-        fromBlueprint: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        // Topology, not content: the same authority that may patch the app.
+        // `fromBlueprint` is create's authority and writes `App` through the
+        // caller's client. Topology, not content: the same authority that may patch the app.
         place:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         unplace: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
       },

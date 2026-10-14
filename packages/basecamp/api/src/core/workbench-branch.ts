@@ -18,7 +18,7 @@
 // element, never a shell string.
 
 import { execFileSync }                       from 'node:child_process'
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { cp, mkdir }                          from 'node:fs/promises'
 import { tmpdir }                             from 'node:os'
 import { dirname, join }                      from 'node:path'
@@ -64,8 +64,17 @@ export function treeOf(root: string): string {
   const index = join(tmp, 'index')
   try {
     // Copied so `add -A` re-hashes only what changed since the operator's own
-    // last add, rather than every file in the tree.
-    if (existsSync(real)) copyFileSync(real, index)
+    // last add, rather than every file in the tree. The copy keeps the real
+    // index's mtime: git re-hashes an entry as new as the index file and
+    // trusts the rest, so a copy stamped now would trust a same-size rewrite
+    // made in the tick the index was written and snapshot the old bytes. The
+    // mtime is cut a millisecond early, because utimes cannot carry the
+    // nanoseconds and a rounded-up stamp would trust an entry it should not.
+    if (existsSync(real)) {
+      copyFileSync(real, index)
+      const stamp = (statSync(real).mtimeMs - 1) / 1000
+      utimesSync(index, stamp, stamp)
+    }
     const env = { GIT_INDEX_FILE: index }
     git(root, ['add', '-A'], { env })
     return git(root, ['write-tree'], { env }).trim()

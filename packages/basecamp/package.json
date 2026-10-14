@@ -34,6 +34,8 @@
     "verify:screens": "bun web/test/verify-screens.mjs",
     "verify:provision": "bun web/test/verify-provision.mjs",
     "verify:pages": "bun web/test/verify-pages.mjs",
+    "verify:sso": "bun web/test/verify-sso.mjs",
+    "verify:caddy": "bun deploy/test/verify-caddy.mjs",
     "verify:registers": "bun web/test/verify-registers.mjs",
     "verify:outpost": "bun api/test/verify-outpost.mjs",
     "verify:dns": "bun api/test/verify-dns.mjs",

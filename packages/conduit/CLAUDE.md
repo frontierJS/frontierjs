@@ -152,6 +152,13 @@ src/
   key under the target's header name) and `query`. Credentials stay on the
   upgrade, never in a frame. A new descriptor field reaches `WebSocketTransport`
   through the router's `opts`, or it stops at this transport in silence.
+  `send()` runs http's ladder minus remint and `Retry-After`: `retry_limit`,
+  `deadline_ms`, and `declineReplay` imported from `http.ts`, so a silent reply to
+  an unkeyed POST is `indeterminate` here too. `stream()` is never retried.
+  **A socket that stays silent through a whole 30s ping interval is terminated**
+  (any inbound frame counts, not only a pong), failing pending sends as
+  `connection_failed` at once; a `stream_chunk` whose `seq` is not the last plus
+  one ends that stream as `invalid_response` (`FJS-2852`).
 - **`max_concurrent` defaults to 64 and unlimited was never unbounded.** A burst
   past the pool queues INSIDE it with the per-attempt timer already running, so
   the wait is charged to the target as a timeout and opens its breaker: 5000

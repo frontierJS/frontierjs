@@ -7,10 +7,11 @@
 
 import { describe, test, expect, afterAll } from 'bun:test'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorkbench, pinId, shownPlan } from '../src/core/workbench.ts'
+import { treeOf } from '../src/core/workbench-branch.ts'
 import { parseUnifiedDiff, readDiff } from '../src/core/workbench-diff.ts'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
@@ -1044,6 +1045,29 @@ describe('branches', () => {
     expect(wb.land(b.id)).toEqual({ refused: expect.stringContaining('nothing to land') })
     writeFileSync(join(b.path, 'later.txt'), 'later\n')
     expect(wb.land(b.id)).toEqual({ landed: ['later.txt'] })
+  })
+
+  test('a snapshot reads a same-size rewrite made in the tick the index was written (FJS-2773)', () => {
+    const dir = join(tmp, 'repos', 'racy')
+    mkdirSync(dir, { recursive: true })
+    const git = (...a: string[]) => execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { encoding: 'utf8' })
+    git('init', '-q', '-b', 'main')
+    // ctime cannot be set and a rewrite always moves it; without this git
+    // would catch the rewrite on ctime and the race would not be reachable.
+    git('config', 'core.trustctime', 'false')
+    writeFileSync(join(dir, 'a.txt'), 'one\ntwo\nthree\n')
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    // Git rehashes an entry as new as the index file and trusts the rest, so
+    // the copy a snapshot reads must keep the index's mtime.
+    const tick = new Date(Date.now() - 60_000)
+    utimesSync(join(dir, 'a.txt'), tick, tick)
+    git('update-index', '--really-refresh')
+    writeFileSync(join(dir, 'a.txt'), 'one\nTWO\nthree\n')
+    utimesSync(join(dir, 'a.txt'), tick, tick)
+    utimesSync(join(dir, '.git', 'index'), tick, tick)
+    const blob = git('hash-object', 'a.txt').trim()
+    expect(git('ls-tree', treeOf(dir)).split('\n').find(l => l.endsWith('\ta.txt'))).toContain(blob)
   })
 
   test('land refuses, naming the file, when the parent moved under it — and writes nothing', async () => {

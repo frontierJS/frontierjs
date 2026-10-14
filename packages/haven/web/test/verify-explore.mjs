@@ -14,7 +14,9 @@
  * figure while Ana's frame is up — each direction is the other client's frame,
  * never a client's own echo. Then Sam walks through the left house's door: a
  * `--frame /` of Ana's no longer shows Sam, a `--frame /tavern/` does, and the
- * tavern's door brings Sam back out (`IDEAS/haven.md` 2.2).
+ * tavern's door brings Sam back out (`IDEAS/haven.md` 2.2). Sam is a mod
+ * (`HAVEN_MODS`): `/ban ana` leaves Ana's next frame with no square and
+ * `/unban ana` gives it back (`IDEAS/haven.md` 3.2).
  *
  * Traps (the terminal's own are in `terminal.mjs`):
  * - A move past 10 a second is dropped by the server in silence, so the
@@ -48,7 +50,7 @@ const check = (ok, label, evidence = '') => {
 const env = await createTestEnv({
   schema: join(WEB, '../db/schema.lite'),
   listen: true,
-  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-explore', port: 0 }),
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-explore', port: 0, mods: ['sam'] }),
 })
 await env.system.room.create({ data: { slug: 'square', name: 'The square' } })
 await env.system.room.create({ data: { slug: 'tavern', name: 'The tavern' } })
@@ -190,6 +192,23 @@ const otherHome = mkdtempSync(join(tmpdir(), 'haven-other-'))
 const stranger = await havenFrame('/', { home: otherHome })
 check(stranger.code !== 0 && /taken/.test(stranger.err + stranger.framed),
   "another machine's key cannot walk in as ana", stranger.err + stranger.framed)
+
+// ─── a mod ────────────────────────────────────────────────────────────
+
+check(sam.role === 'mod', "the server lists sam as a mod, so Sam's login made one", JSON.stringify(sam))
+shell.stdin.write('/ban ana\r')
+check(await until(() => screen(out).includes('ana is banned')), "Sam types /ban ana and the screen says so", screen(out))
+const gone = await havenFrame('/')
+check(gone.code === 0 && cellOf(gone.framed, sx, sy, 1, square) === null && gone.framed.includes('no square'),
+  "Ana's frame has no square to walk into", gone.framed + gone.err)
+check(!screen(out).includes('· ana'), "and Sam's screen never showed Ana", screen(out))
+shell.stdin.write('/unban ana\r')
+check(await until(() => screen(out).includes('ana is back')), 'Sam types /unban ana and the screen says so', screen(out))
+const back = havenFrame('/')
+check(await until(() => screen(out).includes('2 here') && screen(out).includes('· ana')), "Ana walks in again on Sam's screen", screen(out))
+const backed = await back
+check(backed.code === 0 && backed.framed.includes('The square · 2 here') && backed.framed.includes('· sam'),
+  "and Ana's frame has Sam in the square", backed.framed + backed.err)
 
 // ─── done ─────────────────────────────────────────────────────────────
 

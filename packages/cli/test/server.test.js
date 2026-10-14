@@ -759,14 +759,25 @@ describe('GET /api/check', () => {
   })
 
   test('it answers while the server is still serving other requests', async () => {
-    // `runChecks` is synchronous and one scope is ~half a second, so five in a
-    // row froze this server: the state poll missed, every badge on the page
-    // emptied, and a start button did nothing for a second and a half. The
-    // yield between scopes does not make it faster, it makes this true.
+    // `runChecks` is synchronous and the repo scope alone is seconds, so run in
+    // this thread it froze the server: the state poll missed, every badge on
+    // the page emptied, and a start button did nothing. The scopes run on
+    // workers, which is what makes this true.
     const check = fetch(`${base}/api/check`).then(r => r.json())
     const state = await fetch(`${base}/api/state`).then(r => r.json())
     expect(state.state).toBeDefined()
     expect((await check).scopes).toBeDefined()
+  })
+
+  test('requests that overlap share one run', async () => {
+    // FJS-2840: a scope costs seconds, and the panel and its poll each asked
+    // for the whole set, so a second request queued a second full run behind
+    // the first. One run answers both; the timestamp is the run's.
+    const [a, b] = await Promise.all([
+      fetch(`${base}/api/check`).then(r => r.json()),
+      fetch(`${base}/api/check`).then(r => r.json()),
+    ])
+    expect(a.at).toBe(b.at)
   })
 
 })

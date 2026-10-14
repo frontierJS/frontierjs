@@ -244,12 +244,23 @@ exercised end to end (3.2). The hosted Haven is Phase 10.
   of mesa, so a terminal app declares it, and Haven now does. Publishing to
   npm is the owner's call, after use.
 - [~] 3.1a The deploy — moved to 10.1, the last step (owner, 2026-10-14).
-- [ ] 3.2 The mod standing, a ban exercised end to end. Today only
-  `asSystem()` sets `Member.bannedAt` (`@guarded`, `db/schema.lite`); a mod
-  is a standing the gate grants, never a hook (Invariant 6). Proof: a drive
-  where a mod bans a member, and the banned member then reads an empty room
-  while an unbanned one beside it still sees the room (Haven's `CLAUDE.md` trap: a ban
-  answers `[]`, not 403).
+- [x] 3.2 The mod standing, a ban exercised end to end (`FJS-D998`). A mod is
+  a nick in `HAVEN_MODS`, written to `Member.role` (`@guarded`) by the login on
+  every run, both ways; what a mod may do is two predicates in the schema —
+  the row policy admits a mod to every member's row and the field policy admits
+  a mod to `bannedAt` — so the ban is an ordinary `members.patch`, and
+  `/ban <nick>` / `/unban <nick>` in the input line send one. Proof:
+  `db/test/schema.test.js` (a mod bans and lifts, a member's same patch writes
+  nothing), `api/test/room.test.ts` (the ban over a mod's socket takes the
+  member out of the room on the next write; the lift puts them back), and
+  `verify:explore` (Sam types `/ban ana`, Ana's `--frame /` has no square;
+  `/unban ana` and it has Sam again).
+  Found: a field `@allow('write')` DROPS the key rather than refusing
+  (`FJS-D22`), so a member's `/ban` resolves with nothing written — the client
+  reads the answered row's `bannedAt` to say *only a mod bans*. And the session
+  carried `role: 'user'`, so every member graded USER(4) where the schema and
+  `CLAUDE.md` said CREATOR(3); it carries none now and the row's `role` is
+  the standing.
 - [ ] 3.3 The history pane in the tavern, and Message retention.
   `Message` says it is "removed only by retention" but declares none; the
   `@@index([roomId, createdAt])` is already there for the pane. Read

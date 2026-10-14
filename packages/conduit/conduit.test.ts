@@ -1594,6 +1594,101 @@ describe('WebSocket transport — per-target settings', () => {
   })
 })
 
+// ─── WebSocket runs the same ladder http does (FJS-2833) ───
+
+describe('WebSocket transport — retry_limit and deadline_ms', () => {
+  // Stays silent for the first `silent` requests, then answers.
+  function wsFlaky(silent: number) {
+    const frames: Record<string, any>[] = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(req, server) { return server.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+      websocket: {
+        message(ws, raw) {
+          const msg = JSON.parse(String(raw))
+          if (msg.type !== 'request') return
+          frames.push(msg)
+          if (frames.length > silent) ws.send(JSON.stringify({ id: msg.id, type: 'response', body: { ok: true } }))
+        }
+      }
+    })
+    return { frames, url: `ws://localhost:${server.port}`, stop: () => server.stop(true) }
+  }
+
+  it('an idempotent request that timed out is sent again', async () => {
+    const s = wsFlaky(1)
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets(), { timeout_ms: 80, retry_limit: 2 })
+    try {
+      const result = await t.send({ target: target.id, method: 'GET', path: '/state' })
+      expect(result.error).toBeNull()
+      expect(s.frames.length).toBe(2)
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('retry_limit 0 sends once', async () => {
+    const s = wsFlaky(1)
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets(), { timeout_ms: 80, retry_limit: 0 })
+    try {
+      const result = await t.send({ target: target.id, method: 'GET', path: '/state' })
+      expect(result.error!.kind).toBe('timeout')
+      expect(s.frames.length).toBe(1)
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('an unkeyed POST is declined a replay, and says it may have been applied', async () => {
+    const s = wsFlaky(1)
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets(), { timeout_ms: 80, retry_limit: 2 })
+    try {
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      expect(result.error!.kind).toBe('timeout')
+      expect(result.error!.retryable).toBe(false)
+      expect(result.error!.indeterminate).toBe(true)
+      expect(s.frames.length).toBe(1)
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('a keyed POST is replayed under the key it first carried', async () => {
+    const s = wsFlaky(1)
+    const target = outpostTarget({ protocol: 'websocket', address: s.url, idempotency: { auto: true } })
+    const t = new WebSocketTransport(target, secrets(), { timeout_ms: 80, retry_limit: 2 })
+    try {
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      expect(result.error).toBeNull()
+      expect(s.frames.length).toBe(2)
+      expect(s.frames[0].headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+      expect(s.frames[1].headers['idempotency-key']).toBe(s.frames[0].headers['idempotency-key'])
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('deadline_ms bounds every attempt together', async () => {
+    const s = wsFlaky(99)
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets(), { timeout_ms: 150, retry_limit: 5, deadline_ms: 300 })
+    try {
+      const started = Date.now()
+      const result = await t.send({ target: target.id, method: 'GET', path: '/state' })
+      expect(result.error!.kind).toBe('timeout')
+      expect(Date.now() - started).toBeLessThan(450)
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('the router hands a target\'s retry_limit and deadline_ms to its websocket transport', async () => {
+    const s = wsFlaky(1)
+    const c = createConduit({ credentials: secrets() })
+    await c.register(outpostTarget({
+      id: 'ws:flaky', protocol: 'websocket', address: s.url, resilience: { timeout_ms: 80, retry_limit: 0 },
+    }))
+    try {
+      const result = await c.send({ target: 'ws:flaky', method: 'GET', path: '/state' })
+      expect(result.error!.kind).toBe('timeout')
+      expect(s.frames.length).toBe(1)
+    } finally { c.destroy?.(); s.stop() }
+  })
+})
+
 // ─── WebSocket connection lifecycle (§2.1, §2.2) ─────────────
 
 describe('WebSocket transport — connection lifecycle', () => {
@@ -1658,6 +1753,130 @@ describe('WebSocket transport — connection lifecycle', () => {
       })()).rejects.toBeInstanceOf(ConduitStreamError)
 
       expect(chunks).toEqual(['line-1'])
+    } finally { t.destroy(); server.stop(true) }
+  })
+
+  // `FJS-2852`: the keepalive interval is 30s, so the suite takes the transport's
+  // own tick out of `setInterval` and fires it by hand.
+  function captureKeepalive() {
+    const real  = globalThis.setInterval
+    const ticks: Array<() => void> = []
+    globalThis.setInterval = ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (ms === 30_000) { ticks.push(fn); return 0 as unknown as ReturnType<typeof setInterval> }
+      return (real as (...a: unknown[]) => unknown)(fn, ms, ...rest)
+    }) as typeof setInterval
+    return { ticks, restore: () => { globalThis.setInterval = real } }
+  }
+
+  function silentOrPongingServer(pong: boolean) {
+    return Bun.serve({
+      port: 0,
+      fetch(req, server) {
+        return server.upgrade(req) ? undefined : new Response('no', { status: 400 })
+      },
+      websocket: {
+        message(ws, raw) {
+          const msg = JSON.parse(String(raw))
+          if (msg.type === 'ping' && pong) ws.send(JSON.stringify({ type: 'pong' }))
+        }
+      }
+    })
+  }
+
+  it('a ping nobody answers ends the pending send instead of waiting out its timeout', async () => {
+    const server = silentOrPongingServer(false)
+    const clock  = captureKeepalive()
+    const target = outpostTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const t      = new WebSocketTransport(target, secrets(), { timeout_ms: 5000, retry_limit: 0 })
+
+    try {
+      const started = performance.now()
+      const sent    = t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      await Bun.sleep(100)
+      clock.ticks.at(-1)!()      // ping goes out
+      clock.ticks.at(-1)!()      // a whole interval later it is still unanswered
+      const result = await sent
+
+      expect(result.error?.kind).toBe('connection_failed')
+      expect(performance.now() - started).toBeLessThan(2000)
+    } finally { clock.restore(); t.destroy(); server.stop(true) }
+  })
+
+  it('a ping that is answered keeps the socket', async () => {
+    const server = silentOrPongingServer(true)
+    const clock  = captureKeepalive()
+    const target = outpostTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const t      = new WebSocketTransport(target, secrets(), { timeout_ms: 400, retry_limit: 0 })
+
+    try {
+      const sent = t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      await Bun.sleep(100)
+      for (let i = 0; i < 4; i++) { clock.ticks.at(-1)!(); await Bun.sleep(50) }
+      const result = await sent
+
+      // The server never answers the request itself, so the timeout is what
+      // ends it; a dropped socket would have said connection_failed.
+      expect(result.error?.kind).toBe('timeout')
+    } finally { clock.restore(); t.destroy(); server.stop(true) }
+  })
+
+  it('a skipped stream_chunk seq ends the stream by name', async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(req, server) {
+        return server.upgrade(req) ? undefined : new Response('no', { status: 400 })
+      },
+      websocket: {
+        message(ws, raw) {
+          const msg = JSON.parse(String(raw))
+          for (const seq of [0, 1, 3, 4]) {
+            ws.send(JSON.stringify({ id: msg.id, type: 'stream_chunk', body: `line-${seq}`, seq }))
+          }
+        }
+      }
+    })
+
+    const target = outpostTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const t      = new WebSocketTransport(target, secrets())
+    const chunks: unknown[] = []
+
+    try {
+      const err = await (async () => {
+        try {
+          for await (const chunk of t.stream({ target: target.id, method: 'logs' })) chunks.push(chunk.data)
+        } catch (e) { return e }
+      })()
+
+      expect(err).toBeInstanceOf(ConduitStreamError)
+      expect((err as ConduitStreamError).conduit.kind).toBe('invalid_response')
+      expect(chunks).toEqual(['line-0', 'line-1'])
+    } finally { t.destroy(); server.stop(true) }
+  })
+
+  it('a contiguous stream, from whichever seq it starts, is delivered whole', async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch(req, server) {
+        return server.upgrade(req) ? undefined : new Response('no', { status: 400 })
+      },
+      websocket: {
+        message(ws, raw) {
+          const msg = JSON.parse(String(raw))
+          for (const seq of [1, 2, 3]) {
+            ws.send(JSON.stringify({ id: msg.id, type: 'stream_chunk', body: `line-${seq}`, seq }))
+          }
+          ws.send(JSON.stringify({ id: msg.id, type: 'stream_end' }))
+        }
+      }
+    })
+
+    const target = outpostTarget({ protocol: 'websocket', address: `ws://localhost:${server.port}` })
+    const t      = new WebSocketTransport(target, secrets())
+    const chunks: unknown[] = []
+
+    try {
+      for await (const chunk of t.stream({ target: target.id, method: 'logs' })) chunks.push(chunk.data)
+      expect(chunks).toEqual(['line-1', 'line-2', 'line-3'])
     } finally { t.destroy(); server.stop(true) }
   })
 })

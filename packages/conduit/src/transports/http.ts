@@ -25,15 +25,15 @@ import type {
 } from '../types.ts'
 
 export const DEFAULT_TIMEOUT_MS   = 10_000
-const DEFAULT_RETRY_LIMIT  = 3
-const DEFAULT_DEADLINE_MS  = 45_000
+export const DEFAULT_RETRY_LIMIT  = 3
+export const DEFAULT_DEADLINE_MS  = 45_000
 const RETRY_BACKOFF_MS     = [500, 1500, 1500] // before retry N (1-based)
 export const DEFAULT_MAX_BYTES    = 10 * 1024 * 1024  // 10 MiB
 
 // Equal jitter: half the nominal backoff, plus a random half. Without it,
 // N callers hitting the same degraded provider retry in lockstep and
 // arrive as a synchronized thundering herd on every wave.
-function backoffWithJitter(attempt: number): number {
+export function backoffWithJitter(attempt: number): number {
   const base = RETRY_BACKOFF_MS[attempt - 1] ?? 1500
   return Math.round(base / 2 + Math.random() * (base / 2))
 }
@@ -113,6 +113,48 @@ function scrubber(secret: string | undefined): (v: unknown) => unknown {
 function neverDispatched(code: string | undefined): boolean {
   if (!code) return false
   return NEVER_DISPATCHED.has(code) || code.startsWith('CERT_')
+}
+
+/**
+ * The answer to a transient fault on a request conduit will not replay.
+ *
+ * One judgement, one owner: the loop above decided this cannot be sent
+ * again, so the flag the caller reads has to say the same thing. It used to
+ * be handed back untouched, so an unkeyed POST that timed out came back
+ * `retryable: true` — and the layer above conduit acts on that flag, so the
+ * charge conduit declined to repeat was repeated by a job (`FJS-733`).
+ *
+ * `indeterminate` is the fact that flag was standing in for and cannot
+ * express: the request went out and nobody knows whether it was applied. It
+ * is set for the faults that leave that open and not for the ones that do
+ * not — a 429 is the target refusing, and a connection that was never
+ * established carried no bytes.
+ *
+ * Which is why it, and not the refusal to replay, decides the flag. Squashing
+ * every declined replay answered `retryable: false` to a 429 and to a refused
+ * connection — faults this function has already concluded carried no bytes —
+ * and a caravan job reading that drops recoverable work for good. `retryable`
+ * is a statement about THIS request, so a fault that was never applied stays
+ * whatever its own kind said it was.
+ */
+export function declineReplay(result: ConduitErrorResponse): ConduitErrorResponse {
+  const err  = result.error
+  const code = (err.raw as { code?: string } | undefined)?.code
+  const indeterminate =
+    (err.kind === 'timeout' || err.kind === 'aborted' || err.kind === 'server_error' ||
+     (err.kind === 'connection_failed' && !neverDispatched(code)))
+
+  return {
+    data: null,
+    meta: result.meta,
+    error: {
+      ...err,
+      ...(indeterminate ? { retryable: false, indeterminate: true } : {}),
+      message: indeterminate
+        ? `${err.message} — not replayed: no idempotency key, and the request may already have been applied`
+        : `${err.message} — not replayed: no idempotency key`,
+    },
+  }
 }
 
 // A followed redirect is a second request nobody wrote. Bounded so a pair of
@@ -327,11 +369,11 @@ export class HttpTransport extends BaseTransport {
       if (result.error.kind === 'auth_failed') return result
       // Retryable in itself, but the caller has gone — no replay is wanted.
       if (result.error.kind === 'aborted')
-        return replayable ? result : this.declineReplay(result)
+        return replayable ? result : declineReplay(result)
       // Conduit has decided this must not be sent again, so the error may not
       // say `retryable: true` — that flag is what a caravan job acts on, and
       // the job would then make the replay conduit just refused (`FJS-733`).
-      if (!replayable)                  return this.declineReplay(result)
+      if (!replayable)                  return declineReplay(result)
       if (attempt === retries)          return result  // exhausted
 
       attempt++
@@ -354,48 +396,6 @@ export class HttpTransport extends BaseTransport {
 
     // Unreachable but TypeScript needs it
     return this.fail('server_error', 'Retry loop exhausted')
-  }
-
-  /**
-   * The answer to a transient fault on a request conduit will not replay.
-   *
-   * One judgement, one owner: the loop above decided this cannot be sent
-   * again, so the flag the caller reads has to say the same thing. It used to
-   * be handed back untouched, so an unkeyed POST that timed out came back
-   * `retryable: true` — and the layer above conduit acts on that flag, so the
-   * charge conduit declined to repeat was repeated by a job (`FJS-733`).
-   *
-   * `indeterminate` is the fact that flag was standing in for and cannot
-   * express: the request went out and nobody knows whether it was applied. It
-   * is set for the faults that leave that open and not for the ones that do
-   * not — a 429 is the target refusing, and a connection that was never
-   * established carried no bytes.
-   *
-   * Which is why it, and not the refusal to replay, decides the flag. Squashing
-   * every declined replay answered `retryable: false` to a 429 and to a refused
-   * connection — faults this function has already concluded carried no bytes —
-   * and a caravan job reading that drops recoverable work for good. `retryable`
-   * is a statement about THIS request, so a fault that was never applied stays
-   * whatever its own kind said it was.
-   */
-  private declineReplay(result: ConduitErrorResponse): ConduitErrorResponse {
-    const err  = result.error
-    const code = (err.raw as { code?: string } | undefined)?.code
-    const indeterminate =
-      (err.kind === 'timeout' || err.kind === 'aborted' || err.kind === 'server_error' ||
-       (err.kind === 'connection_failed' && !neverDispatched(code)))
-
-    return {
-      data: null,
-      meta: result.meta,
-      error: {
-        ...err,
-        ...(indeterminate ? { retryable: false, indeterminate: true } : {}),
-        message: indeterminate
-          ? `${err.message} — not replayed: no idempotency key, and the request may already have been applied`
-          : `${err.message} — not replayed: no idempotency key`,
-      },
-    }
   }
 
   private async attempt<T>(req: ConduitRequest, budgetMs = Infinity, spent?: { value?: string }, open = false): Promise<ConduitResult<T>> {
@@ -847,7 +847,7 @@ function absolute(location: string, base: string): string {
 }
 
 // Wakes early on the caller's signal; the retry loop reads it next.
-function sleep(ms: number, signal?: AbortSignal) {
+export function sleep(ms: number, signal?: AbortSignal) {
   return new Promise<void>(resolve => {
     if (signal?.aborted) return resolve()
     const done  = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve() }

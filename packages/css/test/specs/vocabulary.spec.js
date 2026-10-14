@@ -59,7 +59,14 @@ test('vocabulary: every term that claims a class has one', function () {
   var missing = [];
 
   vocabTerms().forEach(function (t) {
-    if (t.cls === null) return; /* carried by an element; nothing to find */
+    if (t.cls === null) {
+      /* Carried by an element — but a bare <div> carries nothing, so a term
+         with no class beside one has no way to exist. */
+      if (/^<div>$/i.test(t.element.trim())) {
+        missing.push(t.term + ' (no class, and <div> carries nothing — expected a class)');
+      }
+      return;
+    }
     if (!declared[t.cls]) missing.push(t.term + ' (expected .' + t.cls + ')');
   });
 

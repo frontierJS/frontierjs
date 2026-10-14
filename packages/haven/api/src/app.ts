@@ -10,7 +10,7 @@ import { createHavenAuth }          from './auth.ts'
 import { clientRoute, CLIENT_PATH } from './client.ts'
 import { loginRoute, LOGIN_PATH }  from './login.ts'
 import type { LoginOptions }       from './login.ts'
-import { banned }                  from './principal.ts'
+import { standing }                from './principal.ts'
 import { roomChannels }            from './rooms.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
@@ -23,6 +23,8 @@ export interface HavenAppOptions {
   port?:       number
   /** The login's clock, in seconds. A test states it. */
   now?:        LoginOptions['now']
+  /** The nicks that walk in as mods. Default `HAVEN_MODS`, comma-separated. */
+  mods?:       string[]
 }
 
 export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
@@ -36,7 +38,7 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
     // Stated, not probed: under a test runner the entry file is the test.
     autoload:   new URL('./services', import.meta.url).pathname,
     configPath: new URL('../config', import.meta.url).pathname,
-    principal:  banned(db),
+    principal:  standing(db),
     config: {
       ...(opts.port !== undefined ? { port: opts.port } : {}),
       http: {
@@ -50,7 +52,8 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   const { setup, options } = roomChannels(db)
   app.configure(channels(setup as never, options))
   // Inside configure() so it registers during start(), after the router is patched.
-  const login = loginRoute(db, auth, { now: opts.now })
+  const mods  = opts.mods ?? (process.env.HAVEN_MODS ?? '').split(',').map(n => n.trim()).filter(Boolean)
+  const login = loginRoute(db, auth, { now: opts.now, mods })
   app.configure(a => {
     a.get(CLIENT_PATH, clientRoute())
     a.post(LOGIN_PATH, login)

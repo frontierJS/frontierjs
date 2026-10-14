@@ -99,7 +99,12 @@ describe('labelFieldInfo — four tiers, and it says which one answered', () => 
   })
 
   test('a conventional name is next', () => {
-    expect(labelFieldInfo({ firstName: str, name: str })).toEqual({ field: 'name', source: 'conventional' })
+    expect(labelFieldInfo({ firstName: str, name: str })).toEqual({ field: 'name', source: 'conventional', alt: [] })
+  })
+
+  test('the conventional names below the chosen one are carried for a blank row (FJS-1976)', () => {
+    expect(labelFieldInfo({ email: str, name: str, slug: str }))
+      .toEqual({ field: 'name', source: 'conventional', alt: ['email', 'slug'] })
   })
 
   test('the first plain string is a guess, and is reported as one', () => {

@@ -505,9 +505,12 @@ export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = 
         // Under `fli dev` a warning is a marked line naming its file, which fli
         // prints as one; Vite's own form is the message plus a Plugin and a
         // File line.
+        // `positionless` strips the location, so Vite has no file to print
+        // and 35 warnings in one dev server cannot be traced to a component
+        // unless the message names it (`FJS-2796`).
         const warn = isDev && process.env[DEV_ENV]
           ? (msg) => console.warn(formatDevLine({ warn: { file: relative(root, id), text: msg } }))
-          : (msg) => this.warn(positionless(msg))
+          : (msg) => this.warn(positionless(`${msg}\n  in ${relative(root, id)}`))
         for (const w of analysed) if (!held.has(w)) warn(`[Mesa] ${w}`)
         for (const m of direct) {
           if (!echoed.has(m)) warn(`[Mesa] ${m.replace(/^Warning: /, '')}`)

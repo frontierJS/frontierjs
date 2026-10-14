@@ -562,3 +562,20 @@ describe('serviceAccessor is exported', () => {
     expect(entry.serviceAccessor({ name: 'apps', model: null })).toBeNull()
   })
 })
+
+// FJS-2855 -- the mapper answers the in-process caller too. The method gate's
+// refusal is thrown by an around hook, and an error mapper reached only the
+// refusals thrown from inside the method.
+describe('an in-process caller gets the mapper’s words for a refused method', () => {
+  test('app.service().settle() as a shopper throws what the mapper made', async () => {
+    const { Forbidden } = await import('../src/core/errors.ts')
+    const s = await shop()
+    s.app.errorMapper((err: any) =>
+      err?.name === 'AccessDeniedError' && err.required === 5
+        ? new Forbidden('Requires admin role') : null)
+    const svc: any = (s.app as any).service('orders')
+    await expect(svc.call('settle', 1, {}, { auth: { user: AS.shopper } })).rejects.toThrow('Requires admin role')
+    expect(s.ran).toEqual([])
+    await s.close()
+  })
+})

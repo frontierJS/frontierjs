@@ -35,8 +35,10 @@
  * `class` is optional and only present when the class name is not the
  * lowercased term: Button is `.btn`, Nav is `.navlist`, Row is `.list-row`.
  * `null` means the term is carried by an element and has no class of its own
- * (Heading is `<h1>`–`<h6>`; Text is `<p>`; Section and Group are
- * structural). A wrong value here is the one way to make the test lie.
+ * (Heading is `<h1>`–`<h6>`; Text is `<p>`; Section is `<section>`). A bare
+ * `<div>` is not an element that carries anything, so a `null` class beside
+ * one fails vocabulary.spec.js. A wrong value here is the one way to make
+ * the test lie.
  *
  * ── Adding a term ────────────────────────────────────────────────────
  *

@@ -102,6 +102,29 @@ try {
       check('siteKit() refuses a settings key no page can name', /'let'/.test(err.message), err.message)
     }
   }
+
+  // ─── a content/ with no content/routes (FJS-2546) ─────────────────────────
+  // A legacy ksite keeps its pages in content/pages. Built as-is it is an
+  // empty shell that Sierra blames on frontmatter, so the folder is named here.
+  {
+    const refused = async (label, root, pattern) => {
+      try {
+        await siteKit({ root })
+        check(label, false, 'siteKit() resolved')
+      } catch (err) {
+        check(label, pattern.test(err.message), err.message)
+      }
+    }
+    const legacy = join(TMP, 'legacy')
+    write(join(legacy, 'content/pages/index.md'), '# Home\n')
+    write(join(legacy, 'content/settings/site.md'), '---\ncompany_name: Acme\n---\n')
+    await refused('a content/pages site is refused, naming content/pages and content/routes', legacy,
+      /content\/pages[\s\S]*content\/routes/)
+
+    const empty = join(TMP, 'no-routes')
+    write(join(empty, 'content/settings/site.md'), '---\ncompany_name: Acme\n---\n')
+    await refused('a content/ with no content/routes is refused by name', empty, /content\/routes/)
+  }
 } finally {
   rmSync(TMP, { recursive: true, force: true })
 }

@@ -252,7 +252,15 @@ export async function runPipeline(
     return
   }
 
-  await runAroundHooks(ctx, pipeline.around, 0, runWithError, telemetry)
+  // An around's own throw (gateAuth's method-gate refusal) is outside
+  // `runWithError`, so without this it left raw and only the wire's bridge
+  // mapped it: an in-process caller got the app's words for a refusal from
+  // inside the method and the framework's for the gate's.
+  try {
+    await runAroundHooks(ctx, pipeline.around, 0, runWithError, telemetry)
+  } catch (err) {
+    throw toFrameworkError(err, ctx.app)
+  }
 
   // `null` is a legitimate answer, so the value cannot tell an around that
   // forgot next() from one that answered nothing on purpose: only an

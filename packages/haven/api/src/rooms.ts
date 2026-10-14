@@ -17,7 +17,7 @@
 
 import type { App, Connection, channels } from '@frontierjs/junction'
 
-import { bannedAtOf } from './principal.ts'
+import { standingOf } from './principal.ts'
 
 type ChannelsOptions = NonNullable<Parameters<typeof channels>[1]>
 
@@ -97,9 +97,7 @@ export function roomChannels (db: { asSystem: () => any }): { setup: (a: App) =>
       presenceMetaBytes:        64,
       // The connection's principal was built at the upgrade, so a ban written
       // since would not reach it; every frame reads the column again.
-      claims: async (_name, conn) => conn.user
-        ? { bannedAt: await bannedAtOf(db, conn.user.userId) }
-        : null,
+      claims: async (_name, conn) => conn.user ? await standingOf(db, conn.user.userId) : null,
     },
   }
 }
