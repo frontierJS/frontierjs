@@ -51,6 +51,16 @@ export const tree = {
       meta: JSON.parse("{}"),
       params: [],
       children: [],
+    },
+  {
+      id: "workshop",
+      path: "/workshop/",
+      file: "src/routes/workshop.mesa",
+      companion: null,
+      layout: null,
+      meta: JSON.parse("{}"),
+      params: [],
+      children: [],
     }
   ],
 }
@@ -62,6 +72,7 @@ export const components = {
   'road': () => import('../src/routes/road.mesa'),
   'tavern': () => import('../src/routes/tavern.mesa'),
   'woods': () => import('../src/routes/woods.mesa'),
+  'workshop': () => import('../src/routes/workshop.mesa'),
 }
 
 
@@ -85,7 +96,8 @@ export const all = [
   "/docks/",
   "/road/",
   "/tavern/",
-  "/woods/"
+  "/woods/",
+  "/workshop/"
 ]
 
 export const published = [
@@ -93,7 +105,8 @@ export const published = [
   "/docks/",
   "/road/",
   "/tavern/",
-  "/woods/"
+  "/woods/",
+  "/workshop/"
 ]
 
 export const indexed = [
@@ -101,7 +114,8 @@ export const indexed = [
   "/docks/",
   "/road/",
   "/tavern/",
-  "/woods/"
+  "/woods/",
+  "/workshop/"
 ]
 
 export const redirects = []

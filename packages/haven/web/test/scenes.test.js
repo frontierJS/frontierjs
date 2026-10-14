@@ -7,7 +7,7 @@
 // frame just looks wrong. `<name>.frame.txt` is the picture, pinned row for
 // row; `bun run frames` rewrites it, and the diff is the review.
 import { test, expect } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
 import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT } from '../src/stage.js'
@@ -151,6 +151,28 @@ for (const { name, slug, path } of SCENES) {
   }
 }
 
+// ─── the workshop ─────────────────────────────────────────────────────
+
+// A package with no bench is a session `Workers.mesa` cannot seat, and
+// nothing on the screen says so: the bench set is read off the tree here.
+test('workshop: a bench for every package, for example/ and for the rest of the tree, and none for anything else', () => {
+  const packages = join(WEB, '../..')
+  const names = readdirSync(packages, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && existsSync(join(packages, d.name, 'package.json')))
+    .map((d) => d.name)
+  const benches = scenes.get('/workshop/').marks.filter((m) => m.piece?.bench).map((m) => m.piece.bench)
+  expect([...benches].sort()).toEqual([...names, 'example', 'frontierjs'].sort())
+})
+
+test('workshop: the row under every bench is floor its whole width, where its workers stand and its count is drawn', () => {
+  const stage = scenes.get('/workshop/')
+  for (const b of stage.marks.filter((m) => m.piece?.bench)) {
+    for (let dx = 0; dx < b.piece.art.length; dx++) {
+      expect({ bench: b.piece.bench, x: b.x + dx, floor: stage.walkable(b.x + dx, b.y + 1) }).toEqual({ bench: b.piece.bench, x: b.x + dx, floor: true })
+    }
+  }
+})
+
 // ─── the stage's own rules ───────────────────────────────────────────
 
 test('the view follows a figure only when it nears an edge, and stays inside the stage', () => {
@@ -207,7 +229,7 @@ test('a figure sees within SIGHT over floor, a wall blocks the line, and a light
 })
 
 test('a stage with a seer draws lit cells, remembers them dim, and blanks the rest; with none it draws everything', () => {
-  const stage = createStage({ slug: 'probe', palette: { w: { fg: '#ff0000' }, k: { fg: ['#ffffff', '#000000'], chars: 'ab', ms: 100 } }, spawn: { x: 0, y: 0 } })
+  const stage = createStage({ fog: true, slug: 'probe', palette: { w: { fg: '#ff0000' }, k: { fg: ['#ffffff', '#000000'], chars: 'ab', ms: 100 } }, spawn: { x: 0, y: 0 } })
   stage.stamp(piece('wall', '|', 'w'), 2, 0)
   stage.stamp(piece('water', '~', 'k'), 3, 0)
   stage.stamp(piece('post', '!', ' '), 4, 0)

@@ -1879,8 +1879,10 @@ describe('snoozing a rule silences it for a while, and the server keeps the cloc
   test('a snooze past a week is refused, and so is none at all', async () => {
     await expect(env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 7 * 24 * 60 + 1 }))
       .rejects.toThrow(/1 to 10080/)
-    await expect(env.as(owner).service('alerts').call('snooze', rule.id, {}))
+    await expect(env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 0 }))
       .rejects.toThrow(/1 to 10080/)
+    await expect(env.as(owner).service('alerts').call('snooze', rule.id, {}))
+      .rejects.toThrow(/minutes/)
     // Paired: the ceiling itself is allowed.
     const r = await env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 7 * 24 * 60 }) as any
     expect(r.snoozedUntil).toBeTruthy()
@@ -3574,5 +3576,32 @@ describe('dashboard widget verbs and app placement declare their input', () => {
     // The app screen's Unplace sends the replica it is removing.
     await expect(env.as(owner).service('apps').call('unplace', 'nope', { serverId: 's', replicaIndex: 0 }))
       .rejects.toThrow(/not found/i)
+  })
+})
+
+// FJS-2865. Alert delivery and network membership name their payload in the
+// seed, so a missing field is a 400 naming it before the row is read.
+describe('alert and network verbs declare their input', () => {
+  test('each names a type in the seed', () => {
+    const alerts = (env.app.services.get('alerts') as any).describe().inputs
+    expect(alerts.attachChannel).toBe('AlertChannelRef')
+    expect(alerts.detachChannel).toBe('AlertChannelRef')
+    expect(alerts.snooze).toBe('AlertSnooze')
+    const networks = (env.app.services.get('networks') as any).describe().inputs
+    expect(networks.attach).toBe('NetworkAttach')
+    expect(networks.detach).toBe('NetworkDetach')
+  })
+
+  test('a missing field is refused naming it', async () => {
+    await expect(env.as(owner).service('alerts').call('attachChannel', 'nope', {}))
+      .rejects.toThrow(/channelId/)
+    await expect(env.as(owner).service('alerts').call('detachChannel', 'nope', {}))
+      .rejects.toThrow(/channelId/)
+    await expect(env.as(owner).service('alerts').call('snooze', 'nope', {}))
+      .rejects.toThrow(/minutes/)
+    await expect(env.as(owner).service('networks').call('attach', 'nope', {}))
+      .rejects.toThrow(/serverId/)
+    await expect(env.as(owner).service('networks').call('detach', 'nope', {}))
+      .rejects.toThrow(/serverId/)
   })
 })

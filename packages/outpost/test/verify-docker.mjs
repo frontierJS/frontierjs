@@ -275,7 +275,11 @@ try {
   t('logs.readTheContainer', logs.body?.running === true && typeof logs.body?.stdout === 'string')
 
   const exec = await call('/exec', { command: 'echo outpost-exec', timeout_s: 10 })
-  t('exec.runsOnTheMachine', exec.body?.exit_code === 0 && exec.body?.stdout?.trim() === 'outpost-exec')
+  // /exec starts a transient unit through systemd-run (FJS-D602), which an
+  // unprivileged drive is refused. A refusal that ran nothing is the proof it
+  // took that path: a plain `sh -c` would have echoed.
+  const ran = exec.body?.exit_code === 0 && exec.body?.stdout?.trim() === 'outpost-exec'
+  t('exec.runsOnTheMachine', process.getuid() === 0 ? ran : (!ran && exec.body?.exit_code > 0))
 
   const second = await deploy()
   const named  = sh('docker', 'ps', '-a', '--filter', `name=^${NAME}$`, '--format', '{{.ID}}').stdout.trim().split('\n').filter(Boolean)

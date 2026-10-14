@@ -1,0 +1,9 @@
+<script>
+  // The workshop — through the house beside the tavern. The Claude sessions
+  // editing on this machine stand at their benches, read from `#workers`.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Workers from '@/components/Workers.mesa'
+  import Workshop from '@/scenes/Workshop.mesa'
+</script>
+
+<WalkIn slug="workshop"><Workshop><Workers /></Workshop></WalkIn>

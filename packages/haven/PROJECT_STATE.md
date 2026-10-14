@@ -1,14 +1,16 @@
 # Haven — Project State
 
 **Phases 1, 2, 3, 4 and 5 of `IDEAS/haven.md` are built (5.4, the VS Code
-editor, aside), and 6.1.** 1.1 is the schema, 1.2 the API, 1.3 the signed
+editor, aside), and 6.1–6.4.** 1.1 is the schema, 1.2 the API, 1.3 the signed
 login, 2.1 the square in a terminal, 2.2 the tavern and its door, 2.3 `fli
 haven`, 3.1 the server naming its client, 3.2 the mod standing and the ban end
 to end, 3.3 the history pane and retention by count, Phase 4 color and motion,
 Phase 5 scenes as component trees, the browser target and the scene editor,
 6.1 the view that follows a figure across a square wider than a screen, 6.2
-the road, the woods and the docks across the square's borders. Next: 6.3,
-light and fog; the deploy is the last step (10.1).
+the road, the woods and the docks across the square's borders, 6.3 light and
+fog, 6.4 the map, and Phase 11, the workshop — this machine's Claude sessions
+at their packages' benches. Next: 6.5, secrets; the deploy is the last step
+(10.1).
 
 ## What exists
 
@@ -45,6 +47,16 @@ light and fog; the deploy is the last step (10.1).
   scene, route and Room. A border is a `<Door>` run along the edge, and a
   figure crosses at the matching row, beside the run back; any door is come
   out of, not spawned away from. `verify:explore` times the crossing.
+- Light and fog (6.3): a figure sees seven rows round itself over floor, a
+  palette entry with `light: r` is a source seen from anywhere in the room,
+  a cell lit once is remembered dim and one never lit is blank; a figure in
+  the dark is not drawn. `litAt()` in `stage.js` is the one answer, and the
+  picture and the editor, with no seer, are lit throughout.
+- The map (6.4): `/map` over the art, every scene this machine has walked
+  into at one glyph per 5×5 cells and `@` on the figure's block; scenes laid
+  out from their borders, houses in a row under the streets. Kept on the
+  machine — `~/.fli/haven/seen/` or IndexedDB (`#seen`) — and never sent.
+  `verify:map` (3 HOMEs, 18 checks) and `web/test/map.test.js`.
 - The same `web/` built for a browser (5.2, `FJS-D985`): `bun run web` on
   5506, the routes unchanged, `#paint`/`#cell`/`#sign-in` resolved to their
   `.browser.js` twins by the package's `imports` conditions; the key kept in

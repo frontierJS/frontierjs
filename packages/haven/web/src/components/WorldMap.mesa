@@ -1,0 +1,36 @@
+<script>
+  // WorldMap.mesa — the map pane (`IDEAS/haven.md` 6.4), drawn over the art
+  // the way the history pane is: every scene this machine has walked into
+  // (`#seen`, through `map.js`), the one the figure is in drawn from its live
+  // stage, and `@` on the figure's block, moving as it walks. Placed by
+  // `Scene.mesa` while the map is open, so the store is read when it opens
+  // and not on every scene mounted.
+  import { at } from '#cell'
+  import { coarse, drawn, layoutOf, recall } from '@/map.js'
+
+  export let stage
+  export let route
+  export let x
+  export let y
+  export let box
+
+  let kept = []
+  recall().then((snaps) => { kept = snaps })
+
+  /** The map's rows: what was kept, less this scene's old snap, plus this scene as it stands. */
+  function rows(kept, x, y) {
+    const snaps = [...kept.filter((s) => s.route !== route), coarse(stage, route)]
+    return drawn(layoutOf(snaps), { route, x, y }, { w: box.w, h: box.h - 1 })
+  }
+</script>
+
+<div class="surface map" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
+  {#each rows(kept, x, y) as row, i (i)}
+    <p>{row || ' '}</p>
+  {/each}
+  <p>— the map · @ you · n a door · Esc closes —</p>
+</div>
+
+<style>
+  .map p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

@@ -114,6 +114,9 @@ check(at(sx + dx, sy + 1) === '@' && at(sx + dx, sy + 2) === ',', 'a hedge is a 
 shell.stdin.write('\x1b[A')
 check(await until(() => at(sx + dx, sy) === '@', 3000), 'and Up steps back', screen(out))
 
+// A scene opens in NORMAL, so a line starts with `i`.
+shell.stdin.write('i')
+check(await until(() => screen(out).includes('-- INSERT --')), 'a new scene is NORMAL and i starts the line', screen(out))
 shell.stdin.write('hi all')
 check(await until(() => screen(out).includes('hi all')), 'a typed line shows in the input', screen(out))
 shell.stdin.write('\x1b[D')
@@ -205,6 +208,8 @@ await until(() => at(bar.x, bar.y, 1, tavern) === '@', 3000)
 
 // ─── the history pane ─────────────────────────────────────────────────
 
+shell.stdin.write('i')
+await until(() => screen(out).includes('-- INSERT --'))
 shell.stdin.write('the hearth is warm\r')
 check(await until(() => at(bar.x, bar.y - 1, 20, tavern) === '(the hearth is warm)'), 'Sam says a line in the tavern', screen(out))
 shell.stdin.write('\x1b[5~')
@@ -246,6 +251,8 @@ check(stranger.code !== 0 && /taken/.test(stranger.err + stranger.framed),
 // ─── a mod ────────────────────────────────────────────────────────────
 
 check(sam.role === 'mod', "the server lists sam as a mod, so Sam's login made one", JSON.stringify(sam))
+shell.stdin.write('i')
+await until(() => screen(out).includes('-- INSERT --'))
 shell.stdin.write('/ban ana\r')
 check(await until(() => screen(out).includes('ana is banned')), "Sam types /ban ana and the screen says so", screen(out))
 const gone = await havenFrame('/')

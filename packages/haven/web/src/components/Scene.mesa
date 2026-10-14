@@ -40,6 +40,15 @@
   // the presence itself is made here, in the component's own scope, since
   // one made in `$.onMount` has no owner and its leave never runs.
   //
+  // In NORMAL a `/` enters INSERT with the slash typed (Shell.mesa), and Tab
+  // completes the command word of a line that is only `/` and a partial word
+  // (`commands.js`); the matches are listed under the input as they narrow.
+  //
+  // `/map` opens the map over the art (`IDEAS/haven.md` 6.4) and Esc closes
+  // it: a letter would be typed into the line, as in the workshop, so the
+  // map is a command. Walking into a room keeps its picture for the map
+  // (`#seen`); the map itself is `WorldMap.mesa`.
+  //
   // PageUp opens the room's history over the art and pages back through it,
   // PageDown pages forward and closes it past the newest line, as a
   // terminal's own scrollback does; Esc closes it. The pane reads the same
@@ -53,6 +62,9 @@
   import { members }     from '@/resources/Member.mesa'
   import { messages }    from '@/resources/Message.mesa'
   import { createStage, arrival } from '@/stage.js'
+  import { remember }    from '@/map.js'
+  import { complete, matches, partial } from '@/commands.js'
+  import WorldMap        from '@/components/WorldMap.mesa'
   import { at }          from '#cell'
   import { paint }       from '#paint'
 
@@ -81,12 +93,14 @@
   let draft = ''
   let note  = ''
   let nicks = {}
+  $: hints = matches(draft)
 
   // The pane sits inside the frame's walls; its last row is the footer.
   const PANE = { x: 1, y: 1, w: 94, h: 24 }
   const ROWS = PANE.h - 1
   let pane = false
   let back = 0
+  let charting = false
 
   // Seeded from the spawn and never from `x` and `y`, and a `var`: a
   // top-level const that reads a prop or a `let` is derived — made when it is
@@ -94,6 +108,7 @@
   var here = room ? presence(`room:${room.id}`, { meta: { ...spawn } }) : null
   $.onMount(() => {
     if (!here) return
+    remember(stage, page.pathname)
     const { from, x: fx, y: fy } = page.query
     const start = arrival(stage, { from, x: fx, y: fy })
     if (start.x === x && start.y === y) return
@@ -178,7 +193,7 @@
       else back = Math.max(0, back - ROWS)
       return
     }
-    if (!pane) { pane = true; back = 0; return }
+    if (!pane) { pane = true; charting = false; back = 0; return }
     const want = back + ROWS
     if (want + ROWS > lines().length && messages.hasMore()) await messages.more()
     back = Math.min(want, Math.max(0, lines().length - ROWS))
@@ -189,14 +204,20 @@
   const focus = (el) => el.focus()
 
   const keydown = (e) => {
+    if (room && e.key === 'Tab' && partial(draft) !== null) {
+      e.preventDefault()
+      draft = complete(draft)
+      return
+    }
     if (room && (e.key === 'PageUp' || e.key === 'PageDown')) {
       e.preventDefault()
       turn(e.key === 'PageUp')
       return
     }
-    if (pane && e.key === 'Escape') {
+    if ((pane || charting) && e.key === 'Escape') {
       e.preventDefault()
       pane = false
+      charting = false
       return
     }
     const step = STEP[e.key]
@@ -219,8 +240,9 @@
 
   async function command(line) {
     const [word, nick] = line.slice(1).split(/\s+/)
+    if (word === 'map') { charting = true; pane = false; return '' }
     const cmd = COMMANDS[word]
-    if (!cmd) return `no command /${word} — /ban <nick>, /unban <nick>`
+    if (!cmd) return `no command /${word} — /map, /ban <nick>, /unban <nick>`
     if (!nick) return `/${word} <nick>`
     const who = (await members.service.find({ nick: nick.toLowerCase() })).data?.[0]
     if (!who) return `nobody here is called ${nick}`
@@ -252,6 +274,9 @@
     {#each bubbles(here.get(), lines(), x, y, view) as b (b.key)}
       <p class="surface" {@attach at(b.x, b.y, 12)}>{b.text}</p>
     {/each}
+    {#if charting}
+      <WorldMap {stage} route={page.pathname} {x} {y} box={PANE} />
+    {/if}
     {#if pane}
       <div class="surface pane" {@attach at(PANE.x, PANE.y, 13, [PANE.w, PANE.h])}>
         {#each history(lines(), back, nicks) as l (l.key)}
@@ -265,6 +290,7 @@
 {#if here}
   <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
+  {#if hints.length && partial(draft) !== null}<p>{hints.map((c) => `/${c}`).join('  ')} · Tab completes</p>{/if}
   <form on:submit|preventDefault={say}>
     <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says, PageUp reads back" />
   </form>

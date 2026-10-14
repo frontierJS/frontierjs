@@ -2,9 +2,9 @@
 
 An FJS app laid out like `basecamp` (`FJS-D977`): `db/`, `api/`, and one `web/`
 built for two targets (`FJS-D985`) — the terminal (`fli haven`, `fli dev:tui`)
-and a browser (`bun run web`, `fli dev`). Four modules differ per target and
-nothing else: `#paint`, `#cell`, `#sign-in` and `#errand`, the package's `imports`, whose
-`browser` condition Vite takes and Bun does not. The plan, and the first open
+and a browser (`bun run web`, `fli dev`). Six modules differ per target and
+nothing else: `#paint`, `#cell`, `#sign-in`, `#errand`, `#workers` and `#seen`, the
+package's `imports`, whose `browser` condition Vite takes and Bun does not. The plan, and the first open
 box, is `IDEAS/haven.md`.
 
 ## Layout
@@ -18,7 +18,7 @@ box, is `IDEAS/haven.md`.
 | `api/src/login.ts` | `POST /haven/login` — an Ed25519-signed `{ publicKey, nick }`; the first login makes the member (`FJS-D981`), and every login writes `role` from `HAVEN_MODS`, both ways |
 | `api/src/client.ts` | `GET /haven/client` — the package and version this server runs, read from `package.json`; what `fli haven` installs on a machine with no checkout (`FJS-D982`) |
 | `api/src/auth.ts` | Haven's `IAuth`: mints a `Session` (Grant) and reads a token back to its member |
-| `api/src/rooms.ts` | the room channel's one spelling, `ROOMS` (a row per scene), the `{ x, y }` move, the join at the upgrade — the frame shapes `web/` imports |
+| `api/src/rooms.ts` | the room channel's one spelling, `ROOMS` (a row per scene, the workshop's included), the `{ x, y }` move, the join at the upgrade — the frame shapes `web/` imports |
 | `api/src/retention.ts` | `sweepRooms(db, { keep })` — a room keeps its newest `KEEP` (500) lines; `app.ts` puts it on `app.scheduler` every hour, through `asSystem()` so each dropped line reaches the trail. A count per room, never a window of days (`FJS-D748`) |
 | `api/src/principal.ts` | the one read of the standing — `bannedAt` and `role` — for a call (`principal:`) and a socket frame (`channels({ claims })`) |
 | `api/src/services/` | `messages` (find/get/create, rate-limited per member), `rooms`, `members` |
@@ -27,15 +27,16 @@ box, is `IDEAS/haven.md`.
 | `api/test/retention.test.ts` | seven lines in one burst keep exactly three, a room under the count is untouched, a second sweep finds nothing, and the app has the sweep on its clock |
 | `api/test/client.test.ts` | the stated version is the manifest's, answered with no session |
 | `api/test/sign-in.ts` | a test's machine walking in, with the signed request's parts kept for a test that tampers with them |
-| `web/src/routes/` | `index.mesa` the square, `tavern.mesa`, `road.mesa`, `woods.mesa`, `docks.mesa` — each one `WalkIn` around its scene; the tavern's passes its scene a `<Runner />` |
+| `web/src/routes/` | `index.mesa` the square, `tavern.mesa`, `road.mesa`, `woods.mesa`, `docks.mesa`, `workshop.mesa` — each one `WalkIn` around its scene; the tavern's passes its scene a `<Runner />`, the workshop's a `<Workers />` |
 | `web/src/components/WalkIn.mesa` | a route's body: asks the socket for the scene's room, reads its Room row, then provides it as `$context.room` and lets the scene in |
-| `web/src/components/Scene.mesa` | one room drawn (`FJS-D997`): makes a stage, provides it as `$context.scene`, paints it with `#paint`; and with a `$context.room`, a figure per `presence()` member, a bubble per member's newest line, the input line — a line beginning `/` is a command, `/ban <nick>` and `/unban <nick>`, an ordinary patch of `bannedAt`; a step onto a door is `goto`; PageUp opens the room's history over the art and pages back through it, PageDown forward and closed past the newest, Esc closes. With no room it is a picture |
+| `web/src/components/Scene.mesa` | one room drawn (`FJS-D997`): makes a stage, provides it as `$context.scene`, paints it with `#paint`; and with a `$context.room`, a figure per `presence()` member, a bubble per member's newest line, the input line — a line beginning `/` is a command, `/ban <nick>` and `/unban <nick>`, an ordinary patch of `bannedAt`, and `/map`, which opens `WorldMap` (Esc closes) and keeps this scene's snap at mount; a step onto a door is `goto`; PageUp opens the room's history over the art and pages back through it, PageDown forward and closed past the newest, Esc closes. With no room it is a picture |
 | `web/src/components/Piece.mesa` · `Row.mesa` · `Door.mesa` · `Pacer.mesa` | what a scene is made of — each claims cells on the stage it is inside and draws nothing itself: a piece at `x, y`, a piece `n` times `step` apart, a door that replaces the wall cell under it — with a `w` or an `h` a run of door cells, a border along an edge — a sprite pacing a row |
 | `web/src/components/Runner.mesa` | a boy who runs in through a door with `#errand`'s answer, drawn on this screen only and never sent; placed by a route, inside the scene's `<slot />`, so a scene's picture and its test run no command |
-| `web/src/stage.js` | `createStage()`: the cells a scene's pieces claim, one owner per cell (two pieces on one cell throw naming both), `walkable`, `doorAt`, `look()` — how a cell is painted at a tick — `arrival()`, where a figure stands having come through a door (beside the door back to `from`, nearest the cell crossed, so a border is crossed at its row), `pacerAt()`, `picture()`, and `marks`, every placed thing in order, which the editor moves; `view`, the slice a screen draws (`VIEW`, 97×26, at most), `follow(x, y)`, which pans it when the figure comes within `EDGE` of a side, and `showAll()`, the editor's; the pure `follow()` a drive mirrors a terminal's view with; `stages` by slug, for a test or a drive |
-| `web/src/scenes/Square.mesa` · `Tavern.mesa` · `Road.mesa` · `Woods.mesa` · `Docks.mesa` | each scene as a tree: its one-off piece blocks and palette in `<script>`, its `<Scene>` of placed tags after. The square is 160 cells wide, a screen and two thirds, its frame its own `framed(159, 26)`, with borders east onto the road, west into the woods and south down to the docks; every other scene one screen |
+| `web/src/components/Workers.mesa` | the Claude sessions editing on this machine (`#workers`), a `✻` each at the bench of its package whatever the fog, `(! N here)` beside a bench with two or more, and the one beside this figure read out — session, file, how long ago; read every second, drawn on this screen only and never sent (`IDEAS/haven.md` Phase 11) |
+| `web/src/stage.js` | `createStage()`: the cells a scene's pieces claim, one owner per cell (two pieces on one cell throw naming both), `walkable`, `doorAt`, `look()` — how a cell is painted at a tick, through the fog — `see(x, y)`, the figure that sees, and `seer`, where it stands, `light(x, y)` → `lit`/`dim`/`dark`, `lights`, and the pure `litAt(stage, x, y, from)` under them (`SIGHT`, a palette entry's `light: r`), `arrival()`, where a figure stands having come through a door (beside the door back to `from`, nearest the cell crossed, so a border is crossed at its row), `pacerAt()`, `picture()`, and `marks`, every placed thing in order, which the editor moves; `view`, the slice a screen draws (`VIEW`, 97×26, at most), `follow(x, y)`, which pans it when the figure comes within `EDGE` of a side, and `showAll()`, the editor's; the pure `follow()` a drive mirrors a terminal's view with; `stages` by slug, for a test or a drive |
+| `web/src/scenes/Square.mesa` · `Tavern.mesa` · `Road.mesa` · `Woods.mesa` · `Docks.mesa` · `Workshop.mesa` | each scene as a tree: its one-off piece blocks and palette in `<script>`, its `<Scene>` of placed tags after. The square is 160 cells wide, a screen and two thirds, its frame its own `framed(159, 26)`, with borders east onto the road, west into the woods and south down to the docks; every other scene one screen. The workshop is a `namedBench` per `packages/*`, `example` and `frontierjs`, through the house beside the tavern's, and full at 28 |
 | `web/src/scenes/*.frame.txt` | each scene's picture, rendered from the tree and pinned by `scenes.test.js`; `bun run frames` rewrites them, and the diff is the review |
-| `web/src/pieces/` | `piece()` and the pieces any scene may use, each a small art and its paint: `frame`, `tree`, `lamp`, `bench`, `table`, `barrel` |
+| `web/src/pieces/` | `piece()` and the pieces any scene may use, each a small art and its paint: `frame`, `tree`, `lamp` (its bulb is `Y`, the light), `bench` and `namedBench` (the workshop's, its name a light), `table`, `barrel` |
 | `web/src/paint.js` | `#paint` in the terminal: `paint(stage)` — the attach that draws the stage's `view` and its pacers into an OpenTUI frame buffer in color, on the wall clock, redrawn on the shortest step and on any claim or pan changing |
 | `web/src/paint.browser.js` | `#paint` in a browser: the same `look()` and `pacerAt()` as a `<pre>` of color runs, in a box laid out in `ch`/`lh` cells — the view's size at every window, the font scaled to fit |
 | `web/src/cell.js` | `#cell` in the terminal: `at(col, row, layer, size)` — the attach that places a box on a cell (`FJS-D978`); with a `[cols, rows]` size it is a pane over that many |
@@ -44,17 +45,27 @@ box, is `IDEAS/haven.md`.
 | `web/src/sign-in.browser.js` | `#sign-in` in a browser: the same signed login over a WebCrypto key kept in IndexedDB, once per page load; a first login's nick is `?nick=`, else `guest-` and the key's first six characters |
 | `web/src/errand.js` | `#errand` in the terminal: `nextErrand()` runs `HAVEN_ERRAND` through `sh -c` for one `{ id, title, url }` (unset, none), and `markDelivered(id)` keeps it in `~/.fli/haven/errands.json` for a day |
 | `web/src/errand.browser.js` | `#errand` in a browser: no errand, since a page runs no command on its machine |
+| `web/src/workers.js` | `#workers` in the terminal: `recordWorker(input, { root })`, what the `PostToolUse` hook `.claude/hooks/haven-worker.mjs` calls after every edit — `~/.fli/haven/workers/<session>.json` at the bench `benchOf()` names, nothing for a file outside the repo, files a day old deleted — and `readWorkers()`, every session that edited within `QUIET_MS` (ten minutes) |
+| `web/src/workers.browser.js` | `#workers` in a browser: no workers, since a page reads no directory on its machine |
+| `web/src/map.js` | the map (`IDEAS/haven.md` 6.4), target-neutral: `coarse(stage, route)` — a scene as a snap, its picture at `SCALE` (5×5 cells a glyph), size, doors and route — `remember`/`recall` over `#seen`, `layoutOf(snaps)` placing each scene from its borders (houses in a row under the streets), `drawn()` the rows with `@` on the figure's block |
+| `web/src/seen.js` | `#seen` in the terminal: a snap per scene at `~/.fli/haven/seen/<slug>.json` (`FJS-D991`), a slug that is a path writes nothing, a torn file reads as none |
+| `web/src/seen.browser.js` | `#seen` in a browser: a record per scene in IndexedDB, database `haven-seen` — its own, since a store added to `haven` is a version bump of the member's key |
+| `web/src/components/WorldMap.mesa` | the map pane, placed by `Scene.mesa` while `/map` is open: the kept snaps less this scene's, plus this scene's live stage, drawn over the art and following the figure |
 | `web/src/walk-in.js` | `walkIn(slug)`: `#sign-in`'s token, the room as the socket's query, then the token — target-neutral |
 | `web/src/main.js` · `App.mesa` · `web/index.html` | the browser's entry and root; the terminal shell mounts a route itself and never reads them |
 | `web/config/vite.config.js` | the browser build: 5506 (`havenWeb`) or `WEB_PORT`/`FLI_PORT_FE`, `strictPort`, the API's paths proxied to 5505 or `API_PORT` |
 | `web/src/resources/` | `rooms`, `members`, `messages` |
 | `web/test/stage.mjs` | a scene mounted headless through Sierra's terminal loader: its stage and the frame the terminal drew — `scenes.test.js`'s and both drives' |
-| `web/test/scenes.test.js` | each scene's picture is its `.frame.txt`, and the terminal draws its view's slice of it from the spawn and from the far corner; `follow()` pans only near an edge and stays inside the stage; a glyph and a color at every tick; every door reached from the spawn, leading to a scene with a door back, and every border cell paired with one across at its row; a pacer walks floor only; the stage's own rules — a cell claimed twice refused, a door over a wall, a door run as one mark, `arrival()`, a moved piece freeing its cells |
+| `web/test/scenes.test.js` | each scene's picture is its `.frame.txt`, and the terminal draws its view's slice of it from the spawn and from the far corner; `follow()` pans only near an edge and stays inside the stage; a glyph and a color at every tick; from the spawn a figure sees part of the scene and every light, and `litAt` on a probe — the radius, a wall seen and the cell behind it not, a lamp from across the stage, lit then dim then dark through `look()`; every door reached from the spawn, leading to a scene with a door back, and every border cell paired with one across at its row; a pacer walks floor only; the stage's own rules — a cell claimed twice refused, a door over a wall, a door run as one mark, `arrival()`, a moved piece freeing its cells |
+| `web/test/workers.test.js` | `#workers` over a directory handed in: the bench of a path, a move, quiet, the day's sweep, a torn file, a session id that is a path; and the real hook run as Claude Code runs it, silent and 0 on input it cannot use |
+| `web/test/map.test.js` | a snap is its picture at `SCALE` with a door where one is; the real scenes laid out — woods west, road east, docks under the square at the door both name, houses in a row apart; an unwalked scene not drawn; `@` once, in its own scene; a smaller pane cuts; `#seen` round trip, a torn file, another shape and a path slug |
+| `web/test/verify-map.mjs` | the map: a pty in a HOME of its own opens `/map` in the square — the square alone, Sam's `@` on the spawn's block — walks through the tavern's door and sees both with `@` in the tavern's block and a file per scene; a second terminal in that HOME draws the tavern it never walked into, a third HOME draws the square alone |
+| `web/test/verify-workshop.mjs` | the workshop: three sessions seated through the real hook in a HOME of Sam's, Sam's pty walks from the square through the door, two workers and their count at one bench and one alone, standing beside one reads it; a `--frame /workshop/` from another HOME draws Sam and none of it; a session moving benches and one going quiet |
 | `web/test/frames.mjs` | `bun run frames`: every scene's picture rewritten |
 | `tests/verify-fresh.mjs` | a machine with no checkout: this tree packed into a Verdaccio that never proxies `@frontierjs/*`, then a bare `oven/bun` container runs `bunx @frontierjs/cli haven` twice — installed, drawn, one member |
-| `web/test/verify-explore.mjs` | two terminals: a pty shell walks and speaks, a `fli haven --frame /` sees it, each sees the other; then the door to the tavern and back out beside it, the key is the member, a mod bans; then east off the first screen — the view follows, the frame from the spawn carries the line as a marker on its edge, and a third terminal walking the same way sees the figure where the first screen never reached; then over the border into the road at the matching row, the crossing timed, and back |
-| `web/test/verify-browser.mjs` | a pty terminal and a CDP tab on this package's own Vite server in one room, each read off the other's screen — figures, lines, the art row for row and the palette, the stale-build line; then a reload is the same member and the tab's door empties the terminal's square |
-| `web/test/terminal.mjs` | the pty shell, its screen replayed from cursor moves, and a scene cell read off it against a stage's picture through the view that screen has — both drives' |
+| `web/test/verify-explore.mjs` | two terminals: a pty shell walks and speaks, a `fli haven --frame /` sees it, each sees the other; the wall nobody has walked near is blank on both, the lamp lit from across the square, the hedge walked past drawn from memory, and a figure nine rows beyond a frame's sight listed and not drawn; then the door to the tavern and back out beside it, the key is the member, a mod bans; then east off the first screen — the view follows, the frame from the spawn carries the line as a marker on its edge, and a third terminal walking the same way sees the figure where the first screen never reached; then over the border into the road at the matching row, the crossing timed, and back |
+| `web/test/verify-browser.mjs` | a pty terminal and a CDP tab on this package's own Vite server in one room, each read off the other's screen — figures, lines, the art cell for cell where the tab's figure sees it and blank on both where nobody has walked, the palette, the stale-build line; then a reload is the same member and the tab's door empties the terminal's square |
+| `web/test/terminal.mjs` | the pty shell, its screen replayed from cursor moves, and a scene cell read off it through the view that screen has, counted up from the room's status line under the art — both drives' |
 | `editor/` | the scene editor (`IDEAS/haven.md` 5.7), served by `fli haven:scenes` or `bun run scenes` on 5507 (`havenScenes`) — a tool on this machine, never a Haven route |
 | `editor/source.js` | a scene FILE as text: `readScene`, the `<Scene>` and its placed tags, and `writeScene`, which splices only what changed — an attribute, a removed tag's line, a tag added before `</Scene>` with its import, the spawn, a palette entry's hexes — so a file saved untouched is its own bytes |
 | `editor/doc.js` | the scene as edited: `bind`, the file's tags one to one with the stage's `marks`; `hit`, `cellsOf`, `placeOf`; `problems` (the rules `scenes.test.js` holds, asked while placing); `editsOf`; `record`/`undo`/`redo`, the one history every edit goes through, `packHistory`/`unpackHistory` across a save, and `remapOf`/`rekeyHistory`, since a save renumbers the tags |
@@ -181,6 +192,24 @@ box, is `IDEAS/haven.md`.
   and `theme:` in sierra.config.js would also be read by the terminal shell.
 - **The explore drive reads characters, never colors.** A palette change is
   proved by OpenTUI's `createTestRenderer` and `captureSpans()`, or by eye.
+  So a dim cell and a lit one read the same, and a drive proves memory by
+  reading a glyph where the figure no longer sees — never by its color.
+- **A screen is fogged for its own figure, so no row of its art is sure to
+  be drawn.** `cellOf` counts up from the room's status line (`· N here`),
+  which a frame with no room lacks: a banned member's frame reads `null`.
+  Two screens in one room draw different cells, and a cell is read off a
+  screen where THAT screen's figure sees it, or has — `litAt(stage, x, y,
+  from)` says which; a `--frame` sees from the spawn and remembers nothing.
+- **A light is a palette key, so every glyph painted with it is a source.**
+  The square's `y` is its windows; the lamp's bulb is `Y`. A scene that
+  places a `lamp` names `Y` in its palette or the bulb is drawn in the
+  terminal's own ink with no halo, and nothing says so but the picture.
+- **Light passes through walls; sight does not.** A lamp inside a house
+  facade lights the square outside it. A figure standing in the dark is
+  not drawn and a pacer there is not either; their line still is.
+- **The stage relights on every claim**, so a mount of thirty pieces is
+  thirty sweeps of the stage — cheap with no seer, since only the lights
+  are gathered, and a seer is set after the pieces have claimed.
 - **The editor reads one shape of scene file.** A `<Scene slug spawn={{ x, y }}>`
   after the last `</script>`, placed tags one per line inside it, and
   `const PALETTE = {` with one entry per line in the script; a file written
@@ -203,9 +232,33 @@ box, is `IDEAS/haven.md`.
   per room through `asSystem()`. Its `deleteMany` reaches the `messages`
   channel with no row, which Junction says in a warning once per sweep that
   dropped something; a line nobody's screen still holds is announced to nobody.
+- **A worker is read from the HOME of the process drawing it, and Bun reads
+  HOME once.** `homedir()` ignores a later change to `process.env.HOME`, so a
+  test that wants other workers runs a child with its own HOME
+  (`verify-workshop.mjs`), and the unit tests hand `dir` in.
+- **A package with no bench is a session with nowhere to stand**, drawn
+  nowhere and said nowhere; `scenes.test.js` holds the bench set against
+  `packages/*`. The workshop is full at 28, so the next package widens it.
 - **The ban is read per call and per frame, never off the session.** With a
   `claims` resolver installed every committed write re-grades every room, so a
   write costs one `Member` read per person standing in a room.
+
+- **The map is a command, not `m`.** The line input holds every letter, so a bare
+  key is typed into the line (the workshop's reading met it too). A scene opens in
+  NORMAL, so a drive types `i` before `/map`.
+- **A snap is written once, at mount, and the fog is off.** `FOG` in `stage.js`
+  makes a scene seen whole on arrival. With it on, what a visit uncovered would
+  have to be merged into the file and written on leaving; nothing does that,
+  and nothing says so.
+- **The map is laid out from the doors, so a scene needs a border back.** A
+  neighbor is placed by the border that leads to it, aligned on the two doors'
+  rows or columns; with no border back it is placed by the one door, unaligned.
+  A scene reached by single-cell doors only goes in the bottom row.
+- **A map wider than the pane is cut at its right and bottom**, not scaled; the
+  current world is 72×21 glyphs in a 94×24 pane.
+- **A drive's terminal with no HOME of its own writes `~/.fli/haven/seen/` on
+  the machine running it** — `verify-explore` and `verify-browser`'s do. The
+  files are the real scenes' pictures, so it is harmless, but a map drive sets a HOME.
 
 ## Proving a change
 
@@ -226,7 +279,7 @@ verify:browser` as well (Chrome too; it starts its own API and Vite server).
 (`HAVEN_TOKEN=<a session> bun run tui -- --api <url>`); `fli haven --api <url>`
 signs this machine in first. `bun run web` beside `bun run api` serves the
 browser Haven on 5506, and `bun run dev` runs both. `editor/` and `fli haven:scenes` are proved by `bun run verify:scenes`
-(Chrome; it starts its own server over a copy of `web/src`). A change to
+(Chrome; it starts its own server over a copy of `web/src`). `Workers.mesa`, `#workers`, the workshop or the hook are proved by `bun run verify:workshop` (bun, util-linux `script`; it starts its own API). `map.js`, `WorldMap.mesa`, `#seen` or `/map` are proved by `bun run verify:map` (the same) and, for the browser twin, `verify:browser`. A change to
 `web/src/sign-in.js` or `packages/cli/commands/haven/` is proved by
 `verify:explore` too, and `api/src/client.ts`, the door's installer or this
 manifest's `dependencies` by `bun run verify:fresh` (Docker, network).

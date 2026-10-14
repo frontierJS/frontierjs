@@ -18,11 +18,13 @@
   let path = ''
   const go = () => { if (path.trim()) onopen?.(path.trim()) }
 
-  // The keys are modal, and focus sets the mode: landing on a text field is
-  // INSERT, where the field takes every key but Esc. Anywhere else, or on a
-  // field after Esc, is NORMAL: `i` types into the field again and a letter
-  // types nothing. h j k l reach this as the arrows (shell.js). Esc out of
-  // INSERT stops here, so a dialog or the shell's back hears only a second one.
+  // The keys are modal, and only `i` enters INSERT, where the field takes every
+  // key but Esc. Landing on a text field does not: a route focuses its first
+  // control when it mounts, and a scene that opened already typing would eat
+  // the h j k l it walks on. Every focus is NORMAL, so Tab to the next field
+  // is too. In NORMAL a letter types nothing, and `/` enters INSERT and is
+  // typed, so a line that begins with a slash is one keystroke away. h j k l reach this as the arrows (shell.js).
+  // Esc out of INSERT stops here, so a dialog or the shell's back hears only a second one.
   const NOT_TEXT = new Set(['checkbox', 'radio', 'file', 'button', 'submit', 'reset'])
   const types = (el) => el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT' && !NOT_TEXT.has(el.type))
 
@@ -31,7 +33,7 @@
   const set = (m) => { mode = m; onmode?.({ mode, field }) }
   const focusin = (e) => {
     field = types(e.target)
-    set(field ? 'insert' : 'normal')
+    set('normal')
   }
   const keydown = (e) => {
     if (e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return
@@ -44,7 +46,8 @@
       return
     }
     if (!typing) return
-    if (e.key === 'i') set('insert')
+    if (e.key === 'i' || e.key === '/') set('insert')
+    if (e.key === '/') return
     if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') e.preventDefault()
   }
 

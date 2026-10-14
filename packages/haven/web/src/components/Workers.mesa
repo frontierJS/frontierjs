@@ -1,0 +1,72 @@
+<script>
+  // Workers.mesa — the Claude sessions editing on this machine, each a figure
+  // at the bench of the package it last edited (`IDEAS/haven.md` Phase 11),
+  // read from `#workers` and drawn on this screen only — never sent, as the
+  // tavern's runner is never sent. Two or more at one bench are about to edit
+  // one package in a shared tree, so that bench says how many, and since a
+  // figure here is drawn whatever the fog, it is seen from the door.
+  //
+  // Standing beside a worker reads it: the session, the file it last touched
+  // and how long ago. No key does this, because the line input holds the
+  // keys and a letter pressed beside a worker would be typed into the line.
+  //
+  // A route places this (`routes/workshop.mesa`) and never the scene file:
+  // the scene's picture is pinned, and the directory differs per machine.
+  import { at } from '#cell'
+  import { readWorkers } from '#workers'
+
+  const scene = $context.scene
+  const POLL_MS = 1000
+  // The figures a bench has room for beside its count.
+  const SEATS = 3
+
+  let workers = readWorkers()
+  let now  = Date.now()
+  let view = scene.view
+  let me   = scene.seer
+  $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
+  var poll = setInterval(() => { workers = readWorkers(); now = Date.now() }, POLL_MS)
+  $.onDestroy(() => clearInterval(poll))
+
+  const ago = (ms) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}s ago` : `${Math.round(ms / 60_000)}m ago`)
+
+  /** What is drawn, in the view's cells: a figure per worker, a count over a crowded bench, and the worker beside `me` read out. */
+  function placed(ws, v, me, now) {
+    const benches = new Map(scene.marks.filter((m) => m.kind === 'piece' && m.piece.bench).map((m) => [m.piece.bench, m]))
+    const byBench = new Map()
+    for (const w of ws) if (benches.has(w.bench)) byBench.set(w.bench, [...(byBench.get(w.bench) ?? []), w])
+    const out = []
+    const figures = []
+    for (const [name, here] of byBench) {
+      const b = benches.get(name)
+      here.slice(0, SEATS).forEach((w, i) => {
+        const f = { w, x: b.x + 2 + 2 * i, y: b.y + 1 }
+        figures.push(f)
+        out.push({ key: `w:${w.session}`, x: f.x, y: f.y, text: '✻', layer: 11 })
+      })
+      if (here.length > 1) {
+        out.push({ key: `n:${name}`, x: b.x + 2 + 2 * Math.min(here.length, SEATS), y: b.y + 1, text: `(! ${here.length} here)`, layer: 12, surface: true })
+      }
+    }
+    const near = me && figures.find((f) => Math.abs(f.x - me.x) <= 1 && Math.abs(f.y - me.y) <= 1)
+    if (near) {
+      const text = `${near.w.session.slice(0, 4)} ${near.w.file} · ${ago(now - near.w.at)}`
+      out.push({ key: 'read', x: near.x, y: near.y + 1, text, layer: 12, surface: true })
+    }
+    // A figure off the view is not drawn; a line is kept inside it, as a bubble is.
+    return out
+      .filter((o) => o.y >= v.y && o.y < v.y + v.h && (o.surface || (o.x >= v.x && o.x < v.x + v.w)))
+      .map((o) => {
+        const text = o.text.slice(0, v.w)
+        return { ...o, text, x: Math.max(0, Math.min(o.x - v.x, v.w - text.length)), y: o.y - v.y }
+      })
+  }
+</script>
+
+{#each placed(workers, view, me, now) as o (o.key)}
+  {#if o.surface}
+    <p class="surface" {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
+  {:else}
+    <p {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
+  {/if}
+{/each}

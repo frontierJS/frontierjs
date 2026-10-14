@@ -65,12 +65,12 @@ name, and is as unread as the body.
 | --- | --- | --- |
 | `alerts.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.events` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `alerts.snooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.unsnooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.acknowledge` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alerts.snooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `api-keys.restore` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `api-keys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
@@ -206,17 +206,20 @@ name when it declares none.
 
 ### `alerts` · model `AlertRule`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `snooze`, `unsnooze`, `acknowledge`, `resolve`
-- **custom methods** — `events`, `attachChannel`, `detachChannel`, `snooze`, `unsnooze`, `acknowledge`, `resolve`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `unsnooze`, `acknowledge`, `resolve`, `attachChannel`, `detachChannel`, `snooze`
+- **custom methods** — `events`, `unsnooze`, `acknowledge`, `resolve`, `attachChannel`, `detachChannel`, `snooze`
+- **input** — `attachChannel` takes `AlertChannelRef`
+- **input** — `detachChannel` takes `AlertChannelRef`
+- **input** — `snooze` takes `AlertSnooze`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `snooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `unsnooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `snooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -230,6 +233,9 @@ name when it declares none.
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
+| before | `attachChannel` | `validateInput` |
+| before | `detachChannel` | `validateInput` |
+| before | `snooze` | `validateInput` |
 
 ### `api-keys` · model `ApiKey`
 
@@ -809,6 +815,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `attach`, `detach`
 - **custom methods** — `members`, `attach`, `detach`
+- **input** — `attach` takes `NetworkAttach`
+- **input** — `detach` takes `NetworkDetach`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `members` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -827,6 +835,8 @@ name when it declares none.
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
+| before | `attach` | `validateInput` |
+| before | `detach` | `validateInput` |
 
 ### `notification-preferences` · model `NotificationPreference`
 

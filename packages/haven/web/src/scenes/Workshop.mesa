@@ -1,0 +1,85 @@
+<script>
+  // Workshop.mesa — the workshop, through the house beside the tavern: a
+  // bench for every package in the repo, a bench for `example/` and one for
+  // the rest of the tree, `frontierjs`, in rows by name, and the door back
+  // out to the square in the bottom wall. Each name is a lamp, so every
+  // bench is read from the door. The Claude sessions editing on this machine
+  // stand at them (`components/Workers.mesa`), placed by the route and never
+  // by this file. The picture this draws is `workshop.frame.txt`, which
+  // `scenes.test.js` pins, beside a test that every package has its bench.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { frame }      from '@/pieces/frame.js'
+  import { namedBench } from '@/pieces/bench.js'
+
+  const auth             = namedBench('auth')
+  const basecamp         = namedBench('basecamp')
+  const caravan          = namedBench('caravan')
+  const cli              = namedBench('cli')
+  const conduit          = namedBench('conduit')
+  const config           = namedBench('config')
+  const createFrontier   = namedBench('create-frontier')
+  const css              = namedBench('css')
+  const emailKit         = namedBench('email-kit')
+  const example          = namedBench('example')
+  const frontierjs       = namedBench('frontierjs')
+  const frontierjsVscode = namedBench('frontierjs-vscode')
+  const haven            = namedBench('haven')
+  const jetty            = namedBench('jetty')
+  const junction         = namedBench('junction')
+  const litestone        = namedBench('litestone')
+  const mcp              = namedBench('mcp')
+  const mesa             = namedBench('mesa')
+  const notifications    = namedBench('notifications')
+  const oracle           = namedBench('oracle')
+  const orion            = namedBench('orion')
+  const outpost          = namedBench('outpost')
+  const printKit         = namedBench('print-kit')
+  const sierra           = namedBench('sierra')
+  const siteKit          = namedBench('site-kit')
+  const testing          = namedBench('testing')
+  const toolbelt         = namedBench('toolbelt')
+  const ui               = namedBench('ui')
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    w: { fg: '#a16207' },
+    n: { fg: ['#fde68a', '#fcd34d', '#fde68a', '#fef3c7'], ms: 1400, wave: true, light: 1 },
+  }
+</script>
+
+<Scene slug="workshop" palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+  <Piece of={frame} />
+  <Door  x={48} y={25} to="/" />
+  <Piece of={auth}             x={4}  y={2} />
+  <Piece of={basecamp}         x={27} y={2} />
+  <Piece of={caravan}          x={50} y={2} />
+  <Piece of={cli}              x={73} y={2} />
+  <Piece of={conduit}          x={4}  y={5} />
+  <Piece of={config}           x={27} y={5} />
+  <Piece of={createFrontier}   x={50} y={5} />
+  <Piece of={css}              x={73} y={5} />
+  <Piece of={emailKit}         x={4}  y={8} />
+  <Piece of={example}          x={27} y={8} />
+  <Piece of={frontierjs}       x={50} y={8} />
+  <Piece of={frontierjsVscode} x={73} y={8} />
+  <Piece of={haven}            x={4}  y={11} />
+  <Piece of={jetty}            x={27} y={11} />
+  <Piece of={junction}         x={50} y={11} />
+  <Piece of={litestone}        x={73} y={11} />
+  <Piece of={mcp}              x={4}  y={14} />
+  <Piece of={mesa}             x={27} y={14} />
+  <Piece of={notifications}    x={50} y={14} />
+  <Piece of={oracle}           x={73} y={14} />
+  <Piece of={orion}            x={4}  y={17} />
+  <Piece of={outpost}          x={27} y={17} />
+  <Piece of={printKit}         x={50} y={17} />
+  <Piece of={sierra}           x={73} y={17} />
+  <Piece of={siteKit}          x={4}  y={20} />
+  <Piece of={testing}          x={27} y={20} />
+  <Piece of={toolbelt}         x={50} y={20} />
+  <Piece of={ui}               x={73} y={20} />
+  <slot />
+</Scene>

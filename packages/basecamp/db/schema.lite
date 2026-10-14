@@ -274,6 +274,28 @@ type DashboardReorder {
   ids String[]
 }
 
+/// What `alerts.attachChannel` and `alerts.detachChannel` accept. The channel
+/// is checked against the workspace by the method.
+type AlertChannelRef {
+  channelId String
+}
+
+/// What `alerts.snooze` accepts. The 1..MAX_SNOOZE_MINUTES bound is the
+/// method's, since the ceiling lives in core/alerting.ts.
+type AlertSnooze {
+  minutes Int
+}
+
+/// What `networks.attach` and `networks.detach` accept.
+type NetworkAttach {
+  serverId  String
+  ipAddress String?
+}
+
+type NetworkDetach {
+  serverId String
+}
+
 /// What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
 type AppFromBlueprint {
   blueprintId   String

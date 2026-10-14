@@ -86,6 +86,13 @@ export function createAlertsService(app: BasecampApp) {
     // in the workspace (FJS-031). Declaring both is refused at construction.
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      'events', 'unsnooze', 'acknowledge', 'resolve',
+      { method: 'attachChannel', input: 'AlertChannelRef' },
+      { method: 'detachChannel', input: 'AlertChannelRef' },
+      { method: 'snooze',        input: 'AlertSnooze' },
+    ],
 
     async find() {
       const { limit, offset } = getPagination()
@@ -165,8 +172,7 @@ export function createAlertsService(app: BasecampApp) {
     // that record back.
     async attachChannel() {
       const rule = await getScoped('alertRule', 'Alert rule')
-      const { channelId } = ($.data ?? {}) as Record<string, string>
-      if (!channelId) throw new BadRequest('channelId is required')
+      const { channelId } = $.data as { channelId: string }
 
       // Scoped to the workspace, not merely to existence — an id from another
       // workspace would otherwise route this workspace's pages elsewhere.
@@ -184,8 +190,7 @@ export function createAlertsService(app: BasecampApp) {
 
     async detachChannel() {
       const rule = await getScoped('alertRule', 'Alert rule')
-      const { channelId } = ($.data ?? {}) as Record<string, string>
-      if (!channelId) throw new BadRequest('channelId is required')
+      const { channelId } = $.data as { channelId: string }
 
       const link = await db().alertRuleChannel.findFirst({ where: { ruleId: rule.id, channelId } })
       if (!link) throw new NotFound('That channel is not attached to this rule')

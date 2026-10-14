@@ -85,11 +85,12 @@ export const blank = (s) => s !== null && s.trim() === ''
  * Sierra's interactive shell over Haven's routes, under a pty, signed in
  * with `token` the way `fli haven` hands one over. Answers the process, a
  * reader of its screen, and `exited`; `home` is the stage `at` reads by
- * default.
+ * default, and `env` is laid over this process's — a HOME of the
+ * terminal's own, for one.
  */
-export function terminal(api, token, home) {
+export function terminal(api, token, home, env = {}) {
   const shell = spawn('script', ['-qfec', `stty rows 30 cols 100; bun ${TUI} --api ${api}`, '/dev/null'], {
-    cwd: WEB, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HAVEN_TOKEN: token },
+    cwd: WEB, stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env, HAVEN_TOKEN: token },
   })
   let out = ''
   shell.stdout.on('data', (d) => { out += d })

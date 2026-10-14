@@ -20,6 +20,14 @@
     "#errand": {
       "browser": "./web/src/errand.browser.js",
       "default": "./web/src/errand.js"
+    },
+    "#workers": {
+      "browser": "./web/src/workers.browser.js",
+      "default": "./web/src/workers.js"
+    },
+    "#seen": {
+      "browser": "./web/src/seen.browser.js",
+      "default": "./web/src/seen.js"
     }
   },
   "license": "MIT",
@@ -36,6 +44,8 @@
     "verify:explore": "bun web/test/verify-explore.mjs",
     "verify:browser": "bun web/test/verify-browser.mjs",
     "verify:scenes": "bun editor/test/verify-scenes.mjs",
+    "verify:workshop": "bun web/test/verify-workshop.mjs",
+    "verify:map": "bun web/test/verify-map.mjs",
     "verify:fresh": "bun tests/verify-fresh.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts"

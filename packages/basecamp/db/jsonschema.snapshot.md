@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-123 definitions · 63 models · 1 view · 18 types · 41 enums · 0 other
+127 definitions · 63 models · 1 view · 22 types · 41 enums · 0 other
 ```
 
 ## Definitions
@@ -141,6 +141,10 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `WidgetUpdate` | type |
 | `WidgetRemove` | type |
 | `DashboardReorder` | type |
+| `AlertChannelRef` | type |
+| `AlertSnooze` | type |
+| `NetworkAttach` | type |
+| `NetworkDetach` | type |
 | `AppFromBlueprint` | type |
 | `AppPlace` | type |
 | `AppUnplace` | type |
@@ -1631,6 +1635,47 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ids` | `string[]` = `[]` | yes | — | — | — |
 
 **On create**: required — `ids`
+
+### `AlertChannelRef`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `channelId` | `string` | yes | — | — | — |
+
+**On create**: required — `channelId`
+
+### `AlertSnooze`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `minutes` | `integer` | yes | — | — | — |
+
+**On create**: required — `minutes`
+
+### `NetworkAttach`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `serverId` | `string` | yes | — | — | — |
+| `ipAddress` | `string`? | — | — | — | — |
+
+**On create**: required — `serverId`
+
+### `NetworkDetach`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `serverId` | `string` | yes | — | — | — |
+
+**On create**: required — `serverId`
 
 ### `AppFromBlueprint`
 

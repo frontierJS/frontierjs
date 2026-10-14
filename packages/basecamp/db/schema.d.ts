@@ -190,6 +190,34 @@ export interface DashboardReorder {
 }
 
 /**
+ * What `alerts.attachChannel` and `alerts.detachChannel` accept. The channel
+ * is checked against the workspace by the method.
+ */
+export interface AlertChannelRef {
+  channelId: string
+}
+
+/**
+ * What `alerts.snooze` accepts. The 1..MAX_SNOOZE_MINUTES bound is the
+ * method's, since the ceiling lives in core/alerting.ts.
+ */
+export interface AlertSnooze {
+  minutes: number
+}
+
+/**
+ * What `networks.attach` and `networks.detach` accept.
+ */
+export interface NetworkAttach {
+  serverId: string
+  ipAddress?: string | null
+}
+
+export interface NetworkDetach {
+  serverId: string
+}
+
+/**
  * What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
  */
 export interface AppFromBlueprint {

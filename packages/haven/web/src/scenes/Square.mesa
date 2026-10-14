@@ -3,7 +3,8 @@
   // fountain in the middle, the hedges and flowers along the bottom; and east
   // of the first screen, three more houses, the well, the market stall and the
   // signpost, which the view pans to as a figure walks there (6.1). The
-  // tavern's door is the left house's. Three edges are borders
+  // tavern's door is the left house's, and the workshop's (Phase 11) is the
+  // house beside it, with its sign. Three edges are borders
   // (`IDEAS/haven.md` 6.2): east onto the road, west into the woods, and a
   // gap in the hedge south down to the docks. The picture this draws is
   // `square.frame.txt`, which `scenes.test.js` pins.
@@ -65,6 +66,28 @@ rrrrrrrrrrrrrrrrrrrr
  wwwwwwwwdddwwwwwww
 `)
 
+  const workshop = piece('house', String.raw`
+   ~'
+   ||
+  _||_____________
+ //\/\/\/\/\/\/\/\\
+/__________________\
+ |  [ WORKSHOP ]  |
+ |                |
+ |  []   .-.  []  |
+ |_______|n|______|
+`, String.raw`
+   kk
+   cc
+  rccrrrrrrrrrrrrr
+ rRRRRRRRRRRRRRRRRr
+rrrrrrrrrrrrrrrrrrrr
+ w  S ssssssss S  w
+ w                w
+ w  yy   ddd  yy  w
+ wwwwwwwwdddwwwwwww
+`)
+
   const houseB = piece('house', String.raw`
    ~'
    ||
@@ -111,23 +134,34 @@ rrrrrrrrrrrrrr
  wwwwwdddwwww
 `)
 
-  const fountain = piece('fountain', String.raw`
+  const FOUNTAIN = [String.raw`
       .  :  .
        ' | '
    .-----=-----.
  .'~~~~~~~~~~~~~'.
 (~~~~~~~~~~~~~~~~~)
  '.~~~~~~~~~~~~~.'
-   '-----------'
+   '----~~~----'
 `, String.raw`
       j  j  j
        j j j
    sssssssssssss
- sbbbbbbbbbbbbbbbs
+ ssbbbbbbbbbbbbbss
 sbbbbbbbbbbbbbbbbbs
- sbbbbbbbbbbbbbbbs
-   sssssssssssss
-`)
+ ssbbbbbbbbbbbbbss
+   sssssbbbsssss
+`]
+
+  // One drawing, two pieces: the rim and the jet are a wall, the water inside
+  // is walked through, and three cells of water break the front rim as the
+  // way in. A cell has one owner, so each takes its own paint keys.
+  const carve = (name, keys, options) => {
+    const [art, paint] = FOUNTAIN.map((s) => s.replace(/^\n/, '').replace(/\n$/, '').split('\n'))
+    const keep = (row, dy) => [...row].map((ch, dx) => keys.includes(paint[dy]?.[dx]) ? ch : ' ').join('')
+    return piece(name, art.map(keep).join('\n'), paint.map((r, dy) => [...r].map((k, dx) => keys.includes(k) ? k : ' ').join('')).join('\n'), options)
+  }
+  const fountain = carve('fountain', 'sj')
+  const basin = carve('fountain water', 'b', { floor: true })
 
   // The square's own frame: a screen and two thirds wide, where the shared
   // `frame` is one screen.
@@ -167,8 +201,8 @@ eeeeeee
   lll
 `)
 
-  const hedge  = piece('hedge', ',', 'g')
-  const flower = piece('flower', '*', 'p')
+  const hedge  = piece('hedge', ',', 'g', { floor: true })
+  const flower = piece('flower', '*', 'p', { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -201,10 +235,12 @@ eeeeeee
   <Door  x={47}  y={25} w={6} to="/docks/" />
   <Piece of={tavern} x={4}  y={1} />
   <Door  x={20} y={10} to="/tavern/" />
-  <Piece of={houseA} x={40} y={2} />
+  <Piece of={workshop} x={40} y={2} />
+  <Door  x={50} y={10} to="/workshop/" />
   <Piece of={houseB} x={61} y={1} />
   <Piece of={houseC} x={81} y={2} />
   <Piece of={fountain} x={42} y={12} />
+  <Piece of={basin} x={42} y={12} />
   <Piece of={tree} x={3}  y={13} />
   <Piece of={tree} x={83} y={13} />
   <Piece of={lamp} x={19} y={14} />

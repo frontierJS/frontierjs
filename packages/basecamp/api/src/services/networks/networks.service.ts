@@ -54,6 +54,12 @@ export function createNetworksService(app: BasecampApp) {
     // in the workspace (FJS-031). Declaring both is refused at construction.
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      'members',
+      { method: 'attach', input: 'NetworkAttach' },
+      { method: 'detach', input: 'NetworkDetach' },
+    ],
 
     async find() {
       const { limit, offset } = getPagination()
@@ -123,8 +129,7 @@ export function createNetworksService(app: BasecampApp) {
     // ── attach ────────────────────────────────────────────────────────
     async attach() {
       const network  = await getScoped('network', 'Network')
-      const { serverId, ipAddress } = ($.data ?? {}) as Record<string, string>
-      if (!serverId) throw new BadRequest('serverId is required')
+      const { serverId, ipAddress } = $.data as { serverId: string, ipAddress?: string }
 
       await serverInWorkspace(serverId)
 
@@ -145,8 +150,7 @@ export function createNetworksService(app: BasecampApp) {
     // ── detach ────────────────────────────────────────────────────────
     async detach() {
       const network   = await getScoped('network', 'Network')
-      const { serverId } = ($.data ?? {}) as Record<string, string>
-      if (!serverId) throw new BadRequest('serverId is required')
+      const { serverId } = $.data as { serverId: string }
 
       const link = await db().serverNetwork.findFirst({ where: { serverId, networkId: network.id } })
       if (!link) throw new NotFound('That server is not on this network')

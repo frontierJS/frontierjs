@@ -28,6 +28,7 @@ export const SCENES = [
   { name: 'Road',   slug: 'road',   path: '/road/' },
   { name: 'Woods',  slug: 'woods',  path: '/woods/' },
   { name: 'Docks',  slug: 'docks',  path: '/docks/' },
+  { name: 'Workshop', slug: 'workshop', path: '/workshop/' },
 ]
 
 let loader = null

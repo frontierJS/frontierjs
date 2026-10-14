@@ -77,6 +77,9 @@ export const dim = (hex) => {
 
 const STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 
+/** Whether a scene is fogged at all. Off, every cell is lit for every figure; `seer` is still kept, since a worker is read off where the figure stands. */
+export const FOG = false
+
 /** How far a figure sees, in rows; a column counts half, since a cell is twice as tall as it is wide. */
 export const SIGHT = 7
 
@@ -179,7 +182,7 @@ export function pacerAt(p, ms = 0) {
 /**
  * @param {{ slug: string, palette?: object, spawn: { x: number, y: number } }} o
  */
-export function createStage({ slug, palette = {}, spawn }) {
+export function createStage({ slug, palette = {}, spawn, fog = FOG }) {
   const claims    = new Map()   // 'x,y' → { ch, key, name, floor, door }
   const pacers    = []
   const marks     = []          // every placed thing, in the order it was placed
@@ -211,7 +214,7 @@ export function createStage({ slug, palette = {}, spawn }) {
       const [x, y] = k.split(',').map(Number)
       lights.push({ x, y, r })
     }
-    if (!seer) return
+    if (!seer || !fog) return
     visible = new Set()
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
       if (litAt(stage, x, y, seer)) { const k = key(x, y); visible.add(k); seen.add(k) }
@@ -282,12 +285,15 @@ export function createStage({ slug, palette = {}, spawn }) {
       for (const fn of listeners) { try { fn() } catch (e) { console.error(e) } }
     },
 
+    /** Where the figure that sees stands, `{ x, y }`; null before a scene has said. */
+    get seer() { return seer },
+
     /** Every light on the stage, `{ x, y, r }`. */
     get lights() { return lights },
 
     /** How this cell stands to the seer: `'lit'`, `'dim'` (lit once, not now) or `'dark'`; lit everywhere with no seer. */
     light(x, y) {
-      if (!seer) return 'lit'
+      if (!seer || !fog) return 'lit'
       const k = key(x, y)
       return visible.has(k) ? 'lit' : seen.has(k) ? 'dim' : 'dark'
     },

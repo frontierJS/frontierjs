@@ -6,7 +6,7 @@ dated: 2026-10-14
 
 # Idea — Haven: a place in the terminal anyone with `fli` installed can walk into
 
-**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phase 6 is begun: the view follows a figure across a square wider than a screen (6.1); 6.2–6.5 and Phases 7–9 — a Haven that lives, inhabitants, building and play — are proposed. The deploy is the last step (10.1, by the owner), and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
+**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phase 6 is begun: the view follows a figure across a square wider than a screen (6.1); 6.2–6.5 and Phases 7–9 — a Haven that lives, inhabitants, building and play — are proposed. The deploy is the last step (10.1, by the owner); Phase 11, the workshop placed before it, is built; and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
 probe below is now `packages/mesa/test/terminal/specs/haven.spec.mjs`; everything
 past Phase 0 is argument. Do not cite this file as describing behavior — see
 `VERIFYING.md`.
@@ -578,16 +578,56 @@ FJS-D985's "never a forked world" holds: both targets show the same viewport.
   runs, which `verify:browser` caught as a Mesa warning. Found: a drive that
   took `doors[0]` as the tavern's door broke when the borders claimed first;
   a door is found by its `to`.
-- [ ] 6.3 Light and fog. A figure sees a radius around itself, line of sight
-  cast over `walkable`; a cell seen before and out of sight now is drawn dim,
-  a cell never seen is blank. A palette entry with `light: r` is a source —
-  the lamps, the hearth, the tavern's candles — so a lit corner is seen from
-  across the room and the tavern's back corners are dark. A pure function
-  over the stage beside `look()` (`litAt(stage, x, y, from, tick)`), so both targets and a
-  `--frame` agree; the terminal drive reads characters, so it reads the blank.
-- [ ] 6.4 The map. `m` draws every scene this machine has seen, at one glyph
-  per few cells, with the figure's position marked. What a machine has seen
-  is kept on that machine (`FJS-D991`).
+- [x] 6.3 Light and fog. A figure sees `SIGHT` (7 rows, 14 columns — a cell
+  is twice as tall as it is wide) round itself, the line cast over
+  `walkable`, and an opaque cell is seen when a floor cell beside it is,
+  since a line skimming along a hedge meets the hedge's own nearer cells
+  first. A palette entry with `light: r` is a source and its halo is seen
+  from anywhere in the room — the lamps' `Y` (4), a window's `y` (1), the
+  hearth (6), the cart's lantern (3) — through walls, where sight is not:
+  the hearth is ringed by its own frame cells, and a fire nobody could see
+  is no fire. A cell lit once and not now is dim — its glyph at the clock's
+  first step at two fifths of its color, a memory that does not move — and
+  one never lit is blank. `litAt(stage, x, y, from)` in `stage.js` is the
+  pure answer, with no tick: light is steady, and nothing read one. The
+  stage caches it as `visible` and `seen` when the scene says who sees
+  (`see(x, y)`, beside `follow`), `look()` answers through it, and both
+  paints draw a pacer on lit cells only; a figure standing in the dark is
+  not drawn, its line still is, until 7.1 says who hears whom. With no seer
+  every cell is lit — the picture, the editor, `scenes.test.js`'s frame —
+  so `picture()` and the pinned frames are the art whoever stands where.
+  `scenes.test.js` pins the sight radius, the wall rule and a light on a
+  probe, lit → dim → dark through `look()`, and that every scene is fogged
+  from its spawn; `verify:explore` reads a blank wall, a lamp lit from
+  across the square, a hedge drawn from memory out of sight, and Sam listed
+  and not drawn in Ana's frame of the road, nine rows beyond her sight;
+  `verify:browser` reads the tab's bottom row as a part of the terminal's,
+  cell for cell, and the top wall blank on both. Found: a drive's `cellOf`
+  anchored on the art's top row, which fog blanks — it anchors on the room's
+  status line under the art now; and the square's `y` was the lamps' bulb
+  and every house window, so sixty-eight windows flooded the facades at a
+  lamp's radius — the lamp's bulb is `Y`, its own key.
+- [x] 6.4 The map. `/map` draws every scene this machine has walked into, at
+  one glyph per 5×5 cells, with the figure's block marked `@` and moving as it
+  walks; Esc closes. What a machine has seen is kept on that machine
+  (`FJS-D991`): `~/.fli/haven/seen/<slug>.json` in the terminal, a record in
+  IndexedDB (`haven-seen`) in a browser, a `#seen` twin. Built: a scene is
+  kept as a snap (`coarse()` in `web/src/map.js` — the picture at `SCALE`, its
+  size, its doors, its route) when it is walked into, and the map is those
+  snaps plus the live stage of the scene the figure is in. Where a scene sits
+  is derived, never stored: a border puts its neighbor on that side with the
+  two doors' rows or columns agreeing, so the docks hang under the square at
+  the gap they share; a scene reached only by single-cell doors — the tavern,
+  the workshop — stands in a row under the streets. The key is not `m`: the
+  line input holds the letters, as 11.4 found, so the map is a command
+  beside `/ban`. The fog is off in the tree (`FOG`, `stage.js`), so a scene is
+  seen whole on arrival and a snap is written once, at mount; with fog back
+  on, a visit's exploration would have to be merged into the file and written
+  on leaving, which nothing does yet. `map.test.js` pins the layout on the
+  real scenes; `verify:map` is a pty in a HOME of its own — the square alone,
+  then the tavern too with `@` in its block, a second terminal in the same
+  HOME drawing the tavern it never walked into, a third HOME drawing only the
+  square; `verify:browser` reads the same off the tab and its IndexedDB.
 - [ ] 6.5 Secrets. A cellar under the tavern behind a door in the floor, a
   plank in the woods' fence, a door that is there only at night (7.2). A
   hidden door is `<Door hidden>`, and one the spawn's flood fill in
@@ -669,6 +709,60 @@ drew stands in a scene where the other walks into it.
   palette, never a stranger's glyphs (`FJS-D995` as `FJS-D997` amends it). Strangers drawing art is a
   moderation surface, so this waits on 3.2's mod standing.
 
+### Phase 11 — The workshop
+
+Numbered 11 because a number is issued once, and placed before Phase 10 so the
+deploy stays the last step.
+
+Goal: every Claude session running on this machine stands in the workshop at
+the bench of the package it is editing, so two sessions in one package are
+seen before they collide in the shared tree.
+Done when: two sessions editing one package draw as two workers at one bench
+on a terminal's screen, a session that goes quiet leaves its bench, and nothing
+about a worker reaches the server.
+
+The pattern is the tavern's runner (`web/src/components/Runner.mesa`, `#errand`,
+built outside the plan): something on THIS machine becomes a figure drawn on
+this screen only and never sent. The workshop is its second use. A general
+map of places to commands waits for a third, since two uses do not yet show
+its shape.
+
+- [x] 11.1 The scene. A workshop off the square with a bench per package, each
+  bench labelled with its name; its own Room and route like the others, and a
+  door from the square. The benches are pieces, so the picture is pinned like
+  every scene's. Built: `Workshop.mesa`, through the house beside the
+  tavern's; 28 benches in rows by name — every `packages/*`, `example` and
+  `frontierjs` for the rest of the tree, which fills the one screen. A name is
+  a light, so a bench is read from the door, and `scenes.test.js` fails when a
+  package has no bench.
+- [x] 11.2 The feed. A Claude Code `PostToolUse` hook on `Edit`, `Write` and
+  `NotebookEdit` writes `~/.fli/haven/workers/<session>.json` — the file
+  touched, its package, the time. A session silent past a few minutes is gone.
+  Read through a `#workers` twin, the way `#errand` is: the terminal reads the
+  directory, a browser has none. Transcripts in `~/.claude/projects/` are the
+  other source, rejected because their shape is Claude Code's to change.
+  Built: `.claude/hooks/haven-worker.mjs` hands its input to `recordWorker` in
+  `web/src/workers.js`, which also reads — one owner of the shape. Quiet is ten
+  minutes, since a session reading and testing goes that long between edits;
+  an edit outside the repo writes nothing.
+- [x] 11.3 Workers at their benches. A figure per live session at the bench of
+  its package, moving when the session moves to another; two at one bench is
+  the collision, drawn so it is seen from the door. The directory is read on
+  walking in and watched while the member stays. Built: `Workers.mesa`, a `✻`
+  per session drawn whatever the fog, three seats a bench and `(! N here)`
+  beside them; the directory is read every second.
+- [x] 11.4 Reading a worker. Standing beside one reads it: the session, the
+  file it last touched and how long ago. Not a key, as planned: the line input
+  holds the keys, so a letter pressed beside a worker is typed into the line —
+  7.5's `e` meets the same problem. Its last status line needs a `Stop` hook
+  as well, and comes after the file alone has been used.
+- [x] 11.5 The record and the proof. Two fake worker files draw two figures at
+  one bench in a drive, and the workers directory leaves no trace in any frame
+  another terminal draws; Haven `CLAUDE.md` layout, `DRIVES.md` row. Built:
+  `verify:workshop` — the files written through the real hook, a walk from
+  the square, the reading, a `--frame` from another HOME showing the figure
+  and none of the workers, then a move and a quiet session leaving.
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.
@@ -680,6 +774,41 @@ else's package.)
   Cloudflare; the subdomain has no record yet), with Haven's API serving
   `web/dist` (5.2). `web/config/sierra.config.js` moves to it when a server
   answers there, not before. The machine is not named.
+
+## Ideas past the plan
+
+Not steps. Each becomes one at the end of the plan when it is wanted. The
+first group is the runner's pattern: from this machine, drawn on this screen
+only. The second is shared, so it is rows or presence.
+
+**This machine's**
+
+- **CI as the square's weather.** Clear when `.cache/ci-last.txt` is green,
+  rain when a phase failed, a storm when several did. 7.3 draws the overlay;
+  this picks it. Distinct from 9.2's roof storm, which is baked in at deploy
+  (`FJS-D996`) and is the framework's, not this machine's.
+- **Ships at the docks.** A ship pulls in when a deploy lands, and one stuck at
+  sea is a deploy that hung. Pairs with 8.3's crier, which announces the same
+  landing.
+- **The petition board.** The town hall pins the owner's open decisions
+  (`fli decisions`); read one, pick an option, and the ruling is written.
+- **The woods as `ISSUES.md`.** The more open issues, the denser and darker the
+  woods; walking in is triage, and closing issues clears the path.
+- **A customer at the bar.** When the `support` skill finds an ELA customer
+  waiting, a figure stands at the bar with the conversation and the drafted
+  reply.
+- **Signposts on the road.** One per client site, its lantern lit while the site
+  answers, flickering when the analytics check flags a drop.
+- **The clock tower** rings before the next meeting on the member's calendar.
+
+**Shared**
+
+- **A lit window.** A member deep in work lights their house's window in the
+  square, so others see who is working without interrupting. A presence field,
+  as 8.1's emote is.
+- **The pairing table.** Two members sit at a tavern table and one shows the
+  other a terminal's `fli` output scrolling on the tabletop, read only, shown
+  by choice.
 
 ## Open questions
 

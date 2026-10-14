@@ -220,6 +220,8 @@ await browser.press('Enter')
 check(await until(() => term.at(beaX, sy - 1, 8) === '(hi sam)'),
   "Bea's line shows as a bubble over her figure in Sam's terminal", term.screen())
 
+term.shell.stdin.write('i')
+await new Promise((r) => setTimeout(r, 200))
 term.shell.stdin.write('hi bea')
 await until(() => term.screen().includes('hi bea'))
 term.shell.stdin.write('\r')
@@ -291,6 +293,21 @@ check(await until(async () => (await tabText()).includes('The tavern · 1 here')
   'stepping onto it opens the tavern in the tab, Bea inside its door', await tabText())
 check(await until(() => term.screen().includes('The square · 1 here') && !term.screen().includes('· bea')),
   "Sam's terminal sees the square without her", term.screen())
+
+// The map: a scene walked into is a record in the tab's own IndexedDB
+// (`seen.browser.js`), and `/map` draws the two this tab has been in.
+await browser.type('/map')
+await browser.press('Enter')
+check(await until(async () => { const t = await tabText(); return t.includes('the map · @ you') && /\bsquare\b/.test(t) && /\btavern\b/.test(t) }),
+  '/map in the tab draws the square and the tavern it has walked into', await tabText())
+const seenKept = await browser.evaluate(`
+  const db = await new Promise((r, j) => { const o = indexedDB.open('haven-seen'); o.onsuccess = () => r(o.result); o.onerror = () => j(o.error) })
+  const keys = await new Promise((r) => { const q = db.transaction('scenes').objectStore('scenes').getAllKeys(); q.onsuccess = () => r(q.result) })
+  db.close()
+  return keys.sort().join()`)
+check(seenKept === 'square,tavern', `the tab keeps a record per scene in IndexedDB: ${seenKept}`)
+await browser.press('Escape')
+check(await until(async () => !(await tabText()).includes('the map · @ you')), 'Esc closes the map in the tab', await tabText())
 
 check(browser.errors.length === 0, 'the tab threw nothing and logged no error', browser.errors.join('\n'))
 
