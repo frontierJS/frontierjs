@@ -61,6 +61,14 @@ model Credential {
   @@gate("8")
   @@index([userId, type])
   @@index([type, value])
+  /// One (provider, subject) is one row. `oauthResolve` reads then writes in
+  /// separate awaits, so two callbacks for a subject nobody has seen both
+  /// write, and branch 1 then answers whichever row it reaches first. The
+  /// predicate names the types whose `value` is NOT an identity — a password
+  /// hash, a TOTP secret, a recovery-code hash — because `.lite` has no prefix
+  /// test to say `oauth:` and an unlisted type is constrained, which is the
+  /// safe side.
+  @@unique([type, value], where: type != "password" && type != "totp" && type != "totpPending" && type != "recoveryCode")
 }
 
 model Session {

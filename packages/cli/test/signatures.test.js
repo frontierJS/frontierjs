@@ -104,7 +104,7 @@ describe('the real workspace', () => {
 
   test('bearerClaim is found with its signature, at the line that holds it', () => {
     const r = rows.find(x => x.name === 'bearerClaim')
-    expect(r.text).toBe('export function bearerClaim(opts: BearerClaimOptions): DescribedResolver')
+    expect(r.text).toBe('export function bearerClaim(opts: BearerClaimOptions): BearerResolver')
     expect(r.file).toBe('packages/junction/src/core/litestone.ts')
     expect(importFrom(r)).toBe("import { bearerClaim } from '@frontierjs/junction'")
   })

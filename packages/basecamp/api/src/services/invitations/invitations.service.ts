@@ -34,6 +34,7 @@
 // token does.
 
 import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone, $ } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, refuseGrantAboveOwn, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { notifyPeople, workspaceMembers } from '../../core/notify.ts'
 import { grantsFor } from '../../core/capabilities.ts'
@@ -41,8 +42,6 @@ import { ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
-import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
-import { WORKSPACE_ROLE_LEVEL } from '../../core/gate.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 /** How long a link is good for. Long enough to survive a weekend, short enough
@@ -72,17 +71,6 @@ export function createInvitationsService(app: BasecampApp) {
   /** The system client. Everything about an invitation is a system act: the
    *  token is `@guarded`, and the accept path has no principal to scope by. */
   const sys = () => $.db.asSystem() as any
-
-  /** A role off the wire, refused BY NAME. The vocabulary is the map
-   *  `core/gate.ts` grades on, which a data test holds to the schema enum — a
-   *  role this app cannot grade is a role it must not hand out. */
-  function toRole(value: unknown, fallback: WorkspaceRole = 'developer'): WorkspaceRole {
-    if (value === undefined || value === null || value === '') return fallback
-    const roles = Object.keys(WORKSPACE_ROLE_LEVEL)
-    if (typeof value !== 'string' || !roles.includes(value))
-      throw new BadRequest(`role must be one of: ${roles.join(', ')}`)
-    return value as WorkspaceRole
-  }
 
   /** Lower-cased on the way in, so `Ada@Example.test` and `ada@example.test`
    *  cannot hold two open invitations to one workspace and cannot miss an
@@ -183,7 +171,8 @@ export function createInvitationsService(app: BasecampApp) {
     // invitation is for. The model is `@@gate("5")`, so without this they take a
     // custom method's read-gate floor and the one caller they exist for is
     // refused (`FJS-826`). What guards them is the token in the link.
-    methods: ['find', 'create', 'remove', 'resend',
+    methods: ['find', 'create', 'remove',
+              { method: 'resend',  gate: LEVELS.ADMINISTRATOR },
               { method: 'preview', gate: 0 },
               { method: 'accept',  gate: 0 }],
 
@@ -219,10 +208,10 @@ export function createInvitationsService(app: BasecampApp) {
       if (await sys().invitation.exists({ where: { workspaceId: ws(), email } }))
         throw new Conflict(`${email} already has an open invitation — resend it or revoke it first`)
 
-      // asSystem, and the token generated HERE rather than stamped onto
-      // $.data: `token` is `@guarded`, which puts it outside the
-      // create-mode JSON Schema, and that schema is closed — so a stamped token
-      // is refused as an unknown key before the write is ever attempted.
+      // asSystem: `token` is `@guarded`, a system-context lock in both
+      // directions with no `ctx.system` hatch, so the caller's own client is
+      // refused the write. A system client carries no principal, which is why
+      // stampInvitation states the tenant.
       const token = mintToken()
       const row   = await sys().invitation.create({ data: { ...data, token } })
 
@@ -340,8 +329,8 @@ export function createInvitationsService(app: BasecampApp) {
       } else {
         const name     = String(data.name ?? '').trim()
         const password = String(data.password ?? '')
-        if (!name)               throw new BadRequest('name is required')
-        if (password.length < 8) throw new BadRequest('password must be at least 8 characters')
+        if (!name)     throw new BadRequest('name is required')
+        if (!password) throw new BadRequest('password is required')
 
         // `app.auth` is junction's SessionVerifier — it DECLARES only what
         // junction calls, so a provider without these two refuses by name here
@@ -442,7 +431,6 @@ export function createInvitationsService(app: BasecampApp) {
         // out standing: an admin inviting an address they own as `owner` signs
         // in as that account and holds level 6 (`FJS-410`).
         create: [requireWorkspaceRole(app, 'admin', 'owner'), stampInvitation, refuseGrantAboveOwn()],
-        resend: [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
@@ -461,7 +449,6 @@ export function createInvitationsService(app: BasecampApp) {
   function stampInvitation(): void {
     const data = ($.data ?? {}) as Record<string, unknown>
     data.email       = toEmail(data.email)
-    data.role        = toRole(data.role)
     data.expiresAt   = expiryFrom()
     data.invitedBy   = actor()
     // The tenant, because `create` writes through `sys()` and a system client

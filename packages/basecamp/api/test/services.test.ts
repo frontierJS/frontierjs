@@ -2703,13 +2703,13 @@ describe('a service over no model is graded by the level it declares (FJS-D408)'
 
   test('portal ping is ADMINISTRATOR: a developer is refused, the owner pings', async () => {
     const id = (await env.as(viewer).service('portal').find()).data[0].id
-    await expect(env.as(developer).service('portal').call('ping', id)).rejects.toThrow(/requires level 5, caller has level 4/)
+    await expect(env.as(developer).service('portal').call('ping', id)).rejects.toThrow(/Requires admin role in this workspace to ping/)
     expect((await env.as(owner).service('portal').call('ping', id)).id).toBe(id)
   })
 
   // FJS-2566: the app's error mapper turns the method gate's refusal into a
-  // role. An in-process call never meets the mapper (an around hook's throw
-  // is raw there), so only the wire shows it.
+  // role, in-process and over the wire alike; a level no role reaches (the
+  // hub's SYSADMIN) keeps its level.
   test('over HTTP the same refusal names the role, and a level no role reaches keeps its level', async () => {
     const sys   = env.system as any
     const email = `wire-${Math.random().toString(36).slice(2, 8)}@x.co`
@@ -2870,6 +2870,41 @@ describe('a custom method grades its caller before a system read or a guarded wr
   })
 })
 
+// ─── FJS-2856: a method that writes as the app is graded by its declared level ─
+//
+// These thirteen write through asSystem() or act on a machine or a provider
+// before any write, so no model's gate ever graded them and a hook was the only
+// refusal. Each declares `gate:` in `methods:` now, which is also what shows in
+// an agent's tool list. The refusal is paired with the caller one rung up, who
+// must not meet it.
+describe('a custom method that writes as the app declares the level it needs (FJS-2856)', () => {
+  const DEVELOPER = 4, ADMIN = 5
+  const declared: Array<[string, string, number]> = [
+    ['jobs', 'trigger', DEVELOPER], ['volumes', 'prune', ADMIN], ['posture', 'check', DEVELOPER],
+    ['channels', 'test', ADMIN], ['servers', 'sync', DEVELOPER], ['servers', 'catalog', DEVELOPER],
+    ['servers', 'reconcile', DEVELOPER], ['servers', 'issueEnrollment', ADMIN],
+    ['apps', 'place', DEVELOPER], ['apps', 'unplace', DEVELOPER], ['invitations', 'resend', ADMIN],
+    ['api-keys', 'owners', ADMIN], ['secrets', 'verify', ADMIN],
+  ]
+
+  for (const [service, method, need] of declared) {
+    test(`${service}.${method} needs level ${need}: a caller one rung down is refused by the gate, the level itself is not`, async () => {
+      const below = need === ADMIN ? developer : viewer
+      const at    = need === ADMIN ? owner     : developer
+      const call  = (who: any) => env.as(who).service(service).call(method, 'no-such-id').catch((e: any) => e)
+
+      const refused = await call(below)
+      expect(refused).toBeInstanceOf(Error)
+      // The gate's refusal, said as a role by app.ts's mapper. The hook this
+      // replaced said "Requires developer or admin or owner role ... (you have: ...)".
+      expect(String(refused.message)).toBe(`Requires ${need === ADMIN ? 'admin' : 'developer'} role in this workspace to ${method}`)
+
+      const admitted = await call(at)
+      expect(String(admitted?.message ?? '')).not.toMatch(/requires level|Requires .* role/)
+    })
+  }
+})
+
 describe('the trash lists what was deleted, and each service brings its own back', () => {
   const uniq  = () => Math.random().toString(36).slice(2, 8)
   const trash = async (who: any = owner) => {
@@ -2970,6 +3005,23 @@ describe('the trash lists what was deleted, and each service brings its own back
     await env.as(owner).service('channels').restore(channel.id)
     expect(await live('notificationChannel', channel.id)).toBe(true)
     expect(await live('secret', secret.id)).toBe(true)
+  })
+
+  // FJS-2357: Secret.data is @encrypted and writable by a scoped caller (the
+  // secrets service does it), so a channel's credential is written AS the
+  // caller. A system write names no actor in the trail.
+  test('a channel’s credential Secret is written as the caller, not as the system', async () => {
+    const name = `Pager ${uniq()}`
+    await env.as(owner).service('channels').create({ name, kind: 'webhook', config: { url: 'https://hooks.example.test/x' }, secret: 'tok-2357' })
+
+    const secret = await (env.system as any).secret.findFirst({ where: { workspaceId: ws.id, name: `channel:${name}` } })
+    expect(secret.workspaceId).toBe(ws.id)
+
+    await new Promise(r => setTimeout(r, 50))
+    const entries = await (env.system as any).auditTrail.findMany({ where: { model: 'Secret', operation: 'create' } })
+    const mine    = entries.filter((e: any) => JSON.stringify(e.records ?? e).includes(secret.id))
+    expect(mine.length).toBeGreaterThan(0)
+    expect(mine.every((e: any) => e.actorId === owner.userId)).toBe(true)
   })
 
   test('recipes, dashboards and secrets answer restore, and a row that is not deleted is a 404', async () => {
@@ -3310,7 +3362,7 @@ describe('removing a server that is not online', () => {
 describe('the local ssh listing', () => {
   test('a developer is refused by the declared gate, before anything reads a config', async () => {
     await expect(env.as(developer).service('servers').call('localSshHosts', undefined, {}))
-      .rejects.toThrow(/requires level 5/)
+      .rejects.toThrow(/Requires admin role in this workspace to localSshHosts/)
   })
 
   test('an owner is told it is not offered here, rather than handed an empty list', async () => {
@@ -3324,7 +3376,7 @@ describe('the local ssh listing', () => {
 describe('the local repository listing', () => {
   test('a developer is refused by the declared gate, before anything reads a folder', async () => {
     await expect(env.as(developer).service('git').call('localRepos', undefined, { root: '~' }))
-      .rejects.toThrow(/requires level 5/)
+      .rejects.toThrow(/Requires admin role in this workspace to localRepos/)
   })
 
   test('an owner is told it is not offered here, rather than handed an empty list', async () => {
@@ -3336,7 +3388,7 @@ describe('the local repository listing', () => {
 describe('the workbench', () => {
   test('a developer is refused a run by the declared gate', async () => {
     await expect(env.as(developer).service('workbench').call('send', 'abc', { prompt: 'hi' }))
-      .rejects.toThrow(/requires level 5/)
+      .rejects.toThrow(/Requires admin role in this workspace to send/)
   })
 
   test('an owner is told it is not offered here, before anything is pinned or run', async () => {
@@ -3367,7 +3419,7 @@ describe('the workbench', () => {
 describe('pages', () => {
   test('a developer is refused a start by the declared gate', async () => {
     await expect(env.as(developer).service('pages').call('start', 'page:repo-rings.html', undefined))
-      .rejects.toThrow(/requires level 5/)
+      .rejects.toThrow(/Requires admin role in this workspace to start/)
   })
 
   test('an owner is told it is not offered here, before anything is listed or run', async () => {
@@ -3392,7 +3444,7 @@ describe('pages', () => {
 describe('registers', () => {
   test('a developer is refused a ruling by the declared gate', async () => {
     await expect(env.as(developer).service('registers').call('decide', 'FJS-D1', { pick: 'A' }))
-      .rejects.toThrow(/requires level 5/)
+      .rejects.toThrow(/Requires admin role in this workspace to decide/)
   })
 
   test('an owner is told it is not offered here, before anything is read or sent', async () => {
@@ -3411,5 +3463,49 @@ describe('registers', () => {
     const key = { authMethod: 'apiKey', scopes: [] }
     expect(narrowForAgent({ service: 'registers', method: 'discuss' }, { authMethod: 'session' })).toBe(false)
     expect(keyAllows(key, 'registers')).toBe(false)
+  })
+})
+
+// FJS-2355. A custom method states its payload in the seed, so the enum a
+// status must belong to is the schema's own and the 400 names the field.
+describe('hub custom methods declare their input', () => {
+  test('each names a type in the seed', () => {
+    const inputs = (env.app.services.get('hub') as any).describe().inputs
+    expect(inputs.setWorkspaceStatus).toBe('WorkspaceStatusChange')
+    expect(inputs.setUserStatus).toBe('UserStatusChange')
+    expect(inputs.createBot).toBe('NewBot')
+  })
+
+  test('a status outside the enum is refused naming the field', async () => {
+    await expect(env.as(sysadmin).service('hub').call('setWorkspaceStatus', undefined,
+      { workspaceId: ws.id, status: 'paused' })).rejects.toThrow(/status/)
+    await expect(env.as(sysadmin).service('hub').call('setUserStatus', undefined,
+      { userId: owner.userId, status: 'gone' })).rejects.toThrow(/status/)
+  })
+})
+
+describe('secrets kind is the schema enum, not a service copy', () => {
+  test('create and patch refuse a kind outside SecretKind', async () => {
+    await expect(env.as(owner).service('secrets').call('create', undefined,
+      { name: `S_${Date.now()}`, kind: 'password', data: 'x' })).rejects.toThrow(/kind/)
+  })
+})
+
+// FJS-2863. Member verbs state their payload in the seed, so the role a
+// payload may name is the WorkspaceRole enum and no service keeps a copy.
+describe('workspace member verbs declare their input', () => {
+  test('each names a type in the seed', () => {
+    const inputs = (env.app.services.get('workspaces') as any).describe().inputs
+    expect(inputs.addMember).toBe('WorkspaceMemberAdd')
+    expect(inputs.setMemberRole).toBe('WorkspaceMemberRole')
+  })
+
+  test('a role outside the enum is refused naming the field', async () => {
+    await expect(env.as(owner).service('workspaces').call('addMember', ws.id,
+      { userId: 'nobody-yet', role: 'wizard' })).rejects.toThrow(/role/)
+    await expect(env.as(owner).service('workspaces').call('setMemberRole', ws.id,
+      { userId: owner.userId, role: 'wizard' })).rejects.toThrow(/role/)
+    await expect(env.as(owner).service('invitations').create(
+      { email: `bad-${Date.now()}@x.co`, role: 'wizard' })).rejects.toThrow(/role/)
   })
 })

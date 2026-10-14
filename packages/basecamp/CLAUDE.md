@@ -314,12 +314,13 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   stay this app's: `restandingFor()`, for the workspaces service, which
   addresses `ctx.id` rather than the header and would otherwise carry an admin's
   standing into any other workspace they can name; and the role hooks, kept
-  only where no gate grades the work — a method writing through `asSystem()`,
-  one acting on a machine or provider before any write, the workspaces
-  service. A method writing through the caller's own client takes no hook:
-  the model's gate refuses and `app.ts`'s error mapper says it as a role. The
-  mapper reads the method gate's refusal only on the wire; an in-process call
-  gets junction's level prose.
+  only where no gate grades the work — the workspaces service's member
+  methods, which address `ctx.id` while `gateAuth` grades the header's
+  workspace. A method takes no hook: the model's gate refuses, or a `gate:`
+  in the service's `methods:` where it writes through `asSystem()` or acts on a
+  machine or provider first (`FJS-2856`), and `app.ts`'s error mapper says the
+  refusal as a role, in-process and on the wire alike. `methods:` is the
+  whole surface, so a service gaining a `gate:` lists every verb it answers.
 - **`Server`, `Environment` and `Variable` are graded on TWO axes.**
   `@@capabilities` on all three, ANDed with the gate (`FJS-D146`): a caller needs the
   level AND the grant. `WorkspaceMember.capabilities` holds the grant and
@@ -523,9 +524,12 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   **The one place the tenant is still stated by hand is a SYSTEM write.**
   `invitations.create` goes through `sys()`, and a system client carries no
   principal for the default to read — so `stampInvitation` sets
-  `workspaceId: ws()`, exactly as `channels.createSecret` already did. That is
-  the rule for any new `sys().<model>.create` on a scoped model: the tenant
-  comes from `ws()`, never from the payload.
+  `workspaceId: ws()`. That is the rule for any new `sys().<model>.create` on a
+  scoped model: the tenant
+  comes from `ws()`, never from the payload. `invitations.create` is the one
+  such write left, because `Invitation.token` is `@guarded`; a column that is
+  only `@encrypted` is written on the caller's own client, as a channel
+  credential's Secret is.
 - **A model whose required columns are server-written cannot be created from the
   browser.** `createResource` validates by default, and `ApiKey`'s create-mode
   `required` used to be `["userId","name","tokenHint"]`, two of three

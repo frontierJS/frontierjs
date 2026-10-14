@@ -40,39 +40,18 @@ Object.assign(session, {
 
 const _w = watchProxy(session)
 
-// ─── One JSON helper ──────────────────────────────────────────────────────────
-// Explicit Accept: application/json is load-bearing, not decoration. The dev
-// proxy routes on it — a request without it is treated as a page navigation and
-// answered with the SPA shell, because a service path and a page path are the
-// same URL (see web/config/vite.config.js).
-async function api(path, { method = 'GET', body, auth = true } = {}) {
+// ─── The three raw routes ─────────────────────────────────────────────────────
+// `client.fetch` owns the bearer, origin, call headers and the error a failed
+// call throws (`code` is the status). Explicit Accept: application/json is
+// load-bearing: the dev proxy routes on it — a request without it is treated as
+// a page navigation and answered with the SPA shell, because a service path and
+// a page path are the same URL (see web/config/vite.config.js).
+async function rawJson(path, { body, ...init } = {}) {
   const headers = { accept: 'application/json' }
   if (body) headers['content-type'] = 'application/json'
-  // The token is the client's — this file no longer keeps one. Two copies of
-  // "am I signed in" is what the framework session exists to end.
-  const token = auth ? getClient()?.token : null
-  if (token) headers['authorization'] = `Bearer ${token}`
-
-  // The client's origin, not a relative path: a page the desktop shell serves
-  // from tauri://localhost would send a relative one to the shell, and
-  // /workspaces answering nothing leaves every scoped call without a workspace.
-  const base = getClient()?.origin ?? ''
-  const res = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
-
-  // Read the body once, then decide. With the API down, Vite answers 502 with
-  // an empty body and res.json() throws "Unexpected end of JSON input" from
-  // inside a promise — the real cause is "the API isn't running", so say that.
+  const res = await getClient().fetch(path, { ...init, headers, body: body ? JSON.stringify(body) : undefined })
   const text = await res.text()
-  let data = null
-  try { data = text ? JSON.parse(text) : null } catch { /* not JSON */ }
-
-  if (!res.ok) {
-    const message = res.status === 502
-      ? 'API not reachable on :8120 — run `bun run api`'
-      : data?.message ?? `HTTP ${res.status}`
-    throw Object.assign(new Error(message), { status: res.status, data })
-  }
-  return data
+  return text ? JSON.parse(text) : null
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
@@ -89,7 +68,7 @@ export const ready = restore()
 
 async function restore() {
   try {
-    const probe = await api('/setup/probe', { auth: false })
+    const probe = await rawJson('/setup/probe')
     _w.needsSetup = Boolean(probe?.needs_setup)
     _w.canMail    = probe?.mail !== false
   } catch {
@@ -104,7 +83,7 @@ async function restore() {
     try {
       await loadWorkspace()
     } catch (err) {
-      if (err.status === 401) await signOut()
+      if (err.code === 401) await signOut()
     }
   }
 }
@@ -122,8 +101,7 @@ async function loadWorkspace() {
   // The shell reloads on `session.workspaceId`, so that window is three
   // Forbidden refusals in the API log on the first sign-in after a db reset,
   // when the remembered id belongs to a workspace that no longer exists.
-  const list = await api('/workspaces')
-  _w.workspaces = list?.data ?? []
+  _w.workspaces = await getClient().service('workspaces').findData()
 
   // Membership can also be revoked between sessions, which is the same test.
   if (remembered && _w.workspaces.some(w => w.id === remembered)) {
@@ -133,7 +111,7 @@ async function loadWorkspace() {
 
   // The fallback: the caller's oldest membership, named by the server off the
   // membership row itself, so it needs no second check here.
-  const { workspace_id: fallback } = await api('/auth/workspace')
+  const { workspace_id: fallback } = await rawJson('/auth/workspace')
   adoptWorkspace(fallback ?? null)
 }
 
@@ -153,8 +131,7 @@ function adoptWorkspace(id) {
  * request would otherwise name a workspace that answers nothing.
  */
 export async function reloadWorkspaces() {
-  const list = await api('/workspaces')
-  _w.workspaces = list?.data ?? []
+  _w.workspaces = await getClient().service('workspaces').findData()
   if (!_w.workspaces.some(w => w.id === session.workspaceId))
     adoptWorkspace(_w.workspaces[0]?.id ?? null)
 }
@@ -175,9 +152,8 @@ export function currentWorkspace() {
 export async function completeSetup({ workspace_name, name, email, password }) {
   // The only unauthenticated write in the app, and it self-closes: /setup
   // answers 409 once an active user exists.
-  const result = await api('/setup', {
+  const result = await rawJson('/setup', {
     method: 'POST',
-    auth:   false,
     body:   { workspace_name, name, email, password },
   })
 
@@ -195,7 +171,7 @@ export async function completeSetup({ workspace_name, name, email, password }) {
 //
 // Both of these run with no session — that is the whole point of an invitation
 // (`FJS-032`). They go through the Junction client rather than this file's
-// `api()` helper because they ARE service calls, and the client is what knows
+// `rawJson()` helper because they ARE service calls, and the client is what knows
 // the prefix and the transport.
 
 /** What is this link? Answered to whoever holds the token and nobody else. */

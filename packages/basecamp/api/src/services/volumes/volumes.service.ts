@@ -37,6 +37,7 @@
 // un-round — `0.01 GB` in the mock is 10.7 MB.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
@@ -151,7 +152,9 @@ export function createVolumesService(app: BasecampApp) {
     // `report` is the outpost's: no session, HMAC at the transport, so it
     // states gate 0 rather than taking a custom method's read-gate floor
     // (`FJS-826`).
-    methods: ['find', 'get', 'remove', 'usage', 'prune', { method: 'report', gate: 0 }],
+    // `prune` destroys data on a machine, and it is graded here because no model's
+    // gate reaches a method that acts on the machine before any write.
+    methods: ['find', 'get', 'remove', 'usage', { method: 'prune', gate: LEVELS.ADMINISTRATOR }, { method: 'report', gate: 0 }],
 
     // ── find ──────────────────────────────────────────────────────────
     async find() {
@@ -426,7 +429,6 @@ export function createVolumesService(app: BasecampApp) {
         // Both write paths destroy data on a machine. Same bar as removing a
         // server, and higher than the developer bar the read side sits at.
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        prune:  [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

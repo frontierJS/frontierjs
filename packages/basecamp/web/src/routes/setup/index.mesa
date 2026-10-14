@@ -24,7 +24,7 @@ title: First run
     } catch (err) {
       // 409 means someone else finished setup between the probe and this
       // submit — a second operator, or a tab left open across a db reset.
-      error = err.status === 409
+      error = err.code === 409
         ? 'Basecamp is already set up — sign in instead.'
         : err.message
     } finally {

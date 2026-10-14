@@ -47,7 +47,7 @@ describe('a declared timeout bounds one attempt', () => {
     // The whole defect in two assertions: the stuck job reached a terminal
     // state, and the job behind it ran. Before the timeout both stayed where
     // they were for as long as the process lived.
-    expect(q.find(stuck)!.status).toBe('failed')
+    expect(q.find(stuck)!.status).toBe('dead')
     expect(q.find(stuck)!.error).toContain('timeout')
     expect(q.find(behind)!.status).toBe('done')
   })
@@ -62,7 +62,7 @@ describe('a declared timeout bounds one attempt', () => {
 
     const row = q.find(id)!
     expect(row.attempts).toBe(2)
-    expect(row.status).toBe('failed')
+    expect(row.status).toBe('dead')
   })
 
   it('a handler that finishes inside its bound is untouched', async () => {
@@ -103,7 +103,7 @@ describe('a declared timeout bounds one attempt', () => {
     await q.start()
     const id = await q.dispatch('stuck', {}, { queue: 'bounded' })
     await Bun.sleep(300)
-    expect(q.find(id)!.status).toBe('failed')
+    expect(q.find(id)!.status).toBe('dead')
   })
 
   it("a handler's own timeout beats the queue's", () => {
@@ -126,15 +126,15 @@ describe('what a timeout cannot do', () => {
     await q.start()
     const id = await q.dispatch('late', {})
     await Bun.sleep(SETTLE)
-    expect(q.find(id)!.status).toBe('failed')
+    expect(q.find(id)!.status).toBe('dead')
 
     const before = q.find(id)!.finished_at
     rejectIt(new Error('the socket finally closed'))
     await Bun.sleep(50)
 
-    // Still failed, and the row is untouched by the late arrival: the attempt
+    // Still dead, and the row is untouched by the late arrival: the attempt
     // it belonged to was over.
-    expect(q.find(id)!.status).toBe('failed')
+    expect(q.find(id)!.status).toBe('dead')
     expect(q.find(id)!.finished_at).toBe(before)
   })
 
@@ -152,7 +152,7 @@ describe('what a timeout cannot do', () => {
       await q.start()
       const id = await q.dispatch('late-ok', {})
       await Bun.sleep(SETTLE)
-      expect(q.find(id)!.status).toBe('failed')
+      expect(q.find(id)!.status).toBe('dead')
 
       finish()
       await Bun.sleep(50)
@@ -162,7 +162,7 @@ describe('what a timeout cannot do', () => {
       expect(warnings.some(w => w.includes('late-ok') && w.includes('Its effects happened anyway')))
         .toBe(true)
       // And it still did not resurrect the row.
-      expect(q.find(id)!.status).toBe('failed')
+      expect(q.find(id)!.status).toBe('dead')
     } finally {
       console.warn = realWarn
     }

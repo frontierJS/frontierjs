@@ -19,7 +19,8 @@
 import { describe, it, expect, afterEach } from 'bun:test'
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { createTestApp, request } from '@frontierjs/junction'
+import { createTestApp, createStubAuth, createApp, defaultConfig, request } from '@frontierjs/junction'
+import { createClient, GatePlugin } from '../../litestone/src/index.js'
 import { createCaravan } from '../src/index.ts'
 import { openDb, buildStatements, aggregateStats } from '../src/db.ts'
 import type { CaravanInstance } from '../src/types.ts'
@@ -478,5 +479,61 @@ describe('the operator routes', () => {
     const res = await request(app).get('/jobs/queues')
     expect(res.status).toBe(200)
     expect((res.body as Array<{ name: string }>).map(q => q.name)).toContain('mail')
+  })
+})
+
+// ─── the standing is the app's own (FJS-2449) ─────────────────────────────────
+//
+// `gradeStanding` reads a session's columns. An app whose standing is a
+// membership row maps it in `GatePlugin({ getLevel })`, and the Data boundary
+// grades with that — so a manager the schema admits as ADMINISTRATOR was USER(4)
+// here, and an operator verb refused a caller every model in the app trusts.
+
+describe('the operator routes grade by the app\'s own mapping', () => {
+  const SCHEMA = `
+database main { path "./a.db" }
+model Thing {
+  id Int @id @default(autoincrement())
+  @@gate("0.4.4.5")
+  @@db(main)
+}
+`
+  const ADMIN = 5
+  const getLevel = (u: unknown) => {
+    const role = (u as { role?: string } | null)?.role
+    return role === 'manager' ? ADMIN : role === 'intern' ? 1 : 4
+  }
+
+  async function appWith(withMapping: boolean) {
+    const db: any = await createClient({
+      databases: ':memory:', schema: SCHEMA,
+      ...(withMapping ? { plugins: [new GatePlugin({ getLevel })] } : {}),
+    })
+    const auth = createStubAuth({ users: [
+      { id: 'mgr',    role: 'manager' },
+      { id: 'intern', role: 'intern', isAdmin: true },
+    ] })
+    const app: any = createApp({
+      db, auth,
+      config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 50 } },
+    } as never)
+    app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
+    return app
+  }
+
+  it('admit a manager the app maps to ADMINISTRATOR though the session has no admin column', async () => {
+    const app = await appWith(true)
+    expect((await request(app).post('/jobs/queues/mail/pause').auth('test-token-mgr')).status).toBe(200)
+  })
+
+  it('refuse a caller the app maps below ADMINISTRATOR though the session says isAdmin', async () => {
+    const app = await appWith(true)
+    expect((await request(app).post('/jobs/queues/mail/pause').auth('test-token-intern')).status).toBe(403)
+  })
+
+  it('fall back to the shipped grader where the client cannot grade', async () => {
+    const app = await appWith(false)
+    expect((await request(app).post('/jobs/queues/mail/pause').auth('test-token-mgr')).status).toBe(403)
+    expect((await request(app).post('/jobs/queues/mail/pause').auth('test-token-intern')).status).toBe(200)
   })
 })

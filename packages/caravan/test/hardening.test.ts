@@ -132,7 +132,7 @@ describe('FJS-675 — a claim a process cannot execute', () => {
     for (let i = 0; i < 5; i++) ids.push(await web.dispatch('send-email', { i }, { queue: 'email' }))
     await Bun.sleep(300)
 
-    expect(web.stats().total.failed).toBe(0)
+    expect(web.stats().total.dead).toBe(0)
     for (const id of ids) expect(web.find(id)!.status).toBe('pending')
 
     let ran = 0

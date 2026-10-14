@@ -158,6 +158,7 @@ table `credential` · db `main` · gate `8`
 | `value` | `String` | no | — | @guarded · **required on write** |
 
 ```
+@@unique(type, value), where: ((("type" != 'password' AND "type" != 'totp') AND "type" != 'totpPending') AND "type" != 'recoveryCode')
 @@index(type, value)
 @@index(userId, type)
 ```

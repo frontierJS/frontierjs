@@ -121,6 +121,15 @@
   const unit = column?.rule?.['x-unit']?.symbol ?? null
   const withUnit = (shown) => unit ? `${shown} ${unit}` : String(shown)
 
+  // A Float has no `@scale` to name its places, and one computed in JS carries
+  // noise (0.1 + 0.7 = 0.7999999999999999). With a unit beside it the number
+  // is a sentence, so it rounds to two places and drops trailing zeros.
+  const UNIT_PLACES = 2
+  const measured = (v) => {
+    if (!unit || typeof v !== 'number' || !Number.isFinite(v)) return v
+    return Number(v.toFixed(UNIT_PLACES))
+  }
+
   // An instant is a moment everyone shares and a wall clock is a reading on
   // somebody's wall; rendering the second in the viewer's zone moves an
   // appointment. So the declaration decides, and only a resolved instant is
@@ -203,7 +212,7 @@
   {:else if column?.display === 'scale'}
     {withUnit(scaled(value))}
   {:else if column?.display === 'number'}
-    {withUnit(value)}
+    {withUnit(measured(value))}
   {:else if column?.display === 'boolean'}
     {value ? 'yes' : 'no'}
   {:else if column?.display === 'enum'}

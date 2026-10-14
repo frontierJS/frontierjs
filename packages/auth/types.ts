@@ -58,6 +58,11 @@ export interface LitestoneAuthOptions {
   // walks away mid-episode leaves it open for exactly this long.
   supportTtl?: string
 
+  // What a new password must satisfy, graded at every door that writes one:
+  // createUser, confirmPasswordReset and changePassword. `min` is a length in
+  // characters. Default: { min: 8 }.
+  password?: { min?: number }
+
   // How long a password reset token lives. Default: '1 hour'
   passwordResetTtl?: string
 

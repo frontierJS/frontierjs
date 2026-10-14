@@ -8,7 +8,7 @@ import type { App as JunctionApp, SessionContext } from '@frontierjs/junction'
 
 // ─── Job record (as stored in SQLite) ────────────────────────────────────────
 
-export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+export type JobStatus = 'pending' | 'running' | 'done' | 'dead' | 'cancelled'
 
 export interface JobRecord {
   id:           string
@@ -108,7 +108,7 @@ export type JobHandler<T = unknown> = (ctx: JobContext<T>) => Promise<void> | vo
 export interface HandlerOptions {
   /** Which queue this handler listens on. Default: 'default' */
   queue?:       string
-  /** Max attempts before marking failed. Default: 3 */
+  /** Max attempts before the job is dead. Default: 3 */
   maxAttempts?: number
   /**
    * Delay in ms before each retry attempt.
@@ -368,7 +368,7 @@ export interface CaravanOptions {
    */
   jobsDir?:      string
   /**
-   * How long to retain terminal jobs (done/failed/cancelled), in ms.
+   * How long to retain terminal jobs (done/dead/cancelled), in ms.
    * Jobs older than this are deleted during the cleanup sweep.
    * Default: 7 days. Set to 0 to disable cleanup.
    */
@@ -433,7 +433,8 @@ export interface QueueStats {
   running:   number
   /** Completed, over the retention window — the one number that says work is moving. */
   done:      number
-  failed:    number
+  /** Gave up: attempts exhausted or a non-retryable fault. `retry(id)` is the way back. */
+  dead:      number
   cancelled: number
   /**
    * Age of the oldest in-flight job on this queue, in ms — `null` when nothing
@@ -594,6 +595,13 @@ export interface CaravanApp {
   principal?: () => { userId?: string } | null
 
   /**
+   * The app's Data client, scoped as a call would be — asked what level the app
+   * grades a caller at (`db.$levelOf`), where Caravan has no mapping of its own.
+   * Optional: standalone there is no client, and the shipped grader answers.
+   */
+  withDb?: <T>(fn: (db: unknown) => T | Promise<T>) => Promise<T>
+
+  /**
    * WHICH TENANT is in scope right now — read at dispatch, beside the actor.
    *
    * Optional for `principal`'s reason: Caravan runs standalone, and an app that
@@ -663,7 +671,7 @@ export interface CaravanInstance {
   /** Cancel a job by ID. Works on pending or running jobs. No-op if already terminal. */
   cancel(id: string): Promise<boolean>
 
-  /** Re-queue a failed or cancelled job (resets attempts to 0, clears error). */
+  /** Re-queue a dead or cancelled job (resets attempts to 0, clears error). */
   retry(id: string): Promise<boolean>
 
   /** Current queue statistics. */

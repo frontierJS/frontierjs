@@ -8,10 +8,16 @@
 // item, and the figure would stay where it was mounted.
 //
 // The cell is counted from the box the attached node sits in, so a scene
-// keeps its art and its figures in one wrapper.
-export const at = (col, row, layer = 10) => (el) => {
+// keeps its art and its figures in one wrapper. A `size` of `[cols, rows]`
+// makes the box a pane over that many cells; without one the box is as big
+// as what it holds.
+export const at = (col, row, layer = 10, size = null) => (el) => {
   el.position = 'absolute'
   el.left     = Math.max(0, col)
   el.top      = Math.max(0, row)
   el.zIndex   = layer
+  if (size) {
+    el.width  = size[0]
+    el.height = size[1]
+  }
 }

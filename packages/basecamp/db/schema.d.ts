@@ -106,6 +106,58 @@ export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firin
 
 export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update' | 'Variable.create' | 'Variable.delete' | 'Variable.update'
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+/**
+ * What the hub's custom methods accept (`hub.service.ts` declares each as
+ * `input:`). The status vocabularies are the enums above, so a status outside
+ * them is refused by the schema's own JSON Schema, naming the field.
+ */
+export interface WorkspaceStatusChange {
+  workspaceId: string
+  status: WorkspaceStatus
+}
+
+export interface UserStatusChange {
+  userId: string
+  status: UserStatus
+}
+
+export interface SystemAdminChange {
+  userId: string
+  isSystemAdmin: boolean
+}
+
+/**
+ * `role` is narrowed to the non-owner roles by the method itself: a bot cannot
+ * own a workspace, and an enum cannot say "all but one" without a second copy.
+ */
+export interface NewBot {
+  workspaceId: string
+  name: string
+  role?: WorkspaceRole | null
+}
+
+export interface FlagChange {
+  flagId: string
+  isEnabled: boolean
+}
+
+/**
+ * What `workspaces.addMember` and `workspaces.setMemberRole` accept. Both write
+ * a WorkspaceMember row by hand, so the payload is stated here rather than
+ * read off a model. An omitted role on add is the service's own default.
+ */
+export interface WorkspaceMemberAdd {
+  userId: string
+  role?: WorkspaceRole | null
+}
+
+export interface WorkspaceMemberRole {
+  userId: string
+  role: WorkspaceRole
+}
+
 // ── Models ───────────────────────────────────────────────────────────────────
 
 // ─── Credential ──────────────────────────────────────────────────
@@ -2246,7 +2298,6 @@ export interface App {
   type: AppType
   status: AppStatus
   source: unknown
-  isPublic: boolean
   port?: number | null
   containerPort?: number | null
   volumePath?: string | null
@@ -2269,7 +2320,6 @@ export interface AppCreate {
   type?: AppType
   status?: AppStatus
   source?: unknown
-  isPublic?: boolean
   port?: number | null
   containerPort?: number | null
   volumePath?: string | null
@@ -2289,7 +2339,6 @@ export interface AppUpdate {
   type?: AppType
   status?: AppStatus
   source?: unknown
-  isPublic?: boolean
   port?: number | null
   containerPort?: number | null
   volumePath?: string | null
@@ -2309,7 +2358,6 @@ export interface AppWhere extends WhereBase {
   type?: AppType | WhereOp<AppType> | null
   status?: AppStatus | WhereOp<AppStatus> | null
   source?: unknown | WhereOp<unknown> | null
-  isPublic?: boolean | WhereOp<boolean> | null
   port?: number | WhereOp<number> | null
   containerPort?: number | WhereOp<number> | null
   volumePath?: string | WhereOp<string> | null
@@ -4630,7 +4678,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$ping' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
@@ -4744,6 +4792,9 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly $attached:   string[]
   readonly $rawDbs:     Record<string, unknown>
   readonly $walStatus:  Record<string, unknown>
+  /** The instant the backup this database came out of holds, else null. */
+  $backupStamp(): { takenAt: string } | null
+  $clearBackupStamp(): void
   $ping(): true
   /** Is a transaction open on this connection right now? */
   readonly $inTransaction: boolean

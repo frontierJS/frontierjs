@@ -85,7 +85,10 @@ database audit { path "${dir}/audit/"; driver trail; retention 90d }
   let resetMinted = () => {}
   const auth = createLitestoneAuth(db, {
     encryptionKey: TEST_KEY,
-    onPasswordResetRequested:     async (_e, t) => { resetToken  = t; resetMinted() },
+    // Fixtures here sign in with `pw-1`; the policy is graded in
+    // password-policy.test.ts, which passes `password: undefined` for the default.
+    password:      { min: 1 },
+    onPasswordResetRequested:    async (_e, t) => { resetToken  = t; resetMinted() },
     onEmailVerificationRequested: async (_e, t) => { verifyToken = t },
     ...opts,
   })

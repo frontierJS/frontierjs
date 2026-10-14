@@ -47,3 +47,47 @@ describe('a fault that is not retryable', () => {
     expect(q.find(id)!.attempts).toBe(3)
   })
 })
+
+// `FJS-2126` -- `FJS-D655`: `retryAfterMs` sets the EARLIEST next run_at, so a
+// job rethrowing a rate-limit is not back before the provider said it could be.
+describe('a fault that names retryAfterMs', () => {
+  const run = async (thrown: Record<string, unknown>) => {
+    const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
+    made.push(q)
+    q.handle('limited', async () => {
+      throw Object.assign(new Error('429'), thrown)
+    }, { maxAttempts: 3, retryDelay: [10] })
+
+    await q.start()
+    const id = await q.dispatch('limited', {})
+    await Bun.sleep(SETTLE)
+    return q.find(id)!
+  }
+
+  it('is not retried before it, whatever the ladder says', async () => {
+    const job = await run({ retryAfterMs: 60_000 })
+    expect(job.attempts).toBe(1)
+    expect(job.status).toBe('pending')
+    expect(job.run_at - Date.now()).toBeGreaterThan(50_000)
+  })
+
+  it('reads it from a fault object too', async () => {
+    const job = await run({ fault: { kind: 'rate_limit', retryable: true, retryAfterMs: 60_000 } })
+    expect(job.attempts).toBe(1)
+    expect(job.run_at - Date.now()).toBeGreaterThan(50_000)
+  })
+
+  it('does not shorten a ladder step longer than it', async () => {
+    const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
+    made.push(q)
+    q.handle('slow', async () => {
+      throw Object.assign(new Error('429'), { retryAfterMs: 5 })
+    }, { maxAttempts: 3, retryDelay: [60_000] })
+    await q.start()
+    const id = await q.dispatch('slow', {})
+    await Bun.sleep(SETTLE)
+    const job = q.find(id)!
+    expect(job.attempts).toBe(1)
+    expect(job.run_at - Date.now()).toBeGreaterThan(50_000)
+  })
+})

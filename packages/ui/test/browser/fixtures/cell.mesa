@@ -71,6 +71,10 @@
 <!-- what the number counts -->
 <div id="hours"><Cell value={7.5} column={hours} /></div>
 <div id="tenths"><Cell value={75} column={tenths} /></div>
+<div id="hoursnoise"><Cell value={0.20000000000000018} column={hours} /></div>
+<div id="hourssum"><Cell value={8.799999999999999} column={hours} /></div>
+<div id="hoursfine"><Cell value={1.234} column={hours} /></div>
+<div id="hourswhole"><Cell value={8} column={hours} /></div>
 
 <!-- a point, under whichever keys the model declared -->
 <div id="geo"><Cell value={{ lat: 37.7749, lng: -122.4194 }} column={where} /></div>

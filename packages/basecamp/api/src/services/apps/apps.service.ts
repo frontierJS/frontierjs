@@ -23,6 +23,7 @@
 import { randomBytes } from 'node:crypto'
 import { createService, NotFound, BadRequest, parseWhere, normalizeOrderBy, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
          slugify, }
@@ -218,6 +219,14 @@ export function createAppsService(app: BasecampApp) {
     name:  'apps',
     scope: keyScope('apps'),
     model: 'App',
+    // The whole surface. `place` and `unplace` write AppServer as the app, which
+    // is `@@gate("2.8")`, so the level is stated here rather than read off it.
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      'logs', 'fromBlueprint',
+      { method: 'place',   gate: LEVELS.USER },
+      { method: 'unplace', gate: LEVELS.USER },
+    ],
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,
     // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -482,8 +491,6 @@ export function createAppsService(app: BasecampApp) {
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         // `fromBlueprint` is create's authority and writes `App` through the
         // caller's client. Topology, not content: the same authority that may patch the app.
-        place:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        unplace: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
       },
     },
   })

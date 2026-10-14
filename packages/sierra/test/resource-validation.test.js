@@ -548,6 +548,22 @@ describe('toFieldErrors — a thrown value becomes a form\'s error map', () => {
     })
   })
 
+  test('when a thrown value carries more than one wrapping, `errors` wins, then `data`, then `data.data`', () => {
+    // A hand-copied reader in an app took data.data first and disagreed with
+    // this one whenever two shapes were present at once.
+    const err = Object.assign(new Error('x'), {
+      errors: [{ field: 'a', message: 'from errors' }],
+      data:   { data: [{ field: 'a', message: 'from data.data' }] },
+    })
+    expect(toFieldErrors(err).fields).toEqual({ a: 'from errors' })
+
+    const shallower = Object.assign(new Error('x'), {
+      data: [{ field: 'a', message: 'from data' }],
+    })
+    shallower.data.data = [{ field: 'a', message: 'from data.data' }]
+    expect(toFieldErrors(shallower).fields).toEqual({ a: 'from data' })
+  })
+
   test('unwraps the list one wrapper shallower', () => {
     const err = Object.assign(new Error('nope'), {
       data: [{ field: 'plan', message: 'Plan is required' }],

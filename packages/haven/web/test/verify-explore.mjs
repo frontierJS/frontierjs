@@ -16,11 +16,19 @@
  * `--frame /` of Ana's no longer shows Sam, a `--frame /tavern/` does, and the
  * tavern's door brings Sam back out (`IDEAS/haven.md` 2.2). Sam is a mod
  * (`HAVEN_MODS`): `/ban ana` leaves Ana's next frame with no square and
- * `/unban ana` gives it back (`IDEAS/haven.md` 3.2).
+ * `/unban ana` gives it back (`IDEAS/haven.md` 3.2). Then the square is
+ * wider than a screen (6.1): Sam walks east off the first screen and the
+ * view follows; Ana's frame from the spawn has Sam's line as a marker on the
+ * edge facing him; and Bea, a third terminal walking the same way, sees
+ * Sam's figure and line in the part the first screen never showed.
  *
  * Traps (the terminal's own are in `terminal.mjs`):
  * - A move past 10 a second is dropped by the server in silence, so the
  *   steps wait for the screen between keys.
+ * - A screen's view is its own figure's, so a terminal that walked past the
+ *   edge is read through the view the drive followed beside it (`eye`), and
+ *   a `--frame` from the spawn through the stage's own, which this drive
+ *   never pans.
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
@@ -31,8 +39,9 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { signIn } from '../../api/test/sign-in.ts'
-import { TUI, cellOf, screen, until } from './terminal.mjs'
+import { TUI, cellOf, screen, terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
+import { follow, VIEW } from '../src/stage.js'
 
 const WEB = join(import.meta.dir, '..')
 const square = await stageOf('Square')
@@ -66,7 +75,8 @@ const shell = spawn('script', ['-qfec', `stty rows 30 cols 100; bun ${TUI} --api
 let out = ''
 shell.stdout.on('data', (d) => { out += d })
 const exited = new Promise((r) => shell.on('exit', (code) => r(code)))
-const at = (x, y, width, scene = square) => cellOf(screen(out), x, y, width, scene)
+const at = (x, y, width, scene = square, view) => cellOf(screen(out), x, y, width, scene, view)
+const samTerm = { write: (k) => shell.stdin.write(k), at }
 
 check(await until(() => screen(out).includes('j/k moves, Enter opens')), 'the shell lists the square', screen(out))
 shell.stdin.write('\r')
@@ -142,23 +152,28 @@ check(await until(() => at(sx, sy) === ' ' && screen(out).includes('1 here')), "
 
 // ─── the tavern's door ────────────────────────────────────────────────
 
-/** Walk the shell's figure one step at a time, each waiting for the screen. */
-async function walk(key, from, to, scene = square) {
+/**
+ * Walk a terminal's figure one step at a time, each waiting for the screen.
+ * With an `eye`, the view that terminal has is followed beside it, so a
+ * step past the edge is read where the pan put it.
+ */
+async function walk(who, key, from, to, scene = square, eye = null) {
   const code = { left: '\x1b[D', right: '\x1b[C', up: '\x1b[A', down: '\x1b[B' }[key]
   let { x, y } = from
   while (x !== to.x || y !== to.y) {
     x += Math.sign(to.x - x)
     y += Math.sign(to.y - y)
-    shell.stdin.write(code)
-    if (!await until(() => at(x, y, 1, scene) === '@', 3000)) return false
+    if (eye) eye.view = follow(eye.view, { x, y }, scene)
+    who.write(code)
+    if (!await until(() => who.at(x, y, 1, scene, eye?.view) === '@', 3000)) return false
   }
   return true
 }
 
 const door = square.doors[0]
 const inFront = { x: door.x, y: door.y + 1 }
-const walked = await walk('up', { x: sx + dx, y: sy }, { x: sx + dx, y: inFront.y })
-  && await walk('left', { x: sx + dx, y: inFront.y }, inFront)
+const walked = await walk(samTerm, 'up', { x: sx + dx, y: sy }, { x: sx + dx, y: inFront.y })
+  && await walk(samTerm, 'left', { x: sx + dx, y: inFront.y }, inFront)
 check(walked && at(inFront.x, inFront.y) === '@', "Sam walks to the left house's door", screen(out))
 shell.stdin.write('\x1b[A')
 check(await until(() => at(tavern.spawn.x, tavern.spawn.y, 1, tavern) === '@' && screen(out).includes('The tavern · 1 here')),
@@ -168,6 +183,18 @@ check(await until(() => at(tavern.spawn.x, tavern.spawn.y, 1, tavern) === '@' &&
 const bar = { x: tavern.spawn.x, y: tavern.spawn.y - 1 }
 shell.stdin.write('\x1b[A')
 await until(() => at(bar.x, bar.y, 1, tavern) === '@', 3000)
+
+// ─── the history pane ─────────────────────────────────────────────────
+
+shell.stdin.write('the hearth is warm\r')
+check(await until(() => at(bar.x, bar.y - 1, 20, tavern) === '(the hearth is warm)'), 'Sam says a line in the tavern', screen(out))
+shell.stdin.write('\x1b[5~')
+check(await until(() => screen(out).includes('sam: the hearth is warm') && screen(out).includes('PageDown newer')),
+  "PageUp opens the tavern's history over the art, with Sam's line signed", screen(out))
+check(!screen(out).includes('sam: hi all'), "and the square's line is not in it", screen(out))
+shell.stdin.write('\x1b[6~')
+check(await until(() => !screen(out).includes('PageDown newer') && at(bar.x, bar.y, 1, tavern) === '@'),
+  'PageDown past the newest line closes it, the figure where it stood', screen(out))
 
 const outside = await havenFrame('/')
 check(outside.code === 0 && cellOf(outside.framed, inFront.x, inFront.y, 1, square) === ' ' && outside.framed.includes('The square · 1 here'),
@@ -179,7 +206,7 @@ const ina = await inside
 check(ina.code === 0 && cellOf(ina.framed, bar.x, bar.y, 1, tavern) === 'S',
   "Ana's frame of the tavern shows Sam's figure where it stepped", ina.framed + ina.err)
 
-await walk('down', bar, tavern.spawn, tavern)
+await walk(samTerm, 'down', bar, tavern.spawn, tavern)
 shell.stdin.write('\x1b[B')
 check(await until(() => at(sx, sy) === '@' && screen(out).includes('The square · 1 here')),
   "the tavern's door brings Sam back out to the square", screen(out))
@@ -209,6 +236,48 @@ check(await until(() => screen(out).includes('2 here') && screen(out).includes('
 const backed = await back
 check(backed.code === 0 && backed.framed.includes('The square · 2 here') && backed.framed.includes('· sam'),
   "and Ana's frame has Sam in the square", backed.framed + backed.err)
+
+// ─── past the edge ────────────────────────────────────────────────────
+
+// East along the spawn's row to the far side, then ten back, so Sam stands
+// inside the view's slack with the view still panned and his bubble on his
+// own cell rather than pushed in from the edge.
+const farEast = { x: 110, y: sy }
+const far     = { x: 100, y: sy }
+const samEye  = { view: square.view }
+check(square.width > VIEW.w && square.view.w === VIEW.w, `the square is ${square.width} cells wide and a screen shows ${VIEW.w}`)
+const east = await walk(samTerm, 'right', { x: sx, y: sy }, farEast, square, samEye)
+  && await walk(samTerm, 'left', farEast, far, square, samEye)
+check(east && samEye.view.x > 0 && at(far.x, far.y, 1, square, samEye.view) === '@',
+  `Sam walks east past the first screen's edge and the view follows, to column ${samEye.view.x}`, screen(out))
+check(at(sx, sy, 1, square) === null && at(square.spawn.x + 1, 0, 1, square, samEye.view) === '-',
+  "the first screen's corner is gone from Sam's and the wall runs on", screen(out))
+shell.stdin.write('over here\r')
+check(await until(() => at(far.x, far.y - 1, 11, square, samEye.view) === '(over here)'), 'Sam says a line there', screen(out))
+
+const edge = await havenFrame('/')
+check(edge.code === 0 && cellOf(edge.framed, VIEW.w - 12, far.y - 1, 12, square) === '(over here)>',
+  "Ana's frame from the spawn shows Sam's line as a marker on the edge facing him", edge.framed + edge.err)
+check(cellOf(edge.framed, far.x, far.y, 1, square) === null && edge.framed.includes('· sam'),
+  "Sam's figure is past her edge, and Sam is still listed", edge.framed)
+
+const bea     = await signIn(env.port, 'bea')
+const beaTerm = terminal(API, bea.token, square)
+const beaEye  = { view: square.view }
+const beaWho  = { write: (k) => beaTerm.shell.stdin.write(k), at: beaTerm.at }
+check(await until(() => beaTerm.screen().includes('j/k moves, Enter opens')), "Bea's terminal lists the square", beaTerm.screen())
+beaTerm.shell.stdin.write('\r')
+check(await until(() => beaTerm.at(sx, sy) === '@' && beaTerm.screen().includes('2 here') && beaTerm.at(VIEW.w - 12, far.y - 1, 12) === '(over here)>'),
+  "Bea walks in at the spawn and sees Sam's marker on her edge", beaTerm.screen())
+const beaEast = await walk(beaWho, 'right', { x: sx, y: sy }, { x: farEast.x - 1, y: sy }, square, beaEye)
+  && await walk(beaWho, 'left', { x: farEast.x - 1, y: sy }, { x: far.x - 1, y: sy }, square, beaEye)
+check(beaEast && beaTerm.at(far.x, far.y, 1, square, beaEye.view) === 'S' && beaTerm.at(far.x, far.y - 1, 11, square, beaEye.view) === '(over here)',
+  "Bea's screen, panned the same way, shows Sam's figure and line where the first screen never reached", beaTerm.screen())
+check(await until(() => at(far.x - 1, far.y, 1, square, samEye.view) === 'B'), "and Sam's shows Bea beside him", screen(out))
+beaTerm.shell.stdin.write('\x03')
+const beaCode = await Promise.race([beaTerm.exited, new Promise((r) => setTimeout(() => r('timeout'), 5000))])
+check(beaCode === 0, "Bea's Ctrl+C exits 0", `exit: ${beaCode}`)
+if (beaCode === 'timeout') beaTerm.shell.kill('SIGKILL')
 
 // ─── done ─────────────────────────────────────────────────────────────
 

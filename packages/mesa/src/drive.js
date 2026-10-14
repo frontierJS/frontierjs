@@ -363,8 +363,16 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   if (bootstrap) await cmd('Page.addScriptToEvaluateOnNewDocument', { source: bootstrap })
 
   async function evaluate(expression) {
+    // The inspector holds an awaited promise weakly, so one whose only holder is
+    // a network read in flight can be collected on a GC mid-await and the call
+    // fails with 'Promise was collected' on a page that is fine. The page keeps
+    // the promise until it settles.
     const r = await cmd('Runtime.evaluate', {
-      expression: `(async () => { ${expression} })()`,
+      expression: `(() => {
+        const p = (async () => { ${expression} })();
+        (globalThis.__driveHeld ??= new Set()).add(p);
+        return p.finally(() => globalThis.__driveHeld.delete(p));
+      })()`,
       awaitPromise: true, returnByValue: true,
     })
     if (r.exceptionDetails)
@@ -509,8 +517,14 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   }
 
   async function close() {
-    await cmd('Target.closeTarget', { targetId }).catch(() => {})
-    chrome.kill()
+    // A browser that stopped answering never answers this, and send's own bound
+    // is 30s. SIGTERM to a stopped process stays pending too, so an unanswered
+    // close goes straight to SIGKILL rather than waiting out the exit below.
+    const answered = await Promise.race([
+      cmd('Target.closeTarget', { targetId }).then(() => true, () => false),
+      new Promise((r) => setTimeout(() => r(false), 2000)),
+    ])
+    chrome.kill(answered ? 'SIGTERM' : 'SIGKILL')
     // Chrome is still flushing its profile when kill() returns, so removing
     // the directory straight away throws ENOTEMPTY — and threw it before the
     // report was printed, which turned every run into a stack trace with no

@@ -31,8 +31,7 @@ test('a proof row naming a directory with a trailing slash matches a file under 
   expect(matchChanged('`_steps-docker/`', { files: ['x/my_steps-docker/a.md'], packages: [] })).toBeNull()
 })
 
-// FJS-2378: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-test.failing('runChecks refuses an --only id that names no rule in this scope', () => {
+test('runChecks refuses an --only id that names no rule in this scope', () => {
   const root = tree({ 'db/schema.lite': 'model A {\n  id Int @id\n}\n' })
   try {
     expect(() => runChecks({ root, only: ['vite-strict-prot'] })).toThrow(/vite-strict-prot/)
@@ -54,8 +53,7 @@ test('vite-strict-port fires on strictPort: false and on strictPort only in a co
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-// FJS-2370: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-test.failing('proof-target reports a Run cell that resolves to no target at all', () => {
+test('proof-target reports a Run cell that resolves to no target at all', () => {
   const root = tree({
     'package.json': '{ "name": "ws", "scripts": {} }',
     'DRIVES.md': [

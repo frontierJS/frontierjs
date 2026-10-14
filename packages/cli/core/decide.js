@@ -235,13 +235,18 @@ function closeRow(root, row, how, today) {
 function strikeQuestion(src, q, { date, ruling, answer }) {
   const lines = src.split('\n')
   const i     = q.line - 1
+  const n     = q.lines ?? 1
+  if (i < 0 || i >= lines.length) return null
+  // A wrapped lead is one sentence over several lines; the match crosses the breaks.
+  const block = lines.slice(i, i + n).join('\n')
+  const flex  = s => s.split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')
   const bold  = `**${q.question}**`
-  const lead  = lines[i]?.includes(bold) ? bold : q.question
-  const at    = lines[i]?.indexOf(lead) ?? -1
-  if (at < 0) return null
-  lines[i] = lines[i].slice(0, at) +
+  const match = block.match(new RegExp(flex(bold))) ?? block.match(new RegExp(flex(q.question)))
+  if (!match) return null
+  const struck = block.slice(0, match.index) +
     `~~${bold}~~ **Answered ${date} (\`${ruling}\`): ${answer}.**` +
-    lines[i].slice(at + lead.length)
+    block.slice(match.index + match[0].length)
+  lines.splice(i, n, ...struck.split('\n'))
   return lines.join('\n')
 }
 

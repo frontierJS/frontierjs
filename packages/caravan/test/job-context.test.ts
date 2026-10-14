@@ -278,7 +278,7 @@ describe('what cannot be resolved', () => {
     await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
     delete stub.users.alice
 
-    const failed = () => jobsOf(app).list({ status: 'failed' })
+    const failed = () => jobsOf(app).list({ status: 'dead' })
     expect(await until(() => failed().length > 0)).toBe(true)
     expect(failed()[0].error).toContain('no longer resolves')
 
@@ -292,7 +292,7 @@ describe('what cannot be resolved', () => {
     jobsOf(app).handle('receipt', async () => { ran++ }, { maxAttempts: 3, retryDelay: [60_000] })
     await jobsOf(app).dispatch('receipt', {}, { actor: 'gone-7' })
 
-    const failed = () => jobsOf(app).list({ status: 'failed' })
+    const failed = () => jobsOf(app).list({ status: 'dead' })
     expect(await until(() => failed().length > 0)).toBe(true)
     expect(failed()[0].attempts).toBe(1)
     expect(failed()[0].error).toContain("'receipt'")
@@ -320,7 +320,7 @@ describe('what cannot be resolved', () => {
     jobsOf(app).handle('needs-actor', async () => {}, { maxAttempts: 1 })
     await jobsOf(app).dispatch('needs-actor', {}, { actor: 'alice' })
 
-    const failed = () => jobsOf(app).list({ status: 'failed' })
+    const failed = () => jobsOf(app).list({ status: 'dead' })
     expect(await until(() => failed().length > 0)).toBe(true)
     expect(failed()[0].error).toContain('sessionFor')
 

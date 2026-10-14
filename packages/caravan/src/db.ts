@@ -473,7 +473,7 @@ export const PLANNED = {
     DELETE FROM jobs
     WHERE id IN (
       SELECT id FROM jobs
-      WHERE status IN ('done', 'failed', 'cancelled')
+      WHERE status IN ('done', 'dead', 'cancelled')
         AND (finished_at < $before OR finished_at IS NULL)
       LIMIT ${CLEANUP_BATCH}
     )
@@ -589,7 +589,7 @@ export function buildStatements(db: Database) {
     WHERE id = $id AND status = 'running' AND owner_id = $owner
   `))
 
-  // ── Mark failed (will retry or transition to terminal 'failed' depending on caller) ─
+  // ── Mark failed (will retry or transition to terminal 'dead' depending on caller) ─
   // Same guard, and it carries more: without it a cancelled job whose handler
   // then threw is written back to 'pending' and runs again.
 
@@ -716,7 +716,7 @@ export function buildStatements(db: Database) {
   `))
 
   // ── Retry a terminal job ────────────────────────────────────────────────────
-  // Works on both 'failed' and 'cancelled' — explicit retry intent overrides
+  // Works on both 'dead' and 'cancelled' — explicit retry intent overrides
   // whatever stopped the job in the first place.
 
   const retryTerminal = wrap<void, { id: string; now: number }>(db.prepare(`
@@ -725,7 +725,7 @@ export function buildStatements(db: Database) {
       error     = NULL,
       attempts  = 0,
       run_at    = $now
-    WHERE id = $id AND status IN ('failed', 'cancelled')
+    WHERE id = $id AND status IN ('dead', 'cancelled')
   `))
 
   // ── Stats ───────────────────────────────────────────────────────────────────
@@ -912,7 +912,7 @@ export function aggregateStats(
   pauses:  { queue: string; paused_at: number }[] = [],
 ): CaravanStats {
   const zero = (): QueueStats => ({
-    pending: 0, running: 0, done: 0, failed: 0, cancelled: 0, oldestRunningMs: null, pausedMs: null,
+    pending: 0, running: 0, done: 0, dead: 0, cancelled: 0, oldestRunningMs: null, pausedMs: null,
   })
 
   const result: CaravanStats = {

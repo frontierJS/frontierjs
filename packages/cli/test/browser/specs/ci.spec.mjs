@@ -126,7 +126,7 @@ export async function run(t) {
       // whatever the page's other loaders have the server doing.
       if (String(url).endsWith('/api/ask-claude')) {
         if (opts?.method === 'POST') askPosts++;
-        else return new Response(JSON.stringify({ question: 'q', rules: '', tools: [], bash: [], budget: 1 }));
+        else return new Response(JSON.stringify({ question: 'q', rules: '', tools: [], bash: [], budget: 1, efforts: ['low'], effort: 'low' }));
       }
       if (String(url).endsWith('/api/ci/fix')) {
         posted.push(JSON.parse(opts.body));

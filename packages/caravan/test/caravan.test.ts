@@ -220,7 +220,7 @@ describe('job execution', () => {
     const stats = q.stats()
     expect(stats.total.pending).toBe(0)
     expect(stats.total.running).toBe(0)
-    expect(stats.total.failed).toBe(0)
+    expect(stats.total.dead).toBe(0)
     expect(stats.total.cancelled).toBe(0)
   })
 
@@ -230,7 +230,7 @@ describe('job execution', () => {
     await q.start()
     const id = await q.dispatch('unknown-job', {})
     await Bun.sleep(300)
-    expect(q.stats().total.failed).toBe(0)
+    expect(q.stats().total.dead).toBe(0)
     const row = q.find(id)
     expect(row?.status).toBe('pending')
     expect(row?.attempts).toBe(0)
@@ -281,13 +281,13 @@ describe('retry logic', () => {
 
     await q.start()
     await q.dispatch('failing-job', {})
-    await waitFor(() => q.stats().total.failed === 1, 3_000)
+    await waitFor(() => q.stats().total.dead === 1, 3_000)
 
     expect(attempts).toBe(3)
-    expect(q.stats().total.failed).toBe(1)
+    expect(q.stats().total.dead).toBe(1)
   })
 
-  it('marks job failed after maxAttempts is exhausted', async () => {
+  it('marks job dead after maxAttempts is exhausted', async () => {
     q.handle('always-fails', async () => { throw new Error('fail') }, {
       maxAttempts: 2,
       retryDelay:  [10],
@@ -295,8 +295,8 @@ describe('retry logic', () => {
 
     await q.start()
     await q.dispatch('always-fails', {})
-    await waitFor(() => q.stats().total.failed === 1, 2_000)
-    expect(q.stats().total.failed).toBe(1)
+    await waitFor(() => q.stats().total.dead === 1, 2_000)
+    expect(q.stats().total.dead).toBe(1)
   })
 
   it('succeeds on a later attempt', async () => {
@@ -313,7 +313,7 @@ describe('retry logic', () => {
     await q.dispatch('eventually-succeeds', {})
     await waitFor(() => calls >= 3 && q.stats().total.pending === 0, 3_000)
     expect(calls).toBe(3)
-    expect(q.stats().total.failed).toBe(0)
+    expect(q.stats().total.dead).toBe(0)
   })
 
 })
@@ -413,7 +413,7 @@ describe('retry terminal job', () => {
   beforeEach(() => { q = makeQueue() })
   afterEach(async () => { await q.stop() })
 
-  it('re-queues a failed job', async () => {
+  it('re-queues a dead job', async () => {
     q.handle('failed-job', async () => { throw new Error('fail') }, {
       maxAttempts: 1,
       retryDelay:  [],
@@ -421,12 +421,12 @@ describe('retry terminal job', () => {
 
     await q.start()
     const id = await q.dispatch('failed-job', {})
-    await waitFor(() => q.stats().total.failed === 1, 2_000)
+    await waitFor(() => q.stats().total.dead === 1, 2_000)
 
     const requeued = await q.retry(id)
     expect(requeued).toBe(true)
     expect(q.stats().total.pending).toBe(1)
-    expect(q.stats().total.failed).toBe(0)
+    expect(q.stats().total.dead).toBe(0)
   })
 
   it('re-queues a cancelled job', async () => {
@@ -460,7 +460,7 @@ describe('stats', () => {
     const stats = q.stats()
     expect(stats.total.pending).toBe(0)
     expect(stats.total.running).toBe(0)
-    expect(stats.total.failed).toBe(0)
+    expect(stats.total.dead).toBe(0)
     expect(stats.total.cancelled).toBe(0)
     expect(stats.queues['default']).toBeDefined()
   })

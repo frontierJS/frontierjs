@@ -1,14 +1,16 @@
 <script>
   // Square.mesa — the square: the tavern and three houses along the top, the
-  // fountain in the middle, the hedges and flowers along the bottom. The
+  // fountain in the middle, the hedges and flowers along the bottom; and east
+  // of the first screen, three more houses, the well, the market stall and the
+  // signpost, which the view pans to as a figure walks there (6.1). The
   // tavern's door is the left house's. The picture this draws is
   // `square.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Row   from '@/components/Row.mesa'
   import Door  from '@/components/Door.mesa'
-  import { piece } from '@/pieces/index.js'
-  import { frame } from '@/pieces/frame.js'
+  import { piece }  from '@/pieces/index.js'
+  import { framed } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
   import { lamp }  from '@/pieces/lamp.js'
   import { bench } from '@/pieces/bench.js'
@@ -125,6 +127,44 @@ sbbbbbbbbbbbbbbbbbs
    sssssssssssss
 `)
 
+  // The square's own frame: a screen and two thirds wide, where the shared
+  // `frame` is one screen.
+  const frame = framed(159, 26)
+
+  const well = piece('well', String.raw`
+   __
+  /||\
+ |~~~~|
+ |____|
+`, String.raw`
+   uu
+  uwwu
+ wbbbbw
+ wwwwww
+`)
+
+  const stall = piece('stall', String.raw`
+ _________
+/_________\
+ |  o  o  |
+ |________|
+`, String.raw`
+ rrrrrrrrr
+rrrrrrrrrrr
+ w  p  p  w
+ wwwwwwwwww
+`)
+
+  const signpost = piece('signpost', String.raw`
+[east]>
+   |
+  _|_
+`, String.raw`
+eeeeeee
+   l
+  lll
+`)
+
   const hedge  = piece('hedge', ',', 'g')
   const flower = piece('flower', '*', 'p')
 
@@ -172,4 +212,21 @@ sbbbbbbbbbbbbbbbbbs
   <Row of={hedge} y={23} x={67} n={12} />
   <Row of={hedge} y={23} x={83} n={10} />
   <Row of={flower} y={24} x={6} n={29} step={3} />
+  <Piece of={houseA} x={100} y={2} />
+  <Piece of={houseB} x={122} y={1} />
+  <Piece of={houseC} x={143} y={2} />
+  <Piece of={tree} x={99}  y={13} />
+  <Piece of={tree} x={144} y={12} />
+  <Piece of={lamp} x={114} y={14} />
+  <Piece of={lamp} x={140} y={14} />
+  <Piece of={well} x={120} y={13} />
+  <Piece of={stall} x={128} y={14} />
+  <Piece of={bench} x={118} y={20} />
+  <Piece of={bench} x={132} y={20} />
+  <Piece of={signpost} x={151} y={20} />
+  <Row of={hedge} y={23} x={99}  n={10} />
+  <Row of={hedge} y={23} x={113} n={12} />
+  <Row of={hedge} y={23} x={129} n={10} />
+  <Row of={hedge} y={23} x={143} n={12} />
+  <Row of={flower} y={24} x={99} n={19} step={3} />
 </Scene>

@@ -4,9 +4,13 @@
 // The terminal paints no CSS and mesa's terminal tags lower to text and boxes
 // only, so color per cell goes through the engine's own frame buffer: this
 // attach puts one inside the box it is attached to, sized to the stage, and
-// draws every cell from `stage.look()`. Figures and bubbles are `at()` boxes
-// over it, a layer up, so they cover the art without the art knowing they
-// are there.
+// draws every cell of `stage.view` from `stage.look()` — the slice the screen
+// shows, which pans as the figure walks (6.1) — so a figure's cell on screen
+// is its stage cell less the view's corner. Figures and bubbles are `at()`
+// boxes over it, a layer up, so they cover the art without the art knowing
+// they are there. The buffer is the view's size, made again when that
+// changes: the editor asking for the whole stage, or a piece mounted past
+// the edge of a stage smaller than the view.
 //
 // A stage with a cycling palette entry or a pacer is redrawn on the shortest
 // step, and on any claim changing — a piece moved. The clock is the wall's
@@ -28,25 +32,38 @@ const rgba = (hex) => {
 }
 
 export const paint = (stage) => (box) => {
-  const width  = stage.width
-  const height = stage.height
-  const fb = new FrameBufferRenderable(box.ctx, { width, height, respectAlpha: true, flexShrink: 0 })
-  box.add(fb)
+  let fb = null
+  let size = { w: 0, h: 0 }
+  const buffer = (w, h) => {
+    if (fb && size.w === w && size.h === h) return fb
+    if (fb) { box.remove(fb); fb.destroy() }
+    size = { w, h }
+    fb = new FrameBufferRenderable(box.ctx, { width: w, height: h, respectAlpha: true, flexShrink: 0 })
+    box.add(fb)
+    return fb
+  }
 
   const draw = () => {
-    const ms  = Date.now()
-    const buf = fb.frameBuffer
+    const ms = Date.now()
+    const v  = stage.view
+    if (!v.w || !v.h) return
+    const buf = buffer(v.w, v.h).frameBuffer
     buf.clear(CLEAR)
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const { ch, fg, bg } = stage.look(x, y, ms)
+    for (let row = 0; row < v.h; row++) {
+      for (let col = 0; col < v.w; col++) {
+        const { ch, fg, bg } = stage.look(v.x + col, v.y + row, ms)
         if (ch === ' ' && !bg) continue
-        buf.setCell(x, y, ch, rgba(fg) ?? INK, rgba(bg) ?? CLEAR)
+        buf.setCell(col, row, ch, rgba(fg) ?? INK, rgba(bg) ?? CLEAR)
       }
     }
     for (const p of stage.pacers) {
       const { x, y, text } = pacerAt(p, ms)
-      ;[...text].forEach((ch, i) => { if (ch !== ' ') buf.setCell(x + i, y, ch, rgba(p.fg) ?? INK, CLEAR) })
+      const row = y - v.y
+      if (row < 0 || row >= v.h) continue
+      ;[...text].forEach((ch, i) => {
+        const col = x + i - v.x
+        if (ch !== ' ' && col >= 0 && col < v.w) buf.setCell(col, row, ch, rgba(p.fg) ?? INK, CLEAR)
+      })
     }
     fb.requestRender()
   }
@@ -60,7 +77,6 @@ export const paint = (stage) => (box) => {
   return () => {
     unsubscribe()
     if (timer) clearInterval(timer)
-    box.remove(fb)
-    fb.destroy()
+    if (fb) { box.remove(fb); fb.destroy() }
   }
 }

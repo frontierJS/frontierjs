@@ -138,6 +138,14 @@ describe.skipIf(!CHROME)('the drive', () => {
     await b.close()
   }, 60000)
 
+  test('an evaluate is held by the page until it settles, then released', async () => {
+    const b = await openChrome()
+    await b.navigate(origin)
+    expect(await b.evaluate(`return await new Promise((r) => setTimeout(() => r(globalThis.__driveHeld.size), 10))`)).toBe(1)
+    expect(await b.evaluate(`return globalThis.__driveHeld.size`)).toBe(0)
+    await b.close()
+  }, 60000)
+
   test('args reach Chrome, and send() is the browser-level call', async () => {
     const b = await openChrome({ args: ['--user-agent=fjs-drive-probe'] })
     await b.navigate(origin)
@@ -176,9 +184,24 @@ describe.skipIf(!CHROME)('the drive', () => {
     await net.goOnline()
     await b.close()
   }, 60000)
+
+  // FJS-2283: SIGSTOP is a browser that stopped answering. close() asked it to
+  // close its tab and waited out send's 30s bound, then the 3s exit wait.
+  test('close() on a browser that stopped answering returns in seconds and leaves nothing running', async () => {
+    const b = await openChrome()
+    const held = `user-data-dir=${tmpdir()}/fjs-drive-${process.pid}-`
+    spawnSync('pkill', ['-STOP', '-f', held])
+    const t0 = Date.now()
+    await b.close()
+    const took = Date.now() - t0
+    const left = spawnSync('pgrep', ['-f', held]).stdout.toString().trim()
+    spawnSync('pkill', ['-KILL', '-f', held])
+    expect(left).toBe('')
+    expect(took).toBeLessThan(8000)
+  }, 60000)
 })
 
-const world = ({ have = [], files = [], env = {} } = {}) => ({
+const world =({ have = [], files = [], env = {} } = {}) => ({
   run:    (bin) => have.includes(bin),
   exists: (p)   => files.includes(p),
   env,

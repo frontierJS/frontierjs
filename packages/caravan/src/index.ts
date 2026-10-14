@@ -517,7 +517,18 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         await guard(c)
         const user = (c.user ?? host?.principal?.() ?? null) as Parameters<typeof gradeStanding>[0]
         if (!user) deny(401, 'An operator verb needs a signed-in caller')
-        const level = gradeStanding(user)
+        // The app's own mapping where its client can grade (`FJS-D308`); the
+        // shipped grader only where nothing can, so a membership-row standing
+        // is not read as USER by a column it does not live in.
+        const asked = host?.withDb
+          ? await host.withDb(db => {
+              const fn = db && typeof db === 'object' && '$levelOf' in db
+                ? (db as Record<string, unknown>).$levelOf : null
+              return typeof fn === 'function'
+                ? (fn as (...a: unknown[]) => number | null).call(db, undefined, user) : null
+            })
+          : null
+        const level = asked ?? gradeStanding(user)
         if (!levelPasses(LEVELS.ADMINISTRATOR, level))
           deny(403, `An operator verb needs ${levelName(LEVELS.ADMINISTRATOR)} — this caller stands at ${levelName(level)}`)
       }
@@ -1006,7 +1017,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       ownerTimer = setInterval(onTimer('owner sweep', sweepOwners), heartbeatMs)
       if (ownerTimer.unref) ownerTimer.unref()
 
-      // Cleanup sweep — remove old terminal jobs (done/failed/cancelled) on
+      // Cleanup sweep — remove old terminal jobs (done/dead/cancelled) on
       // start and every hour
       if (cleanupAfter > 0) {
         // One BATCH per pass, yielding to the event loop between them.

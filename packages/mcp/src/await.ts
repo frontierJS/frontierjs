@@ -21,7 +21,7 @@
 export const AWAIT_META = 'frontierjs/await'
 export const JOBS_META  = 'frontierjs/jobs'
 
-const TERMINAL = new Set(['done', 'failed', 'cancelled'])
+const TERMINAL = new Set(['done', 'dead', 'cancelled'])
 
 export interface JobState {
   id:       string

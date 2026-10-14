@@ -35,7 +35,7 @@ function seed(db: Database, rows: number, pending = 10): void {
      VALUES (?, ?, 'work', '{}', ?, 0, 1, 3, ?, ?, ?, ?)`
   )
   const now = Date.now(), week = 7 * 24 * 3600 * 1000
-  const statuses = ['done', 'done', 'done', 'failed', 'cancelled']
+  const statuses = ['done', 'done', 'done', 'dead', 'cancelled']
   const queues   = ['default', 'mail', 'reports']
   db.transaction(() => {
     for (let i = 0; i < rows; i++) {
@@ -80,7 +80,7 @@ describe('the aggregate behind /metrics', () => {
   it('and the filter it used to carry is what made it a scan', () => {
     const db = open(); seed(db, 5_000)
     const p = plan(db, `SELECT queue, status, COUNT(*) FROM jobs
-                        WHERE status IN ('pending','running','done','failed','cancelled')
+                        WHERE status IN ('pending','running','done','dead','cancelled')
                         GROUP BY queue, status`)
     expect(p).toContain('TEMP B-TREE')
     db.close()
@@ -103,7 +103,7 @@ describe('the aggregate behind /metrics', () => {
     const db = open(); seed(db, 5_000)
     const withFilter = db.query(
       `SELECT queue, status, COUNT(*) as count FROM jobs
-       WHERE status IN ('pending','running','done','failed','cancelled')
+       WHERE status IN ('pending','running','done','dead','cancelled')
        GROUP BY queue, status`).all()
     const bare = buildStatements(db).statsByQueue.all()
     expect(JSON.stringify(bare)).toBe(JSON.stringify(withFilter))
@@ -168,8 +168,8 @@ describe('the admin list', () => {
   it('returns the same rows through every shape', () => {
     const db = open(); seed(db, 500)
     const s = buildStatements(db)
-    const viaShape = s.listJobs.all({ queue: 'mail', status: 'failed', limit: 50, offset: 0 })
-    const viaSql   = db.query(`SELECT * FROM jobs WHERE queue = 'mail' AND status = 'failed'
+    const viaShape = s.listJobs.all({ queue: 'mail', status: 'dead', limit: 50, offset: 0 })
+    const viaSql   = db.query(`SELECT * FROM jobs WHERE queue = 'mail' AND status = 'dead'
                                ORDER BY created_at DESC LIMIT 50`).all()
     expect(viaShape.map(r => r.id)).toEqual((viaSql as { id: string }[]).map(r => r.id))
     expect(viaShape.length).toBeGreaterThan(0)
@@ -191,7 +191,7 @@ describe('the cleanup sweep', () => {
     expect(first.changes).toBeGreaterThan(0)
     // Terminal rows, not `done` specifically: a batch of 10 000 over 12 000
     // terminal rows takes every `done` there is and still leaves work behind.
-    expect((db.query(`SELECT COUNT(*) c FROM jobs WHERE status IN ('done','failed','cancelled')`)
+    expect((db.query(`SELECT COUNT(*) c FROM jobs WHERE status IN ('done','dead','cancelled')`)
       .get() as { c: number }).c).toBeGreaterThan(0)
     db.close()
   })

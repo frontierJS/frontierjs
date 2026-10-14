@@ -168,7 +168,7 @@ export async function run(t) {
       const buttons = document.querySelectorAll('#next-rows [data-next]').length;
       const asks    = document.querySelectorAll('#next-rows [data-next] [data-ask]').length;
       clearOutput();
-      nextBody = { ready: [{ id: 'FJS-9999', severity: 'S2', pkg: ['litestone'], file: 'ISSUES.md', line: 76, title: 'a gate answers yes', probeFirst: true }] };
+      nextBody = { readyCount: 1, blocked: [], ready: [{ id: 'FJS-9999', severity: 'S2', pkg: ['litestone'], file: 'ISSUES.md', line: 76, title: 'a gate answers yes', probeFirst: true }] };
       await askAboutNext(0);
       return {
         buttons, asks, posted,

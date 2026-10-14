@@ -156,17 +156,18 @@ const shape = await browser.evaluate(`
   return { rows: lines.length, cols: Math.max(...lines.map((l) => l.length)), top: lines[0], bottom: lines[lines.length - 1] }
 `)
 const artRows = square.picture()
-check(shape.rows === artRows.length && shape.cols === Math.max(...artRows.map((r) => r.length)),
-  `the tab draws the scene at ${shape.cols}×${shape.rows}, the terminal's size`, JSON.stringify(shape))
+const view = square.view
+check(shape.rows === view.h && shape.cols === view.w && square.width > view.w,
+  `the tab draws the view at ${shape.cols}×${shape.rows}, the terminal's size, of a square ${square.width} wide`, JSON.stringify(shape))
 const termTop    = cellOf(term.screen(), 0, 0, shape.cols, square)
-const termBottom = cellOf(term.screen(), 0, artRows.length - 1, shape.cols, square)
+const termBottom = cellOf(term.screen(), 0, view.h - 1, shape.cols, square)
 check(shape.top.trimEnd() === termTop.trimEnd() && shape.bottom.trimEnd() === termBottom.trimEnd(),
   "the tab's top and bottom rows of art are the terminal's", `tab:  ${shape.top}\nterm: ${termTop}\ntab:  ${shape.bottom}\nterm: ${termBottom}`)
 
 // A cell the palette colors and no clock moves, read for its color in the tab.
 const still = (() => {
-  for (let y = 0; y < artRows.length; y++)
-    for (let x = 0; x < artRows[y].length; x++) {
+  for (let y = 0; y < view.h; y++)
+    for (let x = 0; x < view.w; x++) {
       const a = square.look(x, y, 0)
       if (a.fg && a.ch !== ' ' && square.look(x, y, 1e7).fg === a.fg) return { x, y, fg: a.fg }
     }
@@ -212,6 +213,15 @@ await until(() => term.screen().includes('hi bea'))
 term.shell.stdin.write('\r')
 check(await until(async () => await tabCells(samX, sy - 1, 8) === '(hi bea)'),
   "Sam's line shows as a bubble over his figure in Bea's tab", await tabCells(samX, sy - 1, 8))
+
+await browser.press('PageUp')
+check(await until(async () => { const t = await tabText(); return t.includes('bea: hi sam') && t.includes('sam: hi bea') && t.includes('PageDown newer') }),
+  "PageUp opens the square's history in Bea's tab, both lines signed, oldest first", await tabText())
+check(await until(() => term.at(samX, sy - 1, 8) === '(hi bea)' && !term.screen().includes('PageDown newer')),
+  "and Sam's terminal shows nothing of it", term.screen())
+await browser.press('PageDown')
+check(await until(async () => !(await tabText()).includes('PageDown newer') && await tabCells(beaX, sy) === '@'),
+  'PageDown closes it, Bea where she stood', await tabText())
 
 check(await until(async () => (await tabText()).includes('Reload to walk in with it')),
   'a server on another build than the page says so on the page (x-fjs-build)', await tabText())

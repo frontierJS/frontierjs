@@ -6,6 +6,7 @@
 //   trigger · cancel
 
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
@@ -66,6 +67,13 @@ export function createJobsService(app: BasecampApp) {
     name:  'jobs',
     scope: keyScope('jobs'),
     model: 'Job',
+    // The whole surface. `trigger` runs a command on a machine before any write,
+    // so no model's gate grades it and the level is stated here.
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      'cancel', 'startRun', 'finishRun',
+      { method: 'trigger', gate: LEVELS.USER },
+    ],
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,
     // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -270,7 +278,6 @@ export function createJobsService(app: BasecampApp) {
         create:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         patch:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove:  [requireWorkspaceRole(app, 'admin', 'owner')],
-        trigger: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         startRun:  [internalOnly()],
         finishRun: [internalOnly()],
         // `cancel` is a `Job` update through the caller's client, graded by the gate.

@@ -72,6 +72,16 @@ export class EmailTakenError extends AuthError {
 }
 
 /**
+ * A password shorter than the app's `password.min`, offered to createUser,
+ * confirmPasswordReset or changePassword. Safe to be specific about: the policy
+ * is the same for every account and says nothing about this one. → 400
+ */
+export class WeakPasswordError extends AuthError {
+  constructor(readonly min: number) { super(`password must be at least ${min} characters`) }
+  readonly status = 400
+}
+
+/**
  * A password-reset or email-verification token that is unknown, already
  * consumed, or past its expiry. One type for all three — distinguishing them
  * tells an attacker whether a token ever existed. → 400

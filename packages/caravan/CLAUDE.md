@@ -158,8 +158,9 @@ bin/
   result. It never calls `start()`, which would heartbeat and count itself.
 - **`pause`, `resume` and `drain` are operator verbs (`FJS-D198`).** Over HTTP
   (`POST {base}/queues/{name}/pause|resume|drain`) they need ADMINISTRATOR on top
-  of `authorize`, graded by toolbelt's `gradeStanding`; a caller with no session
-  is 401 even with the admin surface open. The handle itself is a plain function
+  of `authorize`, graded by the app's own mapping (`host.withDb` → `db.$levelOf`,
+  `FJS-D308`) and by toolbelt's `gradeStanding` only where the client cannot
+  grade; a caller with no session is 401 even with the admin surface open. The handle itself is a plain function
   and is not gated, which is why `fli check`'s `queue-operator-verb` refuses it
   in a service or job file. `queue('typo')` refuses by name — it must NOT go
   through `ensureQueue`, which would create the queue it was asked about.

@@ -181,7 +181,7 @@ describe('metrics provider', () => {
 
     const stats = app._metricsSources.get('jobs')!() as {
       queues: Record<string, { pending: number }>
-      total:  { pending: number; running: number; failed: number; cancelled: number }
+      total:  { pending: number; running: number; dead: number; cancelled: number }
     }
 
     expect(stats.total).toBeDefined()
@@ -291,7 +291,7 @@ describe('junction config caravan section', () => {
     // queue with no work in it is the config having been read.
     expect(jobsOf(app).stats().queues.reports).toEqual({
       oldestRunningMs: null, pausedMs: null,
-      pending: 0, running: 0, done: 0, failed: 0, cancelled: 0,
+      pending: 0, running: 0, done: 0, dead: 0, cancelled: 0,
     })
   })
 

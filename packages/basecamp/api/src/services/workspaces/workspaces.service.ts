@@ -87,23 +87,6 @@ export function createWorkspacesService(app: BasecampApp) {
     return user
   }
 
-  /**
-   * A role off the wire, refused BY NAME rather than by a CHECK constraint.
-   *
-   * addMember and setMemberRole write a WorkspaceMember row by hand — this
-   * service's own model is Workspace, so autoValidate never sees the payload
-   * and an unknown role reached SQLite as a constraint failure at the end of
-   * the write rather than a 400 naming the field. The vocabulary is read from
-   * the map core/gate.ts grades on, which a data test holds to the enum: a role
-   * this app cannot grade is a role it must not accept.
-   */
-  function toRole(value: unknown): WorkspaceRole {
-    const roles = Object.keys(WORKSPACE_ROLE_LEVEL)
-    if (typeof value !== 'string' || !roles.includes(value))
-      throw new BadRequest(`role must be one of: ${roles.join(', ')}`)
-    return value as WorkspaceRole
-  }
-
   /** Membership decides access, so it is read as system, not through the caller.
    *  `any` for the reason every sibling service says it: `$.db` is the request's
    *  client and Litestone's accessors exist only at runtime, so a typed handle
@@ -117,6 +100,16 @@ export function createWorkspacesService(app: BasecampApp) {
     scope: keyScope('workspaces'),
     model: 'Workspace',
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+
+    // The member verbs write a WorkspaceMember row by hand, so autoValidate
+    // never sees their payload: each names a `type` in db/schema.lite instead,
+    // and a role outside WorkspaceRole is a 400 naming the field before the
+    // method runs.
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'restore',
+              'members',
+              { method: 'addMember',     input: 'WorkspaceMemberAdd' },
+              { method: 'setMemberRole', input: 'WorkspaceMemberRole' },
+              'removeMember', 'leave', 'transferOwnership'],
 
     // Only workspaces the caller belongs to. The old version did this with a
     // JOIN; `memberships: { some: { userId } }` is the relation the schema
@@ -237,15 +230,13 @@ export function createWorkspacesService(app: BasecampApp) {
     },
 
     async addMember() {
-      const { userId, user_id, role } = ($.data ?? {}) as Record<string, string>
-      const target = userId ?? user_id
-      if (!target) throw new BadRequest('userId is required')
+      const { userId: target, role } = $.data as { userId: string; role?: WorkspaceRole }
 
       const wsId = $.id as string
       if (await members().exists({ where: { workspaceId: wsId, userId: target } }))
         throw new Conflict('User is already a member of this workspace')
 
-      const next = toRole(role ?? 'developer')
+      const next = role ?? 'developer'
       return members().create({
         data: { workspaceId: wsId, userId: target, role: next, capabilities: grantsFor(next),
                 invitedBy: actor(), invitedAt: new Date().toISOString() },
@@ -253,10 +244,7 @@ export function createWorkspacesService(app: BasecampApp) {
     },
 
     async setMemberRole() {
-      const { userId, user_id, role } = ($.data ?? {}) as Record<string, string>
-      const target = userId ?? user_id
-      if (!target) throw new BadRequest('userId is required')
-      if (!role)   throw new BadRequest('role is required')
+      const { userId: target, role } = $.data as { userId: string; role: WorkspaceRole }
 
       // FJS-410. `role` is what core/gate.ts grades every gate from, so a
       // caller naming their OWN userId with `role: 'owner'` was granting
@@ -299,10 +287,9 @@ export function createWorkspacesService(app: BasecampApp) {
       // Re-stamped, not merged. A role IS a default set (core/capabilities.ts),
       // so leaving the old grants behind would make a demotion change the word
       // on the screen and nothing about what the person may actually do.
-      const next = toRole(role)
       return members().update({
         where: { id: member.id },
-        data:  { role: next, capabilities: grantsFor(next) },
+        data:  { role, capabilities: grantsFor(role) },
       })
     },
 

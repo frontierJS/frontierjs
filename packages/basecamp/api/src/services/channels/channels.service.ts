@@ -31,6 +31,7 @@
 // added to one of them — tests green, never delivers.
 
 import { createService, BadRequest, Conflict, $ } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
@@ -39,13 +40,6 @@ import type { BasecampApp }    from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
 export function createChannelsService(app: BasecampApp) {
-
-  /** The system client, typed once. `Secret.data` is `@encrypted`, so every
-   *  read and write of the material has to go through `asSystem()` — the column
-   *  is absent from the row a scoped client would produce, and absent from the
-   *  one it would write. `litestone types` would make this unnecessary; until
-   *  then it is one cast rather than four. */
-  const sys = (): any => $.db.asSystem()
 
   /** A channel plus how many rules deliver through it. The count is what makes
    *  a channel legible — an unused channel and one carrying every page-out look
@@ -68,11 +62,10 @@ export function createChannelsService(app: BasecampApp) {
     value: string,
   ): Promise<string> {
     const field  = KINDS[kind].secretField as string
-    // asSystem(): Secret.data is @encrypted, so a scoped client cannot write it
-    // back either — the column is absent from the row it would produce.
-    const secret = await sys().secret.create({
+    // The caller's own client: `@encrypted` hides `Secret.data` from a reader
+    // and leaves it writable, and the tenancy default stamps the workspace.
+    const secret = await db().secret.create({
       data: {
-        workspaceId: ws(),
         // The unique is [workspaceId, name] and a channel's name is already
         // unique in the workspace, so this cannot collide where the channel did
         // not. The prefix keeps it out of the way of secrets a person authored.
@@ -89,6 +82,13 @@ export function createChannelsService(app: BasecampApp) {
     name:  'channels',
     scope: keyScope('channels'),
     model: 'NotificationChannel',
+    // The whole surface. `test` sends real traffic to a third party under the
+    // workspace's name, so it is not a read, and no model's gate grades it.
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      'rules',
+      { method: 'test', gate: LEVELS.ADMINISTRATOR },
+    ],
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,
     // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -174,7 +174,7 @@ export function createChannelsService(app: BasecampApp) {
         if (channel.secretId) {
           // Rotate in place — the rules pointing at this channel keep working,
           // and `isVerified` goes false the way the secrets service does it.
-          await sys().secret.update({
+          await db().secret.update({
             where: { id: channel.secretId as string },
             data:  { data: JSON.stringify({ [spec.secretField]: credential }), isVerified: false },
           })
@@ -209,7 +209,7 @@ export function createChannelsService(app: BasecampApp) {
       // deleted is a live bearer token nothing is watching. Soft-delete, like
       // the channel — the audit trail keeps both.
       if (channel.secretId)
-        await sys().secret.remove({ where: { id: channel.secretId as string } })
+        await db().secret.remove({ where: { id: channel.secretId as string } })
 
       return removed
     },
@@ -219,7 +219,7 @@ export function createChannelsService(app: BasecampApp) {
     async restore() {
       const channel = await restoreScoped('notificationChannel', 'Channel')
       if (channel.secretId)
-        await sys().secret.restore({ where: { id: channel.secretId as string } })
+        await db().secret.restore({ where: { id: channel.secretId as string } })
       return channel
     },
 
@@ -269,9 +269,6 @@ export function createChannelsService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'admin', 'owner'), stampChannel],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        // Testing sends real traffic to a third party under the workspace's
-        // name, so it is not a read.
-        test:   [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

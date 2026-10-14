@@ -2,7 +2,7 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, $} from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, serviceAccessor, accessorCandidates, resultData, $} from '@frontierjs/junction'
 import type { Hook, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { REDACTED }                       from '@frontierjs/toolbelt/redact'
 import { channelManager, workspaceChannelName } from '../channels.ts'
@@ -142,10 +142,11 @@ export function roleOf(ctx: ServiceContext): string | undefined {
  * A protected environment is the production guard: a developer may deploy to
  * it but not reshape it — its own columns, or the variables set on it.
  *
- * One check for every writer. The capability grid cannot say it — a developer
- * holds `Variable.update` on every environment, protected or not — so a writer
- * that skips this lets a developer rewrite production's `DATABASE_URL` that
- * `patch` refuses them (`FJS-1087`).
+ * The rule is the schema's — `Environment` and `Variable` each `@@deny` a caller
+ * under level 5 — and it holds for every writer. A policy FILTERS an update and
+ * a delete, so a developer reaching it unhooked gets a 200 and no change; this
+ * is the sentence for the two services a person reaches it through (`FJS-1087`,
+ * `FJS-2354`).
  */
 export function refuseProtectedForDeveloper(env: { isProtected?: boolean }, ctx: ServiceContext) {
   if (env.isProtected && roleOf(ctx) === 'developer')
@@ -229,10 +230,12 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
 //
 // A SECOND ladder, and it is not the gate's. The sentence a person needs —
 // *Requires admin role in this workspace* — is app.ts's error mapper turning
-// the gate's two numbers back into a role, so a method whose write goes
-// through the caller's own client needs no hook. This one is for what no gate
-// grades: a method that writes through `asSystem()`, or acts on a machine or a
-// provider before any write, and a service that addresses another workspace.
+// the gate's two numbers back into a role, so a method needs no hook once a
+// gate grades it: the model's `@@gate` where it writes through the caller's own
+// client, a `gate:` in `methods:` where it writes through `asSystem()` or acts
+// on a machine or a provider first. This one is for what no gate grades yet —
+// a service that addresses another workspace, because `gateAuth` runs before
+// `restandingFor` and reads the level of the workspace named in the header.
 //
 // Reads the membership row `membershipClaim()` already resolved — no extra query.
 
@@ -896,12 +899,12 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
   return async function basecampAuditLog(ctx: ServiceContext): Promise<void> {
     if (!recordable(ctx, skip)) return
 
-    // Two result shapes reach here. CRUD answers the envelope, so the row is
-    // under `.data`; a custom method answers the row itself. Reading only the
-    // first recorded every action against subjectId 'unknown', which is a trail
-    // entry that cannot be joined back to the thing it happened to.
-    const raw     = ctx.result as Record<string, unknown> | null
-    const result  = (raw?.data as Record<string, unknown> | undefined) ?? raw
+    // Two result shapes reach here: the envelope, and a custom method's own
+    // row. Reading only the first filed every action under subjectId 'unknown',
+    // an entry that cannot be joined back to its subject. `resultData` is the
+    // owner of telling them apart -- `raw.data ?? raw` unwraps a row that has a
+    // `data` column of its own into that column's value.
+    const result  = resultData(ctx.result) as Record<string, unknown> | null | undefined
     const session = userOf(ctx)
     const before  = (ctx.locals as Record<string, unknown>).auditBefore as Record<string, unknown> | null ?? null
 

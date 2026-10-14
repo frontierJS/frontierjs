@@ -10,8 +10,9 @@
  * Traps:
  * - `stages` must be the SAME module the component imports, or the slug is
  *   never found: both reach `src/stage.js` by its absolute path.
- * - The headless renderer is 100×30, the size `--frame` renders at; a frame
- *   row is read up to the stage's width and trailing blanks are trimmed.
+ * - The headless renderer is 100×30, the size `--frame` renders at, so what
+ *   it draws is the stage's VIEW, never a stage wider than it; a frame row
+ *   is read up to the view's width and trailing blanks are trimmed.
  */
 import { join } from 'node:path'
 import { installTerminalLoader } from '../../../sierra/src/terminal/loader.js'
@@ -29,9 +30,11 @@ export const SCENES = [
 let loader = null
 
 /**
- * Mount a scene with no room: `{ stage, frame, dispose }`, `frame` the rows
- * the terminal drew. `name` is a scene's file name under `src/scenes/`, or a
- * path to a scene file elsewhere, which a drive gives for a saved copy.
+ * Mount a scene with no room: `{ stage, frame, capture, dispose }`, `frame`
+ * the rows the terminal drew of the stage's view, and `capture()` those rows
+ * drawn again — after `stage.follow()` panned it. `name` is a scene's file
+ * name under `src/scenes/`, or a path to a scene file elsewhere, which a
+ * drive gives for a saved copy.
  */
 export async function mountScene(name) {
   loader ??= await installTerminalLoader({ root: WEB })
@@ -45,10 +48,14 @@ export async function mountScene(name) {
   const slug = SCENES.find((s) => s.name === base)?.slug ?? base.toLowerCase()
   const stage = stages.get(slug)
   if (!stage) throw new Error(`${name}.mesa made no stage named ${slug}`)
-  const frame = captureCharFrame().split('\n').slice(0, stage.height).map((r) => r.slice(0, stage.width).trimEnd())
+  const rows = () => {
+    const v = stage.view
+    return captureCharFrame().split('\n').slice(0, v.h).map((r) => r.slice(0, v.w).trimEnd())
+  }
   return {
     stage,
-    frame,
+    frame: rows(),
+    async capture() { await renderOnce(); return rows() },
     dispose() { mounted.dispose(); renderer.destroy() },
   }
 }

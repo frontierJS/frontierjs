@@ -110,6 +110,16 @@ export async function run(t) {
     'a @unit column says what the number counts')
   t.is(await t.evaluate(`return ${text('tenths')}`), '7.5 h',
     'and a scaled one too, after the scale')
+  // A Float computed in JS carries float noise, and the unit makes it a
+  // sentence a person reads (FJS-1984).
+  t.is(await t.evaluate(`return ${text('hoursnoise')}`), '0.2 h',
+    'a computed Float is not drawn at full precision')
+  t.is(await t.evaluate(`return ${text('hourssum')}`), '8.8 h',
+    'a sum that lands a hair under is the number it means')
+  t.is(await t.evaluate(`return ${text('hoursfine')}`), '1.23 h',
+    'two places is the default for a unit, and trailing zeros are not drawn')
+  t.is(await t.evaluate(`return ${text('hourswhole')}`), '8 h',
+    'a whole number gains no decimals')
 
   /* ── a point ──────────────────────────────────────────────────────────── */
   //

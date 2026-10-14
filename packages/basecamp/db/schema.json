@@ -169,13 +169,25 @@
             "string",
             "null"
           ],
-          "description": "oauthLink only: which identity is waiting to be attached once the address answers for itself. Null for the other two, which attach nothing."
+          "description": "oauthLink only: which identity is waiting to be attached once the address answers for itself. Null for the others, which attach nothing."
         },
         "subject": {
           "type": [
             "string",
             "null"
           ]
+        },
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "emailChange only: whose account the address replaces the current one on. The identifier is the NEW address, which belongs to nobody yet, so the account cannot be found from it the way every other purpose finds one."
+        },
+        "attempts": {
+          "type": "integer",
+          "default": 0,
+          "description": "magicLink only: wrong codes against this row. Counted on the row for the reason `LoginChallenge.attempts` is — a process-local count resets on a redeploy, and here that is six digits with no ceiling."
         },
         "expiresAt": {
           "type": "string",
@@ -205,7 +217,7 @@
       "type": "object",
       "title": "LoginChallenge",
       "x-litestone-kind": "model",
-      "description": "A login that is half done.  The password was right and there is a second factor, so the caller holds a ticket and no session. It is its own model rather than a fifth `VerificationPurpose` for the reason `OauthFlow` below is not one either: nobody is proving control of an ADDRESS here — there is no `identifier` and the address was settled a step ago — and `attempts` is a column the other purposes have no use for. Three answers to what a column means is three tables wearing one name (`FJS-D261`).  `attempts` is the whole of what stands between a six-digit code and a million guesses, so it is counted on the row rather than in a limiter: a process-local count is reset by a redeploy and is not shared by two instances, and this is the one table where both of those are an authorization bypass rather than a slow path.",
+      "description": "A login that is half done.  The password was right and there is a second factor, so the caller holds a ticket and no session. It is its own model rather than a fifth `VerificationPurpose` for the reason `OauthFlow` below is not one either: nobody is proving control of an ADDRESS here — there is no `identifier` and the address was settled a step ago. Three answers to what a column means is three tables wearing one name (`FJS-D261`).  `attempts` is the whole of what stands between a six-digit code and a million guesses, so it is counted on the row rather than in a limiter: a process-local count is reset by a redeploy and is not shared by two instances, and this is the one table where both of those are an authorization bypass rather than a slow path.",
       "properties": {
         "userId": {
           "type": "string"
@@ -493,7 +505,8 @@
           "x-litestone-write-policy": true
         },
         "ownerId": {
-          "type": "string"
+          "type": "string",
+          "x-litestone-kind": "stamped"
         },
         "runsPerMinute": {
           "anyOf": [
@@ -557,7 +570,7 @@
             "gate": null,
             "system": false
           },
-          "restore": {
+          "unarchive": {
             "from": [
               "archived"
             ],
@@ -607,7 +620,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-litestone-kind": "stamped"
         }
       },
       "additionalProperties": false,
@@ -1178,7 +1192,10 @@
             "lower"
           ],
           "format": "email",
-          "x-litestone-write-policy": true
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isSystemAdmin": true
+          }
         },
         "name": {
           "anyOf": [
@@ -1196,29 +1213,44 @@
         "emailVerified": {
           "type": "boolean",
           "default": false,
-          "x-litestone-write-policy": true
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isAdmin": true
+          }
         },
         "role": {
           "type": "string",
           "default": "user",
-          "x-litestone-write-policy": true
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isAdmin": true
+          }
         },
         "accountId": {
           "type": [
             "string",
             "null"
           ],
-          "x-litestone-write-policy": true
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isSystemAdmin": true
+          }
         },
         "kind": {
           "$ref": "#/$defs/UserKind",
           "default": "human",
-          "x-litestone-write-policy": true
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isSystemAdmin": true
+          }
         },
         "status": {
           "$ref": "#/$defs/UserStatus",
           "default": "pending_verification",
-          "x-litestone-write-policy": true
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isSystemAdmin": true
+          }
         },
         "username": {
           "anyOf": [
@@ -1255,13 +1287,19 @@
         "scopes": {
           "default": [],
           "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isSystemAdmin": true
+          },
           "x-aggregatable": "json",
           "x-sortable": "json"
         },
         "isSystemAdmin": {
           "type": "boolean",
           "default": false,
-          "x-litestone-write-policy": true
+          "x-litestone-write-policy": true,
+          "x-litestone-write-claims": {
+            "isSystemAdmin": true
+          }
         }
       },
       "additionalProperties": false,
@@ -2727,6 +2765,15 @@
           "references": [],
           "onDelete": null,
           "optional": false
+        },
+        {
+          "field": "dependencyUses",
+          "model": "DependencyUse",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
         }
       ]
     },
@@ -2899,10 +2946,6 @@
           "x-aggregatable": "json",
           "x-sortable": "json"
         },
-        "isPublic": {
-          "type": "boolean",
-          "default": false
-        },
         "port": {
           "anyOf": [
             {
@@ -2985,6 +3028,10 @@
               "type": "null"
             }
           ]
+        },
+        "exposesPort": {
+          "type": "boolean",
+          "default": false
         },
         "blueprintId": {
           "type": [
@@ -3846,6 +3893,8 @@
         },
         "timeoutSeconds": {
           "type": "integer",
+          "minimum": 5,
+          "maximum": 3600,
           "default": 300
         },
         "retryLimit": {
@@ -4348,6 +4397,65 @@
       "additionalProperties": false,
       "required": [
         "serverId"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "server",
+          "model": "Server",
+          "type": "belongsTo",
+          "fields": [
+            "serverId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "ServerPosture": {
+      "type": "object",
+      "title": "ServerPosture",
+      "x-litestone-kind": "model",
+      "properties": {
+        "serverId": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "readings": {
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "controls": {
+          "default": [],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "failing": {
+          "type": "integer",
+          "default": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "at"
       ],
       "x-litestone-policies": true,
       "x-gate": {
@@ -5733,6 +5841,224 @@
         }
       ]
     },
+    "Dependency": {
+      "type": "object",
+      "title": "Dependency",
+      "x-litestone-kind": "model",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        },
+        "name": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 214
+        },
+        "latest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "deprecated": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "advisories": {
+          "default": {},
+          "readOnly": true,
+          "x-litestone-kind": "system",
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "checkedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "checkError": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "name"
+      ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 4
+      },
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "uses",
+          "model": "DependencyUse",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "DependencyUse": {
+      "type": "object",
+      "title": "DependencyUse",
+      "x-litestone-kind": "model",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "dependencyId": {
+          "type": "string"
+        },
+        "member": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 214
+        },
+        "memberPath": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 0,
+          "maxLength": 300,
+          "default": ""
+        },
+        "published": {
+          "type": "boolean",
+          "default": false
+        },
+        "kind": {
+          "$ref": "#/$defs/DependencyKind"
+        },
+        "declared": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "installed": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
+              "minLength": 0,
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "dependencyId",
+        "member",
+        "kind",
+        "declared"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "member",
+        "kind"
+      ],
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 4
+      },
+      "x-relations": [
+        {
+          "field": "project",
+          "model": "Project",
+          "type": "belongsTo",
+          "fields": [
+            "projectId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "dependency",
+          "model": "Dependency",
+          "type": "belongsTo",
+          "fields": [
+            "dependencyId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
     "Backup": {
       "type": "object",
       "title": "Backup",
@@ -6109,7 +6435,9 @@
       "enum": [
         "passwordReset",
         "emailVerify",
-        "oauthLink"
+        "oauthLink",
+        "magicLink",
+        "emailChange"
       ],
       "title": "VerificationPurpose"
     },
@@ -6287,7 +6615,9 @@
         "cleanup_ran",
         "cleanup_failed",
         "volume_removed",
-        "volumes_pruned"
+        "volumes_pruned",
+        "posture_failed",
+        "posture_restored"
       ],
       "title": "ServerEventKind"
     },
@@ -6496,6 +6826,16 @@
       ],
       "title": "BackupDestination"
     },
+    "DependencyKind": {
+      "type": "string",
+      "enum": [
+        "dependency",
+        "dev",
+        "peer",
+        "optional"
+      ],
+      "title": "DependencyKind"
+    },
     "NotificationContext": {
       "type": "string",
       "enum": [
@@ -6515,6 +6855,8 @@
         "alert_firing",
         "alert_resolved",
         "server_unreachable",
+        "posture_failed",
+        "dependency_vulnerable",
         "member_joined",
         "job_failed",
         "weekly_digest"
@@ -6540,6 +6882,153 @@
         "Variable.update"
       ],
       "title": "Capability"
+    },
+    "WorkspaceStatusChange": {
+      "type": "object",
+      "title": "WorkspaceStatusChange",
+      "x-litestone-kind": "type",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/WorkspaceStatus"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "status"
+      ]
+    },
+    "UserStatusChange": {
+      "type": "object",
+      "title": "UserStatusChange",
+      "x-litestone-kind": "type",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/UserStatus"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "status"
+      ]
+    },
+    "SystemAdminChange": {
+      "type": "object",
+      "title": "SystemAdminChange",
+      "x-litestone-kind": "type",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "isSystemAdmin": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "isSystemAdmin"
+      ]
+    },
+    "NewBot": {
+      "type": "object",
+      "title": "NewBot",
+      "x-litestone-kind": "type",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceRole"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "name"
+      ]
+    },
+    "FlagChange": {
+      "type": "object",
+      "title": "FlagChange",
+      "x-litestone-kind": "type",
+      "properties": {
+        "flagId": {
+          "type": "string"
+        },
+        "isEnabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "flagId",
+        "isEnabled"
+      ]
+    },
+    "WorkspaceMemberAdd": {
+      "type": "object",
+      "title": "WorkspaceMemberAdd",
+      "x-litestone-kind": "type",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkspaceRole"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId"
+      ]
+    },
+    "WorkspaceMemberRole": {
+      "type": "object",
+      "title": "WorkspaceMemberRole",
+      "x-litestone-kind": "type",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/WorkspaceRole"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "role"
+      ]
     }
   }
 }

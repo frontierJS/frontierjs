@@ -1358,6 +1358,10 @@ test/     one file per module under core/, plus the deploy pipeline's own
   This package's own `test/pipe.test.js` pinned `FJS-379` and had never
   executed. **A new test file here has to be added to the `test` script** — the
   runner does not walk the directory, which is the shape the rule exists for.
+  **The `test` script runs its two `bun test` groups with `;` and combines the
+  exit codes** (`zz-steps` sets globals, so it keeps a process of its own): a
+  second group chained on `&&` never runs in a red tree, and the rule reports a
+  file named only behind one.
 - **`register-check.js` grades a register row against its own table's HEADER,
   never against a shape written into the rule.** `registers.js` infers a row's
   shape from its cell COUNT, so a row with fewer columns than its table falls to

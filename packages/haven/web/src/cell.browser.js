@@ -11,7 +11,7 @@
 // A factory the template calls, for the reason `cell.js` gives: an attach that
 // read the coordinates inside its body would not re-run when a keyed
 // `{#each}` replaces the item.
-export const at = (col, row, layer = 10) => (el) => {
+export const at = (col, row, layer = 10, size = null) => (el) => {
   const s = el.style
   s.position   = 'absolute'
   s.left       = `${Math.max(0, col)}ch`
@@ -22,4 +22,9 @@ export const at = (col, row, layer = 10) => (el) => {
   s.font       = 'inherit'
   s.lineHeight = 'inherit'
   s.whiteSpace = 'pre'
+  if (size) {
+    s.width    = `${size[0]}ch`
+    s.height   = `${size[1]}lh`
+    s.overflow = 'hidden'
+  }
 }

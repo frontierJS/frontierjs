@@ -12,7 +12,7 @@ import { tmpdir } from 'os'
 
 import { keyLiteral, weakLiteral, buildIndex } from '../core/seams.js'
 import { spawnSync } from 'child_process'
-import { RULES, runChecks, findApps, applyFixes, verdictOf,
+import { RULES, runChecks, findApps, applyFixes, verdictOf, blindSkips,
          BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline } from '../core/checks.js'
 
 let ROOT
@@ -430,8 +430,17 @@ describe('command-resolves', () => {
     const root = tree('cr-nots', without('cli/', {
       'cli/src/routes/sup/show.md': cmd('sup:show', '```js\nnope()\n```\n'),
     }))
-    const { skipped } = only(root, 'command-resolves')
-    expect(skipped).toEqual([{ rule: 'command-resolves', why: expect.stringMatching(/typescript/) }])
+    const result = only(root, 'command-resolves')
+    expect(result.skipped).toEqual([{ rule: 'command-resolves', why: expect.stringMatching(/typescript/), blind: true }])
+    // FJS-2475: a missing parser is not "nothing to grade", and CI must be able to tell.
+    expect(blindSkips(result)).toEqual([{ rule: 'command-resolves', severity: 'error', why: expect.stringMatching(/typescript/) }])
+  })
+
+  test('nothing to grade is a skip that is not blind', () => {
+    const root = tree('cr-none', without('cli/', {}))
+    const result = only(root, 'command-resolves')
+    expect(result.skipped).toHaveLength(1)
+    expect(blindSkips(result)).toEqual([])
   })
 })
 
@@ -3934,6 +3943,28 @@ describe('test-files-run', () => {
     expect(findings[0].message).toContain('test/hmr-fullflow.mjs')
   })
 
+  // FJS-2376: a second `bun test` chained on `&&` runs only while the first
+  // passes, so its files are unrun in exactly the tree where the first is red.
+  test('a file behind `&&` after a test runner is not run, even though a script names it', () => {
+    const root = pkg('gated', { test: "node ../../scripts/tmp-run.mjs 'bun test test/a.test.js test/b.test.js && bun test test/c.test.js test/d.test.js'" },
+      { 'test/a.test.js': '//\n', 'test/b.test.js': '//\n', 'test/c.test.js': '//\n', 'test/d.test.js': '//\n' })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/test\/c\.test\.js, test\/d\.test\.js/)
+    expect(findings[0].message).toMatch(/&&/)
+  })
+
+  test('`;` and `||` do not gate the next segment, and a second script naming the file ungates it', () => {
+    const chained = pkg('ungated', { test: 'bun test test/a.test.js test/b.test.js || r=$?; bun test test/c.test.js test/d.test.js' },
+      { 'test/a.test.js': '//\n', 'test/b.test.js': '//\n', 'test/c.test.js': '//\n', 'test/d.test.js': '//\n' })
+    expect(check(chained).findings).toEqual([])
+
+    const named = pkg('gated-named', { test: 'bun test test/a.test.js test/b.test.js && bun test test/c.test.js',
+                                       'test:c': 'bun test test/c.test.js' },
+      { 'test/a.test.js': '//\n', 'test/b.test.js': '//\n', 'test/c.test.js': '//\n' })
+    expect(check(named).findings).toEqual([])
+  })
+
   test('a repo where nobody hand-lists is skipped, not passed', () => {
     const root = pkg('nolist', { test: 'vitest run' }, { 'test/a.test.js': '//\n' })
     const { findings, skipped } = check(root)
@@ -4563,6 +4594,18 @@ describe('app-layout grades the src/ layout (FJS-1888)', () => {
     expect(f).toHaveLength(1)
     expect(f[0].file).toMatch(/core\/mine\.ts$/)
     expect(f[0].message).toMatch(/plugins\//)
+  })
+
+  // FJS-2088: a plugin function is installed by app.configure(fn), so `app` is its ONLY
+  // parameter. A core/ helper taking `app` first and more after it is called with them.
+  test('a core/ helper taking app and more is not a plugin', () => {
+    const f = layout('lay-core-helper', {
+      'api/src/core/channels.ts': "import type { App } from '@frontierjs/junction'\nexport function joinChannels(app: App, session: unknown, conn: unknown): void {}\n",
+      'api/src/core/texting.ts':  "import type { App } from '@frontierjs/junction'\nexport const configureTexting = (app: App, opts: object) => {}\n",
+      'api/src/core/mine.ts':     "import type { App } from '@frontierjs/junction'\nexport function mine(app: App): void {}\n",
+      'api/src/core/arrow.ts':    "import type { App } from '@frontierjs/junction'\nexport const arrow = (app: App) => {}\n",
+    })
+    expect(f.map(x => x.file.replace(/.*\/api\//, 'api/')).sort()).toEqual(['api/src/core/arrow.ts', 'api/src/core/mine.ts'])
   })
 
   test('a relative import from one surface into another', () => {

@@ -17,6 +17,15 @@ export function retryDelayFor(declared: number[], attempt: number): number {
   return base + Math.floor(Math.random() * base * 0.25)
 }
 
+// `FJS-D655`: a fault's `retryAfterMs` is the earliest the provider will take
+// the work again. Read flat like `retryable`, or from the `fault` object a
+// classified error carries (`FJS-D201`).
+function retryAfterOf(err: unknown): number {
+  const e = err as { retryAfterMs?: unknown, fault?: { retryAfterMs?: unknown } } | null
+  const ms = e?.retryAfterMs ?? e?.fault?.retryAfterMs
+  return typeof ms === 'number' && Number.isFinite(ms) && ms > 0 ? ms : 0
+}
+
 // Once per name per process. A queue shared by a process that has the handler
 // and one that does not is the normal deployment, so the release is routine and
 // a line per job would be the log.
@@ -289,7 +298,7 @@ export class QueueWorker {
       if (attempt >= max || (err as { retryable?: unknown })?.retryable === false) {
         const { changes } = this._write(() => this._stmts.markFailed.run({
           id:     record.id,
-          status: 'failed',
+          status: 'dead',
           run_at: record.run_at,
           error,
           now:    failedAt,
@@ -301,11 +310,14 @@ export class QueueWorker {
           name:       record.name,
           error,
           attempts:   attempt,
-          status:     'failed',
+          status:     'dead',
           durationMs: failedAt - startMs,
         })
       } else {
-        const runAt = failedAt + retryDelayFor(handler.retryDelay, attempt)
+        // The ladder is the floor when the provider named nothing, and the
+        // provider's own window is the floor when it did -- never the shorter.
+        const delay = Math.max(retryDelayFor(handler.retryDelay, attempt), retryAfterOf(err))
+        const runAt = failedAt + delay
 
         const { changes } = this._write(() => this._stmts.markFailed.run({
           id:     record.id,

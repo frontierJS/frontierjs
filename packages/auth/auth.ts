@@ -34,7 +34,7 @@ import {
   UserNotFoundError, AuthConfigError,
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
-  TotpAlreadyEnabledError, InvalidSecondFactorError,
+  TotpAlreadyEnabledError, InvalidSecondFactorError, WeakPasswordError,
 } from './errors.ts'
 
 // Minimal interface — avoids a hard import of @frontierjs/litestone types
@@ -68,6 +68,7 @@ export function createLitestoneAuth(
     // this long. An app raises it deliberately; nothing lets a caller ask for
     // more than it.
     supportTtl           = '30 minutes',
+    password: passwordPolicy = {},
     passwordResetTtl     = '1 hour',
     emailVerificationTtl = '24 hours',
     loginChallengeTtl      = '5 minutes',
@@ -273,6 +274,14 @@ export function createLitestoneAuth(
     })
 
     return { token, user: { ...toContext(user, authMethod), sessionId: String(session.id) } }
+  }
+
+  // The one grade of a new password. Every door that writes one calls it before
+  // any token is spent or any row is touched, so a refusal leaves a reset link
+  // usable and no half-made account behind.
+  const passwordMin = passwordPolicy.min ?? 8
+  function requireStrongPassword(candidate: string): void {
+    if (typeof candidate !== 'string' || candidate.length < passwordMin) throw new WeakPasswordError(passwordMin)
   }
 
   // The one place a person comes into being, for a password and for an
@@ -1363,8 +1372,9 @@ export function createLitestoneAuth(
       // Keyed on (provider, subject) and never on the address. An address is
       // mutable at the provider and, on some of them, unverified by design —
       // which is the whole of nOAuth.
-      const cred = await sys.credential.findFirst({ where: { type, value: identity.providerId } })
-      if (cred) {
+      const seen = async (): Promise<OAuthResolution | null> => {
+        const cred = await sys.credential.findFirst({ where: { type, value: identity.providerId } })
+        if (!cred) return null
         const known = await sys.user.findUnique({ where: { id: cred.userId } })
         if (!known) throw new UserNotFoundError()
         await audit('oauth.signin', {
@@ -1372,6 +1382,21 @@ export function createLitestoneAuth(
           meta:  { provider: providerName },
         })
         return oauthFirstFactor(known, { provider: providerName })
+      }
+      const before = await seen()
+      if (before) return before
+
+      // The read above and the write in branch 3 or 4 are separate awaits, so a
+      // second callback for the same subject can land between them. The schema
+      // refuses the loser's write (Credential's partial unique, or User.email
+      // in branch 3); a loser that finds the winner's row signs in as branch 1
+      // would have, and any other conflict is not this race.
+      const lostRace = async (err: unknown): Promise<OAuthResolution> => {
+        if ((err as any)?.name === 'UniqueConflictError') {
+          const won = await seen()
+          if (won) return won
+        }
+        throw err
       }
 
       // ── 2. No address ─────────────────────────────────────────────────
@@ -1429,13 +1454,18 @@ export function createLitestoneAuth(
         // closed beta, a blocked domain. Before the row, per the ordering rule.
         if (onRegister) await onRegister({ email, name: identity.name })
 
-        const made = await registerUser(async tx => {
-          const row = await tx.user.create({
-            data: { email, name: identity.name ?? null, emailVerified: true },
+        let made: any
+        try {
+          made = await registerUser(async tx => {
+            const row = await tx.user.create({
+              data: { email, name: identity.name ?? null, emailVerified: true },
+            })
+            await tx.credential.create({ data: { userId: row.id, type, value: identity.providerId } })
+            return row
           })
-          await tx.credential.create({ data: { userId: row.id, type, value: identity.providerId } })
-          return row
-        })
+        } catch (err) {
+          return lostRace(err)
+        }
         await audit('oauth.registered', {
           model: 'User', records: [made.id], actorId: made.id,
           meta:  { provider: providerName, emailVerified: true },
@@ -1466,7 +1496,11 @@ export function createLitestoneAuth(
         return invite()
       }
 
-      await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId } })
+      try {
+        await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId } })
+      } catch (err) {
+        return lostRace(err)
+      }
       await credentialChanged('oauth.linked', existing.id, {
         model: 'User', records: [existing.id], actorId: existing.id,
         meta:  { provider: providerName },
@@ -1675,6 +1709,8 @@ export function createLitestoneAuth(
     // not that a session exists.
 
     async createUser(data: CreateUserInput): Promise<SessionContext> {
+      if (data.password != null) requireStrongPassword(data.password)
+
       const existing = await sys.user.findFirst({ where: { email: data.email } })
       if (existing) throw new EmailTakenError()
 
@@ -1805,6 +1841,8 @@ export function createLitestoneAuth(
     // ── confirmPasswordReset ─────────────────────────────────────────────
 
     async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+      requireStrongPassword(newPassword)
+
       // `purpose` is not decoration: without it this matched an EMAIL-VERIFY
       // token too, and what refused it was two steps downstream and accidental
       // (FJS-476).
@@ -2058,6 +2096,8 @@ export function createLitestoneAuth(
       userId: string, currentPassword: string, newPassword: string,
       opts?: { exceptSessionId?: string },
     ): Promise<void> {
+      requireStrongPassword(newPassword)
+
       const cred = await sys.credential.findFirst({ where: { userId, type: 'password' } })
       // Same refusal for "no password set" as for "wrong password". An account
       // with only an OAuth credential is a fact about that account, and this is

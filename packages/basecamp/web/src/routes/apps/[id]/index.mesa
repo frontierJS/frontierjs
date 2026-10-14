@@ -447,7 +447,6 @@ title: App
         <code id="app-source-line">{app.sourceLabel}</code>
         <Pill tone={STATUS_TONE[app.status] ?? 'muted'} id="app-status">{app.status}</Pill>
         <Badge tone="muted">{app.type}</Badge>
-        {#if app.isPublic}<Badge tone="info">public</Badge>{/if}
       </span>
     </div>
     <span class="cluster">
@@ -582,7 +581,6 @@ title: App
       <dl class="facts">
         <dt>Type</dt><dd>{app.type}</dd>
         <dt>Port</dt><dd><code>{app.port ?? 'not set'}</code></dd>
-        <dt>Public</dt><dd>{app.isPublic ? 'yes' : 'no'}</dd>
         <dt>Hostname</dt><dd><code>{primaryHost ?? 'none'}</code></dd>
         <dt>Label</dt><dd><code>{app.slug}</code></dd>
         {#if app.environment?.project}

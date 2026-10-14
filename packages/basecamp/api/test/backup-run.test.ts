@@ -64,3 +64,20 @@ describe('a backup archives every database the app keeps', () => {
     expect(done.sizeBytes).toBe(total)
   })
 })
+
+// FJS-2358: the declared SQLite files go through the framework's own backup,
+// which stamps the copy as a backup (FJS-D665) — a hand-run VACUUM INTO does not.
+describe('the archive is the framework\'s backup', () => {
+  test('main.db carries the backup stamp', async () => {
+    const sys = env.system as any
+    const row = await sys.backup.create({ data: {} })
+    await takeBackup(env.app, row.id)
+    const done = await sys.backup.findUnique({ where: { id: row.id } })
+    expect(done.status).toBe('success')
+
+    const copy = new Database(join(done.location as string, 'main.db'), { readonly: true })
+    try {
+      expect(copy.query('SELECT value FROM "_litestone_meta" WHERE key LIKE ?').get('%taken%')).toBeTruthy()
+    } finally { copy.close() }
+  })
+})

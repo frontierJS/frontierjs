@@ -285,6 +285,36 @@ describe('the pick', () => {
     } finally { cleanup() }
   })
 
+  test('a question that wraps is queued whole, and ruling it strikes the whole lead (FJS-2160)', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- Does the cache key grow with the view set or only with',
+      '  the number of tenants? Nobody has measured it.',
+      '  - **A** — no', '  - **B** — yes', '  - **Recommend A** — the key is the name',
+      '- **Where does the parse happen — the connector, or',
+      '  one shared parser?** Argued below.',
+      '  - **A** — connector', '  - **B** — shared',
+      '',
+    ].join('\n')
+    const { root, cleanup } = fixture({ paper })
+    try {
+      const [plain, bold] = readDecisions(root).filter(q => q.paper?.id === 'views')
+      expect(plain.question).toBe('Does the cache key grow with the view set or only with the number of tenants?')
+      expect(plain.body).toBe('Nobody has measured it.')
+      expect(bold.question).toBe('Where does the parse happen — the connector, or one shared parser?')
+      expect(bold.body).toBe('Argued below.')
+      expect(bold.options.map(o => o.letter)).toEqual(['A', 'B'])
+
+      const out = decide({ root, id: plain.id, pick: 'A', section: 'Naming & vocabulary', today: TODAY })
+      expect(out.ok).toBe(true)
+      expect(readFileSync(join(root, 'IDEAS', 'views.md'), 'utf8')).toContain(
+        `- ~~**${plain.question}**~~ **Answered 2026-09-14 (\`${out.ruling}\`): A — no.** Nobody has measured it.\n`)
+      const out2 = decide({ root, id: bold.id, pick: 'B', why: 'one parser', section: 'Naming & vocabulary', today: TODAY })
+      expect(out2.ok).toBe(true)
+      expect(readDecisions(root).filter(q => q.paper?.id === 'views').map(q => q.state)).toEqual(['ruled', 'ruled'])
+    } finally { cleanup() }
+  })
+
   test('the next id is past every one issued anywhere, a paper included', () => {
     const { root, cleanup } = fixture()
     try {

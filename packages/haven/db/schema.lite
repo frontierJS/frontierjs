@@ -107,7 +107,9 @@ model Message {
   /// a room in time order.
   @@index([roomId, createdAt])
 
-  /// Said by a member, rewritten by nothing, removed only by retention.
+  /// Said by a member, rewritten by nothing, removed only by retention — a
+  /// room's newest lines kept by count, `api/src/retention.ts`, and never a
+  /// `retention` on `main`, which would sweep members and rooms with them.
   @@gate("3.3.9.8")
   @@allow('read', auth().bannedAt == null && member.bannedAt == null)
   @@allow('create', auth().bannedAt == null)

@@ -257,6 +257,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- allow **update** — `isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
@@ -498,9 +499,12 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `Variable`
 
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- allow **create** — `appId != null || environment.isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- allow **update** — `appId != null || environment.isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- allow **delete** — `appId != null || environment.isProtected == false || auth().level >= 5` — "Protected environments require admin or owner role to modify"
 - deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Volume`

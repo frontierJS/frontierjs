@@ -133,6 +133,8 @@
       mounted = mount(anchorIn(box), Component, { root: box })
       stage   = stages.get(read.slug)
       if (!stage) throw new Error(`${entry.file} made no stage named ${read.slug}`)
+      // A screen shows a slice of a scene; the editor edits all of it.
+      stage.showAll()
       els = bind(read, stage)
     } catch (e) {
       unmount()
@@ -172,15 +174,17 @@
     if (box) box.replaceChildren()
   }
 
-  // `paint()` fits the scene to the whole window's width; here it shares the
-  // window with the sidebar, and the scene's right wall would sit under it.
-  // The marks overlay is laid out in the same `ch`/`lh` as the scene's box,
-  // so it takes the box's font; in other units a mark sits on the wrong cell.
+  // `paint()` fits one screen's columns to the whole window's width; here
+  // the scene shares the window with the sidebar and may be wider than a
+  // screen, so the font is sized to the stage's own columns, about 0.6em
+  // each. The marks overlay is laid out in the same `ch`/`lh` as the
+  // scene's box, so it takes the box's font; in other units a mark sits on
+  // the wrong cell.
   function fit() {
     const art = box?.querySelector('pre[data-art]')?.parentElement
     const overlay = box?.parentElement?.querySelector('[data-marks]')
-    if (!art || !overlay) return
-    const size = 'clamp(8px, calc((100vw - 26rem) / 58), 22px)'
+    if (!art || !overlay || !stage) return
+    const size = `clamp(6px, calc((100vw - 26rem) / ${Math.round(stage.width * 0.6)}), 22px)`
     art.style.fontSize = size
     Object.assign(overlay.style, { fontSize: size, fontFamily: art.style.fontFamily, lineHeight: art.style.lineHeight })
   }

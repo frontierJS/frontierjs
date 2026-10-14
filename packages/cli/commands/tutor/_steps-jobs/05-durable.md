@@ -19,7 +19,7 @@ same disk, readable by anything.
 
 Three columns worth knowing.
 
-**`status`** — one of `pending`, `running`, `done`, `failed`, `cancelled`. A
+**`status`** — one of `pending`, `running`, `done`, `dead`, `cancelled`. A
 job that finished is `done`, and it stays: terminal rows are swept after seven
 days rather than immediately, so *what happened last night* is answerable in the
 morning.

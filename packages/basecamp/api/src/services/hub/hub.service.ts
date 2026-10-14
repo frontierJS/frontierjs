@@ -54,19 +54,6 @@ import { slugify } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
-// ─── Vocabularies ─────────────────────────────────────────────────────────
-// The words are declared in db/schema.lite, where the column gets its CHECK.
-// These are the API's copy of the same two lists, and they are a copy on
-// purpose: a caller sending an unknown status must get a sentence naming what
-// is allowed, not a SQLite constraint message from three layers down.
-//
-// Two homes need a test that names both — db/test/schema.test.ts imports these
-// and asserts they match the enums the schema declares, in both directions.
-// That is the only thing keeping them one list.
-
-export const USER_STATUSES      = ['pending_verification', 'active', 'suspended']
-export const WORKSPACE_STATUSES = ['active', 'suspended']
-
 /** A bot's address. `.invalid` is reserved by RFC 2606 and resolves nowhere,
  *  which is the point: `User.email` is required and unique, a bot has no
  *  inbox, and a plausible-looking address would eventually be mailed. */
@@ -131,10 +118,18 @@ export function createHubService(app: BasecampApp) {
     // the base service answers every CRUD verb it was not given, and on a
     // service with no model that is a 500 rather than a refusal. It also
     // throws at construction on a name that does not exist below.
+    // A payload is a `type` in db/schema.lite, so a status outside its enum is a
+    // 400 naming the field from the schema's own vocabulary.
     methods: [
       'overview', 'workspaces', 'users', 'flags',
-      'setWorkspaceStatus', 'setUserStatus', 'setSystemAdmin', 'createBot', 'setFlag',
-    ].map(method => ({ method, gate: LEVELS.SYSADMIN })),
+      ['setWorkspaceStatus', 'WorkspaceStatusChange'],
+      ['setUserStatus',      'UserStatusChange'],
+      ['setSystemAdmin',     'SystemAdminChange'],
+      ['createBot',          'NewBot'],
+      ['setFlag',            'FlagChange'],
+    ].map(m => Array.isArray(m)
+      ? { method: m[0], input: m[1], gate: LEVELS.SYSADMIN }
+      : { method: m, gate: LEVELS.SYSADMIN }),
 
     // ── overview — the runtime, as one object ─────────────────────────
     // An ACTION and not `find`, which was the obvious first shape and is not
@@ -291,8 +286,6 @@ export function createHubService(app: BasecampApp) {
     // rule written twice and the vocabulary is already a declared enum.
     async setWorkspaceStatus() {
       const { workspaceId, status } = ($.data ?? {}) as Record<string, unknown>
-      if (!WORKSPACE_STATUSES.includes(status as string))
-        throw new BadRequest(`status must be one of ${WORKSPACE_STATUSES.join(', ')}`)
 
       const ws = await workspaceOr404(workspaceId)
       return sys().workspace.update({ where: { id: ws.id }, data: { status } })
@@ -301,8 +294,6 @@ export function createHubService(app: BasecampApp) {
     // ── setUserStatus ─────────────────────────────────────────────────
     async setUserStatus() {
       const { userId, status } = ($.data ?? {}) as Record<string, unknown>
-      if (!USER_STATUSES.includes(status as string))
-        throw new BadRequest(`status must be one of ${USER_STATUSES.join(', ')}`)
 
       const user = await userOr404(userId)
 
@@ -330,9 +321,6 @@ export function createHubService(app: BasecampApp) {
     // ── setSystemAdmin ────────────────────────────────────────────────
     async setSystemAdmin() {
       const { userId, isSystemAdmin } = ($.data ?? {}) as Record<string, unknown>
-      if (typeof isSystemAdmin !== 'boolean')
-        throw new BadRequest('isSystemAdmin must be true or false')
-
       const user = await userOr404(userId)
 
       if (!isSystemAdmin) {
@@ -403,8 +391,6 @@ export function createHubService(app: BasecampApp) {
     // environment in hand. Flipping the default is what a killswitch is.
     async setFlag() {
       const { flagId, isEnabled } = ($.data ?? {}) as Record<string, unknown>
-      if (typeof isEnabled !== 'boolean') throw new BadRequest('isEnabled must be true or false')
-      if (typeof flagId !== 'string' || !flagId) throw new BadRequest('flagId is required')
 
       const flag = await sys().featureFlag.findUnique({ where: { id: flagId } })
       if (!flag) throw new NotFound(`Flag '${flagId}' not found`)

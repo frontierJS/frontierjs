@@ -748,7 +748,7 @@ interface HandlerCtx {
 
 /**
  * The call has answered; now wait on the jobs it started, telling the client
- * as each one moves, and answer with where each ended up. A job that FAILED is
+ * as each one moves, and answer with where each ended up. A job that is DEAD is
  * reported, not raised: the method did what it was asked, and the second text
  * block is what an agent reading only text is told.
  */
@@ -765,7 +765,7 @@ async function held(app: App, call: CallScope, since: number, ctx: HandlerCtx, a
   const outcome = await awaitJobs(jobs as JobsReader, call.correlationId, since, {
     timeoutMs: call.awaitMs, pollMs: AWAIT_POLL_MS, signal: ctx.mcpReq?.signal,
     onProgress: token === undefined || !notify ? undefined : (done, total, list) => {
-      const moving = list.find(j => j.status !== 'done' && j.status !== 'failed' && j.status !== 'cancelled')
+      const moving = list.find(j => j.status !== 'done' && j.status !== 'dead' && j.status !== 'cancelled')
       void notify({ method: 'notifications/progress', params: {
         progressToken: token, progress: done, total,
         message: moving ? `${moving.name}: ${moving.status}` : 'finished',

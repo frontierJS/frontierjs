@@ -46,7 +46,8 @@ export const QUESTIONS_HEADING = /^##\s+(?:\d+\.\s+)?(?:the\s+)?open questions?\
 const MOOT_STATUS = new Set(['superseded-by', 'withdrawn'])
 
 const TOP_BULLET  = /^(?:[-*]|\d+\.)\s+(.*)$/
-const OPTION      = /^\s+[-*]\s+\*\*([A-Z])\*\*\s*[—–:-]\s*(.+)$/
+const WRAPPED     = /^\s+(?![-*]\s)\S/
+const OPTION      =/^\s+[-*]\s+\*\*([A-Z])\*\*\s*[—–:-]\s*(.+)$/
 // A recommendation's bold says more than its letter as often as not — `A's
 // first half now`, `C, then A`, `C1`. Read narrower, the line failed this and
 // was folded into the option above it as a wrapped line, so the question showed
@@ -165,7 +166,10 @@ export function paperQuestions(text, { paper, rel = paper.file } = {}) {
     current = null
   }
 
+  let joinedTo = -1
+
   lines.forEach((line, i) => {
+    if (i <= joinedTo) return
     if (/^\s*```/.test(line)) { fence = !fence; return }
     if (fence) return
 
@@ -175,7 +179,15 @@ export function paperQuestions(text, { paper, rel = paper.file } = {}) {
     const top = line.match(TOP_BULLET)
     if (top && !/^\s/.test(line)) {
       close()
-      const lead = questionLead(top[1])
+      // A lead that wraps is read off the whole sentence, never its first line.
+      let text = top[1]
+      let wrap = i + 1
+      while (wrap < lines.length && WRAPPED.test(lines[wrap]) && !OPTION.test(lines[wrap]) && !RECOMMEND.test(lines[wrap])) {
+        text += ' ' + lines[wrap].trim()
+        wrap++
+      }
+      joinedTo = wrap - 1
+      const lead = questionLead(text)
       const base = `${paper.id}:${slug(lead.question)}`
       const n    = (seen.get(base) ?? 0) + 1
       seen.set(base, n)
@@ -184,6 +196,7 @@ export function paperQuestions(text, { paper, rel = paper.file } = {}) {
         source:    'idea',
         file:      rel,
         line:      i + 1,
+        lines:     wrap - i,
         question:  lead.question,
         struck:    lead.struck,
         text:      [lead.rest],

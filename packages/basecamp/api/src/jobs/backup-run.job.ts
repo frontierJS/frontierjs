@@ -40,10 +40,10 @@ import { runsAsApp }        from './context.ts'
 import { jobsDatabasePath } from '../core/db.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 
-/** Bound as a parameter and never interpolated (Invariant 8) — the path is
- *  built here, but the rule is about the shape of the statement rather than
- *  about who supplied the value today. Its own read-only handle, so the file is
- *  copied from what is committed and nothing here can write to it. */
+/** Only for Caravan's queue, which no schema names and `app.db.$backup` cannot
+ *  reach. Bound as a parameter and never interpolated (Invariant 8). Its own
+ *  read-only handle, so the file is copied from what is committed and nothing
+ *  here can write to it. */
 function vacuumInto(source: string, dest: string): void {
   const raw = new Database(source, { readonly: true })
   try { raw.run('VACUUM INTO ?', [dest]) } finally { raw.close() }
@@ -60,7 +60,7 @@ function treeSize(dir: string): number {
  *  directory that does not exist yet is an app that has not written to it, and
  *  is left out; a SQLite file that fails to copy throws, because an archive
  *  missing one of them is not an archive. */
-function archiveAll(app: BasecampApp, dest: string): void {
+async function archiveAll(app: BasecampApp, dest: string): Promise<void> {
   mkdirSync(dest, { recursive: true })
 
   const declared = (app.db as unknown as {
@@ -69,8 +69,12 @@ function archiveAll(app: BasecampApp, dest: string): void {
 
   for (const [name, { driver, path }] of Object.entries(declared)) {
     if (!path || !existsSync(path)) continue
-    if (driver === 'sqlite') vacuumInto(path, join(dest, `${name}.db`))
-    else                     cpSync(path, join(dest, name), { recursive: true })
+    if (driver === 'sqlite') {
+      // The client's own backup, which stamps the copy as one (`FJS-D665`).
+      await (app.db as unknown as {
+        $backup(dest: string, opts: { vacuum: boolean; only: string }): Promise<unknown>
+      }).$backup(join(dest, `${name}.db`), { vacuum: true, only: name })
+    } else cpSync(path, join(dest, name), { recursive: true })
   }
 
   const jobs = jobsDatabasePath(app.sqlite.filename)
@@ -121,7 +125,7 @@ export async function takeBackup(app: BasecampApp, backupId: string): Promise<vo
   const path  = join(dir, `basecamp-${stamp}`)
 
   try {
-    archiveAll(app, path)
+    await archiveAll(app, path)
 
     const size = treeSize(path)
     await finish({ status: 'success', sizeBytes: size, location: path, error: null })

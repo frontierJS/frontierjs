@@ -12,7 +12,7 @@
 // auth error raised from a SERVICE surfacing as a 500.
 
 import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@frontierjs/junction'
-import { parseTtl, Unauthorized, BadRequest, Forbidden, NotFound, rateLimitHook } from '@frontierjs/junction'
+import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound, rateLimitHook } from '@frontierjs/junction'
 import type { AuthPluginOptions }                                   from './types.ts'
 import { createAuthServices, asPrincipal }                          from './services.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
@@ -771,8 +771,7 @@ function clearCookie(ctx: TransportContext): void {
  * matches it as an exact string.
  */
 function callbackPath(app: App, prefix: string, provider: string): string {
-  const apiPrefix = String((app as { config?: { apiPrefix?: string } }).config?.apiPrefix ?? '')
-    .replace(/\/+$/, '')
+  const apiPrefix = normalizePrefix((app as { config?: { apiPrefix?: string } }).config?.apiPrefix)
   return `${apiPrefix}${prefix}/oauth/${provider}/callback`
 }
 

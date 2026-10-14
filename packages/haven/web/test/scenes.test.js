@@ -10,31 +10,41 @@ import { test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
-import { pacerAt, createStage } from '../src/stage.js'
+import { pacerAt, createStage, follow, VIEW, EDGE } from '../src/stage.js'
 import { piece } from '../src/pieces/index.js'
 
 const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
 
 for (const { name, slug } of SCENES) {
-  const { stage, frame } = await mountScene(name)
+  const { stage, frame, capture } = await mountScene(name)
   const expected = readFileSync(join(WEB, 'src/scenes', `${slug}.frame.txt`), 'utf8').replace(/\n$/, '').split('\n')
 
   test(`${slug}: the stage's picture is ${slug}.frame.txt`, () => {
     expect(stage.picture()).toEqual(expected)
   })
 
-  test(`${slug}: the terminal draws that picture`, () => {
+  test(`${slug}: the terminal draws that picture, the view's slice of it from the spawn and from the far corner`, async () => {
     // A cycling cell may show another glyph of its `chars` at this tick, and a
     // pacer stands somewhere on its row, so a cell is compared only where no
-    // clock moves it.
+    // clock moves it. A stage no bigger than the view draws the same slice
+    // from both corners.
     const paced = (x, y) => stage.pacers.some((p) => p.y === y && x >= p.from && x <= p.to)
-    expected.forEach((row, y) => {
-      const drawn = frame[y] ?? ''
-      ;[...row].forEach((ch, x) => {
-        if (stage.cycles(x, y) || paced(x, y)) return
-        expect({ x, y, ch: drawn[x] ?? ' ' }).toEqual({ x, y, ch })
-      })
-    })
+    const same = (drawn, v) => {
+      for (let row = 0; row < v.h; row++) {
+        for (let col = 0; col < v.w; col++) {
+          const x = v.x + col, y = v.y + row
+          if (stage.cycles(x, y) || paced(x, y)) continue
+          expect({ x, y, ch: drawn[row]?.[col] ?? ' ' }).toEqual({ x, y, ch: expected[y][x] })
+        }
+      }
+    }
+    expect(stage.view).toEqual({ x: 0, y: 0, w: Math.min(VIEW.w, stage.width), h: Math.min(VIEW.h, stage.height) })
+    same(frame, stage.view)
+    stage.follow(stage.width - 1, stage.height - 1)
+    const far = stage.view
+    expect(far.x).toBe(stage.width - far.w)
+    same(await capture(), far)
+    stage.follow(stage.spawn.x, stage.spawn.y)
   })
 
   test(`${slug}: a cycling cell changes over time and never moves a wall`, () => {
@@ -104,6 +114,35 @@ for (const { name, slug } of SCENES) {
 }
 
 // ─── the stage's own rules ───────────────────────────────────────────
+
+test('the view follows a figure only when it nears an edge, and stays inside the stage', () => {
+  const extent = { width: 160, height: 40 }
+  const home = { x: 0, y: 0, w: VIEW.w, h: VIEW.h }
+  expect(follow(home, { x: 30, y: 20 }, extent)).toEqual(home)
+  expect(follow(home, { x: VIEW.w - EDGE.x - 1, y: 20 }, extent)).toEqual(home)
+  const panned = follow(home, { x: VIEW.w - EDGE.x, y: 20 }, extent)
+  expect(panned).toEqual({ ...home, x: 1 })
+  expect(follow(panned, { x: VIEW.w - EDGE.x - 1, y: 20 }, extent)).toEqual(panned)
+  expect(follow(panned, { x: EDGE.x, y: 20 }, extent)).toEqual({ ...home, x: 0 })
+  expect(follow(home, { x: 159, y: 39 }, extent)).toEqual({ x: 160 - VIEW.w, y: 40 - VIEW.h, w: VIEW.w, h: VIEW.h })
+  expect(follow(home, { x: 0, y: 0 }, extent)).toEqual(home)
+  const small = { width: 60, height: 20 }
+  expect(follow(home, { x: 59, y: 19 }, small)).toEqual({ x: 0, y: 0, w: 60, h: 20 })
+})
+
+test('a stage shows the view it is told to follow and the whole of itself to the editor', () => {
+  const stage = createStage({ slug: 'probe', spawn: { x: 0, y: 0 } })
+  stage.stamp(piece('dot', '.', 'f'), 199, 29)
+  expect(stage.view).toEqual({ x: 0, y: 0, w: VIEW.w, h: VIEW.h })
+  const seen = []
+  stage.subscribe(() => seen.push(stage.view.x))
+  stage.follow(150, 10)
+  expect(stage.view).toEqual({ x: 150 + EDGE.x - VIEW.w + 1, y: 0, w: VIEW.w, h: VIEW.h })
+  stage.follow(150, 10)
+  expect(seen).toEqual([62])
+  stage.showAll()
+  expect(stage.view).toEqual({ x: 0, y: 0, w: 200, h: 30 })
+})
 
 const wall  = piece('wall', '|', 'w')
 const table = piece('table', 'o|o', 'tct')

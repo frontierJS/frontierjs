@@ -17,7 +17,8 @@
 // which litestone walks, so a read through `db()` is confined like Volume's.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel } from '../../core/hooks.ts'
+import { LEVELS } from '@frontierjs/litestone'
+import { sessionScope, workspaceChannel } from '../../core/hooks.ts'
 import { db, ws }   from '../../core/resource.ts'
 import { declaredFor, gradePosture, postureChanges, postureRank, POSTURE_INTERVAL_MS } from '../../core/posture.ts'
 import type { Control, PostureReadings } from '../../core/posture.ts'
@@ -137,7 +138,8 @@ export function createPostureService(app: BasecampApp) {
     // No CRUD: a report is what a machine said, and editing one edits the record
     // rather than the box. `report` is the outpost's — no session, HMAC at the
     // transport, so it states gate 0 (`FJS-826`).
-    methods: ['latest', 'fleet', 'check', { method: 'report', gate: 0 }],
+    // `check` is thirty process spawns on the machine, so not a viewer's button.
+    methods: ['latest', 'fleet', { method: 'check', gate: LEVELS.USER }, { method: 'report', gate: 0 }],
 
     // ── report — POST /posture  X-Service-Method: report ──────────────
     async report() {
@@ -203,8 +205,6 @@ export function createPostureService(app: BasecampApp) {
     hooks: {
       before: {
         all:   [sessionScope(app, { except: ['report'] })],
-        // Thirty process spawns on the machine, so not a viewer's button.
-        check: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
       },
     },
   })

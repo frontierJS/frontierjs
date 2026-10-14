@@ -203,6 +203,50 @@ enum UserKind       { human bot ai }
 // scopeToWorkspace (a suspended workspace refuses every scoped service).
 enum UserStatus      { pending_verification active suspended }
 enum WorkspaceStatus { active suspended }
+/// What the hub's custom methods accept (`hub.service.ts` declares each as
+/// `input:`). The status vocabularies are the enums above, so a status outside
+/// them is refused by the schema's own JSON Schema, naming the field.
+type WorkspaceStatusChange {
+  workspaceId String
+  status      WorkspaceStatus
+}
+
+type UserStatusChange {
+  userId String
+  status UserStatus
+}
+
+type SystemAdminChange {
+  userId        String
+  isSystemAdmin Boolean
+}
+
+/// `role` is narrowed to the non-owner roles by the method itself: a bot cannot
+/// own a workspace, and an enum cannot say "all but one" without a second copy.
+type NewBot {
+  workspaceId String
+  name        String @trim @length(1, 80)
+  role        WorkspaceRole?
+}
+
+type FlagChange {
+  flagId    String
+  isEnabled Boolean
+}
+
+/// What `workspaces.addMember` and `workspaces.setMemberRole` accept. Both write
+/// a WorkspaceMember row by hand, so the payload is stated here rather than
+/// read off a model. An omitted role on add is the service's own default.
+type WorkspaceMemberAdd {
+  userId String
+  role   WorkspaceRole?
+}
+
+type WorkspaceMemberRole {
+  userId String
+  role   WorkspaceRole
+}
+
 enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
@@ -1374,6 +1418,12 @@ model Environment {
   @@gate("2.4.4.5")
   @@capabilities
 
+  // The production guard: a developer deploys to a protected environment and
+  // does not reshape it. The gate cannot say it, since a developer holds
+  // update on every environment, so the row does — and it holds for every
+  // writer, which a check in two services did not (FJS-1087, FJS-2354).
+  @@allow('update', isProtected == false || auth().level >= 5, "Protected environments require admin or owner role to modify")
+
   // Environment carries its own workspaceId rather than reaching through
   // projectId, so tenancy scopes it on a column rather than through a parent.
   @@softDelete(cascade)
@@ -1405,7 +1455,6 @@ model App {
   status        AppStatus   @default(unknown) @system
 
   source        Json        @default("{}")
-  isPublic      Boolean     @default(false)
 
   // How the machine starts the container: each column is a `docker run` flag,
   // built into the release by `core/runtime.ts`, the one reader. Columns and not
@@ -1510,6 +1559,11 @@ model Variable {
   // setting production's DATABASE_URL and renaming production are not one act.
   @@gate("2.4.4.4")
   @@capabilities
+
+  // An environment-wide variable is the environment's to guard (see
+  // Environment's @@deny); an app's own is the app's, at the level that may
+  // write the app.
+  @@allow('create,update,delete', appId != null || environment.isProtected == false || auth().level >= 5, "Protected environments require admin or owner role to modify")
   @@softDelete
   @@trail(audit)
   @@unique([environmentId, key], where: appId == null)

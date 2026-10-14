@@ -946,7 +946,6 @@ CREATE TABLE IF NOT EXISTS "app" (
   "type" TEXT NOT NULL DEFAULT 'container',
   "status" TEXT NOT NULL DEFAULT 'unknown',
   "source" TEXT NOT NULL DEFAULT '{}',
-  "isPublic" INTEGER NOT NULL DEFAULT 0,
   "port" INTEGER,
   "containerPort" INTEGER,
   "volumePath" TEXT,

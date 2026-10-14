@@ -131,7 +131,6 @@ class AppFactory extends Factory {
       status:   'running',
       source:   { kind: 'inline', files: [{ path: 'index.html', content: PASTED_PAGE }] },
       port:     null,
-      isPublic: true,
     }
 
     return {
@@ -141,7 +140,6 @@ class AppFactory extends Factory {
       status:   rng ? rng.pick(['running', 'running', 'running', 'stopped', 'error']) : 'running',
       source:   { kind: 'git', repo: `git@forgejo.local:acme/${name}.git`, branch: 'main' },
       port:     name === 'web' ? 3000 : null,
-      isPublic: name === 'web',
     }
   }
 }

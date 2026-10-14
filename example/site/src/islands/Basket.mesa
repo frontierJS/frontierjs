@@ -25,6 +25,7 @@
            removeDiscount, setShipping, loadShippingOptions, dismissReceipt,
            bootShop, redeemHandoff, handoffCodeFromUrl } from '@/cart.js'
   import { money } from '@/money.js'
+  import { toFieldErrors } from '@frontierjs/sierra/field-rules'
 
   let code     = ''
   let details  = { email: '', name: '', note: '' }
@@ -70,12 +71,7 @@
       // comes back as a 400 keyed by FIELD, in the schema's own wording. Put it
       // under the box that caused it rather than in a banner; a form-level
       // message about an email address is a form people re-read three times.
-      const errs = err?.data?.data ?? err?.data ?? err?.errors ?? []
-      for (const e of Array.isArray(errs) ? errs : []) {
-        const key = e?.path?.replace(/^\//, '') ?? e?.field
-        if (key) fields[key] = e.message
-      }
-      fields = { ...fields }
+      fields = toFieldErrors(err).fields
     } finally {
       placing = false
     }

@@ -155,9 +155,11 @@ describe('documented exceptions, pinned so a change to them is seen', () => {
     expect(au.rows.some((r: any) => r.workspaceId === null)).toBe(true)
     expect(summarize(await d.call('job-caller-db', 'admin', 'audit', 'find')).rows!.some((r: any) => r.workspaceId === null)).toBe(false)
   })
-  test('MCP offers custom methods to any signed-in caller (surface.snapshot.md "who may call"); the call is refused by the hook, not the list', async () => {
+  test('MCP offers a custom method at the level it declares (FJS-2856): a viewer is not offered issueEnrollment, an admin is', async () => {
     const viewer = await d.tools('viewer') as Set<string>
-    expect(viewer.has('servers_issueEnrollment')).toBe(true)
+    const admin  = await d.tools('admin')  as Set<string>
+    expect(viewer.has('servers_issueEnrollment')).toBe(false)
+    expect(admin.has('servers_issueEnrollment')).toBe(true)
     expect((await d.call('mcp', 'viewer', 'servers', 'issueEnrollment', fx.rows.server.id)).ok).toBe(false)
   })
   test('a tenancy-filtered update or delete at the Data boundary answers null, not a refusal (data-hazards: a @@gate refuses, a @@allow filters)', async () => {

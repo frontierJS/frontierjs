@@ -53,7 +53,7 @@ import { tmpdir }                          from 'node:os'
 // path rather than reimplemented, because a framework that breaks its own stated
 // rules is worse than one that never stated them — and the way that happens is
 // two copies where only one of them is ever re-derived.
-import { runChecks, findApps, formatFindings, readBaseline } from '../packages/cli/core/checks.js'
+import { runChecks, blindSkips, findApps, formatFindings, readBaseline, gradeBaseline } from '../packages/cli/core/checks.js'
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
@@ -661,12 +661,31 @@ function structure() {
   const allow = allowances.structure ?? {}
   const apps  = findApps(ROOT)
   let  checked = 0
+  let  blind   = 0
 
   // Errors carry their own detail rather than going to `notes`, which print at
   // the very bottom — a failure that says "see above" for lines that appear
   // below is how a run gets read as a mystery.
-  const report = (label, result, base) => {
+  const report = (label, result, base, baseline = null) => {
     checked += result.ran.length
+
+    // An app's check-baseline.json is its ratchet and `fli check` exits 1 on a
+    // rule above its ceiling; a CI that only counts errors passes the same tree.
+    if (baseline?.present) {
+      const grade = gradeBaseline(result, baseline)
+      if (grade.regressions.length) fail(
+        `${label} — ${grade.regressions.length} rule(s) above check-baseline.json\n` +
+        grade.regressions.map(r => `    ${r.rule}: ${r.count} finding(s), baseline is ${r.ceiling}`).join('\n') + '\n' +
+        `      Run \`fli check\` in ${label} for the findings; \`fli check --update\` only lowers a ceiling.`
+      )
+    }
+
+    // An error-severity rule that could not run is not a rule with nothing to
+    // grade; both leave zero findings, so only this line tells them apart.
+    for (const s of blindSkips(result)) {
+      blind++
+      note(`${label} — rule \`${s.rule}\` (error) did NOT run: ${s.why}`)
+    }
 
     const errors = result.findings.filter(f => f.severity === 'error')
     const warns  = result.findings.filter(f => f.severity !== 'error')
@@ -688,12 +707,14 @@ function structure() {
     // The app's own `check-baseline.json` allowances (`FJS-D508`) count here as
     // they do under `fli check`; a CI run that read only this file's would fail
     // an app on what the app already answered.
-    report(label, runChecks({ root: app, allow: { ...readBaseline(app).allow, ...allow[label] } }), app)
+    const baseline = readBaseline(app)
+    report(label, runChecks({ root: app, allow: { ...baseline.allow, ...allow[label] } }), app, baseline)
   }
 
   report('packages', runChecks({ root: ROOT, scope: 'repo', allow: allow['.'] ?? {} }), ROOT)
 
-  if (clean(from)) ok(`${apps.length} app(s), ${checked} rule run(s), no architecture errors`)
+  if (clean(from)) ok(`${apps.length} app(s), ${checked} rule run(s), no architecture errors` +
+    (blind ? ` — ${blind} error rule(s) could not run, see notes` : ''))
 }
 
 // ─── phase 3 · registers ────────────────────────────────────

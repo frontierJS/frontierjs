@@ -34,7 +34,6 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 // The hub's copy of the two status vocabularies. It exists so a bad value is
 // refused by name at the API rather than by a CHECK constraint message; this
 // import is what keeps it a copy of the schema rather than a second opinion.
-import { USER_STATUSES, WORKSPACE_STATUSES } from '../../api/src/services/hub/hub.service.ts'
 import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
 import { grantsFor } from '../../api/src/core/capabilities.ts'
 
@@ -379,8 +378,11 @@ describe('generated migration', () => {
 
     const a = introspect(fromMigrations.db.$rawDbs.main)
     const b = introspect(fromSchema.db.$rawDbs.main)
-    const tablesOf  = (s: any) => Object.keys(s.tables ?? s).sort()
-    const columnsOf = (s: any, t: string) => Object.keys((s.tables ?? s)[t].columns ?? {}).sort()
+    // `introspect` keeps its non-table dimensions (`__views`, `__search`, …) in
+    // the same object as the tables, and `__search` is null when no model
+    // declares search -- a key walk that does not skip them reads it as a table.
+    const tablesOf  = (s: any) => Object.keys(s).filter(k => !k.startsWith('__')).sort()
+    const columnsOf = (s: any, t: string) => s[t].columns.map((c: any) => c.name).sort()
 
     expect(tablesOf(a)).toEqual(tablesOf(b))
     for (const t of tablesOf(a)) expect([t, columnsOf(a, t)]).toEqual([t, columnsOf(b, t)])
@@ -1958,18 +1960,12 @@ describe('Recipe and CleanupRun — the arbitrary act and the declared one', () 
 // schema holding it.
 
 describe('the hub tier — suspension, and who may grant it', () => {
-  test('both status vocabularies are declared once, in both places', () => {
+  test('the notification kinds are declared once, in both places', () => {
     const schema = parseFile(SCHEMA).schema
     const values = (name: string) =>
       (schema.enums.find((e: any) => e.name === name)?.values ?? []).map((v: any) => v.name ?? v)
 
-    // The service's copy exists so a bad value is refused by NAME rather than
-    // by a SQLite constraint message three layers down. This is what keeps the
-    // copy a copy.
-    expect([...values('UserStatus')].sort()).toEqual([...USER_STATUSES].sort())
-    expect([...values('WorkspaceStatus')].sort()).toEqual([...WORKSPACE_STATUSES].sort())
-
-    // The third copy, and the one with a default behind every value:
+    // The copy with a default behind every value:
     // `kinds.ts` says what happens for a person who has never chosen, so a kind
     // added to the enum and forgotten there resolves to nothing rather than to
     // a default. Both directions, so neither list can grow alone.
@@ -2312,4 +2308,75 @@ describe('the access and constraints this schema declares are enforced', () => {
     const graded = rows.filter((m: any) => m.got !== 'skipped')
     expect(graded.map((m: any) => m.message)).toEqual([])
   }, 120_000)
+})
+
+// FJS-2771: "public" has two meanings that are already declared elsewhere — a
+// hostname is what Caddy serves, `exposesPort` is the raw port (FJS-D930). A
+// third boolean with no reader reads as a third idea.
+describe('App reachability', () => {
+  test('exposesPort is the one declared exposure; there is no isPublic beside it', () => {
+    const app = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')
+    const names = app.fields.map((f: any) => f.name)
+    expect(names).toContain('exposesPort')
+    expect(names).not.toContain('isPublic')
+  })
+})
+
+// FJS-2354: a protected environment is the production guard, and a hook on two
+// services is not a guard on the model — a writer that skips the hook (a job in
+// process, a service nobody wired it onto) reshaped production unrefused. The
+// rule is the schema's, so it holds on the caller's own client with no service.
+describe('a protected environment — a developer deploys to it and does not reshape it', () => {
+  async function protectedTree(sys: any) {
+    const ws      = await seedWorkspace(sys)
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'P', slug: 'p' } })
+    const mk = (slug: string, isProtected: boolean) => sys.environment.create({ data: {
+      workspaceId: ws.id, projectId: project.id, name: slug, slug, isProtected } })
+    const prod = await mk('prod', true)
+    const dev  = await mk('dev', false)
+    const app  = await sys.app.create({ data: { workspaceId: ws.id, environmentId: prod.id, name: 'web', slug: 'web' } })
+    const putVar = (e: any, extra: Record<string, unknown> = {}) => sys.variable.create({ data: {
+      workspaceId: ws.id, environmentId: e.id, key: `K${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+      value: 'v', ...extra } })
+    return { ws, prod, dev, app, putVar }
+  }
+
+  test('a developer cannot update a protected environment or write its variables; an admin can', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { ws, prod, dev, app, putVar } = await protectedTree(sys)
+    const developer = db.$setAuth(as('developer', { workspaceId: ws.id }))
+    const admin     = db.$setAuth(as('admin',     { workspaceId: ws.id }))
+    const held      = await putVar(prod)
+    const open      = await putVar(dev)
+    const appOwn    = await putVar(prod, { appId: app.id })
+    const nameOf    = async (id: string) => (await sys.environment.findUnique({ where: { id } })).name
+    const valueOf   = async (id: string) => (await sys.variable.findUnique({ where: { id } }))?.value
+
+    // An update and a delete FILTER (the deny compiles into the WHERE, so the
+    // statement matches no row); a create is the one policy that throws.
+    await developer.environment.update({ where: { id: prod.id }, data: { name: 'renamed', version: prod.version } })
+    expect(await nameOf(prod.id)).toBe('prod')
+    await expect(developer.variable.create({ data: {
+      workspaceId: ws.id, environmentId: prod.id, key: 'DATABASE_URL', value: 'x' } }))
+      .rejects.toThrow(/Protected environments/)
+    expect(await sys.variable.findFirst({ where: { environmentId: prod.id, key: 'DATABASE_URL' } })).toBeNull()
+    await developer.variable.update({ where: { id: held.id }, data: { value: 'y', version: held.version } })
+    expect(await valueOf(held.id)).toBe('v')
+    await developer.variable.delete({ where: { id: held.id } })
+    expect(await valueOf(held.id)).toBe('v')
+
+    // Not protected, and an app's own variable: the developer's, as before.
+    await developer.environment.update({ where: { id: dev.id }, data: { name: 'renamed', version: dev.version } })
+    expect(await nameOf(dev.id)).toBe('renamed')
+    await developer.variable.update({ where: { id: open.id }, data: { value: 'y', version: open.version } })
+    await developer.variable.update({ where: { id: appOwn.id }, data: { value: 'y', version: appOwn.version } })
+    expect([await valueOf(open.id), await valueOf(appOwn.id)]).toEqual(['y', 'y'])
+
+    await admin.environment.update({ where: { id: prod.id }, data: { name: 'renamed', version: prod.version } })
+    expect(await nameOf(prod.id)).toBe('renamed')
+    await admin.variable.update({ where: { id: held.id }, data: { value: 'y', version: held.version } })
+    expect(await valueOf(held.id)).toBe('y')
+    db.$close()
+  })
 })

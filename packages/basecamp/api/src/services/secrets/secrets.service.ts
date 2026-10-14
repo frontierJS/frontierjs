@@ -19,6 +19,7 @@
 // client: 0 occurrences in `strings bc.db`, 0 in the audit log.
 
 import { createService, BadRequest, $ } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
@@ -28,8 +29,6 @@ import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ProviderKind }   from '../../../../db/schema.d.ts'
 import { keyScope } from '../api-keys/scopes.ts'
-
-const KINDS = ['ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'generic']
 
 export function createSecretsService(app: BasecampApp) {
 
@@ -76,6 +75,12 @@ export function createSecretsService(app: BasecampApp) {
     name:  'secrets',
     scope: keyScope('secrets'),
     model: 'Secret',
+    // The whole surface. `verify` calls the provider with the stored token before
+    // any write, so no model's gate grades it and the level is stated here.
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      { method: 'verify', gate: LEVELS.ADMINISTRATOR },
+    ],
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,
     // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -99,8 +104,6 @@ export function createSecretsService(app: BasecampApp) {
 
     async create() {
       const data = $.data as Record<string, unknown>
-      if (data.kind && !KINDS.includes(data.kind as string))
-        throw new BadRequest(`kind must be one of ${KINDS.join(', ')}`)
       if (!data.data) throw new BadRequest('data is required — a secret with no value is a name')
 
       normalizeProviderKey(data)
@@ -124,9 +127,6 @@ export function createSecretsService(app: BasecampApp) {
     async patch() {
       await getScoped('secret', 'Secret')
       const data = $.data as Record<string, unknown>
-
-      if (data.kind && !KINDS.includes(data.kind as string))
-        throw new BadRequest(`kind must be one of ${KINDS.join(', ')}`)
 
       // Rotating the value is allowed and is the point of patch here. What is
       // NOT allowed is kind and createdBy: a secret that changes what it IS
@@ -233,7 +233,6 @@ export function createSecretsService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'admin', 'owner'), stampSecret],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        verify: [requireWorkspaceRole(app, 'admin', 'owner')],
         // Reads are NOT restricted further, because there is nothing sensitive
         // in one: the value is stripped at the Data boundary, so a viewer sees
         // that a secret exists and never what it is.

@@ -11,6 +11,7 @@ import { clientRoute, CLIENT_PATH } from './client.ts'
 import { loginRoute, LOGIN_PATH }  from './login.ts'
 import type { LoginOptions }       from './login.ts'
 import { standing }                from './principal.ts'
+import { sweepRooms, KEEP }        from './retention.ts'
 import { roomChannels }            from './rooms.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
@@ -57,6 +58,13 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   app.configure(a => {
     a.get(CLIENT_PATH, clientRoute())
     a.post(LOGIN_PATH, login)
+  })
+  // Startup is not a schedule (`$retain()`): a server that stays up for a
+  // month sweeps nothing after its first hour unless something ticks. The
+  // app's scheduler is armed by `start-work`, so a one-shot boot ticks nothing.
+  app.scheduler.every('1 hour', async () => {
+    for (const { roomId, removed } of await sweepRooms(db))
+      console.log(`[haven] retention: room ${roomId} dropped ${removed} lines past its newest ${KEEP}`)
   })
   return app
 }

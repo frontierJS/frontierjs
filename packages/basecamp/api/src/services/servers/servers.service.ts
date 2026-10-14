@@ -165,19 +165,28 @@ export function createServersService(app: BasecampApp) {
       // `methods:` list is the whole surface, so leaving them out silently
       // stopped answering them. `surface.snapshot.md` is what caught it.
       'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
-      'events', 'feed', 'sync', 'logEvent', 'metrics',
+      'events', 'feed', 'logEvent', 'metrics',
       'reboot', 'drain', 'undrain',
-      // Both read a vendor rather than a row. They take the model's own read
-      // gate, because what they disclose is a price list and the NAMES of this
-      // workspace's accounts — never a token, which is `@encrypted` and absent
-      // from the row `providers` reads.
-      'catalog', 'providers',
+      // `sync`, `catalog` and `reconcile` act on a machine or SPEND the
+      // workspace's vendor token before any write, and a rate limit is per
+      // token, so a viewer refreshing a picker is somebody else's failed
+      // deploy. No model's gate reaches them, so the level is stated here.
+      { method: 'sync', gate: LEVELS.USER },
+      { method: 'catalog', gate: LEVELS.USER },
+      // `providers` reads rows this app owns and discloses account names, which
+      // is the model's own read gate, never a token.
+      'providers',
       // `provision` is a person spending money; `provisionStep` is the job it
       // dispatched, and is internalOnly.
       'provision', 'provisionStep',
       // `destroy` is a person, with a typed confirmation; `destroyStep` is the
       // job. `reconcile` reads a cloud and writes nothing.
-      'destroy', 'destroyStep', 'reconcile', 'issueEnrollment',
+      'destroy', 'destroyStep',
+      { method: 'reconcile', gate: LEVELS.USER },
+      // `issueEnrollment` hands out a credential that makes a machine a member
+      // of this fleet, the same weight as buying or destroying one, which are
+      // `@gate(5)` moves. It is not a move, so the level is declared here.
+      { method: 'issueEnrollment', gate: LEVELS.ADMINISTRATOR },
       // The operator's own ~/.ssh/config, on a Basecamp running on their
       // machine and nowhere else (`core/local-ssh.ts`). Reads, so a keyed
       // retry runs them again rather than replaying a stale listing. At
@@ -1193,28 +1202,13 @@ export function createServersService(app: BasecampApp) {
         // drain and undrain at ADMINISTRATOR(5), reboot at the model's own
         // update level. A hook here would be the same sentence twice, and the
         // one in the seed is the one `db/access.snapshot.md` can see.
-        sync:      [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        // `catalog` SPENDS the workspace's vendor token — a rate limit is per
-        // token, so a viewer refreshing a picker is somebody else's failed
-        // deploy. `providers` is not here: it reads rows this app owns and
-        // discloses account names, which is the model's own read gate.
-        catalog:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         logEvent:  [internalOnly()],
         // Every step moves a machine or spends money, and the job is the only
         // caller. `provision` itself carries no role hook: `@gate(5)` on the
         // move is the authority, in the place the access snapshot prints it.
         provisionStep: [internalOnly()],
         destroyStep:   [internalOnly()],
-        // `reconcile` spends the workspace's token, like `catalog`. `destroy`
-        // carries no role hook: `@gate(5)` on the move is the authority.
-        reconcile:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        // `issueEnrollment` hands out a credential that makes a machine a
-        // member of this fleet — the same weight as buying or destroying one,
-        // which are `@gate(5)` moves. It is not a move, so the authority is
-        // stated here rather than in the schema, in the same place and the same
-        // vocabulary as every other role hook on this service. A second ladder
-        // written by hand inside the method is what this replaced.
-        issueEnrollment: [requireWorkspaceRole(app, 'admin', 'owner')],
+        // `destroy` carries no role hook: `@gate(5)` on the move is the authority.
         // heartbeat: HMAC auth at Conduit transport level — no session hook
       },
     },

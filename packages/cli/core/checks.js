@@ -268,6 +268,17 @@ function walkSql(dir) {
 // passed, and reporting the two as one number is how a check quietly stops
 // covering the thing it was written for.
 
+// A skip is one of two things. Most are *nothing to grade* (no `web/`, no test
+// directory). A rule that has something to grade and lacks the tool or input to
+// grade it — no parser, a snapshot nobody generated — answers `blind: true`,
+// and `blindSkips` lists those that are errors, which is what a runner must not
+// let read as a clean pass.
+export function blindSkips({ skipped = [] }) {
+  const severity = Object.fromEntries(RULES.map(r => [r.id, r.severity]))
+  return skipped.filter(s => s.blind && severity[s.rule] === 'error')
+    .map(({ rule, why }) => ({ rule, severity: 'error', why }))
+}
+
 // `allow` is `{ '<rule>:<path>': 'why' }`, path relative to `root`. An exception
 // is a named entry with a reason, never a loosened rule: the rule is what every
 // app gets on the next release, and the one place it may not hold is written down
@@ -296,8 +307,19 @@ export function verdictOf(rule, out) {
 }
 
 export function runChecks({ root, only = null, scope = 'app', allow = {} } = {}) {
-  const wanted = RULES.filter(r =>
-    (scope === 'both' || r.scope === 'both' || r.scope === scope) && (!only || only.includes(r.id)))
+  const inScope = r => scope === 'both' || r.scope === 'both' || r.scope === scope
+  const wanted  = RULES.filter(r => inScope(r) && (!only || only.includes(r.id)))
+
+  // An id that matches no rule in this scope would otherwise run nothing and
+  // read as a clean pass: a typo, or a repo rule asked for from an app.
+  const unknown = (only ?? []).filter(id => !wanted.some(r => r.id === id))
+  if (unknown.length) {
+    const why = unknown.map(id => {
+      const rule = RULES.find(r => r.id === id)
+      return rule ? `\`${id}\` is a ${rule.scope}-scope rule, not run in ${scope} scope` : `\`${id}\` names no rule`
+    })
+    throw new Error(`fli check --only: ${why.join('; ')}. \`fli check --list\` shows the rules.`)
+  }
 
   const findings = []
   const allowed  = []
@@ -306,7 +328,7 @@ export function runChecks({ root, only = null, scope = 'app', allow = {} } = {})
 
   for (const rule of wanted) {
     const out = verdictOf(rule, CHECKS[rule.id]({ root, rule }))
-    if (out.skipped) skipped.push({ rule: rule.id, why: out.skipped })
+    if (out.skipped) skipped.push({ rule: rule.id, why: out.skipped, ...(out.blind && { blind: true }) })
     else             ran.push(rule.id)
     for (const f of out.findings ?? []) {
       const found = { rule: rule.id, severity: rule.severity, invariant: rule.invariant, ...f }
@@ -783,7 +805,7 @@ const CHECKS = {
     }
 
     if (!graded && unread.length) return { skipped: `src/lib/nav.js in ${unread.join(', ')} with no ` +
-      'routes.snapshot.md beside it — `sierra routes` writes one' }
+      'routes.snapshot.md beside it — `sierra routes` writes one', blind: true }
     if (!graded) return { skipped: 'no src/lib/nav.js' }
     return { findings }
   },
@@ -1052,7 +1074,7 @@ const CHECKS = {
     const dir = join(root, routesDir)
     if (!existsSync(dir)) return { skipped: `no ${routesDir}/` }
     const ts = typeScriptIn(root)
-    if (!ts) return { skipped: 'no typescript in node_modules — the parser this rule reads with' }
+    if (!ts) return { skipped: 'no typescript in node_modules — the parser this rule reads with', blind: true }
     const { checked, problems } = resolveCommands(dir, ts)
     if (!checked) return { skipped: `no command files under ${routesDir}/` }
     return { findings: problems }
@@ -2691,7 +2713,19 @@ const CHECKS = {
     const findings = []
 
     for (const p of readProofs(root)) {
-      for (const t of resolveRun(p.run, { root, rows })) {
+      const targets = resolveRun(p.run, { root, rows })
+      // Targets are read only after a `where` anchor, so a cell with none reads
+      // as zero targets: `fli proves` lists the row with nothing to run.
+      if (!targets.length) {
+        findings.push({
+          file: join(root, DRIVES_FILE), line: p.line,
+          message: `the proof table sends a change in "${p.changed}" to no target at all: the Run cell has ` +
+                   'no `where`: `target` pair, so `fli proves` lists the row with nothing to run. ' +
+                   'Anchor each drive, `.`: `ci` for the workspace root.',
+        })
+        continue
+      }
+      for (const t of targets) {
         if (t.kind !== 'unknown') continue
         findings.push({
           file: join(root, DRIVES_FILE), line: p.line,
@@ -2896,11 +2930,35 @@ const CHECKS = {
         (/\bbun\s+test\b/.test(seg) && !/[\w.-]+\.[cm]?[jt]s\b/.test(seg)))
       if (walking) continue
 
-      const listed = new Set([...bodies.join(' ').matchAll(/(?:\.\/)?(tests?)\/([\w.-]+\.[cm]?[jt]sx?)\b/g)]
-        .map(m => `${m[1]}/${m[2]}`))
+      // A file named in a segment that follows a `bun test` on `&&` runs only
+      // while that run is green — unrun in the one tree where it matters, a red
+      // one. `;` and `||` reach the next segment whatever the last one did.
+      const FILE   = /(?:\.\/)?(tests?)\/([\w.-]+\.[cm]?[jt]sx?)\b/g
+      const filesIn = (text) => [...text.matchAll(FILE)].map(m => `${m[1]}/${m[2]}`)
+      const ran   = new Set()
+      const gated = new Set()
+      for (const body of bodies) {
+        const parts = body.split(/(&&|\|\||;)/)
+        let behind = false
+        for (let i = 0; i < parts.length; i += 2) {
+          const files = filesIn(parts[i])
+          for (const f of files) (behind ? gated : ran).add(f)
+          if (parts[i + 1] !== '&&') behind = false
+          else if (/\bbun\s+test(\s|$)/.test(parts[i])) behind = true
+        }
+      }
+      const listed = new Set([...ran, ...gated])
       // Fewer than two named files is a script this rule has no business reading.
       if (listed.size < 2) continue
       looked++
+      const gatedOnly = [...gated].filter(f => !ran.has(f))
+      if (gatedOnly.length) findings.push({
+        file: join(dir, 'package.json'),
+        message: `${gatedOnly.length} test file(s) chained behind \`&&\` after a \`bun test\` — ${gatedOnly.join(', ')}. ` +
+                 `They run only while every file before them passes, so in the tree where something is red ` +
+                 `they are the ones that never run, and the count printed is the first segment's. Run the ` +
+                 `segments with \`;\` and combine the exit codes, or put the files in one \`bun test\`.`,
+      })
 
       const dirs = [...new Set([...listed].map(f => f.split('/')[0]))]
       // Two shapes of unrun file, and the second one needed a second signal.
@@ -4092,7 +4150,9 @@ function srcLayoutFindings(root) {
     let text = ''
     try { text = stripComments(readFileSync(file, 'utf8')) } catch { continue }
     const typed = /import\s*(type\s*)?\{[^}]*\bPlugin(Fn|Input)?\b[^}]*\}\s*from\s*['"]@frontierjs\/junction/.test(text)
-    const shaped = /export\s+(const|function)\s+\w+\s*(=\s*)?\(?\s*app\s*:\s*App\b/.test(text)
+    // `app` alone: app.configure(fn) calls it with nothing else, so a helper taking more
+    // (joinChannels(app, session, conn), configureTexting(app, opts)) is called by app.ts.
+    const shaped = /export\s+(async\s+)?(const|function)\s+\w+\s*(=\s*(async\s*)?)?\(\s*app\s*:\s*App\b(<[^>]*>)?\s*,?\s*\)/.test(text)
     if (!/\bexport\b/.test(text) || !(typed || shaped)) continue
     warn(rel(root, file), `a core/ file that exports a plugin. core/ sets up what the framework ships; a plugin ` +
       `the app wrote goes in api/src/plugins/, which app.ts installs one by one because order matters (FJS-D625).`)

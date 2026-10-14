@@ -19,6 +19,7 @@
 // thing an API key exists not to do.
 
 import { createService, BadRequest, Forbidden, $ } from '@frontierjs/junction'
+import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
 import { scopeVocabulary, WHOLE_KEY } from './scopes.ts'
@@ -220,6 +221,13 @@ export function createApiKeysService(app: BasecampApp) {
   return createService({
     name:  'api-keys',
     model: 'ApiKey',
+    // The whole surface. `owners` reads the roster through the app, so no model's
+    // gate grades it and the level is stated here.
+    methods: [
+      'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+      'revoke', 'scopes',
+      { method: 'owners', gate: LEVELS.ADMINISTRATOR },
+    ],
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,
     // where an `after: { all: [...] }` hook broadcast every read to every browser
@@ -354,9 +362,6 @@ export function createApiKeysService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'admin', 'owner'), stampKey],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-        // `revoke` is an `ApiKey` update through the caller's client; `owners`
-        // reads through `asSystem()`, so the hook is its only grade.
-        owners: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

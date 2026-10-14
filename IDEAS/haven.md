@@ -1,12 +1,12 @@
 ---
 id: haven
 status: proposed
-dated: 2026-10-13
+dated: 2026-10-14
 ---
 
 # Idea — Haven: a place in the terminal anyone with `fli` installed can walk into
 
-**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phases 6–9 — exploration, a Haven that lives, inhabitants, building and play — are proposed and none is started. The deploy is the last step (10.1, by the owner), and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
+**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phase 6 is begun: the view follows a figure across a square wider than a screen (6.1); 6.2–6.5 and Phases 7–9 — a Haven that lives, inhabitants, building and play — are proposed. The deploy is the last step (10.1, by the owner), and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
 probe below is now `packages/mesa/test/terminal/specs/haven.spec.mjs`; everything
 past Phase 0 is argument. Do not cite this file as describing behavior — see
 `VERIFYING.md`.
@@ -261,10 +261,23 @@ exercised end to end (3.2). The hosted Haven is Phase 10.
   carried `role: 'user'`, so every member graded USER(4) where the schema and
   `CLAUDE.md` said CREATOR(3); it carries none now and the row's `role` is
   the standing.
-- [ ] 3.3 The history pane in the tavern, and Message retention.
-  `Message` says it is "removed only by retention" but declares none; the
-  `@@index([roomId, createdAt])` is already there for the pane. Read
-  `IDEAS/forgetting.md` and `FJS-D748` before picking a window.
+- [x] 3.3 The history pane, and Message retention. PageUp opens a room's
+  lines over the art, oldest first and signed by nick, and pages back through
+  them, growing the store by a page at the oldest line loaded (`more()`);
+  PageDown pages forward and closes it past the newest line, Esc closes it —
+  a terminal's own scrollback, in every room and proved in the tavern
+  (`verify:explore`) and the square (`verify:browser`). Retention is a COUNT
+  per room, not a window of days (`FJS-D748`; `IDEAS/forgetting.md` says a
+  clock that is a query is a job, not a word): `api/src/retention.ts` keeps a
+  room's newest 500 lines and `app.scheduler` sweeps every hour through
+  `asSystem()`, so each dropped line reaches the trail. A count is what 7.5's
+  board needs — its pins outlive the tavern's chatter for as long as nothing
+  newer pushes them off, where a window would erase them on a date.
+  Found: Litestone's `retention` is per DATABASE, every model with a
+  `createdAt`, so declared on `main` it would sweep members and rooms with the
+  lines; `main` declares none and the schema's "removed only by retention"
+  names the sweep. A burst stamps several lines on one millisecond, so the
+  edge is ordered by `createdAt` then `id` and the test keeps exactly three.
 
 ### Phase 4 — Scenery
 
@@ -527,13 +540,24 @@ cap in Haven's traps is the VIEWPORT's, from `--frame`'s 100×30, and stays;
 a scene's art is bounded only by the server's `MAX_CELL` (255) in `api/src/rooms.ts`.
 FJS-D985's "never a forked world" holds: both targets show the same viewport.
 
-- [ ] 6.1 The camera. A stage may exceed 97×26; `Scene.mesa` draws the
-  viewport's slice of it, and the camera follows the figure with a deadzone
-  (about 8 columns and 4 rows from an edge) so it pans rather than jitters.
-  `paint(stage)` takes the camera as an offset, `at(x - cam.x, y - cam.y)` places a
-  figure, and a figure or bubble outside the slice is not drawn. A speaker off
-  the edge is a marker on the edge facing them, so a line is never lost.
-  `scenes.test.js`'s rules are unchanged; a drive walks past the first edge.
+- [x] 6.1 The camera is the stage's `view` (`web/src/stage.js`): the slice a
+  screen draws, `VIEW` (97×26) cells at most, following the figure the scene
+  tells it to with `EDGE` (8 columns, 4 rows) of slack, so it pans only when
+  the figure nears a side and a stage no bigger than a screen never pans. It
+  lives on the stage rather than being handed to `paint()` as an offset, so a
+  pan is a `changed()` like a moved piece and both paint twins keep their one
+  subscription. A figure is placed at its cell less the view's corner, one
+  outside the view is not drawn, and a speaker outside it is their line pushed
+  to the edge they are past with the way to them, `(over here)>`. The square
+  is 160 cells wide — three more houses, a well, a stall and a signpost east
+  of the first screen, its frame its own `framed(159, 26)` — and the editor
+  asks for the whole stage (`showAll()`). `scenes.test.js` draws each
+  picture's slice from the spawn and from the far corner and pins `follow()`;
+  `verify:explore` walks Sam past the edge, reads Ana's frame from the spawn
+  with Sam's line as a marker on its right edge, and a third terminal walks
+  the same way and sees Sam where the first screen never reached. Found: a
+  bubble kept inside the view is pushed off its figure's cell near the right
+  edge, so the drive reads it where the figure stands inside the slack.
 - [ ] 6.2 Borders. The square opens onto a road, the docks and the woods, each
   its own scene and its own Room (`FJS-D990`). A border is a `<Door>` run
   along an edge: the client walks into the next scene at the matching cell on

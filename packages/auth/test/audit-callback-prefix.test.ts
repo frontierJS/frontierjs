@@ -57,8 +57,7 @@ describe('the redirect URI follows the mounted route under every apiPrefix spell
     expect(cookie).toMatch(/Path=\/api\/auth\/oauth\/google\/callback/i)
   })
 
-  // FJS-2445: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('the "api" spelling mounts and redirects under /api, as normalizePrefix does', async () => {
+  test('the "api" spelling mounts and redirects under /api, as normalizePrefix does', async () => {
     const app = await appWithPrefix('api')
     const { status, cookie, redirectUri } = await startFlow(app)
     expect(status).toBe(302)

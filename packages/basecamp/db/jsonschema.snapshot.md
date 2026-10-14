@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-104 definitions · 63 models · 1 view · 40 enums · 0 other
+111 definitions · 63 models · 1 view · 7 types · 40 enums · 0 other
 ```
 
 ## Definitions
@@ -129,6 +129,13 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `NotificationContext` | enum |
 | `NotificationKind` | enum |
 | `Capability` | enum |
+| `WorkspaceStatusChange` | type |
+| `UserStatusChange` | type |
+| `SystemAdminChange` | type |
+| `NewBot` | type |
+| `FlagChange` | type |
+| `WorkspaceMemberAdd` | type |
+| `WorkspaceMemberRole` | type |
 
 ## Enums
 
@@ -797,7 +804,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `type` | `AppType` = `"container"` | — | — | — | — |
 | `status` | `AppStatus` = `"unknown"` | — | — | `x-litestone-kind` | — |
 | `source` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `isPublic` | `boolean` = `false` | — | — | — | — |
 | `port` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
 | `containerPort` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
 | `volumePath` | `string`? | — | — | `pattern: "^/[^:,]*$"` `x-transforms` | `pattern` `regex` |
@@ -1480,3 +1486,86 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `servers` | `integer` | — | — | — | — |
 | `vcpu` | `integer` | — | — | — | — |
 | `ramGb` | `integer` | — | — | — | — |
+
+## Types
+
+`type T { … }` declarations. No table, no rows, no gate — a payload shape a
+`$ref` points at, and what a service `input:` validates against.
+
+### `WorkspaceStatusChange`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `workspaceId` | `string` | yes | — | — | — |
+| `status` | `WorkspaceStatus` | yes | — | — | — |
+
+**On create**: required — `workspaceId`, `status`
+
+### `UserStatusChange`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `userId` | `string` | yes | — | — | — |
+| `status` | `UserStatus` | yes | — | — | — |
+
+**On create**: required — `userId`, `status`
+
+### `SystemAdminChange`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `userId` | `string` | yes | — | — | — |
+| `isSystemAdmin` | `boolean` | yes | — | — | — |
+
+**On create**: required — `userId`, `isSystemAdmin`
+
+### `NewBot`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `workspaceId` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `role` | `WorkspaceRole`? | — | — | — | — |
+
+**On create**: required — `workspaceId`, `name`
+
+### `FlagChange`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `flagId` | `string` | yes | — | — | — |
+| `isEnabled` | `boolean` | yes | — | — | — |
+
+**On create**: required — `flagId`, `isEnabled`
+
+### `WorkspaceMemberAdd`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `userId` | `string` | yes | — | — | — |
+| `role` | `WorkspaceRole`? | — | — | — | — |
+
+**On create**: required — `userId`
+
+### `WorkspaceMemberRole`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `userId` | `string` | yes | — | — | — |
+| `role` | `WorkspaceRole` | yes | — | — | — |
+
+**On create**: required — `userId`, `role`

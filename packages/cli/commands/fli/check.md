@@ -28,7 +28,7 @@ flags:
   only:
     char: o
     type: string
-    description: Run only these rules (comma-separated ids)
+    description: Run only these rules (comma-separated ids); an id naming no rule in this scope is refused
     defaultValue: ''
   list:
     char: l

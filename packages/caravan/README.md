@@ -191,22 +191,22 @@ a schedule exists and nothing about the handler behind it —
 
 ### `queue.cancel(id)`
 
-Cancel a job. Works on pending or running jobs. Returns `true` if cancelled, `false` if not found or already terminal (done/failed/cancelled). For running jobs, the cancel is recorded immediately — the handler may still complete its current attempt, but the job's status is `cancelled` from that point forward.
+Cancel a job. Works on pending or running jobs. Returns `true` if cancelled, `false` if not found or already terminal (done/dead/cancelled). For running jobs, the cancel is recorded immediately — the handler may still complete its current attempt, but the job's status is `cancelled` from that point forward.
 
 ### `queue.retry(id)`
 
-Re-queue a `failed` or `cancelled` job (resets attempts to 0, clears error). Returns `true` if re-queued.
+Re-queue a `dead` or `cancelled` job (resets attempts to 0, clears error). Returns `true` if re-queued.
 
 ### `queue.stats()`
 
 ```ts
 {
   queues: {
-    default:  { pending: 4,  running: 2, done: 91,  failed: 1, cancelled: 0 },
-    critical: { pending: 0,  running: 1, done: 12,  failed: 0, cancelled: 0 },
-    email:    { pending: 12, running: 1, done: 340, failed: 3, cancelled: 1 },
+    default:  { pending: 4,  running: 2, done: 91,  dead: 1, cancelled: 0 },
+    critical: { pending: 0,  running: 1, done: 12,  dead: 0, cancelled: 0 },
+    email:    { pending: 12, running: 1, done: 340, dead: 3, cancelled: 1 },
   },
-  total: { pending: 16, running: 4, done: 443, failed: 4, cancelled: 1 }
+  total: { pending: 16, running: 4, done: 443, dead: 4, cancelled: 1 }
 }
 ```
 
@@ -286,7 +286,7 @@ retryDelay: [60_000, 300_000, 1_800_000]
 // attempt 4+: wait 30m
 ```
 
-Jobs that exhaust `maxAttempts` are marked `failed` and kept in the database for inspection. Use `queue.retry(id)` to re-queue them. Jobs cancelled via `queue.cancel(id)` are marked `cancelled` and can also be re-queued with `queue.retry(id)`.
+Jobs that exhaust `maxAttempts` are marked `dead` and kept in the database for inspection. Use `queue.retry(id)` to re-queue them. Jobs cancelled via `queue.cancel(id)` are marked `cancelled` and can also be re-queued with `queue.retry(id)`.
 
 ## Crash recovery, and more than one instance
 

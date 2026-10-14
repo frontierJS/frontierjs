@@ -720,8 +720,7 @@ export async function buildBasecampApp(
       if (!workspace_name?.trim()) return ctx.json({ message: 'workspace_name required' }, 400)
       if (!name?.trim())           return ctx.json({ message: 'name required' }, 400)
       if (!email?.trim())          return ctx.json({ message: 'email required' }, 400)
-      if (!password || password.length < 8)
-        return ctx.json({ message: 'password must be at least 8 characters' }, 400)
+      if (!password)               return ctx.json({ message: 'password required' }, 400)
 
       if (await sys.user.count({ where: { status: 'active' } }) > 0)
         return ctx.json({ message: 'Basecamp already set up — use /auth/login' }, 409)

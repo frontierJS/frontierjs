@@ -10,6 +10,10 @@
  *   different row in the shell (under its heading) and in `--frame` (top
  *   line). `cellOf` finds the corner first, from the stage's own picture
  *   (`stage.mjs`), so a drive hands it the scene it is reading.
+ * - A screen draws the stage's VIEW, which follows that screen's own figure
+ *   (`stage.js`), so a cell is read through the view that screen has: the
+ *   drive's stage's own unless the drive says otherwise, and a drive that
+ *   walks a figure past the edge keeps that terminal's view with `follow()`.
  * - The pty is util-linux `script`, which copies its stdin into the pty. A
  *   key written before the screen it is meant for has painted lands on the
  *   previous one, so a caller waits for what each key should produce.
@@ -52,15 +56,21 @@ export function screen(stream, rows = 30, cols = 100) {
   return grid.map((l) => l.join('').trimEnd()).join('\n')
 }
 
-/** What is drawn on a cell of a scene in a frame — the picture's own corner is the origin. */
-export function cellOf(frame, x, y, width = 1, stage) {
-  const corner = stage.picture()[0].trimEnd()
+/**
+ * What is drawn on stage cells `x`..`x+width-1` of row `y` in a frame that
+ * shows `view` of the stage — the drawn slice's own corner is the origin.
+ * A cell outside the view is null.
+ */
+export function cellOf(frame, x, y, width = 1, stage, view = stage.view) {
+  const corner = stage.picture()[view.y].slice(view.x, view.x + view.w).trimEnd()
   const lines = frame.split('\n')
   const mark = corner.trim()
   const top = lines.findIndex((l) => l.includes(mark))
   if (top === -1) return null
+  const col = x - view.x, row = y - view.y
+  if (col < 0 || row < 0 || col >= view.w || row >= view.h) return null
   const left = lines[top].indexOf(mark) - corner.indexOf(mark)
-  return (lines[top + y] ?? '').slice(left + x, left + x + width)
+  return (lines[top + row] ?? '').slice(left + col, left + col + width)
 }
 
 /**
@@ -80,6 +90,6 @@ export function terminal(api, token, home) {
     shell,
     exited,
     screen: () => screen(out),
-    at:     (x, y, width, stage = home) => cellOf(screen(out), x, y, width, stage),
+    at:     (x, y, width, stage = home, view) => cellOf(screen(out), x, y, width, stage, view),
   }
 }

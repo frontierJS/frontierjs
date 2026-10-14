@@ -63,7 +63,7 @@ title: Hub overview
     { name: 'queue',   label: 'Queue' },
     { name: 'pending', label: 'Pending' },
     { name: 'running', label: 'Running' },
-    { name: 'failed',  label: 'Failed' },
+    { name: 'dead',    label: 'Dead' },
   ]
 </script>
 
@@ -113,7 +113,7 @@ title: Hub overview
               <td><code>{queue}</code></td>
               <td>{depth.pending}</td>
               <td>{depth.running}</td>
-              <td>{depth.failed}</td>
+              <td>{depth.dead}</td>
             </tr>
           {/snippet}
         </Table>

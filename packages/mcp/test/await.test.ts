@@ -36,12 +36,12 @@ describe('awaitJobs', () => {
     expect(q.polls()).toBe(2)
   })
 
-  test('a failed job is terminal and reported with its error, not raised', async () => {
-    const q = queue([[{ status: 'running' }], [{ status: 'failed', error: 'no server assigned', attempts: 1 }]])
+  test('a dead job is terminal and reported with its error, not raised', async () => {
+    const q = queue([[{ status: 'running' }], [{ status: 'dead', error: 'no server assigned', attempts: 1 }]])
     const o = await awaitJobs(q.reader, 'c1', 1_000, q.opts)
     expect(o.settled).toBe(true)
-    expect(o.jobs[0]).toMatchObject({ status: 'failed', error: 'no server assigned' })
-    expect(describeOutcome(o)).toMatch(/job:run \(j0\): failed — no server assigned/)
+    expect(o.jobs[0]).toMatchObject({ status: 'dead', error: 'no server assigned' })
+    expect(describeOutcome(o)).toMatch(/job:run \(j0\): dead — no server assigned/)
   })
 
   test('a job created before the call is not this call\'s, even under the same correlation id', async () => {

@@ -14,6 +14,13 @@
 // cells and nothing finer (`api/src/rooms.ts`), so a client that walks through
 // a wall walks through it on its own screen and every other one.
 //
+// The view is the slice of the stage a screen shows (`IDEAS/haven.md` 6.1):
+// VIEW cells at most, following the figure a scene tells it to with EDGE
+// cells of slack, so it pans only when the figure nears an edge. It lives
+// on the stage, so a pan is a `changed()` like a moved piece and `#paint`
+// has one subscription; a stage no bigger than VIEW never pans. The editor
+// asks for the whole stage instead.
+//
 // A cycling cell steps on a shared clock. `wave` offsets each cell by its
 // column and row, so a row of water rolls; `flicker` draws each cell's step
 // from a hash of the tick and the cell, so a fire never repeats in a pattern
@@ -35,6 +42,30 @@ const stepOf = (style, x, y, ms) => {
 }
 
 const pick = (v, i) => (Array.isArray(v) ? v[i % v.length] : v)
+
+/** The most cells a screen shows: a 100×30 terminal with the status and input lines under the art. */
+export const VIEW = { w: 97, h: 26 }
+
+/** How near an edge the followed figure may come before the view pans. */
+export const EDGE = { x: 8, y: 4 }
+
+/**
+ * Where the view sits once a figure at `fig` is followed from `view`:
+ * VIEW cells or the extent where that is smaller, the figure kept EDGE
+ * cells from each edge, and the view kept inside the extent. A figure
+ * already inside the slack leaves the view where it is.
+ */
+export function follow(view, fig, extent) {
+  const axis = (at, size, f, edge, span) => {
+    let v = at
+    if (f - v < edge) v = f - edge
+    if (v + size - 1 - f < edge) v = f + edge - size + 1
+    return Math.max(0, Math.min(v, span - size))
+  }
+  const w = Math.min(VIEW.w, extent.width)
+  const h = Math.min(VIEW.h, extent.height)
+  return { x: axis(view.x, w, fig.x, EDGE.x, extent.width), y: axis(view.y, h, fig.y, EDGE.y, extent.height), w, h }
+}
 
 /**
  * Where a pacer is `ms` into the clock: `{ x, y, text }`, `x` the sprite's
@@ -64,6 +95,9 @@ export function createStage({ slug, palette = {}, spawn }) {
   const marks     = []          // every placed thing, in the order it was placed
   const listeners = new Set()
   let width = 0, height = 0
+  let eye   = { x: 0, y: 0 }   // the view's top-left
+  let fig   = null             // the figure followed, re-followed when the extent changes
+  let whole = false
 
   const key = (x, y) => `${x},${y}`
   const extent = () => {
@@ -79,6 +113,7 @@ export function createStage({ slug, palette = {}, spawn }) {
   // stage is right and the picture is late, which the next tick repairs.
   const changed = () => {
     extent()
+    if (fig) eye = follow({ ...eye }, fig, { width, height })
     for (const fn of listeners) { try { fn() } catch (e) { console.error(e) } }
   }
   const drop = (mark) => { const i = marks.indexOf(mark); if (i !== -1) marks.splice(i, 1) }
@@ -112,6 +147,24 @@ export function createStage({ slug, palette = {}, spawn }) {
     marks,
     get width()  { return width },
     get height() { return height },
+
+    /** The slice a screen draws: `{ x, y, w, h }` in the stage's cells. */
+    get view() {
+      if (whole) return { x: 0, y: 0, w: width, h: height }
+      return { x: eye.x, y: eye.y, w: Math.min(VIEW.w, width), h: Math.min(VIEW.h, height) }
+    },
+
+    /** Keep this figure on screen; a pan redraws. The figure is kept, so a piece mounting later pans too. */
+    follow(x, y) {
+      fig = { x, y }
+      const next = follow(stage.view, fig, { width, height })
+      if (next.x === eye.x && next.y === eye.y) return
+      eye = { x: next.x, y: next.y }
+      changed()
+    },
+
+    /** The whole stage as the view, for the editor's preview. */
+    showAll() { whole = true; changed() },
 
     /** A piece's cells, claimed at `x, y`; the mark moves or removes them. */
     stamp(piece, x, y) {

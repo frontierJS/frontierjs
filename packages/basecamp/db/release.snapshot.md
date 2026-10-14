@@ -229,7 +229,6 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `exposesPort` | `Boolean` | no | `0` | — |
 | `healthCheck` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `isPublic` | `Boolean` | no | `0` | — |
 | `jobs` | `Job[]` | — | — | relation |
 | `memLimitMb` | `Int` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |

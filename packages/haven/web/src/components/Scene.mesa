@@ -11,7 +11,13 @@
   // condition picks the `.browser.js` twin, every other runtime the
   // terminal's (`FJS-D985`), so this file is the same on both targets. The
   // figures are `at()` boxes in the same box the stage is painted in, so a
-  // figure's cell is the stage's cell.
+  // figure's cell is the stage's cell less the view's corner.
+  //
+  // A scene may be bigger than a screen (6.1): the stage's `view` is the
+  // slice drawn, and this figure is the one it follows, so it pans when the
+  // figure nears an edge. A figure outside the view is not drawn, and a
+  // speaker outside it is their line as a marker on the edge facing them,
+  // so a line is never lost to the pan.
   //
   // A line beginning `/` is a command and never a Message: `/ban <nick>` and
   // `/unban <nick>` are an ordinary patch of the member's `bannedAt`, which the
@@ -24,6 +30,14 @@
   // is prevented so the shell does not also move focus for a j or a k. A step
   // onto a door is a navigation, and the next route's walk-in cycles the
   // socket into that room.
+  //
+  // PageUp opens the room's history over the art and pages back through it,
+  // PageDown pages forward and closes it past the newest line, as a
+  // terminal's own scrollback does; Esc closes it. The pane reads the same
+  // store the bubbles do, newest first, and grows it by a page when the
+  // window reaches the oldest line loaded. The keys are prevented so the
+  // terminal's page does not scroll under the pane and the shell does not
+  // leave the route on the Esc.
   import { presence }    from '@frontierjs/sierra/presence'
   import { useStore }    from '@frontierjs/sierra/resource'
   import { goto }        from '@frontierjs/sierra/router'
@@ -49,9 +63,20 @@
 
   let x = spawn.x
   let y = spawn.y
+  // Read through the stage's subscription rather than from `x` and `y`: a
+  // piece mounting after this script changes the extent, and the view with it.
+  let view = stage.view
+  $.onDestroy(stage.subscribe(() => { view = stage.view }))
+  $: stage.follow(x, y)
   let draft = ''
   let note  = ''
   let nicks = {}
+
+  // The pane sits inside the frame's walls; its last row is the footer.
+  const PANE = { x: 1, y: 1, w: 94, h: 24 }
+  const ROWS = PANE.h - 1
+  let pane = false
+  let back = 0
 
   // Seeded from the spawn and never from `x` and `y`, and a `var`: a
   // top-level const that reads a prop or a `let` is derived — made when it is
@@ -65,24 +90,33 @@
       .catch((e) => { note = e.message })
   }
 
-  // A figure carries a member id; the nick is read once per member.
+  // A figure and a line carry a member id; the nick is read once per member.
   const asked = new Set()
-  function askNicks(roster) {
-    for (const m of roster) {
-      if (asked.has(m.userId)) continue
-      asked.add(m.userId)
-      members.service.get(m.userId)
-        .then((row) => { nicks = { ...nicks, [m.userId]: row.nick } })
+  function askNicks(ids) {
+    for (const id of ids) {
+      if (asked.has(id)) continue
+      asked.add(id)
+      members.service.get(id)
+        .then((row) => { nicks = { ...nicks, [id]: row.nick } })
         .catch(() => {})
     }
   }
-  $: { if (here) askNicks(here.get().members) }
+  $: { if (here) askNicks(here.get().members.map((m) => m.userId)) }
+  $: { if (pane) askNicks(lines().map((l) => l.memberId)) }
 
-  const glyph = (m, names) => (names[m.userId] ?? '?')[0].toUpperCase()
-  const cell  = (m) => ({ x: m.meta?.x ?? spawn.x, y: m.meta?.y ?? spawn.y })
+  const glyph  = (m, names) => (names[m.userId] ?? '?')[0].toUpperCase()
+  const cell   = (m) => ({ x: m.meta?.x ?? spawn.x, y: m.meta?.y ?? spawn.y })
+  const inView = (c, v) => c.x >= v.x && c.x < v.x + v.w && c.y >= v.y && c.y < v.y + v.h
 
-  /** The newest line of each member standing here, over where they stand. */
-  function bubbles(h, said, sx, sy) {
+  /** The other figures on screen, each at its cell of the view. */
+  const figures = (h, v) => h.others.filter((m) => inView(cell(m), v)).map((m) => ({ m, x: cell(m).x - v.x, y: cell(m).y - v.y }))
+
+  /**
+   * The newest line of each member standing here, over where they stand, in
+   * the view's cells. A speaker outside the view is their line pushed to the
+   * edge they are past, marked with the way to them.
+   */
+  function bubbles(h, said, sx, sy, v) {
     const me = h.self?.userId
     const where = new Map(h.others.map((m) => [String(m.userId), cell(m)]))
     if (me != null) where.set(String(me), { x: sx, y: sy })
@@ -92,10 +126,41 @@
       const who = String(line.memberId)
       if (seen.has(who) || !where.has(who)) continue
       seen.add(who)
-      const { x: bx, y: by } = where.get(who)
-      out.push({ key: `${who}:${line.id}`, x: bx, y: by - 1, text: line.body })
+      const at = where.get(who)
+      let text = `(${line.body})`
+      if (!inView(at, v)) {
+        if (at.x >= v.x + v.w) text = `${text}>`
+        else if (at.x < v.x)   text = `<${text}`
+        else if (at.y < v.y)   text = `^${text}`
+        else                   text = `v${text}`
+      }
+      const bx = Math.max(0, Math.min(at.x - v.x, v.w - text.length))
+      const by = Math.max(0, Math.min(at.y - v.y - 1, v.h - 1))
+      out.push({ key: `${who}:${line.id}`, x: bx, y: by, text })
     }
     return out
+  }
+
+  /** The pane's rows: a window of ROWS lines ending `b` lines before the newest, oldest first. */
+  function history(said, b, names) {
+    const all = [...(said ?? [])].reverse()
+    const end = Math.max(0, all.length - b)
+    return all.slice(Math.max(0, end - ROWS), end).map((l) => ({
+      key:  l.id,
+      text: `${names[l.memberId] ?? '…'}: ${l.body}`.slice(0, PANE.w),
+    }))
+  }
+
+  async function turn(older) {
+    if (!older) {
+      if (back === 0) pane = false
+      else back = Math.max(0, back - ROWS)
+      return
+    }
+    if (!pane) { pane = true; back = 0; return }
+    const want = back + ROWS
+    if (want + ROWS > lines().length && messages.hasMore()) await messages.more()
+    back = Math.min(want, Math.max(0, lines().length - ROWS))
   }
 
   // The shell focuses a route's first control when it mounts it, and this
@@ -103,6 +168,16 @@
   const focus = (el) => el.focus()
 
   const keydown = (e) => {
+    if (room && (e.key === 'PageUp' || e.key === 'PageDown')) {
+      e.preventDefault()
+      turn(e.key === 'PageUp')
+      return
+    }
+    if (pane && e.key === 'Escape') {
+      e.preventDefault()
+      pane = false
+      return
+    }
     const step = STEP[e.key]
     if (!step || !room || draft) return
     e.preventDefault()
@@ -149,19 +224,32 @@
 <div {@attach paint(stage)}>
   <slot />
   {#if here}
-    {#each here.get().others as m (m.connectionId)}
-      <p {@attach at(cell(m).x, cell(m).y)}>{glyph(m, nicks)}</p>
+    {#each figures(here.get(), view) as f (f.m.connectionId)}
+      <p {@attach at(f.x, f.y)}>{glyph(f.m, nicks)}</p>
     {/each}
-    <p {@attach at(x, y, 11)}>@</p>
-    {#each bubbles(here.get(), lines(), x, y) as b (b.key)}
-      <p class="surface" {@attach at(b.x, b.y, 12)}>({b.text})</p>
+    <p {@attach at(x - view.x, y - view.y, 11)}>@</p>
+    {#each bubbles(here.get(), lines(), x, y, view) as b (b.key)}
+      <p class="surface" {@attach at(b.x, b.y, 12)}>{b.text}</p>
     {/each}
+    {#if pane}
+      <div class="surface pane" {@attach at(PANE.x, PANE.y, 13, [PANE.w, PANE.h])}>
+        {#each history(lines(), back, nicks) as l (l.key)}
+          <p>{l.text}</p>
+        {/each}
+        <p>— {room.name} · {back ? `${back} newer below` : 'the newest'} · PageUp older · PageDown newer · Esc closes —</p>
+      </div>
+    {/if}
   {/if}
 </div>
 {#if here}
   <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
   <form on:submit|preventDefault={say}>
-    <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says" />
+    <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says, PageUp reads back" />
   </form>
 {/if}
+
+<style>
+  /* A browser's paragraph carries a margin; a pane's row is one cell tall. */
+  .pane p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+</style>
