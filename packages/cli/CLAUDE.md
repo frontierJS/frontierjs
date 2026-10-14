@@ -172,6 +172,10 @@ core/
                 the app's `db/` — never the app root, which holds `api/.env`,
                 and `/text`, a text edit with no model (`locateText`) that
                 falls back to an ask when the text is not there exactly once.
+                `/plan` is Make a plan, the ask with nothing to pick: the
+                Workbench's `buildPlanPrompt` in a fresh session that may edit
+                `PLAN.md` at the app root and nothing else, undoable and never
+                Submit's — the Workbench's Open plan carries it out.
                 Sierra turns it on (`src/build/ask-plugin.js`); nothing here
                 does. A request must carry this server's Origin, and under
                 `ASK_ADMIT_URL` the page's Bearer token too, graded by the

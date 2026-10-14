@@ -2466,7 +2466,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">150 rows · 252 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">151 rows · 255 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>a migration, db/migrations/, or a column whose KIND of time changed</td>
       <td>example: verify:migrate — the only thing that reads the committed files, since autoMigrate means nothing else ever does</td>
@@ -2495,6 +2495,10 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>sierra widget target / embed runtime</td>
       <td>sierra: test:widgets — nothing else runs a widget on a page it does not own — and example: verify:widget, which builds the same target as an app's own surface and is the only one that MINIFIES (the fixture does not, which is how FJS-448 survived)</td>
       <td><span class="tally"><b>sierra</b>test:widgets</span><span class="tally"><b>example</b>verify:widget</span></td>
+    </tr><tr data-row>
+      <td>an MCP App view — sierra/src/mcp/, build/mcp-build.js, fli mcp:build</td>
+      <td>packages/sierra: test/mcp-relay.test.js + test/mcp-build.test.js — the relay's table, the handshake against a stand-in window, a real build — and example: verify:mcp-view, the only place a built view runs in a host: a sandbox decides what a stand-in window cannot, and the reference AppBridge grades the wire</td>
+      <td><span class="tally"><b>packages/sierra</b>test/mcp-relay.test.js</span><span class="tally"><b>packages/sierra</b>test/mcp-build.test.js</span><span class="tally"><b>example</b>verify:mcp-view</span></td>
     </tr><tr data-row>
       <td>sierra router URL handling (navigate, boot)</td>
       <td>example: verify:widget — the handoff arrives in a FRAGMENT, and nothing else here puts one on a URL</td>

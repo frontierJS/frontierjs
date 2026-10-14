@@ -458,9 +458,55 @@ owner's to start.
     silent wrong answer, asserted in the test and the drive (9). *Paved
     road*: `FJS-D968` names this as the one way a step's work is committed.
     Tier Map.
-- [ ] 5.4 Build plan in the ask panel (`vite-ask-client.js`) — a *Make a plan*
+- [x] 5.4 Build plan in the ask panel (`vite-ask-client.js`) — a *Make a plan*
   button beside the pick, because a pick is an element on the page and a new
   feature has none to select.
+  - `POST /__fjs/ask/plan { goal, page, effort }` in `vite-ask.js`: the
+    Workbench's own `buildPlanPrompt` through `runAsk`, in a fresh session
+    (never the panel's conversation, whose follow-up resumes with the Vite
+    root to edit) that may edit `PLAN.md` at the app root and nothing else
+    (`FJS-D966`). Reads are the ask's, factored into `reach()`: the Vite
+    root, the guides, `db/` — never the app root, which holds `api/.env`.
+    The ledger is rooted at the app, so the diff and the Undo are an ask's;
+    a plan's run is held for Undo and never counted by Submit, since the
+    Workbench carries it out and commits it off its Diff tab. The stream
+    ends in `{ type: 'plan', path }`, the path from the git top level —
+    what Open plan takes.
+  - `askArgv({ edit })` now also allows Read of the path it may edit: a file
+    outside the working directory is unreadable by default and Edit refuses
+    one it has not read. Measured against the real CLI: the plan written at
+    the app root from a `web/` working directory, `.env` untouched.
+  - The real probe found the read-first sentence wrong for an app: it sent
+    the session after `CLAUDE.md`, `DECISIONS.md` and `.claude/skills/`, four
+    denied calls and a plan opening on *groundwork reading was incomplete*.
+    It is `PLAN_READ_REPO` or `PLAN_READ_APP` now — guides given (even none)
+    is the app's case, which reads `db/schema.lite` and the guides; re-probed,
+    0 denied, the schema read. The guide list is `guideList`, shared with
+    `editPrompt`.
+  - The panel: a toggle beside Pick mode; the box asks for a goal, Send says
+    *Make a plan*, the picks and the chips step aside and are kept for the
+    next ask; a pick goes back to asking. The log ends on where the plan is
+    and to Open plan it in the Workbench.
+  - Still a pick away: the panel opens on a shift+alt-click, so a plan from
+    a fresh page starts with one pick of anything. Asked 2026-10-14: left as
+    is — no corner tab or shortcut until it chafes.
+  - `vite-ask.test.js` 75/75 (one route test: refused with no goal; the
+    file, the argv, no `--resume`, the prompt's path, page and goal; Submit
+    naming it as not the panel's — reverted `hold` turns it red; the Undo).
+    `verify:ask` 83/83 (six new), `verify:ask --real` passes, two real plan
+    probes $0.08 together. Basecamp `workbench.test.ts` 42/42. The cli
+    suite's 8 failures are the shared tree's (`signatures` on junction's
+    `bearerClaim` type; three pass alone).
+  - `decision-rules` ran before the first edit: all nine pass — one prompt
+    (`buildPlanPrompt`), one runner, one ledger (1, 6); no new noun, *Make a
+    plan* is this step's words (2); the route mirrors the ask's stream,
+    refusals and Undo (4); the path derived from `findAppRoot` (5); a plan
+    swept into Submit or reading the app root is the silent wrong answer,
+    asserted in the test and the argv (9). *Paved road*: the Workbench's
+    Build plan is the one way a plan is written. Tier Map.
+
+**Done 2026-10-14.** Several plans per pin, *needs you*, a commit off the Diff
+tab, and Make a plan from the page — Phase 5 is closed.
 
 ## Open questions (owner)
 
