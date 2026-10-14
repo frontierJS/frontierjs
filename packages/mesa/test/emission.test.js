@@ -799,6 +799,19 @@ describe('{@const} inside {#each} reading the loop index', () => {
       c.remove()
     }
   })
+
+  // FJS-2669: the outer destructured row's `$$item` getter rewrote the inner
+  // key arrow's own raw `$$item` parameter into `$$item()`.
+  it('keys a nested each by its own item inside a destructured row', async () => {
+    const C = await build(
+      `<script>let list = [{ id: 1, kind: 'app' }, { id: 2, kind: 'script' }, { id: 3, kind: 'app' }]</script>` +
+      `{#each [['app', 'Apps'], ['script', 'Scripts']] as [kind, heading]}` +
+      `<h2>{heading}</h2>{#each list.filter(r => r.kind === kind) as row (row.id)}<i>{row.id}</i>{/each}` +
+      `{/each}`, 'NestedKey.mesa')
+    const c = mount(C)
+    expect(c.textContent).toBe('Apps13Scripts2')
+    c.remove()
+  })
 })
 
 describe('the {class} passthrough', () => {
@@ -1331,6 +1344,10 @@ describe('a compiled door member never emits an undeclared local', () => {
     ['$.mounted as a reference',    s(`const m = $.mounted`),       /const ready = \$\.mounted/],
     ['$.mounted from the template', `<p>{$.mounted}</p>`,           /not readable from the template/],
     ['$.context sugar in template', `<p>{$.context.k}</p>`,         /compile step is script-only/],
+    ['$.context read in an expression',  s(`let a = 1\nconst v = a || $.context.k`, '<p>{v}</p>'), /'\$context\.k' is compiled/],
+    ['$.context write under an if',      s(`let x = 1\nif (x) $.context.k = true`),               /'\$context\.k' is compiled/],
+    ['$.context compound assignment',    s(`$.context.k += 1`),                                   /'\$context\.k' is compiled/],
+    ['$.context provide inside a call',  s(`foo($.context.k = 1)`),                               /'\$context\.k' is compiled/],
   ]
   for (const [label, src, names] of refused) {
     it(`refuses by name — ${label}`, async () => {

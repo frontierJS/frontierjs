@@ -186,8 +186,8 @@ Wrangler signs in once with `wrangler login`, or reads `CLOUDFLARE_API_TOKEN`.
 build writes `sitemap.xml` and `robots.txt` against `siteUrl` in
 `site/content/settings/site.js`, and a pre-paint theme script into every page.
 
-`packages/site-kit/` is `@frontierjs/site-kit`, the engine this site and later
-ksite's client sites depend on — private and unlisted. It is a member through the root `website/packages/*` glob; see its `CLAUDE.md`.
+`@frontierjs/site-kit` (`../packages/site-kit/`) is the engine this site and
+ksite's client sites depend on; see its `CLAUDE.md`.
 
 `website` is a root workspace member, so `bun run --filter '*' test` and CI's
 `tests` phase reach it. Its `test` script is the build followed by `verify`, the

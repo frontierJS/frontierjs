@@ -28,7 +28,7 @@ import { join }                         from 'node:path'
 import net                              from 'node:net'
 
 const APP_PORT = 3961
-const DV_PORT  = 8503   // the default; see packages/cli/core/ports.js
+const DV_PORT  = 5503   // the default; see packages/cli/core/ports.js
 const dir      = mkdtempSync(join(tmpdir(), 'fjs-devtools-'))
 const here     = new URL('.', import.meta.url).pathname
 
@@ -56,7 +56,7 @@ const queue = createCaravan({ db: '${join(dir, 'jobs.db')}', pollInterval: 50 })
 queue.handle(boom); queue.handle(sweep)
 app.configure(queue)
 app.configure(healthPlugin())
-app.configure(devtools())   // no port: 8503 is the assigned slot
+app.configure(devtools())   // no port: 5503 is the assigned slot
 app.services.register(createService({ name: 'things', async find() { return [] } }))
 await app.start()
 await queue.dispatch(boom, { orderId: 'ord_42' })
@@ -66,7 +66,7 @@ const appFile = join(dir, 'app.ts')
 writeFileSync(appFile, APP)
 
 // Refuse a port that already answers. A leftover console from an earlier run
-// holds 8503 and serves that run's data, so this drive asserted against a
+// holds 5503 and serves that run's data, so this drive asserted against a
 // previous queue and reported half its checks red with nothing naming the cause
 // (`FJS-420`). The repo's own rule about `strictPort`, applied to a drive.
 for (const [p, what] of [[DV_PORT, 'the devtools console'], [APP_PORT, 'the test app']]) {

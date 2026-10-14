@@ -1706,6 +1706,7 @@ class Parser {
   //   first: true    — first row as full object (ORDER BY {orderBy|id} ASC  LIMIT 1)
   //   count: true    — COUNT(*) as Int
   //   sum: fieldName — COALESCE(SUM(field), 0) as Float/Int
+  //   avg: fieldName — AVG(field) as Float, null when there are no rows
   //   max: fieldName — MAX(field) as DateTime/Float/Int
   //   min: fieldName — MIN(field) as DateTime/Float/Int
   //   exists: true   — EXISTS(...) as Boolean
@@ -1739,6 +1740,7 @@ class Parser {
           break
         }
         case 'sum':
+        case 'avg':
         case 'max':
         case 'min': {
           opValue = this.eat(TK.IDENT).value
@@ -1780,7 +1782,7 @@ class Parser {
     }
 
     this.eat(TK.RPAREN)
-    if (!op) throw new ParseError(`@from requires an operation (last, first, count, sum, max, min, exists)`, this.peek())
+    if (!op) throw new ParseError(`@from requires an operation (last, first, count, sum, avg, max, min, exists)`, this.peek())
     return { target, op, opValue, where: where ?? null, orderBy: orderBy ?? null, via, withDeleted, withTemplates }
   }
 
@@ -7473,7 +7475,7 @@ function validate(schema) {
       if (op === 'exists' && field.type.name !== 'Boolean')
         errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, exists: true) — field type must be Boolean, got '${field.type.name}'`)
       // sum/max/min: target field must exist on target model
-      if ((op === 'sum' || op === 'max' || op === 'min') && targetModel) {
+      if ((op === 'sum' || op === 'avg' || op === 'max' || op === 'min') && targetModel) {
         const targetField = targetModel.fields.find(f => f.name === opValue)
         if (!targetField)
           errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ${op}: ${opValue}) — field '${opValue}' does not exist on '${target}'`)

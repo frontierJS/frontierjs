@@ -18,6 +18,11 @@
 // naming it then resolves to the ruling. Left open, the row would hold its
 // blocked work up after the question was answered, with nothing saying so.
 //
+// `file` names the one file a question is argued in, for a plan outside
+// `IDEAS/` — an app's `PLAN.md` is no register source, so `readDecisions` never
+// sees its `Q` bullets. The file is read through `paperQuestions`, the parse
+// `parsePlan` uses, so the id a plan shows is the id answered here.
+//
 // ── What it refuses ─────────────────────────────────────────────────────────
 //
 // A question with no options (there is nothing to pick), one already ruled, an
@@ -35,9 +40,10 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join, relative }                                      from 'node:path'
+import { basename, join, relative, resolve, sep }              from 'node:path'
 
-import { readDecisions, rulingSections, QUESTION_ID } from './decisions.js'
+import { paperQuestions, readDecisions, rulingSections, QUESTION_ID } from './decisions.js'
+import { extractFrontmatter }        from './compiler.js'
 import { moveToClosed }                from './close.js'
 import { errorKeys, newErrors }          from './register-check.js'
 import { readRegisters, registerLayout, withRegisterGuard } from './registers.js'
@@ -57,9 +63,10 @@ export function decide(opts) {
   return withRegisterGuard(opts.root, () => decideUnguarded(opts))
 }
 
-function decideUnguarded({ root, id, pick, why = '', section, today = new Date() }) {
-  const q = readDecisions(root).find(d => d.id === id)
-  if (!q)                     return refuse(`no question has the id ${id}`)
+function decideUnguarded({ root, id, pick, why = '', section, file, today = new Date() }) {
+  const q = findQuestion(root, id, file)
+  if (q?.reason)              return q
+  if (!q)                     return refuse(`no question has the id ${id}${file ? ` in ${file}` : ''}`)
   if (q.state === 'ruled')    return refuse(`${id} is already ruled`)
   if (q.state !== 'decidable') return refuse(`${id} has no options to pick from — write them into ${q.file} first`)
 
@@ -139,9 +146,10 @@ export function settle(opts) {
   return withRegisterGuard(opts.root, () => settleUnguarded(opts))
 }
 
-function settleUnguarded({ root, id, by, why = '', today = new Date() }) {
-  const q = readDecisions(root).find(d => d.id === id)
-  if (!q)                  return refuse(`no question has the id ${id}`)
+function settleUnguarded({ root, id, by, why = '', file, today = new Date() }) {
+  const q = findQuestion(root, id, file)
+  if (q?.reason)           return q
+  if (!q)                  return refuse(`no question has the id ${id}${file ? ` in ${file}` : ''}`)
   if (q.state === 'ruled') return refuse(`${id} is already ruled`)
 
   const ruling = String(by ?? '').trim().toUpperCase()
@@ -179,6 +187,23 @@ function settleUnguarded({ root, id, by, why = '', today = new Date() }) {
   }
 
   return { ok: true, ruling: found.id, question: q.question, closed: row?.id ?? null, files: [q.file, ...(row ? [row.file] : [])] }
+}
+
+// ─── the question ─────────────────────────────────────────────────────────────
+
+// Every register source, or the one file named — refused when that file is not
+// a markdown file inside the root, since the strike writes it.
+function findQuestion(root, id, file) {
+  if (file == null || file === '') return readDecisions(root).find(d => d.id === id) ?? null
+  const rel = String(file).trim()
+  const abs = resolve(root, rel)
+  if (!abs.startsWith(resolve(root) + sep) || !rel.endsWith('.md')) return refuse(`${rel} is not a markdown file inside ${root}`)
+  if (!existsSync(abs)) return refuse(`there is no ${rel}`)
+  const text  = readFileSync(abs, 'utf8')
+  const at    = relative(root, abs)
+  const meta  = extractFrontmatter(text, abs)
+  const paper = { id: meta.id || basename(abs).replace(/\.md$/, ''), status: meta.status || '', file: at }
+  return paperQuestions(text, { paper, rel: at }).find(d => d.id === id) ?? null
 }
 
 // ─── the row a question answers ────────────────────────────────────────────────

@@ -21,14 +21,24 @@ inside the API that is already running; `projectTools()` is what it serves.
 - **A one-row tool's model is a view** (`mcpPlugin({ ui: { root } })`,
   `FJS-D955`): `<root>/<Model>.html` is served at `ui://<server>/<Model>` and
   every one-row tool of that model carries `_meta.ui.resourceUri`, both read
-  off one per-request set after `narrow` and the key's scopes. `ui` absent is
+  off one per-request set after `narrow` and the key's scopes — pinned at
+  every rung a session stands on and for a scoped key (plan 4.1), and over
+  `example`'s built views by `verify:mcp` (plan 4.2). `ui` absent is
   text-only tools. A tool answer carries its object in `structuredContent`,
-  the value the socket would have handed a client, beside the text.
+  the value the socket would have handed a client, beside the text, and a
+  refusal carries junction's `errorBody()` there — the body HTTP answers the
+  same call with, protected values redacted and a 5xx message replaced and
+  logged (plan 3.2). A request's `_meta['frontierjs/base']` is the call's
+  `base`, what a view's `@@sync(field)` save merges against (plan 3.6).
   `IDEAS/agent-client-ui.md` Phase 1 is the protocol half;
   the build is Sierra's (`fli mcp:build` writes `api/dist/mcp/`, the
-  directory `ui.root` names) and the iframe client is not started.
-- **173 tests over eleven files, plus a drive.** `example`: `verify:mcp` is the only
-  place a real MCP client connects and the only one over an app with no `app.db`. `test/projection.test.ts` is the rules against a
+  directory `ui.root` names) and the iframe client's relay is built
+  (`@frontierjs/sierra/mcp`, plan 3.1): its per-verb arguments restate
+  `invoke()`'s, so a change to what a tool takes moves sierra's
+  `test/mcp-relay.test.js` too.
+- **185 tests over eleven files, plus a drive.** `example`: `verify:mcp` is the only
+  place a real MCP client connects, the only one over an app with no `app.db`, and
+  the only one serving views `fli mcp:build` wrote. `test/projection.test.ts` is the rules against a
   real `.lite` fixture; `test/plugin.test.ts` boots a real Junction app over a
   real Litestone client on a real port and speaks JSON-RPC to it.
 

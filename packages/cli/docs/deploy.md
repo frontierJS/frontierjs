@@ -1,10 +1,9 @@
 # FLI deploy (deploy:* namespace)
 
-Three modes coexist:
+Two modes coexist:
 
 1. **Modern Docker/SSH/nginx** — triggered by `frontier.config.js` having a `deploy` block. Used for new FJS apps, especially Junction.
 2. **Legacy CapRover** — fallback when no `deploy` block. Uses `DEV_SERVER`/`STAGE_SERVER`/`PROD_SERVER` env vars.
-3. **ksite-specific** — `ksite:deploy` for static-site projects, separate code path.
 
 ### Modern deploy pipeline — `commands/deploy/_steps-docker/`, 13 files
 

@@ -43,7 +43,7 @@
 //   until each answers, asserts, and kills.
 
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, appendFileSync, mkdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -149,7 +149,9 @@ writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
 const WORKBENCH = join(SCRATCH, 'workbench')
 // A Build plan prompt names its file; the stand-in writes this there, with
 // its argv beside it, since only the real claude can enforce the edit scope.
-// A Go prompt names a step, and the stand-in ticks that box as a session would.
+// A Go prompt names a step, as Next's does under its handoff, and the stand-in
+// ticks that box as a session would — except the welcome mail, which it leaves open as a session stopping short.
+// On 0.2 it also files a defect and a question where the checkout keeps registers.
 const PLAN_FIXTURE = `# Sign-up form
 
 ### Phase 0 — Groundwork
@@ -161,6 +163,7 @@ Done when: it posts.
   - It has an email column.
 - [ ] 0.2 Write the form
 - [~] 0.3 A captcha — dropped: nobody asked
+- [ ] 0.4 Send the welcome mail
 
 ## Open questions (owner)
 
@@ -174,14 +177,17 @@ writeFileSync(FAKE_CLAUDE, `#!/usr/bin/env node
 const fs = require('fs')
 const input = fs.readFileSync(0, 'utf8')
 const plan = input.match(/^Write a plan at \`([^\`]+)\`/)
-const step = input.match(/^Carry out step (\\S+) of the plan at \`([^\`]+)\`/)
+const step = input.match(/^Carry out step (\\S+) of the plan at \`([^\`]+)\`/m)
 const out = l => process.stdout.write(JSON.stringify(l) + '\\n')
 out({ type: 'system', subtype: 'init', session_id: '5acea7bb-3850-44cf-81dc-97688510acda' })
 out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'bun test' } }] } })
 setTimeout(() => {
   fs.writeFileSync('claude-was-here.txt', input)
   if (plan) { fs.writeFileSync(plan[1], ${JSON.stringify(PLAN_FIXTURE)}); fs.writeFileSync('claude-argv.txt', process.argv.join('\\n')) }
-  if (step) fs.writeFileSync(step[2], fs.readFileSync(step[2], 'utf8').replace('- [ ] ' + step[1], '- [x] ' + step[1]))
+  if (step && !/welcome mail/.test(input)) fs.writeFileSync(step[2], fs.readFileSync(step[2], 'utf8').replace('- [ ] ' + step[1], '- [x] ' + step[1]))
+  if (step && step[1] === '0.2' && fs.existsSync('ISSUES.md')) fs.writeFileSync('ISSUES.md', fs.readFileSync('ISSUES.md', 'utf8')
+    .replace('| --- | --- | --- | --- |\\n', '| --- | --- | --- | --- |\\n| <a id="dl-d1"></a>DL-D1 | web | **Which captcha?** | asked in 0.2 |\\n')
+    .replace('| --- | --- | --- | --- | --- | --- |\\n', '| --- | --- | --- | --- | --- | --- |\\n| <a id="dl-002"></a>DL-002 | web | **The form posts twice** | open | 2026-10-13 | found in 0.2 |\\n'))
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Done: ' + input }] } })
   out({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.42, num_turns: 3 })
 }, /slow/.test(input) ? 20000 : 3000)
@@ -1293,6 +1299,7 @@ try {
   const branchFiles = await until(`[...${branch}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
     t => /claude-was-here\.txt/.test(t), 'the branch\'s diff never listed what its run wrote')
   check('the branch\'s diff is its work alone, not what it carried', !/dirty\.txt/.test(branchFiles), branchFiles)
+  check('a branch\'s diff offers no commit — its work lands first', !(await evaluate(`!!${branch}.querySelector('.workbench-commit')`)))
 
   await evaluate(`${button(branch, 'Land')}.click()`)
   const landed = await until(`document.getElementById('workbench-notice')?.textContent ?? ''`, t => /Landed/.test(t), 'Land said nothing')
@@ -1307,6 +1314,34 @@ try {
     !spawnSync('ls', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim())], { encoding: 'utf8' }).stdout.includes('try')
       && /wb\/try/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout))
 
+  // Commit off alpha's Diff tab: the landed file chosen, dirty.txt unticked,
+  // so the commit carries one file and the other stays in the tree.
+  gitIn(ALPHA, 'config', 'user.email', 't@t'); gitIn(ALPHA, 'config', 'user.name', 't')
+  const headBefore = gitIn(ALPHA, 'rev-parse', 'HEAD').stdout.toString().trim()
+  await tab(card, 'diff')
+  await until(`!!${card}.querySelector('.workbench-commit') && [...${card}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
+    t => /claude-was-here\.txt/.test(t) && /dirty\.txt/.test(t), 'alpha\'s diff drew no commit form over its two files')
+  const commitButton = `${card}.querySelector('.workbench-commit button[type=submit]')`
+  check('the commit form chooses every file listed, and waits for a message',
+    await evaluate(`/Commit 2 files/.test(${commitButton}.textContent) && ${commitButton}.disabled`))
+  await evaluate(`(() => { const box = ${card}.querySelector('[aria-label="Commit dirty.txt"]')
+    box.click()
+    const t = ${card}.querySelector('.workbench-commit textarea')
+    t.value = "Land the branch's readme"; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  check('unticking a file drops it from the count, and the box over them goes mixed',
+    await until(`${commitButton}.textContent`, t => /Commit 1 file\b/.test(t), 'unticking dirty.txt left the count') && await evaluate(
+      `${card}.querySelector('.workbench-commit input[name=all]').indeterminate && !${commitButton}.disabled
+        && !${card}.querySelector('[aria-label="Commit dirty.txt"]').closest('details').open`))
+  await evaluate(`${commitButton}.click()`)
+  const commitNotice = await until(`document.getElementById('workbench-notice')?.textContent ?? ''`, t => /Committed/.test(t), 'Commit said nothing')
+  const show = gitIn(ALPHA, 'show', '--name-only', '--format=%s%n%P', 'HEAD').stdout.toString()
+  check('Commit puts the chosen file on HEAD with the message, and leaves the unticked one in the tree',
+    /Committed [0-9a-f]{7} on alpha: 1 file/.test(commitNotice) && show.split('\n').filter(Boolean).join('|') === `Land the branch's readme|${headBefore}|claude-was-here.txt`
+      && gitIn(ALPHA, 'status', '--porcelain', '--', 'dirty.txt').stdout.toString() === '?? dirty.txt\n', `${commitNotice.replace(/\s+/g, ' ')} :: ${show.replace(/\s+/g, ' ')}`)
+  const afterCommit = await until(`[...${card}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
+    t => !/claude-was-here\.txt/.test(t), 'the diff still lists the committed file')
+  check('…and the diff reads again without it', /dirty\.txt/.test(afterCommit), afterCommit)
+
   // ─── The Plan tab ──────────────────────────────────────────────────────
   // A checkout of its own, so the plan chat and the file it writes reach
   // nothing the preview below cuts. It has IDEAS/, so the path defaults
@@ -1314,6 +1349,16 @@ try {
   console.log('\n  the Plan tab — Build plan, then the plan read off its boxes')
   const DELTA = join(SCRATCH, 'elsewhere', 'delta')
   mkdirSync(join(DELTA, 'IDEAS'), { recursive: true })
+  // Registers, so a step's filed rows have somewhere to land; DL-001 is there
+  // before any step and is no step's. Needs a decision comes first: its
+  // separator is a suffix of the six-column one the stand-in also matches.
+  writeFileSync(join(DELTA, 'package.json'), JSON.stringify({ name: 'delta', private: true, registers: { prefix: 'DL' } }))
+  writeFileSync(join(DELTA, 'ISSUES.md'), [
+    '# Issues', '', '## Needs a decision', '', '| Id | Area | Question | Detail |', '| --- | --- | --- | --- |', '',
+    '## S3 — medium', '', '| Id | Area | Title | Status | Verified | Detail |', '| --- | --- | --- | --- | --- | --- |',
+    '| <a id="dl-001"></a>DL-001 | web | **Already here** | open | 2026-10-01 | — |', '',
+  ].join('\n'))
+  writeFileSync(join(DELTA, 'DECISIONS.md'), '# Decisions\n\n## Mail\n\n## Sign-up\n\n## Open (discussed, not yet ruled)\n')
   gitIn(DELTA, 'init', '-q', '-b', 'main')
   const deltaPin = (await call('POST', '/workbench', 'pin', { path: DELTA })).body
   await goto('/workbench/')
@@ -1337,9 +1382,9 @@ try {
   await until(`${delta}.dataset.state`, s => s === 'working', 'Build plan started no run')
   check('Build plan starts a run in the checkout', true)
   const steps = `[...${delta}.querySelectorAll('.workbench-step')].map(li => li.dataset.step + ':' + li.dataset.box + (li.getAttribute('aria-current') ? '*' : '')).join(' ')`
-  const drawnSteps = await until(steps, t => t.split(' ').length === 3, 'the plan the session wrote was never drawn', 15_000)
+  const drawnSteps = await until(steps, t => t.split(' ').length === 4, 'the plan the session wrote was never drawn', 15_000)
   check('the tab draws the plan off the file — each step with its box, the first open one marked',
-    drawnSteps === '0.1:done 0.2:open* 0.3:dropped', drawnSteps)
+    drawnSteps === '0.1:done 0.2:open* 0.3:dropped 0.4:open', drawnSteps)
   check('…and the tab names the next step', /Plan · 0\.2/.test(await evaluate(`${delta}.querySelector('[data-tab=plan]').textContent`)))
   check('…with the phase\'s goal, a finding folded under its step, and the open question',
     await evaluate(`(() => { const t = ${delta}.querySelector('.workbench-plan').textContent
@@ -1352,15 +1397,180 @@ try {
       && argv.some(a => a.includes(`Edit(/${planFile})`)), argv.join(' ').slice(0, 400))
   check('the plan chat is not a work session', !argv.includes('bypassPermissions'), argv.join(' ').slice(0, 400))
   await until(`${delta}.dataset.state`, s => s !== 'working', 'the plan run never finished')
+  // A stand-in Notification and a page without focus, so the announcement
+  // is caught rather than shown.
+  await evaluate(`(() => {
+    window.__notes = []; window.__realNotification = window.Notification
+    window.Notification = class { static permission = 'granted'; constructor(t, o) { window.__notes.push(t + ' | ' + (o?.body ?? '')) } }
+    document.hasFocus = () => false
+  })()`)
   await evaluate(`${button(delta, 'Go')}.click()`)
   await until(`${delta}.dataset.state`, s => s === 'working', 'Go started no run')
   const started = await until(`${delta}.querySelector('[data-step="0.2"] .workbench-step-ran')?.textContent ?? ''`, t => /Started/.test(t), 'the step Go started was not marked on the tab')
   check('Go starts a run on the next box, and the tab marks the step started', true, started)
-  const ticked = await until(steps, t => t === '0.1:done 0.2:done 0.3:dropped', 'the box the session ticked was never drawn', 15_000)
-  check('…and the box the step session ticked is drawn, with nothing open left', /Plan ✓/.test(await evaluate(`${delta}.querySelector('[data-tab=plan]').textContent`)), ticked)
+  const ticked = await until(steps, t => t === '0.1:done 0.2:done 0.3:dropped 0.4:open*', 'the box the session ticked was never drawn', 15_000)
+  check('…and the box the step session ticked is drawn, the next one marked', /Plan · 0\.4/.test(await evaluate(`${delta}.querySelector('[data-tab=plan]').textContent`)), ticked)
   const stepSent = spawnSync('cat', [join(DELTA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout
   check('the step session was handed the step and its plan, and told to commit nothing',
     /^Carry out step 0\.2 of the plan at `IDEAS\/ship-the-sign-up-form\.md`: Write the form/.test(stepSent) && /Commit nothing\./.test(stepSent), stepSent.slice(0, 200))
+  // 0.4's session ends with its box still open: the tab offers the tick.
+  await until(`${delta}.dataset.state`, s => s !== 'working', 'the 0.2 run never finished')
+  // The plan holds Q1, so the run that ended is waiting on the owner.
+  const needs = `${delta}.querySelector('.workbench-needs')`
+  const needsText = await until(`${needs}?.textContent.trim() ?? ''`, t => !!t, 'a run ending with an open question drew no needs you')
+  check('a run that ends with an open question on the plan reads needs you, the question in its title',
+    needsText === 'needs you · 1' && /Which mail provider\?/.test(await evaluate(`${needs}.title`)), needsText)
+  const notes = await until('window.__notes.join("\\n")', t => /needs you/.test(t), 'the end of the run announced no needs you')
+  check('…the announcement says needs you and asks the question, not done',
+    /: needs you \| Q1 — Which mail provider\?$/m.test(notes) && !/: done/.test(notes), notes)
+  await evaluate(`(() => { window.Notification = window.__realNotification; delete document.hasFocus })()`)
+  check('…and the tab title counts it apart from the unread', /\? 1 · /.test(await evaluate('document.title')), await evaluate('document.title'))
+  await evaluate(`${delta}.click()`)
+  await tab(delta, 'chat')
+  check('seeing the chat does not answer it', await evaluate(`!!${needs}`))
+  await evaluate(`${needs}.click()`)
+  await until(`${delta}.querySelector('[data-tab=plan]').getAttribute('aria-selected')`, v => v === 'true', 'needs you did not open the Plan tab')
+  check('needs you opens the Plan tab, on the question', await evaluate(`!!${delta}.querySelector('[data-question]')`))
+  const stepCost = await until(`${delta}.querySelector('[data-step="0.2"] .workbench-step-ran')?.textContent ?? ''`, t => /\$/.test(t), 'the finished step drew no cost')
+  check('a finished step shows what its run cost, off its chat', /· \$0\.42 · 3 turns$/.test(stepCost.trim()), stepCost)
+  const filed = (st) => `[...${delta}.querySelectorAll('[data-step="${st}"] [data-filed]')].map(li => li.dataset.filed + ':' + li.querySelector('.badge, [class*=badge]')?.textContent.trim()).join(' ')`
+  const filed02 = await until(filed('0.2'), t => !!t, 'the rows 0.2 filed were never drawn under it')
+  check('the rows a step filed are drawn under it — the question first, then the defect, and nothing filed before it',
+    filed02 === 'DL-D1:question DL-002:S3', filed02)
+  check('a step whose session ticked its box offers no manual tick',
+    !await evaluate(`!!${delta}.querySelector('[data-step="0.2"] .workbench-step-open')`))
+  // The strip of chat tabs is drawn from a second chat on; the pin is the count.
+  const deltaChats = async () => (await call('GET', '/workbench', 'pins')).body?.pins?.find(x => x.id === deltaPin?.id)?.chats?.length
+  const chatsBefore = await deltaChats()
+  check('Next is held while the plan has an open question, and says which',
+    await evaluate(`${button(delta, 'Next')}.disabled`) && /Which mail provider\?/.test(await evaluate(`${button(delta, 'Next')}.title`)))
+  const blocked = await call('POST', `/workbench/${deltaPin?.id}`, 'next')
+  check('…and the API refuses it, opening no chat', blocked.status === 409 && /open question/.test(JSON.stringify(blocked.body))
+    && await deltaChats() === chatsBefore, `${blocked.status} ${JSON.stringify(blocked.body).slice(0, 200)}`)
+  // The owner rules it in the tab: a letter, a section, Rule — fli's decide
+  // with the plan named as the file the question is argued in.
+  const Q1 = 'ship-the-sign-up-form:q1-which-mail-provider'
+  const question = `${delta}.querySelector('[data-question="${Q1}"]')`
+  const ruleForm = `${delta}.querySelector('.workbench-plan-rule')`
+  const pick = (letter) => evaluate(`${question}.querySelector('[data-pick="${letter}"]').click()`)
+  check('an open question offers its letters, the recommendation marked',
+    await evaluate(`[...${question}.querySelectorAll('[data-pick]')].map(b => b.dataset.pick).join(' ')`) === 'A B'
+      && /recommended/.test(await evaluate(`${question}.querySelector('[data-pick="A"]').parentElement.textContent`)))
+  const against = await call('POST', `/workbench/${deltaPin?.id}`, 'decide', { question: Q1, pick: 'B', section: 'Mail' })
+  check('the API refuses a pick against the recommendation with no reason, in decide\'s words, and writes nothing',
+    against.status === 400 && /not the recommendation/.test(JSON.stringify(against.body)) && /- \*\*Q1 — Which mail provider\?\*\*/.test(readFileSync(planFile, 'utf8')),
+    `${against.status} ${JSON.stringify(against.body).slice(0, 200)}`)
+  await pick('B')
+  await until(`!!${ruleForm}`, v => v, 'a letter opened no ruling form')
+  check('the section is the owner\'s: the DECISIONS.md sections, none chosen',
+    await evaluate(`[...${ruleForm}.querySelectorAll('select[name=section] option')].map(o => o.value).join('|')`) === '|Mail|Sign-up'
+      && await evaluate(`${ruleForm}.querySelector('select[name=section]').value`) === '')
+  await evaluate(`(() => { const el = ${ruleForm}.querySelector('select[name=section]'); el.value = 'Mail'; el.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  check('B against the recommendation holds Rule until a reason is written',
+    await evaluate(`${button(ruleForm, 'Rule B')}.disabled`) && /not the recommendation/.test(await evaluate(`${ruleForm}.textContent`)))
+  await pick('A')
+  await until(`${ruleForm}?.querySelector('button[type=submit]')?.textContent.trim()`, t => t === 'Rule A', 'pressing A did not retarget the form')
+  check('…while A, the recommendation, rules with no reason, the section kept',
+    !await evaluate(`${button(ruleForm, 'Rule A')}.disabled`) && await evaluate(`${ruleForm}.querySelector('select[name=section]').value`) === 'Mail')
+  await evaluate(`${button(ruleForm, 'Rule A')}.click()`)
+  const ruledNote = await until(`${delta}.querySelector('[data-ruled-note]')?.textContent ?? ''`, t => /Ruled/.test(t), 'a ruling drew no note')
+  check('Rule writes the ruling and strikes the question in the plan, and the note names the id',
+    /Ruled DL-D2: A/.test(ruledNote)
+      && /- ~~\*\*Q1 — Which mail provider\?\*\*~~ \*\*Answered \S+ \(`DL-D2`\): A — the one configured\.\*\*/.test(readFileSync(planFile, 'utf8'))
+      && /^## Mail\n\n### <a id="dl-d2"><\/a>/m.test(readFileSync(join(DELTA, 'DECISIONS.md'), 'utf8')), ruledNote)
+  await until(`${button(delta, 'Next')}.disabled`, v => !v, 'Next stayed held once the question was ruled')
+  check('…and the question leaves the callout, which goes with it', !await evaluate(`!!${question}`))
+  await until(`!${needs}`, v => v, 'needs you stayed once the question was ruled')
+  check('…and the card no longer needs you, nor the tab title', !/\? \d+ · /.test(await evaluate('document.title')), await evaluate('document.title'))
+  await evaluate(`${button(delta, 'Next')}.click()`)
+  await until(`${delta}.dataset.state`, s => s === 'working', 'Next on 0.4 started no run')
+  const chatsAfter = await deltaChats()
+  check('Next opens a new chat for the next box, and shows it',
+    chatsAfter === chatsBefore + 1 && await evaluate(`${delta}.querySelectorAll('.workbench-chat-tab').length`) === chatsAfter, `${chatsBefore} → ${chatsAfter}`)
+  check('no tick is offered while the step\'s run is live',
+    !await evaluate(`!!${delta}.querySelector('[data-step="0.4"] .workbench-step-open')`))
+  const leftOpen = await until(`${delta}.querySelector('[data-step="0.4"] .workbench-step-open')?.textContent ?? ''`,
+    t => /still open/.test(t), 'a step whose run left its box open was not marked so', 15_000)
+  check('a step whose run ended with its box open says so, with a Tick', /Tick/.test(leftOpen), leftOpen)
+  // By number the ruling is 0.2's: it answers the question that step stopped on.
+  const filed02ruled = await evaluate(filed('0.2'))
+  check('…and a step that filed nothing draws no rows, while the earlier step keeps its own and the ruling on its question',
+    await evaluate(filed('0.4')) === '' && filed02ruled === 'DL-D1:question DL-D2:ruling DL-002:S3', filed02ruled)
+  const handoff = spawnSync('cat', [join(DELTA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout
+  check('Next hands the new session the plan and the last reply, then the step',
+    /^This is a fresh session continuing the plan at `IDEAS\/ship-the-sign-up-form\.md`/.test(handoff)
+      && /The last session's reply:\n\nDone: Carry out step 0\.2/.test(handoff)
+      && !/Which mail provider\?/.test(handoff) && /^Carry out step 0\.4 /m.test(handoff), handoff.slice(0, 300))
+  await evaluate(`[...${delta}.querySelectorAll('[data-step="0.4"] button')].find(b => b.textContent.trim() === 'Tick').click()`)
+  const handTicked = await until(steps, t => t === '0.1:done 0.2:done 0.3:dropped 0.4:done', 'the manual tick was never drawn')
+  check('Tick writes the box into the file and the tab reads Plan ✓',
+    /^- \[x\] 0\.4 Send the welcome mail$/m.test(readFileSync(planFile, 'utf8'))
+      && /Plan ✓/.test(await evaluate(`${delta}.querySelector('[data-tab=plan]').textContent`)), handTicked)
+  // File issue and Ask question write through fli's fileIssue; by number the
+  // rows are 0.4's, the last step started.
+  const fileForm = `${delta}.querySelector('.workbench-plan-file')`
+  const fillFiling = (sel, value, ev = 'input') => evaluate(`(() => { const el = ${fileForm}.querySelector('${sel}'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('${ev}', { bubbles: true })) })()`)
+  await evaluate(`${button(delta, 'File issue')}.click()`)
+  await until(`!!${fileForm}`, v => v, 'File issue opened no form')
+  check('File issue is a form whose button is held until area, title and detail are written',
+    await evaluate(`${button(fileForm, 'File')}.disabled`) && await evaluate(`${fileForm}.querySelector('select[name=severity]').value`) === 'S3')
+  await fillFiling('select[name=severity]', 'S2', 'change')
+  await fillFiling('input[name=area]', 'web')
+  await fillFiling('input[name=title]', 'The welcome mail has no unsubscribe link')
+  await fillFiling('textarea[name=detail]', 'Found reading 0.4.')
+  await until(`${button(fileForm, 'File')}.disabled`, v => !v, 'File stayed held with every field written')
+  // The checkout declares no S2 table: fileIssue's refusal is the banner, and the form keeps what was typed.
+  await evaluate(`${button(fileForm, 'File')}.click()`)
+  const noTable = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => /no `## S2` table/.test(t), 'a refused filing drew no reason')
+  check('a filing fileIssue refuses shows its reason and keeps the form as typed',
+    await evaluate(`${fileForm}?.querySelector('input[name=title]').value`) === 'The welcome mail has no unsubscribe link', noTable.trim())
+  await fillFiling('select[name=severity]', 'S3', 'change')
+  await evaluate(`${button(fileForm, 'File')}.click()`)
+  const filedNote = await until(`${delta}.querySelector('[data-filed-note]')?.textContent ?? ''`, t => /DL-003/.test(t), 'filing drew no note')
+  check('File writes the row into the checkout\'s ISSUES.md at its severity and says where',
+    /\| <a id="dl-003"><\/a>DL-003 \| web \| \*\*The welcome mail has no unsubscribe link\*\* \| open \|/.test(readFileSync(join(DELTA, 'ISSUES.md'), 'utf8'))
+      && /ISSUES\.md:\d+/.test(filedNote) && !await evaluate(`!!${fileForm}`), filedNote)
+  await evaluate(`${button(delta, 'Ask question')}.click()`)
+  await until(`!!${fileForm}`, v => v, 'Ask question opened no form')
+  check('Ask question names no severity', !await evaluate(`!!${fileForm}.querySelector('select')`))
+  await fillFiling('input[name=area]', 'web')
+  await fillFiling('input[name=title]', 'Does the welcome mail wait for verification?')
+  await fillFiling('textarea[name=detail]', 'A — send at once. B — after verify.')
+  await until(`${button(fileForm, 'Ask')}.disabled`, v => !v, 'Ask stayed held with every field written')
+  await evaluate(`${button(fileForm, 'Ask')}.click()`)
+  const filed04 = await until(filed('0.4'), t => /DL-D3/.test(t), 'the rows filed from the tab were never drawn under 0.4')
+  check('…and both rows are drawn under the last step started, the question first',
+    filed04 === 'DL-D3:question DL-003:S3' && await evaluate(filed('0.2')) === 'DL-D1:question DL-D2:ruling DL-002:S3', filed04)
+  const refusedFile = await call('POST', `/workbench/${deltaPin?.id}`, 'file', { severity: 'S9', area: 'web', title: 'x', detail: 'y' })
+  check('the API refuses a severity fileIssue does not name, with its reason', refusedFile.status === 400
+    && /S1, S2, S3, S4, decision/.test(JSON.stringify(refusedFile.body)), `${refusedFile.status} ${JSON.stringify(refusedFile.body).slice(0, 200)}`)
+  // Several plans per pin: Open plan shows a file already written, the picker
+  // switches back, and each plan keeps its own steps; Close plan forgets one.
+  writeFileSync(join(DELTA, 'IDEAS', 'second.md'), '# Second\n\n## Plan\n\n### Phase 0 — Again\n\n- [ ] 0.1 Do it again\n')
+  const openForm = `${delta}.querySelector('.workbench-plan-open')`
+  const openPath = (value) => evaluate(`(() => { const el = ${openForm}.querySelector('input[name=open-path]'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await evaluate(`${button(delta, 'Open plan')}.click()`)
+  await until(`!!${openForm}`, v => v, 'Open plan opened no form')
+  await openPath('IDEAS/nope.md')
+  await evaluate(`${button(openForm, 'Open')}.click()`)
+  const noPlan = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => /nothing is written at IDEAS\/nope\.md/.test(t), 'opening a file that is not there drew no reason')
+  check('Open plan refuses a path with nothing written there, by name', !!noPlan)
+  await openPath('IDEAS/second.md')
+  await evaluate(`${button(openForm, 'Open')}.click()`)
+  const second = await until(steps, t => t === '0.1:open*', 'the opened plan was never drawn')
+  const picker = `${delta}.querySelector('.workbench-plan select[name=plan]')`
+  check('Open plan shows the file it names, its next step on the tab, and a picker over both plans',
+    /Plan · 0\.1/.test(await evaluate(`${delta}.querySelector('[data-tab=plan]').textContent`))
+      && await evaluate(`${picker}?.value`) === 'IDEAS/second.md' && !await evaluate(`!!${openForm}`), second)
+  await evaluate(`(() => { const el = ${picker}; el.value = 'IDEAS/ship-the-sign-up-form.md'; el.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  const firstAgain = await until(steps, t => t === '0.1:done 0.2:done 0.3:dropped 0.4:done', 'the picker never drew the first plan again')
+  check('the picker shows the first plan again, its steps and the rows they filed kept',
+    await evaluate(filed('0.2')) === 'DL-D1:question DL-D2:ruling DL-002:S3', firstAgain)
+  await evaluate(`${button(delta, 'Close plan')}.click()`)
+  const left = await until(steps, t => t === '0.1:open*', 'Close plan never showed the plan left')
+  check('Close plan forgets the shown plan and shows the other, and the file stays',
+    !await evaluate(`!!${picker}`) && existsSync(planFile)
+      && await evaluate(`${delta}.querySelector('.workbench-plan code')?.textContent`) === 'IDEAS/second.md', left)
   check('the unpinned plan checkout goes', (await call('POST', `/workbench/${deltaPin?.id}`, 'unpin')).status === 200)
   await goto('/workbench/')
   await until(`!!${delta}`, v => !v, 'the unpinned plan checkout was still drawn')

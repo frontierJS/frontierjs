@@ -1,0 +1,11 @@
+<script>
+  // Door.mesa — a door on a cell of the scene it is inside: drawn as an `n`
+  // over whatever wall is there, and stepping onto it is `goto(to)`.
+  export let x
+  export let y
+  export let to
+
+  const scene = $context.scene
+  var mark = scene.door(x, y, to)
+  $.onDestroy(() => mark.remove())
+</script>

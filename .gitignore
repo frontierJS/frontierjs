@@ -111,3 +111,6 @@ registers.html
 
 # Claude
 .claude/worktrees/
+
+# A scene-editor drive edits a copy of Haven's web surface made beside the editor.
+packages/haven/editor/.copy-*/

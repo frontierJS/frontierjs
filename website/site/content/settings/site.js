@@ -1,6 +1,6 @@
 // content/settings/site.js — what makes this site frontierjs.com rather than
 // any other site-kit site. Everything else in the Sierra config is site-kit's
-// (packages/site-kit/config/vite.js).
+// (@frontierjs/site-kit, config/vite.js).
 //
 // The browser imports this file whole to read `theme` (FJS-1544), so it stays
 // plain data: an import here ships to every visitor.

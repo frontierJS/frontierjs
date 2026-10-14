@@ -47,7 +47,13 @@ src/
                          link is `followLink`. No layout or autoImport yet
     Shell.mesa           the heading, a note and the list, compiled by the same
                          loader; `state` is a signal's read, since a prop's `$:`
-                         watch is local and would not hear the shell
+                         watch is local and would not hear the shell. Also the
+                         keys' mode (`FJS-D987`): a text field is INSERT, Esc
+                         is NORMAL, where `i` types again. shell.js renames
+                         h/j/k/l to the arrows in NORMAL before any mount sees
+                         the key; a j/k the page does not prevent moves focus
+    Mode.mesa            the mode line, mounted in mesa's `footerOf` so a page
+                         taller than the screen does not scroll it away
 
   serve/                 — what the two static servers share
     hashed-asset.js      is this filename content-addressed? The only answer
@@ -87,16 +93,42 @@ src/
                          a cache answer per file kind
 
   mcp/                   — the runtime inside an MCP App view (`@frontierjs/sierra/mcp`)
-    index.js             `mountView`; `resourceIn(module, name)`, the file's
+    index.js             `startView(View, { name, module })`, what every built
+                         entry calls: `ui/initialize` (its `hostContext` to the
+                         theme), `initialized`, then the first `tool-result`'s
+                         row read through the file's Resource — the relay
+                         answers that one `get` from the row in hand, whatever
+                         the file's `detailQuery` asks (3.7), so
+                         `_call` still records the read and a save diffs
+                         against it — and mounted as `record`; size reported
+                         on a ResizeObserver; teardown unmounts. A refusal, a
+                         cancel or an unspellable read is said IN THE PAGE,
+                         since a sandbox shows no console.
+                         `mountView`, the mount it ends in; `resourceIn(module, name)`, the file's
                          Resource picked off its exports for the generated form
                          (known by `save` + `formFields`, two objects refused);
                          `applyHostContext(ctx)`, the host's `theme` handed to
                          the switch as a scheme — a key absent from a
                          `host-context-changed` is a key unchanged;
-                         and `mcpApp()` — the relay handle, NOT built: it
-                         refuses by name until plan step 3.1, so a built view
-                         mounts nothing rather than a form whose every call
-                         fails in a sandbox no console shows
+                         and `mcpApp()` — the PAGE's client installed through
+                         `initJunction({ relay })`, each call a `tools/call`
+                         built by `toolCall()`, the plugin's `invoke()` read
+                         backwards. What no tool spells (a call option, a
+                         directive on a by-id call, an unknown `$` key) is refused by name,
+                         never dropped; `base` alone rides, as `_meta`. A view
+                         holds no write — `isRelayed()` (session.js) turns the
+                         device machinery off, as `connectApp()` does — and
+                         a `@@sync(field)` save still carries the row it read
+                         (plan 3.6). A view opens NO socket — a host
+                         relays results, never a push — so its store is its
+                         own calls' answers and `resource.stale` stays 0.
+                         `toolAnswer()` throws a refusal as HTTP does —
+                         `code` the status, `data` the plugin's
+                         `structuredContent` — so `toFieldErrors` reads it
+    host.js              JSON-RPC 2.0 to `window.parent` over postMessage —
+                         `'*'` out, only the host's `event.source` read back;
+                         `on(method)` answers the host's requests (`-32601`
+                         for one with no handler) and hears its notifications
 
   router/                — the runtime router
     index.js, match.js, internals.js (used by RouterView.mesa),
@@ -175,7 +207,9 @@ src/
     index.js             WebSocket client integration; `connectApp()`, the
                          handle a Resource over ANOTHER app is built from
     session.js           who the browser thinks you are — the reactive object,
-                         the boot restore, signIn/submitCode/signOut, and `ready`
+                         the boot restore, signIn/submitCode/signOut, and `ready`.
+                         A RELAYED page (an MCP view) has a principal and no
+                         credential, so its level is null, never STRANGER
     resource.js          createResource — coerce → blankToNull → validate
     list.js              resource.list() — where a list's state lives, its load
                          and re-run, and the window. Imports the router
@@ -183,6 +217,11 @@ src/
                          `loaded` and `error()` tracked; released by a ROOT,
                          because a `$:` re-run disposes the effects it made and
                          a view kept across re-runs would go deaf
+    palette-source.js    `paletteSource` — junction's `search` hits as
+                         `CommandPalette` rows; a link defaults to
+                         `/<service>/<id>` lowercased, as the scanner
+                         serves it, and may answer a promise, because a
+                         hit carries no column a parent route could be read off
     field-rules.js       schema → field rules; the control table and the
                          registry over it; toFieldErrors. LEAF: no client import
     schema-registry.js   modelNameFor / schemaFor, over `createSchemaRegistry()` —
@@ -655,7 +694,9 @@ src/
 - **Nothing a resource holds may outlive the person it was read for.** A Resource
   is created once at import (Invariant 18), so its live store, its read baselines
   and its picker lists live for the TAB while the principal is a thing that changes
-  inside it. A token change in either direction clears all three, beside the
+  inside it. A token change in either direction clears all three, and so does a
+  support episode starting or ending (same token, different principal —
+  `FJS-2808`), beside the
   prefetch cache this package already dropped for the same reason (`FJS-041`,
   `FJS-786`). The picker cache was the worst of them and not a race at all: it
   never asks again, so the second caller was offered rows their own row policy
@@ -860,8 +901,8 @@ rather than picking a service method.
 `verify:build` for router/resource/build; `verify:site` for anything touching
 prerender, islands or static-safety. **`bun run test:widgets` for anything
 touching `src/widget/` or `build/widget-build.js`**; `test/mcp-build.test.js` runs a
-REAL build of one resource file for `build/mcp-build.js`, and no drive loads a
-view in a host yet (plan step 4.3) — it builds the fixture and
+REAL build of one resource file for `build/mcp-build.js`, `test/mcp-relay.test.js`
+the relay's tool table and the handshake against a stand-in parent window, and no drive loads a view in a host yet (plan step 4.3) — it builds the fixture and
 drives a plain host page in Chrome, which is the only place shadow isolation,
 custom element upgrade and a delegated click inside a shadow root are decidable.
 **`bun run test:installable` for `postbuild/manifest.js`** — the grader restates

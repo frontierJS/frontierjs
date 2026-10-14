@@ -172,7 +172,7 @@ export function create${pascalPlural}Service() {
 // What a generated Resource IS lives in `core/resource-template.js`, shared with
 // `fli make:resource` and `fli web:resource` — three commands wrote the same
 // file three times and had already drifted (Invariant 4).
-const { resourceFile } =
+const { resourceFile, servicePlural } =
   await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 // ─── Templates: routes ────────────────────────────────────────────────────────
@@ -244,13 +244,7 @@ const skipRoutes = !flag.routes || !flag.resource
 const editor     = process.env.EDITOR || 'vi'
 const created    = []
 
-// Model → service name. Regular English plurals only — the same three rules
-// Sierra's schema registry applies in the other direction. Irregulars are not
-// guessed anywhere in this framework; the resource states `model` explicitly so
-// a miss cannot break resolution.
-const plural = /[^aeiou]y$/.test(lower)     ? lower.slice(0, -1) + 'ies'
-             : /(s|x|z|ch|sh)$/.test(lower) ? lower + 'es'
-             : lower + 's'
+const plural       = servicePlural(modelName)
 
 const pascalPlural = plural.charAt(0).toUpperCase() + plural.slice(1)
 

@@ -421,12 +421,12 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   // 0 (`FJS-1784`). The box therefore ends in the answer apply reads, and it is
   // written `no` — accepting is an act on the file after it exists, and the file
   // is what a deploy replays, so a flag on any command could not carry it there.
-  const loss   = describeDataLoss(diffResult.tableDiffs)
+  const loss   = describeDataLoss(diffResult)
   const rename = loss.find(l => l.renameTo)
   const guess  = guessRenames(diffResult.tableDiffs, parseResult, { pluralize })[0]
   const banner = loss.length ? [
     `-- ╔${'═'.repeat(74)}╗`,
-    `-- ║ DESTRUCTIVE — applying this deletes the values in these columns:`,
+    `-- ║ DESTRUCTIVE — applying this deletes the values in these columns and the rows of these tables:`,
     ...loss.map(l => `-- ║     ${lossLine(l)}`),
     `-- ║`,
     ...(rename ? [
@@ -932,8 +932,12 @@ function announceResidue(dbName, residue) {
 // Answers the FACTS and never the advice: the two callers are a refusal and a
 // banner inside the very file the refusal tells you to write, so a shared
 // sentence is wrong in one of them whichever way it is worded.
-function describeDataLoss(tableDiffs) {
-  const out = []
+//
+// A model leaving the schema is the same loss at the size of the table, and
+// takes the same approval: its DROP TABLE used to be written commented out,
+// where nobody was asked and the orphan failed every later diff (`FJS-2758`).
+function describeDataLoss({ tableDiffs, droppedTables = [] }) {
+  const out = droppedTables.map(table => ({ table, columns: [], renameTo: null, wholeTable: true }))
   for (const d of tableDiffs) {
     const dropped = d.cols?.dropped ?? []
     if (!dropped.length) continue
@@ -949,7 +953,7 @@ function describeDataLoss(tableDiffs) {
   return out
 }
 
-const lossLine = (l) => `${l.table}.${l.columns.join(', ')}` +
+const lossLine = (l) => l.wholeTable ? `${l.table} (the whole table)` : `${l.table}.${l.columns.join(', ')}` +
   (l.renameTo ? ` (renamed to "${l.renameTo}"?)` : '')
 
 /**
@@ -1145,11 +1149,11 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       // column the newer build is writing to. `only` is the tell and is stated
       // rather than left to be noticed: a diff that ADDS nothing is not a
       // schema being edited, it is a schema that is behind.
-      const dataLoss = describeDataLoss(diffResult.tableDiffs)
+      const dataLoss = describeDataLoss(diffResult)
       if (dataLoss.length && !acceptDataLoss) {
         const rename = dataLoss.find(l => l.renameTo)
         const only   = onlyDrops(diffResult)
-        const reason = `drops column(s) and the values in them: ${dataLoss.map(lossLine).join('; ')}`
+        const reason = `drops column(s) or table(s) and the values in them: ${dataLoss.map(lossLine).join('; ')}`
         console.warn(
           `[litestone] Migration BLOCKED for database "${dbName}" — it would destroy data.\n` +
           `            ${reason}\n` +

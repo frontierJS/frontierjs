@@ -137,8 +137,10 @@ in the plugin rather than in a directory.
    cannot load its screen. *What fails*: a projection test that asserts the
    resource list equals the tool list for every fixture standing, and a
    `drive-browser` run loading the bundle in a sandboxed iframe against a fake
-   host that refuses every message but `tools/call`. Until those exist the
-   answer is `none`, and this paper records it as unenforced.
+   host that refuses every message but `tools/call`. The projection half is
+   `packages/mcp/test/plugin.test.ts` § every fixture standing (4.1), and
+   over a real app's built views `example`'s `verify:mcp` (4.2); the browser
+   drive is owed (4.3), and until it exists that half reads `none`.
 
 **Adjudications in tension (§ IV):** *batteries vs. smallness* — `mcp` is a
 battery, and `resources/read` plus the relay adapter land inside it, severable
@@ -253,12 +255,21 @@ owed to `mesa-ir.md`, not here.
     `ui` is taken from the spec because it fits whole; `views` is refused
     because it half-fits and collides. Tier: Register — the ruling closes 0.2,
     names 2.4 and amends 1.5.
-- **Sign-in inside the iframe.** The host's standing is whatever the MCP
+- ~~**Sign-in inside the iframe.**~~ **Answered 2026-10-14 (`FJS-D986`): A — the host's standing only: the view acts as whatever the MCP session resolved, as 3.4 already writes, and a refused `tools/call` lands as the refusal under the form through `toFieldErrors`. No elevation path; asked again when the MCP Apps spec stabilizes an elevation message.** The host's standing is whatever the MCP
   session resolved. Whether a resource may ask the host to elevate (OAuth back
   to the app) is a protocol question with no stable answer yet.
-- **A2UI's catalog is the host's.** If the host's catalog has no `Field` with
-  `aria-describedby`, the kit's forwarding rule (`ui` package) has nowhere to
-  land. That is the first thing a spike would learn.
+  - **A** — the host's standing only: the view acts as whatever the MCP
+    session resolved, as 3.4 already writes, and a refused `tools/call` lands
+    as the refusal under the form through `toFieldErrors`. No elevation path;
+    asked again when the MCP Apps spec stabilizes an elevation message.
+  - **B** — on a 401 or 403 the view asks the host (`ui/open-link`) to open the
+    app's `/auth` in a browser tab, and the user retries. Adds a Phase 3 step
+    against a message the spec may still change.
+  - **C** — hold Phase 3 until the protocol has a stable elevation answer.
+  - **Recommend A** — 3.4 is already A, and the server enforces every call
+    (Invariant 6), so a too-low standing is a visible refusal, never a leak. B
+    builds against an unstable message; C blocks the client half on a
+    question it does not need answered to work.
 
 ## The plan — MCP Apps first
 
@@ -716,29 +727,321 @@ whose transport is the host.
 Done when: a `createResource(name, { app: mcpApp() })` loads and saves through
 `tools/call` with no HTTP from the iframe.
 
-- [ ] 3.1 `mcpApp()` answers `{ client, registry, user }`, the exact handle
+- [x] 3.1 `mcpApp()` answers `{ client, registry, user }`, the exact handle
   jetty's `harborApp()` answers (`packages/jetty/src/resources/harbor-app.js`).
   `createJunctionClient({ relay })`, where `relay` turns a `RelayedCall`
   (`{ service, method, id, data, query, opts }`) into a `tools/call` request to
   `window.parent`, named by `toolName(service, method)` (0.3).
   `tokenStorage: null`; `connect()` is never called.
-- [ ] 3.2 The answer mapping: `CallToolResult.structuredContent` is what
+  Done 2026-10-14: `mcpApp({ host })` in `packages/sierra/src/mcp/index.js`
+  installs the PAGE's client through `initJunction({ relay })` — the one owner
+  of the page client, which now takes `relay` in place of `url` and keeps no
+  token — so a resource file naming no `app` reaches it, and answers
+  `{ client, registry: defaultRegistry, user: null }`. `toolCall(call)` is the
+  plugin's `invoke()` read backwards, verb by verb; `toolAnswer(result)` reads
+  `structuredContent`, else the text block's JSON, and throws on `isError`
+  with the plugin's text (3.2 rebuilds `code`/`data`). The wire is
+  `src/mcp/host.js`, JSON-RPC 2.0 over `postMessage` with a SOURCE check and a
+  30 s answer timeout, hand-rolled rather than ext-apps' `App` (~420 kB with
+  its SDK and zod, in every view), whose `AppBridge` becomes 4.3's host and so
+  the oracle. Over `example`: 36 views, 473 kB each (was 460–462). **Two things
+  the step did not know.** (1) A form saving a whole record carries `id` in
+  `data`, and the patch tool lifts `id` out of the update view under
+  `additionalProperties: false` — every such save would have been refused, so
+  `toolCall` drops a `data.id` equal to the call's id and refuses one that is
+  not. (2) A `@@sync` model's every write goes through the pending queue with
+  `idempotencyKey` and `callHeaders` (and `base` under `field`), none of which
+  a tool spells — 3.6. Unknown answers are refused by name throughout rather
+  than dropped: a `$populate` dropped answers the bare row, a `base` dropped
+  turns a merge into an overwrite (`FJS-D334`). `session.ready` resolves at
+  once with `user: null`, since a relayed client has no credential — 3.4's
+  first clause, arrived at by the owner rather than written.
+  **The nine, answered before the edit.** Origin — the tool name is
+  `toolName()`'s, the `$` split `splitParams`'s, the page client
+  `initJunction`'s; the per-verb argument shape restates `invoke()`, which
+  sierra cannot import. Concept — none; *relay* and *handle* are jetty's.
+  Complexity — one requester and one table. Predictability — `harborApp()`'s
+  shape, and the boot installs the client as `virtual:sierra`'s does.
+  Derived — nothing typed in. Owner — `initJunction` extended, not paralleled.
+  Boundary — a `RelayedCall` in, what `forward()` resolves out. Failure — what
+  no tool spells is refused by name. Silence — must stay true: *the arguments
+  are the ones `invoke()` dispatches* — fails in
+  `packages/sierra/test/mcp-relay.test.js` for the table, and the cross-package
+  half is `none` until 4.3 runs the real plugin. Adjudication: none in
+  tension; *one owner* is Invariant 4's, not § IV's. Tier: Assessment.
+- [x] 3.2 The answer mapping: `CallToolResult.structuredContent` is what
   `forward()` would have resolved; `isError` rebuilds the framework error's
   `code` and `data`, so `toFieldErrors(err)` still lands a message under its
   field. Jetty learned this once — a refusal crossing a JSON port arrived as
   `{}` and a 409 was indistinguishable from a 400.
-- [ ] 3.3 The handshake: `ui/initialize` → `ui/notifications/initialized` → the
+  Done 2026-10-14: the plugin's `isError` answer now carries junction's
+  `errorBody()` as `structuredContent` — the body HTTP's `errorResponse` and
+  the socket's `service_error` already send, newly exported — and the text
+  is that body's `message`. `toolAnswer()` throws it as the HTTP and socket
+  paths of the client do: `code` the status, `data` the whole body, so
+  `err.data.data` is the field list and `err.data.retryable` the stale-write
+  bit on every transport. A refusal with no body (the SDK refusing arguments
+  before the app saw them) throws its text with no `code`. Both SDK halves skip
+  output-schema validation on `isError`, so the field is legal there.
+  **Two things the step did not know.** (1) The plugin's 5xx branch said
+  *The API logged the reason* and nothing did — `sanitizeError` logs, and only
+  the transports called it. Through `errorBody` a 5xx is now logged with the
+  correlation id its replaced message carries. (2) Redacting `data` needs the
+  call's client; under `strategy database` that is `app.withDb`, which can be
+  the very thing that failed, so `data` goes as null there rather than
+  unredacted — a unique collision's `data` names the value it collided on.
+  Over the fixture, `orders_create` of a taken reference answers exactly the
+  body `POST /orders` does: 409, `retryable: false`, `data: [{ path:
+  ['reference'] }]`.
+  **The nine, answered before the edit.** Origin — the body is `errorBody()`'s,
+  the one HTTP and the socket send; the client-side rebuild matches
+  `_request`'s and the socket handler's `Object.assign(new Error(message),
+  { code, data })`. Concept — none; `structuredContent` is the protocol's.
+  Complexity — one export, one helper over the existing `withDb` split, one
+  branch in `toolAnswer`. Predictability — a relayed refusal is the HTTP
+  refusal; `_meta` was the alternative and would have hidden the field list
+  from an agent that reads the object. Derived — the text is the body's
+  message, not a second sentence. Owner — `errorBody` (bridge, Invariant 4);
+  the plugin's own 4xx/5xx split was a second translation beside it and is
+  gone. Boundary — the plugin hands a body, the relay reads it without
+  knowing the wire. Failure — no body throws the text with no status, never
+  a guessed one; no client to redact with sends `data: null`. Silence — must
+  stay true: *a tool refusal carries the body HTTP answers the same call
+  with* — fails in `packages/mcp/test/plugin.test.ts` § the answer is
+  structured, which compares the two over one call; *the relay throws it as
+  the client does* — fails in `packages/sierra/test/mcp-relay.test.js` via
+  the real `toFieldErrors` and `isStaleWrite`. The `data: null` fallback is
+  `none`: no fixture has a tenant that fails to resolve mid-refusal.
+  Adjudication: none in tension. Tier: Assessment.
+- [x] 3.3 The handshake: `ui/initialize` → `ui/notifications/initialized` → the
   first `ui/notifications/tool-result` seeds the record store → mount →
   `ui/notifications/size-changed`. `ui/initialize`'s `hostContext` and every
   `host-context-changed` go to `applyHostContext` (2.3), which is what puts
   the function back in the document; `ui/resource-teardown` unmounts.
-- [ ] 3.4 Identity: no boot restore — `account.me` is a route, and a relayed
+  Done 2026-10-14: `startView(View, { name, module })` in
+  `packages/sierra/src/mcp/index.js` is what every built entry now calls, with
+  the resource file's exports as `module`. **Seeding is a read, not a new
+  write path into the store.** The row the tool answered is read back through
+  the file's Resource with `service.get(id)`, and the relay answers that one
+  `get` from the row in hand rather than asking the host — so `_call` is
+  still the one place a read is recorded, and a save after it patches what
+  changed and carries the `@version` it read. The view mounts with the row as
+  `record`, the prop a page's `<Model record={row} />` hands the same file
+  (every markup half in `example` declares it, and the generated form does).
+  The size is measured at `height: max-content` on a ResizeObserver, the way
+  ext-apps' `autoResize` does it, because a frame's root is never shorter
+  than the frame. `host.js` gains `notify` and `on`: a host request with no
+  handler is answered `-32601` rather than left waiting. Over `example`: 36
+  views, 476–477 kB (was 473), `applyHostContext` back in each.
+  **Three things the step did not know.** (1) `ui/notifications/tool-cancelled`
+  replaces the result when a call is cancelled, and a view waiting only for a
+  result would stay blank forever — it is said in the page. (2) What stops a
+  view (a refused call, a cancel, a read no tool can spell, a file with no
+  Resource) is now said IN THE PAGE as a `.alert` as well as on the console,
+  which is 2.1's *a view that mounts nothing* answered: a sandbox shows the
+  person no console. (3) `Invoice` and `JournalEntry` declare a
+  `detailQuery`, so their read goes out with directives a by-id tool cannot
+  spell and is refused by name (3.1's rule) — 3.7. `appInfo.version` is
+  `'0.0.0'`: the spec requires one and a view has none of its own. A second
+  `tool-result` is not read; one view is one call's answer.
+  **The nine, answered before the edit.** Origin — the row is `toolAnswer()`'s,
+  the read is `_call('get')`'s, the id is `resource.context.idField`'s; the
+  method strings and the protocol version are spelled again rather than
+  imported, since ext-apps' entry is its `App` (~420 kB, 3.1). Concept — no
+  noun; `startView` is a verb over *view*. Complexity — one function, three
+  helpers, two methods on the channel. Predictability — a view mounts as a
+  page's `<Model record>` does, and its read is recorded as a page's `get`.
+  Derived — service and key off `resource.context`, nothing typed in. Owner
+  — `_call` owns a read (a `resource.seed(row)` beside it was the
+  alternative, refused: a second way into `_read` that a later change to
+  `_call` would not move), the switch owns the theme, Mesa the mount.
+  Boundary — the entry hands the view and the module, and the handshake
+  knows no field. Failure — every stop is said in the page and on the
+  console, and the frame is sized to the message. Silence — must stay true:
+  *the tool's row is read with no second `tools/call`, and a save after it
+  sends only what changed* — fails in `test/mcp-relay.test.js` § startView
+  (with the relay's answer-from-hand disabled, three of its tests fail); the
+  handshake reachable in a built document — `test/mcp-build.test.js` § a real
+  build; the method strings against a real host — `none` until 4.3, whose
+  `AppBridge` is the oracle. Adjudication: *paved road vs. workaround* — the
+  Resource's own read over a seed method. Tier: Assessment; nothing in
+  `DECISIONS.md` is overridden.
+  **Seen, not fixed:** 2.2's `CreditNote` — a form over a read-only service —
+  is still a form whose save the service refuses; what a view may do is
+  `resource.can()`, which is 3.4's (locked there).
+- [x] 3.4 Identity: no boot restore — `account.me` is a route, and a relayed
   client refuses routes by name. `session.ready` resolves at once with
   `user: null`; `resource.can()` is permissive on an unknown answer and the
   server enforces every `tools/call` (Invariant 6). This is the second sibling
   difference, stated beside the first: no live pushes.
-- [ ] 3.5 The live store is request-response only; `stale` never fires. Written
+  Done 2026-10-14, stated in `mcpApp()`'s header. **The step's premise was
+  wrong:** `me()` is `account.get('me')`, a service since `FJS-D20`, and the
+  projection offers a model-less verb with no declared level as an ungraded
+  tool — so a relayed `me()` leaves as `account_get`, it is not refused. The
+  boot asks nothing because the relayed client holds no credential
+  (`initSession`'s existing branch), and the test now asserts no `tools/call`
+  at boot. **Three things the step did not know.** (1) `session.level` was 0
+  in a view, not null: `clear()`'s STRANGER rests on *a request with no
+  principal is refused above 0*, and a relayed call carries the host's
+  session (`FJS-D986`) — so a markup half writing `can(op, session.level)`
+  hid every gated control. `initSession(client, { relayed })`, told by
+  `initJunction`, leaves it null. (2) `canAtLevel(gate, op, null)` answered
+  yes over a SYSTEM or LOCKED need, which no caller on a rung clears at any
+  level — the answer was never unknown. It now answers no there
+  (`@frontierjs/toolbelt/gate`); the projection passes a number and is
+  untouched. (3) The generated form asked nothing: it is now
+  `disabled={!resource.can('update')}` on the form and its submit, which is
+  2.2's `CreditNote` (`@@gate("1.8.8.8")`) answered as a locked form. A
+  read-only SERVICE over a rung gate (`methods: ['find', 'get']` with
+  `update` at 4) still offers one — a service's method list never crosses to
+  the browser. A view COULD learn its standing — a relayed `me()` answers
+  the MCP session's principal — and the owner ruled it does not ask
+  (2026-10-14): a view-initiated `tools/call` may be a consent prompt before
+  the form shows, and the server grades every call anyway.
+  **The nine, answered before the edit for (2) and (3), late for (1)** — (1)
+  was found by the test written for the step. Origin — the sentinels are
+  `levelPasses`'s, the method map `canAtLevel`'s, the view's question
+  `resource.can()`'s; the relayed bit is `initJunction`'s, which already
+  holds `relay`. Concept — none. Complexity — one branch each in
+  `canAtLevel` and `initSession`, one prop on the form. Predictability — a
+  sentinel answers the same at every level now, and a view's level means
+  what a page's means when unresolved. Derived — the lock is the schema's
+  `x-gate`, nothing typed in. Owner — `canAtLevel` (`FJS-D197`), session.js
+  for the level, Form's existing `disabled`. Boundary — `initSession` takes
+  the bit rather than sniffing the client, which exposes no relay flag.
+  Failure — a locked form before typing beats a 403 after; the server
+  grades regardless. Silence — must stay true: *a sentinel need refuses an
+  unknown level* — fails in `packages/toolbelt/test/specs/gate.spec.js` and
+  `packages/sierra/test/resource-relations-gate.test.js` (both red with the
+  branch reverted); *a view's level is unknown and its boot asks nothing* —
+  `test/mcp-relay.test.js` § mcpApp (red with `relayed` dropped); *the
+  generated form is locked on `can('update')`* — `test/mcp-build.test.js`
+  on the source, and the built `CreditNote.html` carries the call; a locked
+  form RENDERED as locked — `none` until 4.3. Adjudication: none in tension —
+  permissiveness is for an unknown answer, and neither change is one.
+  Tier: Assessment; nothing in `DECISIONS.md` is overridden.
+- [x] 3.5 The live store is request-response only; `stale` never fires. Written
   into the handle's header rather than worked around.
+  Done 2026-10-14, stated in `mcpApp()`'s header beside 3.4's paragraph. The
+  premise held: `connect()` returns on a relayed client and the host has
+  nothing to feed `client.receive()` with — ext-apps gives a view tool results
+  and no push. **Four things go quiet, not one.** `resource.stale` stays 0,
+  which on a page means *as current as a push can make it* and here means
+  *nothing arrived*; `reconnected` never fires, so no refetch; `status.connected`
+  stays false; and `status.stale`, the `x-fjs-build` channel, is never set
+  since a tool result carries no header. What a view does learn is somebody
+  else's write AT SAVE — and only on a `@version` model, as the 409
+  `resource.conflict()` reads (3.2); on any other model the patch diff (3.3)
+  limits a save to what this view changed, and the last writer wins that.
+  **The nine, answered late** — after the header was written. Origin — the
+  early return is junction's `connect()`, the counter `client.resource()`'s;
+  the header owns the sentence, and the package map and state point at it.
+  Concept — none.
+  Complexity — one header paragraph and one test. Predictability — a page
+  with its socket down reads the same four values, so a markup half needs no
+  view branch. Derived — nothing typed. Owner — the client owns the socket,
+  the host the connection. Boundary — unchanged. Failure — a stale screen,
+  bounded by the `@version` 409 where one is declared. Silence — must stay
+  true: *a view opens no socket* — fails in
+  `packages/sierra/test/mcp-relay.test.js` § mcpApp *opens no socket* (red
+  with junction's relayed early return dropped). Adjudication: none in
+  tension. Tier: Assessment.
+- [x] 3.6 A `@@sync` model's writes in a view. Every write on one is queued
+  first (`resource/pending.js`, IndexedDB) and sent with `idempotencyKey` and
+  `callHeaders`, plus `base` under `@@sync(field)`; the relay refuses all
+  three by name, so a save from `example`'s `ProductVariant`,
+  `InventoryMovement`, `StocktakeSheet` and `StocktakeCount` views is refused
+  today. Whether a view queues at all (a sandbox may throw on IndexedDB) and
+  how the three ride a tool call is the step.
+  Done 2026-10-14, stated in `mcpApp()`'s header. **A view holds no write.**
+  The queue's drain is armed on the socket's `connect`, which a view never
+  opens (3.5), so a held entry would never be sent; and its IndexedDB, the
+  list cache and the local tables would be the HOST's sandbox origin, not the
+  app's. `resource.js` already says this of `connectApp()` — *another app's
+  rows are never this device's* — and a relayed page now joins it: `device`
+  is `!app && !isRelayed()`, the bit `initSession` already took from
+  `initJunction` (3.4). So `idempotencyKey` and `callHeaders` are never made
+  and a failed save fails rather than reporting itself held. **`base` is the
+  write's, not the device's**: it is read off the declared `field` and
+  `_read`, and rides the tool call as `_meta['frontierjs/base']`, which the
+  plugin reads into the call's `base` — the owner chose `_meta` over a patch
+  tool argument (2026-10-14), so an agent's tool list is unchanged. ext-apps'
+  `AppBridge` forwards a view's `params` whole; a host that strips `_meta`
+  sends no base, and litestone answers a moved `@version` with 409 rather
+  than overwriting. **Three things the step did not know.** (1) Junction's
+  in-process caller dropped `base` (`FJS-2848`), and an mcp tool reaches the
+  boundary through `app.service()` — the wire half would have been green
+  and merged nothing. (2) With the device off, an `offlineQuery` over a model
+  that DOES declare `@@sync` would have warned that it declares none; a
+  relayed page now skips the declaration silently, and no warm fires there
+  anyway, for want of a `connect`. (3) Read off the declaration, a base now
+  rides a `connectApp()` resource's `field` save too, and `append`'s
+  refusal of a held patch does not speak in a view, since nothing there is
+  held — a patch on `InventoryMovement` leaves and the server decides, as it
+  does through `connectApp()`.
+  **The nine, answered late** — after the code; the `_meta` fork was put to
+  the owner before the first edit. Origin — *is this page's device the
+  app's* is `isRelayed()`, set by `initSession`; the base is `_read`'s; the
+  key is the plugin's `BASE_META`, restated in sierra as `invoke()`'s
+  argument shape already is. Concept — none; `_meta` is MCP's own slot
+  beside the arguments. Complexity — one predicate in `resource.js`, one
+  derivation moved, `toolCall` splitting one option out, one key read in
+  `run()`, one field in junction's `makeCtx`. Predictability — a view's
+  resource behaves as a `connectApp()` one: live writes, nothing on the
+  device; a `field` save merges on every transport, in-process included.
+  Derived — the relayed bit is told, never sniffed; the base comes from the
+  schema's `x-sync` and the read, nothing typed. Owner — `resource.js` owns
+  the hold, the plugin's `run()` owns tool → call, junction's caller owns the
+  context. Boundary — the host must forward `_meta`; the reference bridge
+  does. Failure — every other option is still refused by name; a base that
+  is not a row is a 400 naming the key; a dropped `_meta` costs a 409, never
+  a lost column. Silence — must stay true: *a view queues nothing and a
+  `field` save carries `_meta`* — `packages/sierra/test/mcp-sync.test.js`
+  (red with `isRelayed()` ignored, with the base read off the hold, and with
+  the `offlineQuery` guard dropped); *the plugin hands the key to the call* —
+  `packages/mcp/test/plugin.test.ts` § the base a view read rides _meta;
+  *`app.service()` carries a base* — `packages/junction/test/write-envelope.test.ts`
+  (red with the field dropped); *the two spellings of the key agree* — `none`,
+  each side asserts its own literal; *a merge lands from a view in a host* —
+  `none` until 4.3. Adjudication: none in tension. Tier: Assessment, with
+  `FJS-2848` in the register; nothing in `DECISIONS.md` is overridden.
+- [x] 3.7 A resource with a `detailQuery` in a view. Its `get` carries the
+  include shape a detail screen needs, which a by-id tool has no spelling for,
+  so `example`'s `Invoice` and `JournalEntry` views say *cannot be relayed* in
+  the page today (3.3). Whether a view's read is the detail read at all — a
+  form edits the row — or the tool learns the shape is the step.
+  Done 2026-10-14, stated in `mcpApp()`'s header. **The premise was wrong
+  about `example`.** Neither file declares a `detailQuery`, and none ever has:
+  each carries a comment SECTION of that name, and the header-and-lines shape
+  is the service's own `get()` (`invoices.service.ts`,
+  `journal-entries.service.ts`), which `invoices_get` reaches unchanged — so
+  those two views were never refused, and 3.3's note (3) read the comment for
+  the option. The case is real elsewhere: `fjs-prototypes/jazzhr`'s
+  `Application.mesa` declares `populate` over `candidate` and `job`.
+  **The record is the tool's answer** — the owner chose this over a get tool
+  that takes directives (2026-10-14), so an agent's tool list is unchanged, as
+  3.6 kept it. A view mounts what the agent's call returned, as a page mounts
+  the row `<Model record={row} />` was handed; `readSent`'s read is
+  bookkeeping that never leaves, so the relay answers it from the row in hand
+  BEFORE spelling it. A later read carrying the shape still leaves as a tool
+  call and is refused by name. What this costs: a markup half reading a
+  populated relation finds none in a view; a form loses nothing, since a
+  composed key never travels in a patch.
+  **The nine, answered after the fork went to the owner and before the
+  edit.** Origin — the row is `toolAnswer()`'s, the shape the Resource's;
+  nothing restated. Concept — none. Complexity — one check moved above
+  another in `relay()`, one header paragraph. Predictability — a view with
+  and without a `detailQuery` mounts the same row; a page and a view differ
+  only where a page asks the server for more. Derived — nothing typed.
+  Owner — the plugin owns what a tool takes, the relay what it refuses.
+  Boundary — unchanged; no tool argument added. Failure — a missing relation
+  renders empty in a markup half rather than the whole view refusing; any read
+  that would leave without its shape is still refused. Silence — must stay
+  true: *a `detailQuery` view mounts the tool's row and a later shaped read is
+  refused* — `packages/sierra/test/mcp-relay.test.js` § startView (red with the
+  spelling check moved back above the row in hand); *a markup half reading a
+  populated relation is told* — `none`. Adjudication: none in tension. Tier:
+  Assessment; nothing in `DECISIONS.md` is overridden.
 
 ### Phase 4 — Proof
 
@@ -746,11 +1049,73 @@ Goal: § *The nine* item 9 stops reading `none`.
 Done when: the three tests below are green in CI and the drive is a row in
 `DRIVES.md`.
 
-- [ ] 4.1 Projection test: for every fixture standing, the resource list equals
+- [x] 4.1 Projection test: for every fixture standing, the resource list equals
   the models of the one-row tools offered, and a withheld tool's model is
   unlisted.
-- [ ] 4.2 Plugin test over a real app on a real port: `resources/read` answers
+  Done 2026-10-14 in `packages/mcp/test/plugin.test.ts` § every fixture
+  standing, over HTTP rather than in `projection.test.ts`: the resource list is
+  the plugin's answer, so a test of the projection alone would pass with the
+  SDK registration broken. The fixture's stub auth gained one caller per rung a
+  session reaches (VISITOR, READER, CREATOR, OWNER, SYSADMIN beside the
+  stranger, shopper and staff), and the scoped key `reader` is the ninth
+  standing; SYSTEM is no session's, so the levels route keeps it. Per standing:
+  every listed tool is one `projectTools` grades in at that level; the
+  `resources/list` URIs equal the documented models of the LISTED tools
+  `answersOneRow` admits; that set equals a literal ladder (none · Order at 1–3
+  · Customer and Order at 4–7 · Order for the key), so a sweep answering one
+  list everywhere fails; and every documented model outside it is refused by
+  `resources/read` without its bytes. The key is the case the pairs lacked — a
+  model withheld by SCOPE rather than level, Customer unreadable at staff's
+  standing. Red with `viewedModels` answering every document (8 fail, the
+  sweep's four lowest rungs and the key among them); each rung's list was
+  checked once against `GET /mcp/levels` at its level and matched. Item 9's
+  projection half now reads this test; its drive half is 4.3. The nine,
+  answered after green: origin — the expected set is read off the app's own
+  services and schema through the exported projection, the ladder is the
+  fixture's gates; concept — none; complexity — five stub users and one
+  describe; predictability — the sweep makes the pair rule a ladder, same
+  shape; derived — the oracle is the projection, the ladder a check on it;
+  owner — the plugin test owns the endpoint's answers; boundary — unchanged;
+  failure — a view offered to a standing withheld its tool fails by rung
+  name; silence — must stay true: *at every standing, the views offered are
+  the documented models of the one-row tools offered, and no other view
+  reads* — fails in `packages/mcp/test/plugin.test.ts` § every fixture
+  standing, by rung. Adjudication: none in tension. Tier: Assessment; nothing
+  in `DECISIONS.md` is overridden.
+- [x] 4.2 Plugin test over a real app on a real port: `resources/read` answers
   the document with its mime; a stranger reading a staff-only model is refused.
+  Done 2026-10-14 as a section of `example`'s `verify:mcp`, which `FJS-D955`'s
+  silence answer named: the drive runs `fli mcp:build` after the seed and boots
+  the API with `SHOP_MCP_UI=1`, the switch in `api/src/app.ts` that passes
+  `ui: { root }` — a switch and not the default because a declared root that is
+  missing refuses the boot, and every other drive starts the API unbuilt. Per
+  rung: `resources/list` equals the URIs its tools' `_meta.ui.resourceUri` name;
+  every listed view is a built file; a written-out ladder (Product not Order at
+  STRANGER, Order not Employee at the shopper's rung, staff identical to the
+  shopper, Employee at the administrator's); staff's `resources/read` of Order
+  answers `text/html;profile=mcp-app` and the built file's exact bytes; the
+  stranger reading Order and the shopper and staff reading Employee are refused
+  with no page in the refusal, the administrator reading it is not. *Staff-only*
+  in the step reads as the administrator's rung here: `example`'s staff stand on
+  the shopper's rung (the drive's own pair). The mime is written out, not
+  imported from ext-apps, so the oracle does not share the plugin's constant.
+  Red with `viewedModels` answering every document: 8 of 42 fail, the four
+  agreements, two ladder rows and both refusals; the line restored, 42/42. The nine, answered after green: origin — the
+  root is `app.ts`'s one statement of `api/dist/mcp`, the path fli writes, and
+  the expected sets are read off the tools' own pointers; concept — none;
+  complexity — one env switch beside `DEVTOOLS=1`, one build call, one section;
+  predictability — the switch has `DEVTOOLS`' and `SHOP_COOKIE_AUTH`'s shape;
+  derived — the agreement rows are derived, the ladder is the check on them;
+  owner — the plugin serves, the drive grades; boundary — unchanged; failure —
+  a stale or foreign document fails the byte comparison, a view leaked to a
+  rung fails by rung and by URI; silence — must stay true: *the image serves
+  the views its commit built, and none to a rung withheld their tool* — fails
+  in `example`: `verify:mcp` § the views are the caller's. Adjudication:
+  *paved road vs. the workaround* — the switch is a flag beside the road, so
+  the reason the road does not change is written at the flag: the boot
+  refusal is `FJS-D955`'s (*ergonomics vs. strictness*, what it destroys is
+  the surface in production) and building views on every `bun run api` costs
+  each drive the build. Tier: Assessment; nothing in `DECISIONS.md` is overridden.
 - [ ] 4.3 A browser drive over mesa's `test/browser/drive.mjs` harness. The fake
   host serves from a SECOND origin, as the spec requires of a host and its
   sandbox (`widget/serve.js` is already the cross-origin shape), with the iframe
@@ -766,7 +1131,11 @@ Done when: the three tests below are green in CI and the drive is a row in
 
 - [ ] 5.1 List views over a `find` result.
 - [ ] 5.2 `hostContext.styles.variables` → `@frontierjs/css` tokens.
-- [ ] 5.3 A2UI as an IR backend, when `mesa-ir.md` has its seam.
+- [ ] 5.3 A2UI as an IR backend, when `mesa-ir.md` has its seam. Its catalog
+  is the host's: if that catalog has no `Field` with `aria-describedby`, the
+  kit's forwarding rule (`ui` package) has nowhere to land — the first thing
+  the spike learns. An MCP App view renders the kit's own DOM, so this is
+  5.3's question, not Phase 3's.
 
 ### Sizes and risks
 

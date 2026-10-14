@@ -736,7 +736,7 @@ A foreign key. The scalar column and the relation field are separate declaration
 author User @relation(fields: [authorId], references: [id])
 ```
 
-#### `@from` (<Model>, last|first|count|sum|max|min|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates])
+#### `@from` (<Model>, last|first|count|sum|avg|max|min|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates])
 
 tier: **common** · legal in: on a model's field, on a trait's field · also called: aggregate, rollup, roll-up, denormalized · see also: `computed`, `derived`
 

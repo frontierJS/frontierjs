@@ -327,7 +327,7 @@ describe('the credential sierraFetch attaches has one audience', () => {
 // ─── FJS-786 — the call site for the live stores' half of a token change ─────
 
 describe('a live store when the person at the machine changes', () => {
-  // The mechanism is resource.js's; what is graded here is that `_tokenChanged`
+  // The mechanism is resource.js's; what is graded here is that `_identityChanged`
   // CALLS it — the same hook that has dropped the prefetch cache since FJS-041,
   // for the same reason. A Resource is created once at import (Invariant 18), so
   // its store lives for the tab: on a shared machine the next person renders the
@@ -352,6 +352,40 @@ describe('a live store when the person at the machine changes', () => {
 
   test('and is left alone while nobody signs out — a reset that fired on everything would pass the row above', async () => {
     const { orders } = await bootedWithAResource()
+    expect(orders.store.get()).toHaveLength(1)
+  })
+})
+
+// ─── FJS-2808 — a support episode changes who the token resolves to ───────────
+
+describe('a live store when a support episode starts or ends', () => {
+  // The token is the same across the episode, so 'token' never fires; the
+  // client's own `support:*` events are the only signal that who is asking changed.
+
+  async function bootedWithAResource() {
+    const J = await freshJunction()
+    J.initJunction({ url: API })
+    J.getClient().setToken('tok-OPERATOR')
+    const orders = J.createResource('order')
+    orders.store.set([{ id: 1, secret: 'OPERATOR-ONLY' }])
+    return { J, orders }
+  }
+
+  test('is emptied when the episode starts', async () => {
+    const { J, orders } = await bootedWithAResource()
+    J.getClient().emit('support:started', { subjectId: 'u2', endsAt: 'x' })
+    expect(orders.store.get()).toEqual([])
+  })
+
+  test('is emptied when the episode ends', async () => {
+    const { J, orders } = await bootedWithAResource()
+    J.getClient().emit('support:ended', { ended: true })
+    expect(orders.store.get()).toEqual([])
+  })
+
+  test('and is left alone when endSupport found no episode to end', async () => {
+    const { J, orders } = await bootedWithAResource()
+    J.getClient().emit('support:ended', { ended: false })
     expect(orders.store.get()).toHaveLength(1)
   })
 })

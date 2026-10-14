@@ -9,9 +9,14 @@
  * The badge assertion is the one worth having. Every other check here would
  * pass against a page that renders a frozen snapshot of the tree.
  */
+import { guiPort } from '../../../core/ports.js'
+
 export const name = 'the front page — what can run here'
 
 export async function run(t) {
+  // The workspace's gui port follows its `fli dev` slot (`FJS-D983`), so it is
+  // 8508 on one machine and 8500 on the next — read it, never write it down.
+  const gui = guiPort(global.projectRoot)
   // The badges are filled by a POLL, and the page's own first one races
   // whatever else it kicked off on load. Asking for one here is not a
   // workaround: this spec asserts state, so it has to assert it after a state
@@ -50,7 +55,7 @@ export async function run(t) {
   const guiState = await t.evaluate(`
     const li = document.querySelector('#dash-groups [data-id="tool:gui"]');
     const badge = li && li.querySelector('[data-state]');
-    return { text: badge?.textContent, port: li?.textContent.includes(':8500') };
+    return { text: badge?.textContent, port: li?.textContent.includes(':${gui}') };
   `)
   t.ok(guiState.port, 'the gui tool row carries the reserved port')
   t.ok(['answering', 'not running', 'claimed, not answering'].includes(guiState.text),
@@ -90,7 +95,7 @@ export async function run(t) {
     const a = document.querySelector('#dash-groups [data-id="tool:gui"] [data-open]');
     return a ? a.getAttribute('href') : null;
   `)
-  t.is(href, 'http://localhost:8500', 'the open link is the url the inventory named, not a guess')
+  t.is(href, `http://localhost:${gui}`, 'the open link is the url the inventory named, not a guess')
 
   /* ── the tick is on screen ────────────────────────────────────────────── */
 

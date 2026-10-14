@@ -64,6 +64,14 @@ export interface ExportPluginOptions {
    * much is read at once, not how much is buffered.
    */
   batch?: number
+  /**
+   * Query keys that are the app's, not filters — read by its `principal` or
+   * tenancy hook off `ctx.reserved`, exactly as a service's `reservedQuery`.
+   * Every other key except `since` and `format` is a column filter, so a key
+   * the app reads off the URL must be named here or it is refused as an unknown
+   * column.
+   */
+  reservedQuery?: readonly string[]
 }
 
 interface Dataset { name: string; accessor: string; kind: string; export: { format: string; since: string | null } }
@@ -72,8 +80,29 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
   const path          = opts.path ?? '/exports'
   const maxConcurrent = opts.maxConcurrent ?? 2
   const batch         = opts.batch ?? 1000
+  const appKeys       = new Set(opts.reservedQuery ?? [])
+  // The route's own parameters; every other key is a filter.
+  const ownKeys       = new Set(['since', 'format', ...appKeys])
 
   let inFlight = 0
+
+  /**
+   * The URL's search, split three ways. A filter is what a service's `find`
+   * would read off the same URL, so a screen's query string transplants onto
+   * the export and the file is the rows on screen. A `$` key is refused: an
+   * extract has a fixed order and no page, and a directive ignored is a file
+   * that does not match the screen (Invariant 10).
+   */
+  const splitQuery = (query: Record<string, unknown>) => {
+    const dollar = Object.keys(query).filter(k => k.startsWith('$'))
+    const filter: Record<string, unknown> = {}
+    const reserved: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(query)) {
+      if (appKeys.has(k)) reserved[k] = v
+      else if (!ownKeys.has(k) && !k.startsWith('$')) filter[k] = v
+    }
+    return { dollar, filter, reserved }
+  }
 
   return {
     name: 'export',
@@ -126,12 +155,13 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
        *
        * A synthetic service context is the price of being below the pipeline,
        * and every field in it is one the hooks are documented to read.
-       * `reserved` is the query, whole: it means *keys that are not filters*,
-       * and an export route has no filters at all, so on this route every key
-       * qualifies. That is what lets an app whose `tenantFrom` reads
-       * `?workspace_id=` keep working here.
+       * `reserved` is the keys the plugin's `reservedQuery` names, as on a
+       * service: that is what lets an app whose `tenantFrom` reads
+       * `?workspace_id=` keep working here beside the filters.
        */
-      const resolveCaller = async (ctx: RouteCtx): Promise<{ client: unknown; principal: unknown }> => {
+      const resolveCaller = async (
+        ctx: RouteCtx, reserved: Record<string, unknown>, query: Record<string, unknown>,
+      ): Promise<{ client: unknown; principal: unknown }> => {
         // The same two hooks `createApp` installs, and the same two symbols it
         // parks them under — read rather than guessed, so a rename moves both
         // halves together.
@@ -143,8 +173,8 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
         const sctx: any = {
           auth:     { user: (ctx as any).user ?? null },
           caller:   { headers: (ctx as any).headers ?? {}, ip: (ctx as any).ip },
-          query:    { ...((ctx as any).query ?? {}) },
-          reserved: { ...((ctx as any).query ?? {}) },
+          query:    { ...query },
+          reserved: { ...reserved },
           locals:   {},
         }
 
@@ -174,7 +204,8 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
       // ── What may leave ───────────────────────────────────────────────
       app.get(path, async (ctx) => {
         if (!(ctx as any).user) return ctx.json({ error: 'Unauthorized' }, 401)
-        const { client } = await resolveCaller(ctx)
+        const { reserved } = splitQuery(((ctx as any).query ?? {}) as Record<string, unknown>)
+        const { client } = await resolveCaller(ctx, reserved, {})
         return ctx.json(datasets(client).map(d => ({
           dataset: d.name,
           kind:    d.kind,
@@ -191,7 +222,15 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
         // system path is not reachable from here at all.
         if (!(ctx as any).user) return ctx.json({ error: 'Unauthorized' }, 401)
 
-        const { client, principal } = await resolveCaller(ctx)
+        const q = ((ctx as any).query ?? {}) as Record<string, unknown>
+        const { dollar, filter, reserved } = splitQuery(q)
+        if (dollar.length)
+          return ctx.json({
+            error: `${dollar.join(', ')} ${dollar.length > 1 ? 'are' : 'is'} not something an extract takes. ` +
+                   `A '$' name is a page or sort directive; an extract is the whole filtered set in a fixed order.`,
+          }, 400)
+
+        const { client, principal } = await resolveCaller(ctx, reserved, filter)
 
         const name = String((ctx as any).route?.dataset ?? '')
         const set  = datasets(client).find(d => d.name === name || d.accessor === name)
@@ -203,7 +242,6 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
           }, 404)
         }
 
-        const q      = ((ctx as any).query ?? {}) as Record<string, unknown>
         const since  = q.since != null ? String(q.since) : null
         const format = q.format != null ? String(q.format) : set.export.format
 
@@ -213,6 +251,20 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
           return ctx.json({
             error: `'${set.name}' declares no @@export(since:), so there is no cursor to resume from.`,
           }, 400)
+
+        // Graded by the owner a service's `find` uses, so an unknown key is a
+        // 400 naming it. Ignored, it would hand over the whole dataset to a
+        // caller who believes they asked for a subset.
+        const hasFilter = Object.keys(filter).length > 0
+        if (hasFilter) {
+          const { autoFilter } = await import('../../core/litestone.ts')
+          try { autoFilter(set.accessor)({ locals: { db: client }, query: filter, service: set.accessor } as any) }
+          catch (err) {
+            const { toFrameworkError } = await import('../../core/errors.ts')
+            const fe = toFrameworkError(err, app)
+            return ctx.json({ error: fe.message }, fe.code ?? 500)
+          }
+        }
 
         if (inFlight >= maxConcurrent)
           return ctx.json({
@@ -291,6 +343,7 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
               // The RESOLVED principal, never `ctx.user` — see resolveCaller.
               as:    principal,
               since, format, batch,
+              where: hasFilter ? filter : null,
               // The two that belong to the CLI. Restated here rather than left
               // to the default, because the default is the thing a later edit
               // changes.

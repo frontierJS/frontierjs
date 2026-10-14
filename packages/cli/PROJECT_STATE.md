@@ -14,13 +14,13 @@ runtime started the parent, which is bun for every test and CI call here
 A modular CLI automation platform where every command is a plain `.md` file, compiled to JavaScript and run — drop a file, it is discovered by the next invocation. The same command files power two interfaces:
 
 - **CLI** — `fli <command> [args] [flags]`
-- **Web GUI** — `fli gui` → `http://localhost:8500`
+- **Web GUI** — `fli gui` → `http://localhost:5500`
 
 ---
 
 ## Where it stands
 
-Working. ~210 commands (`fli list --json` is the count). Three deploy modes coexist: Docker/SSH/nginx (default when `frontier.config.js` has a `deploy` block), legacy CapRover, and `ksite:deploy`. Runtime is bun (`FJS-D593`).
+Working. ~210 commands (`fli list --json` is the count). Two deploy modes coexist: Docker/SSH/nginx (default when `frontier.config.js` has a `deploy` block) and legacy CapRover. Runtime is bun (`FJS-D593`).
 
 ## Test suite
 

@@ -171,3 +171,22 @@ describe('a window name is a column a select may name', () => {
     expect(rows[0]).toEqual({ name: 'ada', rn: 1 })
   })
 })
+
+// FJS-2663 — findManyAndCount admits `window` and used to answer rows without
+// the column, in silence. It reads the spec as findMany does.
+describe('findManyAndCount honors a window spec', () => {
+  it('answers the window column on each row, and the total ignores it', async () => {
+    const { sys } = await seeded()
+    const { rows, total } = await sys.employee.findManyAndCount({
+      orderBy: { id: 'asc' }, window: { rn: { rowNumber: true, orderBy: { id: 'asc' } } },
+    })
+    expect(total).toBe(3)
+    expect(rows.map((r: any) => r.rn)).toEqual([1, 2, 3])
+  })
+
+  it('holds the spec to the same refusals findMany does', async () => {
+    const { as } = await seeded()
+    const err = await refuses(() => as.employee.findManyAndCount({ window: { p: { max: 'salary' } } }))
+    expect(err).toBeInstanceOf(ValidationError)
+  })
+})

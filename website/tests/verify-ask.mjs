@@ -26,7 +26,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { openChrome } from '../../packages/mesa/src/drive.js'
-import { siteKit } from '../packages/site-kit/config/vite.js'
+import { siteKit } from '../../packages/site-kit/config/vite.js'
 
 const REAL   = process.argv.includes('--real')
 const HERE   = dirname(fileURLToPath(import.meta.url))

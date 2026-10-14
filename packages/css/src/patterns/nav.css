@@ -240,15 +240,17 @@
   text-overflow: ellipsis;
   white-space:   nowrap;
 }
-.sidebar.rail :is(.navlink-text, .navlist-label:not(:has(.navlink-text))) {
-  opacity:    0;
+.sidebar :is(.navlink-text, .navlist-label) {
   transition: opacity var(--motion-base);
 }
-.sidebar.rail:has(:focus-visible) :is(.navlink-text, .navlist-label) {
+.sidebar.rail :is(.navlink-text, .navlist-label:not(:has(.navlink-text))) {
+  opacity: 0;
+}
+.sidebar.rail.peek:has(:focus-visible) :is(.navlink-text, .navlist-label) {
   opacity: 1;
 }
 @media (hover: hover) {
-  .sidebar.rail:hover :is(.navlink-text, .navlist-label) {
+  .sidebar.rail.peek:hover :is(.navlink-text, .navlist-label) {
     opacity: 1;
   }
 }

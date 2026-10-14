@@ -536,15 +536,17 @@ runs on `8001`/`8101`, and the slot is remembered per app directory in
 reach the servers as `FLI_PORT_FE`, `FLI_PORT_BE`, `FLI_PORT_SITE`,
 `FLI_PORT_WIDGET` and `FLI_PORT_DESKTOP`, which the scaffolded configs read; an
 app whose configs ignore them stays on slot 0. `fli ps` lists the slots. Global
-fli tooling is reserved — the whole of **8500–8509**, of which **8500 is the GUI, 8501 `project:map --as=serve`, 8502 db studio and 8503 junction's devtools console** — and the
-formula refuses those to any app.
+fli tooling has no project and so no env, and takes a 5 where the env digit
+goes — **5500–5509**, of which **5500 is the GUI, 5501 `project:map --as=serve`, 5502 db studio and 5503 junction's devtools console**. No project port in
+any env can land there.
 
 ---
 
 ## The Web GUI
 
 ```bash
-fli gui                # http://localhost:8500
+fli gui                # in a project: its tooling port beside its web port (8001 → 8501); outside one: 5500
+fli gui --test         # 7500 — --production is 9500
 fli gui --port 8080    # or FLI_PORT
 fli gui --open         # and open a browser
 ```
@@ -624,14 +626,6 @@ command *generates* `.md` files — `make:command` does:
 const fence       = '`'.repeat(3)     // no literal triple backticks
 const scriptClose = '</' + 'script>'  // no literal closing script tag
 ```
-
----
-
-## Dependencies
-
-| Package | |
-|---|---|
-| `linkedom` · `turndown` | Optional peers, only for `ksite:fetch` — HTML into markdown. The app installs them: `bun add -d linkedom turndown` |
 
 ---
 

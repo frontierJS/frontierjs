@@ -545,9 +545,17 @@ kept true instead:
 ```typescript
 app.configure(channels(setup, { rooms: { 'page:{id}': 'Page' }, presence: ['page:*'] }))
 
-// in a service method: graded at the Data boundary, answers whether it admitted
-const admitted = await app.channel(`page:${id}`).join(conn)
+// in the connection hook: graded at the Data boundary, answers whether it admitted
+app.channels.on('connection', async (session, conn) => {
+  const id = conn.data.query.page        // the upgrade's search: /ws?page=7
+  if (id) await app.channel(`page:${id}`).join(conn)
+})
 ```
+
+A service call cannot reach the socket it arrived on, so a room is chosen at the
+upgrade. The client says which with `socketQuery`, kept across a reconnect;
+`client.setSocketQuery({ page: '8' })` cycles the socket into another room, the
+way `setToken` cycles it for another principal.
 
 The join reads the row as the system and asks the joiner's read verdict on it.
 After every committed write to a model the row's read policy reaches
@@ -1888,6 +1896,10 @@ client.setToken(token)
 
 // Open the socket without a token, as an anonymous caller
 client.connect()
+
+// What the upgrade asks for — a room joined in channels.on('connection').
+// Kept across a reconnect; a change cycles the open socket.
+client.setSocketQuery({ room: 'tavern' })
 ```
 
 **`client.auth`** is the whole auth surface, and it speaks the server's own

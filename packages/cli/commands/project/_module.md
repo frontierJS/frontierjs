@@ -433,7 +433,7 @@ const countModels = (map) => Object.values(map.schema?.$defs ?? {})
 // first time it is called. The command body (a ```js fence) is inside `run()`
 // and sees the real one, which is why this code worked in `project:view` and
 // broke the moment it moved here. Everything this module needs is handed to it.
-const serveProjectMap = async ($, initialMap, { port = 8501, open = true, atlas = true, log } = {}) => {
+const serveProjectMap = async ($, initialMap, { port = 5501, open = true, atlas = true, log } = {}) => {
   const { createServer } = await import('http')
   const url  = `http://localhost:${port}`
   let   map  = initialMap

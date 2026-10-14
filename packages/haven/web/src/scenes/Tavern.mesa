@@ -1,0 +1,127 @@
+<script>
+  // Tavern.mesa — the tavern: the bar and its shelves, the hearth with a rug
+  // before it where the cat paces, tables, barrels, the stairs, and the door
+  // back out to the square in the bottom wall. The picture this draws is
+  // `tavern.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
+  import { piece }  from '@/pieces/index.js'
+  import { frame }  from '@/pieces/frame.js'
+  import { table }  from '@/pieces/table.js'
+  import { barrel } from '@/pieces/barrel.js'
+
+  // The shelves, the bar, the hearth, its rug and the stairs are the tavern's
+  // own; the tables and barrels are pieces any scene may use.
+  const shelves = piece('shelves', String.raw`
+.--------------------------------------.
+| U  0  U  0  U  0  U  0  U  0  U  0  U|
+|--------------------------------------|
+| i  !  i  !  i  !  i  !  i  !  i  !  i|
+'--------------------------------------'
+`, String.raw`
+wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+w c  e  p  c  e  p  c  e  p  c  e  p  cw
+wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+w e  p  c  e  p  c  e  p  c  e  p  c  ew
+wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+`)
+
+  const bar = piece('bar', String.raw`
+________________________________________
+|======================================|
+'--------------------------------------'
+  o     o     o     o     o     o     o
+`, String.raw`
+wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+wWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWw
+wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+  t     t     t     t     t     t     t
+`)
+
+  const hearth = piece('hearth', String.raw`
+  _______________________
+ |#######################|
+ |##.-----------------.##|
+ |##|   ^   ^ ^   ^   |##|
+ |##|  ^^^ ^^^^^ ^^^  |##|
+ |##| ^^^^^^^^^^^^^^^ |##|
+ |##|_=_=_=_=_=_=_=_=_|##|
+[=========================]
+`, String.raw`
+  sssssssssssssssssssssss
+ sSSSSSSSSSSSSSSSSSSSSSSSs
+ sSSsssssssssssssssssssSSs
+ sSSs   h   h h   h   sSSs
+ sSSs  hhh hhhhh hhh  sSSs
+ sSSs hhhhhhhhhhhhhhh sSSs
+ sSSsuuuuuuuuuuuuuuuuusSSs
+sssssssssssssssssssssssssss
+`)
+
+  // The rug is floor, walked on, and painted all the same.
+  const rug = piece('rug', String.raw`
+;;;;;;;;;;;;;;;;;;;;;;;
+;:::::::::::::::::::::;
+;:::::::::::::::::::::;
+;;;;;;;;;;;;;;;;;;;;;;;
+`, String.raw`
+mmmmmmmmmmmmmmmmmmmmmmm
+mMMMMMMMMMMMMMMMMMMMMMm
+mMMMMMMMMMMMMMMMMMMMMMm
+mmmmmmmmmmmmmmmmmmmmmmm
+`, { floor: true })
+
+  const stairs = piece('stairs', String.raw`
+            ____
+        ____|
+    ____|
+____|
+`, String.raw`
+            uuuu
+        uuuuu
+    uuuuu
+uuuuu
+`)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    w: { fg: '#b45309' },
+    W: { fg: '#d97706' },
+    t: { fg: '#a16207' },
+    u: { fg: '#854d0e' },
+    s: { fg: '#9ca3af' },
+    S: { fg: '#57534e' },
+    c: { fg: '#22d3ee' },
+    e: { fg: '#a3e635' },
+    p: { fg: '#f472b6' },
+    y: { fg: ['#fde047', '#fbbf24', '#fef08a'], chars: 'i!i', ms: 300, flicker: true },
+    m: { fg: '#7f1d1d' },
+    M: { fg: '#b91c1c' },
+    h: { fg: ['#ef4444', '#f97316', '#facc15', '#fb923c'], chars: '^*^"', ms: 110, flicker: true },
+  }
+</script>
+
+<Scene slug="tavern" palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+  <Piece of={frame} />
+  <Door  x={48} y={25} to="/" />
+  <Piece of={shelves} x={5}  y={1} />
+  <Piece of={bar}     x={5}  y={7} />
+  <Piece of={hearth}  x={63} y={1} />
+  <Piece of={rug}     x={65} y={10} />
+  <Piece of={table}   x={9}  y={13} />
+  <Piece of={table}   x={29} y={13} />
+  <Piece of={table}   x={49} y={16} />
+  <Piece of={table}   x={9}  y={19} />
+  <Piece of={table}   x={29} y={19} />
+  <Piece of={stairs}  x={77} y={21} />
+  <Piece of={barrel}  x={83} y={15} />
+  <Piece of={barrel}  x={89} y={15} />
+  <Piece of={barrel}  x={86} y={18} />
+  <Pacer name="cat" y={12} from={66} to={86} ms={260} rest={14} fg="#f59e0b"
+    right={['-=^.^=', '~=^.^=']}
+    left={['=^.^=-', '=^.^=~']}
+    sit={['=^.^=', '=^.^=', '=^.^=', '=^-^=']} />
+</Scene>

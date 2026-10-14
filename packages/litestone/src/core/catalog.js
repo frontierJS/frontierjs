@@ -365,7 +365,7 @@ const FIELD = [
     'from',
     'field',
     'relate',
-    '(<Model>, last|first|count|sum|max|min|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates])',
+    '(<Model>, last|first|count|sum|avg|max|min|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates])',
     'A value read off another model — the last order, the count of comments, the sum of a column. Computed in SQL, so unlike @computed it can be filtered and sorted by.',
     'orderCount Int @from(Order, count: true)',
     {

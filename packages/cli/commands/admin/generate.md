@@ -71,17 +71,7 @@ function scanModels(src) {
 }
 
 // ─── Naming ───────────────────────────────────────────────────────────────────
-// Model → service name. Regular English plurals only — the same three rules
-// Sierra's schema registry applies in the other direction (schema-registry.js).
-// Irregulars are not guessed anywhere in this framework; the generated resource
-// passes `model:` explicitly so a miss cannot break resolution either way.
-
-function servicePlural(modelName) {
-  const a = modelName.charAt(0).toLowerCase() + modelName.slice(1)
-  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
-  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
-  return a + 's'
-}
+const { servicePlural } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 function toLabel(name) {
   return name
@@ -131,10 +121,10 @@ function makeResourceFile(model, service, exportName) {
 
 import { createResource } from '@frontierjs/sierra/resource'
 
-// The first argument is the SERVICE name and \`model\` is the MODEL. Only the
-// regular English plurals were guessed — an irregular (Person -> people) comes
-// out wrong. Fix the string if one did; nothing else changes, because the model
-// is stated rather than inferred.
+// The first argument is the SERVICE name and \`model\` is the MODEL. The plural
+// is guessed by the same rules the API names its table with; where the service
+// is called something else, fix the string — nothing else changes, because the
+// model is stated rather than inferred.
 export const ${exportName} = createResource('${service}', {
   model: '${model}',
 })

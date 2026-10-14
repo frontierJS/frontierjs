@@ -39,19 +39,19 @@ flags:
   gui-port:
     type: number
     description: Port for fli gui
-    defaultValue: 8500
+    defaultValue: 5500
   view-port:
     type: number
     description: Port for fli project:map --as=serve
-    defaultValue: 8501
+    defaultValue: 5501
   studio-port:
     type: number
     description: Port for the database studio
-    defaultValue: 8502
+    defaultValue: 5502
   devtools-port:
     type: number
     description: Port for junction's API console
-    defaultValue: 8503
+    defaultValue: 5503
 ---
 
 ```js
@@ -89,16 +89,16 @@ looks the same whether the request was refused, never sent, or answered fine and
 the render is broken.
 
 Four tools answer those, and each answers a different question. They live on
-fixed ports — **8500 to 8509 is reserved for tooling, for every app** — because
+fixed ports — **5500 to 5509 is reserved for tooling, for every app** — because
 these are things you run *beside* whatever you are working on and type from
 memory. They never move with the app.
 
 | | Port | The question it answers |
 | --- | --- | --- |
-| `fli gui` | 8500 | what is there, what is running, and does anything fail a check |
-| `fli db:studio` | 8502 | what is actually in the database |
-| junction's console | 8503 | what happened to that call |
-| `fli project:map --as=serve` | 8501 | what handles a request, and in what order |
+| `fli gui` | 5500 | what is there, what is running, and does anything fail a check |
+| `fli db:studio` | 5502 | what is actually in the database |
+| junction's console | 5503 | what happened to that call |
+| `fli project:map --as=serve` | 5501 | what handles a request, and in what order |
 
 **Start at the GUI.** It is the only one that knows about the other three — it
 lists everything startable in this project, shows which of them is up right

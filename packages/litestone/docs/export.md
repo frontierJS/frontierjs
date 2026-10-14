@@ -146,7 +146,16 @@ and the single one most worth having a record of.
 streams the extract **as the calling session** — the same `runExport`, so the
 same gate, the same row policies, the same tenancy.
 
-Three differences, all deliberate:
+Four differences, all deliberate:
+
+- **The query string is the list's filter.** `/exports/Order?status=open&total[gte]=200`
+  reads the keys a service's `find` reads, graded by the same owner, so a screen's
+  URL query transplants onto the export and the file is the rows on screen. A key
+  that is no column is a 400 naming it, and a `$` key is refused. `since` and
+  `format` are the route's own; an app that reads another key off the URL
+  (`tenantFrom`, a `principal` resolver) names it in `exportPlugin({ reservedQuery })`.
+  `runExport`'s `where` is the same filter, ANDed with `since`, and the manifest
+  records it.
 
 - **`--system` and `--include-protected` have no query parameter.** Both belong
   where an operator typed them and the manifest recorded it. A query parameter is

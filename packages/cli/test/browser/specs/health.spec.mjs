@@ -183,6 +183,10 @@ export async function run(t) {
   }
   try {
     const fresh = await t.evaluate(`
+      // Off the refresh tick: every fifth poll refreshes health, and how many
+      // ran before the timer stopped is timing, so a bare poll lands on one in
+      // about a fifth of runs and asks the new process after all.
+      healthTick = 1;
       await pollState();              // deliberately WITHOUT refreshing health
       return { state: ${badge(row.id, 'data-state')}.textContent,
                hidden: ${badge(row.id, 'data-health')}.hidden };

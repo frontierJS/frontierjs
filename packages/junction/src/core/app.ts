@@ -1165,6 +1165,10 @@ export function createApp(opts: AppOptions = {}): App {
           //   app.service('posts').find({}, { directives: { limit: 10 } })
           directives: opts.directives ?? {},
           data,
+          // Per call and never inherited: the row THIS writer read. An mcp
+          // tool states it for a view, and a held write replayed in-process
+          // states it for the device that read it.
+          base: opts.base ?? null,
           // PROPAGATES. A caller that says nothing inherits the request's
           // principal from the ALS store the bridge already wraps the whole
           // pipeline in; a caller that says `{ user: null }` means *as
@@ -2115,7 +2119,7 @@ export function createApp(opts: AppOptions = {}): App {
         }
       }},
 
-      { name: 'listen', needsHost: true, run: () => { http.start() } },
+      { name: 'listen', needsHost: true, run: () => { http.start(config.port, config.hostname) } },
 
       { name: 'ready-hooks', needsHost: true, run: async () => {
         for (const plugin of plugins) {

@@ -112,7 +112,7 @@ describe('the boot', () => {
 describe('the entry', () => {
   const src = viewEntrySource({ name: 'Order', entry: '/abs/Order.mesa' }, { boot: '/abs/.sierra/mcp-boot.js' })
 
-  test('imports the boot FIRST, then the resource file, then mounts', () => {
+  test('imports the boot FIRST, then the resource file, then starts the view', () => {
     // createResource() runs at the resource file's import and reads the
     // registry and the client right then — so the boot has to be evaluated
     // before it, which in ESM means imported before it.
@@ -120,8 +120,8 @@ describe('the entry', () => {
     const view = src.indexOf('import View from "/abs/Order.mesa"')
     expect(boot).toBeGreaterThan(-1)
     expect(view).toBeGreaterThan(boot)
-    expect(src).toContain(`import { mountView } from "${VIEW_RUNTIME}"`)
-    expect(src).toContain('mountView(View, { name: "Order" })')
+    expect(src).toContain(`import { startView } from "${VIEW_RUNTIME}"`)
+    expect(src).toContain('startView(View, { name: "Order", module: Resource })')
   })
 
   test('a view module other than the resource file is mounted in its place', () => {
@@ -129,6 +129,8 @@ describe('the entry', () => {
       { boot: '/abs/.sierra/mcp-boot.js', view: '/abs/.sierra/mcp-Order.form.mesa' })
     expect(over).toContain('import View from "/abs/.sierra/mcp-Order.form.mesa"')
     expect(over).not.toContain('import View from "/abs/Order.mesa"')
+    // The row is still read through the resource file's own Resource.
+    expect(over).toContain('import * as Resource from "/abs/Order.mesa"')
   })
 })
 
@@ -166,8 +168,13 @@ describe('the generated form', () => {
     expect(src).toContain(`import { resourceIn } from "${VIEW_RUNTIME}"`)
     expect(src).toContain('import Form   from "@frontierjs/ui/components/forms/Form.mesa"')
     expect(src).toContain('resourceIn(Resource, "CreditNote")')
-    expect(src).toContain('<Form {resource} bind:record={record}>')
+    expect(src).toContain('<Form {resource} bind:record={record} disabled={locked}>')
     expect(src).toContain('type="submit"')
+  })
+
+  test('is locked where the gate refuses an edit, asked at no level — a view has none', () => {
+    expect(src).toContain("const locked   = !resource.can('update')")
+    expect(src).toContain('<Button slot="actions" type="submit" disabled={locked}>')
   })
 
   test('states no method — save() decides create against patch', () => {
@@ -529,7 +536,7 @@ describe('a real build', () => {
     expect(tag).toContain('"Tag"')
     expect(tag).toMatch(/novalidate/)
     // The markup-half file did not get one.
-    expect(html).not.toContain('resourceIn(')
+    expect(html).not.toMatch(/novalidate/)
   })
 
   test('the runtime, the schema, the stylesheet and the component are inside it', () => {
@@ -544,17 +551,17 @@ describe('a real build', () => {
     expect(html).toContain('createResource')
     // The component's own markup and the runtime it needs.
     expect(html).toContain('a fixture note')
-    expect(html).toContain('mountView(Note, { name: "Note" })')
+    // Rollup reprints the call across lines; the shape is matched.
+    expect(html).toMatch(/startView\(Note, \{\s*name: "Note",\s*module: \w+\s*\}\)/)
   })
 
   test('the switch is booted with the app\'s pair, persist off whatever the app said', () => {
     // Rollup reprints the literal, so the shape is matched and not the spelling.
     expect(html).toMatch(/initTheme\(\{\s*"themes":\s*\["theme-default",\s*"theme-dark"\],\s*"default":\s*"theme-dark",\s*"key":\s*"fixture_theme",\s*"persist":\s*false\s*\}\)/)
     expect(html).not.toContain('localStorage.getItem("fixture_theme")')
-    // `applyHostContext` is NOT in the document yet: nothing calls it until the
-    // handshake (plan step 3.3) and the bundler drops it. Asserting it here
-    // would pass only by a dead reference; the unit tests above are its proof.
-    expect(html).not.toMatch(/function applyHostContext\(/)
+    // The handshake applies the host's context, so the function is reachable.
+    expect(html).toMatch(/function applyHostContext\(/)
+    expect(html).toContain('"ui/notifications/host-context-changed"')
   })
 
   test('the component\'s </script> did not end the element', () => {

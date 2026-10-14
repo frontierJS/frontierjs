@@ -661,7 +661,7 @@ async function handleDoctor(req, res) {
 // Junction answers `/health` with a named check per plugin, and this is the one
 // reader of it here.
 //
-// **Fetched by this server and not by the page.** The page is on 8500 and the
+// **Fetched by this server and not by the page.** The page is on 5500 and the
 // app is on 8110, so a browser fetch is cross-origin: an app whose CORS does
 // not name this origin answers a network error that is indistinguishable from
 // the app being down, which is the opposite of what this is for.

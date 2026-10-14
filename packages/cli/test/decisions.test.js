@@ -377,6 +377,56 @@ describe('the pick', () => {
   })
 })
 
+// ─── a plan outside IDEAS ─────────────────────────────────────────────────────
+
+describe('a question argued in one named file', () => {
+  const PLAN = [
+    '# Plan', '', '### Phase 1 — Mail', '', '- [ ] 1.1 Send it', '',
+    '## Open questions (owner)', '',
+    '- **Q1 — Which mail provider?** Prose.', '  - **A** — a sink', '  - **B** — a real one', '  - **Recommend A** — nothing sends yet',
+    '- **Q2 — Is the key the name?** Asked.', '  - **A** — yes', '  - **B** — no', '  - **Recommend A** — FJS-D03 already rules it',
+    '',
+  ].join('\n')
+  const Q1 = 'PLAN:q1-which-mail-provider'
+
+  test('a PLAN.md question is no register source, and is ruled with file: at the id parsePlan gives it', async () => {
+    const { parsePlan } = await import('../core/plan.js')
+    const { root, cleanup } = fixture()
+    try {
+      writeFileSync(join(root, 'PLAN.md'), PLAN)
+      expect(parsePlan(PLAN, { file: 'PLAN.md' }).blocking.map(q => q.id)).toEqual([Q1, 'PLAN:q2-is-the-key-the-name'])
+      expect(decide({ root, id: Q1, pick: 'A', section: 'Naming & vocabulary', today: TODAY }).reason).toBe(`no question has the id ${Q1}`)
+
+      const out = decide({ root, id: Q1, pick: 'A', section: 'Naming & vocabulary', file: 'PLAN.md', today: TODAY })
+      expect(out.ok).toBe(true)
+      expect(out.files).toEqual(['DECISIONS.md', 'PLAN.md'])
+      const plan = readFileSync(join(root, 'PLAN.md'), 'utf8')
+      expect(plan).toContain(`- ~~**Q1 — Which mail provider?**~~ **Answered 2026-09-14 (\`${out.ruling}\`): A — a sink.** Prose.`)
+      expect(readFileSync(join(root, 'DECISIONS.md'), 'utf8')).toContain('Asked in [`PLAN.md`](PLAN.md) § Open questions.')
+      expect(parsePlan(plan, { file: 'PLAN.md' }).blocking.map(q => q.id)).toEqual(['PLAN:q2-is-the-key-the-name'])
+      expect(runRegisterCheck({ root, today: TODAY }).errors).toEqual([])
+
+      const settled = settle({ root, id: 'PLAN:q2-is-the-key-the-name', by: 'FJS-D03', file: 'PLAN.md', today: TODAY })
+      expect(settled).toMatchObject({ ok: true, ruling: 'FJS-D03', files: ['PLAN.md'] })
+      expect(parsePlan(readFileSync(join(root, 'PLAN.md'), 'utf8'), { file: 'PLAN.md' }).blocking).toEqual([])
+    } finally { cleanup() }
+  })
+
+  test('a file outside the root, not markdown, or absent is refused and nothing is written', () => {
+    const { root, cleanup } = fixture()
+    try {
+      writeFileSync(join(root, 'PLAN.md'), PLAN)
+      const dec = readFileSync(join(root, 'DECISIONS.md'), 'utf8')
+      for (const [file, reason] of [['../PLAN.md', /not a markdown file inside/], ['package.json', /not a markdown file inside/], ['NOPE.md', /there is no NOPE\.md/], ['PLAN.md', /no question has the id PLAN:nope in PLAN\.md/]]) {
+        const id = file === 'PLAN.md' ? 'PLAN:nope' : Q1
+        expect(decide({ root, id, pick: 'A', section: 'Naming & vocabulary', file, today: TODAY }).reason).toMatch(reason)
+      }
+      expect(readFileSync(join(root, 'DECISIONS.md'), 'utf8')).toBe(dec)
+      expect(readFileSync(join(root, 'PLAN.md'), 'utf8')).toBe(PLAN)
+    } finally { cleanup() }
+  })
+})
+
 // ─── settled by an existing ruling ────────────────────────────────────────────
 
 describe('the settle', () => {

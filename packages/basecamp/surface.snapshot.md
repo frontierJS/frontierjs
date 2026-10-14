@@ -1219,8 +1219,8 @@ name when it declares none.
 
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `fork`, `freeze`, `thaw`, `land`, `archive`, `run`, `halt`
-- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `fork`, `freeze`, `thaw`, `land`, `archive`, `run`, `halt`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `runnables`, `output`, `plan`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `select`, `close`, `seen`, `check`, `review`, `buildPlan`, `openPlan`, `closePlan`, `go`, `next`, `tick`, `file`, `decide`, `fork`, `freeze`, `thaw`, `land`, `commit`, `archive`, `run`, `halt`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
@@ -1241,10 +1241,18 @@ name when it declares none.
   - `check` — standing 5 or above — declared `gate: 5`
   - `review` — standing 5 or above — declared `gate: 5`
   - `buildPlan` — standing 5 or above — declared `gate: 5`
+  - `openPlan` — standing 5 or above — declared `gate: 5`
+  - `closePlan` — standing 5 or above — declared `gate: 5`
+  - `go` — standing 5 or above — declared `gate: 5`
+  - `next` — standing 5 or above — declared `gate: 5`
+  - `tick` — standing 5 or above — declared `gate: 5`
+  - `file` — standing 5 or above — declared `gate: 5`
+  - `decide` — standing 5 or above — declared `gate: 5`
   - `fork` — standing 5 or above — declared `gate: 5`
   - `freeze` — standing 5 or above — declared `gate: 5`
   - `thaw` — standing 5 or above — declared `gate: 5`
   - `land` — standing 5 or above — declared `gate: 5`
+  - `commit` — standing 5 or above — declared `gate: 5`
   - `archive` — standing 5 or above — declared `gate: 5`
   - `run` — standing 5 or above — declared `gate: 5`
   - `halt` — standing 5 or above — declared `gate: 5`

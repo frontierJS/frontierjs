@@ -51,6 +51,11 @@ export const TK = {
   MINUS: 'MINUS', // -  (a `-` before a digit is a negative NUMBER instead)
 }
 
+// Any other escaped character stands for itself. Without these three a
+// multi-line `@default("a\nb")` stored `anb` and no migration warned. A
+// template takes the same table, and so does a flow's reading of its raw text.
+export const STRING_ESCAPES ={ n: '\n', t: '\t', r: '\r' }
+
 export function tokenize(src) {
   // Strip leading UTF-8 BOM if present — editors sometimes write \uFEFF at the
   // start of files and the rest of the parser treats it as garbage.
@@ -160,7 +165,7 @@ export function tokenize(src) {
       advance()
       let str = ''
       while (i < end) {
-        if (src[i] === '\\') { advance(); str += src[i] } else { str += src[i] }
+        if (src[i] === '\\') { advance(); str += STRING_ESCAPES[src[i]] ?? src[i] } else { str += src[i] }
         advance()
       }
       advance() // closing backtick
@@ -174,7 +179,7 @@ export function tokenize(src) {
       advance()
       let str = ''
       while (i < src.length && src[i] !== quote) {
-        if (src[i] === '\\') { advance(); str += src[i] } else { str += src[i] }
+        if (src[i] === '\\') { advance(); str += STRING_ESCAPES[src[i]] ?? src[i] } else { str += src[i] }
         advance()
       }
       advance() // closing quote

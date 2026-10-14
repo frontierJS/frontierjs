@@ -101,8 +101,9 @@ if (explicitProject) {
 // `fli list` in /tmp.
 // `new` and its alias are here because they CREATE the project this warns about
 // not finding — the scaffold's first line was a complaint that the directory it
-// was about to write does not exist yet.
-const NO_PROJECT_NEEDED = new Set(['list', 'help', '?', 'init', 'new', 'project:new'])
+// was about to write does not exist yet. `haven` walks into an app that is not
+// this directory's.
+const NO_PROJECT_NEEDED = new Set(['list', 'help', '?', 'init', 'new', 'project:new', 'haven', 'haven:walk'])
 const firstArg = process.argv[2]
 // `completion:*` runs from ~/.bashrc on every new shell and on every tab press —
 // a warning there prints on terminal open and corrupts the prompt mid-line.

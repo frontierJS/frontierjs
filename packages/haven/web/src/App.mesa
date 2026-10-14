@@ -1,0 +1,9 @@
+<script>
+  // App.mesa — the browser Haven's root. The terminal shell mounts a route
+  // itself, so only the browser mounts this.
+  import { RouterView } from '@frontierjs/sierra/router'
+</script>
+
+<main>
+  <RouterView />
+</main>

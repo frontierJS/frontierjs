@@ -53,6 +53,7 @@ Detail: `references/mesa.md`
 - **Mesa's scoped styles do not reach into child components.**
 - **A block that reads a `const` derived from another `const` can mount a STALE value** (`FJS-1684`)
 - **A `const` read off a getter is a constant, whatever the getter reads.**
+- **A `const` that CALLS something with a `let` in its arguments is made again on every write to that `let`.**
 - **Replacing a value notifies; mutating one does not — and `o = o` is the deliberate exception.**
 - **An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that.**
 - **A function hides its reads from the compiler, which costs a subscription and an ordering.**

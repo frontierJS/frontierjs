@@ -74,6 +74,14 @@ const _w = watchProxy(session)
 
 /** @type {object|null} */
 let _client = null
+let _relayed = false
+
+/**
+ * Whether the page's client hands its calls to whoever holds the connection —
+ * an MCP App view. Asked where a page's rows would be kept on its DEVICE,
+ * since a relayed page's storage is its host's (`resource.js`, `@@sync`).
+ */
+export function isRelayed() { return _relayed }
 
 let _resolveReady
 /**
@@ -90,11 +98,27 @@ export let ready = new Promise(resolve => { _resolveReady = resolve })
 /**
  * Called by initJunction once the client exists. Restores from the stored
  * token, if there is one.
+ *
+ * A RELAYED client has no credential and still has a principal: each call is
+ * made by whoever holds the connection, under their standing (an MCP host's
+ * session, `FJS-D986`). STRANGER is the one level this page could state for
+ * itself, and it is false there, so the level is left unknown — permissive to
+ * `canAtLevel` — and the server grades every call.
+ *
  * @param {object} client
+ * @param {{ relayed?: boolean }} [opts]
  */
-export function initSession(client) {
+export function initSession(client, { relayed = false } = {}) {
   _client = client
+  _relayed = relayed
   takeOAuthError()
+
+  if (relayed) {
+    _w.level   = null
+    _w.checked = true
+    _resolveReady()
+    return
+  }
 
   // No credential means no question to ask — and asking anyway would answer 401
   // on every cold visit to a public page, filling the console for anonymous

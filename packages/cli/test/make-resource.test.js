@@ -137,6 +137,15 @@ describe('fli make:resource', () => {
     expect(shape(b, 'Invoice', 'invoices')).toBe(shape(a, 'Lead', 'leads'))
   })
 
+  // The service name is also the route directory `fli scaffold` writes, and
+  // sierra's palette links a search hit there through `serviceNameFor` — both
+  // must be toolbelt's plural, irregulars included (`FJS-2841`).
+  test('the service name is the plural the rest of the framework uses', async () => {
+    const { servicePlural } = await import('../core/resource-template.js')
+    expect(['Lead', 'ProductVariant', 'Person', 'Category', 'Box'].map(servicePlural))
+      .toEqual(['leads', 'productVariants', 'people', 'categories', 'boxes'])
+  })
+
   test('what it wrote passes `fli check`', async () => {
     const { runChecks } = await import('../core/checks.js')
     const { findings, ran } = runChecks({ root: ROOT })

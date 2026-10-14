@@ -33,18 +33,18 @@ export const env = defineEnv({
   // Junction's API console — the live call feed, /metrics with every plugin's
   // section, readiness, and the job queue with retry/cancel/run-now.
   //
-  // Opt-in rather than on in development, because it binds a port: 8503 is the
+  // Opt-in rather than on in development, because it binds a port: 5503 is the
   // one slot in the framework's global tooling block (packages/cli/core/ports.js)
   // and it is GLOBAL, so a second app running its console at the same time is
   // the collision the port scheme exists to stop. One at a time, deliberately.
   //
-  //   DEVTOOLS=1 bun run api      →  http://localhost:8503
+  //   DEVTOOLS=1 bun run api      →  http://localhost:5503
   //
   // Safe to leave declared: the plugin refuses to bind under
   // NODE_ENV=production with no auth gate rather than serving request params
   // and a retry button to anyone who finds the port.
   DEVTOOLS:     { type: 'boolean', default: false },
-  DEVTOOLS_PORT:{ type: 'port',    default: 8503 },
+  DEVTOOLS_PORT:{ type: 'port',    default: 5503 },
 
   // ── Database ──────────────────────────────────────────────
   DATABASE_URL: { default: './db/basecamp.db' },

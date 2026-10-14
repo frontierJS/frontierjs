@@ -54,7 +54,8 @@ src/
                          reached there throws on a terminal (FJS-2242). Also the
                          one place another package gets a renderer from
                          (`createRenderer`, `createHeadlessRenderer`) — its own
-                         engine import would be a second copy
+                         engine import would be a second copy — and a strip
+                         under the page that does not scroll (`footerOf`)
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}
   render-component.js  — renderComponent(): a component → HTML, at build time

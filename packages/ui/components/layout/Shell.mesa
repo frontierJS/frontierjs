@@ -26,8 +26,8 @@
   // else. The session is a watched object mutated in place, so passed whole it
   // would reach this component once and never again; two scalars re-push.
   //
-  // `layout` is `sidebar`, `rail` (frame.css's `.sidebar.rail`, the icons
-  // alone until hovered or focused) or `topbar` (the groups drawn flat in
+  // `layout` is `sidebar`, `rail` (frame.css's `.sidebar.rail.peek`, the
+  // icons alone until hovered or focused) or `topbar` (the groups drawn flat in
   // the bar, wrapping below md, with no drawer). It may change while
   // mounted: collapsing a sidebar to a rail for good is the app flipping it.
   // `foot(where)` is told `'sidebar'`, `'rail'`, `'drawer'` or `'topbar'`.
@@ -190,7 +190,7 @@
   <div class="shell sidebar-first" {class} {...$attributes}>
     <a class="skip-link" href="#screen">Skip to content</a>
 
-    <nav class="sidebar stack" class:rail={shape === 'rail'} aria-label="Main">
+    <nav class="sidebar stack" class:rail={shape === 'rail'} class:peek={shape === 'rail'} aria-label="Main">
       {@render navigation(shape)}
     </nav>
 

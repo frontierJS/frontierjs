@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // tools/tui.js — a web surface's routes in this terminal (`terminal/shell.js`).
 //
-//   bun tui.js                         the shell: Tab moves, Enter opens, Esc comes back, Ctrl+C quits
+//   bun tui.js                         the shell: Tab or j/k moves, Enter opens, Esc comes back, Ctrl+C quits
 //   bun tui.js --list                  each route and the first thing that stops it lowering
 //   bun tui.js --frame /reports/       one route's frame, printed, no TTY needed
 //   bun tui.js --api http://host:8110  the API origin, when it is not config.junction.url

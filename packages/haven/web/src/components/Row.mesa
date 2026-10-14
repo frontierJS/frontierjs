@@ -1,0 +1,16 @@
+<script>
+  // Row.mesa — one piece placed `n` times along a row, `step` cells apart: a
+  // hedge, a line of flowers. One claim, so a run is one thing to the stage.
+  export let of
+  export let x = 0
+  export let y = 0
+  export let n = 1
+  export let step = 1
+
+  const scene = $context.scene
+  const cells = []
+  for (let i = 0; i < n; i++) for (const c of of.cells) cells.push({ ...c, dx: c.dx + i * step })
+  var mark = scene.stamp({ name: of.name, cells, floor: of.floor }, x, y)
+  $: mark.move(x, y)
+  $.onDestroy(() => mark.remove())
+</script>

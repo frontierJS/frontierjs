@@ -9,8 +9,8 @@ import { test, expect, describe, afterAll } from 'bun:test'
 import { spawnSync }              from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
-import { join, resolve }          from 'node:path'
-import { prepare, render, section, titleOf, folderIndex } from '../core/cat.js'
+import { dirname, join, resolve } from 'node:path'
+import { prepare, render, prettify, formatJson, blockCommentLines, section, titleOf, folderIndex } from '../core/cat.js'
 
 const FLI = resolve(import.meta.dir, '../bin/fli.js')
 
@@ -48,14 +48,59 @@ test('render without color is plain text with the frontmatter shown as a block',
 
 describe('section', () => {
   const doc = '# Top\n\nintro\n\n## One\n\nfirst\n\n## Two\n\nsecond\n'
-  test('a heading names its section, through to the next sibling', () => {
-    expect(section(doc, 'One').text).toBe('## One\n\nfirst')
+  test('a heading names its section, through to the next sibling', async () => {
+    expect((await section('a.md', doc, 'One')).text).toBe('## One\n\nfirst')
   })
-  test('a line names the innermost section holding it', () => {
-    expect(section(doc, '11').text).toBe('## Two\n\nsecond')
+  test('a line names the innermost section holding it', async () => {
+    expect((await section('a.md', doc, '11')).text).toBe('## Two\n\nsecond')
   })
-  test('none refuses by name', () => {
-    expect(section(doc, 'Nine').refused).toBe('no section matches Nine')
+  test('none refuses by name', async () => {
+    expect((await section('a.md', doc, 'Nine')).refused).toBe('no section matches Nine')
+  })
+
+  const json = '{"scripts":{"test":"bun test","a.b":{"c":1}},"list":[10,20]}'
+  test('a JSON section is a key path, and a key may hold a dot', async () => {
+    expect((await section('p.json', json, 'scripts.test')).text).toBe('"bun test"')
+    expect((await section('p.json', json, 'scripts.a.b.c')).text).toBe('1')
+    expect((await section('p.json', json, 'list.1')).text).toBe('20')
+  })
+  test('a missing key refuses with the top-level keys', async () => {
+    const got = await section('p.json', json, 'nope')
+    expect(got.refused).toBe('no key nope — the top-level keys:')
+    expect(got.rows).toEqual(['  scripts', '  list'])
+  })
+  test('a file with no reading refuses by name', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'fli-cat-')), 'notes.txt')
+    writeFileSync(file, 'x')
+    expect((await section(file, 'x', 'y')).refused).toContain(`no outline for ${file}`)
+    rmSync(dirname(file), { recursive: true, force: true })
+  })
+})
+
+describe('prettify', () => {
+  test('valid JSON is laid out from its tokens, so a number prints as written', () => {
+    expect(formatJson('{"a":[],"b":{"c":1.0,"d":[12345678901234567890,true]},"e":{}}', { color: false }))
+      .toBe('{\n  "a": [],\n  "b": {\n    "c": 1.0,\n    "d": [\n      12345678901234567890,\n      true\n    ]\n  },\n  "e": {}\n}\n')
+  })
+  test('JSON that does not parse keeps its layout and comments', () => {
+    const src = '{\n  // why\n  "a": 1,\n}\n'
+    expect(formatJson(src, { color: false })).toBe(src)
+  })
+  test('a key and a string value color differently', () => {
+    const out = formatJson('{"k":"v"}')
+    expect(out).toContain('\x1b[36m"k"\x1b[0m')
+    expect(out).toContain('\x1b[32m"v"\x1b[0m')
+  })
+  test('code is highlighted with no box around it, and a backtick run cannot close the fence', () => {
+    const src = 'const a = 1\nconst t = `x`\nconst f = "```"\n'
+    const out = prettify(src, 'a.ts', { color: true })
+    expect(out).toContain('\x1b[35mconst')
+    expect(out).not.toContain('│')
+    expect(out).not.toContain('┌')
+    expect(out.replace(/\x1b\[[0-9;]*m/g, '')).toBe(src)
+  })
+  test('anything else prints as it is', () => {
+    expect(prettify('a\tb', 'notes.txt')).toBe('a\tb\n')
   })
 })
 
@@ -93,6 +138,17 @@ describe('a folder and the command', () => {
     expect(fli('a.md', 'Part').stdout).toBe('## Part\n\ntext\n')
   })
 
+  test('a JSON file and its key path, piped', () => {
+    writeFileSync(join(dir, 'p.json'), '{"scripts":{"test":"bun test"}}')
+    expect(fli('p.json').stdout).toBe('{"scripts":{"test":"bun test"}}\n')
+    expect(fli('p.json', 'scripts').stdout).toBe('{\n  "test": "bun test"\n}\n')
+  })
+
+  test('a binary file is named, not printed', () => {
+    writeFileSync(join(dir, 'x.bin'), Buffer.from([1, 0, 2]))
+    expect(fli('x.bin').stdout).toBe('x.bin: binary, 3 bytes — not printed\n')
+  })
+
   test('a word after a folder is a missing file', () => {
     const r = fli('.', 'Part')
     expect(r.status).toBe(1)
@@ -107,4 +163,17 @@ describe('a folder and the command', () => {
   })
 
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
+})
+
+describe('blockCommentLines', () => {
+  const lines = src => [...blockCommentLines(src)].sort((a, b) => a - b)
+  test('a JSDoc block is every line of it', () => {
+    expect(lines('/**\n * a\n */\nconst x = 1\n')).toEqual([0, 1, 2])
+  })
+  test('code before an opening or after a close keeps its line', () => {
+    expect(lines('x() /* a\n b\n c */ y()\n')).toEqual([1])
+  })
+  test('a string or a regex holding comment marks opens nothing', () => {
+    expect(lines("const a = '/*'\nconst r = /`+/g\nconst b = 2\n")).toEqual([])
+  })
 })

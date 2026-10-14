@@ -160,13 +160,24 @@
   background: color-mix(in srgb, var(--sidebar-bg, var(--surface)) var(--glass-alpha), transparent);
 }
 
-/* ── Sidebar ─────────────────────────────────────────────────────── */
+/*
+ * ── Sidebar ─────────────────────────────────────────────────────────
+ *
+ * The transition is here and not on .rail: a transition is read from the
+ * state being entered, so on .rail alone a collapse moved and the expand
+ * back to a Sidebar jumped.
+ */
 .sidebar {
   grid-area:         sidebar;
   inline-size:       var(--sidebar-width);
   padding:           var(--space-2xl) var(--space-lg);
   background:        var(--sidebar-bg, var(--surface));
   border-inline-end: var(--border-width) solid var(--rule);
+  transition:
+    inline-size       var(--motion-base),
+    padding           var(--motion-base),
+    margin-inline-end var(--motion-base),
+    box-shadow        var(--motion-base);
 }
 
 /*
@@ -181,11 +192,18 @@
  *     </ul>
  *   </nav>
  *
- * Closed it is --rail-width; under the pointer, or while the keyboard's
- * focus is in it, it opens to --sidebar-width OVER the Screen rather than
- * pushing it. The negative end margin gives back what the open width
- * takes, so the Shell's `auto` column stays --rail-width and the page does
- * not reflow on every pass of the mouse. The two must move together.
+ * A rail is --rail-width and stays it. Collapsing and expanding for good
+ * is the class itself — an app that persists the choice toggles `.rail`,
+ * and the Drawer below md shows the same nav without it.
+ *
+ * `.rail.peek` also opens under the pointer, or while the keyboard's focus
+ * is in it, to --sidebar-width OVER the Screen rather than pushing it. The
+ * negative end margin gives back what the open width takes, so the Shell's
+ * `auto` column stays --rail-width and the page does not reflow on every
+ * pass of the mouse. The two must move together. A plain rail does not
+ * peek because the control that collapses it usually sits inside it: the
+ * pointer that clicked it is still over the rail, so a peeking rail opened
+ * again on the spot and the click appeared to do nothing.
  *
  * :focus-visible, not :focus-within — a click focuses the link too, and
  * the rail stayed open after the pointer had left. :hover is gated on
@@ -201,10 +219,6 @@
  * Topbar like any Sidebar; open, it is an overlay and sits above it.
  * `position: relative` is what keeps it above the static Screen for the
  * moment it is closing, after the z-index has already gone.
- *
- * Collapsing and expanding a rail for good is the class itself — an app
- * that persists the choice toggles `.rail`, and the Drawer below md shows
- * the same nav without it.
  */
 .sidebar.rail {
   position:        relative;
@@ -218,19 +232,15 @@
    */
   overflow-x:      clip;
   scrollbar-width: none;
-  transition:
-    inline-size       var(--motion-base),
-    margin-inline-end var(--motion-base),
-    box-shadow        var(--motion-base);
 }
-.sidebar.rail:has(:focus-visible) {
+.sidebar.rail.peek:has(:focus-visible) {
   inline-size:       var(--sidebar-width);
   margin-inline-end: calc(var(--rail-width) - var(--sidebar-width));
   box-shadow:        var(--shadow-lg);
   z-index:           var(--z-sidebar);
 }
 @media (hover: hover) {
-  .sidebar.rail:hover {
+  .sidebar.rail.peek:hover {
     inline-size:       var(--sidebar-width);
     margin-inline-end: calc(var(--rail-width) - var(--sidebar-width));
     box-shadow:        var(--shadow-lg);
@@ -372,11 +382,11 @@
 }
 
 /*
- * A rail opens under the pointer or the keyboard's focus, and a touch
- * screen has neither (a tap is not :focus-visible), so at md and up it
- * shows its icons and never their names. The toggle reaches the drawer,
- * where they are written out. A `title` per link would not: a touch
- * screen draws no tooltip, and a mouse has already opened the rail.
+ * A peeking rail opens under the pointer or the keyboard's focus, and a
+ * touch screen has neither (a tap is not :focus-visible), so at md and up
+ * a rail of either kind shows its icons and never their names. The toggle
+ * reaches the drawer, where they are written out. A `title` per link would
+ * not: a touch screen draws no tooltip.
  */
 @media (hover: none) {
   .shell:has(> .sidebar.rail) .sidebar-toggle {

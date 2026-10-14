@@ -153,6 +153,12 @@ export interface JunctionClientOptions {
   // only HTTP can carry (a file, a filtered bulk write, a findFirst) is
   // refused by name: there is no origin here to send it to.
   relay?: (call: RelayedCall) => Promise<unknown>
+  // The search the socket's upgrade carries — `/ws?room=tavern` — for an app
+  // whose `channels.on('connection')` decides membership from it. It is state
+  // of the connection rather than of one open, so a reconnect after a drop
+  // asks for the same thing; `setSocketQuery` changes it. Never a credential:
+  // that rides the subprotocol list (`FJS-D486`).
+  socketQuery?: Record<string, string>
 }
 
 /**
@@ -1370,6 +1376,7 @@ export class JunctionClient extends EventEmitter {
   private _wsCallMap: Map<string, { resolve: Function; reject: Function }> = new Map()
   private _wsCallSeq: number = 0
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private _socketQuery: Record<string, string> = {}
   private _reconnectAttempts: number = 0
   private _intentionalClose: boolean = false
   private _relay: ((call: RelayedCall) => Promise<unknown>) | null = null
@@ -1407,6 +1414,7 @@ export class JunctionClient extends EventEmitter {
     this.workspaceId = opts.workspaceId ?? null
     for (const [k, v] of Object.entries(opts.callHeaders ?? {})) this.setCallHeader(k, v)
     this._build = opts.build?.trim() || null
+    this._socketQuery = { ...opts.socketQuery }
     // Every proxy method picks the frame path on `_wsReady`, and a relayed
     // client has no other path, so it is ready for its whole life.
     if (opts.relay) {
@@ -1487,6 +1495,23 @@ export class JunctionClient extends EventEmitter {
       this._openWs()
     } else if (token) {
       // No socket open yet — open one now (e.g. first login with no stored token)
+      this._openWs()
+    }
+  }
+
+  /**
+   * Change what the socket's upgrade asks for, and cycle an open socket so the
+   * server reads it — the way `setToken` cycles for a new principal. A door in
+   * an app that joins rooms at the upgrade is this call. A socket not open yet
+   * is left closed: it opens with this query when something opens it.
+   */
+  setSocketQuery(query: Record<string, string>): void {
+    if (this._relay) throw new Error('A relayed client has no socket of its own; the holder of the connection decides what its upgrade asks for')
+    const next = new URLSearchParams(query).toString()
+    if (next === new URLSearchParams(this._socketQuery).toString()) return
+    this._socketQuery = { ...query }
+    if (this._ws && this._ws.readyState < 2) {
+      this._disconnect()
       this._openWs()
     }
   }
@@ -2375,7 +2400,8 @@ export class JunctionClient extends EventEmitter {
     if (token && !WS_TOKEN_SAFE.test(token)) {
       throw new Error('This session token cannot open a socket: a WebSocket subprotocol carries only RFC 7230 token characters, and it has others')
     }
-    const ws = new WebSocket(`${proto}${host}/ws`, token ? [WS_PROTOCOL, WS_BEARER + token] : [WS_PROTOCOL])
+    const search = new URLSearchParams(this._socketQuery).toString()
+    const ws = new WebSocket(`${proto}${host}/ws${search ? `?${search}` : ''}`, token ? [WS_PROTOCOL, WS_BEARER + token] : [WS_PROTOCOL])
     this._ws = ws
 
     ws.onopen = () => {

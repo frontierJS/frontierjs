@@ -13,18 +13,26 @@
 //   GET  /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
 //   GET  /workbench/:id           runnables   `fli dev` per app and every package.json script (`core/workbench-run.ts`)
 //   GET  /workbench/:id           output      { row } — the tail of what a started row wrote
-//   GET  /workbench/:id           plan        the pin's plan — its path, the steps Go started, and the file parsed now (null until written)
+//   GET  /workbench/:id           plan        the shown plan — its path, the steps Go started with what each cost, and the file parsed now (null until written)
 //   POST /workbench               pin         { path }
 //   POST /workbench/:id           send        { prompt, chat? } — queued behind a run in the same chat, refused while another chat runs
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
-//   POST /workbench/:id           buildPlan   { goal, path } — a new chat writing the plan at path, allowed to edit that file and no other
-//   POST /workbench/:id           go          the plan's first open box, run in the shown chat; refused while any run is live
+//   POST /workbench/:id           buildPlan   { goal, path } — a new chat writing the plan at path, allowed to edit that file and no other; that plan shown
+//   POST /workbench/:id           openPlan    { path } — the plan shown: one on the pin, or a file already in the checkout, added
+//   POST /workbench/:id           closePlan   { path } — forgotten here with its steps; the file stays; refused while a run is live
+//   POST /workbench/:id           go          the shown plan's first open box, run in the shown chat; refused while any run is live
+//   POST /workbench/:id           next        that box in a new chat, handed the plan's path and the last reply; refused like go, and while a plan Q is unruled
+//   POST /workbench/:id           tick        { step } — the owner's tick on a box a Go'd step's run left open; refused while a run is live
+//   POST /workbench/:id           file        { severity, area, title, detail } — a row in the checkout's ISSUES.md through fli's `fileIssue`; severity decision is a question
+//   POST /workbench/:id           decide      { question, pick, why?, section } — a letter on a plan Q through fli's `decide`, the plan named as its file; refused while a run is live
 //   POST /workbench/:id           fork        { slug?, preview? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run;
 //                                             with preview, Open: a preview Environment and its rows (`core/preview.ts`), routed to the branch's web port
 //   POST /workbench/:id           freeze      a preview's web/ built and released by digest; the hostname serves the build
 //   POST /workbench/:id           thaw        a preview's hostname routed back to the branch's dev server
 //   POST /workbench/:id           land        a branch's work into its parent's tree, uncommitted
+//   POST /workbench/:id           commit      { message, files: [{ path, blob }] } — those files as the diff showed them, committed on a
+//                                             checkout's HEAD; refused on a branch, while a run is live, and where a file moved since
 //   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept;
 //                                             a preview is RETIRED first — off the machine, its Environment removed
 //   POST /workbench/:id           fresh       a new chat, shown — or the shown one, when it is still empty
@@ -53,7 +61,7 @@ import { db, ws }                  from '../../core/resource.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'buildPlan', 'go', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'buildPlan', 'openPlan', 'closePlan', 'go', 'next', 'tick', 'file', 'decide', 'fork', 'freeze', 'thaw', 'land', 'commit', 'archive', 'run', 'halt']
 
 export function createWorkbenchService(app: BasecampApp) {
   // Read per call: services are built inside createApp, before app.ts claims it.
@@ -164,10 +172,54 @@ export function createWorkbenchService(app: BasecampApp) {
       return r
     },
 
+    async openPlan() {
+      const p = pinned()
+      const r = wb().openPlan(p.id, body().path)
+      if ('refused' in r) throw new BadRequest(r.refused)
+      return r
+    },
+
+    async closePlan() {
+      const p = pinned()
+      const r = wb().closePlan(p.id, body().path)
+      if ('refused' in r) throw new Conflict(r.refused)
+      return r
+    },
+
     async go() {
       const p = pinned()
       const r = await wb().go(p.id)
       if ('refused' in r) throw new Conflict(r.refused)
+      return r
+    },
+
+    async next() {
+      const p = pinned()
+      const r = await wb().next(p.id)
+      if ('refused' in r) throw new Conflict(r.refused)
+      return r
+    },
+
+    async tick() {
+      const p = pinned()
+      const r = await wb().tick(p.id, body().step)
+      if ('refused' in r) throw new Conflict(r.refused)
+      return r
+    },
+
+    async file() {
+      const p = pinned()
+      const { severity, area, title, detail } = body()
+      const r = await wb().file(p.id, { severity, area, title, detail })
+      if ('refused' in r) throw new BadRequest(r.refused)
+      return r
+    },
+
+    async decide() {
+      const p = pinned()
+      const { question, pick, why, section } = body()
+      const r = await wb().decide(p.id, { question, pick, why, section })
+      if ('refused' in r) throw new BadRequest(r.refused)
       return r
     },
 
@@ -237,6 +289,13 @@ export function createWorkbenchService(app: BasecampApp) {
     async land() {
       const p = pinned()
       const r = wb().land(p.id)
+      if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
+      return r
+    },
+
+    async commit() {
+      const p = pinned()
+      const r = wb().commit(p.id, body())
       if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
       return r
     },

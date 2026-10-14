@@ -212,3 +212,44 @@ describe('a write that lands children answers @from after they land (FJS-2388)',
     expect(made.hasOrders).toBe(true)
   })
 })
+
+// ─── @from avg (FJS-2679) ────────────────────────────────────────────────────
+
+const AVERAGE = `
+model Template {
+  id       Int      @id @default(autoincrement())
+  name     String
+  average  Float?   @from(Score, avg: points)
+  scores   Score[]
+}
+model Score {
+  id         Int      @id @default(autoincrement())
+  templateId Int
+  points     Int
+  template   Template @relation(fields: [templateId], references: [id])
+}
+`
+
+describe('@from(avg:) is the mean of a column, filterable and sortable (FJS-2679)', () => {
+  async function seeded() {
+    const db: any = await createClient({ db: ':memory:', schema: AVERAGE })
+    const sys = db.asSystem()
+    for (const name of ['low', 'high', 'empty']) await sys.template.create({ data: { name } })
+    for (const [templateId, points] of [[1, 1], [1, 2], [2, 4], [2, 5]]) await sys.score.create({ data: { templateId, points } })
+    return sys
+  }
+
+  it('reads the mean, and null where there is nothing to average', async () => {
+    const sys = await seeded()
+    const rows = await sys.template.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.average)).toEqual([1.5, 4.5, null])
+  })
+
+  it('filters and sorts by it', async () => {
+    const sys = await seeded()
+    const over = await sys.template.findMany({ where: { average: { gt: 2 } } })
+    expect(over.map((r: any) => r.name)).toEqual(['high'])
+    const ordered = await sys.template.findMany({ where: { average: { not: null } }, orderBy: { average: 'desc' } })
+    expect(ordered.map((r: any) => r.name)).toEqual(['high', 'low'])
+  })
+})

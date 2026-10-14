@@ -25,7 +25,7 @@ Three trees, each read on the date above:
 - **the port** — `fjs-prototypes/ksite`: `packages/ksite` (`@kobami/ksite`, the
   engine) and `site/` (its content folder). Its `PLAN.md` § Port ledger is the
   record of each move; the rows below cite it rather than repeat it.
-- **site-kit** — `website/packages/site-kit`. It runs `website/site/` from that
+- **site-kit** — `packages/site-kit`. It runs `website/site/` from that
   site's `content/` folder (the shell, the dev entry and the build) and holds
   one block, Marquee. Nothing has moved out of `@kobami/ksite` yet, so for
   ksite parity today still means parity of the port.

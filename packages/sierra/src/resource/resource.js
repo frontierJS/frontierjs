@@ -142,7 +142,7 @@ import {buildFieldRules, buildRelations, buildGate, canAtLevel,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined,
 } from './field-rules.js'
-import { session } from './session.js'
+import { session, isRelayed } from './session.js'
 import { directiveParams } from '@frontierjs/toolbelt/directives'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { humanize } from '@frontierjs/toolbelt/inflect'
@@ -436,7 +436,7 @@ const READ_CACHE_MAX = 200
 //                     person's name. Steady state, not a race.
 //
 // This package already learned the rule once and wired half of it:
-// `_tokenChanged` calls `invalidatePrefetch()` for `FJS-041` — *a payload
+// `_identityChanged` calls `invalidatePrefetch()` for `FJS-041` — *a payload
 // prefetched as somebody else must not be served to whoever is here now* — and
 // the three siblings were never joined to it (`FJS-786`).
 //
@@ -445,7 +445,7 @@ const READ_CACHE_MAX = 200
 // on nothing else, so a second render inside one session is still a hit and
 // costs no request.
 //
-// Sierra's junction module calls this from `_tokenChanged`. It is exported
+// Sierra's junction module calls this from `_identityChanged`. It is exported
 // rather than subscribed to from here because this module holds no client:
 // `getClient()` is imported from there, and a listener registered in the other
 // direction would be a second owner of *when the identity changed*.
@@ -456,7 +456,7 @@ const _liveResources = new Set()
  * principal — the live store, the remembered revisions, the cached picker
  * lists, and the ids this resource has read.
  *
- * Called on a token change, in either direction. Not on a reconnect and not on
+ * Called on a token change or a support episode starting or ending. Not on a reconnect and not on
  * a navigation: those do not change who is asking.
  */
 export function resetResourcesForIdentityChange() {
@@ -846,8 +846,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   //
   // Another app's rows are never this device's: the queue, the list cache and
   // the local tables all belong to this page's app, and a held write would
-  // drain into it.
-  const syncMode = app ? null : (schema?.['x-sync'] ?? null)
+  // drain into it. Nor are a relayed page's: an MCP App view's storage is the
+  // HOST's sandbox origin, and nothing drains there, since the drain waits on
+  // a socket a view never opens (`IDEAS/agent-client-ui.md` 3.6).
+  const declaredSync = schema?.['x-sync'] ?? null
+  const device       = !app && !isRelayed()
+  const syncMode     = device ? declaredSync : null
 
   // `read` says the rows are HELD here and never written here (`FJS-D488`), so
   // it keeps the device read path and holds no write: a write to such a model
@@ -1288,8 +1292,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       //
       // Only a write against an EXISTING row has one — a create was made
       // against nothing — and only `field` reads it, since litestone refuses a
-      // base on every other policy by name.
-      const heldBase = holdMode === 'field' && ctx.id != null
+      // base on every other policy by name. Read off the DECLARATION rather
+      // than the device: a write that is never held still merges, so a view
+      // or another app's resource carries one too.
+      const heldBase = declaredSync === 'field' && ctx.id != null
         ? _read.get(ctx.id) ?? null
         : null
 
@@ -3014,12 +3020,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // Registered here rather than at the top because it needs `service.find`,
   // which is built above — and it is `find` rather than `load` on purpose: a
   // warm runs under a question nobody is looking at, and `load` writes the
-  // store the screen is rendering (`offline.js`).
+  // store the screen is rendering (`offline.js`). A relayed page declares
+  // nothing and says nothing: the file is right for the app's own page, and
+  // `syncMode` is null here for a model that DID declare `@@sync`, so the
+  // warning below would blame its schema.
   if (offlineQuery && app) {
     console.warn(
       `[Sierra] ${serviceName}: offlineQuery is ignored on a resource over another app.\n` +
       `  What a device holds belongs to the app this page is, and nothing is warmed here.`)
-  } else if (offlineQuery) {
+  } else if (offlineQuery && device) {
     if (!syncMode) {
       // Warned rather than thrown, which is what the other refusals in this
       // file do — a throw in a `<script module>` is a white screen. The

@@ -1155,3 +1155,61 @@ describe('apply, status and verify refuse a client by name (FJS-2426)', () => {
     expect(status(db, dir)).toEqual([])
   })
 })
+
+// FJS-2758: removing a model wrote its DROP TABLE commented out, outside the
+// approval a column delete gets, and the orphan then made every later diff dirty.
+describe('a removed model is a loss the file and autoMigrate both ask about', () => {
+  const WITH_NOTE = `model Post { id Int @id  title String  views Int @default(0) }
+model Note { id Int @id  body String }`
+  const WITHOUT   = `model Post { id Int @id  title String  views Int @default(0) }`
+  const tables    = (db: Database) =>
+    (db.query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\'`).all() as any[]).map(r => r.name).sort()
+
+  const seed = async (db: Database, dir: string) => {
+    create(db, parse(WITH_NOTE), 'initial', dir)
+    await apply(db, dir)
+    db.run(`INSERT INTO note (body) VALUES ('keep me')`)
+  }
+
+  it('create writes a real DROP TABLE behind the DESTRUCTIVE box, and apply waits for the yes', async () => {
+    const { dir, db } = freshLab()
+    await seed(db, dir)
+    const r = create(db, parse(WITHOUT), 'drop-note', dir)
+    expect(r.loss).toEqual([{ table: 'note', columns: [], renameTo: null, wholeTable: true }])
+    const text = readFileSync(r.filePath!, 'utf8')
+    expect(text).toMatch(/^DROP TABLE IF EXISTS "note";$/m)
+    expect(text).toContain('Accept data loss: no')
+
+    const a = await apply(db, dir)
+    expect(a.refused).toBe(true)
+    expect(tables(db)).toContain('note')
+
+    acceptLoss(r.filePath!)
+    const b = await apply(db, dir)
+    expect(b.error).toBeUndefined()
+    expect(tables(db)).not.toContain('note')
+  })
+
+  it('a table dropped through the file leaves nothing for the next create to report', async () => {
+    const { dir, db } = freshLab()
+    await seed(db, dir)
+    const r = create(db, parse(WITHOUT), 'drop-note', dir)
+    acceptLoss(r.filePath!)
+    await apply(db, dir)
+    expect(create(db, parse(WITHOUT), 'again', dir).created).toBe(false)
+  })
+
+  it('autoMigrate refuses the drop without acceptDataLoss and makes it with it', () => {
+    const db = new Database(':memory:')
+    autoMigrate({ $db: db }, parse(WITH_NOTE))
+    db.run(`INSERT INTO note (body) VALUES ('keep me')`)
+
+    const refused = autoMigrate({ $db: db }, parse(WITHOUT)).main
+    expect(refused.state).toBe('blocked')
+    expect(refused.dataLoss).toEqual([{ table: 'note', columns: [], renameTo: null, wholeTable: true }])
+    expect(tables(db)).toContain('note')
+
+    expect(autoMigrate({ $db: db }, parse(WITHOUT), { acceptDataLoss: true }).main.state).toBe('migrated')
+    expect(tables(db)).not.toContain('note')
+  })
+})

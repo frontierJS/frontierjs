@@ -185,7 +185,7 @@ See [access-control.md](./access-control.md).
                                  only pick what they can read and the source model's own
                                  @@gate/@@allow decide who may grow an `open` set
 @from(Model, count: true)        derived count from relation (not stored) — field must be Int
-@from(Model, sum: field)         derived sum/max/min — take a field name
+@from(Model, sum: field)         derived sum/avg/max/min — take a field name
 @from(Model, first|last: true)   the whole related ROW — field must be typed Model?
 @from(Model, exists: true)       field must be Boolean
 @from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered

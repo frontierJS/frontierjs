@@ -1,0 +1,125 @@
+/// Haven — Litestone schema
+///
+/// THE SEED. Three models: a Member is somebody who walked in, a Room is a
+/// scene they stand in, a Message is a line they said there. A MOVE is not
+/// here — it is a raw channel frame and never a row (`IDEAS/haven.md`).
+///
+/// ACCESS — every model declares @@gate, read as R.C.U.D.
+///
+///   0 STRANGER   no principal: sees nothing of Haven
+///   3 CREATOR    a signed-in Member. A member carries no `role`, so the stock
+///                grader puts every one of them here (`FJS-D197`)
+///   8 SYSTEM     asSystem(): the login that verified a signature, the seed
+///                that lays out the rooms, retention, the session a login mints
+///   9 LOCKED     nothing — a said line is never rewritten
+///
+/// A BAN IS A POLICY, not a level and not a hook (Invariant 6). `bannedAt` is a
+/// claim off the `@@auth` model, so a banned member's reads filter to nothing —
+/// an empty room — and everyone else stops seeing them and what they said. A
+/// gate would have refused with a 403 instead, which tells a spammer exactly
+/// when to make a new key.
+///
+/// `auth().bannedAt == null` is the IS NULL form and answers a boolean, so an
+/// absent claim admits. Spelled `auth().bannedAt != null` inside a `@@deny` it
+/// would fire on UNKNOWN as well and lock out every principal that does not
+/// carry the column.
+
+import "@frontierjs/litestone/references/Grant.lite"
+
+database main  { path env("DATABASE_URL", "./db/haven.db") }
+
+database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
+
+model Member {
+  id        Int       @id
+
+  /// What the bubble is signed with. Lowercase so `Sam` and `sam` are one
+  /// figure in the square rather than two.
+  nick      String    @unique @trim @lower @length(2, 16) @regex("^[a-z0-9_-]+$", "letters, digits, - and _")
+
+  /// The machine's key, written once at the first login. A member is the same
+  /// person tomorrow because the key is, so it never moves.
+  publicKey String    @unique @immutable
+
+  /// Set by a mod — today only `asSystem()`, since the mod standing is 3.2.
+  /// `@guarded` because the caller being graded must never write the column
+  /// the grade is read from.
+  bannedAt  DateTime? @guarded
+
+  createdAt DateTime  @default(now())
+
+  messages  Message[]
+  sessions  Session[]
+
+  @@auth
+
+  /// Created by the login after the signature verifies; a member edits their
+  /// own nick and nothing else.
+  @@gate("3.8.3.8")
+  @@allow('read', auth().bannedAt == null && bannedAt == null)
+  @@allow('update', id == auth().id)
+
+  @@trail(audit)
+}
+
+model Room {
+  id       Int       @id
+
+  /// The scene's name in the client — `square`, `tavern`. The art is the
+  /// client's; the row is what a channel and a history pane hang off.
+  slug     String    @unique @lower @length(2, 24) @regex("^[a-z0-9-]+$")
+  name     String    @length(1, 40)
+
+  messages Message[]
+
+  /// A room is a channel bound to this row (`api/src/rooms.ts`), so the read
+  /// policy is the join: a banned member is refused the room and evicted from
+  /// one they stand in on the next write.
+  @@gate("3.8")
+  @@allow('read', auth().bannedAt == null)
+}
+
+model Message {
+  id        Int      @id
+  roomId    Int
+  room      Room     @relation(fields: [roomId], references: [id])
+
+  /// A stamp rather than a default, so a payload naming somebody else's id is
+  /// overwritten with the caller's own.
+  memberId  Int      @createdBy
+  member    Member   @relation(fields: [memberId], references: [id])
+
+  body      String   @trim @length(1, 280)
+  createdAt DateTime @default(now())
+
+  /// The tavern's history pane and the newest-line-per-member bubble both read
+  /// a room in time order.
+  @@index([roomId, createdAt])
+
+  /// Said by a member, rewritten by nothing, removed only by retention.
+  @@gate("3.3.9.8")
+  @@allow('read', auth().bannedAt == null && member.bannedAt == null)
+  @@allow('create', auth().bannedAt == null)
+
+  @@trail(audit)
+}
+
+/// What a login mints once the signature verifies (`api/src/login.ts`), and
+/// what `verifySession` reads a token back to. A Grant: the token leaves in the
+/// login's answer and only its digest is stored. Nothing below the system
+/// reads or writes one — a member holds the token, never the row.
+model Session {
+  id        Int      @id
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@trait(Grant)
+
+  /// Required where the trait leaves it open: the key re-mints one in a
+  /// signature, so a session that never expires buys nothing and is a standing
+  /// hole for a token that leaked.
+  expiresAt DateTime
+
+  @@gate("8")
+}

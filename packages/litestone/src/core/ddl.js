@@ -807,11 +807,13 @@ export const SEARCH_COLUMNS = Object.freeze(['model', 'rid', 'title', 'body'])
 // 10, not the 3 the gate first chose: under trigram a corpus of 40 rows sharing
 // one word let a bare body edge a title carrying four other words at 3 (−2.046
 // against −2.036); 5 and 10 hold, and 10 is the margin the paper measured.
-export const SEARCH_WEIGHTS = Object.freeze({ title: 10 })
+// `model` is 0: it is indexed only so `$search({ models })` can narrow inside
+// the MATCH, and a model's name is not evidence a row is about the words.
+export const SEARCH_WEIGHTS = Object.freeze({ model: 0, title: 10 })
 
 // bm25() takes one weight PER DECLARED COLUMN, UNINDEXED ones included, so the
 // title's weight is the third argument. `bm25(_search, 3, 1)` weights `model`
-// and changes nothing, which is what the gate's first run did. Placed by name.
+// and not the title, which is what the gate's first run did. Placed by name.
 export function searchRankExpr() {
   return `bm25(${quoteIdent(SEARCH_TABLE)}, ${SEARCH_COLUMNS.map(c => (SEARCH_WEIGHTS[c] ?? 1).toFixed(1)).join(', ')})`
 }
@@ -835,10 +837,12 @@ export function searchColumnsFor(model) {
 
 // trigram whatever the models' own tokenizers: a short word is then a match
 // rather than FJS-2332's scan, and the gate ranked the same under unicode61.
+// `model` is indexed: UNINDEXED, a filter on it runs after the MATCH has walked
+// every model's postings, so one small model paid for the largest (FJS-2845).
 export function createSearchIndex() {
   return [
     `CREATE VIRTUAL TABLE IF NOT EXISTS ${quoteIdent(SEARCH_TABLE)} USING fts5(`,
-    `  model UNINDEXED, rid UNINDEXED, title, body,`,
+    `  model, rid UNINDEXED, title, body,`,
     `  tokenize='trigram'`,
     `);`,
   ].join('\n')

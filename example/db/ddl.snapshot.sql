@@ -14,7 +14,7 @@
 PRAGMA foreign_keys = ON;
 
 CREATE VIRTUAL TABLE IF NOT EXISTS "_search" USING fts5(
-  model UNINDEXED, rid UNINDEXED, title, body,
+  model, rid UNINDEXED, title, body,
   tokenize='trigram'
 );
 

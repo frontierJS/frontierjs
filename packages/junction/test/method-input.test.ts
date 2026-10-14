@@ -335,3 +335,41 @@ describe('a declared output is reported', () => {
     expect(spec.components.schemas.SearchResult).toBeDefined()
   })
 })
+
+// ─── a list's size rules ──────────────────────────────────────────────────
+
+// `@minItems`/`@maxItems` reach `$defs` as JSON Schema keywords; mapProp copied
+// the string and number bounds and dropped these, so a list rule declared in
+// the schema passed any length over the wire (FJS-2702).
+describe('a list member is graded by its size rules', () => {
+  const LISTS = `
+    type SurveyPreview { labels String[] @minItems(2) @maxItems(3) }
+    model Order { id Int @id }
+  `
+
+  async function mk() {
+    const db  = await createClient({ db: ':memory:', schema: LISTS })
+    const app = createApp({ db: db as never })
+    const seen: unknown[] = []
+    app.services.register(createService({
+      name: 'orders', model: 'Order', db: db as never,
+      methods: [{ method: 'preview', input: 'SurveyPreview' }] as never,
+      async preview(ctx: any) { seen.push(ctx.data); ctx.dispatch = false; return { ok: true } },
+    } as never))
+    await app._startForTest()
+    return { app, seen }
+  }
+
+  test('too few and too many are a 400 naming the field; the range passes', async () => {
+    const { app, seen } = await mk()
+    for (const labels of [['a'], ['a', 'b', 'c', 'd']]) {
+      let err: any
+      try { await call(app, 'preview', { labels }) } catch (e) { err = e }
+      expect(err).toBeDefined()
+      expect(err.code ?? err.status ?? err.statusCode).toBe(400)
+      expect(JSON.stringify(err.data ?? err.errors ?? err.message)).toMatch(/labels/)
+    }
+    await call(app, 'preview', { labels: ['a', 'b'] })
+    expect(seen).toHaveLength(1)
+  })
+})

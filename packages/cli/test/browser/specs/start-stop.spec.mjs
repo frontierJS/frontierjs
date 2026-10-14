@@ -77,13 +77,15 @@ export async function run(t) {
 
   /* ── a row this page cannot start is refused by name ──────────────────── */
 
-  // A snapshot generator resolves through its own package rather than off
-  // PATH, so this page does not spawn one — and the refusal hands over the
-  // line to type instead of failing quietly.
+  // A `litestone`/`junction`/`sierra` generator resolves through its own
+  // package rather than off PATH, so this page does not spawn one — and the
+  // refusal hands over the line to type instead of failing quietly. Chosen by
+  // runner: a `fli` generator IS one this page runs, so picking the first
+  // snapshot row regenerated `deps.snapshot.md` on every drive.
   const notOurs = await t.evaluate(`
-    const li = [...document.querySelectorAll('#dash-groups [data-id]')]
-      .find(el => el.dataset.id.startsWith('snapshot:'));
-    const res  = await fetch('/api/start/' + encodeURIComponent(li.dataset.id), { method: 'POST' });
+    const { rows } = await (await fetch('/api/runnables')).json();
+    const row = rows.find(r => r.kind === 'snapshot' && r.argv && !['bun', 'fli'].includes(r.argv[0]));
+    const res  = await fetch('/api/start/' + encodeURIComponent(row.id), { method: 'POST' });
     return { status: res.status, error: (await res.json()).error };
   `)
   t.is(notOurs.status, 400, 'a generator this page does not run is refused')

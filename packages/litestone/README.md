@@ -223,7 +223,7 @@ The CLI also compiles to a dependency-free executable for machines without Bun �
 bunx litestone init              # create schema.lite + litestone.config.js
 bunx litestone migrate create initial
 bunx litestone migrate apply
-bunx litestone studio            # browser UI at http://localhost:8502
+bunx litestone studio            # browser UI at http://localhost:5502
 ```
 
 ---
@@ -2392,7 +2392,7 @@ that set.
 ## Litestone Studio
 
 ```bash
-bunx litestone studio   # → http://localhost:8502
+bunx litestone studio   # → http://localhost:5502
 ```
 
 - **Browse** — paginated table viewer, inline cell editing, soft-delete toggle, DB filter pills

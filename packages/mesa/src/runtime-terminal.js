@@ -657,6 +657,10 @@ export function element(tag, attrs = {}) {
   // A handler written for the DOM reads `e.target.name`, and the engine has
   // no `name` of its own; `value` it already has on a field.
   Object.defineProperty(node, 'name', { get: () => node.__attrs.name, configurable: true })
+  // A key shortcut asks `tagName` and `type` whether the key is somebody's
+  // typing before it acts on one.
+  Object.defineProperty(node, 'tagName', { value: tag.toUpperCase(), configurable: true })
+  if (tag === 'input') Object.defineProperty(node, 'type', { get: () => String(node.__attrs.type ?? 'text').toLowerCase(), configurable: true })
   // A click-away handler asks whether the click landed inside it. Inclusive,
   // as the DOM's is, and through `up`, so a lifted dialog is still inside the
   // component that wrote it.
@@ -1281,6 +1285,26 @@ function documentOf(r) {
     if (node && reveal(doc, node)) r.requestRender()
   })
   return doc
+}
+
+const footers = new WeakMap()
+
+/**
+ * A strip under the page that does not scroll with it, for `mount(C, {
+ * parent })` — a status line a long page would otherwise carry off screen.
+ * Asked for, the page gives up the rows it takes.
+ */
+export function footerOf(r) {
+  let foot = footers.get(r)
+  if (foot && !foot.isDestroyed) return foot
+  const doc = documentOf(r)
+  doc.height = 'auto'
+  doc.flexGrow = 1
+  doc.flexShrink = 1
+  foot = new BoxRenderable(r, { width: '100%', flexShrink: 0, flexDirection: 'column' })
+  r.root.add(foot)
+  footers.set(r, foot)
+  return foot
 }
 
 /** `node` is in the page's flow: a modal dialog in the top layer is not,

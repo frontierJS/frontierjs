@@ -1,0 +1,8 @@
+<script>
+  // Mode.mesa — the shell's mode line, mounted in the footer under the page so
+  // a long page does not scroll it away. `mode` is a signal's read, as
+  // Shell.mesa's `state` is.
+  export let mode  // () => { mode: 'normal' | 'insert', field }
+</script>
+
+<p>{mode().mode === 'insert' ? '-- INSERT --  Esc stops typing' : mode().field ? '-- NORMAL --  i types' : '-- NORMAL --'}</p>

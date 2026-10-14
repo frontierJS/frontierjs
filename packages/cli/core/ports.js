@@ -3,7 +3,7 @@
  *
  * Port schema:  [ENV][CATEGORY][PROJECT][SERVICE]
  *
- *   ENV      7=test  8=dev  9=prod
+ *   ENV      7=test  8=dev  9=prod  — a PROJECT's environment
  *   CATEGORY 0=fe  1=be  2=widgetDev  3=widgetServe  4=ext  5=tooling
  *            6=siteDev  7=siteServe  8=desktopDev
  *   PROJECT  0-9  (assigned in PROJECTS below; every other app is 0)
@@ -24,13 +24,13 @@
  *   8010  →  dev / fe      / project 1 / service 0
  *   8100  →  dev / be      / project 0 / service 0
  *
- * Global tooling (not project-scoped, never dynamic) is the WHOLE of
- * 8500–8509 — dev, tooling, project 0. A tool here is one a person runs
- * beside whatever app they are working on, so it cannot take a number from
- * the app's own row and cannot be handed one at runtime: the URL is typed
- * from memory and has to be the same tomorrow. Assigned slots are in GLOBAL
- * below; the rest of the block is held free so the next one costs a line
- * rather than a collision with an app that already claimed project 0.
+ * Global tooling (not project-scoped, never dynamic) is 5500–5509: a 5 where
+ * the env digit goes, because a tool run from `~/` has no project and so no
+ * test/dev/prod to be in. A tool here is one a person runs beside whatever
+ * app they are working on, so it cannot take a number from the app's own row
+ * and cannot be handed one at runtime: the URL is typed from memory and has
+ * to be the same tomorrow. Assigned slots are in GLOBAL below; the rest of
+ * the block is held free so the next one costs a line, not a renumbering.
  */
 
 import net from 'net'
@@ -66,15 +66,21 @@ export const CAT = {
 }
 
 export const GLOBAL = {
-  gui:      8500,   // fli web GUI
-  pmap:     8501,   // fli project:map --as=serve (FJSChain)
-  studio:   8502,   // litestone db studio
-  devtools: 8503,   // junction's API console — app.configure(devtools())
-  proxy:    8504,   // fli ports:proxy — the FALLBACK when 80 cannot be bound
+  gui:         5500,   // fli web GUI
+  pmap:        5501,   // fli project:map --as=serve (FJSChain)
+  studio:      5502,   // litestone db studio
+  devtools:    5503,   // junction's API console — app.configure(devtools())
+  proxy:       5504,   // fli ports:proxy — the FALLBACK when 80 cannot be bound
+  haven:       5505,   // packages/haven's API — where `fli haven` in a checkout knocks
+  havenWeb:    5506,   // packages/haven's browser Haven, proxying to the API above
+  havenScenes: 5507,   // packages/haven's scene editor — `fli haven:scenes`
 }
 
 /** The whole reserved block, assigned slots and free ones alike. */
-export const GLOBAL_RANGE = { first: 8500, last: 8509 }
+export const GLOBAL_RANGE = { first: 5500, last: 5509 }
+
+/** The digit global tooling has where a project port has its env. */
+export const GLOBAL_DIGIT = 5
 
 // ─── Static project ids ───────────────────────────────────────────────────────
 //
@@ -122,17 +128,6 @@ export function port(category, { env, projectId, serviceId = 0 }) {
   if (CAT[category] === undefined) throw new Error(`Unknown category "${category}"`)
   if (projectId < 0 || projectId > 9) throw new Error(`projectId must be 0–9`)
   if (serviceId < 0 || serviceId > 9) throw new Error(`serviceId must be 0–9`)
-  // Guard: the whole of dev/tooling/project-0 is the global block. Reserving
-  // only the slots currently assigned would hand the next free one to an app,
-  // and the collision surfaces as a tool that has quietly moved — the failure
-  // this scheme exists to stop. Test (75xx) and prod (95xx) tooling are not
-  // reserved: nobody types those from memory.
-  if (env === 'dev' && projectId === 0 && CAT[category] === CAT.tooling) {
-    const taken = Object.entries(GLOBAL).map(([n, p]) => `${p} ${n}`).join(', ')
-    throw new Error(
-      `Ports ${GLOBAL_RANGE.first}–${GLOBAL_RANGE.last} are reserved for global tooling (${taken})`
-    )
-  }
   return (ENV[env] * 1000) + (CAT[category] * 100) + (projectId * 10) + serviceId
 }
 
@@ -144,7 +139,8 @@ export function decode(p) {
   const catDigit     = Math.floor((p % 1000) / 100)
   const projectDigit = Math.floor((p % 100) / 10)
   const serviceDigit = p % 10
-  const env      = Object.keys(ENV).find(k => ENV[k] === envDigit) ?? `unknown(${envDigit})`
+  const env      = envDigit === GLOBAL_DIGIT ? 'global'
+    : Object.keys(ENV).find(k => ENV[k] === envDigit) ?? `unknown(${envDigit})`
   const category = Object.keys(CAT).find(k => CAT[k] === catDigit) ?? `unknown(${catDigit})`
   return { env, category, projectId: projectDigit, serviceId: serviceDigit, branch }
 }
@@ -154,9 +150,30 @@ export function isGlobalPort(p) {
   return Object.values(GLOBAL).includes(p)
 }
 
-/** Inside the reserved block, assigned or not — what the guard answers. */
+/** Inside the reserved block, assigned or not. */
 export function isReservedToolingPort(p) {
   return p >= GLOBAL_RANGE.first && p <= GLOBAL_RANGE.last
+}
+
+/**
+ * Where `fli gui` listens. Run in a project it is THAT project's GUI, so it
+ * takes the project's tooling row in the env asked for — 8500 dev, 7500
+ * test, 9500 prod for project 0. Run where there is no project there is no
+ * env either, and it is the global 5500.
+ *
+ * A scaffolded app is project 0 beside every other scaffolded app, so its GUI
+ * takes the app's slot as its service digit, as its web port does — without
+ * it two apps' GUIs both want 8500 while their web ports are 8000 and 8001.
+ * A branch moves it like every other port of the checkout.
+ */
+export function guiPort(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
+  if (!appRoot) return GLOBAL.gui
+  let manifest = {}
+  try { manifest = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')) } catch {}
+  const projectId = projectIdFor(manifest.name, basename(appRoot))
+  const slot      = projectId === PROJECTS.scaffold ? slotFor(appRoot, { env, lockFile }) ?? 0 : 0
+  const branch    = branchFor(appRoot, { lockFile }) ?? 0
+  return port('tooling', { env, projectId, serviceId: slot }) + branch * BRANCH_STEP
 }
 
 // ─── Which ports does THIS app use ────────────────────────────────────────────
@@ -453,12 +470,11 @@ export function knownPorts() {
   const out = []
   for (let p = GLOBAL_RANGE.first; p <= GLOBAL_RANGE.last; p++) {
     const name = Object.keys(GLOBAL).find(k => GLOBAL[k] === p)
-    out.push({ port: p, env: 'dev', category: 'tooling', project: name ? `fli ${name}` : null, reserved: true })
+    out.push({ port: p, env: 'global', category: 'tooling', project: name ? `fli ${name}` : null, reserved: true })
   }
   for (const [project, projectId] of Object.entries(PROJECTS)) {
     for (const env of Object.keys(ENV)) {
       for (const category of Object.keys(CAT)) {
-        if (env === 'dev' && projectId === 0 && category === 'tooling') continue   // the reserved block, already above
         out.push({ port: port(category, { env, projectId }), env, category, project, reserved: false })
       }
     }
@@ -546,7 +562,7 @@ export function parseDockerPorts(out) {
 /**
  * The half `getSessionStatus()` cannot see: ports that are HELD but were never
  * claimed through the broker. Every tool in the reserved block is that shape —
- * studio binds 8502 as a literal — and so is any app somebody started by hand,
+ * studio binds 5502 as a literal — and so is any app somebody started by hand,
  * which is most of them. Reporting only the lock file answers "nothing here"
  * while a port is busy, which is the one answer that sends somebody looking in
  * the wrong place.

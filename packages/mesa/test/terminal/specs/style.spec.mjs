@@ -4,7 +4,7 @@
  * paints no CSS, so both are inert, as a static `style` or `class` and the
  * scoped rules are: the two frames must be the same characters, before and
  * after a click moves the live ones. The one class that paints is a surface's,
- * which blanks its box (`town.spec.mjs`).
+ * which blanks its box (`haven.spec.mjs`).
  *
  * A green run pins what the slice decided rather than what it built — a
  * `style:display` of `none` still shows its content here, where a browser

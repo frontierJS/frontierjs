@@ -241,7 +241,7 @@ Run Litestone Studio directly on the host instead:
 
 ```bash
 ssh myserver
-cd /app && litestone studio --port=8502
+cd /app && litestone studio --port=5502
 ```
 
 ---

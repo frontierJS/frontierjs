@@ -428,3 +428,97 @@ describe('the app says what may leave', () => {
     } finally { await app.stop() }
   })
 })
+
+// ─── a filtered list is a filtered extract ───────────────────────────────
+//
+// FJS-2676. The screen's URL query is the list's filter, and CSV must be the
+// rows on screen — so the export route reads the same keys a service's find
+// does, graded by the same owner.
+
+describe('the extract takes the list\'s filter', () => {
+
+  test('a column in the query narrows the file, and the paired call without it does not', async () => {
+    const { app, port } = await serve()
+    try {
+      const all  = await lines(await get(port, '/exports/Order', 'tok-staff'))
+      expect(all.length).toBe(3)
+      const some = await lines(await get(port, '/exports/Order?ownerId=u-shop', 'tok-staff'))
+      expect(some.map(l => JSON.parse(l).ref).sort()).toEqual(['A-1', 'A-2'])
+    } finally { await app.stop() }
+  })
+
+  test('an operator filter reads as it does on a list', async () => {
+    const { app, port } = await serve()
+    try {
+      const some = await lines(await get(port, '/exports/Order?total[gte]=200', 'tok-staff'))
+      expect(some.map(l => JSON.parse(l).ref).sort()).toEqual(['A-2', 'B-1'])
+    } finally { await app.stop() }
+  })
+
+  test('it narrows within the caller\'s standing and never past it', async () => {
+    const { app, port } = await serve()
+    try {
+      const res = await get(port, '/exports/Order?ownerId=u-other', 'tok-shop')
+      expect((await lines(res)).length).toBe(0)
+    } finally { await app.stop() }
+  })
+
+  test('csv carries it too, with the column header intact', async () => {
+    const { app, port } = await serve()
+    try {
+      const rows = await lines(await get(port, '/exports/Order?format=csv&ownerId=u-other', 'tok-staff'))
+      expect(rows.length).toBe(2)
+      expect(rows[1]).toContain('B-1')
+    } finally { await app.stop() }
+  })
+
+  // A key that filters nothing would hand over the whole dataset while the
+  // caller believed they had a subset.
+  test('a key that is no column is a 400 naming it, not an ignored filter', async () => {
+    const { app, port } = await serve()
+    try {
+      const res = await get(port, '/exports/Order?ownrId=u-shop', 'tok-staff')
+      expect(res.status).toBe(400)
+      expect(await res.text()).toContain('ownrId')
+      expect((await get(port, '/exports/Order?system=true', 'tok-staff')).status).toBe(400)
+    } finally { await app.stop() }
+  })
+
+  test('a $ key is refused rather than ignored', async () => {
+    const { app, port } = await serve()
+    try {
+      const res = await get(port, '/exports/Order?$limit=1', 'tok-staff')
+      expect(res.status).toBe(400)
+      expect(await res.text()).toContain('$limit')
+    } finally { await app.stop() }
+  })
+
+  test('a filter on a protected column is refused, not answered', async () => {
+    const { app, port } = await serve()
+    try {
+      const res = await get(port, '/exports/Order?cardTok=tok_live_AAA', 'tok-staff')
+      expect(res.status).toBeGreaterThanOrEqual(400)
+      expect(res.status).toBeLessThan(500)
+    } finally { await app.stop() }
+  })
+
+  test('a reservedQuery key is the app\'s, reaches the resolver, and filters nothing', async () => {
+    const db = await createClient({ databases: ':memory:', schema: SCHEMA, encryptionKey: 'a'.repeat(64) }) as any
+    await db.asSystem().account.create({ data: SHOPPER })
+    await db.asSystem().report.create({ data: { title: 'north', deptId: 'd-north' } })
+    await db.asSystem().report.create({ data: { title: 'south', deptId: 'd-south' } })
+    const app = createApp({
+      db,
+      principal: async (ctx: any) => (ctx.reserved?.dept ? { deptId: String(ctx.reserved.dept) } : {}),
+      config: { port: 0, services: { dir: '/nonexistent' } },
+      logLevel: 'silent',
+    })
+    app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })
+    app.configure(exportPlugin({ reservedQuery: ['dept'] }))
+    await app.start()
+    try {
+      const res = await get(app.http.port as number, '/exports/Report?dept=d-south', 'tok-shop')
+      expect((await lines(res)).map(l => JSON.parse(l).title)).toEqual(['south'])
+    } finally { await app.stop() }
+  })
+})

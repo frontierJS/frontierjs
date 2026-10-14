@@ -191,6 +191,17 @@ describe('on the resource', () => {
     expect(r.can('delete', 0)).toBe(true)
   })
 
+  test('a model only the application writes refuses an edit at no level', () => {
+    // What a relayed MCP view asks: it has no level, and a form over a
+    // `@@gate("1.8.8.8")` model is one whose every save is refused.
+    registerSchemas({
+      CreditNote: { type: 'object', title: 'CreditNote', properties: {}, 'x-gate': { read: 1, create: 8, update: 8, delete: 8 } },
+    }, ['CreditNote'])
+    const notes = createResource('credit-notes', { model: 'CreditNote' })
+    expect(notes.can('update')).toBe(false)
+    expect(notes.can('read')).toBe(true)
+  })
+
   test('a relation target can be turned into its own resource', () => {
     // The point of normalizing `model`: it round-trips.
     const users = createResource('users')

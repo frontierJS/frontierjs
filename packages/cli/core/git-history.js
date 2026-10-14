@@ -37,21 +37,21 @@ export const parseLog = (text) => {
 }
 
 // One bucket per day from `from` to `to` inclusive, or per week (Monday start)
-// when `by` is 'week'. Every bucket exists, zero or not.
-export const buildSeries = (days, { from, to, by = 'day' }) => {
+// when `by` is 'week'. Every bucket exists, zero or not. `zero` names the fields
+// a bucket sums, so a second source charts on the same columns.
+const COMMIT_ZERO = { commits: 0, added: 0, deleted: 0 }
+export const buildSeries = (days, { from, to, by = 'day', zero = COMMIT_ZERO }) => {
   let start = toTime(from)
   const end = toTime(to)
   if (by === 'week') start -= ((new Date(start).getUTCDay() + 6) % 7) * DAY
   const step = by === 'week' ? 7 * DAY : DAY
   const buckets = []
-  for (let t = start; t <= end; t += step) buckets.push({ date: toYmd(t), commits: 0, added: 0, deleted: 0 })
+  for (let t = start; t <= end; t += step) buckets.push({ date: toYmd(t), ...zero })
   for (const [ymd, d] of days) {
     const t = toTime(ymd)
     if (t < start || t > end) continue
     const b = buckets[Math.floor((t - start) / step)]
-    b.commits += d.commits
-    b.added += d.added
-    b.deleted += d.deleted
+    for (const k in zero) b[k] += d[k] ?? 0
   }
   return { by, buckets }
 }
@@ -68,12 +68,12 @@ const niceMax = (max, rows) => {
 
 // The chart as plain rows — `bar` is applied to each column's glyphs so the
 // caller decides color. `width` is the whole line, axis included.
-export const renderChart = (series, { height = 12, width = 100, value = (b) => b.commits, bar = (s) => s, dim = (s) => s } = {}) => {
+export const renderChart = (series, { height = 12, width = 100, value = (b) => b.commits, bar = (s) => s, dim = (s) => s, label = (v) => String(Math.round(v)) } = {}) => {
   const { buckets, by } = series
   const values = buckets.map(value)
   const top = niceMax(Math.max(0, ...values), height)
-  const label = (v) => String(Math.round(v))
-  const axisW = Math.max(label(top).length, 1)
+  // Measured over every tick, because a compact label is not widest at the top: 4.5M over 6M.
+  const axisW = Math.max(1, ...Array.from({ length: height }, (_, i) => label((top * (height - i)) / height).length))
 
   // Column width: as wide as the screen allows, up to three cells. The last
   // cell of a wide column is a gap so neighbors stay apart.

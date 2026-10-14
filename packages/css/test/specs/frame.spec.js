@@ -173,17 +173,17 @@ test('controls: one token moves both, so they cannot drift apart again', functio
 
 /*
  * A rail in a sidebar-first Shell, transitions off so a read straight after
- * focus() sees the end state rather than the first frame of the move. Opened
- * by focus, because :hover cannot be driven from a page; the two states share
- * every declaration. :focus-visible matches a programmatic focus() here — see
- * focus.spec.js.
+ * focus() sees the end state rather than the first frame of the move. A
+ * peeking one is opened by focus, because :hover cannot be driven from a
+ * page; the two states share every declaration. :focus-visible matches a
+ * programmatic focus() here — see focus.spec.js.
  */
-function rail() {
+function rail(extra) {
   var shell = el(
     '<div class="shell sidebar-first" style="inline-size:1000px">' +
       '<style>.t-rail, .t-rail * { transition: none !important; }</style>' +
       '<header class="topbar">Leads</header>' +
-      '<nav class="sidebar rail t-rail" aria-label="Main">' +
+      '<nav class="sidebar rail t-rail' + (extra ? ' ' + extra : '') + '" aria-label="Main">' +
         '<div class="navlist-label">Workspace</div>' +
         '<ul class="navlist">' +
           '<li><a class="navlink" href="#a"><span class="icon" aria-hidden="true"></span>' +
@@ -265,8 +265,48 @@ test('frame: closed, the labels are transparent and still there', function () {
   cleanup();
 });
 
+test('frame: a rail without .peek stays shut with the keyboard in it', function () {
+  /*
+   * The control that collapses a rail usually sits inside it, so a rail
+   * that opened under the focus or pointer that just collapsed it would
+   * look as if the click did nothing.
+   */
+  var r    = rail();
+  var want = railPx(r.shell, '--rail-width');
+
+  r.link.focus();
+
+  assert.ok(Math.abs(r.rail.getBoundingClientRect().width - want) < 1,
+    'a plain rail should stay --rail-width (' + want + 'px) with focus in it, got ' +
+    r.rail.getBoundingClientRect().width + 'px');
+  assert.equal(style(r.text, 'opacity'), '0', 'and its labels stay faded');
+
+  r.link.blur();
+  cleanup();
+});
+
+test('frame: the Sidebar carries the width transition, so a rail moves both ways', function () {
+  /*
+   * A transition is read from the state being entered. Declared on .rail
+   * alone, collapsing moved and expanding back to a Sidebar jumped. The
+   * harness turns transitions off, so this reads the rule.
+   */
+  var found = allRules().filter(function (r) {
+    return r.selectorText === '.sidebar' && /transition/.test(r.cssText);
+  });
+  assert.equal(found.length, 1, 'exactly one .sidebar rule declares a transition');
+  ['inline-size', 'padding', 'margin-inline-end'].forEach(function (prop) {
+    assert.ok(new RegExp('\\b' + prop + '\\s+var\\(--motion-').test(found[0].cssText),
+      '.sidebar transitions ' + prop + ' on a motion token: ' + found[0].cssText);
+  });
+  assert.ok(!allRules().some(function (r) {
+    return /\.rail/.test(r.selectorText || '') && /(^|[;{\s])transition\s*:/.test(r.cssText) &&
+      !/navlink-text|navlist-label/.test(r.selectorText);
+  }), 'no .rail rule redeclares the transition, which would make one direction differ');
+});
+
 test('frame: an open rail is --sidebar-width over the page, and the page does not move', function () {
-  var r      = rail();
+  var r      = rail('peek');
   var before = r.screen.getBoundingClientRect().left;
   var iconX  = r.icon.getBoundingClientRect().left;
 

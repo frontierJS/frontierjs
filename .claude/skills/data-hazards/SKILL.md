@@ -78,6 +78,7 @@ Detail: `references/migrations-and-release.md`
 - **A schema change is a deploy question before it is a migration**
 - **The migration differ compares an ENUMERATED list of dimensions, so *in sync* means *in sync on every dimension it reads*.**
 - **A rename is a statement, never an inference** (`FJS-D603`)
+- **A table in the database and not in the schema is a loss, not a leftover** (`FJS-2758`)
 - **A new column with an EXPRESSION default costs a table rebuild, and one with no default at all is refused.**
 
 ## Columns and clocks

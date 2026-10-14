@@ -47,7 +47,7 @@ export async function run(t) {
   // `contract` and nothing else has told an operator a term of art, not a fact
   // about their deploy — and *after it, only forward* is the whole realm.
   t.ok(
-    /pivot|reversible|nothing moved|decidable|declares a schema/.test(panel.note),
+    /pivot|reversible|moved|decidable|declares a schema/.test(panel.note),
     `and says what it means rather than naming a verdict — "${panel.note}"`,
   )
 

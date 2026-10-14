@@ -1,0 +1,143 @@
+<script>
+  // Scene.mesa — one room drawn (`FJS-D997`): a stage its children claim
+  // cells on — `<Piece>`, `<Row>`, `<Door>`, `<Pacer>`, through
+  // `$context.scene` — painted in the scene's palette and kept moving; and,
+  // when a `WalkIn` has set `$context.room`, the room on it: a figure for
+  // every member standing here, a bubble over each with the newest line they
+  // said, and the line this member is typing. With no room it is a picture,
+  // which is what `scenes.test.js` renders against `<name>.frame.txt`.
+  //
+  // `#paint` and `#cell` are the package's subpath imports: the browser
+  // condition picks the `.browser.js` twin, every other runtime the
+  // terminal's (`FJS-D985`), so this file is the same on both targets. The
+  // figures are `at()` boxes in the same box the stage is painted in, so a
+  // figure's cell is the stage's cell.
+  //
+  // Arrows walk while the input line is empty and edit it while it is not, so
+  // a line being typed is never walked away from by a Left meant for it. In
+  // the terminal shell's NORMAL mode h j k l arrive as the arrows, and a step
+  // is prevented so the shell does not also move focus for a j or a k. A step
+  // onto a door is a navigation, and the next route's walk-in cycles the
+  // socket into that room.
+  import { presence }    from '@frontierjs/sierra/presence'
+  import { useStore }    from '@frontierjs/sierra/resource'
+  import { goto }        from '@frontierjs/sierra/router'
+  import { members }     from '@/resources/Member.mesa'
+  import { messages }    from '@/resources/Message.mesa'
+  import { createStage } from '@/stage.js'
+  import { at }          from '#cell'
+  import { paint }       from '#paint'
+
+  export let slug
+  export let palette
+  export let spawn
+
+  var stage = createStage({ slug, palette, spawn })
+  $context.scene = stage
+
+  // A snapshot: the room is set before this mounts and never changes under
+  // it. Read reactively it would make `here` derived, and a derived presence
+  // is made again on every step — a second subscribe and an empty roster.
+  var room = $context.room
+
+  const STEP = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+
+  let x = spawn.x
+  let y = spawn.y
+  let draft = ''
+  let note  = ''
+  let nicks = {}
+
+  // Seeded from the spawn and never from `x` and `y`, and a `var`: a
+  // top-level const that reads a prop or a `let` is derived — made when it is
+  // first read, inside whatever effect reads it, and again on every step.
+  var here = room ? presence(`room:${room.id}`, { meta: { ...spawn } }) : null
+
+  const { get: lines, unsubscribe } = useStore(messages.store)
+  $.onDestroy(unsubscribe)
+  if (room) {
+    messages.load({ roomId: room.id }, { orderBy: '-createdAt', limit: 50 })
+      .catch((e) => { note = e.message })
+  }
+
+  // A figure carries a member id; the nick is read once per member.
+  const asked = new Set()
+  function askNicks(roster) {
+    for (const m of roster) {
+      if (asked.has(m.userId)) continue
+      asked.add(m.userId)
+      members.service.get(m.userId)
+        .then((row) => { nicks = { ...nicks, [m.userId]: row.nick } })
+        .catch(() => {})
+    }
+  }
+  $: { if (here) askNicks(here.get().members) }
+
+  const glyph = (m, names) => (names[m.userId] ?? '?')[0].toUpperCase()
+  const cell  = (m) => ({ x: m.meta?.x ?? spawn.x, y: m.meta?.y ?? spawn.y })
+
+  /** The newest line of each member standing here, over where they stand. */
+  function bubbles(h, said, sx, sy) {
+    const me = h.self?.userId
+    const where = new Map(h.others.map((m) => [String(m.userId), cell(m)]))
+    if (me != null) where.set(String(me), { x: sx, y: sy })
+    const out = []
+    const seen = new Set()
+    for (const line of said ?? []) {
+      const who = String(line.memberId)
+      if (seen.has(who) || !where.has(who)) continue
+      seen.add(who)
+      const { x: bx, y: by } = where.get(who)
+      out.push({ key: `${who}:${line.id}`, x: bx, y: by - 1, text: line.body })
+    }
+    return out
+  }
+
+  // The shell focuses a route's first control when it mounts it, and this
+  // scene mounts later, once the room's row is read.
+  const focus = (el) => el.focus()
+
+  const keydown = (e) => {
+    const step = STEP[e.key]
+    if (!step || !room || draft) return
+    e.preventDefault()
+    const nx = x + step[0]
+    const ny = y + step[1]
+    const door = stage.doorAt(nx, ny)
+    if (door) { goto(door.to); return }
+    if (!stage.walkable(nx, ny)) return
+    x = nx
+    y = ny
+    here.updateMeta({ x, y })
+  }
+
+  async function say() {
+    const body = draft.trim()
+    if (!body) return
+    draft = ''
+    note  = ''
+    try { await messages.save({ roomId: room.id, body }) }
+    catch (e) { note = e.message }
+  }
+</script>
+
+<mesa:window on:keydown={keydown} />
+<div {@attach paint(stage)}>
+  <slot />
+  {#if here}
+    {#each here.get().others as m (m.connectionId)}
+      <p {@attach at(cell(m).x, cell(m).y)}>{glyph(m, nicks)}</p>
+    {/each}
+    <p {@attach at(x, y, 11)}>@</p>
+    {#each bubbles(here.get(), lines(), x, y) as b (b.key)}
+      <p class="surface" {@attach at(b.x, b.y, 12)}>({b.text})</p>
+    {/each}
+  {/if}
+</div>
+{#if here}
+  <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
+  {#if note}<p>{note}</p>{/if}
+  <form on:submit|preventDefault={say}>
+    <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says" />
+  </form>
+{/if}

@@ -1,0 +1,7 @@
+<script>
+  // The tavern — through the left house's door in the square.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Tavern from '@/scenes/Tavern.mesa'
+</script>
+
+<WalkIn slug="tavern"><Tavern /></WalkIn>

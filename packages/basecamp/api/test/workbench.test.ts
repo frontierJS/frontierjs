@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorkbench, pinId } from '../src/core/workbench.ts'
+import { createWorkbench, pinId, shownPlan } from '../src/core/workbench.ts'
 import { parseUnifiedDiff, readDiff } from '../src/core/workbench-diff.ts'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
@@ -404,7 +404,7 @@ describe('the plan', () => {
     const built = await wb.buildPlan(id, { goal: 'ship the widget', path: 'IDEAS/widget.md' })
     if (!('chat' in built)) throw new Error(built.refused)
     expect(built.chat).not.toBe(r.pin.chat)
-    expect(wb.getPin(id)).toMatchObject({ chat: built.chat, plan: { path: 'IDEAS/widget.md', steps: {} } })
+    expect(wb.getPin(id)).toMatchObject({ chat: built.chat, plan: 'IDEAS/widget.md', plans: [{ path: 'IDEAS/widget.md', steps: {} }] })
     await until(async () => seen().length === 2 && !wb.getPin(id)!.pid)
 
     const run = seen()[1]
@@ -416,7 +416,7 @@ describe('the plan', () => {
     expect(run.input).toContain('`IDEAS/widget.md`')
 
     // The session has not written it: the plan is the path, parsed as nothing.
-    expect(await wb.readPlan(id)).toEqual({ path: 'IDEAS/widget.md', steps: {}, parsed: null })
+    expect(await wb.readPlan(id)).toEqual({ path: 'IDEAS/widget.md', steps: {}, sections: [], parsed: null })
 
     mkdirSync(join(dir, 'IDEAS'), { recursive: true })
     writeFileSync(join(dir, 'IDEAS', 'widget.md'), [
@@ -453,7 +453,7 @@ describe('the plan', () => {
     writeFileSync(join(dir, 'PLAN.md'), PLAN.join('\n').replace('- [ ] 0.2', '- [x] 0.2'))
     expect(await wb.go(id)).toEqual({ refused: expect.stringContaining('every step of PLAN.md is done') })
     expect(seen()).toHaveLength(1)
-    expect(wb.getPin(id)!.plan!.steps).toEqual({})
+    expect(shownPlan(wb.getPin(id)!)!.steps).toEqual({})
   })
 
   test('Go: the first open box\'s step prompt in the shown chat, recorded with the registers\' high-water marks', async () => {
@@ -473,7 +473,7 @@ describe('the plan', () => {
     const built = await wb.buildPlan(id, { goal: 'ship the widget', path: 'PLAN.md' })
     if (!('chat' in built)) throw new Error(built.refused)
     await until(async () => existsSync(bin + '.seen') && !wb.getPin(id)!.pid)
-    writeFileSync(join(dir, 'PLAN.md'), PLAN.join('\n'))
+    writeFileSync(join(dir, 'PLAN.md'), [...PLAN.slice(0, -1), '- [ ] 0.3 Tell people', ''].join('\n'))
 
     const before = Date.now()
     expect(await wb.go(id)).toEqual({ step: '0.2', chat: built.chat })
@@ -486,10 +486,251 @@ describe('the plan', () => {
     expect(run.input).toContain('Phase 0 — Groundwork, done when: it renders.')
     expect(run.input).toContain('Commit nothing.')
 
-    const step = wb.getPin(id)!.plan!.steps['0.2']
+    const step = shownPlan(wb.getPin(id)!)!.steps['0.2']
     expect(step).toEqual({ chat: built.chat, startedAt: expect.any(String), registerHigh: { issue: 41, decision: 7 } })
     expect(Date.parse(step.startedAt)).toBeGreaterThanOrEqual(before - 1000)
-    expect((await wb.readPlan(id))!.steps).toEqual({ '0.2': step })
+    expect((await wb.readPlan(id))!.steps).toEqual({ '0.2': { ...step, cost: 0.12, turns: 3, filed: [] } })
+
+    // A row numbered above a step's marks is the step's, up to the next step's marks.
+    const file = (row: string) => writeFileSync(join(dir, 'ISSUES.md'),
+      readFileSync(join(dir, 'ISSUES.md'), 'utf8').replace('| --- | --- | --- | --- | --- | --- |', `| --- | --- | --- | --- | --- | --- |\n${row}`))
+    file('| <a id="go-042"></a>GO-042 | api | **Found in 0.2** | open | 2026-10-13 | — |')
+    expect((await wb.readPlan(id))!.steps['0.2'].filed).toEqual([
+      { id: 'GO-042', kind: 'issue', title: 'Found in 0.2', severity: 'S3', status: 'open', file: 'ISSUES.md', line: 7 },
+    ])
+    expect(await wb.tick(id, '0.2')).toEqual({ step: '0.2' })
+    expect(await wb.go(id)).toMatchObject({ step: '0.3' })
+    await until(async () => !wb.getPin(id)!.pid)
+    file('| <a id="go-043"></a>GO-043 | api | **Found in 0.3** | open | 2026-10-13 | — |')
+    const steps = (await wb.readPlan(id))!.steps
+    expect(steps['0.2'].filed.map(r => r.id)).toEqual(['GO-042'])
+    expect(steps['0.3'].filed.map(r => r.id)).toEqual(['GO-043'])
+  })
+
+  test('File: an issue and a question through fli\'s fileIssue, each the step\'s that is running', async () => {
+    const { bin } = fakeClaude({ sleep: 300 })
+    const wb = createWorkbench({ dir: join(tmp, 'wb-file'), bin })
+    const dir = repo('file')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    const row = { severity: 'S3', area: 'web', title: 'The tab', detail: 'It wraps.' }
+    expect(await wb.file(id, row)).toEqual({ refused: expect.stringContaining('registers.prefix') })
+
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'file', registers: { prefix: 'FI' } }))
+    writeFileSync(join(dir, 'ISSUES.md'), [
+      '# Issues', '', '## Needs a decision', '',
+      '| Id | Area | Question | Detail |', '| --- | --- | --- | --- |', '',
+      '## S3 — medium', '',
+      '| Id | Area | Title | Status | Verified | Detail |', '| --- | --- | --- | --- | --- | --- |',
+      '| <a id="fi-001"></a>FI-001 | api | **Before** | open | 2026-10-01 | — |', '',
+    ].join('\n'))
+    await wb.buildPlan(id, { goal: 'x', path: 'PLAN.md' })
+    await until(async () => !wb.getPin(id)!.pid)
+    writeFileSync(join(dir, 'PLAN.md'), PLAN.join('\n'))
+    expect(await wb.go(id)).toMatchObject({ step: '0.2' })
+
+    // Filed while the step runs: by number, the step's.
+    expect(await wb.file(id, row)).toEqual({ id: 'FI-002', file: 'ISSUES.md', line: 12 })
+    expect(await wb.file(id, { ...row, severity: 'decision', title: 'Which tab?' })).toEqual({ id: 'FI-D1', file: 'ISSUES.md', line: 7 })
+    expect(await wb.file(id, { ...row, severity: 'S9' })).toEqual({ refused: expect.stringContaining('S1, S2, S3, S4, decision') })
+    expect(await wb.file(id, { ...row, area: ' ' })).toEqual({ refused: expect.stringContaining('area is required') })
+    expect(readFileSync(join(dir, 'ISSUES.md'), 'utf8')).toContain('| <a id="fi-002"></a>FI-002 | web | **The tab** | open |')
+    await until(async () => !wb.getPin(id)!.pid)
+    expect((await wb.readPlan(id))!.steps['0.2'].filed.map(f => [f.id, f.kind])).toEqual([['FI-D1', 'question'], ['FI-002', 'issue']])
+  })
+
+  test('a step costs the runs in its chat from its Go to the next Go there, and nothing once the chat is closed', async () => {
+    const { bin } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-step-cost'), bin })
+    const dir = repo('step-cost')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    const idle = () => until(async () => !wb.getPin(id)!.pid)
+    // The Build plan run is in the same chat and before the Go: not the step's.
+    await wb.buildPlan(id, { goal: 'x', path: 'PLAN.md' })
+    await idle()
+    writeFileSync(join(dir, 'PLAN.md'), [...PLAN.slice(0, -1), '- [ ] 0.3 Tell people', ''].join('\n'))
+
+    expect(await wb.go(id)).toMatchObject({ step: '0.2' })
+    expect((await wb.readPlan(id))!.steps['0.2']).toMatchObject({ cost: null, turns: null })
+    await idle()
+    // The owner's answer in that chat is the step's too.
+    await wb.send(id, 'and the docs')
+    await idle()
+    expect((await wb.readPlan(id))!.steps['0.2']).toMatchObject({ cost: 0.24, turns: 6 })
+
+    expect(await wb.tick(id, '0.2')).toEqual({ step: '0.2' })
+    expect(await wb.go(id)).toMatchObject({ step: '0.3' })
+    await idle()
+    const steps = (await wb.readPlan(id))!.steps
+    expect(steps['0.2']).toMatchObject({ cost: 0.24, turns: 6 })
+    expect(steps['0.3']).toMatchObject({ cost: 0.12, turns: 3 })
+
+    const chat = wb.getPin(id)!.chat
+    await wb.fresh(id)
+    expect(await wb.close(id, chat)).toMatchObject({ chats: [expect.anything()] })
+    expect((await wb.readPlan(id))!.steps['0.2']).toMatchObject({ cost: null, turns: null })
+  })
+
+  test('Next: the next box in a new chat, handed the plan\'s path and the last reply, and refused while a question is open until a letter rules it', async () => {
+    const { bin, seen } = fakeClaude({ sleep: 200 })
+    const wb = createWorkbench({ dir: join(tmp, 'wb-next'), bin })
+    const dir = repo('next')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    const idle = () => until(async () => !wb.getPin(id)!.pid)
+    expect(await wb.next(id)).toEqual({ refused: expect.stringContaining('has no plan') })
+    const built = await wb.buildPlan(id, { goal: 'x', path: 'PLAN.md' })
+    if (!('chat' in built)) throw new Error(built.refused)
+    await idle()
+    writeFileSync(join(dir, 'PLAN.md'), [
+      ...PLAN.slice(0, -1), '- [ ] 0.3 Tell people', '',
+      '## Open questions (owner)', '',
+      '- **Q1 — Which colour is the widget?**', '  - **A** — red.', '  - **B** — blue.', '  - **Recommend A** — it shows.',
+      '- ~~**Q2 — Does it ship?**~~ **Answered 2026-10-13: A — yes.**', '',
+    ].join('\n'))
+
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'next', registers: { prefix: 'NX' } }))
+    writeFileSync(join(dir, 'DECISIONS.md'), '# Decisions\n\n## Widgets\n\n## Open (discussed, not yet ruled)\n')
+    const Q1 = 'PLAN:q1-which-colour-is-the-widget'
+
+    expect(await wb.go(id)).toMatchObject({ step: '0.2' })
+    expect(await wb.next(id)).toEqual({ refused: expect.stringContaining('Next starts the next step once it is done') })
+    expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Widgets' })).toEqual({ refused: expect.stringContaining('answer once it stops') })
+    await idle()
+    writeFileSync(join(dir, 'PLAN.md'), readFileSync(join(dir, 'PLAN.md'), 'utf8').replace('- [ ] 0.2', '- [x] 0.2'))
+
+    // The step ended on a question: the status carries it, and seeing the
+    // chat does not take it away — only a ruling does.
+    const asked = { plan: 'PLAN.md', id: Q1, question: 'Q1 — Which colour is the widget?' }
+    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([asked])
+    wb.seen(id)
+    expect(await wb.status(wb.getPin(id)!)).toMatchObject({ unread: false, questions: [asked] })
+
+    const chats = wb.getPin(id)!.chats.length
+    expect(await wb.next(id)).toEqual({ refused: 'PLAN.md has an open question — rule it before Next: Q1 — Which colour is the widget?' })
+    expect(wb.getPin(id)!.chats.length).toBe(chats)
+    expect(shownPlan(wb.getPin(id)!)!.steps['0.3']).toBeUndefined()
+
+    // A letter is fli's decide over PLAN.md, which no register source reads.
+    const read = (await wb.readPlan(id))!
+    expect(read.sections).toEqual(['Widgets'])
+    expect(read.parsed!.blocking.map((q: { id: string }) => q.id)).toEqual([Q1])
+    expect(await wb.decide(id, { question: Q1, pick: 'B', section: 'Widgets' })).toEqual({ refused: expect.stringContaining('not the recommendation') })
+    expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Nope' })).toEqual({ refused: expect.stringContaining('no section named') })
+    expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Widgets' })).toEqual({ ruling: 'NX-D1', pick: 'A', files: ['DECISIONS.md', 'PLAN.md'] })
+    expect(readFileSync(join(dir, 'PLAN.md'), 'utf8')).toContain('- ~~**Q1 — Which colour is the widget?**~~ **Answered ')
+    expect(readFileSync(join(dir, 'DECISIONS.md'), 'utf8')).toContain('`NX-D1` — Q1 — Which colour is the widget — Red.')
+    expect(await wb.decide(id, { question: Q1, pick: 'A', section: 'Widgets' })).toEqual({ refused: `${Q1} is already ruled` })
+    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([])
+    // By number the ruling is 0.2's: it answers the question that step stopped on.
+    expect((await wb.readPlan(id))!.steps['0.2'].filed).toEqual([expect.objectContaining({ id: 'NX-D1', kind: 'ruling' })])
+
+    const next = await wb.next(id)
+    if (!('chat' in next)) throw new Error(next.refused)
+    expect(next.step).toBe('0.3')
+    expect(next.chat).not.toBe(built.chat)
+    expect(wb.getPin(id)!.chat).toBe(next.chat)
+    await idle()
+
+    const run = seen()[2]
+    expect(run.argv).not.toContain('--resume')
+    expect(run.input).toStartWith('This is a fresh session continuing the plan at `PLAN.md`.')
+    // The stand-in's reply to the Go is `did: ` and the prompt it was sent.
+    expect(run.input).toContain("The last session's reply:\n\ndid: Carry out step 0.2 of the plan at `PLAN.md`")
+    expect(run.input).not.toContain('Which colour is the widget?')
+    expect(run.input).not.toContain('Does it ship?')
+    expect(run.input).toContain('Carry out step 0.3 of the plan at `PLAN.md`: Tell people')
+    expect(shownPlan(wb.getPin(id)!)!.steps['0.3']).toEqual({ chat: next.chat, startedAt: expect.any(String), registerHigh: { issue: 0, decision: 1 } })
+    expect((await wb.readPlan(id))!.steps['0.3']).toMatchObject({ cost: 0.12, turns: 3 })
+  })
+
+  test('Tick: a box the Go\'d run left open, ticked by hand once the run ends, and no other box', async () => {
+    const { bin } = fakeClaude({ sleep: 300 })
+    const wb = createWorkbench({ dir: join(tmp, 'wb-tick'), bin })
+    const dir = repo('tick')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    await wb.buildPlan(id, { goal: 'x', path: 'PLAN.md' })
+    await until(async () => !wb.getPin(id)!.pid)
+    writeFileSync(join(dir, 'PLAN.md'), PLAN.join('\n'))
+    expect(await wb.tick(id, '0.2')).toEqual({ refused: expect.stringContaining('Go did not start step \'0.2\'') })
+
+    expect(await wb.go(id)).toMatchObject({ step: '0.2' })
+    expect(await wb.tick(id, '0.2')).toEqual({ refused: expect.stringContaining('may still tick 0.2 itself') })
+    await until(async () => !wb.getPin(id)!.pid)
+
+    // The stand-in ticks nothing: the box did not move.
+    expect((await wb.readPlan(id))!.parsed!.next).toMatchObject({ id: '0.2', box: 'open' })
+    expect(await wb.tick(id, '0.1')).toEqual({ refused: expect.stringContaining('Go did not start step \'0.1\'') })
+    expect(await wb.tick(id, '0.2')).toEqual({ step: '0.2' })
+    expect(readFileSync(join(dir, 'PLAN.md'), 'utf8')).toBe(PLAN.join('\n').replace('- [ ] 0.2', '- [x] 0.2'))
+    expect((await wb.readPlan(id))!.parsed!.next).toBeNull()
+    expect(await wb.tick(id, '0.2')).toEqual({ refused: expect.stringContaining('0.2 is not an open box in PLAN.md') })
+  })
+
+  test('several plans: one shown, Go and tick act on it, and a step\'s rows and runs stop at the next step of any plan', async () => {
+    const { bin } = fakeClaude({ sleep: 300 })
+    const wb = createWorkbench({ dir: join(tmp, 'wb-plans'), bin })
+    const dir = repo('plans')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'plans', registers: { prefix: 'SP' } }))
+    writeFileSync(join(dir, 'ISSUES.md'), [
+      '# Issues', '', '## S3 — medium', '',
+      '| Id | Area | Title | Status | Verified | Detail |', '| --- | --- | --- | --- | --- | --- |',
+      '| <a id="sp-041"></a>SP-041 | api | **A thing** | open | 2026-10-01 | — |', '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'PLAN.md'), PLAN.join('\n'))
+    mkdirSync(join(dir, 'IDEAS'))
+    writeFileSync(join(dir, 'IDEAS', 'b.md'), PLAN.join('\n'))
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    const idle = () => until(async () => !wb.getPin(id)!.pid)
+    const file = (row: string) => writeFileSync(join(dir, 'ISSUES.md'),
+      readFileSync(join(dir, 'ISSUES.md'), 'utf8').replace('| --- | --- | --- | --- | --- | --- |', `| --- | --- | --- | --- | --- | --- |\n${row}`))
+
+    expect(wb.openPlan(id, 'nope.md')).toEqual({ refused: expect.stringContaining('nothing is written at nope.md') })
+    expect(wb.openPlan(id, '../PLAN.md')).toEqual({ refused: expect.stringContaining('not a path inside') })
+    expect(wb.openPlan(id, './PLAN.md')).toMatchObject({ plan: 'PLAN.md', plans: [{ path: 'PLAN.md', steps: {} }] })
+    expect(wb.openPlan(id, 'PLAN.md')).toMatchObject({ plans: [expect.anything()] })
+
+    expect(await wb.go(id)).toMatchObject({ step: '0.2' })
+    expect(wb.closePlan(id, 'PLAN.md')).toEqual({ refused: expect.stringContaining('close PLAN.md once it stops') })
+    await idle()
+    file('| <a id="sp-042"></a>SP-042 | api | **Found in PLAN 0.2** | open | 2026-10-13 | — |')
+
+    // Shown while nothing runs; Go starts the shown plan's box, recorded on it.
+    expect(wb.openPlan(id, 'IDEAS/b.md')).toMatchObject({ plan: 'IDEAS/b.md', plans: [{ path: 'PLAN.md' }, { path: 'IDEAS/b.md', steps: {} }] })
+    expect((await wb.readPlan(id))!.path).toBe('IDEAS/b.md')
+    expect(await wb.go(id)).toMatchObject({ step: '0.2' })
+    await idle()
+    file('| <a id="sp-043"></a>SP-043 | api | **Found in b 0.2** | open | 2026-10-13 | — |')
+    expect(Object.keys(wb.getPin(id)!.plans[0].steps)).toEqual(['0.2'])
+    expect((await wb.readPlan(id))!.steps['0.2']).toMatchObject({ cost: 0.12, filed: [{ id: 'SP-043' }] })
+
+    // The first plan's step ends where the second plan's began, in rows and in runs.
+    wb.openPlan(id, 'PLAN.md')
+    expect((await wb.readPlan(id))!.steps['0.2']).toMatchObject({ cost: 0.12, turns: 3, filed: [{ id: 'SP-042' }] })
+    expect(await wb.tick(id, '0.2')).toEqual({ step: '0.2' })
+    expect(readFileSync(join(dir, 'PLAN.md'), 'utf8')).toContain('- [x] 0.2')
+    expect(readFileSync(join(dir, 'IDEAS', 'b.md'), 'utf8')).toContain('- [ ] 0.2')
+
+    // A question on a plan not shown is still one the owner is waited on for.
+    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([])
+    writeFileSync(join(dir, 'IDEAS', 'b.md'), [...PLAN, '', '## Open questions (owner)', '', '- **Q1 — Red or blue?**', '  - **A** — red.', ''].join('\n'))
+    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([{ plan: 'IDEAS/b.md', id: 'b:q1-red-or-blue', question: 'Q1 — Red or blue?' }])
+
+    expect(wb.closePlan(id, 'nope.md')).toEqual({ refused: expect.stringContaining("no plan at 'nope.md'") })
+    expect(wb.closePlan(id, 'PLAN.md')).toMatchObject({ plan: 'IDEAS/b.md', plans: [{ path: 'IDEAS/b.md' }] })
+    expect(existsSync(join(dir, 'PLAN.md'))).toBe(true)
+    expect(wb.closePlan(id, 'IDEAS/b.md')).toMatchObject({ plan: null, plans: [] })
+    expect((await wb.status(wb.getPin(id)!)).questions).toEqual([])
+    expect(await wb.readPlan(id)).toBeNull()
+    expect(await wb.go(id)).toEqual({ refused: expect.stringContaining('has no plan') })
   })
 
   test('Build plan waits for a run in the checkout, like any message to another chat', async () => {
@@ -556,6 +797,65 @@ describe('diff', () => {
     expect(byPath['b.txt']).toMatchObject({ status: 'untracked', adds: 2, dels: 0 })
     expect(byPath['b.txt'].hunks[0].lines.map(l => l.new)).toEqual([1, 2])
     expect(byPath['c.bin']).toMatchObject({ status: 'binary', hunks: [] })
+  })
+
+  test('commit: the chosen files as the diff showed them, on HEAD; what others staged and what was not chosen stay uncommitted', () => {
+    const wb  = createWorkbench({ dir: join(tmp, 'wb-commit') })
+    const dir = join(tmp, 'repos', 'git-commit')
+    mkdirSync(dir, { recursive: true })
+    const git = (...a: string[]) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' })
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 't@t')
+    git('config', 'user.name', 't')
+    writeFileSync(join(dir, 'a.txt'), 'one\n')
+    writeFileSync(join(dir, 'gone.txt'), 'delete me\n')
+    writeFileSync(join(dir, 'staged.txt'), 'theirs\n')
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    writeFileSync(join(dir, 'a.txt'), 'one\ntwo\n')
+    unlinkSync(join(dir, 'gone.txt'))
+    writeFileSync(join(dir, 'b.txt'), 'new\n')
+    writeFileSync(join(dir, 'other.txt'), 'not chosen\n')
+    writeFileSync(join(dir, 'staged.txt'), 'theirs, staged\n')
+    git('add', 'staged.txt')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+
+    const read  = () => Object.fromEntries(wb.diff(id)!.files.map(f => [f.path, { path: f.path, blob: f.blob }]))
+    const shown = read()
+    expect(shown['a.txt'].blob).toBe(git('hash-object', 'a.txt').trim())
+    expect(shown['gone.txt'].blob).toBe(null)
+    const chosen = [shown['a.txt'], shown['gone.txt'], shown['b.txt']]
+
+    expect(wb.commit(id, { message: ' ', files: chosen })).toEqual({ refused: 'a commit needs a message' })
+    expect(wb.commit(id, { message: 'm', files: [] })).toEqual({ refused: 'no files chosen' })
+    expect(wb.commit(id, { message: 'm', files: [{ path: 'nope.txt', blob: null }] })).toMatchObject({ files: ['nope.txt'] })
+    expect(wb.commit(id, { message: 'm', files: ['a.txt'] })).toEqual({ refused: expect.stringContaining('{ path, blob }') })
+
+    // Written after the diff was read: refused by name, nothing committed.
+    writeFileSync(join(dir, 'a.txt'), 'one\ntwo\nthree\n')
+    const head = git('rev-parse', 'HEAD').trim()
+    expect(wb.commit(id, { message: 'm', files: chosen })).toEqual({ refused: expect.stringContaining('a.txt changed since'), files: ['a.txt'] })
+    expect(git('rev-parse', 'HEAD').trim()).toBe(head)
+
+    // The checkout's own hook refuses: the untracked file is untracked again.
+    writeFileSync(join(dir, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\necho no commits today >&2\nexit 1\n')
+    chmodSync(join(dir, '.git', 'hooks', 'pre-commit'), 0o755)
+    const again = read()
+    const fresh = [again['a.txt'], again['gone.txt'], again['b.txt']]
+    expect(wb.commit(id, { message: 'm', files: fresh })).toEqual({ refused: expect.stringContaining('no commits today') })
+    expect(git('status', '--porcelain', '--', 'b.txt')).toBe('?? b.txt\n')
+    unlinkSync(join(dir, '.git', 'hooks', 'pre-commit'))
+
+    const done = wb.commit(id, { message: 'Add b, drop gone\n\nThe body.', files: fresh })
+    expect(done).toEqual({ commit: git('rev-parse', 'HEAD').trim(), files: ['a.txt', 'gone.txt', 'b.txt'] })
+    expect(git('log', '-1', '--format=%B').trim()).toBe('Add b, drop gone\n\nThe body.')
+    expect(git('show', '--name-only', '--format=', 'HEAD').trim().split('\n').sort()).toEqual(['a.txt', 'b.txt', 'gone.txt'])
+    expect(git('show', 'HEAD:a.txt')).toBe('one\ntwo\nthree\n')
+    expect(git('diff', '--cached', '--name-only').trim()).toBe('staged.txt')
+    expect(git('status', '--porcelain', '--', 'other.txt')).toBe('?? other.txt\n')
+    expect(wb.diff(id)!.files.map(f => f.path).sort()).toEqual(['other.txt', 'staged.txt'])
   })
 
 })
@@ -723,6 +1023,7 @@ describe('branches', () => {
     const headBefore = git('rev-parse', 'HEAD').trim()
 
     expect(wb.land(b.id)).toEqual({ refused: expect.stringContaining('nothing to land') })
+    expect(wb.commit(b.id, { message: 'm', files: [] })).toEqual({ refused: expect.stringContaining('is a branch — land it') })
 
     writeFileSync(join(b.path, 'a.txt'), 'one\nTWO\nthree\nfour\n')
     bgit('commit', '-qam', 'four')

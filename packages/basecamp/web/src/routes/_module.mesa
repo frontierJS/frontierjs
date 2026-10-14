@@ -525,7 +525,7 @@ siteName: Basecamp
        down from 1920px, so the topbar holds PRIMARY only.
        Hidden below 767px by the package; the drawer below covers that. -->
   {#if session.user && !focus}
-    <nav class="sidebar" class:rail={rail} aria-label="Main">
+    <nav class="sidebar" class:rail={rail} class:peek={rail} aria-label="Main">
       <button class="btn ghost square rail-toggle" id="rail-toggle"
               aria-label={rail ? 'Expand the sidebar' : 'Collapse the sidebar'}
               aria-expanded={rail ? 'false' : 'true'}

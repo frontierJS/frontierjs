@@ -510,3 +510,22 @@ describe('withParents() builds a parent the child\'s @values where admits', () =
     await expect(factories.part.withParents().createOne()).rejects.toThrow()
   })
 })
+
+// FJS-2667 — the stamped column is written from the env's clock, so a rule
+// comparing against it was read with the wall clock and satisfied with the wrong
+// instant whenever the two differ.
+test('an ordering against a @default(now()) column is read with the env clock, not the wall clock', async () => {
+  const env = await createTestEnv({
+    now: '2040-06-01T12:00:00.000Z',
+    schema: `enum St { active submitted }
+      model T { id Int @id @default(autoincrement()); status St; clockInAt DateTime @default(now())
+        clockOutAt DateTime? @required(where: status != 'active')
+        @@check("clockOutAt IS NULL OR clockInAt < clockOutAt") }`,
+    autoFactories: true,
+  })
+  try {
+    const made = await env.factories.t.createOne()
+    expect(made.clockInAt).toBe('2040-06-01T12:00:00.000Z')
+    expect(ms(made.clockOutAt)).toBeGreaterThan(ms(made.clockInAt))
+  } finally { await env.cleanup?.() }
+})

@@ -78,6 +78,7 @@ What a habit from another framework produces, and what this package wants.
 | `await orders.service.get(id)` kept in a variable | `orders.record(id)` — a live view |
 | `resources/orders.js`, two resources in one file | `resources/Order.mesa` exporting `orders`, one per file |
 | hand-written inputs plus a submit handler | `<Order />`, or `<Form resource={orders}>` |
+| a palette `search` calling each resource's `find` and merging the lists | `paletteSource(getClient(), { models, link })` — one ranked, gate-graded call over junction's `searchService` |
 | `localStorage.setItem('token', …)` after a `fetch('/login')` | `signIn(email, password)` and `session` from `@frontierjs/sierra/resource` |
 | `row.ownerId === session.user.id` | `session.user.userId` — `session.user` is the server's SessionContext, `{ userId, userType, email, name, role, … }`, and has no `id`, so the owner is shown nothing of their own |
 

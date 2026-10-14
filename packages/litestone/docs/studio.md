@@ -3,7 +3,7 @@
 Litestone Studio is the browser UI. Launch it with:
 
 ```bash
-bunx litestone studio                       # http://localhost:8502, opened in the browser
+bunx litestone studio                       # http://localhost:5502, opened in the browser
 bunx litestone studio --port=3000 --no-open
 bunx litestone studio --gate ./api/src/core/gate.ts#getLevel   # grade previews with the app's own getLevel
 bunx litestone studio --host=0.0.0.0 --token=<secret>          # beyond loopback; refused without the token
@@ -422,7 +422,7 @@ Studio is the schema's own client with the gate lifted by default, and the SQL p
 
 ```bash
 # Host on the server, not localhost
-kamal app exec --no-interactive -- litestone studio --port=8502 --readonly
+kamal app exec --no-interactive -- litestone studio --port=5502 --readonly
 ```
 
 > Note: Running Studio via `kamal app exec` spawns a new container — if your SQLite file is on the host, use the host directly to avoid WAL contention.

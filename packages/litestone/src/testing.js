@@ -1935,7 +1935,7 @@ export async function reset(db) {
 // For traits or afterCreate, extend Factory with a subclass instead.
 
 export function factoryFrom(schema, modelName, db, registry = null) {
-  const defFn = generateFactory(schema, modelName)
+  const defFn = generateFactory(schema, modelName, { now: () => db?.$now?.() ?? new Date() })
   // A generated definition's key columns are placeholders the chain overwrites;
   // a hand-written one names rows, and createOne() leaves those alone.
   defFn.generated = true
@@ -1962,7 +1962,7 @@ export function generateFactory(schema, modelName, options = {}) {
   const model = schema.models.find(m => m.name === modelName)
   if (!model) throw new Error(`generateFactory: model "${modelName}" not found in schema`)
 
-  const { fkDefaults = {} } = options
+  const { fkDefaults = {}, now = null } = options
 
   // Build set of FK field names from relation declarations
   const fkFields = new Set()
@@ -1988,7 +1988,7 @@ export function generateFactory(schema, modelName, options = {}) {
       const v = _fieldValue(schema, modelName, field, seq, rng, { fkFields, fkDefaults })
       if (v !== undefined) out[field.name] = v
     }
-    _satisfyChecks(schema, model, out, { fkFields, seq })
+    _satisfyChecks(schema, model, out, { fkFields, seq, now })
     return out
   }
 }
@@ -3695,15 +3695,18 @@ function _matchesRegex(pattern, value) {
 // or one no move satisfies, is left to the table to refuse with the declared
 // message — as before, and the caller's `factories` override is the answer.
 
-function _satisfyChecks(schema, model, out, { fkFields = new Set(), seq = 1 } = {}) {
-  // A column under `@default(now())` is left to SQLite, so a rule comparing
-  // against it is read with the clock the database will stamp — the one value
-  // here that is not derived from seq, because nothing else can be.
+function _satisfyChecks(schema, model, out, { fkFields = new Set(), seq = 1, now = null } = {}) {
+  // A column under `@default(now())` is left out and the client stamps it from
+  // its own clock, so a rule comparing against it is read with that clock — the
+  // one value here that is not derived from seq, because nothing else can be.
+  // Read from the wall clock instead, a frozen env.clock stamps another instant
+  // and the rule is satisfied for the wrong one.
   const stamped = {}
+  const at = (now ? new Date(now()) : new Date()).toISOString()
   for (const f of model.fields) {
     if (f.type.name !== 'DateTime' || f.name in out) continue
     if (f.attributes.some(a => a.kind === 'default' && a.value?.kind === 'call' && a.value.fn === 'now'))
-      stamped[f.name] = new Date().toISOString()
+      stamped[f.name] = at
   }
   const c = { schema, model, out, fkFields, seq, view: () => ({ ...stamped, ...out }) }
   for (const attr of model.attributes ?? []) {

@@ -4,7 +4,7 @@
 // A webhook registration, a pasted link to capture, a feed to poll: each is a
 // URL a stranger picked, fetched from inside the network. That is the SSRF
 // primitive: `http://169.254.169.254/latest/meta-data/` is the cloud instance's
-// own credentials and `http://localhost:8503/api/jobs/1/retry` is junction's
+// own credentials and `http://localhost:5503/api/jobs/1/retry` is junction's
 // own devtools job runner, both reachable from the app and from nowhere else
 // (`FJS-681`). An app that fetches such a URL calls this rather than writing
 // its own ranges, because the copy is where the hole was (`FJS-1578`).

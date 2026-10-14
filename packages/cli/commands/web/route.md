@@ -45,14 +45,7 @@ const { frontmatterValue } = await import(resolve(global.fliRoot, 'core/compiler
 // with a non-greedy match and does not care that the tag is inside a string.
 const SC = '<' + '/script>'
 
-// Regular English plurals only, matching Sierra's registry. Irregulars are not
-// guessed: `fli make:resource Person --service people` names it explicitly.
-const servicePlural = (model) => {
-  const a = model.charAt(0).toLowerCase() + model.slice(1)
-  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
-  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
-  return a + 's'
-}
+const { servicePlural } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 const toLabel = (name) => name
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2')

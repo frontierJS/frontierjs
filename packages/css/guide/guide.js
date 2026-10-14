@@ -7989,11 +7989,15 @@ function framePage() {
             <strong><code>.sidebar.rail</code></strong>
             <p>
               The Sidebar collapsed to its icons, <code>--rail-width</code> wide.
-              Under the pointer, or while the keyboard&rsquo;s focus is in it, it
-              opens to <code>--sidebar-width</code> over the Screen rather than
-              pushing it, so the page does not reflow. Wrap each label in
-              <code>.navlink-text</code>: the rail fades it rather than removing
-              it, so it stays the link&rsquo;s name.
+              Wrap each label in <code>.navlink-text</code>: the rail fades it
+              rather than removing it, so it stays the link&rsquo;s name.
+            </p>
+            <p>
+              <code>.rail.peek</code> also opens under the pointer, or while the
+              keyboard&rsquo;s focus is in it, to <code>--sidebar-width</code>
+              over the Screen rather than pushing it, so the page does not
+              reflow. Leave it off when the control that collapses the rail sits
+              inside the rail: the pointer that clicked it would open it again.
             </p>
             ${code(`<nav class="sidebar rail" aria-label="Main">
   <ul class="navlist">
@@ -8005,7 +8009,8 @@ function framePage() {
 </nav>`, "html")}
             <p>
               Collapsing it for good is the class: an app that remembers the
-              choice toggles <code>.rail</code>. Below <code>768px</code> it is
+              choice toggles <code>.rail</code>, and the width animates both
+              ways. Below <code>768px</code> it is
               hidden like any Sidebar, and the Drawer shows the same nav without
               the class.
             </p>

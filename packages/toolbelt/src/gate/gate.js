@@ -180,7 +180,8 @@ const GATE_OP = {
  * guard on it anything the server does not also guard.
  *
  * **Unknown answers are permissive** — no gate declared, no level supplied, an
- * operation the gate does not mention. Withholding something the caller could
+ * operation the gate does not mention. A SYSTEM or LOCKED need is not an
+ * unknown at any level, and answers no to a caller whose level is missing. Withholding something the caller could
  * have used is the quieter failure and the server is the thing actually saying
  * no. Two consumers with different stakes reach the same answer here: a screen
  * hiding a button it should have drawn is a feature that looks missing, and an
@@ -199,7 +200,10 @@ export function canAtLevel(gate, operation, level) {
 
   const need = gate[GATE_OP[operation] ?? operation]
   if (typeof need !== 'number') return true
-  if (typeof level !== 'number') return true
+  // A sentinel is not answered by the caller's rung, so an unknown rung leaves
+  // nothing unknown: no caller of this function is `asSystem()`, and a form
+  // offered over a SYSTEM gate is a form whose every save is refused.
+  if (typeof level !== 'number') return need < LEVELS.SYSTEM
 
   return levelPasses(need, level)
 }

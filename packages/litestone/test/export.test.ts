@@ -322,3 +322,37 @@ describe('the two formats', () => {
     expect(lines[0].startsWith('id,ref,total')).toBe(true)
   })
 })
+
+// FJS-2676 — a screen's filtered list is an extract of a subset.
+describe('an extract can be narrowed by a where', () => {
+  test('only the matching rows leave, through the same scoped read', async () => {
+    const db = await client(); await seed(db)
+    const { lines } = await collect(db, 'Order', { as: staff, where: { ownerId: 'u-a' } })
+    expect(lines.length).toBe(2)   // ndjson has no header: A + C
+    expect(lines.join('\n')).not.toContain('"ref":"B"')
+  })
+
+  test('the row policy still bounds it — a filter cannot widen what the caller may read', async () => {
+    const db = await client(); await seed(db)
+    const { lines } = await collect(db, 'Order', { as: ownerA, where: { ownerId: 'u-b' } })
+    expect(lines.length).toBe(0)
+  })
+
+  // A filter on the cursor column must AND with the cursor: merged by key it
+  // would replace `gt cut`, and the rows the caller already holds would come back.
+  test('it composes with the since cursor rather than replacing it', async () => {
+    const db = await client(); await seed(db)
+    const all = await collect(db, 'Order', { as: staff })
+    const cut = JSON.parse(all.lines[0]).updatedAt
+    const { lines } = await collect(db, 'Order', { as: staff, since: cut, where: { updatedAt: { lte: cut } } })
+    expect(lines.length).toBe(0)
+  })
+
+  test('the manifest records the filter, so a partial file is not mistaken for a whole one', async () => {
+    const db = await client(); await seed(db)
+    const { manifest } = await collect(db, 'Order', { as: staff, where: { ownerId: 'u-a' } })
+    expect(manifest.where).toEqual({ ownerId: 'u-a' })
+    const whole = await collect(db, 'Order', { as: staff })
+    expect(whole.manifest.where).toBeNull()
+  })
+})

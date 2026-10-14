@@ -28,7 +28,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, basename }                        from 'node:path'
 import { findSnapshots }                                   from './snapshots.js'
-import { GLOBAL, appPorts, hostFor, toolHost, toolBaseHost } from './ports.js'
+import { GLOBAL, guiPort, appPorts, hostFor, toolHost, toolBaseHost } from './ports.js'
 import { preambleIndex, resolveNeeds }                     from './preflight.js'
 import { parseFrontmatter }                                from '@frontierjs/toolbelt/frontmatter'
 
@@ -149,7 +149,7 @@ function surfaces(root) {
 
 // ─── tools ────────────────────────────────────────────────────────────────────
 //
-// The reserved 8500–8509 block, read off `ports.js` § GLOBAL so a slot added
+// The reserved 5500–5509 block, read off `ports.js` § GLOBAL so a slot added
 // there is a tile here with nothing edited.
 //
 // Which COMMAND starts one is derived rather than listed, by matching a
@@ -168,8 +168,10 @@ function tools(root, { commands } = {}) {
     if (typeof cmd.port === 'number' && !byPort.has(cmd.port)) byPort.set(cmd.port, cmd)
   }
 
-  return Object.entries(GLOBAL).map(([name, port]) => {
-    const cmd = byPort.get(port)
+  return Object.entries(GLOBAL).map(([name, reserved]) => {
+    const cmd = byPort.get(reserved)
+    // In a project the GUI is that project's, on its own tooling port.
+    const port = name === 'gui' && root ? guiPort(root) : reserved
     return {
       kind:   'tool',
       id:     `tool:${name}`,

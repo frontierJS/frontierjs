@@ -28,7 +28,7 @@ describe('askArgv — edit', () => {
     const argv = askArgv({ edit: '/app/site/' })
     const at = argv.indexOf('--allowedTools')
     expect(argv[argv.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Edit,Write')
-    expect(argv.slice(at + 1, at + 3)).toEqual(['Edit(//app/site)', 'Edit(//app/site/**)'])
+    expect(argv.slice(at + 1, at + 5)).toEqual(['Edit(//app/site)', 'Edit(//app/site/**)', 'Read(//app/site)', 'Read(//app/site/**)'])
     expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('')
     expect(argv[argv.indexOf('--permission-mode') + 1]).toBe('dontAsk')
     expect(argv).toContain('--strict-mcp-config')
@@ -42,6 +42,11 @@ describe('askArgv — edit', () => {
     expect(argv.filter(a => a.startsWith('Edit('))).toEqual(['Edit(//repo/IDEAS/new-plan.md)', 'Edit(//repo/IDEAS/new-plan.md/**)'])
   })
 
+  test('the path it may edit it may also read: Edit refuses a file it has not read, and one outside the working directory is not readable', () => {
+    const argv = askArgv({ edit: '/app/PLAN.md' })
+    expect(argv.filter(a => a.startsWith('Read('))).toEqual(['Read(//app/PLAN.md)', 'Read(//app/PLAN.md/**)'])
+  })
+
   test('a follow-up resumes by id', () => {
     const id = '5acea7bb-3850-44cf-81dc-97688510acda'
     expect(askArgv({ edit: '/app', session: id }).slice(-2)).toEqual(['--resume', id])
@@ -50,7 +55,7 @@ describe('askArgv — edit', () => {
   test('each read directory is a Read rule beside the Edit rules, and grants no edit', () => {
     const argv = askArgv({ edit: '/app/web', reads: ['/repo/packages/css/', '/app/db'] })
     const at = argv.indexOf('--allowedTools')
-    expect(argv.slice(at + 1, at + 5)).toEqual(['Edit(//app/web)', 'Edit(//app/web/**)', 'Read(//repo/packages/css/**)', 'Read(//app/db/**)'])
+    expect(argv.slice(at + 5, at + 7)).toEqual(['Read(//repo/packages/css/**)', 'Read(//app/db/**)'])
     expect(argv.filter(a => a.startsWith('Edit('))).toHaveLength(2)
   })
 
@@ -857,6 +862,71 @@ process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_err
     } finally { rmSync(join(app, 'List.mesa')) }
   })
 
+  test('Make a plan writes PLAN.md at the app root in a fresh session, names it from the checkout, and undoes like an ask', async () => {
+    const seenAt = join(dir, 'claude-plan.json')
+    const bin = join(dir, 'claude-plan')
+    // A stand-in that writes the plan where its Edit rule points, reporting
+    // the call and its result the way the CLI does.
+    writeFileSync(bin, `#!/usr/bin/env node
+const fs = require('fs')
+const argv = process.argv.slice(2)
+const file = argv.find(a => a.startsWith('Edit(/') && !a.endsWith('/**)')).slice(6, -1)
+fs.writeFileSync(${JSON.stringify(seenAt)}, JSON.stringify({ argv, input: fs.readFileSync(0, 'utf8') }))
+const say = e => process.stdout.write(JSON.stringify(e) + '\\n')
+say({ type: 'system', subtype: 'init', session_id: '${SESSION}' })
+const content = '# Plan\\n\\n### Phase 0 — Groundwork\\n\\n- [ ] 0.1 Read\\n'
+say({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'w', name: 'Write', input: { file_path: file, content } }] } })
+fs.writeFileSync(file, content)
+say({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'w', content: 'File created successfully at: ' + file }] } })
+say({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.5 })
+`)
+    chmodSync(bin, 0o755)
+    // An app root above the Vite root, as an app's web/ sits beside its db/.
+    mkdirSync(join(work, 'db'), { recursive: true })
+    writeFileSync(join(work, 'db', 'schema.lite'), 'model Lead { id Int @id }\n')
+    const plan = join(work, 'PLAN.md')
+    try {
+      const post = await serve({ admit: null, bin })
+      expect(await post('/__fjs/ask/plan', { goal: '  ' })).toMatchObject({ status: 400, error: 'say what the plan is for' })
+      expect(existsSync(seenAt)).toBe(false)
+
+      const at = servers.at(-1).address().port
+      const res = await fetch(`http://localhost:${at}/__fjs/ask/plan`, {
+        method: 'POST',
+        headers: { origin: `http://localhost:${at}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ goal: 'a leads export', page: 'http://localhost/leads', session: SESSION }),
+      })
+      const events = (await res.text()).split('\n').filter(Boolean).map(l => JSON.parse(l))
+      expect(events.map(e => e.type)).toEqual(['run', 'tool', 'diff', 'plan', 'result'])
+      expect(events.find(e => e.type === 'plan')).toEqual({ type: 'plan', path: 'PLAN.md' })
+      expect(events.find(e => e.type === 'diff').files[0]).toMatchObject({ file: 'PLAN.md', created: true })
+      expect(readFileSync(plan, 'utf8')).toContain('### Phase 0')
+
+      const seen = JSON.parse(readFileSync(seenAt, 'utf8'))
+      expect(seen.argv.filter(a => a.startsWith('Edit('))).toEqual([`Edit(/${plan})`, `Edit(/${plan}/**)`])
+      expect(seen.argv).toContain(`Read(/${join(work, 'db')}/**)`)
+      expect(seen.argv).not.toContain(`Read(/${work}/**)`)
+      expect(seen.argv).not.toContain('--resume')
+      expect(seen.input).toContain(`Write a plan at \`${plan}\``)
+      expect(seen.input).toContain('Asked from the page: http://localhost/leads')
+      expect(seen.input).toContain('The goal:\n\na leads export')
+
+      // A plan is the Workbench's to commit, never Submit's: off a preview,
+      // Submit names it as a file the panel did not change.
+      rmSync(markerPath(work))
+      const refused = await post('/__fjs/ask/submit')
+      writeFileSync(markerPath(work), '')
+      expect(refused).toMatchObject({ status: 409, error: expect.stringContaining('this panel did not change') })
+      expect(refused.files).toContain('PLAN.md')
+      const run = events[0].id
+      expect(await post('/__fjs/ask/undo', { run })).toMatchObject({ status: 200, undone: ['PLAN.md (new, removed)'] })
+      expect(existsSync(plan)).toBe(false)
+    } finally {
+      rmSync(join(work, 'db'), { recursive: true, force: true })
+      rmSync(plan, { force: true })
+    }
+  })
+
 })
 
 // ─── the plan prompts ─────────────────────────────────────────────────────────
@@ -879,6 +949,17 @@ describe('plan prompts', () => {
     expect(p).toContain('Do not answer them')
     expect(p).toContain('The goal:\n\ncrop images')
     expect(p).toContain('dated:` today')
+    expect(p).not.toContain('one guide per package')
+    expect(p).not.toContain('Asked from the page')
+  })
+
+  test('from the ask panel it carries the guides an app reads, and the page', () => {
+    const guides = [{ pkg: 'sierra', file: '/r/sierra/AGENTS.md', about: 'routes and resources' }]
+    const p = buildPlanPrompt({ goal: 'export', path: '/app/PLAN.md', page: 'http://localhost:8010/leads', guides })
+    expect(p).toContain('one guide per package')
+    expect(p).toContain('- /r/sierra/AGENTS.md — routes and resources')
+    expect(p).toContain('Asked from the page: http://localhost:8010/leads')
+    expect(p.indexOf('Asked from the page')).toBeLessThan(p.indexOf('The goal:'))
   })
 
   test('stepPrompt carries the step, its phase and every guardrail', () => {
@@ -901,25 +982,19 @@ describe('plan prompts', () => {
     ]) expect(p).toContain(rule)
   })
 
-  test('nextHandoff reads the file first, carries the last reply capped, lists open questions, then the step', () => {
+  test('nextHandoff reads the file first, carries the last reply capped, then the step', () => {
     const long = 'x'.repeat(HANDOFF_MAX + 50)
-    const p = nextHandoff({
-      path: 'IDEAS/crop.md', step, phase, lastResult: long, today: '2026-10-13',
-      questions: [{ question: 'Q1 — Which axis?', state: 'decidable' }, { question: 'Q2 — Settled?', state: 'ruled' }],
-    })
+    const p = nextHandoff({ path: 'IDEAS/crop.md', step, phase, lastResult: long, today: '2026-10-13' })
     expect(p.indexOf('Read it first')).toBeLessThan(p.indexOf('The last session\'s reply'))
     expect(p).toContain('…' + 'x'.repeat(HANDOFF_MAX))
     expect(p).not.toContain('x'.repeat(HANDOFF_MAX + 1))
-    expect(p).toContain('- Q1 — Which axis?')
-    expect(p).not.toContain('Q2 — Settled?')
-    expect(p.indexOf('Open questions')).toBeLessThan(p.indexOf('Carry out step 2.2'))
+    expect(p.indexOf('The last session\'s reply')).toBeLessThan(p.indexOf('Carry out step 2.2'))
     expect(p).toContain('Do ONLY this step')
   })
 
   test('nextHandoff with nothing to carry is the read line and the step', () => {
     const p = nextHandoff({ path: 'PLAN.md', step, today: '2026-10-13' })
     expect(p).not.toContain('last session')
-    expect(p).not.toContain('Open questions the owner')
     expect(p).toContain('Carry out step 2.2 of the plan at `PLAN.md`')
   })
 })

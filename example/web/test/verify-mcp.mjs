@@ -15,11 +15,16 @@
  *   • with the app's OWN gate ladder, four standings deep. The counts in
  *     `packages/mcp/CHANGES.md` were hand measurements until this file, which
  *     is what made them the kind of number that goes quietly stale.
+ *   • serving the MCP App views THIS tree built (`FJS-D955`): `fli mcp:build`
+ *     runs first and the API boots with `SHOP_MCP_UI=1`, so `resources/read`
+ *     is compared with the file on disk, and a view whose tool a standing is
+ *     withheld is refused by URI.
  *
  *   bun run verify:mcp
  *
  * Starts and stops its own API. No browser. Seeds first, because the ladder
- * assertions below are about the seed's accounts.
+ * assertions below are about the seed's accounts, then builds the views, which
+ * is most of the run.
  *
  * It runs under **bun** where most drives here run under node, for `verify:site`'s
  * reason: the last section imports the app's own Litestone, which reaches
@@ -51,7 +56,7 @@ const procs = []
 function start(cmd, args, name) {
   const p = spawn(cmd, args, {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, API_PORT },
+    env: { ...process.env, API_PORT, SHOP_MCP_UI: '1' },
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
@@ -86,6 +91,9 @@ async function waitFor(url, label, tries = 120) {
 }
 
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
+// Built here rather than told to the reader, so a view served is one this tree
+// built: a drive over last week's `api/dist/mcp/` grades last week's forms.
+execFileSync('fli', ['mcp:build'], { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore' })
 start('bun', ['run', 'api/index.ts'], 'api')
 if (!await waitFor(`${BASE}/products`, 'api')) { stopAll(); process.exit(1) }
 
@@ -192,6 +200,70 @@ console.log('\nthe gate decides, one tool at a time')
         staffTools.includes('orders_refund'), false)
   check('the administrator is', adminTools.includes('orders_refund'), true)
   check('and the ordinary move beside it is a shopper\'s', shopperTools.includes('orders_pay'), true)
+}
+
+// ─── The views ─────────────────────────────────────────────────────────────
+
+console.log('\nthe views are the caller\'s, and serve what this tree built')
+{
+  // The spec's string, written out rather than imported from ext-apps: the
+  // plugin reads it from there, and an oracle sharing the code under test
+  // agrees with it when both are wrong.
+  const MIME = 'text/html;profile=mcp-app'
+  const DIST = join(ROOT, 'api/dist/mcp')
+  const { readFileSync, readdirSync } = await import('node:fs')
+  const built = readdirSync(DIST).filter(f => f.endsWith('.html')).map(f => f.slice(0, -5))
+  check('fli mcp:build wrote views at all', built.length, n => n > 0)
+
+  const uris    = async (client) => (await client.listResources()).resources.map(r => r.uri).sort()
+  const stamped = async (client) => [...new Set((await client.listTools()).tools
+    .map(t => t._meta?.ui?.resourceUri).filter(Boolean))].sort()
+  const views = {}
+  for (const [who, client] of Object.entries({ stranger, shopper, staff, admin })) views[who] = await uris(client)
+
+  // Each rung's list is the one its tools point at: a pointer to a view the
+  // caller is not listed, or a listed view no tool of theirs opens, fails here
+  // by rung. The derived half, so a model the seed grows needs no edit.
+  for (const [who, client] of Object.entries({ stranger, shopper, staff, admin })) {
+    check(`${who}: the views listed are exactly the ones its tools point at`, views[who], await stamped(client))
+  }
+  check('every view listed is one the build wrote',
+        Object.values(views).flat().filter(u => !built.includes(u.slice('ui://shop/'.length))), [])
+
+  // The ladder's half, written out: a sweep answering one list everywhere
+  // passes the agreement above and fails these.
+  check('a stranger is shown the catalog\'s views and not an order\'s',
+        [views.stranger.includes('ui://shop/Product'), views.stranger.includes('ui://shop/Order')], [true, false])
+  check('a shopper is shown the order\'s, and not an employee\'s',
+        [views.shopper.includes('ui://shop/Order'), views.shopper.includes('ui://shop/Employee')], [true, false])
+  check('staff are shown what a shopper is, as their tool lists are identical', views.staff, views.shopper)
+  check('the administrator is shown the employee\'s', views.admin.includes('ui://shop/Employee'), true)
+
+  // `resources/read` answers the built bytes under the extension's mime —
+  // compared with the file on disk, so a plugin serving any HTML at all, or
+  // last boot's, does not pass.
+  const read = await staff.readResource({ uri: 'ui://shop/Order' })
+  const doc  = read.contents?.[0]
+  check('staff read the Order view, under the extension\'s mime',
+        [doc?.uri, doc?.mimeType], ['ui://shop/Order', MIME])
+  check('and its bytes are the document the build wrote',
+        doc?.text === readFileSync(join(DIST, 'Order.html'), 'utf8'), true)
+
+  // The refusal. A view is a screen over a row the caller may not reach, so a
+  // URI that is guessable must not be readable: the stranger is listed no
+  // Order and the shopper no Employee, and asking by name anyway is refused
+  // without the page in the answer.
+  const refusal = async (client, uri) => {
+    try { const r = await client.readResource({ uri }); return { read: true, leaked: /<html/i.test(JSON.stringify(r)) } }
+    catch (err) { return { read: false, leaked: /<html/i.test(String(err?.message ?? err)) } }
+  }
+  check('a stranger reading the Order view by name is refused, with no page in the refusal',
+        await refusal(stranger, 'ui://shop/Order'), { read: false, leaked: false })
+  check('as are a shopper and staff reading the administrator\'s Employee view',
+        [await refusal(shopper, 'ui://shop/Employee'), await refusal(staff, 'ui://shop/Employee')],
+        [{ read: false, leaked: false }, { read: false, leaked: false }])
+  const adminRead = await admin.readResource({ uri: 'ui://shop/Employee' })
+  check('which the administrator reads', adminRead.contents?.[0]?.mimeType, MIME)
 }
 
 // ─── A call is a service call ──────────────────────────────────────────────

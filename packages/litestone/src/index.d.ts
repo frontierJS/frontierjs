@@ -979,8 +979,8 @@ export interface CreateMigrationResult {
   filePath?: string
   summary?:  string
   sql?:      string
-  /** The columns whose values the file deletes — what its DESTRUCTIVE box names. Empty when nothing is lost. */
-  loss?:     { table: string; columns: string[]; renameTo: string | null }[]
+  /** The columns, or whole tables (`wholeTable`), whose values the file deletes — what its DESTRUCTIVE box names. Empty when nothing is lost. */
+  loss?:     { table: string; columns: string[]; renameTo: string | null; wholeTable?: true }[]
 }
 
 export interface VerifyResult {

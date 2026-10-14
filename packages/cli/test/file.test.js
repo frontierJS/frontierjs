@@ -11,7 +11,7 @@ import { join }   from 'path'
 import { spawn }  from 'child_process'
 import { tmpdir } from 'os'
 
-import { fileIssue, registerHigh } from '../core/file.js'
+import { fileIssue, filedSince, registerHigh } from '../core/file.js'
 import { readRegisters }    from '../core/registers.js'
 import { runRegisterCheck } from '../core/register-check.js'
 
@@ -103,6 +103,30 @@ describe('the high-water marks', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-file-'))
     dirs.push(root)
     expect(registerHigh(root)).toEqual({ issue: 0, decision: 0 })
+  })
+
+  test('what was filed between two marks, and above the last one', () => {
+    const root = project(ISSUES.flatMap(l => l === '## Closed'
+      ? ['## Needs a decision', '', '| Id | Area | Question | Detail |', '| --- | --- | --- | --- |', '', l]
+      : [l]))
+    writeFileSync(join(root, '.project', 'DECISIONS.md'), '# Decisions\n\n## ELA-D3 — A ruling\n')
+    const first = registerHigh(root)
+    fileIssue({ root, ...input })
+    expect(fileIssue({ root, ...input, severity: 'decision', title: 'Which way?' })).toMatchObject({ ok: true, id: 'ELA-D4' })
+    const second = registerHigh(root)
+    fileIssue({ root, ...input, title: 'A later one' })
+    writeFileSync(join(root, '.project', 'DECISIONS.md'), '# Decisions\n\n## Plans\n\n### 2026-09-26 · `ELA-D4` — This way\n')
+
+    const [a, b] = filedSince(root, [{ from: first, until: second }, { from: second }])
+    expect(a.map(r => [r.id, r.kind])).toEqual([['ELA-D4', 'ruling'], ['ELA-008', 'issue']])
+    expect(a[1]).toMatchObject({ title: 'A retry sends twice', severity: 'S3', status: 'open', file: '.project/ISSUES.md' })
+    expect(b.map(r => r.id)).toEqual(['ELA-009'])
+  })
+
+  test('a root declaring no registers filed nothing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-file-'))
+    dirs.push(root)
+    expect(filedSince(root, [{ from: { issue: 0, decision: 0 } }])).toEqual([[]])
   })
 })
 

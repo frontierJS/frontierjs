@@ -365,3 +365,23 @@ test('predicate: a name inherited from Object is not a field or a claim', functi
   assert.equal(evaluate({ type: 'field', name: 'ownerId' }, { record: Object.create({ ownerId: 5 }) }), null)
   assert.equal(evaluate({ type: 'field', name: 'ownerId' }, { record: { ownerId: 5 } }), 5)
 })
+
+// ── a template takes the same escapes a quoted string does (FJS-2837) ─────────
+
+test('template: \\n \\t \\r are the control character in the token value and in a flow template', function () {
+  const [tok] = tokenize('`a\\nb\\tc\\r\\`q\\` \\\\ \\x`')
+  assert.equal(tok.value, 'a\nb\tc\r`q` \\ x')
+  // The raw text is untouched: a flow reads its `${…}` holes out of it.
+  assert.equal(tok.raw, 'a\\nb\\tc\\r\\`q\\` \\\\ \\x')
+  const tokens = tokenize('`a\\nb ${1}`')
+  let pos = 0
+  const p = {
+    peek: (n = 0) => tokens[pos + n], advance: () => tokens[pos++],
+    check: (type) => tokens[pos]?.type === type,
+    maybeEat: (type) => (tokens[pos]?.type === type ? tokens[pos++] : undefined),
+    eat: (type) => { if (tokens[pos]?.type !== type) throw p.fail(`Expected ${type}`, tokens[pos]); return tokens[pos++] },
+    fail: (msg, at) => new ParseError(msg, at),
+  }
+  const ast = parseFlowExpression(p)
+  assert.equal(ast.parts[0].value, 'a\nb ')
+})

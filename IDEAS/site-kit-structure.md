@@ -183,5 +183,5 @@ stay site-kit blocks built from Bar and Nav until a second consumer wants them.
 **The first pieces to build are in css** — built 2026-10-06: Band, `.bleed`,
 Grid and the align axis, each named in `vocabulary.js`. Then ksite's
 `Block.mesa` moves to site-kit under its own name (question 6), reading typed
-keys and emitting those words — what `website/packages/site-kit/PROJECT_STATE.md` § Next
+keys and emitting those words — what `packages/site-kit/PROJECT_STATE.md` § Next
 names.

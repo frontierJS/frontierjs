@@ -130,6 +130,36 @@ export function registerHigh(root) {
   return { issue: Number(nextId(doc).slice(doc.prefix.length + 1)) - 1, decision: nextDecisionNumber(root) - 1 }
 }
 
+/** The rows numbered above each span's `from` marks and at or below its
+ *  `until` (none: no ceiling) — what a workbench step filed, one read for every
+ *  span. A `D` id is one row: the ruling where `decide` has answered it under
+ *  that id, else its § Needs a decision row. Questions and rulings first,
+ *  then issues, each by number. */
+export function filedSince(root, spans) {
+  const doc = readRegisters(root)
+  if (!doc.prefix) return spans.map(() => [])
+  const issueNo = new RegExp(`^${doc.prefix}-(\\d+)$`)
+  const dNo     = new RegExp(`^${doc.prefix}-D(\\d+)$`)
+  const rows = new Map()
+  for (const r of doc.issues) {
+    const i = issueNo.exec(r.id), d = dNo.exec(r.id)
+    if (i) rows.set(r.id, { id: r.id, kind: 'issue', n: Number(i[1]), title: r.title, severity: r.severity, status: r.status, file: r.file, line: r.line })
+    else if (d) rows.set(r.id, { id: r.id, kind: 'question', n: Number(d[1]), title: r.title, severity: null, status: r.status, file: r.file, line: r.line })
+  }
+  for (const r of doc.decisions) {
+    const d = dNo.exec(r.id ?? '')
+    if (d) rows.set(r.id, { id: r.id, kind: 'ruling', n: Number(d[1]), title: r.title, severity: null, status: 'ruled', file: r.file, line: r.line })
+  }
+  const all = [...rows.values()]
+  return spans.map(({ from, until }) => all
+    .filter(r => {
+      const mark = r.kind === 'issue' ? 'issue' : 'decision'
+      return r.n > from[mark] && (!until || r.n <= until[mark])
+    })
+    .sort((a, b) => (a.kind === 'issue') - (b.kind === 'issue') || a.n - b.n)
+    .map(({ n, ...row }) => row))
+}
+
 // ─── where the row goes ───────────────────────────────────────────────────────
 
 // The first line under the separator of the table below the `##` heading the

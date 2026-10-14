@@ -30,7 +30,7 @@
  * without the other.
  */
 
-import { TK, tokenize, holeEnd, ParseError } from './tokenize.js'
+import { TK, STRING_ESCAPES, tokenize, holeEnd, ParseError } from './tokenize.js'
 import { unitInfo, MEASURE_UNITS } from '../units/units.js'
 
 // The token names this grammar reads. The table is the lexer's.
@@ -449,7 +449,7 @@ function template(p, ctx, t) {
   const flush = () => { if (text) parts.push({ type: 'literal', value: text }); text = '' }
 
   for (let i = 0; i < raw.length;) {
-    if (raw[i] === '\\') { text += raw[i + 1] ?? ''; i += 2; continue }
+    if (raw[i] === '\\') { text += STRING_ESCAPES[raw[i + 1]] ?? raw[i + 1] ?? ''; i += 2; continue }
     if (raw[i] === '$' && raw[i + 1] === '{') {
       const end = holeEnd(raw, i + 2)
       flush()

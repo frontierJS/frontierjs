@@ -63,12 +63,23 @@
 // is read off the disk — the pid in pins.json, still alive — and a restart loses
 // the queue and nothing else.
 //
-// A pin may carry a PLAN — a Phases-of-Steps file in the checkout (`FJS-D966`),
+// A pin may carry PLANS — Phases-of-Steps files in the checkout (`FJS-D966`),
 // parsed by the cli's `parsePlan` on every read and never cached, because the
-// session edits it. Build plan writes it from a goal in a session that may edit
+// session edits it — except the unruled `Q`s every status carries, kept per
+// file until its mtime moves. One is SHOWN, as one chat is, and Go, Next, tick and decide
+// act on that one; `openPlan` shows another, adding a file already written, and
+// `closePlan` forgets one here and leaves the file. Build plan writes it from a goal in a session that may edit
 // that one file and nothing else (`askArgv({ edit })`, `buildPlanPrompt`). Go
 // sends the first open box's `stepPrompt` into the shown chat and records the
-// step on the pin with the registers' high-water marks (`registerHigh`).
+// step on the pin with the registers' high-water marks (`registerHigh`); Next
+// starts the same step in a new chat with `nextHandoff` — the plan's path and
+// the last run's final reply (`FJS-D967`), refused while a `Q` is unruled. The
+// session ticks the box (`FJS-D969`); where its run ended with the box still
+// open, `tick` is the owner's manual tick and the one write the UI makes to
+// the plan. `file` is the tab's File issue and Ask question — fli's
+// `fileIssue` into the checkout's registers. `decide` is a letter on a plan
+// `Q` — fli's `decide` with the plan named as the file the question is argued
+// in, so a `PLAN.md` outside `IDEAS/` is ruled as a paper's question is.
 //
 // A log can be megabytes (a verbose stream carries every tool result whole), and
 // the grid asks for status every second or two, so each log is read
@@ -81,10 +92,10 @@ import {
   readSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { homedir }                     from 'node:os'
-import { basename, join }              from 'node:path'
+import { basename, join, posix }       from 'node:path'
 import { fileURLToPath }               from 'node:url'
 import { resolveRoot }                 from './local-git.ts'
-import { readDiff }                    from './workbench-diff.ts'
+import { commitFiles, readDiff }       from './workbench-diff.ts'
 import { addWorktree, branchName, copyIgnored, land as landBranch, pendingFiles, removeWorktree, snapshot } from './workbench-branch.ts'
 import { previewLabelRefusal, previewSettings, type Opened, type PreviewSettings } from './preview.ts'
 import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } from './workbench-run.ts'
@@ -139,10 +150,18 @@ export type Pin = {
   opened:   ({ port: number } & Partial<Omit<Opened, 'port'>>) | null
   /** What the Run tab started here, by row id (`core/workbench-run.ts`). */
   runs:     Record<string, RunRecord>
-  /** The plan this checkout is working through: its path in the checkout,
-   *  and each step a Go started, by step id. */
-  plan:     { path: string, steps: Record<string, PlanStep> } | null
+  /** The plans this checkout works through, in the order they were added. */
+  plans:    PlanRecord[]
+  /** The path of the plan the tab shows and Go, Next, tick and decide act on. */
+  plan:     string | null
 }
+
+/** A plan on a pin: its path in the checkout, and each step a Go started, by
+ *  step id. */
+export type PlanRecord = { path: string, steps: Record<string, PlanStep> }
+
+/** The plan the pin shows; null with none. */
+export const shownPlan = (p: Pin): PlanRecord | null => p.plans.find(x => x.path === p.plan) ?? null
 
 /** A step Go started: the chat it ran in, when, and the highest `FJS-###` and
  *  `FJS-D##` the registers held then — every row above them is the step's. */
@@ -150,6 +169,24 @@ export type PlanStep = {
   chat:         string
   startedAt:    string
   registerHigh: { issue: number, decision: number }
+}
+
+/** A Go'd step as the Plan tab reads it: what its runs cost, summed off the
+ *  chat's log from `startedAt` to the next step Go started in that chat. Null
+ *  where no run has finished, or the chat was closed and its log went with it.
+ *  `filed` is the register rows numbered above its marks and at or below the
+ *  next step's — by number, so a row another session filed meanwhile is here too. */
+export type PlanStepRead = PlanStep & { cost: number | null, turns: number | null, filed: FiledRow[] }
+
+/** A register row a step filed (fli's `filedSince`). */
+export type FiledRow = {
+  id:       string
+  kind:     'issue' | 'question' | 'ruling'
+  title:    string
+  severity: string | null
+  status:   string
+  file:     string
+  line:     number
 }
 
 export type Item =
@@ -205,7 +242,13 @@ export type PinStatus = {
   review:  { state: RunState, cost: number | null } | null
   /** Each dev server or script the Run tab started, and the ports an app holds. */
   runs:    Array<{ id: string, name: string, running: boolean, exit: number | null, stopped: boolean, ports: Served[] }>
+  /** Every unruled `Q` on every plan here — the plan's `blocking`, read off
+   *  each file. A step stops on one, so a run that ended with one standing is
+   *  waiting on the owner, seen or not. */
+  questions: OpenQuestion[]
 }
+
+export type OpenQuestion = { plan: string, id: string, question: string }
 
 type Folded = {
   offset:  number
@@ -217,6 +260,8 @@ type Folded = {
   run:     { state: RunState, tool: string | null, cost: number | null, turns: number | null, at: string | null }
   /** Cost by the local day each run started. */
   byDay:   Record<string, number>
+  /** Every run, kept whole like `byDay`: a step's cost is summed off it. */
+  runs:    Array<{ at: string, cost: number | null, turns: number | null }>
 }
 
 /** Kept per chat; older items stay in the log and in Claude Code's own session. */
@@ -235,7 +280,7 @@ const INSTALL_MS = 10 * 60_000
 
 const freshFold = (): Folded => ({
   offset: 0, partial: '', items: [], title: null, session: null,
-  run: { state: 'idle', tool: null, cost: null, turns: null, at: null }, byDay: {},
+  run: { state: 'idle', tool: null, cost: null, turns: null, at: null }, byDay: {}, runs: [],
 })
 
 // The operator's own day: the workbench runs only on their machine, so this
@@ -306,26 +351,48 @@ type AskClaude = {
   resumeCommand: (root: string, session: string) => string | null
   reviewPrompt:  (o: { request?: string }) => string
   stepPrompt:    (o: { path: string, step: Record<string, any>, phase?: Record<string, any> | null }) => string
+  nextHandoff:   (o: { path: string, step: Record<string, any>, phase?: Record<string, any> | null, lastResult?: string }) => string
 }
 let askClaude: Promise<AskClaude> | null = null
 const loadAskClaude = () => askClaude ??= import('@frontierjs/cli/core/ask-claude.js') as Promise<AskClaude>
 type PlanMod = {
   parsePlan: (text: string, o?: { file?: string }) => Record<string, any>
   phaseOf:   (plan: Record<string, any>, step: Record<string, any>) => Record<string, any> | null
+  tickStep:  (text: string, id: string, o?: { file?: string }) => string | null
 }
 let planMod: Promise<PlanMod> | null = null
 const loadPlan = () => planMod ??= import('@frontierjs/cli/core/plan.js') as Promise<PlanMod>
-type FileMod = { registerHigh: (root: string) => PlanStep['registerHigh'] }
+type FileMod = {
+  registerHigh: (root: string) => PlanStep['registerHigh']
+  filedSince:   (root: string, spans: { from: PlanStep['registerHigh'], until?: PlanStep['registerHigh'] }[]) => FiledRow[][]
+  fileIssue:    (o: { root: string, severity: unknown, area: unknown, title: unknown, detail: unknown }) =>
+    { ok: true, id: string, file: string, line: number } | { ok: false, reason: string }
+}
 let fileMod: Promise<FileMod> | null = null
 const loadFile = () => fileMod ??= import('@frontierjs/cli/core/file.js') as Promise<FileMod>
+type DecideMod = {
+  decide: (o: { root: string, id: string, pick: string, why: string, section: string, file: string }) =>
+    { ok: true, ruling: string, pick: string, files: string[] } | { ok: false, reason: string }
+}
+let decideMod: Promise<DecideMod> | null = null
+const loadDecide = () => decideMod ??= import('@frontierjs/cli/core/decide.js') as Promise<DecideMod>
+type DecisionsMod = { rulingSections: (root: string) => string[] }
+let decisionsMod: Promise<DecisionsMod> | null = null
+const loadDecisions = () => decisionsMod ??= import('@frontierjs/cli/core/decisions.js') as Promise<DecisionsMod>
 
 /** A plan's path, relative to its checkout: a markdown file inside it. */
 export function planPathRefusal(input: unknown): string | null {
-  const path = String(input ?? '').trim()
+  const path = planPath(input)
   if (!path) return 'name the plan\'s path in the checkout — IDEAS/<slug>.md or PLAN.md'
   if (path.startsWith('/') || path.split('/').includes('..')) return `'${path}' is not a path inside the checkout`
   if (!/\.md$/.test(path)) return `'${path}' is not a markdown file`
   return null
+}
+
+/** The path a plan is keyed by on its pin, so `./PLAN.md` is `PLAN.md`. */
+const planPath = (input: unknown) => {
+  const path = String(input ?? '').trim()
+  return path ? posix.normalize(path) : ''
 }
 
 export type Workbench = ReturnType<typeof createWorkbench>
@@ -357,7 +424,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return pins.map(p => ({
       chats: [{ id: '1', session: null, forkOf: null }], chat: '1', runChat: null, closedByDay: {},
       review: false, reviewPid: null, from: null, base: null, branch: null, carried: null,
-      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, plan: null, ...p,
+      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, plans: [], plan: null, ...p,
     }) as Pin)
   }
 
@@ -417,7 +484,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       budget: DEFAULT_BUDGET, hooks: false, review: false,
       pinnedAt: new Date().toISOString(), seenAt: null, pid: null, reviewPid: null,
       from: null, base: null, branch: null, carried: null,
-      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, plan: null,
+      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, plans: [], plan: null,
     }
     writePins([...pins, next])
     return { pin: next }
@@ -556,6 +623,24 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   }
 
   /**
+   * The files the owner chose off the Diff tab, committed on the checkout's
+   * HEAD (`FJS-D968`: a step never commits). A branch's work lands first and
+   * is committed on its checkout, so a branch has one way out.
+   */
+  function commit(id: string, input: { message?: unknown, files?: unknown } = {}): { commit: string, files: string[] } | { refused: string, files?: string[] } {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    if (p.from) return { refused: `${p.name} is a branch — land it, then commit on its checkout` }
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    if (alive(p.pid)) return { refused: `${p.name} is working; commit when the run ends` }
+    const files = Array.isArray(input.files) ? input.files : []
+    if (!files.every(f => f && typeof f.path === 'string' && (f.blob === null || typeof f.blob === 'string')))
+      return { refused: 'each file is { path, blob }, as the diff answered it' }
+    return commitFiles(p.path, files, typeof input.message === 'string' ? input.message : '')
+  }
+
+  /**
    * Stop everything running in the branch, remove its worktree and unpin it;
    * `wb/<slug>` stays, holding what was committed there. Work not yet landed
    * is refused by count unless `discard` says to lose it.
@@ -644,6 +729,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       push(f, { kind: 'you', text: String(event.text ?? ''), at })
       f.title ??= titleOf(String(event.text ?? ''))
       f.run = { state: 'working', tool: null, cost: null, turns: null, at }
+      f.runs.push({ at, cost: null, turns: null })
       return
     }
     if (event.type === 'exit') {
@@ -662,6 +748,8 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       if (e.type === 'result') {
         push(f, { kind: 'result', ok: e.ok, stop: e.stop, cost: e.cost, turns: e.turns })
         f.run = { ...f.run, state: e.ok ? 'done' : 'error', tool: null, cost: e.cost, turns: e.turns }
+        const last = f.runs.at(-1)
+        if (last) { last.cost = e.cost; last.turns = e.turns }
         if (e.cost != null && f.run.at) {
           const day = dayOf(f.run.at)
           f.byDay[day] = (f.byDay[day] ?? 0) + Number(e.cost)
@@ -726,6 +814,32 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return { fold: r, state: settled(r.run.state, p.reviewPid) }
   }
 
+  // Keyed on mtime and size: the poll reads every pin's plans, and a session
+  // writing one moves both.
+  const questionCache = new Map<string, { mark: string, value: OpenQuestion[] }>()
+
+  async function openQuestions(p: Pin): Promise<OpenQuestion[]> {
+    const out: OpenQuestion[] = []
+    for (const plan of p.plans) {
+      const file = join(p.path, plan.path)
+      let mark: string
+      try { const st = statSync(file); mark = `${st.mtimeMs}:${st.size}` } catch { questionCache.delete(file); continue }
+      let hit = questionCache.get(file)
+      if (hit?.mark !== mark) {
+        let value: OpenQuestion[] = []
+        try {
+          const { parsePlan } = await loadPlan()
+          value = parsePlan(readFileSync(file, 'utf8'), { file: plan.path }).blocking
+            .map((q: { id: string, question: string }) => ({ plan: plan.path, id: q.id, question: q.question }))
+        } catch {}
+        hit = { mark, value }
+        questionCache.set(file, hit)
+      }
+      out.push(...hit.value)
+    }
+    return out
+  }
+
   type ChatFold = { chat: Chat, fold: Folded, state: RunState, mtime: number }
 
   /** Every chat's log folded, and the one holding the latest run — which,
@@ -775,6 +889,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       },
       review: review && { state: review.state, cost: review.fold.run.cost },
       runs:   await runsOf(p),
+      questions: await openQuestions(p),
     }
   }
 
@@ -978,18 +1093,69 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   // ─── the plan ─────────────────────────────────────────────────────────
 
-  /** The pin's plan, parsed off the file now; `parsed` is null until it exists. */
+  /** The shown plan, parsed off the file now; `parsed` is null until it
+   *  exists. `sections` are the checkout's `DECISIONS.md` sections a ruling on
+   *  one of its `Q`s may go under. */
   async function readPlan(id: string) {
     const p = getPin(id)
-    if (!p?.plan) return null
+    const shown = p && shownPlan(p)
+    if (!shown) return null
+    const [{ rulingSections }, steps] = await Promise.all([loadDecisions(), stepReads(p, shown)])
+    const sections = rulingSections(p.path)
     let text: string
-    try { text = readFileSync(join(p.path, p.plan.path), 'utf8') } catch { return { ...p.plan, parsed: null } }
+    try { text = readFileSync(join(p.path, shown.path), 'utf8') } catch { return { ...shown, steps, sections, parsed: null } }
     const { parsePlan } = await loadPlan()
-    return { ...p.plan, parsed: parsePlan(text, { file: p.plan.path }) }
+    return { ...shown, steps, sections, parsed: parsePlan(text, { file: shown.path }) }
+  }
+
+  /** Every Go'd step on the pin, whichever plan it is in, by when it started:
+   *  the registers and the chats are the checkout's, so a step of another
+   *  plan is where this one's rows and runs stop. */
+  const allSteps = (p: Pin) => p.plans
+    .flatMap(pl => Object.entries(pl.steps).map(([id, st]) => ({ plan: pl.path, id, st })))
+    .sort((a, b) => Date.parse(a.st.startedAt) - Date.parse(b.st.startedAt))
+
+  /** Each of `shown`'s Go'd steps with its cost and the rows it filed — a
+   *  step's rows end where the next step started, in whichever chat. */
+  async function stepReads(p: Pin, shown: PlanRecord): Promise<Record<string, PlanStepRead>> {
+    const order = allSteps(p)
+    const mine  = order.flatMap((s, i) => s.plan === shown.path ? [i] : [])
+    if (!mine.length) return {}
+    const costs = await stepCosts(p, shown)
+    const { filedSince } = await loadFile()
+    const filed = filedSince(p.path, mine.map(i => ({ from: order[i].st.registerHigh, until: order[i + 1]?.st.registerHigh })))
+    return Object.fromEntries(mine.map((i, k) => [order[i].id, { ...costs[order[i].id], filed: filed[k] }]))
+  }
+
+  /** Each of `shown`'s Go'd steps with its cost: the runs in its chat from
+   *  its start up to the next step started in that chat, so an answer the
+   *  owner sends a step that stopped on a question is the step's too. */
+  async function stepCosts(p: Pin, shown: PlanRecord): Promise<Record<string, Omit<PlanStepRead, 'filed'>>> {
+    const every = allSteps(p)
+    const out: Record<string, Omit<PlanStepRead, 'filed'>> = {}
+    for (const [id, st] of Object.entries(shown.steps)) {
+      const from = Date.parse(st.startedAt)
+      const until = Math.min(...every
+        .map(({ st: o }) => o.chat === st.chat ? Date.parse(o.startedAt) : Infinity)
+        .filter(t => t > from))
+      const runs = p.chats.some(c => c.id === st.chat)
+        ? (await fold(logFile(p.id, st.chat))).runs.filter(r => {
+            const at = Date.parse(r.at)
+            return at >= from && at < until && r.cost != null
+          })
+        : []
+      out[id] = {
+        ...st,
+        cost:  runs.length ? runs.reduce((n, r) => n + Number(r.cost), 0) : null,
+        turns: runs.length ? runs.reduce((n, r) => n + (r.turns ?? 0), 0) : null,
+      }
+    }
+    return out
   }
 
   /** A goal written into a plan at `path`, in a new chat that may edit that
-   *  file and nothing else. The pin's plan is that path from here on. */
+   *  file and nothing else, and shown. A plan already at that path starts
+   *  over: the session rewrites the file its steps were read from. */
   async function buildPlan(id: string, input: { goal?: unknown, path?: unknown }): Promise<{ chat: string, path: string } | { refused: string }> {
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
@@ -997,13 +1163,15 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     if (!goal) return { refused: 'say what the plan is for' }
     const bad = planPathRefusal(input.path)
     if (bad) return { refused: bad }
-    const path = String(input.path).trim()
+    const path = planPath(input.path)
     const gone = goneRefusal(p)
     if (gone) return gone
     if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — one run at a time in a checkout` }
     const shown = await fresh(id)
     const chat  = chatIn(shown!)!
-    const now   = updatePin(id, { plan: { path, steps: {} } })
+    const record: PlanRecord = { path, steps: {} }
+    const plans = p.plans.some(x => x.path === path) ? p.plans.map(x => x.path === path ? record : x) : [...p.plans, record]
+    const now   = updatePin(id, { plans, plan: path })
     const { askArgv, buildPlanPrompt } = await loadAskClaude()
     await start(now, chat, buildPlanPrompt({ goal, path }), askArgv({ edit: join(p.path, path) }))
     return { chat: chat.id, path }
@@ -1014,24 +1182,150 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
    *  starts, and read under a run still filing they would hand its rows to
    *  this step. */
   async function go(id: string): Promise<{ step: string, chat: string } | { refused: string }> {
+    const ready = await nextStep(id, 'Go')
+    if ('refused' in ready) return ready
+    const { p, plan, step } = ready
+    const [{ stepPrompt }, { phaseOf }] = await Promise.all([loadAskClaude(), loadPlan()])
+    return startStep(p, plan.path, step, chatIn(p)!, stepPrompt({ path: plan.path, step, phase: phaseOf(plan.parsed, step) }))
+  }
+
+  /** Next: the same step in a new chat, handed the plan's path and the last
+   *  run's final reply — the paste, composed. Refused while a `Q` is unruled,
+   *  before `fresh()`: a session started under an open question builds on a
+   *  guess at its answer, and the refusal leaves no empty chat behind. */
+  async function next(id: string): Promise<{ step: string, chat: string } | { refused: string }> {
+    const ready = await nextStep(id, 'Next')
+    if ('refused' in ready) return ready
+    const { p, plan, step } = ready
+    const open = plan.parsed.blocking
+    if (open.length) return { refused: `${plan.path} has ${open.length === 1 ? 'an open question' : `${open.length} open questions`} — rule ${open.length === 1 ? 'it' : 'them'} before Next: ${open[0].question}` }
+    const { latest } = await chatsOf(p)
+    const items = latest.fold.items
+    const lastResult = items.slice(items.findLastIndex(i => i.kind === 'you') + 1).findLast(i => i.kind === 'text')
+    const [{ nextHandoff }, { phaseOf }] = await Promise.all([loadAskClaude(), loadPlan()])
+    const prompt = nextHandoff({
+      path: plan.path, step, phase: phaseOf(plan.parsed, step),
+      lastResult: lastResult?.kind === 'text' ? lastResult.text : '',
+    })
+    const shown = await fresh(id)
+    return startStep(shown!, plan.path, step, chatIn(shown!)!, prompt)
+  }
+
+  /** What Go and Next both refuse, and the step they would start. */
+  async function nextStep(id: string, verb: string) {
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
-    if (!p.plan) return { refused: `${p.name} has no plan — Build plan writes one` }
+    if (!shownPlan(p)) return { refused: `${p.name} has no plan — Build plan writes one` }
     const gone = goneRefusal(p)
     if (gone) return gone
-    if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — Go starts the next step once it is done` }
-    const plan = await readPlan(id)
-    if (!plan?.parsed) return { refused: `nothing is written at ${p.plan.path} yet` }
+    if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — ${verb} starts the next step once it is done` }
+    const plan = (await readPlan(id))!
+    if (!plan.parsed) return { refused: `nothing is written at ${plan.path} yet` }
     const step = plan.parsed.next
-    if (!step) return { refused: `every step of ${p.plan.path} is done` }
-    const chat = chatIn(p)!
-    const [{ stepPrompt }, { phaseOf }, { registerHigh }] = await Promise.all([loadAskClaude(), loadPlan(), loadFile()])
+    if (!step) return { refused: `every step of ${plan.path} is done` }
+    return { p, plan, step }
+  }
+
+  /** The marks read before the send, and the step written onto its plan only
+   *  after it, so a refused send records nothing. */
+  async function startStep(p: Pin, path: string, step: Record<string, any>, chat: Chat, prompt: string): Promise<{ step: string, chat: string } | { refused: string }> {
+    const { registerHigh } = await loadFile()
     const record: PlanStep = { chat: chat.id, startedAt: new Date().toISOString(), registerHigh: registerHigh(p.path) }
-    const sent = await send(id, stepPrompt({ path: p.plan.path, step, phase: phaseOf(plan.parsed, step) }), chat.id)
+    const sent = await send(p.id, prompt, chat.id)
     if ('refused' in sent) return sent
-    const now = getPin(id)!
-    updatePin(id, { plan: { ...now.plan!, steps: { ...now.plan!.steps, [step.id]: record } } })
+    const now = getPin(p.id)!
+    updatePin(p.id, { plans: now.plans.map(x => x.path === path ? { ...x, steps: { ...x.steps, [step.id]: record } } : x) })
     return { step: step.id, chat: chat.id }
+  }
+
+  /** The owner's tick on a box a Go'd step's run left open. Refused while a
+   *  run is live — the session may be writing the file — and on a step Go
+   *  did not start, so the tab stays a reader of every other box. */
+  async function tick(id: string, stepId: unknown): Promise<{ step: string } | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const plan = shownPlan(p)
+    if (!plan) return { refused: `${p.name} has no plan — Build plan writes one` }
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    const step = String(stepId ?? '').trim()
+    if (!plan.steps[step]) return { refused: `Go did not start step '${step}' — a tick here is for a box its run left open` }
+    if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — it may still tick ${step} itself` }
+    const file = join(p.path, plan.path)
+    let text: string
+    try { text = readFileSync(file, 'utf8') } catch { return { refused: `nothing is written at ${plan.path}` } }
+    const { tickStep } = await loadPlan()
+    const out = tickStep(text, step, { file: plan.path })
+    if (out === null) return { refused: `${step} is not an open box in ${plan.path}` }
+    writeFileSync(file, out)
+    return { step }
+  }
+
+  /** A row the owner files from the Plan tab — fli's `fileIssue`, under its
+   *  register guard, numbered like a row a session files. Not refused while a
+   *  run is live: the guard and `register:check` are what keep two writers
+   *  from minting one id, and by number the row is the running step's. */
+  async function file(id: string, input: { severity?: unknown, area?: unknown, title?: unknown, detail?: unknown }): Promise<{ id: string, file: string, line: number } | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    const { fileIssue } = await loadFile()
+    const out = fileIssue({ root: p.path, severity: input.severity, area: input.area, title: input.title, detail: input.detail })
+    if (!out.ok) return { refused: out.reason }
+    return { id: out.id, file: out.file, line: out.line }
+  }
+
+  /** A letter on one of the plan's `Q`s — fli's `decide` over the checkout,
+   *  under its register guard: the ruling, the question struck in the plan,
+   *  and Next's block gone with it. Refused while a run is live, since the
+   *  session may be writing the plan file the strike rewrites. */
+  async function decide(id: string, input: { question?: unknown, pick?: unknown, why?: unknown, section?: unknown }): Promise<{ ruling: string, pick: string, files: string[] } | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const plan = shownPlan(p)
+    if (!plan) return { refused: `${p.name} has no plan — Build plan writes one` }
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — answer once it stops` }
+    const { decide: rule } = await loadDecide()
+    const out = rule({
+      root: p.path, file: plan.path, id: String(input.question ?? ''),
+      pick: String(input.pick ?? ''), why: String(input.why ?? ''), section: String(input.section ?? ''),
+    })
+    if (!out.ok) return { refused: out.reason }
+    return { ruling: out.ruling, pick: out.pick, files: out.files }
+  }
+
+  /** Show the plan at `path` — one on the pin, or a file already written in
+   *  the checkout, added. Not refused while a run is live: Go and Next are,
+   *  and a running step is recorded on the plan it started in. */
+  function openPlan(id: string, input: unknown): Pin | { refused: string } {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const bad = planPathRefusal(input)
+    if (bad) return { refused: bad }
+    const path = planPath(input)
+    if (p.plans.some(x => x.path === path)) return updatePin(id, { plan: path })
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    if (!existsSync(join(p.path, path))) return { refused: `nothing is written at ${path} — Build plan writes one` }
+    return updatePin(id, { plans: [...p.plans, { path, steps: {} }], plan: path })
+  }
+
+  /** Forget a plan here, with what its steps cost and filed; the file stays.
+   *  The one shown passes to its neighbor. Refused while a run is live,
+   *  since the step running may be one of its. */
+  function closePlan(id: string, input: unknown): Pin | { refused: string } {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const path = planPath(input)
+    const at = p.plans.findIndex(x => x.path === path)
+    if (at === -1) return { refused: `${p.name} has no plan at '${path}'` }
+    if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — close ${path} once it stops` }
+    const plans = p.plans.filter(x => x.path !== path)
+    const shown = p.plan === path ? plans[Math.max(0, at - 1)]?.path ?? null : p.plan
+    return updatePin(id, { plans, plan: shown })
   }
 
   // ─── follow-ups ───────────────────────────────────────────────────────
@@ -1182,7 +1476,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
 
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
-    send, stop, fresh, select, close, seen, check, review, fork, land, archive, archiveRefusal, recordOpened,
-    runnables, run, halt, output, readPlan, buildPlan, go,
+    send, stop, fresh, select, close, seen, check, review, fork, land, commit, archive, archiveRefusal, recordOpened,
+    runnables, run, halt, output, readPlan, buildPlan, go, next, tick, file, decide, openPlan, closePlan,
   }
 }

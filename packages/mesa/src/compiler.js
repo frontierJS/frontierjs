@@ -3015,12 +3015,6 @@ function refuseCompiledDoorMisuse(ast) {
         blessed.add(node.init.callee)
         mountedVars.push(node.id.name)
       }
-      const o = sugarObject(node.init)
-      if (o) blessed.add(o)
-    }
-    if (node.type === 'AssignmentExpression') {
-      const o = sugarObject(node.left)
-      if (o) blessed.add(o)
     }
     for (const k of Object.keys(node)) {
       const c = node[k]
@@ -3030,13 +3024,47 @@ function refuseCompiledDoorMisuse(ast) {
   }
   find(ast)
 
+  // Only a whole top-level statement is compiled; the same member anywhere else
+  // is a property of the runtime's one shared context object.
+  for (const stmt of ast.body ?? []) {
+    if (stmt.type === 'VariableDeclaration') {
+      for (const d of stmt.declarations) {
+        const o = sugarObject(d.init)
+        if (o) blessed.add(o)
+      }
+    } else if (
+      stmt.type === 'ExpressionStatement' &&
+      stmt.expression.type === 'AssignmentExpression' &&
+      stmt.expression.operator === '='
+    ) {
+      const o = sugarObject(stmt.expression.left)
+      if (o) blessed.add(o)
+    }
+  }
+
   const MOUNTED_FIX =
     `'$.mounted' gates the template on a promise and the compiler wires it by NAME. ` +
     `Write 'const ready = $.mounted(fn)' and reference 'ready'. ` +
     `For work at mount with no gate, '$.onMount(fn)'.`
 
-  const sweep = (node) => {
+  // A function body is left to the context pass, which reports it by name.
+  const isFn = (n) =>
+    n.type === 'FunctionDeclaration' || n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression'
+
+  const sweep = (node, inFn = false) => {
     if (!node || typeof node !== 'object') return
+    inFn = inFn || isFn(node)
+    const unblessed = inFn ? null : sugarObject(node)
+    if (unblessed && !blessed.has(unblessed)) {
+      const key = node.property?.name
+      if (key !== 'use' && key !== 'provide') {
+        throw new Error(
+          `'$context.${key}' is compiled, and only as a whole top-level statement. ` +
+          `Read it with 'const ${key} = $context.${key}' or provide it with '$context.${key} = value'; ` +
+          `anywhere else it reads and writes a property of the one object every component shares.`
+        )
+      }
+    }
     for (const k of Object.keys(node)) {
       if (k === 'label') continue
       if ((k === 'key' || k === 'property') && !node.computed) continue
@@ -3049,7 +3077,7 @@ function refuseCompiledDoorMisuse(ast) {
           // export and works — it just needs its local declared.
           if (n.name === '$context') needsContextLocal = true
         }
-        sweep(n)
+        sweep(n, inFn)
       }
       if (Array.isArray(c)) c.forEach(visit)
       else visit(c)
@@ -6381,7 +6409,10 @@ export function makeEachBlock(data, option) {
       const keyLink = isDestructure ? {} : { [itemName]: '$$item' }
       if (indexName) keyLink[indexName] = '$index'
       const keyExp0 = replaceKeyword(keyName, (n) => keyLink[n] ?? n)
-      const keyExp = this.accessors ? rewriteExpr(keyExp0, this.accessors) : keyExp0
+      // The key arrow takes the raw item as its own `$$item`; an enclosing
+      // destructured row's `$$item` getter would turn it into `$$item()`.
+      const { $$item: _outerItem, ...keyAccessors } = this.accessors ?? {}
+      const keyExp = this.accessors ? rewriteExpr(keyExp0, keyAccessors) : keyExp0
       if (isDestructure) {
         keyFunction = xNode('key-function', { exp: keyExp, pat: destructurePattern }, (w, n) => {
           w.write(`($$item, $index) => { const ${n.pat} = $$item; return ${n.exp}; }`)

@@ -5557,6 +5557,8 @@ interface LiJsonProp {
   items?:            LiJsonProp
   minLength?:        number
   maxLength?:        number
+  minItems?:         number
+  maxItems?:         number
   minimum?:          number
   maximum?:          number
   exclusiveMinimum?: number
@@ -5760,6 +5762,8 @@ function _mapProp(
 
   if (inner.minLength !== undefined) def.minLength = inner.minLength
   if (inner.maxLength !== undefined) def.maxLength = inner.maxLength
+  if (inner.minItems  !== undefined) def.minItems  = inner.minItems
+  if (inner.maxItems  !== undefined) def.maxItems  = inner.maxItems
   if (inner.minimum   !== undefined) def.min       = inner.minimum
   if (inner.maximum   !== undefined) def.max       = inner.maximum
   if (inner.exclusiveMinimum !== undefined) def.exclusiveMin = inner.exclusiveMinimum

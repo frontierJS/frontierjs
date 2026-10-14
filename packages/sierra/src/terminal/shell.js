@@ -53,6 +53,7 @@ import { createSignal, flushSync } from '@frontierjs/mesa/runtime'
 import { installTerminalLoader } from './loader.js'
 
 const SHELL = new URL('./Shell.mesa', import.meta.url).pathname
+const MODE  = new URL('./Mode.mesa', import.meta.url).pathname
 const NO_LOWERING = / has no terminal lowering$/
 
 /** Every node of the route tree that renders a page, in table order. */
@@ -145,6 +146,7 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
 
   const tui = await import('@frontierjs/mesa/runtime/terminal.js')
   const Shell = (await import(SHELL)).default
+  const Mode  = (await import(MODE)).default
   const app = config.siteName ?? root.split('/').filter(Boolean).at(-2) ?? 'app'
   const { components, loaders } = routeTable(root, routes)
   const byId = new Map(routes.map((r) => [r.node.id, r]))
@@ -200,6 +202,23 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
   const done = new Promise((res) => { finished = res })
   const renderer = await tui.createRenderer({ exitOnCtrlC: true, onDestroy: () => finished(0) })
 
+  // In NORMAL, h j k l are the arrows, so a route that walks or scrolls on
+  // them takes vim's keys without knowing the mode. The key is renamed before
+  // the runtime makes a keydown of it, which is why this listener goes on
+  // before the first mount takes the renderer's keys; added after, a route
+  // would read a letter. A j or k the page leaves alone moves focus, below.
+  const [mode, setMode] = createSignal({ mode: 'normal', field: false })
+  const VIM = { h: ['left', '\x1b[D'], j: ['down', '\x1b[B'], k: ['up', '\x1b[A'], l: ['right', '\x1b[C'] }
+  const FOCUS = { j: 1, k: -1 }
+  let focusStep = 0
+  renderer.keyInput.on('keypress', (k) => {
+    focusStep = 0
+    const arrow = VIM[k.name]
+    if (!arrow || mode().mode !== 'normal' || k.ctrl || k.meta || k.option || k.shift) return
+    focusStep = FOCUS[k.name] ?? 0
+    ;[k.name, k.sequence] = arrow
+  })
+
   const listed = {
     routes:   open.filter((r) => !r.params.length),
     patterns: open.filter((r) => r.params.length).map((r) => r.path),
@@ -254,9 +273,22 @@ export async function runTerminalShell({ root, apiUrl, list = false, frame = nul
     else set({ note: `${path} did not open` })
   }
 
-  tui.mount(Shell, { renderer, props: { state, onopen: openPath } })
+  tui.mount(Mode,{ renderer, parent: tui.footerOf(renderer), props: { mode } })
+  tui.mount(Shell, { renderer, props: {
+    state,
+    onopen: openPath,
+    onmove: (step) => step > 0 ? tui.focusNext() : tui.focusPrev(),
+    onmode: setMode,
+  } })
   tui.followLinks(renderer, (href) => {
     if (!followLink(href) && shown) set({ note: `${href} is not a route here` })
+  })
+  // A route that walks on the arrows prevents the one it took; otherwise a j
+  // stepping the figure would also move focus off the line it types in.
+  renderer.keyInput.on('keypress', (k) => {
+    if (!focusStep || k.defaultPrevented) return
+    k.preventDefault()
+    focusStep > 0 ? tui.focusNext() : tui.focusPrev()
   })
   // An Escape the page prevented was the page's: a confirm panel closing
   // must not also leave the route.

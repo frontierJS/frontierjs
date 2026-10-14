@@ -38,7 +38,7 @@ global.fliRoot     = CLI
 global.projectRoot = REPO
 
 // 7500 is the tooling slot on the TEST tier, so a drive cannot collide with a
-// `fli gui` somebody has open on 8500 while they run it.
+// `fli gui` somebody has open on 5500 while they run it.
 const PORT = process.env.FLI_GUI_TEST_PORT ?? '7500'
 process.env.FLI_PORT = PORT
 const origin = `http://localhost:${PORT}`

@@ -92,15 +92,19 @@ export const BUILD_PLAN_RULES = [
   'Each step names the files it touches and the test or drive that proves it. A step that cannot name its proof is not a step yet.',
 ].join('\n\n')
 
-/** Build plan: the goal, the shape, and the one path the session may write. */
-export function buildPlanPrompt({ goal, path, today = new Date().toISOString().slice(0, 10) } = {}) {
+/** Build plan: the goal, the shape, and the one path the session may write.
+ *  From the ask panel it also carries the framework guides an app reads in
+ *  place of this repo's skills, and the page it was asked from. */
+export function buildPlanPrompt({ goal, path, page = null, guides = [], today = new Date().toISOString().slice(0, 10) } = {}) {
   const asked = String(goal ?? '').trim().slice(0, 8000)
   return [
     `Write a plan at \`${path}\` for the goal below. Today is ${today}.`,
     BUILD_PLAN_RULES,
     PLAN_SHAPE,
+    guides.length ? guideList(guides) : null,
+    page ? `Asked from the page: ${String(page).slice(0, 300)}` : null,
     `The goal:\n\n${asked}`,
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 }
 
 export const STEP_RULES = [
@@ -125,16 +129,14 @@ export function stepPrompt({ path, step, phase = null, today = new Date().toISOS
 
 export const HANDOFF_MAX = 4000
 
-/** Next: a fresh session handed the plan, the last reply and the open questions, then the step. */
-export function nextHandoff({ path, step, phase = null, lastResult = '', questions = [], today } = {}) {
+/** Next: a fresh session handed the plan and the last reply, then the step.
+ *  No open questions: Next is refused while one is unruled, and a ruled one
+ *  is struck in the plan the session reads first. */
+export function nextHandoff({ path, step, phase = null, lastResult = '', today } = {}) {
   const tail = String(lastResult ?? '').trim()
-  const open = questions.filter(q => q.state !== 'ruled')
   return [
     `This is a fresh session continuing the plan at \`${path}\`. Read it first: the next step is the first open box, and what earlier steps found is written under their boxes.`,
     tail ? `The last session's reply:\n\n${tail.length > HANDOFF_MAX ? '…' + tail.slice(-HANDOFF_MAX) : tail}` : null,
-    open.length
-      ? `Open questions the owner has not ruled on — do not answer them, and do not build what depends on one:\n${open.map(q => `- ${q.question}`).join('\n')}`
-      : null,
     stepPrompt({ path, step, phase, today }),
   ].filter(Boolean).join('\n\n')
 }
@@ -271,7 +273,10 @@ function askFlags({ session, edit, reads, work, fork }) {
       '--permission-mode', 'dontAsk',
       '--strict-mcp-config',
       '--tools',           EDIT_TOOLS.join(','),
-      '--allowedTools',    `Edit(/${scope})`, `Edit(/${scope}/**)`, ...reads.map(d => `Read(/${String(d).replace(/\/+$/, '')}/**)`),
+      // A file outside the working directory is not readable by default, and
+      // Edit refuses a file it has not read: the plan the ask panel writes
+      // at the app root, beside a Vite root that is the working directory.
+      '--allowedTools',    `Edit(/${scope})`, `Edit(/${scope}/**)`, `Read(/${scope})`, `Read(/${scope}/**)`, ...reads.map(d => `Read(/${String(d).replace(/\/+$/, '')}/**)`),
       '--max-budget-usd',  String(ASK_BUDGET_USD),
     ]
     // The reply streams as it is written, and a block's start says what the
@@ -357,11 +362,13 @@ export function askPrompt({ question, output = '', context = {}, git = null, rul
  * `rules: false` keeps the guides and drops the rules, for a prompt handed to
  * an agent the panel does not run.
  */
+const guideList = guides => ['The framework this app is built on, one guide per package — read the one a change touches before you make it, and follow it over the habits of other frameworks:', ...guides.map(g => `- ${g.file} — ${g.about}`)].join('\n')
+
 export function editPrompt({ instruction, picks = [], page = null, followUp = false, rules = !followUp, kind = null, scope = null, data = [], images = 0, guides = [] }) {
   const known = Object.hasOwn(EDIT_KINDS, kind ?? '')
   const parts = []
   if (rules) parts.push(EDIT_RULES)
-  if (!followUp && guides.length) parts.push(['The framework this app is built on, one guide per package — read the one a change touches before you make it, and follow it over the habits of other frameworks:', ...guides.map(g => `- ${g.file} — ${g.about}`)].join('\n'))
+  if (!followUp && guides.length) parts.push(guideList(guides))
   const first = known ? guides.filter(g => EDIT_KINDS[kind].guides.includes(g.pkg)) : []
   if (first.length) parts.push(`Before this change, read: ${first.map(g => g.file).join(', ')}`)
   const change = String(instruction ?? '').trim()

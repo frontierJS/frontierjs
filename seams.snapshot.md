@@ -29,12 +29,12 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 13 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 14 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 11 |
+| `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 10 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
-| `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 9 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 8 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 8 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 7 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
@@ -121,7 +121,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `ctx.enqueue(job, payload)` / `deliverOutbox(app)` | `packages/junction/src/plugins/outbox/engine.ts` | yes | 4 |
 | `claimIdempotency(ctx, key, config)` | `packages/junction/src/core/idempotency.ts` | yes | — |
 | `runStartPhases(bindHost)` | `packages/junction/src/core/app.ts` | yes | — |
-| `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | yes | 9 |
+| `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | yes | 10 |
 | `app.withDb(fn)` / `app.onTenantClient(observer)` | `packages/junction/src/core/app.ts` | yes | 1 |
 | `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 6 |
 | `createLitestoneAuth(db, { sessionFields })` | `packages/auth/auth.ts` | yes | — |
@@ -140,7 +140,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 13 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 14 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
@@ -156,7 +156,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
 | `page.query` / `page.directives` | `packages/sierra/src/router/page-fields.js` | mentions `query` — weak | — |
 | `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | — |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 8 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 11 |
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |
 | `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | — |
 | `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 1 |

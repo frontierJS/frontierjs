@@ -698,6 +698,15 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       fieldSchema['x-litestone-kind'] = tenancyStamped ? 'tenancy' : 'system'
     }
 
+    // @createdBy / @updatedBy — the principal WINS (`core/stamps.js`), so a
+    // value a caller sends is overwritten and requiring one made every caller
+    // send an id that was thrown away (`FJS-1737`). Readonly for the client
+    // audience, and out of `required` for both: an `asSystem()` write has no
+    // principal to stamp from and states the author itself, and the client's
+    // own pre-flight still names the column when it does not.
+    const authStamped = field.attributes.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy')
+    if (authStamped && audience === 'client') fieldSchema.readOnly = true
+
     // A column `@default(auth().x)` fills when the caller leaves it out. Still
     // writable, since a caller may name someone else, so the kind is all that
     // says the SERVER owns the blank. A nullable one cannot be told from
@@ -813,8 +822,8 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       // the browser refuse before the request, naming fields the caller was
       // never meant to send: basecamp's ApiKey has three of them, and every
       // create was refused with "the button does nothing" (FJS-095).
-      if (isSystemWritten) {
-        // nothing — the application fills it
+      if (isSystemWritten || authStamped) {
+        // nothing — the application or the principal fills it
       } else if (!field.type.optional && !isServerFilled(field) && (!isId || !isServerAssignedId(field, model))) {
         // A required @transient field lands here like any other, and this is
         // the only layer that can hold the rule: there is no column, so no

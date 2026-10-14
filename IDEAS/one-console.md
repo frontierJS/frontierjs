@@ -33,10 +33,10 @@ the same daemon and shell with the machine left out.
 
 | Console | Serves | Port | What it does | Written as |
 | --- | --- | --- | --- | --- |
-| `fli gui` | `packages/cli/core/server.js` | 8500 | what can run, what is up, start and stop, `proves`, `check`, decisions, CI, release, publish (`overview.md` 5.24) | `cli/web/index.html`, 4,249 lines |
-| the viewer | the same server | 8500 | reads a document | `cli/web/viewer/index.html`, 2,064 lines |
-| Litestone Studio | `litestone/src/tools/studio.js` | 8502 | browse and edit rows | `studio.html`, 7,946 lines |
-| devtools | `junction/src/plugins/devtools/` | 8503 | service calls, live, health and metrics | `admin.html`, 650 lines |
+| `fli gui` | `packages/cli/core/server.js` | 5500 | what can run, what is up, start and stop, `proves`, `check`, decisions, CI, release, publish (`overview.md` 5.24) | `cli/web/index.html`, 4,249 lines |
+| the viewer | the same server | 5500 | reads a document | `cli/web/viewer/index.html`, 2,064 lines |
+| Litestone Studio | `litestone/src/tools/studio.js` | 5502 | browse and edit rows | `studio.html`, 7,946 lines |
+| devtools | `junction/src/plugins/devtools/` | 5503 | service calls, live, health and metrics | `admin.html`, 650 lines |
 
 **About 15,000 lines of console, in four pages, each its own app.** All four read
 `@frontierjs/css`, so they share a look but nothing else: no shared component, no
@@ -91,7 +91,7 @@ written in handlers.
 
 **One set of tool screens, written in `.mesa`, built for two targets.**
 
-- **Web:** `fli gui` serves them on 8500, as today.
+- **Web:** `fli gui` serves them on 5500, as today.
 - **Terminal:** the same screens through the `FJS-D809` path, one process, one
   key model.
 - **Owner:** the screens live in `packages/cli`, which is the tooling ring and may

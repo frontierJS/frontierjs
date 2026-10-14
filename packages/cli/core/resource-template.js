@@ -15,6 +15,8 @@
 // read back off the schema at runtime as `fields`, `relations` and `gate`, so a
 // column added to `schema.lite` appears with no edit to the generated file.
 
+import { pluralize } from '@frontierjs/toolbelt/inflect'
+
 /**
  * The whole file.
  *
@@ -101,13 +103,12 @@ const resource = ${service}
 }
 
 /**
- * Model → service name. Regular English plurals only — the same three rules
- * Sierra's schema registry applies in the other direction. Irregulars are not
- * guessed anywhere in this framework; the commands take a --service flag.
+ * Model → service name, and so the route directory a scaffold writes. Toolbelt's
+ * `pluralize`, the rule litestone names the table by and sierra's
+ * `serviceNameFor` reads — a copy here missing the irregulars wrote `persons`
+ * where sierra's palette links `/people/` (`FJS-2841`). A word the rules cannot
+ * reach takes `--service`.
  */
 export function servicePlural(model) {
-  const a = model.charAt(0).toLowerCase() + model.slice(1)
-  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
-  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
-  return a + 's'
+  return pluralize(model.charAt(0).toLowerCase() + model.slice(1))
 }

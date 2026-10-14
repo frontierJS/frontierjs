@@ -47,7 +47,7 @@ if (!/\bdevtools\s*:/.test(src) && !readFileSync(appTs, 'utf8').includes('devtoo
   // console's own default: a lesson that baked a number in would leave every
   // later lesson's app binding that number too, and a person reading the
   // config afterwards would find a port where the documented line has none.
-  const entry = $.config.devtoolsPort === 8503
+  const entry = $.config.devtoolsPort === 5503
     ? 'devtools: true,'
     : `devtools: { port: ${$.config.devtoolsPort} },`
 

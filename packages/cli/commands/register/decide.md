@@ -7,6 +7,7 @@ examples:
   - fli decide scoped-sql:encrypted-columns A --section "Access control"
   - fli decide scoped-sql:encrypted-columns B --section "Access control" --why "an operator reads ciphertext on purpose"
   - fli decide scoped-sql:cache-key --by FJS-D123 --why "the key is the view's name, which D123 fixes"
+  - fli decide PLAN:q1-which-mail-provider A --section "Batteries" --file PLAN.md
 args:
   -
     name: id
@@ -27,6 +28,10 @@ flags:
     char: b
     type: string
     description: An existing ruling that already answers the question — strikes it citing that id, and writes no new ruling
+  file:
+    char: f
+    type: string
+    description: The one file the question is argued in, for a plan outside IDEAS/ such as an app's PLAN.md
 ---
 
 ```js
@@ -76,7 +81,7 @@ if (flag.by) {
     process.exitCode = 1
     return
   }
-  const out = settle({ root, id: arg.id, by: flag.by, why: flag.why ?? '' })
+  const out = settle({ root, id: arg.id, by: flag.by, why: flag.why ?? '', file: flag.file })
   echo('')
   if (!out.ok) {
     echo(`  ✗ ${out.reason}`)
@@ -106,7 +111,7 @@ if (!flag.section) {
   return
 }
 
-const out = decide({ root, id: arg.id, pick: arg.pick, why: flag.why ?? '', section: flag.section })
+const out = decide({ root, id: arg.id, pick: arg.pick, why: flag.why ?? '', section: flag.section, file: flag.file })
 
 echo('')
 if (!out.ok) {
@@ -153,3 +158,8 @@ the paper alone — the question struck with that ruling's id — and nothing to
 first one says. Options are not needed. The reason is the recommendation's when
 it names the ruling, and `--why` otherwise. A withdrawn or superseded ruling is
 refused, the second naming what replaced it.
+
+`--file <path>` looks the id up in that one file instead of the registers — a
+plan's `Q` outside `IDEAS/`, such as an app's `PLAN.md`, which `fli decisions`
+does not queue. `fli plan <file>` prints the ids. The act is the same in every
+other way; it is what the workbench's Plan tab runs when a letter is pressed.

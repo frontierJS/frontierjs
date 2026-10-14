@@ -10,7 +10,7 @@
  * Each refusal below is a real attack on the shape, not a spelling check.
  */
 
-import { canonicalRequest, canonicalQuery, signRequest, verifyRequest, sha256Hex } from '../../src/signature/signature.js'
+import { canonicalRequest, canonicalQuery, signRequest, verifyRequest, sha256Hex, generateSigningKeys } from '../../src/signature/signature.js'
 
 const SECRET = 'a-fleet-secret'
 const BODY   = JSON.stringify({ outpost_version: '0.4.1' })
@@ -26,6 +26,51 @@ test('signature: a signed request verifies', async function () {
   const headers = await sign({ secret: SECRET, method: 'POST', path: '/servers/7', body: BODY })
   const result  = await verify({ secret: SECRET, method: 'POST', path: '/servers/7', body: BODY, headers })
   assert.ok(result.ok, JSON.stringify(result))
+})
+
+// A key pair: the machine signs, and the side that verifies holds nothing that
+// could sign as it. Haven's login is the first caller (`IDEAS/haven.md` 1.3).
+test('signature: a key pair signs, the public half verifies, and nothing else does', async function () {
+  const mine   = await generateSigningKeys()
+  const theirs = await generateSigningKeys()
+  const req    = { method: 'POST', path: '/haven/login', body: BODY }
+  const headers = await sign({ privateKey: mine.privateKey, ...req })
+  assert.match(headers['X-Fjs-Signature'], /^v1-ed25519=/)
+
+  const ok = await verify({ publicKey: mine.publicKey, ...req, headers })
+  assert.ok(ok.ok, JSON.stringify(ok))
+
+  assert.deepEqual(await verify({ publicKey: theirs.publicKey, ...req, headers }), { ok: false, reason: 'signature does not match' })
+  assert.deepEqual(await verify({ publicKey: mine.publicKey, ...req, body: '{}', headers }), { ok: false, reason: 'signature does not match' })
+  // Remote input that does not parse is a refusal, not a crash.
+  assert.deepEqual(await verify({ publicKey: 'not-a-key', ...req, headers }), { ok: false, reason: 'signature does not match' })
+  assert.deepEqual(await verify({ publicKey: mine.publicKey, ...req, headers: { ...headers, 'X-Fjs-Signature': 'v1-ed25519=@@' } }), { ok: false, reason: 'signature does not match' })
+})
+
+test('signature: the scheme is named — an HMAC where a key pair is expected, and the reverse, say which', async function () {
+  const keys = await generateSigningKeys()
+  const req  = { method: 'POST', path: '/haven/login', body: BODY }
+  const hmac = await sign({ secret: SECRET, ...req })
+  const pair = await sign({ privateKey: keys.privateKey, ...req })
+  assert.equal((await verify({ publicKey: keys.publicKey, ...req, headers: hmac })).reason, 'signature is v1-sha256 and this side verifies v1-ed25519')
+  assert.equal((await verify({ secret: SECRET, ...req, headers: pair })).reason, 'signature is v1-ed25519 and this side verifies v1-sha256')
+})
+
+test('signature: one scheme per side — a secret and a key together are refused', async function () {
+  const keys = await generateSigningKeys()
+  const req  = { method: 'POST', path: '/x' }
+  await assertRejects(() => sign({ secret: SECRET, privateKey: keys.privateKey, ...req }), /secret OR privateKey/)
+  await assertRejects(() => verify({ secret: SECRET, publicKey: keys.publicKey, ...req, headers: {} }), /secret OR publicKey/)
+})
+
+test('signature: a key-pair signature replayed is refused by the same nonce store', async function () {
+  const keys = await generateSigningKeys()
+  const seen = new Set()
+  const seenNonce = (n) => seen.has(n) || (seen.add(n), false)
+  const req  = { method: 'POST', path: '/haven/login', body: BODY }
+  const headers = await sign({ privateKey: keys.privateKey, ...req })
+  assert.ok((await verify({ publicKey: keys.publicKey, ...req, headers, seenNonce })).ok)
+  assert.equal((await verify({ publicKey: keys.publicKey, ...req, headers, seenNonce })).reason, 'nonce has already been used')
 })
 
 test('signature: the canonical string has seven lines, the query is the third and the service method the fourth', async function () {

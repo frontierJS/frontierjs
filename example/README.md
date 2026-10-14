@@ -20,7 +20,7 @@ halves still run on their own:
 
 ```bash
 bun run api     # terminal 1 — Junction + Litestone on :8110
-                # DEVTOOLS=1 bun run api  adds the console on :8503
+                # DEVTOOLS=1 bun run api  adds the console on :5503
 bun run web     # terminal 2 — Sierra + Vite on :8010
 ```
 

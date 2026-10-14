@@ -61,3 +61,31 @@ describe('a column the Data boundary fills is not required of the caller', () =>
     } finally { await db.$close() }
   })
 })
+
+// `FJS-1737`. A principal stamp is filled only when there IS a principal, so it
+// is not `isServerFilled` — an `asSystem()` create still names it — but a
+// caller's value is overwritten, so the caller's schema neither requires nor
+// offers it.
+describe('a column the principal stamps is not required of the caller', () => {
+  const SRC = `model M { id Int @id  ownerId String @createdBy  editorId String? @updatedBy  x String }`
+
+  it('is out of required and readonly to a client, and writable to the system', () => {
+    const def = createDef(SRC)
+    expect(def.required).toEqual(['x'])
+    expect(def.properties.ownerId.readOnly).toBe(true)
+    expect(def.properties.editorId.readOnly).toBe(true)
+
+    const sys = generateJsonSchema(parse(SRC).schema, { mode: 'create', audience: 'system' }).$defs.M
+    expect(sys.required).toEqual(['x'])
+    expect(sys.properties.ownerId.readOnly).toBeUndefined()
+  })
+
+  it('a create omitting it is stamped from the caller, and a system create must still state it', async () => {
+    const db = await createClient({ schema: SRC, db: ':memory:' })
+    try {
+      const row = await db.$setAuth({ id: 'u1' }).m.create({ data: { x: 'a' } })
+      expect(row.ownerId).toBe('u1')
+      await expect(db.asSystem().m.create({ data: { x: 'b' } })).rejects.toThrow(/ownerId/)
+    } finally { await db.$close() }
+  })
+})

@@ -165,7 +165,7 @@ key by name (FJS-1310's fix, measured). Verses are listed in book order and
 lemmas as their own group, 1–8 ms median over HTTP. What the second caller adds
 is the easy case linear lacked: the corpus has no row policies, so `search()`
 through `$.db` is the whole of it. **The spanning verb is still not owed.**
-What the third copy should be priced against is `cross-model-search.md`
+What the third copy should be priced against is `shipped/cross-model-search.md`
 (rewritten 2026-10-13): one shared FTS index across every `@@fts` model, graded
 in one query — Q4's *not comparable* was measured on per-model indexes, and one
 index is one bm25 scale. Rerun the −0.981/−3.287 measurement on it first.

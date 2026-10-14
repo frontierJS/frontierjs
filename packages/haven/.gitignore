@@ -1,0 +1,4 @@
+# Runtime data, created on first boot. `rm -rf db/haven.db* db/audit` resets it.
+db/haven.db
+db/haven.db-*
+db/audit/

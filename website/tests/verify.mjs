@@ -33,7 +33,7 @@ import settings     from '../site/content/settings/site.js'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const SITE   = join(HERE, '..', 'site')
-const KIT    = join(HERE, '..', 'packages', 'site-kit')
+const KIT    = join(HERE, '..', '..', 'packages', 'site-kit')
 const DIST   = join(SITE, 'dist')
 const SRC_ROUTES = join(SITE, 'content', 'routes')
 // test / siteServe / project 9 (`website`) — its own slot, so it cannot collide

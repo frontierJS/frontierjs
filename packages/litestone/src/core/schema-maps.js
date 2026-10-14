@@ -715,11 +715,10 @@ export function buildFromMap(schema, pluralize = false) {
         case 'sum':
           subquerySql = `(SELECT COALESCE(SUM(_from."${opValue}"), 0) FROM "${targetTable}" AS _from WHERE ${whereClause})`
           break
+        case 'avg':
         case 'max':
-          subquerySql = `(SELECT MAX(_from."${opValue}") FROM "${targetTable}" AS _from WHERE ${whereClause})`
-          break
         case 'min':
-          subquerySql = `(SELECT MIN(_from."${opValue}") FROM "${targetTable}" AS _from WHERE ${whereClause})`
+          subquerySql = `(SELECT ${op.toUpperCase()}(_from."${opValue}") FROM "${targetTable}" AS _from WHERE ${whereClause})`
           break
         case 'exists':
           subquerySql = `(SELECT EXISTS(SELECT 1 FROM "${targetTable}" AS _from WHERE ${whereClause}))`

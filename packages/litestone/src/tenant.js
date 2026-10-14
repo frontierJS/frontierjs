@@ -28,7 +28,7 @@
 import { openDatabase, openWalDatabase } from './core/engine.js'
 import { applyBusyTimeout, busyTimeoutFor } from './core/pragmas.js'
 import { existsSync, unlinkSync, mkdirSync } from 'fs'
-import { resolve, join, dirname } from 'path'
+import { resolve, join, dirname, isAbsolute } from 'path'
 import { createClient, CLIENT_OPTIONS } from './core/client.js'
 import { suggestKey }      from './core/args.js'
 import { generateDDL, generateDDLForDatabase } from './core/ddl.js'
@@ -921,9 +921,12 @@ export async function createTenantRegistry({
   // was not there is the same signal it is for a database file: every measured
   // instance of `FJS-449` is a relative declared path resolved from one
   // directory away, and nothing fails — the fleet simply becomes empty.
+  // The warning is about the cwd choosing the directory: a stated `dir` that is
+  // relative, or no schema path for the default and the declared one to anchor
+  // to. An absolute `dir` names its directory.
   if (!inMemory && !existsSync(absDir)) {
     mkdirSync(absDir, { recursive: true })
-    noteMintedDirectory(absDir, registryPath)
+    if (dir ? !isAbsolute(dir) : !schemaPath) noteMintedDirectory(absDir, registryPath)
   }
 
   // Open registry DB

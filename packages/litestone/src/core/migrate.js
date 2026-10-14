@@ -1458,10 +1458,9 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
   if (droppedTables.length) {
     lines.push(`-- ─── dropped tables ${'─'.repeat(48)}`)
     lines.push(`-- These tables exist in the db but not in schema.lite.`)
-    lines.push(`-- Uncomment to drop them (destructive — data will be lost):`)
     lines.push(``)
     for (const name of droppedTables)
-      lines.push(`-- DROP TABLE IF EXISTS "${name}";`)
+      lines.push(`DROP TABLE IF EXISTS "${name}";`)
     lines.push(``)
   }
 

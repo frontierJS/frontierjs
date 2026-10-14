@@ -762,7 +762,7 @@ be worse.
 - **A webhook registration is a destination somebody else chose, and every bound
   on it was missing** (`FJS-681`). Measured: a `role: 'user'` shopper POSTed a
   `*` subscription and got 201 with the signing secret; `169.254.169.254`,
-  `localhost:8503` (the devtools job runner), `file:///etc/passwd` and the
+  `localhost:5503` (the devtools job runner), `file:///etc/passwd` and the
   literal string `not-a-url` were all accepted as destinations; a 307 was
   followed with the signature re-sent; and a subscriber whose deliveries all
   died stayed active. **`manage` (default 5) is the standing**, graded with

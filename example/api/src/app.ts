@@ -381,11 +381,18 @@ app.configure(exportPlugin())
 // `keepAliveMs` is under this app's `http.idleTimeout`. The SDK's own default
 // is 15s against Bun's 10s, which is a stream that dies before its first
 // keep-alive frame — every time, and silently.
-app.configure(mcpPlugin({ name: 'shop', version: '1.0.0', keepAliveMs: 5_000 }))
+//
+// `SHOP_MCP_UI=1` serves the views `fli mcp:build` wrote, and is a switch rather
+// than the default because a declared root that is missing REFUSES the boot
+// (`FJS-D955`) and every other drive here starts this API unbuilt.
+app.configure(mcpPlugin({
+  name: 'shop', version: '1.0.0', keepAliveMs: 5_000,
+  ui: process.env.SHOP_MCP_UI === '1' ? { root: new URL('../dist/mcp', import.meta.url).pathname } : undefined,
+}))
 
 // ── The devtools console ──────────────────────────────────────────────────
 //
-//   DEVTOOLS=1 bun run api        →  http://localhost:8503
+//   DEVTOOLS=1 bun run api        →  http://localhost:5503
 //
 // The live call feed, /metrics with every plugin's contributed section,
 // readiness, and the job queue — depth per queue, the stall age, every
@@ -395,7 +402,7 @@ app.configure(mcpPlugin({ name: 'shop', version: '1.0.0', keepAliveMs: 5_000 }))
 // surface.
 //
 // `bun run api` sets DEVTOOLS=1, so the console is up for anyone running this
-// app. The flag stays rather than becoming unconditional because 8503 is a
+// app. The flag stays rather than becoming unconditional because 5503 is a
 // GLOBAL tooling port (packages/cli/core/ports.js § the tooling block) — one
 // console at a time, so running this beside basecamp's is a collision rather
 // than two consoles, and a held port is fatal at boot rather than quiet
@@ -406,7 +413,7 @@ app.configure(mcpPlugin({ name: 'shop', version: '1.0.0', keepAliveMs: 5_000 }))
 // with no auth gate rather than serving request params and a retry button to
 // whoever finds the port. The startup banner says which it did.
 if (process.env.DEVTOOLS === '1')
-  app.configure(devtools({ port: Number(process.env.DEVTOOLS_PORT ?? 8503) }))
+  app.configure(devtools({ port: Number(process.env.DEVTOOLS_PORT ?? 5503) }))
 
 // Mounts POST /api/auth/register, /api/auth/login, /api/auth/logout and the
 // password-reset + email-verify routes — deliberately NOT services, because

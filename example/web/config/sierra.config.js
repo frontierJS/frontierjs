@@ -40,7 +40,7 @@ export default {
 
   // The toolbar in the corner, dev server only — routes, live stores, the call
   // feed and the N+1 warning. Its only source of data is junction's own
-  // `devtools()` plugin on 8503, which `bun run api` turns on here, so the
+  // `devtools()` plugin on 5503, which `bun run api` turns on here, so the
   // block is the opt-in: declaring it is what injects the script, and an app
   // without a console must not have a toolbar retrying a socket nobody holds.
   devtools: {},
@@ -55,7 +55,7 @@ export default {
     // Every call logged to the browser console — `{ request }` on the way out,
     // `{ response }` with its duration coming back, both transports. It is the
     // answer the toolbar's feed cannot give: junction's telemetry event carries
-    // no payload, so the console on 8503 knows a call happened and not what it
+    // no payload, so the console on 5503 knows a call happened and not what it
     // returned.
     //
     // Opt-in per app and not per dev session, because devtools retains every

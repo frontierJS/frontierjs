@@ -478,7 +478,7 @@ export async function getStaticPaths() {        // static builds only
 ```js
 import {
   status, session, signIn, signOut, getClient, whenReady,
-  createResource, createStore, useStore,
+  createResource, createStore, useStore, paletteSource,
 } from '@frontierjs/sierra/resource'
 ```
 
@@ -819,7 +819,9 @@ it that the server does not also guard.
 
 Unknown answers are permissive — no gate declared, no level supplied, an
 operation the gate does not mention. Hiding a control the user could have used is
-a worse and much quieter failure than showing one that errors.
+a worse and much quieter failure than showing one that errors. A `SYSTEM` (8) or
+`LOCKED` (9) need is the exception: no browser caller reaches either at any
+level, so `can()` answers no to it with no level supplied too.
 
 Levels are the 0–9 ladder (`STRANGER` 0 … `USER` 4 … `OWNER` 6, `SYSTEM` 8), owned by
 `@frontierjs/toolbelt/gate`. Pass a number, or read a name off that kit rather than
@@ -953,6 +955,38 @@ Presence is socket-only and has no HTTP fallback: it is a fact about a live conn
 a request that opens and closes one has nothing to be present in. A reconnect re-announces
 every channel this client had announced, because the server keys presence by connection id
 and a new socket is a new connection with no meta and no roster.
+
+### Search
+
+`paletteSource(client, { models, link })` is `CommandPalette`'s `search`, over the API's
+`searchService({ models })` from `@frontierjs/junction/search` (`FJS-D970`):
+
+```js
+import { getClient, paletteSource } from '@frontierjs/sierra/resource'
+
+const search = paletteSource(getClient(), {
+  models: ['issue', 'comment', 'project'],
+  link:   { comment: async hit => `/issues/${(await comments.get(hit.id)).issueId}` },
+})
+```
+
+```html
+<CommandPalette items={NAV} {search} />
+```
+
+One round trip per pause in typing, answering one list ranked on one scale and already
+graded by the Data boundary — a row the caller may not read is never a hit. Each hit
+becomes a row: the group is the model's plural (`Issues`), the label its `@@label` column,
+the sub its identifying key, and choosing it goes to `/<service>/<id>` lowercased —
+`/productvariants/7`, `/people/3` — the route `fli scaffold` writes. A model whose rows live elsewhere states its own `link`, which may
+answer a promise: a hit carries `model`, `id`, `title` and `sub` and nothing else, so
+finding a comment's issue is a read.
+
+`models` narrows what the service mounts and cannot widen it — a model outside the mount
+is a 400 naming it. A `link` key that is not in `models` throws at the call, because a
+misspelled one would send its rows to the default route, which for most models is a page
+that exists and so reads as a wrong record rather than an error. A kind the index does not
+hold is the app's own source, appended to what this answers.
 
 ---
 
@@ -1284,7 +1318,7 @@ test:installable` holds the grader against Chrome's own `Page.getInstallabilityE
 - **Error overlay.** Runtime errors are forwarded to an in-page overlay and the terminal.
   `load()` failures are excluded — they are data errors, and the page renders `page.error`.
 - **Devtools toolbar.** Injected in dev only. It connects over WebSocket to Junction's
-  devtools plugin (`app.configure(devtools())`, port 8503) and shows requests, events,
+  devtools plugin (`app.configure(devtools())`, port 5503) and shows requests, events,
   logs, connections and an N+1 waterfall. Zero production bundle cost.
 - **Build warnings.** Unexported snippets, frontmatter shadowing a reserved `page` field,
   and duplicate snippet/layout-prop names.

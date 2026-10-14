@@ -1730,8 +1730,8 @@ function tutor() {
   const WEB     = 7000
   const LESSONS = [
     { id: 'tutor:app',    args: ['--api-port', String(API), '--web-port', String(WEB)] },
-    // The four tools, on the test tier of the reserved global block: 8500-8509
-    // is dev/tooling, so 7500-7509 is the same slot one environment down. The
+    // The four tools, on test/tooling/project 0 rather than their global
+    // 5500-5509, so the lesson never meets a GUI somebody has open. The
     // lesson runs the API off its assigned port on purpose, which is the case
     // its liveness assertion is written to survive.
     { id: 'tutor:tools',  args: ['--api-port', String(API), '--gui-port', '7500',
@@ -2019,9 +2019,9 @@ function selectedDirs() {
 }
 
 // A package.json under any directory a workspace pattern starts in, that no
-// pattern names. `website/packages/` is one such parent: bun reads workspaces
-// only from the root manifest, so a package there outside the root glob is
-// uninstalled, and a walk of packages/ alone never sees it.
+// pattern names: bun reads workspaces only from the root manifest, so a
+// package under a member's own directory is uninstalled, and a walk of
+// packages/ alone never sees it.
 function nestedPackageDirs() {
   const found = []
   const walk  = (dir, depth) => {

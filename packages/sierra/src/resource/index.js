@@ -61,6 +61,8 @@ export {
   displayFor, defaultDisplayFor, columnList, filterOpFor,
   registerDisplay, unregisterDisplay, registeredDisplays,
 } from './resource.js'
+// The ⌘K palette's server search, over junction's `search` service (`FJS-D970`).
+export { paletteSource } from './palette-source.js'
 // The device's own database, when the app configured one. Exported because
 // `virtual:sierra` calls it — the app never does.
 export { configureLocalDb } from './local-db.js'
@@ -71,7 +73,7 @@ export { pendingQueue } from './pending.js'
 export { offlineStatus } from './offline.js'
 import { clearLocalDb } from './local-db.js'
 
-// The live stores' half of a token change — see _tokenChanged below.
+// The live stores' half of a token change — see _identityChanged below.
 import { resetResourcesForIdentityChange } from './resource.js'
 
 // ─── Module-level refs (set by initJunction) ──────────────────────────────────
@@ -161,7 +163,7 @@ export function getClient() {
 
 /** A payload prefetched as somebody else must not be served to whoever is here
  *  now — in either direction (`FJS-041`). */
-function _tokenChanged(token) {
+function _identityChanged() {
   invalidatePrefetch()
   // And the same for every live store, for the same reason one layer over: a
   // Resource is created once at import (Invariant 18), so its store lives for
@@ -343,8 +345,19 @@ export function isPublicRoute(rule, path) {
   return p === base || p === `${base}/` || p.startsWith(base.replace(/\/?$/, '/'))
 }
 
+/**
+ * Install the page's client — the one every Resource naming no `app` reaches.
+ *
+ * `relay` in place of `url` is a page that holds no connection: an MCP App
+ * view, whose every call leaves through the host (`@frontierjs/sierra/mcp`).
+ * It keeps no token, since the standing is the host's MCP session
+ * (`FJS-D986`) and a sandboxed frame throws on a `localStorage` read.
+ *
+ * @param {{ url?: string, relay?: Function } & Record<string, any>} config
+ */
 export function initJunction(config) {
-  if (!config?.url) return
+  if (!config?.url && !config?.relay) return
+  const relay = config.relay ?? null
 
   // apiPrefix must match the server's `apiPrefix` config. Both default to ''
   // — Junction registers services at /{service} unless an app opts into a
@@ -362,7 +375,8 @@ export function initJunction(config) {
     // opens the socket, and it is what a 401 clears. This module used to write
     // localStorage in its own login() while the client kept its copy in
     // memory, so the two halves of "signed in" could disagree.
-    tokenStorage:  localTokenStore(tokenKey),
+    tokenStorage:  relay ? undefined : localTokenStore(tokenKey),
+    ...(relay ? { relay } : {}),
     // Which credential the server issues. The client's `hasCredential` is the
     // one question three mechanisms here ask — the boot restore, the socket
     // branch below, and junction's own signOut — and without this it answers
@@ -461,11 +475,17 @@ export function initJunction(config) {
     })
   }
 
-  client.on('token', _tokenChanged)
+  client.on('token', _identityChanged)
+  // A support episode keeps the token and changes who it resolves to, so
+  // 'token' never fires: without these the subject's screen renders the
+  // operator's rows, and the other way back (`FJS-2808`). `endSupport` emits
+  // with `ended: false` when no episode was running, which changed nobody.
+  client.on('support:started', _identityChanged)
+  client.on('support:ended', res => { if (res?.ended) _identityChanged() })
 
   // Ask the server who this caller is — and resolve `ready` either way, which
   // is what the navigation guard below waits on.
-  initSession(client)
+  initSession(client, { relayed: !!relay })
 
   // The socket, in cookie mode. The branch above opens it on the strength of a
   // token the constructor adopted, and in cookie mode there is never one — so

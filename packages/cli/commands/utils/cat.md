@@ -1,10 +1,12 @@
 ---
 title: utils:cat
-description: Markdown rendered for a terminal — a file, one section of it, or a folder's files
+description: A file read in a terminal — markdown rendered, JSON laid out, code highlighted, anything else as is
 alias: cat
 examples:
   - fli cat README.md
   - fli cat DECISIONS.md FJS-D237
+  - fli cat package.json scripts
+  - fli cat core/cat.js prettify
   - fli cat docs
   - fli cat docs --all
   - fli cat IDEAS/*.md
@@ -12,13 +14,13 @@ args:
   -
     name: paths
     kind: path
-    description: Markdown files or folders — and, after one file, a section of it by heading, dotted path or line
+    description: Files or folders — and, after one file, a section of it by heading, declaration, key path or line
     variadic: true
 flags:
   all:
     char: a
     type: boolean
-    description: For a folder, render every file in it rather than listing them
+    description: For a folder, render every markdown file in it rather than listing them
     defaultValue: false
   raw:
     char: r
@@ -38,12 +40,12 @@ import { resolve } from 'node:path'
 ```js
 const { existsSync, statSync, readFileSync } = await import('node:fs')
 const { spawnSync }                          = await import('node:child_process')
-const { render, section, folderIndex, MARKDOWN } = await import(resolve(global.fliRoot, 'core/cat.js'))
+const { prettify, section, folderIndex }     = await import(resolve(global.fliRoot, 'core/cat.js'))
 const { colorEnabled }                       = await import(resolve(global.fliRoot, 'core/color.js'))
 
 const tokens = (arg.paths?.trim() || '').split(/\s+/).filter(Boolean)
 if (!tokens.length) {
-  echo('name a markdown file or a folder — fli cat README.md')
+  echo('name a file or a folder — fli cat README.md')
   process.exitCode = 1
   return
 }
@@ -63,7 +65,7 @@ const query = strays[0] ?? null
 // Piped output is the source, so `fli cat x.md | grep` reads what is in the file.
 const pretty  = colorEnabled && !flag.raw
 const columns = Math.min(process.stdout.columns || 80, 100)
-const show    = (file, text) => pretty ? render(text, { file, columns }) : text.replace(/\n?$/, '\n')
+const show    = (file, text) => pretty ? prettify(text, file, { columns }) : text.replace(/\n?$/, '\n')
 const banner  = rel => pretty ? `${chalk.dim('━━━')} ${chalk.bold(rel)} ${chalk.dim('━'.repeat(Math.max(3, columns - rel.length - 5)))}\n\n` : `==> ${rel} <==\n`
 
 const out = []
@@ -82,14 +84,15 @@ for (const p of paths) {
     for (const f of files) out.push(`${f.rel.padEnd(width)}  ${chalk.dim(String(f.lines).padStart(lines))}  ${f.title ?? chalk.dim('—')}\n`)
     continue
   }
-  if (!MARKDOWN.test(p)) {
-    echo(`not markdown: ${p}`)
-    process.exitCode = 1
-    return
+  const bytes = readFileSync(abs)
+  // a terminal handed raw bytes can be left in a state the next prompt inherits
+  if (bytes.subarray(0, 8000).includes(0)) {
+    out.push(`${p}: binary, ${bytes.length} bytes — not printed\n`)
+    continue
   }
-  const text = readFileSync(abs, 'utf8')
+  const text = bytes.toString('utf8')
   if (query) {
-    const got = section(text, query)
+    const got = await section(abs, text, query)
     if (got.refused) {
       echo(got.refused)
       for (const r of got.rows) echo(r)
@@ -121,7 +124,17 @@ if (paged.error) process.stdout.write(doc)
 
 ## What it renders
 
-Bun's renderer, with three things handed to it differently: a frontmatter block
+By the file's extension:
+
+| File | Printed |
+| --- | --- |
+| `.md`, `.markdown` | rendered, below |
+| `.json`, `.jsonc`, `.webmanifest`, `bun.lock` | two-space and colored. Valid JSON is re-laid from its tokens, so a number prints as written; JSON with comments or trailing commas is colored where it stands |
+| `.js`, `.ts` and their `x`/`m`/`c` kin | highlighted by Bun's code-fence highlighter |
+| anything else | as is |
+| a binary file (a NUL in its first 8000 bytes) | its size, not its bytes |
+
+Markdown is Bun's renderer, with three things handed to it differently: a frontmatter block
 as a yaml fence (md4c reads one as a rule and a heading), a command file's
 `<script>` as a js fence, and a relative link as a `file://` URL so the terminal
 can open it.
@@ -132,9 +145,11 @@ pipe. `--raw` prints the source on a terminal.
 
 ## A section
 
-`fli cat DECISIONS.md FJS-D237` prints one heading's section, named the way
-`fli outline` names it — a whole heading, a dotted path through its ancestors,
-a substring, or a line inside it. A word after one file that names nothing on
+`fli cat DECISIONS.md FJS-D237` prints one section, named the way `fli outline`
+names it — a whole heading or declaration, a dotted path through its ancestors,
+a substring, or a line inside it — so it reaches every file the outline reads:
+markdown, JS/TS, `.lite` and `.mesa`. A JSON file's section is a key path:
+`fli cat package.json scripts.test`. A word after one file that names nothing on
 disk is read as a section; anywhere else it is a missing file.
 
 ## A folder

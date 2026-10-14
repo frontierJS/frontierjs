@@ -80,7 +80,7 @@ $``          // the shell — Bun's, captured by default, --dry aware
 
 `$.git` provides: `branch()`, `status()`, `isDirty()`, `lastTag()`, `hasChangesSince()`, `isAffected()`, `log()`, `remote()`, `ahead()`, `behind()`, `repoRoot()`, `pkgState()`. Defaults to `paths.root` for the dir but accepts an override.
 
-`$.paths` exposes: `root`, `wiki`, `tests`, `cli`, `api`, `db`, `web`, `webPages`, `webComponents`, `webResources`, `site`, `siteContent`, `siteMedia`, `mobile`, `extension`.
+`$.paths` exposes: `root`, `wiki`, `tests`, `cli`, `api`, `db`, `web`, `webPages`, `webComponents`, `webResources`, `site`, `mobile`, `extension`.
 
 ### Workspace context
 
@@ -114,7 +114,7 @@ trust rather than a number typed here.
 
 ## Web GUI
 
-**Port:** 8500 (override: `FLI_PORT=8080`)  
+**Port:** 5500 (override: `FLI_PORT=8080`)  
 **Start:** `fli gui` or `bun bin/server.js`
 
 Layout:
@@ -158,7 +158,7 @@ Compiled command shims live at `<fliRoot>/.fli-tmp/<pid>/c_*.mjs`. Created lazil
 - **Iterative, file-driven sessions**: zip uploads, run commands immediately, paste errors back, expect targeted fixes.
 - **State doc as handoff artifact**: this file is the source of truth carried forward to each new session.
 - **Concise communication preference**: "caveman mode" available via skill file when detail isn't needed.
-- **Namespace consistency enforced**: all workspace aliases use colon format (`ws:*`), all tooling ports in `85xx` range.
+- **Namespace consistency enforced**: all workspace aliases use colon format (`ws:*`), all tooling ports in `55xx` range.
 - **Verify before assuming**: redirect when about to write against an unknown format. The runtime has multiple cases where this prevented hours of debugging (litestone JSON Schema, Bun ESM cache semantics, frontmatter edge cases).
 
 ## Tools & resources

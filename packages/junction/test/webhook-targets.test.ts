@@ -6,7 +6,7 @@
 // authenticated POST to from inside the network — which is the SSRF primitive,
 // and every bound on it was missing (`FJS-681`). Measured before any of it was
 // written: a `role: 'user'` shopper POSTed a `*` subscription and got 201 with
-// the signing secret in the body; `169.254.169.254`, `localhost:8503` (the
+// the signing secret in the body; `169.254.169.254`, `localhost:5503` (the
 // devtools job runner), `file:///etc/passwd` and the literal string
 // `not-a-url` were all accepted as destinations; a 307 was followed with the
 // signature re-sent to the new host; and a registration whose deliveries all
@@ -107,7 +107,7 @@ describe('managing registrations needs a standing, not just a session', () => {
 describe('a destination is graded before anything is sent', () => {
   const REFUSED = [
     ['the cloud metadata service', 'http://169.254.169.254/latest/meta-data/'],
-    ['loopback by name',           'http://localhost:8503/api/jobs/1/retry'],
+    ['loopback by name',           'http://localhost:5503/api/jobs/1/retry'],
     ['loopback by address',        'https://127.0.0.1/x'],
     ['loopback as IPv6',           'https://[::1]/x'],
     ['loopback mapped into IPv6',  'https://[::ffff:127.0.0.1]/x'],

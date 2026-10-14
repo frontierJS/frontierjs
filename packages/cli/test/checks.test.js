@@ -1389,7 +1389,7 @@ describe('the silent config hazards', () => {
         "const BASE = process.env.API_URL ?? 'http://localhost:8110'\n" +
         "// listen on 8110 -- a comment is prose\n" +
         "const API = `http://localhost:${await portFor(import.meta.url, 'be')}`\n" +
-        "const tooling = 'http://localhost:8503'\n" +
+        "const tooling = 'http://localhost:5503'\n" +
         "const moved = 'http://localhost:18110'\n",
       'web/src/dev.js': "const PORT = 8110\n",
     })

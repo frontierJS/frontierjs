@@ -19,7 +19,7 @@ litestone migrate verify
 litestone migrate check                                  # does the history build the schema? no database opened
 litestone migrate baseline                               # record the files as applied, running none
 litestone db push [--accept-data-loss]                   # apply the schema directly, no file written (dev)
-litestone studio [--port=8502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
+litestone studio [--port=5502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
 litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>] [--tenant <id>] [--eval '<expr>']
 litestone doctor
 litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction] [--out=<path>] [--stdout]
@@ -113,9 +113,9 @@ Apply the schema to the database directly, writing no migration file — prototy
 ## Development commands
 
 ```bash
-litestone studio [--port=8502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
+litestone studio [--port=5502] [--no-open] [--gate <path[#export]>] [--host <addr> --token <secret>] [--readonly]
 ```
-Launch the browser UI at `http://localhost:8502` and open it (`--no-open` to not). `--gate` grades access previews with the app's own `getLevel`; `--host` beyond loopback is refused without `--token`; `--readonly` blocks every mutating endpoint. [studio.md](studio.md) is the full reference.
+Launch the browser UI at `http://localhost:5502` and open it (`--no-open` to not). `--gate` grades access previews with the app's own `getLevel`; `--host` beyond loopback is refused without `--token`; `--readonly` blocks every mutating endpoint. [studio.md](studio.md) is the full reference.
 
 ```bash
 litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>] [--tenant <id>] [--eval '<expr>']

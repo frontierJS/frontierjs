@@ -16,7 +16,7 @@ const base = `http://localhost:${PORT}`
 
 const { startServer } = await import('../core/server.js')
 
-// The tool ports are the real 8500s, and an app's dev API holds 8503 for
+// The tool ports are the real 8500s, and an app's dev API holds 5503 for
 // devtools — so a test that binds one, or asserts it `down`, takes a tool
 // nothing on this machine is listening on.
 const { createServer: netServer } = await import('net')
@@ -389,7 +389,7 @@ describe('GET /api/runnables', () => {
     const { rows } = await (await fetch(`${base}/api/runnables`)).json()
     const tools = rows.filter(r => r.kind === 'tool')
     expect(tools.length).toBeGreaterThan(0)
-    for (const t of tools) expect(t.port).toBeGreaterThanOrEqual(8500)
+    for (const t of tools) expect(t.port).toBeGreaterThanOrEqual(5500)
   })
 
 })

@@ -192,6 +192,16 @@ per-model indexes cannot do, since each scores against its own vocabulary
 (`FJS-D970`). A `@@fts` model with no `@@label` is refused at parse, because a
 hit with no title is a palette entry with nothing to show.
 
+`$search(q, { models: ['lemma'] })` narrows inside the MATCH, so a small model
+does not walk a large one's postings (`FJS-2845`). Narrowing to the largest
+model can cost more than naming none, since the model's own postings are read.
+
+A model whose gate or capability refuses the caller contributes no hits, the
+way a row its policy hides contributes none, and the call answers the models the
+caller may read. Refused by every model it names, the call throws the first
+refusal, so a caller who may read nothing is told so rather than shown an empty
+list.
+
 ```lite
 model Issue {
   id    Int    @id

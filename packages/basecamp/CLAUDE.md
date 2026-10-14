@@ -30,13 +30,13 @@ bun run verify:desktop # that shell, signed in and scanning, on 7120 — rebuild
 fli desktop:run        # build it, start the API if nothing answers on 8120, open the window
 fli desktop:install    # add it to the app launcher; a click opens it through desktop:run
                        # (--release: the release shell, after fli desktop:run --release)
-DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
+DEVTOOLS=1 bun run api   # …and junction's console on 5503 beside it
 bun run image        # build the container image from the WORKING TREE
 bun run image:up     # …and bring the stack up on 8020  · image:down stops it
 ```
 
 **The devtools console is opt-in and there is one of it.** `DEVTOOLS=1` puts
-junction's console on **8503** — the live call feed, `/metrics` with conduit's
+junction's console on **5503** — the live call feed, `/metrics` with conduit's
 and caravan's own sections, readiness, and the job queue with its six queues,
 every handler's schedule, and retry / cancel / run-now. It is the only screen
 here that can see the queue at all: `/jobs` in the SPA is basecamp's own `Job`
@@ -45,7 +45,7 @@ model, which is a fleet noun and not the thing running it.
 The API banner states it either way (`devtools=…` / `devtools=disabled`), so
 there is no guessing whether it came up.
 
-It is off by default rather than on in development because 8503 is a GLOBAL
+It is off by default rather than on in development because 5503 is a GLOBAL
 port (`packages/cli/core/ports.js` § the tooling block) — one console at a time,
 so running basecamp's and `example`'s together is a collision rather than two
 consoles. Safe to leave wired: the plugin refuses to bind under
@@ -142,10 +142,41 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           own log — never `children.js`, whose in-memory table a `bun --watch`
           restart would lose with the server still up. The checkout's OWN fli,
           and no FLI_PORT_* or PORT of this API's; Unpin and Archive stop it.
-          A pin may carry a PLAN (`plan: { path, steps }`, IDEAS/workbench-plans.md):
-          `plan` parses the file through fli's `parsePlan` on every read, and
+          A pin may carry PLANS (`plans: [{ path, steps }]`, IDEAS/workbench-plans.md),
+          and `plan` is the path of the SHOWN one, as `chat` is for chats — Go,
+          Next, tick and decide act on it; `openPlan` shows one, adding a file
+          already written, and `closePlan` forgets one here and keeps the file.
+          A step's rows and cost stop at the next step of ANY plan, since the
+          registers and the chats are the checkout's. Every status carries
+          `questions`, the unruled `Q`s of every plan on the pin (`parsePlan`'s
+          `blocking`, kept per file on its mtime) — the card's *needs you*,
+          which seeing the chat does not clear and a ruling does.
+          `plan` parses the shown file through fli's `parsePlan` on every read, and
           `buildPlan` writes one from a goal in a new chat that may edit THAT
-          FILE and nothing else (`askArgv({ edit })`, `buildPlanPrompt`).
+          FILE and nothing else (`askArgv({ edit })`, `buildPlanPrompt`). `go`
+          sends the first open box's `stepPrompt` into the shown chat and records
+          the step with fli's `registerHigh` — refused while any run is live, or
+          the marks would be read under a run still filing. `next` is the
+          same step in a NEW chat (`fresh`), sent fli's `nextHandoff` — the
+          plan's path and the final text of the checkout's latest run — and
+          recorded the same way; refused while the plan's parse has a
+          `blocking` (unruled) `Q`, before the chat opens. `tick` is the
+          owner's tick on a box a Go'd step's run left open — fli's `tickStep`,
+          the one write the UI makes to the file (`FJS-D969`). A step's cost
+          is summed on read off its chat's fold (`runs`), from its Go to the
+          next Go in that chat — never stored on the pin; so are the register
+          rows it filed (fli's `filedSince`), from its marks to the next step's.
+          `file` is the tab's File issue / Ask question — fli's `fileIssue`
+          into the checkout's ISSUES.md, not refused while a run is live.
+          `decide` is a letter on a plan `Q` — fli's `decide` with the plan
+          as its `file`, so a PLAN.md outside IDEAS/ is reachable; refused
+          while a run is live, since the strike rewrites the plan file.
+          `commit` is the Diff tab's: the files the owner ticked, each sent
+          with the `blob` the diff read, committed through `git commit --only`
+          (core/workbench-diff.ts's `commitFiles`) — so another session's
+          staged files stay staged, the checkout's hooks run, and a file
+          written since the diff was read is refused by name. A step never
+          commits (`FJS-D968`); a branch lands, then commits on its checkout.
           core/workbench-branch.ts is a BRANCH: Fork snapshots the parent's tree through a temporary index (its real index and HEAD
           are only read), cuts wb/<slug> into a worktree under WORKBENCH_DIR/trees
           and pins it, then sets it up before it answers — the parent's copy

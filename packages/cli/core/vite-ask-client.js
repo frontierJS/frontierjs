@@ -37,6 +37,11 @@
 // person goes on with every tool their own session has. Before there is a
 // conversation it copies what a first ask would send instead, for any agent.
 //
+// "Make a plan" is for what has no element to pick yet, a new feature: the
+// box takes a goal instead of a change, and the run writes PLAN.md at the app
+// root for the Workbench to carry out. Picks and chips stay for the next ask;
+// a pick while planning goes back to asking.
+//
 // "Pick mode" latches shift+alt in the inspector, so a plain click picks the
 // next element. The inspector owns the mode and draws its own way out; the
 // button only flips it and redraws when the inspector says it changed.
@@ -87,8 +92,8 @@
   const pressedEffort = () => { try { const v = localStorage.getItem(EFFORT_KEY); return EFFORTS.includes(v) ? v : null } catch { return null } }
   const setEffort = v => { try { v === kindEffort() ? localStorage.removeItem(EFFORT_KEY) : localStorage.setItem(EFFORT_KEY, v) } catch {} }
 
-  let panel, tab, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch
-  let picks = [], sent = false, busy = false
+  let panel, tab, list, hint, chips, effortBox, tray, input, send, stop, submit, fresh, log, rail, folds, latch, planner
+  let picks = [], sent = false, busy = false, planning = false
   // The reply entry still streaming, and what the run said it is doing.
   let draft = null, doing = 'working'
   // Closed hides the panel and its tab; shrunk hides the panel behind the tab.
@@ -138,6 +143,7 @@
     close: ['M18 6 6 18', 'm6 6 12 12'],
     edit:  ['M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'm15 5 4 4'],
     open:  ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
+    plan:  ['m3 17 2 2 4-4', 'm3 7 2 2 4-4', 'M13 6h8', 'M13 12h8', 'M13 18h8'],
   }
   const SVG = 'http://www.w3.org/2000/svg'
   const iconButton = (name, label, title) => {
@@ -468,11 +474,13 @@
     latch = iconButton('pick', 'Pick mode', 'Pick mode: click elements to pick them, without holding shift+alt (Esc leaves)')
     latch.onclick = () => { const i = inspector(); if (i) i.pickMode(!i.pickMode()) }
     drawLatch()
+    planner = iconButton('plan', 'Make a plan', 'Make a plan: for a new feature, with nothing on the page to pick — Claude writes PLAN.md at the app root and builds nothing')
+    planner.onclick = () => { planning = !planning; render(); input.focus() }
     const shrink = iconButton('shrink', 'Shrink to a tab', 'Shrink to a tab in the corner (the conversation is kept)')
     shrink.onclick = () => fit(true)
     const close = iconButton('close', 'Close', 'Close (the conversation is kept)')
     close.onclick = () => { closed = true; shown.set(null); layout() }
-    head.append(latch, term, wipe, fresh, make('span', 'flex:1'), shrink, close)
+    head.append(latch, planner, term, wipe, fresh, make('span', 'flex:1'), shrink, close)
 
     list = make('div', 'display:flex;flex-direction:column;gap:6px;max-height:24vh;overflow:auto')
     hint = make('div', 'margin-top:-6px;color:#94a3b8;font-size:12.5px')
@@ -500,7 +508,6 @@
     chips = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;font-size:12px;color:#94a3b8')
 
     input = make('textarea', 'box-sizing:border-box;width:100%;resize:vertical;min-height:84px;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:' + WELL + ';color:#e2e8f0;font:14px/1.45 ui-sans-serif,system-ui')
-    input.placeholder = 'What should change? Paste a screenshot to show it. (⌘/Ctrl+Enter sends)'
     input.onkeydown = (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask() } }
     input.onpaste = paste
     tray = make('div', 'display:none;flex-wrap:wrap;gap:6px')
@@ -671,11 +678,22 @@
     effortBox.append('Effort', tray)
   }
 
+  function drawPlanner() {
+    planner.style.cssText = ICON + (planning ? ';background:#0369a1;border-color:#0369a1' : '')
+    planner.setAttribute('aria-pressed', String(planning))
+    input.placeholder = planning
+      ? 'What should the new feature do? Claude writes a plan and builds nothing. (⌘/Ctrl+Enter sends)'
+      : 'What should change? Paste a screenshot to show it. (⌘/Ctrl+Enter sends)'
+    send.textContent = planning ? 'Make a plan' : 'Send'
+    chips.style.display = planning ? 'none' : 'flex'
+  }
+
   function render() {
     drawChips()
+    drawPlanner()
     drawTab()
     list.textContent = ''
-    list.style.display = picks.length ? 'flex' : 'none'
+    list.style.display = picks.length && !planning ? 'flex' : 'none'
     for (const p of picks) {
       const row = make('div', 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 8px 7px 11px;border:1px solid #1e293b;border-radius:8px;background:' + WELL + '')
       row.dataset.pick = p.loc
@@ -707,6 +725,7 @@
   function open(p) {
     if (!panel) build()
     if (sent || closed) { picks = []; sent = false; kind = null; scope = null }
+    planning = false
     if (!picks.some(x => x.el === p.el)) {
       if (picks.length >= MAX_PICKS) line(`${MAX_PICKS} elements is the most one ask takes`, 'error')
       else picks.push({ el: p.el, loc: p.loc, html: outline(p.el), inner: innerLocs(p.el), repeats: drawnFrom(p.loc), open: p.open })
@@ -855,6 +874,11 @@
   async function ask() {
     const instruction = input.value.trim()
     if (!instruction || busy) return
+    if (planning) {
+      input.value = ''
+      line(`Make a plan: ${instruction}`, 'you')
+      return stream('/__fjs/ask/plan', { goal: instruction, page: location.href, effort: pressedEffort() || undefined })
+    }
     if (shots.some(s => s.pending)) return line('an image is still being read — send again in a moment', 'error')
     const images = shots
     input.value = ''
@@ -864,20 +888,26 @@
     return request(instruction, picks, { kind, scope }, images)
   }
 
-  async function request(instruction, list, chosen, images = []) {
+  function request(instruction, list, chosen, images = []) {
     line(instruction, 'you', images.map(s => s.thumb))
+    return stream('/__fjs/ask', {
+      instruction,
+      ...chosen,
+      images:  images.map(s => ({ type: s.type, data: s.data })),
+      picks:   wire(list),
+      page:    location.href,
+      session: store.get(),
+      effort:  pressedEffort() || undefined,
+    })
+  }
+
+  // One run, read as it streams: an ask, or a plan, whose last word is where
+  // the plan was written.
+  async function stream(path, body) {
     setBusy(true)
     let run = null
     try {
-      const res = await post('/__fjs/ask', {
-        instruction,
-        ...chosen,
-        images:  images.map(s => ({ type: s.type, data: s.data })),
-        picks:   wire(list),
-        page:    location.href,
-        session: store.get(),
-        effort:  pressedEffort() || undefined,
-      })
+      const res = await post(path, body)
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({}))
         line(err.error || `the dev server answered ${res.status}`, 'error')
@@ -902,6 +932,7 @@
           else if (e.type === 'tool') { draft = null; line('· ' + e.text, 'tool') }
           else if (e.type === 'error') line(e.text, 'error')
           else if (e.type === 'diff') diff(e.files)
+          else if (e.type === 'plan') line(`The plan is at ${e.path}. In the Workbench, Open plan with that path, then Go.`, 'meta')
           else if (e.type === 'result') {
             const bits = [e.ok ? 'done' : `stopped (${e.stop})`]
             if (e.cost != null) bits.push(`$${e.cost.toFixed(2)}`)

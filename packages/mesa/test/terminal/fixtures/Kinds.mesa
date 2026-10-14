@@ -1,0 +1,9 @@
+<script>
+  // One control of each kind a key shortcut tells apart by `tagName` and
+  // `type` before it treats a key as somebody's typing.
+</script>
+<button>go</button>
+<input name="q" />
+<input type="checkbox" />
+<input type="EMAIL" />
+<textarea></textarea>

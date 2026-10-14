@@ -152,7 +152,7 @@ export async function runExport(db, name, opts = {}) {
     since = null, format: formatOverride = null,
     includeProtected = false, withDeleted = false,
     batch = 1000, write, now = () => new Date(),
-    audit = true, tenant = null,
+    audit = true, tenant = null, where: filter = null,
   } = opts
 
   if (typeof write !== 'function')
@@ -208,7 +208,11 @@ export async function runExport(db, name, opts = {}) {
   // primary key — which is a LIST, because a key can be a tuple, and empty for
   // a view. An empty list is not a weaker order, it is no order at all.
   const orderColumns = cursorColumn ? [cursorColumn] : safePrimaryKey(db, dataset.accessor)
-  const where = since && cursorColumn ? { [cursorColumn]: { gt: since } } : undefined
+  // The caller's filter is ANDed with the cursor, never merged key by key: a
+  // filter on the cursor column itself would otherwise overwrite the cursor and
+  // re-send rows the caller already holds.
+  const sinceWhere = since && cursorColumn ? { [cursorColumn]: { gt: since } } : null
+  const where = filter && sinceWhere ? { AND: [filter, sinceWhere] } : (filter ?? sinceWhere ?? undefined)
 
   const common = {
     ...(where ? { where } : {}),
@@ -262,6 +266,9 @@ export async function runExport(db, name, opts = {}) {
     columns,
     rows,
     cursor: cursorColumn ? { column: cursorColumn, after: last ?? null } : null,
+    // Names a file that is a subset, which a manifest with only a row count
+    // cannot tell from a short dataset.
+    where: filter ?? null,
     policiesApplied: policyTextFor(schema, dataset),
     omitted,
     includeProtected,

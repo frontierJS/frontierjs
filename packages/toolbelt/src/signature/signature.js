@@ -84,6 +84,17 @@ export const SIGNATURE_VERSION = 1
 const PREFIX = 'v1-sha256='
 
 /**
+ * The same canonical string, signed with a key pair rather than a shared
+ * secret. A shared secret cannot prove a stranger: Haven's server has never
+ * met the machine signing in, so there is nothing to share — the machine
+ * brings its public key, and the server learns nothing that could sign as it.
+ * The canonical string, the freshness window and the nonce are one scheme for
+ * both; only the last step differs, and the prefix says which.
+ */
+const ED25519_PREFIX = 'v1-ed25519='
+const ED25519 = { name: 'Ed25519' }
+
+/**
  * RFC 3986 percent-encoding.
  *
  * `encodeURIComponent` leaves `!'()*` alone, which RFC 3986 reserves — two
@@ -232,13 +243,14 @@ async function hmacHex(secret, message) {
  * pair most likely to be wrong.
  *
  * @param {{
- *   secret: string, method: string, path: string, query?: string|object,
+ *   secret?: string, privateKey?: string, method: string, path: string, query?: string|object,
  *   serviceMethod?: string, body?: string|Uint8Array, prefix?: string, timestamp: string|number, nonce: string
  * }} opts
  * @returns {Promise<Record<string,string>>}
  */
-export async function signRequest({ secret, method, path, query, serviceMethod, body = '', prefix = 'X-Fjs', timestamp, nonce }) {
-  if (!secret)    throw new TypeError('signRequest: secret is required')
+export async function signRequest({ secret, privateKey, method, path, query, serviceMethod, body = '', prefix = 'X-Fjs', timestamp, nonce }) {
+  if (secret && privateKey) throw new TypeError('signRequest: secret OR privateKey — a request is signed one way, and the verifier is told which')
+  if (!secret && !privateKey) throw new TypeError('signRequest: secret is required, or privateKey for a key pair')
   if (!timestamp) throw new TypeError('signRequest: timestamp is required — seconds, from the caller\'s clock')
   if (!nonce)     throw new TypeError('signRequest: nonce is required — one per request, from the caller')
 
@@ -246,11 +258,14 @@ export async function signRequest({ secret, method, path, query, serviceMethod, 
   if (wrongUnit) throw new TypeError(`signRequest: ${wrongUnit}`)
 
   const ts  = String(timestamp)
-  const sig = await hmacHex(secret, canonicalRequest({
+  const canonical = canonicalRequest({
     method, path, query, serviceMethod, timestamp: ts, nonce, bodyHash: await sha256Hex(body),
-  }))
+  })
+  const value = privateKey
+    ? `${ED25519_PREFIX}${await ed25519Sign(privateKey, canonical)}`
+    : `${PREFIX}${await hmacHex(secret, canonical)}`
   return {
-    [`${prefix}-Signature`]: `${PREFIX}${sig}`,
+    [`${prefix}-Signature`]: value,
     [`${prefix}-Timestamp`]: ts,
     [`${prefix}-Nonce`]:     nonce,
   }
@@ -275,7 +290,7 @@ export async function signRequest({ secret, method, path, query, serviceMethod, 
  * signature was right, one byte at a time.
  *
  * @param {{
- *   secret: string|undefined, method: string, path: string, query?: string|object,
+ *   secret?: string, publicKey?: string, method: string, path: string, query?: string|object,
  *   body?: string|Uint8Array,
  *   headers: Record<string,string>|Headers, prefix?: string,
  *   toleranceSeconds?: number, now: number,
@@ -284,10 +299,11 @@ export async function signRequest({ secret, method, path, query, serviceMethod, 
  * @returns {Promise<{ok: true} | {ok: false, reason: string}>}
  */
 export async function verifyRequest({
-  secret, method, path, query, body = '', headers, prefix = 'X-Fjs', toleranceSeconds = 300,
+  secret, publicKey, method, path, query, body = '', headers, prefix = 'X-Fjs', toleranceSeconds = 300,
   now, seenNonce = null,
 }) {
-  if (!secret) return { ok: false, reason: 'no secret is configured on this side' }
+  if (secret && publicKey) throw new TypeError('verifyRequest: secret OR publicKey — the side that verifies states which scheme it accepts')
+  if (!secret && !publicKey) return { ok: false, reason: 'no secret is configured on this side' }
   // Same rule as signing: the clock belongs to the caller. A default here would
   // be a clock read in the substrate package, and a receiver that forgot to
   // pass one would silently grade every timestamp against zero.
@@ -326,23 +342,80 @@ export async function verifyRequest({
   // digest of a string this side does not build, so without this the answer is
   // `signature does not match` — the same sentence a wrong secret gives, which
   // is the wrong half to go looking at while a fleet 401s every call.
-  if (!signature.startsWith(PREFIX))
-    return { ok: false, reason: `signature is not v${SIGNATURE_VERSION}, which is the only version this side understands` }
+  // The scheme second, for the version's reason: an HMAC presented where a key
+  // pair is expected would otherwise read as a forgery.
+  const scheme = publicKey ? ED25519_PREFIX : PREFIX
+  if (!signature.startsWith(scheme)) {
+    const other = publicKey ? PREFIX : ED25519_PREFIX
+    return signature.startsWith(other)
+      ? { ok: false, reason: `signature is ${other.slice(0, -1)} and this side verifies ${scheme.slice(0, -1)}` }
+      : { ok: false, reason: `signature is not v${SIGNATURE_VERSION}, which is the only version this side understands` }
+  }
 
   // Read off the request rather than passed in: the receiver's job is to check
   // the header it is about to dispatch on, and a parameter is a way to forget.
   const serviceMethod = headerValue(headers, 'x-service-method')
-  const expected = await hmacHex(secret, canonicalRequest({
+  const canonical = canonicalRequest({
     method, path, query, serviceMethod, timestamp, nonce, bodyHash: await sha256Hex(body),
-  }))
-  if (!timingSafeEqual(signature.slice(PREFIX.length), expected))
-    return { ok: false, reason: 'signature does not match' }
+  })
+  const matches = publicKey
+    ? await ed25519Verify(publicKey, signature.slice(scheme.length), canonical)
+    : timingSafeEqual(signature.slice(scheme.length), await hmacHex(secret, canonical))
+  if (!matches) return { ok: false, reason: 'signature does not match' }
 
   // Last, and only once the signature is known good: a replay check that runs
   // before verification is a free way to fill somebody's nonce store.
   if (seenNonce && await seenNonce(nonce)) return { ok: false, reason: 'nonce has already been used' }
 
   return { ok: true }
+}
+
+/*
+ * Keys travel as base64url strings — the raw 32-byte public key and the PKCS#8
+ * private key — because a key is written to a file and sent in a JSON body, and
+ * a CryptoKey can be neither. One encoding, read and written only here.
+ */
+function toBase64url(bytes) {
+  let bin = ''
+  for (const b of new Uint8Array(bytes)) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function fromBase64url(text) {
+  const s = String(text).replace(/-/g, '+').replace(/_/g, '/')
+  const bin = atob(s + '='.repeat((4 - s.length % 4) % 4))
+  return Uint8Array.from(bin, c => c.charCodeAt(0))
+}
+
+/**
+ * A key pair for `signRequest({ privateKey })`, both halves base64url. The one
+ * export here that is not pure: it draws randomness, as `/ids` does, and reads
+ * no clock.
+ *
+ * @returns {Promise<{ publicKey: string, privateKey: string }>}
+ */
+export async function generateSigningKeys() {
+  const pair = await crypto.subtle.generateKey(ED25519, true, ['sign', 'verify'])
+  return {
+    publicKey:  toBase64url(await crypto.subtle.exportKey('raw', pair.publicKey)),
+    privateKey: toBase64url(await crypto.subtle.exportKey('pkcs8', pair.privateKey)),
+  }
+}
+
+async function ed25519Sign(privateKey, message) {
+  const key = await crypto.subtle.importKey('pkcs8', fromBase64url(privateKey), ED25519, false, ['sign'])
+  return toBase64url(await crypto.subtle.sign(ED25519, key, ENCODER.encode(message)))
+}
+
+/** False, never a throw, for a key or a signature that does not parse: both
+ *  are remote input, and the receiver must not be crashed by them. */
+async function ed25519Verify(publicKey, signature, message) {
+  try {
+    const key = await crypto.subtle.importKey('raw', fromBase64url(publicKey), ED25519, false, ['verify'])
+    return await crypto.subtle.verify(ED25519, key, fromBase64url(signature), ENCODER.encode(message))
+  } catch {
+    return false
+  }
 }
 
 /** One header off a Headers or a plain object, whatever case the sender used. */

@@ -23,15 +23,9 @@ const CLI  = join(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO = join(CLI, '..', '..')
 
 // An exception is a named entry with a reason — the rule this repo holds for an
-// allowance anywhere else. Both of these are a doc naming a command that really
-// does not exist, and the difference is what the sentence is DOING with it.
-const ALLOWED = {
-  'serve': 'commands/ksite/_module.md explains that `fli serve` was REMOVED — a sentence about a '
-         + 'command that is gone has to name it, and that is the opposite of advertising it',
-  'ksite:build': 'commands/ksite/serve.md tells you to run it and there is no build command in the '
-               + 'ksite namespace. ksite is a separate static-site toolchain rather than FrontierJS '
-               + '(root CLAUDE.md), and what that message should say is a question for whoever owns it',
-}
+// allowance anywhere else: a doc naming a command that really does not exist,
+// where what the sentence is DOING with it makes that right.
+const ALLOWED = {}
 
 async function registryNames() {
   global.fliRoot     = CLI

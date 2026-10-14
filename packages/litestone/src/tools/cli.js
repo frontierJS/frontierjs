@@ -3,7 +3,7 @@
 
 import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSync } from 'fs'
 import { applyBusyTimeout } from '../core/pragmas.js'
-import { resolve, relative, join, dirname, basename, extname, sep } from 'path'
+import { resolve, relative, join, dirname, basename, extname, sep, isAbsolute } from 'path'
 import { openDatabase }                           from '../core/engine.js'
 
 // Imports of sibling source files MUST use literal relative specifiers — never
@@ -170,7 +170,7 @@ const HELP = `
     ${dim('  --only=User,Post')}                    only emit types for these models
     ${dim('  --audience=client|system')}             field visibility (default: client)
     ${cyan('litestone studio')} [--no-open]        open Litestone Studio
-    ${dim('  --port <n>')}                          listen here ${dim('(default: 8502)')}
+    ${dim('  --port <n>')}                          listen here ${dim('(default: 5502)')}
     ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
     ${dim('  --host <addr> --token <secret>')}      serve beyond loopback; the token is required there
     ${dim('  --insecure')}                          serve beyond loopback with no token
@@ -380,7 +380,10 @@ function openDb(dbPath) {
   const abs = resolve(dbPath)
   if (!existsSync(abs))
     console.log(`  ${dim(`db not found — will be created: ${rel(abs)}`)}`)
-  ensureParentDir(abs)
+  // A config `db` was resolved against the config file, so only a relative
+  // `--db` leaves the directory to the working directory.
+  const stated = getFlag('db')
+  ensureParentDir(abs, !!stated && !isAbsolute(stated))
   try {
     const db = openDatabase(abs)
     applyBusyTimeout(db)
@@ -392,14 +395,19 @@ function openDb(dbPath) {
   }
 }
 
-/** Ensure the parent directory of `absPath` exists (for SQLite db paths). */
-function ensureParentDir(absPath) {
+/**
+ * Ensure the parent directory of `absPath` exists (for SQLite db paths).
+ * `cwdChose`: the stated path left its directory to the working directory, the
+ * only case the minted-directory warning is true of. A schema-declared path is
+ * anchored to the schema file, so it passes false.
+ */
+function ensureParentDir(absPath, cwdChose = false) {
   if (!absPath || absPath === ':memory:') return
   try {
     const dir = dirname(absPath)
     if (dir && dir !== '.' && !existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
-      noteMintedDirectory(dir, absPath)
+      if (cwdChose) noteMintedDirectory(dir, absPath)
     }
   } catch { /* let the subsequent open() surface the real error */ }
 }
@@ -4721,12 +4729,13 @@ async function cmdDbPush(cfg) {
 // like, and a yes there deletes the column that build is writing — so the
 // question says so rather than leaving it to the warning above it.
 async function confirmDataLoss(lost, hasDbs) {
-  console.log(`  ${yellow('!')}  This push drops these columns and every value in them:\n`)
+  console.log(`  ${yellow('!')}  This push drops these columns and tables and every value in them:\n`)
   for (const [dbName, r] of lost) {
     for (const l of r.dataLoss) {
       const at   = hasDbs ? `${cyan(dbName)}  ` : ''
       const hint = l.renameTo ? dim(`  — a rename to ${l.renameTo}? a yes drops the values instead`) : ''
-      console.log(`       ${at}${l.columns.map(c => `${l.table}.${c}`).join(', ')}${hint}`)
+      const what = l.wholeTable ? `${l.table} (the whole table)` : l.columns.map(c => `${l.table}.${c}`).join(', ')
+      console.log(`       ${at}${what}${hint}`)
     }
   }
   if (lost.some(([, r]) => r.onlyDrops))

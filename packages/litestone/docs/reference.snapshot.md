@@ -386,7 +386,7 @@ model Example {
 - **Also typed** — `fk` · `has many` · `belongs to`
 - **Deeper** — [relations.md](relations.md)
 
-#### `@from` `(<Model>, last|first|count|sum|max|min|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates])` <a id="from-field"></a>
+#### `@from` `(<Model>, last|first|count|sum|avg|max|min|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates])` <a id="from-field"></a>
 
 A value read off another model — the last order, the count of comments, the sum of a column. Computed in SQL, so unlike @computed it can be filtered and sorted by.
 

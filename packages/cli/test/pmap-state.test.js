@@ -30,7 +30,7 @@ const REPO = resolve(CLI, '../..')
 const APP  = resolve(REPO, 'example')
 
 // Tooling on the TEST tier, so a drive cannot collide with a `project:map --as=serve`
-// somebody has open on 8501.
+// somebody has open on 5501.
 const PORT = 7502
 const BASE = `http://localhost:${PORT}`
 

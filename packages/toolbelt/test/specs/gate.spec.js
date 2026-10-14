@@ -259,6 +259,14 @@ test('gate: unknowns are permissive, each paired with the shape that refuses', f
   assert.equal(canAtLevel(gate, 'delete', undefined), true)
   assert.equal(canAtLevel(gate, 'delete', null),      true)
   assert.equal(canAtLevel(gate, 'delete', 0),         false)
+
+  // ...except where no rung decides. A sentinel refuses every caller on a
+  // rung, so a missing level knows the answer already.
+  const sealed = { read: 1, create: 8, update: 8, delete: 9 }
+  assert.equal(canAtLevel(sealed, 'update', null),      false)
+  assert.equal(canAtLevel(sealed, 'delete', undefined), false)
+  assert.equal(canAtLevel(sealed, 'read',   null),      true)
+  assert.equal(canAtLevel(sealed, 'update', 8),         true)
 })
 
 // ─── the fields the grader reads ──────────────────────────────────────────────

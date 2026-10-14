@@ -212,7 +212,9 @@ core/
                 workbench Plan tab by import. Phases of steps (`FJS-D927`):
                 `next` is the FIRST OPEN BOX and is written nowhere, the `Q`
                 bullets come through `decisions.js`'s `paperQuestions` rather
-                than a second parse, and an unruled one is `blocking`. The
+                than a second parse, and an unruled one is `blocking`.
+                `tickStep` is the one writer — the workbench's manual tick,
+                at the parser's own line so a fenced step is never ticked. The
                 three prompts a plan runs under — Build, Go (`stepPrompt`) and
                 Next (`nextHandoff`, which ends in `stepPrompt`) — are
                 `ask-claude.js`'s, beside `reviewPrompt`, and the test asserts
@@ -224,7 +226,11 @@ core/
                 strike alone, citing a ruling that already answers it — no id
                 minted, `DECISIONS.md` untouched. A bullet naming an open
                 § Needs a decision row closes that row too, and a pick takes
-                its id, so a `blocked by` naming it resolves to the ruling
+                its id, so a `blocked by` naming it resolves to the ruling.
+                `file` (`--file`) looks the id up in one named file through
+                `paperQuestions` — a plan's `Q` outside `IDEAS/`, such as an
+                app's `PLAN.md`, which no register source reads; the
+                workbench's letter always passes it
   decide-walk.js  `fli decide` with no id — the queue one key per question,
                 Enter the recommendation. Writes only through `decide`/`settle`;
                 the tty, the editor and the viewer are handed in, so the test
@@ -244,7 +250,10 @@ core/
                 width) atop its severity's table, put back on a new
                 `register:check` error, which is also what catches two sessions
                 minting one id. `decision` files into § Needs a decision under
-                the next D id; `blocks` writes `blocked by` into the held row
+                the next D id; `blocks` writes `blocked by` into the held row.
+                `registerHigh` is the highest of each, read by the workbench
+                when a plan step starts so the rows above are that step's,
+                and `filedSince` lists them between one step's marks and the next's
   amend.js      the writer behind `register:amend` — `--detail` APPENDED to an
                 open row's Detail after ` · `, Verified re-dated today; a closed
                 row refused (a regression is a new row). Put back on a new
@@ -347,7 +356,7 @@ core/
                 (a committed page, served because a `file://` link from an http
                 page is refused — the id is looked up against the runnable rows
                 and never joined onto a path), and start/stop/
-                output. The health probe is HERE and not in the page: 8500
+                output. The health probe is HERE and not in the page: 5500
                 fetching 8110 is cross-origin, and a CORS failure reads exactly
                 like the app being down
   proxy.js      one listener, so a dev surface has a NAME — `example.localhost`
@@ -382,6 +391,11 @@ core/
                 `fli ghist`. Pure: `git log --shortstat` text in, rows out. Every
                 day in range is a bucket, zero or not, or the x axis stops being
                 time; week buckets start Monday
+  claude-usage.js  Claude Code sessions and output tokens per day — `fli
+                ghist --claude`'s second chart, on `git-history.js`'s buckets.
+                Pure: one transcript's text in. Dedupes by message id, because a
+                streamed reply is several lines; a subagent adds tokens and no
+                session. Only as far back as Claude Code keeps transcripts
   doctor.js     can this MACHINE run fli — binaries, the two env files, and the
                 env vars a namespace declares. The sibling of `checks.js` and
                 deliberately not merged with it: a missing `sqlite3` is not an
@@ -624,12 +638,8 @@ core/
   png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries
-  peer.js       loadPeer — linkedom and turndown are optional peers, only for
-                `ksite:fetch`; asks the app first, then fli's own install
   config.js · bootstrap.js · ports.js · utils.js · server.js
-commands/  one directory per namespace — `fli list` prints them all (ksite is
-           NOT FrontierJS — a separate static-site toolchain that used to hold
-           the `site:` namespace)
+commands/  one directory per namespace — `fli list` prints them all
 db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and the
            DDL derived from them. The snapshot is what ships: nothing on a target
            can emit DDL, so the fragment stays the single source and the

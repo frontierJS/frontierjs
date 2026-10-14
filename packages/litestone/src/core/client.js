@@ -1035,6 +1035,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
   }
 
+  // The names a `window` spec adds to a row, after the spec is held to the
+  // aggregate key check. One owner, since `findMany` and `findManyAndCount`
+  // both build the window column and a verb that skipped this would hand a
+  // scoped caller the @guarded column the check exists to refuse.
+  function windowNamesOf(windowSpec) {
+    if (!windowSpec) return null
+    const { values, names } = windowColumnNames(windowSpec)
+    refuseAggregateKeys('window', values)
+    refuseAggregateKeys('window', names, false)
+    return new Set(Object.keys(windowSpec))
+  }
+
   // The field names a named aggregate reads, if any. `count: true` / `'*'`
   // counts rows rather than a column.
   function namedAggFields(specs) {
@@ -6481,6 +6493,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
           seal: { sql: _vWhereSql0, params: _vWhereParams0, op: 'update' },
         },
         before: beforeRow, transition: _transResult,
+        // The row the statement's own WHERE reaches, so a child written ahead
+        // of it is written only for a row the policy, the move and the version
+        // let the UPDATE touch.
+        reach: () => {
+          const q = frag(sqlJoin([KW.select, T, KW.where, _vSelf], ''))
+          return readDb.query(q.sql).get(...q.params)
+        },
       }
     }
 
@@ -6901,13 +6920,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const { where, include, orderBy, limit, offset, select, distinct, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
       const windowSpec      = args.window ?? null
-      if (windowSpec) {
-        const { values, names } = windowColumnNames(windowSpec)
-        refuseAggregateKeys('window', values)
-        refuseAggregateKeys('window', names, false)
-      }
-      const windowNames     = windowSpec ? new Set(Object.keys(windowSpec)) : null
-      const ps              = parseArgs(select, include, windowNames)
+      const windowNames     = windowNamesOf(windowSpec)
+      const ps             = parseArgs(select, include, windowNames)
       const psLog           = logReadParse(select, include, ps, distinct, windowNames)
 
       // ── the similarity ordering's two halves (`FJS-D331`) ────────────────
@@ -7161,11 +7175,15 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       }
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, orderBy, limit, offset, select, distinct } = args
-      const ps   = parseArgs(select, include)
-      const psLog = logReadParse(select, include, ps, distinct)
+      const windowSpec  = args.window ?? null
+      const windowNames = windowNamesOf(windowSpec)
+      const ps   = parseArgs(select, include, windowNames)
+      const psLog = logReadParse(select, include, ps, distinct, windowNames)
 
       // ── rows query (with limit/offset) ──────────────────────────────────
-      const { sql, params } = buildSQL({ verb: 'findManyAndCount', where, args, orderBy, limit, offset, parsedSelect: psLog, distinct: distinct === true })
+      // The window is the rows' alone: the total counts the filtered set, and a
+      // window column is not a filter.
+      const { sql, params } = buildSQL({ verb: 'findManyAndCount', where, args, orderBy, limit, offset, parsedSelect: psLog, distinct: distinct === true, windowSpec })
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
       const rawRows = readDb.query(sql).all(...params)
@@ -7974,10 +7992,22 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const body = async () => {
         plan = await u.plan(u.hasNested ? await processBelongsToNested(u.nested) : {})
         if (!plan) return null
+        const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+        // A model that seals is written children first: its own UPDATE may be
+        // the move that seals them, and a child written after it is refused,
+        // rolling the move back. A child still refused here is refused because
+        // the document was ALREADY sealed.
+        let childrenDone = false
+        if (_sealSelf && u.hasNested && plan.reach) {
+          const raw = plan.reach()
+          if (raw) {
+            await processHasManyNested(u.nested, raw[pkField], read(raw, { mode: 'single' }))
+            childrenDone = true
+          }
+        }
         const outcome = writeUnit(plan)
         if (!outcome.row) return outcome
-        const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-        await processHasManyNested(u.nested, outcome.row[pkField], outcome.row)
+        if (!childrenDone) await processHasManyNested(u.nested, outcome.row[pkField], outcome.row)
         applyEdgeWrites(u.edgeWrites, outcome.row[pkField], u.scopedBy)
         return u.hasNested || u.edgeWrites.length ? rehydrateAfterChildren(outcome) : outcome
       }
@@ -9044,7 +9074,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       whereSql = whereSql && whereSql !== '1=1' ? `${inSql} AND (${whereSql})` : inSql
       params.unshift(...binds)
       if (policy) { whereSql = `(${whereSql}) AND (${policy.sql})`; params.push(...policy.params) }
-      const rows = readAll(readDb.query(`SELECT rowid AS __rid, * FROM ${quoteIdent(tableName)} WHERE ${whereSql}`).all(...params))
+      // Announced like any read: a telemetry count of one `$search` per
+      // keystroke is otherwise one statement short per model hit.
+      const sql  = `SELECT rowid AS __rid, * FROM ${quoteIdent(tableName)} WHERE ${whereSql}`
+      const _nt  = needsTiming()
+      const t0   = _nt ? performance.now() : 0
+      const raw  = readDb.query(sql).all(...params)
+      fireQuery({ operation: '$search', args: { rids }, sql, params, duration: _nt ? performance.now() - t0 : 0, rowCount: raw.length })
+      const rows = readAll(raw)
       const pk       = shape.model.attributes.find(a => a.kind === 'id')?.fields
                     ?? [shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id']
       const identify = identifyingKeysFor(shape.model, ctx.schema)
@@ -12810,28 +12847,53 @@ function makeLockPrimitive(rawWriteDb) {
     const words = ftsWords(q, { prefix, trigram: true })
     if (words == null) return []
 
-    const branches = [], params = []
+    // A model whose gate or capability refuses the caller holds no hit for
+    // them, as a row its policy hides holds none: refusing the whole call
+    // would hide the models they may read too. Refused everywhere, the first
+    // refusal stands, so a caller who may read nothing is told so by name.
+    const branches = [], params = [], read = []
+    let refused = null
     for (const acc of chosen) {
-      const b = await tablesOf[acc][SEARCH_BRANCH]({ limit, offset })
+      let b
+      try { b = await tablesOf[acc][SEARCH_BRANCH]({ limit, offset }) }
+      catch (e) {
+        if (!(e instanceof AccessDeniedError)) throw e
+        refused ??= e
+        continue
+      }
       branches.push(b.sql ? `(model = ? AND ${b.sql})` : `model = ?`)
       params.push(acc, ...b.params)
+      read.push(acc)
     }
+    if (!branches.length) throw refused
     const globs      = words.scan.map(() => `(${quoteIdent(SEARCH_TABLE)}.title GLOB ? OR ${quoteIdent(SEARCH_TABLE)}.body GLOB ?)`)
     const globParams = words.scan.flatMap(g => [g, g])
 
+    // The words are held to title and body, or a model's name would be a hit
+    // on every one of its rows. The models read are narrowed inside the MATCH
+    // too, so a small model skips the large ones' postings (FJS-2845). Under
+    // trigram that narrowing is a substring test (`post` matches `postComment`)
+    // and a name under three characters matches nothing, so `model = ?` in each
+    // branch stays the exact test and a short name leaves the MATCH unnarrowed.
+    const narrow   = read.length < _searchAccessors.length && read.every(a => [...a].length >= 3)
+      ? `{model} : (${read.map(a => '"' + a + '"').join(' OR ')})` : null
+    const terms    = words.match != null ? `{title body} : (${words.match})` : null
+    const match    = [narrow, terms].filter(Boolean).join(' AND ') || null
+    const matchSql = match ? ` ${quoteIdent(SEARCH_TABLE)} MATCH ?` : null
+
     let sql, binds
-    if (words.match != null) {
+    if (terms != null) {
       sql = `SELECT model, rid, title, ${searchRankExpr()} AS rank, snippet(${quoteIdent(SEARCH_TABLE)}, 3, '<mark>', '</mark>', '…', 15) AS _snippet` +
-            ` FROM ${quoteIdent(SEARCH_TABLE)} WHERE ${quoteIdent(SEARCH_TABLE)} MATCH ?` +
+            ` FROM ${quoteIdent(SEARCH_TABLE)} WHERE${matchSql}` +
             globs.map(g => ` AND ${g}`).join('') +
             ` AND (${branches.join(' OR ')}) ORDER BY rank, model, rid` + pageSql(limit, offset || null)
-      binds = [words.match, ...globParams, ...params]
+      binds = [match, ...globParams, ...params]
     } else {
-      // No MATCH, so no bm25: every rank is null and the hits come in index
-      // order, after any ranked list a caller merges them with.
+      // No words to rank, so no bm25: every rank is null and the hits come in
+      // index order, after any ranked list a caller merges them with.
       sql = `SELECT model, rid, title, NULL AS rank, NULL AS _snippet FROM ${quoteIdent(SEARCH_TABLE)}` +
-            ` WHERE ${globs.join(' AND ')} AND (${branches.join(' OR ')}) ORDER BY model, rid` + pageSql(limit, offset || null)
-      binds = [...globParams, ...params]
+            ` WHERE${matchSql ? matchSql + ' AND' : ''} ${globs.join(' AND ')} AND (${branches.join(' OR ')}) ORDER BY model, rid` + pageSql(limit, offset || null)
+      binds = [...(match ? [match] : []), ...globParams, ...params]
     }
 
     const _nt = !!(ctx.onQuery || ctx._queryListeners.size)

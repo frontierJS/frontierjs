@@ -921,7 +921,7 @@ await context.slack.post(`Deployed ${flag.target} ✓`)</code></pre>
   &quot;editor&quot;:           &quot;code&quot;              // used by fli edit &lt;command&gt;
 }</code></pre>
         <h3>environment variables</h3>
-        <div class="table-wrap"><table class="table"><thead><tr><th>variable</th><th>what it controls</th></tr></thead><tbody><tr><td>FLI_PORT</td><td>Web GUI port (default 8500 — matches the global port schema)</td></tr><tr><td>WORKSPACE_DIR</td><td>Monorepo root for all ws-* commands</td></tr><tr><td>ANTHROPIC_API_KEY</td><td>Required for <code>fli ask</code></td></tr><tr><td>WEB_DIR / API_DIR / DB_DIR</td><td>Override default directory names</td></tr><tr><td>DEV_SERVER / PROD_SERVER</td><td>SSH targets for deploy and db commands</td></tr><tr><td>EDITOR / VISUAL</td><td>Editor opened by <code>fli edit</code></td></tr></tbody></table></div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>variable</th><th>what it controls</th></tr></thead><tbody><tr><td>FLI_PORT</td><td>Web GUI port (default 5500 — matches the global port schema)</td></tr><tr><td>WORKSPACE_DIR</td><td>Monorepo root for all ws-* commands</td></tr><tr><td>ANTHROPIC_API_KEY</td><td>Required for <code>fli ask</code></td></tr><tr><td>WEB_DIR / API_DIR / DB_DIR</td><td>Override default directory names</td></tr><tr><td>DEV_SERVER / PROD_SERVER</td><td>SSH targets for deploy and db commands</td></tr><tr><td>EDITOR / VISUAL</td><td>Editor opened by <code>fli edit</code></td></tr></tbody></table></div>
         </div>
       </article>
   </div>
@@ -3622,7 +3622,7 @@ function checkRow(f) {
 // The state badge is a socket that opened, which is true of an app whose
 // database probe is failing and of a process that bound the port and wedged.
 // Junction answers `/health` with a named check per plugin; the fli server does
-// the fetching, because this page is on 8500 and the app is on 8110 and a
+// the fetching, because this page is on 5500 and the app is on 8110 and a
 // cross-origin failure from here reads exactly like the app being down.
 //
 // Polled at a FIFTH of the state rate. Readiness is a question about the app's

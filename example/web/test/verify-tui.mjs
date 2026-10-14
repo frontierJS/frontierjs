@@ -91,12 +91,14 @@ check(settings.stdout.includes('theme theme-default ·'), 'and its footer names 
  * The screen a person would see after `stream`: the renderer moves the
  * cursor with `ESC[row;colH` and writes only the cells that changed, so the
  * stream's text is a patch over the last frame and never a frame itself.
- * Every other sequence moves nothing it paints.
+ * Every other sequence moves nothing it paints. An OSC or DCS ends at BEL or at
+ * ESC \, and read to BEL alone, one ended by ESC \ swallows every frame up to
+ * the next BEL — the cursor color a focused field sets.
  */
 function screen(stream, rows = 30, cols = 100) {
   const grid = Array.from({ length: rows }, () => Array(cols).fill(' '))
   let r = 0, c = 0
-  const seq = /\x1b\[([0-9;?<>]*)([a-zA-Z~])|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b\][^\x07]*\x07/y
+  const seq = /\x1b\[([0-9;?<>]*)([a-zA-Z~])|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b[\]P][^\x07\x1b]*(?:\x07|\x1b\\)/y
   for (let i = 0; i < stream.length;) {
     seq.lastIndex = i
     const m = seq.exec(stream)
@@ -116,7 +118,7 @@ function screen(stream, rows = 30, cols = 100) {
 }
 const seen = (text) => screen(out).includes(text)
 
-const plain = (s) => s.replace(/\x1b\[[0-9;?<>]*[a-zA-Z~]|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b\][^\x07]*\x07/g, '')
+const plain = (s) => s.replace(/\x1b\[[0-9;?<>]*[a-zA-Z~]|\x1b[()][A-Z0-9]|\x1b[=>]|\x1b[\]P][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
 
 const shell = spawn('script', ['-qfec', `stty rows 30 cols 100; bun ${TUI} --api ${API}`, '/dev/null'], {
   cwd: WEB, stdio: ['pipe', 'pipe', 'inherit'],
@@ -134,10 +136,10 @@ const until = async (pred, ms = 15000) => {
 check(await until(() => plain(out).includes('/reports/')), 'the shell lists the route', plain(out).slice(-500))
 let mark = out.length
 // The shell has a button per route `--list` marks that takes no param, in its
-// order, with the first focused, and the path field after them; a Tab paints
-// no text, so the moves go together.
+// order, with the first focused, and the path field after them; a move paints
+// no text, so the moves go together. j moves as Tab does, and k back again.
 const buttons = rows.filter((l) => l.startsWith('✓ ') && !l.includes(':')).map((l) => l.slice(2).trim())
-shell.stdin.write('\t'.repeat(Math.max(0, buttons.indexOf('/reports/'))) + '\r')
+shell.stdin.write('j'.repeat(Math.max(0, buttons.indexOf('/reports/')) + 1) + 'k\r')
 check(await until(() => seen('administrator-only')), 'Enter opens it', screen(out))
 mark = out.length
 // The heading's Orders link is the route's first focus. /orders/ holds the
@@ -171,18 +173,31 @@ shell.stdin.write('\x1b')
 check(await until(() => seen('/reports/ · Esc goes back')), 'Esc goes back to the route the link was on', screen(out))
 mark = out.length
 shell.stdin.write('\x1b')
-check(await until(() => seen('Tab moves, Enter opens')), 'and a second Esc comes back to the list', screen(out))
+check(await until(() => seen('j/k moves, Enter opens')), 'and a second Esc comes back to the list', screen(out))
 mark = out.length
 shell.stdin.write('\t'.repeat(buttons.length))
+check(await until(() => seen('INSERT')), 'the path field is INSERT the moment focus lands on it', screen(out))
+shell.stdin.write('/plans/7')
+await until(() => seen('/plans/7'))
+// Esc out of INSERT leaves the list up, and in NORMAL a letter types nothing
+// until i. The keys wait apart: Esc then a letter at once reads as Alt+letter.
+mark = out.length
+shell.stdin.write('\x1b')
+check(await until(() => seen('i types')), 'Esc on the field is NORMAL', screen(out))
+await new Promise((r) => setTimeout(r, 100))
+shell.stdin.write('xx')
 await new Promise((r) => setTimeout(r, 300))
-shell.stdin.write('/plans/7/')
-await until(() => seen('/plans/7/'))
+mark = out.length
+shell.stdin.write('i')
+check(await until(() => seen('INSERT')), 'and i is INSERT again', screen(out))
+shell.stdin.write('/')
+check(await until(() => seen('/plans/7/')) && !plain(out).includes('/plans/7x'), 'with nothing NORMAL was handed in the field', screen(out))
 mark = out.length
 shell.stdin.write('\r')
 check(await until(() => seen('/plans/7/ · Esc goes back')), 'a typed path opens a route that takes a param', screen(out))
 mark = out.length
 shell.stdin.write('\x1b')
-check(await until(() => seen('Tab moves, Enter opens')), 'and Esc comes back to the list', screen(out))
+check(await until(() => seen('j/k moves, Enter opens')), 'and Esc comes back to the list', screen(out))
 mark = out.length
 // The route's first focus is its Pay runs link, so one Tab reaches New
 // employee. The Drawer is a modal <dialog>: drawn in a border over the page,
@@ -200,7 +215,7 @@ check(await until(() => !/│ New employee/.test(screen(out))), 'Esc closes the 
 check(seen('/people/ · Esc goes back') && seen('[ New employee ]'), 'and leaves the route open', screen(out))
 mark = out.length
 shell.stdin.write('\x1b')
-check(await until(() => seen('Tab moves, Enter opens')), 'a second Esc comes back to the list', screen(out))
+check(await until(() => seen('j/k moves, Enter opens')), 'a second Esc comes back to the list', screen(out))
 mark = out.length
 shell.stdin.write('\x03')
 const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('timeout'), 5000))])
@@ -220,7 +235,7 @@ out = ''
 mark = 0
 walk.stdout.on('data', (d) => { out += d })
 const walked = new Promise((r) => walk.on('exit', (c) => r(c)))
-check(await until(() => seen('Tab moves, Enter opens')), 'the fixture shell lists its routes', screen(out))
+check(await until(() => seen('j/k moves, Enter opens')), 'the fixture shell lists its routes', screen(out))
 mark = out.length
 walk.stdin.write('\r')
 check(await until(() => seen('Things: 2')), '/ opens', screen(out))
@@ -239,7 +254,7 @@ check(await until(() => seen('/make/ does not lower:')),
   'a link to a route that does not lower is refused by the router, which says why', screen(out))
 mark = out.length
 walk.stdin.write('\x1b')
-check(await until(() => seen('Tab moves, Enter opens')), 'and from its first entry to the list', screen(out))
+check(await until(() => seen('j/k moves, Enter opens')), 'and from its first entry to the list', screen(out))
 
 // `/confirm/` mounts the kit's ConfirmationPopover, which no route of the app
 // opens without rows from an API. Its panel is a `<mesa:portal>` and paints
@@ -258,7 +273,7 @@ check(await until(() => seen('Cancels: 1') && !seen('Remove it?')), 'Esc cancels
 check(seen('/confirm/ · Esc goes back'), 'and leaves the route open, since the panel took the key', screen(out))
 mark = out.length
 walk.stdin.write('\x1b')
-check(await until(() => seen('Tab moves, Enter opens')), 'a second Esc leaves the route', screen(out))
+check(await until(() => seen('j/k moves, Enter opens')), 'a second Esc leaves the route', screen(out))
 walk.stdin.write('\x03')
 const walkCode = await Promise.race([walked, new Promise((r) => setTimeout(() => r('timeout'), 5000))])
 if (walkCode === 'timeout') walk.kill('SIGKILL')

@@ -380,12 +380,13 @@ export class HttpTransport {
   // ─── Start server ──────────────────────────────────────────────────
 
   /**
-   * `port` overrides the configured one for this bind only. It exists for a
-   * caller that wants 0 — an OS-chosen free port, read back from `.port` — which
-   * is what makes a test server parallel-safe. Configuration stays untouched, so
-   * a restart binds what the app declared.
+   * `port` and `hostname` override the configured ones for this bind only. The
+   * app passes its loaded config here, because these options were captured in
+   * `createApp`, before `junction.config.js` and `PORT` were read (`FJS-2839`).
+   * A port of 0 is an OS-chosen free one, read back from `.port`, which is what
+   * makes a test server parallel-safe.
    */
-  start(port?: number): ReturnType<typeof Bun.serve> {
+  start(port?: number, hostname?: string): ReturnType<typeof Bun.serve> {
 
     // Build route cache — must happen before first request
     this.router.build()
@@ -399,7 +400,7 @@ export class HttpTransport {
     // agreed with by none.
     this._server = Bun.serve<WsData>({
       port:     port ?? this._opts.port,
-      hostname: this._opts.hostname,
+      hostname: hostname ?? this._opts.hostname,
       ...(this._opts.idleTimeout !== undefined ? { idleTimeout: this._opts.idleTimeout } : {}),
 
       fetch: (req, server) => this._handle(req, server),

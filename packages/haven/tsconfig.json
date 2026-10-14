@@ -1,0 +1,7 @@
+{
+  // Plain JS checked for real. noImplicitAny is off because a test's fixtures
+  // are rows of a schema the checker cannot see until `db:types` runs.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": true, "noImplicitAny": false },
+  "include": ["db/**/*.js", "api/**/*.ts"]
+}

@@ -5,13 +5,13 @@ alias: proxy
 examples:
   - fli proxy
   - fli proxy --list
-  - fli proxy --port 8504
+  - fli proxy --port 5504
 flags:
   port:
     char: p
     type: string
     description: Listen here instead of 80
-    defaultValue: 8504
+    defaultValue: 5504
   list:
     char: l
     type: boolean
@@ -74,10 +74,10 @@ const server = createProxy({ table })
 // 80 first, because a name with a port on it is only half the point; the
 // fallback is a number from the ports table rather than a convention, because a
 // tool typed from memory cannot take a number from an app's row.
-const wanted = flag.port && String(flag.port) !== '8504' ? Number(flag.port) : 80
+const wanted = flag.port && String(flag.port) !== '5504' ? Number(flag.port) : 80
 let bound
 try {
-  bound = await listenWithFallback(server, { port: wanted, fallback: Number(flag.port) || 8504 })
+  bound = await listenWithFallback(server, { port: wanted, fallback: Number(flag.port) || 5504 })
 } catch (err) {
   log.error(`could not listen on ${wanted} or ${flag.port}: ${err.message}`)
   return

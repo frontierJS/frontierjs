@@ -1,0 +1,8 @@
+<script module>
+// src/resources/Room.mesa — a scene a member stands in. The row is what a
+// channel hangs off (`api/src/rooms.ts`); the art is the client's, keyed by
+// the slug.
+import { createResource } from '@frontierjs/sierra/resource'
+
+export const rooms = createResource('rooms', { model: 'Room' })
+</script>

@@ -25,10 +25,13 @@ title: Workbench
   // package.json scripts (api core/workbench-run.ts) -- and leaves it running
   // on the API's machine; what is up comes on the same poll.
   //
-  // The Plan tab is a Phases-of-Steps file in the checkout (fli's
-  // core/plan.js), reread whenever the card's rev moves while it shows. With
-  // no plan it is the Build plan form: a goal and a path, written by a new
-  // chat that may edit that one file.
+  // The Plan tab is one of the pin's Phases-of-Steps files in the checkout
+  // (fli's core/plan.js), the one the API shows and Go acts on, reread
+  // whenever the card's rev moves while it shows. With no plan it is the
+  // Build plan form: a goal and a path, written by a new
+  // chat that may edit that one file. File issue and Ask question write a
+  // row into the checkout's ISSUES.md (fli's core/file.js); a letter on a
+  // plan question rules it (fli's core/decide.js) and lifts Next's hold.
   //
   // A BRANCH is a pin forked from another (api core/workbench-branch.ts): a
   // worktree of its own, drawn right after its parent, with Land and Archive
@@ -55,6 +58,7 @@ title: Workbench
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Markdown   from '@frontierjs/ui/components/display/Markdown.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
 
   const POLL_MS   = 2000
@@ -169,10 +173,12 @@ title: Workbench
   function announce(s) {
     const p = pins.find(x => x.id === s.id)
     if (!p || document.hasFocus()) return
+    const q = s.questions?.[0]
     try {
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted')
-        new Notification(`${p.name}: ${s.state === 'done' ? 'done' : 'stopped with an error'}`, {
-          body: s.cost != null ? `$${s.cost.toFixed(2)} · ${s.turns} turns` : '',
+        new Notification(`${p.name}: ${q ? 'needs you' : s.state === 'done' ? 'done' : 'stopped with an error'}`, {
+          body: q ? markdownText(q.question) + (s.questions.length > 1 ? ` (+${s.questions.length - 1} more)` : '')
+            : s.cost != null ? `$${s.cost.toFixed(2)} · ${s.turns} turns` : '',
           tag:  `workbench-${s.id}`,
         })
     } catch {}
@@ -194,14 +200,15 @@ title: Workbench
     window.removeEventListener('resize', place)
   })
 
-  // The tab says how many are working and how many finished unread, so it
-  // reads from another tab.
+  // The tab says how many are working, how many wait on a question and how
+  // many finished unread, so it reads from another tab.
   const baseTitle = document.title
   function retitle() {
     const all     = Object.values(status)
     const working = all.filter(s => s.state === 'working').length
-    const unread  = all.filter(s => s.unread).length
-    document.title = (working ? `● ${working} · ` : '') + (unread ? `(${unread}) ` : '') + baseTitle
+    const asking  = all.filter(s => needsYou(s)).length
+    const unread  = all.filter(s => s.unread && !needsYou(s)).length
+    document.title = (working ? `● ${working} · ` : '') + (asking ? `? ${asking} · ` : '') + (unread ? `(${unread}) ` : '') + baseTitle
   }
 
   // ─── the stage and the dock ──────────────────────────────────────────
@@ -343,11 +350,18 @@ title: Workbench
     return !!p && visible().some(v => v.id === id) && tabOf(p) === tab
   }
 
-  // The oldest finish nobody has looked at; one this tab did not see end
-  // counts as older than any it did.
+  // A question first, then the oldest finish nobody has looked at; one this
+  // tab did not see end counts as older than any it did.
   function waiting() {
-    return ordered(pins).filter(p => status[p.id]?.unread)
-      .sort((a, b) => (endedAt[a.id] ?? 0) - (endedAt[b.id] ?? 0))
+    const asks = (p) => needsYou(status[p.id]) ? 0 : 1
+    return ordered(pins).filter(p => status[p.id]?.unread || needsYou(status[p.id]))
+      .sort((a, b) => asks(a) - asks(b) || (endedAt[a.id] ?? 0) - (endedAt[b.id] ?? 0))
+  }
+
+  // Lands where the owner acts: on the question, where that is why it waits.
+  function openWaiting(p) {
+    stageOn(p.id)
+    if (needsYou(status[p.id])) toQuestion(p)
   }
 
   // Alt and a code rather than a key: on a Mac, Alt+1 types ¡.
@@ -359,7 +373,7 @@ title: Workbench
       if (p) { e.preventDefault(); stageOn(p.id) }
     } else if (e.code === 'KeyJ') {
       const next = waiting()[0]
-      if (next) { e.preventDefault(); stageOn(next.id) }
+      if (next) { e.preventDefault(); openWaiting(next) }
     } else if (e.code === 'KeyZ') {
       const target = zoomed() ?? freshest()?.id
       if (target && staged().length === SLOTS) { e.preventDefault(); toggleZoom(target) }
@@ -611,6 +625,13 @@ title: Workbench
   const TONE  = { idle: 'muted', working: 'info', done: 'success', error: 'danger' }
   const LABEL = { idle: 'idle', working: 'working', done: 'done', error: 'error' }
 
+  // A step stops on a `Q`; a run is no longer the thing to wait for once it
+  // has, and seeing the chat does not answer it.
+  const needsYou = (s) => !!s?.questions?.length && s.state !== 'working'
+  const dotTone  = (id) => needsYou(status[id]) ? 'warning' : status[id]?.unread ? 'success' : TONE[status[id]?.state ?? 'idle']
+  const dotLabel = (id) => needsYou(status[id]) ? 'needs you' : LABEL[status[id]?.state ?? 'idle']
+  const asksOf   = (id) => (status[id]?.questions ?? []).map(q => `${q.plan}: ${markdownText(q.question)}`).join('\n')
+
   // A run is mostly tool calls; the chat shows the last few in a row and how
   // many came before them, so the words are not lost between the calls.
   function grouped(items = []) {
@@ -692,6 +713,36 @@ title: Workbench
     return [`My comments on the diff:\n\n${lines.join('\n')}`, draft].filter(Boolean).join('\n\n')
   }
 
+  // ─── the commit ──────────────────────────────────────────────────────
+  // Off the Diff tab, on a checkout; a branch lands first. Every file the
+  // panel lists is chosen until it is unticked, and each goes up with the blob
+  // the panel read — the tree is shared, so a file written since is refused
+  // rather than committed with lines nobody saw.
+
+  let unchosen   = {}
+  let messages   = {}
+  let committing = {}
+
+  const chosenOf = (id) => (diffs[id]?.files ?? []).filter(f => !unchosen[id]?.[f.path])
+  const choose   = (id, path, on) => unchosen = { ...unchosen, [id]: { ...unchosen[id], [path]: !on } }
+  const chooseAll = (id, on) =>
+    unchosen = { ...unchosen, [id]: on ? {} : Object.fromEntries((diffs[id]?.files ?? []).map(f => [f.path, true])) }
+
+  async function commit(p, e) {
+    e?.preventDefault()
+    const files = chosenOf(p.id).map(f => ({ path: f.path, blob: f.blob }))
+    committing = { ...committing, [p.id]: true }
+    const out  = await act('commit', p, { message: messages[p.id] ?? '', files })
+    committing = { ...committing, [p.id]: false }
+    // Refused or not, the panel shows the tree as it is now.
+    loadDiff(p.id)
+    if (!out) return
+    notice   = `Committed ${out.commit.slice(0, 7)} on ${p.name}: ${plural(out.files.length, 'file')}.`
+    messages = { ...messages, [p.id]: '' }
+    unchosen = { ...unchosen, [p.id]: {} }
+    await loadPins()
+  }
+
   // ─── the Run tab ─────────────────────────────────────────────────────
   // The rows are read when the pins are and again when the tab opens, since a
   // chat may have added a script. A row is named by id; the API looks up the
@@ -769,13 +820,15 @@ title: Workbench
 
   // ─── the Plan tab ────────────────────────────────────────────────────
   // The position is the first open box (`next`), derived by the parser and
-  // marked here; nothing on this screen writes the file. Go runs that box in
-  // the shown chat, and the API records when.
+  // marked here. Go runs that box in the shown chat, and the API records when.
+  // The session ticks the box (`FJS-D969`); a Go'd step whose run ended with
+  // its box still open gets Tick, the one write this screen makes to the file.
 
   let plans     = {}
   let planDraft = {}
   let building  = {}
   let going     = {}
+  let ticking   = {}
   const planRev = {}
 
   async function loadPlan(p, rev = status[p.id]?.rev) {
@@ -816,20 +869,137 @@ title: Workbench
     } finally { building = { ...building, [p.id]: false } }
   }
 
-  async function go(p) {
+  // Go runs the next box in the shown chat; Next opens a new chat and hands
+  // it the plan and the last reply, held while a question is open.
+  async function go(p, method = 'go') {
     going = { ...going, [p.id]: true }
     try {
-      if (!await act('go', p)) return
+      const started = await act(method, p)
+      if (!started) return
       lastState[p.id] = 'working'
       fetchedAt[p.id] = -1
-      status = { ...status, [p.id]: { ...status[p.id], state: 'working', running: status[p.id]?.chat } }
+      status = { ...status, [p.id]: { ...status[p.id], state: 'working', chat: started.chat, running: started.chat } }
       await loadPins()
       const now = pins.find(x => x.id === p.id)
       if (now) await loadPlan(now)
     } finally { going = { ...going, [p.id]: false } }
   }
 
+  async function tick(p, st) {
+    ticking = { ...ticking, [p.id]: st.id }
+    try {
+      if (!await act('tick', p, { step: st.id })) return
+      await loadPlan(p)
+    } finally { ticking = { ...ticking, [p.id]: null } }
+  }
+
+  // Open plan shows a file already in the checkout, or one on the pin; Close
+  // plan forgets the shown one and its steps here, and the file stays.
+  let opening = {}
+  const openingOf = (p) => opening[p.id] ?? null
+  function setOpening(p, v) { opening = { ...opening, [p.id]: v && { ...openingOf(p), ...v } } }
+
+  // The plan holding the first open question, shown on its Plan tab.
+  async function toQuestion(p) {
+    const q = status[p.id]?.questions?.[0]
+    if (!q) return
+    if (q.plan !== p.plan) await openPlan(p, q.plan)
+    setTab(p, 'plan')
+  }
+
+  async function openPlan(p, path, e) {
+    e?.preventDefault()
+    if (!await act('openPlan', p, { path })) return
+    setOpening(p, null)
+    closeRuling(p)
+    await loadPins()
+    const now = pins.find(x => x.id === p.id)
+    if (now) await loadPlan(now)
+  }
+
+  async function closePlan(p) {
+    if (!await act('closePlan', p, { path: p.plan })) return
+    closeRuling(p)
+    await loadPins()
+    const now = pins.find(x => x.id === p.id)
+    if (now) await loadPlan(now)
+  }
+
+  // File issue and Ask question write a row into the checkout's ISSUES.md
+  // through fli's fileIssue; by number it is the step running, or the last
+  // one started, and shows under it on the reread.
+  let filing = {}
+  let filed  = {}
+  const filingOf = (p) => filing[p.id] ?? null
+  function openFiling(p, kind) {
+    filing = { ...filing, [p.id]: { kind, severity: 'S3', area: '', title: '', detail: '' } }
+    filed  = { ...filed, [p.id]: null }
+  }
+  function closeFiling(p) { filing = { ...filing, [p.id]: null } }
+  function setFiling(p, patch) { filing = { ...filing, [p.id]: { ...filingOf(p), ...patch } } }
+  const fileReady = (f) => !!(f && f.area.trim() && f.title.trim() && f.detail.trim() && !f.busy)
+
+  async function fileRow(p, e) {
+    e?.preventDefault()
+    const f = filingOf(p)
+    if (!fileReady(f)) return
+    setFiling(p, { busy: true })
+    const out = await act('file', p, {
+      severity: f.kind === 'question' ? 'decision' : f.severity,
+      area: f.area, title: f.title, detail: f.detail,
+    })
+    if (!out) { setFiling(p, { busy: false }); return }
+    closeFiling(p)
+    filed  = { ...filed, [p.id]: out }
+    await loadPlan(p)
+  }
+
+  // A letter on an open plan question is fli's decide, the plan named as
+  // the file it is argued in. decide refuses a pick against the
+  // recommendation with no reason, and a qualified recommendation's letter
+  // likewise, so the reason box is required exactly there. The section is
+  // the owner's each time; the last one picked in this checkout is offered.
+  let ruling      = {}
+  let ruled       = {}
+  let lastSection = {}
+  const rulingOf  = (p) => ruling[p.id] ?? null
+  const followsRec = (q, pick) => q.recommend?.letter === pick && !q.recommend.qualifier
+  // Another letter on the same question keeps what was typed beside it.
+  function openRuling(p, q, pick) {
+    const was = rulingOf(p)?.question === q.id ? rulingOf(p) : null
+    ruling = { ...ruling, [p.id]: { question: q.id, pick, why: was?.why ?? '', section: was?.section || lastSection[p.id] || '' } }
+    ruled  = { ...ruled, [p.id]: null }
+  }
+  function closeRuling(p) { ruling = { ...ruling, [p.id]: null } }
+  function setRuling(p, patch) { ruling = { ...ruling, [p.id]: { ...rulingOf(p), ...patch } } }
+  const ruleReady = (q, r) => !!(r && r.section && (followsRec(q, r.pick) || r.why.trim()) && !r.busy)
+
+  async function rule(p, q, e) {
+    e?.preventDefault()
+    const r = rulingOf(p)
+    if (!ruleReady(q, r)) return
+    setRuling(p, { busy: true })
+    const out = await act('decide', p, { question: q.id, pick: r.pick, why: r.why, section: r.section })
+    if (!out) { setRuling(p, { busy: false }); return }
+    lastSection = { ...lastSection, [p.id]: r.section }
+    closeRuling(p)
+    ruled = { ...ruled, [p.id]: { ...out, question: q.question } }
+    await loadPlan(p)
+  }
+
+  // A step Go started whose run is over and whose box the session left open.
+  // What the step's runs cost, summed by the API off its chat; nothing until
+  // one has finished.
+  const stepCost = (r) => r.cost == null ? '' : ` · ${money(r.cost)}${r.turns ? ` · ${plural(r.turns, 'turn')}` : ''}`
+  const leftOpen = (p, st) => st.box === 'open' && !!plans[p.id]?.steps?.[st.id] && status[p.id]?.state !== 'working'
+
   const BOX = { open: '☐', done: '☑', dropped: '⊘' }
+  // A question still waiting is the row that holds the plan up; an S1/S2 is
+  // the one that outranks the next step.
+  const filedLabel = (r) => r.kind === 'issue' ? (r.severity ?? 'issue') : r.kind === 'ruling' ? 'ruling' : r.status === 'needs a ruling' ? 'question' : 'ruled'
+  const filedTone  = (r) => r.kind === 'question' && r.status === 'needs a ruling' ? 'warning'
+    : r.kind === 'issue' && /^S[12]$/.test(r.severity ?? '') && !/closed/.test(r.status) ? 'danger'
+    : r.kind === 'ruling' ? 'success' : ''
 
   // ─── folding ─────────────────────────────────────────────────────────
   // The card's mode folds a side; a click on one message flips it against
@@ -953,7 +1123,7 @@ title: Workbench
         </EmptyState>
       {:else if loaded && !staged().length}
         <EmptyState title="Nothing on the stage">
-          Pick a chat from the dock — or Alt+1 to Alt+9 for the one at that place, Alt+J for the oldest one waiting on you.
+          Pick a chat from the dock — or Alt+1 to Alt+9 for the one at that place, Alt+J for one waiting on you, an open question first.
         </EmptyState>
       {:else}
       <div class="workbench-panes" data-panes={visible().length} style:--split={String(split)}>
@@ -962,13 +1132,16 @@ title: Workbench
                    data-branch={p.branch ?? null} on:click={() => { touched[p.id] = Date.now(); markSeen(p) }}>
             <div class="section-header workbench-head">
               <h2 class="h5 cluster">
-                <Dot tone={status[p.id]?.unread ? 'success' : TONE[status[p.id]?.state ?? 'idle']}
+                <Dot tone={dotTone(p.id)}
                      pulse={status[p.id]?.state === 'working'}
-                     label={LABEL[status[p.id]?.state ?? 'idle']} />
+                     label={dotLabel(p.id)} />
                 {p.name}
               </h2>
               <span class="cluster">
-                {#if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+                {#if needsYou(status[p.id])}
+                  <Button size="xs" variant="outlined" tone="warning" class="workbench-needs" onclick={() => toQuestion(p)}
+                          title={asksOf(p.id)}>needs you · {status[p.id].questions.length}</Button>
+                {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
                 {#if status[p.id]?.queued}<Badge tone="info">{status[p.id].queued} queued</Badge>{/if}
                 {#if staged().length === SLOTS}
                   <Button size="xs" variant="ghost" onclick={() => toggleZoom(p.id)} aria-pressed={zoomed() === p.id ? 'true' : 'false'}
@@ -1129,9 +1302,30 @@ title: Workbench
                     <p class="text-muted">The working tree against HEAD — another session's edits show here too. Click a line to comment on it.</p>
                   {/if}
                   {#if !diffs[p.id].files.length}<p class="text-muted">Nothing changed.</p>{/if}
+                  {#if !p.from && diffs[p.id].files.length}
+                    <form class="stack workbench-commit" id={`workbench-commit-${p.id}`} on:submit={(e) => commit(p, e)}>
+                      <Checkbox label={`Every file listed (${chosenOf(p.id).length} of ${diffs[p.id].files.length} chosen)`} name="all"
+                                checked={chosenOf(p.id).length === diffs[p.id].files.length}
+                                indeterminate={chosenOf(p.id).length > 0 && chosenOf(p.id).length < diffs[p.id].files.length}
+                                onchange={(e) => chooseAll(p.id, e.target.checked)} />
+                      <Textarea label="Commit message" name="message" rows={2} value={messages[p.id] ?? ''}
+                                hint="The chosen files as the panel shows them, committed on HEAD with the checkout's own hooks. What anyone else staged stays staged."
+                                oninput={(e) => messages = { ...messages, [p.id]: e.target.value }} />
+                      <div class="cluster">
+                        <Button type="submit" disabled={!chosenOf(p.id).length || !(messages[p.id] ?? '').trim() || committing[p.id] || status[p.id]?.state === 'working'}
+                                title={status[p.id]?.state === 'working' ? 'A chat here is working — commit when the run ends' : null}>
+                          Commit {plural(chosenOf(p.id).length, 'file')}
+                        </Button>
+                      </div>
+                    </form>
+                  {/if}
                   {#each diffs[p.id].files as f, fi (f.path)}
                     <details class="workbench-file">
                       <summary class="cluster">
+                        {#if !p.from}
+                          <input type="checkbox" class="workbench-choose" aria-label={`Commit ${f.path}`}
+                                 checked={!unchosen[p.id]?.[f.path]} on:change={(e) => choose(p.id, f.path, e.target.checked)} />
+                        {/if}
                         <code>{f.path}</code>
                         <span class="text-success">+{f.adds}</span>
                         <span class="text-danger">−{f.dels}</span>
@@ -1240,22 +1434,102 @@ title: Workbench
                   </form>
                 {:else}
                   <div class="cluster">
-                    <code>{p.plan.path}</code>
+                    {#if p.plans.length > 1}
+                      <Select label="Plan" name="plan" placeholder="" value={p.plan} options={p.plans.map(x => x.path)}
+                              onchange={(e) => openPlan(p, e.target.value)} />
+                    {:else}
+                      <code>{p.plan}</code>
+                    {/if}
                     {#if parsedOf(p.id)?.title}<strong>{markdownText(parsedOf(p.id).title)}</strong>{/if}
                     <span class="cluster workbench-runrow-end">
+                      <Button size="xs" variant="ghost" onclick={() => openFiling(p, 'issue')}
+                              title="A defect, as a row in this checkout's ISSUES.md">File issue</Button>
+                      <Button size="xs" variant="ghost" onclick={() => openFiling(p, 'question')}
+                              title="A question for a ruling, in § Needs a decision of this checkout's ISSUES.md">Ask question</Button>
                       <Button size="xs" variant="ghost" onclick={() => setDraft(p, { open: true })}
-                              title="Write a new plan; this file stays where it is">New plan</Button>
+                              title="Write a new plan; this one stays on the pin">New plan</Button>
+                      <Button size="xs" variant="ghost" onclick={() => setOpening(p, { path: '' })}
+                              title="Show a plan already written in this checkout">Open plan</Button>
+                      <Button size="xs" variant="ghost" onclick={() => closePlan(p)} disabled={status[p.id]?.state === 'working'}
+                              title={status[p.id]?.state === 'working' ? 'A chat here is working — close it once it stops' : `Forget ${p.plan} here; the file stays`}>Close plan</Button>
                     </span>
                   </div>
+                  {#if openingOf(p)}
+                    <form class="cluster workbench-plan-open" on:submit={(e) => openPlan(p, openingOf(p).path, e)} aria-label="Open plan">
+                      <Input label="Path in the checkout" name="open-path" value={openingOf(p).path} placeholder="IDEAS/<slug>.md or PLAN.md"
+                             oninput={(e) => setOpening(p, { path: e.target.value })} />
+                      <Button type="submit" disabled={!openingOf(p).path.trim()}>Open</Button>
+                      <Button variant="ghost" onclick={() => setOpening(p, null)}>Cancel</Button>
+                    </form>
+                  {/if}
+                  {#if filingOf(p)}
+                    <form class="stack workbench-plan-file" data-filing={filingOf(p).kind} on:submit={(e) => fileRow(p, e)}
+                          aria-label={filingOf(p).kind === 'question' ? 'Ask question' : 'File issue'}>
+                      <p class="text-muted">{filingOf(p).kind === 'question'
+                        ? 'A row in § Needs a decision, under the id its ruling will carry.'
+                        : 'A row at the top of its severity\'s table, open and verified today.'}</p>
+                      {#if filingOf(p).kind === 'issue'}
+                        <Select label="Severity" name="severity" placeholder="" value={filingOf(p).severity}
+                                options={['S1', 'S2', 'S3', 'S4']}
+                                onchange={(e) => setFiling(p, { severity: e.target.value })} />
+                      {/if}
+                      <Input label="Area" name="area" value={filingOf(p).area} placeholder="The package or surface — web, cli, litestone"
+                             oninput={(e) => setFiling(p, { area: e.target.value })} />
+                      <Input label={filingOf(p).kind === 'question' ? 'Question' : 'Title'} name="title" value={filingOf(p).title}
+                             oninput={(e) => setFiling(p, { title: e.target.value })} />
+                      <Textarea label="Detail" name="detail" rows={3} value={filingOf(p).detail}
+                                oninput={(e) => setFiling(p, { detail: e.target.value })} />
+                      <div class="cluster">
+                        <Button type="submit" disabled={!fileReady(filingOf(p))}>{filingOf(p).kind === 'question' ? 'Ask' : 'File'}</Button>
+                        <Button variant="ghost" onclick={() => closeFiling(p)}>Cancel</Button>
+                      </div>
+                    </form>
+                  {/if}
+                  {#if filed[p.id]}
+                    <p class="text-success workbench-filed-note" data-filed-note={filed[p.id].id}>Filed <code>{filed[p.id].id}</code> at {filed[p.id].file}:{filed[p.id].line}</p>
+                  {/if}
                   {#if !plans[p.id]}
                     <p class="text-muted">Reading the plan…</p>
                   {:else if !parsedOf(p.id)}
-                    <p class="text-muted">{status[p.id]?.state === 'working' ? 'The plan session is writing it…' : `Nothing at ${p.plan.path} yet.`}</p>
+                    <p class="text-muted">{status[p.id]?.state === 'working' ? 'The plan session is writing it…' : `Nothing at ${p.plan} yet.`}</p>
                   {:else}
+                    {#if ruled[p.id]}
+                      <p class="text-success workbench-ruled-note" data-ruled-note={ruled[p.id].ruling}>Ruled <code>{ruled[p.id].ruling}</code>: {ruled[p.id].pick} on {markdownText(ruled[p.id].question)}</p>
+                    {/if}
                     {#if parsedOf(p.id).blocking?.length}
                       <Callout tone="warning" title={plural(parsedOf(p.id).blocking.length, 'open question')}>
                         {#each parsedOf(p.id).blocking as q}
-                          <div>{markdownText(q.question)}</div>
+                          <div class="stack workbench-question" data-question={q.id}>
+                            <div>{markdownText(q.question)}</div>
+                            {#if q.state === 'decidable'}
+                              {#each q.options as o}
+                                <div class="cluster">
+                                  <Button size="xs" variant={rulingOf(p)?.question === q.id && rulingOf(p).pick === o.letter ? 'primary' : 'outlined'}
+                                          data-pick={o.letter} onclick={() => openRuling(p, q, o.letter)}
+                                          disabled={status[p.id]?.state === 'working'}
+                                          title={status[p.id]?.state === 'working' ? 'A chat here is working — answer once it stops' : `Rule ${o.letter}`}>{o.letter}</Button>
+                                  <span>{markdownText(o.text)}</span>
+                                  {#if q.recommend?.letter === o.letter}<Badge tone="info">{q.recommend.qualifier ? `recommended: ${q.recommend.qualifier}` : 'recommended'}</Badge>{/if}
+                                </div>
+                              {/each}
+                              {#if rulingOf(p)?.question === q.id}
+                                <form class="stack workbench-plan-rule" on:submit={(e) => rule(p, q, e)} aria-label={`Rule ${rulingOf(p).pick}`}>
+                                  <Select label="Section" name="section" placeholder="The DECISIONS.md section it goes under" value={rulingOf(p).section}
+                                          options={plans[p.id]?.sections ?? []}
+                                          onchange={(e) => setRuling(p, { section: e.target.value })} />
+                                  <Textarea label={followsRec(q, rulingOf(p).pick) ? 'Why (optional — the recommendation is the reason)' : `Why — ${q.recommend ? (q.recommend.letter === rulingOf(p).pick ? 'what of it is ruled' : `${rulingOf(p).pick} is not the recommendation`) : 'there is no recommendation'}`}
+                                            name="why" rows={2} value={rulingOf(p).why}
+                                            oninput={(e) => setRuling(p, { why: e.target.value })} />
+                                  <div class="cluster">
+                                    <Button type="submit" disabled={!ruleReady(q, rulingOf(p)) || status[p.id]?.state === 'working'}>Rule {rulingOf(p).pick}</Button>
+                                    <Button variant="ghost" onclick={() => closeRuling(p)}>Cancel</Button>
+                                  </div>
+                                </form>
+                              {/if}
+                            {:else}
+                              <p class="text-muted">No lettered options yet — write them under it in {p.plan} to answer it here.</p>
+                            {/if}
+                          </div>
                         {/each}
                       </Callout>
                     {/if}
@@ -1280,11 +1554,31 @@ title: Workbench
                                   <span class="cluster workbench-runrow-end">
                                     <Button size="xs" onclick={() => go(p)} disabled={going[p.id] || status[p.id]?.state === 'working'}
                                             title={status[p.id]?.state === 'working' ? 'A chat here is working — Go starts the next step once it is done' : `Run ${st.id} in the shown chat`}>Go</Button>
+                                    <Button size="xs" variant="outlined" onclick={() => go(p, 'next')} disabled={going[p.id] || status[p.id]?.state === 'working' || !!parsedOf(p.id).blocking?.length}
+                                            title={status[p.id]?.state === 'working' ? 'A chat here is working — Next starts the next step once it is done' : parsedOf(p.id).blocking?.length ? `Rule the open question before Next: ${parsedOf(p.id).blocking[0].question}` : `Run ${st.id} in a new chat, handed the plan and the last reply`}>Next</Button>
                                   </span>
                                 {/if}
                               </div>
                               {#if plans[p.id].steps?.[st.id]}
-                                <div class="text-muted workbench-step-ran">Started {new Date(plans[p.id].steps[st.id].startedAt).toLocaleString()}</div>
+                                <div class="text-muted workbench-step-ran">Started {new Date(plans[p.id].steps[st.id].startedAt).toLocaleString()}{stepCost(plans[p.id].steps[st.id])}</div>
+                                {#if plans[p.id].steps[st.id].filed?.length}
+                                  <ul class="workbench-filed" aria-label={`Filed during ${st.id}`}>
+                                    {#each plans[p.id].steps[st.id].filed as r (r.id)}
+                                      <li class="cluster" data-filed={r.id} title={`${r.file}:${r.line}`}>
+                                        <code>{r.id}</code>
+                                        <Badge tone={filedTone(r)}>{filedLabel(r)}</Badge>
+                                        <span class="workbench-step-title">{markdownText(r.title)}</span>
+                                      </li>
+                                    {/each}
+                                  </ul>
+                                {/if}
+                              {/if}
+                              {#if leftOpen(p, st)}
+                                <div class="cluster workbench-step-open">
+                                  <span class="text-warning">The run ended and the box is still open.</span>
+                                  <Button size="xs" variant="outlined" onclick={() => tick(p, st)} disabled={ticking[p.id] === st.id}
+                                          title={`Mark ${st.id} done in ${p.plan}`}>Tick</Button>
+                                </div>
                               {/if}
                               {#if st.reason}<div class="text-muted">dropped: {markdownText(st.reason)}</div>{/if}
                               {#if st.notes.length}
@@ -1445,19 +1739,20 @@ title: Workbench
 
     <aside class="workbench-dock" aria-label="Docked chats">
       {#if waiting().length}
-        <Button size="sm" variant="outlined" tone="success" id="workbench-next" onclick={() => stageOn(waiting()[0].id)}
-                title="The oldest finished chat nobody has looked at (Alt+J)">Next waiting · {waiting().length}</Button>
+        <Button size="sm" variant="outlined" tone={needsYou(status[waiting()[0].id]) ? 'warning' : 'success'} id="workbench-next" onclick={() => openWaiting(waiting()[0])}
+                title="A plan's open question first, then the oldest finished chat nobody has looked at (Alt+J)">Next waiting · {waiting().length}</Button>
       {/if}
       {#each docked() as p (p.id)}
         <div class="workbench-tile" id={`workbench-${p.id}`} data-state={status[p.id]?.state} data-branch={p.branch ?? null}>
           <button type="button" class="workbench-tile-open" on:click={() => stageOn(p.id)}
                   title={`Put ${p.name} on the stage${keyOf(p) ? ` (${keyOf(p)})` : ''}`}>
             <span class="cluster">
-              <Dot tone={status[p.id]?.unread ? 'success' : TONE[status[p.id]?.state ?? 'idle']}
+              <Dot tone={dotTone(p.id)}
                    pulse={status[p.id]?.state === 'working'}
-                   label={LABEL[status[p.id]?.state ?? 'idle']} />
+                   label={dotLabel(p.id)} />
               <strong class="workbench-tile-name">{p.from ? '↳ ' : ''}{p.name}</strong>
-              {#if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
+              {#if needsYou(status[p.id])}<Badge tone="warning" class="workbench-needs" title={asksOf(p.id)}>needs you</Badge>
+              {:else if status[p.id]?.unread}<Badge tone="success">new</Badge>{/if}
               {#if keyOf(p)}<kbd class="text-xs text-muted">{keyOf(p)}</kbd>{/if}
             </span>
             <span class="text-sm text-muted workbench-now">{doing(p.id)}</span>
@@ -1769,12 +2064,14 @@ title: Workbench
   .workbench-step-title { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
   .workbench-box { font-family: var(--font-mono); }
   .workbench-notes > summary { cursor: pointer; }
+  .workbench-filed { list-style: none; margin: var(--space-2xs) 0 0; padding-inline-start: var(--space-md); }
   .workbench-notes ul { margin: var(--space-2xs) 0 0; padding-inline-start: var(--space-md); }
 
   .workbench-drive { margin-block-start: var(--space-xs); }
   .workbench-drive code { display: block; overflow-wrap: anywhere; }
 
   .workbench-file > summary { cursor: pointer; }
+  .workbench-commit { padding-block-end: var(--space-sm); border-block-end: var(--border-width) solid var(--tint-rule); }
   .workbench-file code { overflow-wrap: anywhere; }
   .workbench-diff {
     max-block-size: 50vh;

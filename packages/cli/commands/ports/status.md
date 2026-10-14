@@ -44,10 +44,10 @@ import { resolve } from 'path'
 Two questions, because the answer to one of them was misleading on its own.
 
 **What is actually holding a port.** Every port the schema can name — the
-reserved 8500–8509 tooling block and each assigned project across every
+reserved 5500–5509 tooling block and each assigned project across every
 category and env — probed against the OS, then decoded back into *env ·
 category · project* and named with the process holding it. This is the half the
-lock file cannot see: `fli db:studio` binds 8502 as a literal and claims no
+lock file cannot see: `fli db:studio` binds 5502 as a literal and claims no
 session, as does any app somebody started by hand, so a status built on the
 broker alone answered *no active sessions* while a port was busy and sent people
 looking in the wrong place.

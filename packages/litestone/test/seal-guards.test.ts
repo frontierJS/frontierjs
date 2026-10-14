@@ -228,3 +228,52 @@ describe('a model nothing seals pays nothing', () => {
     expect(seen.some(s => s.includes('SELECT ? WHERE') || s.includes('NOT EXISTS'))).toBe(false)
   })
 })
+
+// FJS-2709
+describe('a nested child write rides in the same update as the seal', () => {
+  const mk = async () => {
+    const d = await createClient({ schema: SCHEMA, db: ':memory:' })
+    await d.invoice.create({ data: { id: 1, number: 'N1' } })
+    await d.invoiceLine.create({ data: { id: 10, invoiceId: 1, amount: 10 } })
+    return d
+  }
+
+  test('children written in the update land before the document seals', async () => {
+    const d = await mk()
+    await d.invoice.update({
+      where: { id: 1 },
+      data: { state: 'issued', lines: { update: [{ where: { id: 10 }, data: { amount: 55 } }], create: [{ amount: 7 }] } },
+    })
+    expect((await d.invoice.findUnique({ where: { id: 1 } })).state).toBe('issued')
+    expect((await d.invoiceLine.findUnique({ where: { id: 10 } })).amount).toBe(55)
+    expect(await d.invoiceLine.count({ where: { invoiceId: 1 } })).toBe(2)
+  })
+
+  test('the same nested write on an already-sealed document is still refused', async () => {
+    const d = await mk()
+    await d.invoice.transition(1, 'issue')
+    const e = await refusal(() => d.invoice.update({
+      where: { id: 1 }, data: { number: 'N1', lines: { create: [{ amount: 7 }] } },
+    }))
+    expect(e?.name).toBe('SealedDocumentError')
+    expect(await d.invoiceLine.count({ where: { invoiceId: 1 } })).toBe(1)
+  })
+})
+
+describe('children written ahead of a seal are tied to the parent update reaching a row', () => {
+  test('a where that matches nothing writes no child', async () => {
+    const d = await createClient({ schema: SCHEMA, db: ':memory:' })
+    await d.invoice.create({ data: { id: 1, number: 'N1' } })
+    const out = await d.invoice.update({ where: { id: 1, number: 'other' }, data: { lines: { create: [{ amount: 7 }] } } })
+    expect(out).toBeNull()
+    expect(await d.invoiceLine.count({})).toBe(0)
+  })
+
+  test('a move the machine refuses rolls the child back', async () => {
+    const d = await createClient({ schema: SCHEMA, db: ':memory:' })
+    await d.invoice.create({ data: { id: 1, number: 'N1' } })
+    const e = await refusal(() => d.invoice.update({ where: { id: 1 }, data: { state: 'paid', lines: { create: [{ amount: 7 }] } } }))
+    expect(e).not.toBeNull()
+    expect(await d.invoiceLine.count({})).toBe(0)
+  })
+})

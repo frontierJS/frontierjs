@@ -134,6 +134,19 @@ export function phaseOf(plan, step) {
   return plan.phases.find(p => p.n === step.phase) ?? null
 }
 
+/**
+ * The plan's text with step `id`'s open box ticked, or null when no open box
+ * carries that id. The line is the parser's, so a step quoted in a fence is
+ * never the one written.
+ */
+export function tickStep(text, id, { file } = {}) {
+  const step = parsePlan(text, { file }).steps.find(s => s.id === id && s.box === 'open')
+  if (!step) return null
+  const lines = text.split('\n')
+  lines[step.line - 1] = lines[step.line - 1].replace(/^- \[ \]/, '- [x]')
+  return lines.join('\n')
+}
+
 /** Step ids issued twice, which `FJS-D927` forbids; empty when the plan is sound. */
 export function reissued(plan) {
   const seen = new Map()
@@ -172,7 +185,8 @@ export function renderPlan(plan, chalk) {
     rows.push(c`  {bold Open questions}  {dim ${plan.questions.length - open} ruled · ${open} open}`)
     for (const q of plan.questions) {
       const mark = q.state === 'ruled' ? '☑' : q.state === 'decidable' ? '?' : '…'
-      rows.push(c`    ${mark} ${q.question}`)
+      // The id is what `fli decide <id> <letter> --file <plan>` answers it by.
+      rows.push(q.state === 'ruled' ? c`    ${mark} ${q.question}` : c`    ${mark} ${q.question} {dim ${q.id}}`)
     }
     rows.push('')
   }

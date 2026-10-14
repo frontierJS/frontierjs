@@ -1,0 +1,503 @@
+<script>
+  // Editor.mesa — one scene file edited by placing (`FJS-D997`). The preview
+  // is the scene's own component, mounted on this page, so what is drawn here
+  // is what a tab and a terminal draw once it is saved; the file's placed
+  // tags are bound one to one to the marks the scene made on its stage
+  // (`doc.js`), and an edit moves a mark.
+  //
+  // A click on the preview does what the mode says: selects the thing on
+  // that cell, places the chosen piece or a door with its top-left there, or
+  // moves the spawn. Arrows move the selection a cell, Delete removes it. A
+  // move onto another piece is refused by the stage naming the cell, and the
+  // piece stays where it was. A door's `to` is typed in the sidebar. A block
+  // of art pasted in is recognized as pieces (`import.js`) and placed.
+  //
+  // Ctrl+Z undoes any edit from one history; Ctrl+Shift+Z or Ctrl+Y redoes.
+  // A save starts this component again (below), and so does a reload, so the
+  // history is kept in `sessionStorage` at the save and taken back when the
+  // editor opens on the text it was saved with.
+  //
+  // Save splices the edits into the file's own text (`source.js`), so a file
+  // saved untouched is its own bytes. The scene module is then a changed file
+  // Vite serves, and it swaps this component in place: the script runs again
+  // and reads the files again, and the hash keeps the scene.
+  import { mount } from '@frontierjs/mesa/runtime'
+  import { scenes, shared } from './modules.js'
+  import { readScene, writeScene } from './source.js'
+  import { bind, added, placeOf, cellsOf, hit, snapshotEls, problems, hexesOf, withHexes, editsOf, emptyHistory, record, undo, redo, packHistory, unpackHistory, remapOf, rekeyHistory, nextIdAfter } from './doc.js'
+  import { recognize } from './import.js'
+  // By the alias the scene itself uses, so under a drive's copy this is the
+  // copy's stage registry and cell module, the ones the mounted scene writes.
+  import { stages } from '@/stage.js'
+  import { at } from '@/cell.browser.js'
+
+  const MODES = [
+    { id: 'select', label: 'Select' },
+    { id: 'place',  label: 'Place' },
+    { id: 'spawn',  label: 'Spawn' },
+  ]
+  const DOOR = { ident: 'door', file: null, piece: null }
+
+  let files    = []
+  let file     = ''
+  let source   = ''
+  let parsed   = null
+  let els      = []
+  let spawn    = { x: 0, y: 0 }
+  let colors   = {}
+  let mode     = 'select'
+  let chosen   = null
+  let selected = null
+  let hover    = null
+  let status   = ''
+  let pasted   = ''
+  let box      = null
+  let steps    = emptyHistory()
+  let nextId   = 0
+  let baseColors = {}
+
+  var stage   = null
+  var mounted = null
+
+  const state   = { els: snapshotEls(els), spawn, colors }
+  const edits   = parsed ? editsOf(parsed, state, baseColors) : {}
+  const written = parsed ? write(source, edits) : { text: source, error: null }
+  const output  = written.text
+  const dirty   = output !== source
+  const issues  = stage && els ? problems(stage) : []
+  const current = els.find((el) => el.id === selected) ?? null
+  const where   = whereOf(els, selected)
+  const doors   = els.filter((el) => el.kind === 'Door').map(placeOf)
+
+  // Read off `els`, which a move replaces, so the place shown follows the
+  // mark; `current` is the same object before and after a move.
+  function whereOf(list, id) {
+    const el = list.find((e) => e.id === id)
+    return el ? placeOf(el) : null
+  }
+
+  // A file this page cannot splice into is said on the page, never thrown
+  // from the middle of a render.
+  function write(text, e) {
+    try { return { text: writeScene(text, e), error: null } }
+    catch (err) { return { text, error: err.message } }
+  }
+
+  // Every piece a click can place: the scene's own blocks, by the ident its
+  // tag names, then each shared export the scene does not import yet, which
+  // a placement imports; and a door.
+  const stamps = stampsOf(els, source)
+  function stampsOf(list, text) {
+    const out = []
+    const seen = new Set()
+    for (const el of list) {
+      if (!el.mark.piece || el.kind === 'Row' || !el.ident || seen.has(el.ident)) continue
+      seen.add(el.ident)
+      out.push({ ident: el.ident, file: el.file, piece: el.mark.piece })
+    }
+    for (const s of shared) {
+      if (seen.has(s.ident)) continue
+      seen.add(s.ident)
+      out.push({ ...s, file: new RegExp(`import \\{[^}]*\\b${s.ident}\\b[^}]*\\}\\s+from`).test(text) ? null : s.file })
+    }
+    return [...out, DOOR]
+  }
+
+  // The cells the preview marks: the selection, each problem's, every door, the spawn.
+  const marks = marksOf(current, issues, stage, spawn)
+  function marksOf(sel, found, st, at0) {
+    const out = []
+    if (sel) for (const c of cellsOf(sel)) out.push({ key: `sel:${c.x},${c.y}`, x: c.x, y: c.y, tone: 'info', ch: '' })
+    for (const [i, f] of found.entries()) for (const c of f.cells) out.push({ key: `p${i}:${c.x},${c.y}`, x: c.x, y: c.y, tone: 'danger', ch: '' })
+    for (const d of st?.doors ?? []) out.push({ key: `d:${d.x},${d.y}`, x: d.x, y: d.y, tone: 'warning', ch: '' })
+    out.push({ key: `s:${at0.x},${at0.y}`, x: at0.x, y: at0.y, tone: 'success', ch: '@' })
+    return out
+  }
+
+  fetch('/__scenes')
+    .then((r) => r.json())
+    .then((list) => {
+      files = list
+      open(decodeURIComponent(location.hash.slice(1)) || list[0]?.file)
+    })
+    .catch((e) => { status = e.message })
+
+  function open(f) {
+    const entry = files.find((x) => x.file === f) ?? files[0]
+    const Component = entry && scenes[entry.file]
+    if (!Component) { status = `${f} is not a scene this page can read`; return }
+    let read
+    try { read = readScene(entry.source) } catch (e) { status = e.message; return }
+    unmount()
+    try {
+      mounted = mount(anchorIn(box), Component, { root: box })
+      stage   = stages.get(read.slug)
+      if (!stage) throw new Error(`${entry.file} made no stage named ${read.slug}`)
+      els = bind(read, stage)
+    } catch (e) {
+      unmount()
+      status = e.message
+      return
+    }
+    fit()
+    requestAnimationFrame(fit)
+    file     = entry.file
+    source   = entry.source
+    parsed   = read
+    spawn    = { ...read.spawn }
+    colors   = Object.fromEntries(Object.entries(stage.palette).map(([k, v]) => [k, hexesOf(v)]))
+    baseColors = colors
+    nextId   = els.length
+    window.__stage = stage
+    selected = null
+    chosen   = null
+    pasted   = ''
+    status   = ''
+    steps    = recall(file, source)
+    nextId   = nextIdAfter(steps, els.length)
+    history.replaceState(null, '', `#${file}`)
+  }
+
+  function anchorIn(el) {
+    const anchor = document.createTextNode('')
+    el.appendChild(anchor)
+    return anchor
+  }
+
+  function unmount() {
+    mounted?.destroy()
+    mounted = null
+    stage   = null
+    els     = []
+    if (box) box.replaceChildren()
+  }
+
+  // `paint()` fits the scene to the whole window's width; here it shares the
+  // window with the sidebar, and the scene's right wall would sit under it.
+  // The marks overlay is laid out in the same `ch`/`lh` as the scene's box,
+  // so it takes the box's font; in other units a mark sits on the wrong cell.
+  function fit() {
+    const art = box?.querySelector('pre[data-art]')?.parentElement
+    const overlay = box?.parentElement?.querySelector('[data-marks]')
+    if (!art || !overlay) return
+    const size = 'clamp(8px, calc((100vw - 26rem) / 58), 22px)'
+    art.style.fontSize = size
+    Object.assign(overlay.style, { fontSize: size, fontFamily: art.style.fontFamily, lineHeight: art.style.lineHeight })
+  }
+
+  function hold(el) {
+    box = el
+    return () => unmount()
+  }
+
+  function pick(e) {
+    if (dirty && !confirm(`Discard the edits to ${file}?`)) { e.target.value = file; return }
+    open(e.target.value)
+  }
+
+  function cellOf(e) {
+    const art = box.querySelector('pre[data-art]')?.parentElement
+    if (!art || !stage) return null
+    const r = art.getBoundingClientRect()
+    return { x: Math.floor((e.clientX - r.left) / (r.width / stage.width)), y: Math.floor((e.clientY - r.top) / (r.height / stage.height)) }
+  }
+
+  // The stage refuses a cell another piece holds, by name; the page says so
+  // and the thing stays where it was.
+  function tryStage(fn) {
+    try { fn(); status = ''; return true }
+    catch (e) { status = e.message.replace(/^\[\w+\] /, ''); return false }
+  }
+
+  function click(e) {
+    const cell = cellOf(e)
+    if (!cell) return
+    const { x, y } = cell
+    if (mode === 'select') {
+      selected = hit(els, x, y)?.id ?? null
+    } else if (mode === 'place' && chosen) {
+      remember(null)
+      place(chosen, x, y)
+    } else if (mode === 'spawn') {
+      remember(null)
+      spawn = { x, y }
+      stage.spawn.x = x
+      stage.spawn.y = y
+      stage.touch()
+      els = [...els]
+    }
+  }
+
+  function place(what, x, y) {
+    const id = nextId
+    const ok = tryStage(() => {
+      const mark = what === DOOR ? stage.door(x, y, '/') : stage.stamp(what.piece, x, y)
+      els = [...els, added(id, what === DOOR ? 'Door' : 'Piece', what.ident, what.file, mark)]
+    })
+    if (ok) { nextId = id + 1; selected = id; return true }
+    return false
+  }
+
+  function moveBy(dx, dy) {
+    if (!current) return
+    const { x, y } = placeOf(current)
+    const nx = (current.kind === 'Pacer' ? current.mark.spec.from : x) + dx
+    const ny = (current.kind === 'Pacer' ? current.mark.spec.y : y) + dy
+    // A refused move is no edit, so it leaves no step to undo.
+    const before = steps
+    remember(`move:${current.id}`)
+    if (tryStage(() => current.mark.move(nx, ny))) els = [...els]
+    else steps = before
+  }
+
+  function removeSelected() {
+    if (!current) return
+    remember(null)
+    current.mark.remove()
+    els = els.filter((el) => el !== current)
+    selected = null
+  }
+
+  function retarget(to) {
+    if (!current || current.kind !== 'Door') return
+    remember(`to:${current.id}`)
+    current.mark.retarget(to)
+    els = [...els]
+  }
+
+  function color(key, i, hex) {
+    remember(`color:${key}:${i}`)
+    const hexes = [...(colors[key] ?? [])]
+    hexes[i] = hex
+    colors = { ...colors, [key]: hexes }
+    stage.palette[key] = withHexes(stage.palette[key], hexes)
+    stage.touch()
+  }
+
+  // A pasted block of art, recognized as the pieces at hand and placed with
+  // its top-left on the selection or the spawn; what no piece draws is said.
+  function importArt() {
+    if (!pasted.trim() || !stage) return
+    const known = stamps.filter((s) => s.piece).map((s) => ({ ident: s.ident, file: s.file, piece: s.piece }))
+    const { placements, twice, unclaimed } = recognize(pasted, known)
+    const origin = where ? { x: where.x ?? 0, y: where.y ?? 0 } : spawn
+    remember(null)
+    let placed = 0
+    const refused = []
+    for (const p of placements) {
+      if (place(known.find((k) => k.ident === p.ident), origin.x + p.x, origin.y + p.y)) placed++
+      else refused.push(status)
+    }
+    const notes = []
+    if (refused.length) notes.push(`${refused.length} refused: ${refused[0]}`)
+    if (placements.length === 0) notes.push(`nothing recognized among ${known.map((k) => k.ident).join(', ')}`)
+    if (twice.length) notes.push(`${twice.length} cell(s) two pieces draw`)
+    if (unclaimed.length) notes.push(`${unclaimed.length} glyph(s) no piece draws (${unclaimed.slice(0, 3).map((u) => `'${u.ch}' at ${u.x},${u.y}`).join(', ')}${unclaimed.length > 3 ? ', …' : ''})`)
+    status = `${placed} piece(s) placed${notes.length ? ' — ' + notes.join(', ') : ''}`
+    pasted = ''
+  }
+
+  // Every edit replaces its value rather than changing it in place, so a
+  // snapshot holds references and is never copied.
+  const snapshot = () => ({ els: snapshotEls(els), spawn, colors })
+
+  // Storage can be refused (a private window, blocked site data); the page
+  // then edits as before, with a history that ends at each save.
+  const KEPT = (f) => `haven-scenes:undo:${f}`
+  function recall(f, text) {
+    const known = new Map(stamps.filter((s) => s.piece).map((s) => [s.ident, s.piece]))
+    try { return unpackHistory(sessionStorage.getItem(KEPT(f)), text, known, stage.pacers) } catch { return emptyHistory() }
+  }
+  function keep(f, text) {
+    try { sessionStorage.setItem(KEPT(f), packHistory(steps, text)) } catch {}
+  }
+
+  function remember(kind) { steps = record(steps, snapshot(), kind) }
+
+  // The stage is brought to the snapshot: a mark it has is moved, one it
+  // lacks is placed again, one the snapshot lacks is removed.
+  function restore(step) {
+    if (!step) return
+    steps = step.history
+    const was = step.state
+    const live = new Map(els.map((el) => [el.id, el]))
+    const next = []
+    tryStage(() => {
+      for (const el of els) if (!was.els.some((s) => s.id === el.id)) el.mark.remove()
+      for (const s of was.els) {
+        let el = live.get(s.id)
+        if (el && el.kind !== s.kind) el = null
+        if (el) {
+          if (el.kind === 'Pacer') el.mark.move(s.from, s.y)
+          else { el.mark.move(s.x, s.y); if (el.kind === 'Door') el.mark.retarget(s.to) }
+        } else {
+          const mark = s.kind === 'Door' ? stage.door(s.x, s.y, s.to) : s.kind === 'Pacer' ? stage.pace(s.spec) : stage.stamp(s.piece, s.x, s.y)
+          el = added(s.id, s.kind, s.ident, s.file, mark)
+        }
+        next.push(el)
+      }
+    })
+    els    = next
+    spawn  = was.spawn
+    colors = was.colors
+    stage.spawn.x = spawn.x
+    stage.spawn.y = spawn.y
+    for (const [key, hexes] of Object.entries(colors)) stage.palette[key] = withHexes(stage.palette[key], hexes)
+    stage.touch()
+  }
+
+  const back    = () => restore(undo(steps, snapshot()))
+  const forward = () => restore(redo(steps, snapshot()))
+
+  const typing = (e) => ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)
+  const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+
+  function keys() {
+    const on = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const k = e.key.toLowerCase()
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); back() }
+        else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); forward() }
+        return
+      }
+      if (typing(e)) return
+      if (ARROWS[e.key] && current) { e.preventDefault(); moveBy(...ARROWS[e.key]) }
+      else if ((e.key === 'Delete' || e.key === 'Backspace') && current) { e.preventDefault(); removeSelected() }
+    }
+    addEventListener('keydown', on)
+    return () => removeEventListener('keydown', on)
+  }
+
+  function move(e) { hover = box ? cellOf(e) : null }
+
+  // The history is kept before the write: the write is a changed module, and
+  // Vite can swap this component before the answer arrives. A write that fails
+  // leaves a history anchored to a text the file is not, which is dropped.
+  async function save() {
+    steps = rekeyHistory(steps, remapOf(parsed, els))
+    keep(file, output)
+    try {
+      const res  = await fetch(`/__scenes/${file}`, { method: 'PUT', body: output })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error)
+      source = output
+      status = `Saved ${file} — ${body.bytes} bytes`
+    } catch (e) {
+      status = `Not saved: ${e.message}`
+    }
+  }
+
+  // A revert is a step too, so a revert by mistake comes back with Ctrl+Z.
+  function revert() {
+    const kept = record(steps, snapshot(), null)
+    open(file)
+    steps = kept
+  }
+</script>
+
+<main class="editor stack" {@attach keys}>
+  <header class="cluster">
+    <strong>Haven scenes</strong>
+    <select value={file} on:change={pick} aria-label="Scene file">
+      {#each files as f (f.file)}<option value={f.file}>{f.file}</option>{/each}
+    </select>
+    <span class="cluster" role="group" aria-label="What a click does">
+      {#each MODES as m (m.id)}
+        <button class="btn" class:primary={mode === m.id} class:ghost={mode !== m.id} aria-pressed={mode === m.id} on:click={() => { mode = m.id }}>{m.label}</button>
+      {/each}
+    </span>
+    <button class="btn primary" disabled={!dirty || !!written.error} on:click={save}>Save</button>
+    <button class="btn ghost" disabled={!steps.past.length} title="Ctrl+Z" on:click={back}>Undo</button>
+    <button class="btn ghost" disabled={!steps.future.length} title="Ctrl+Shift+Z" on:click={forward}>Redo</button>
+    <button class="btn ghost" disabled={!dirty} on:click={revert}>Revert</button>
+    <span data-status>{status}</span>
+  </header>
+
+  <div class="panes">
+    <div class="stack">
+      <div class="frame">
+        <div class="preview" data-preview {@attach hold} on:click={click} on:mousemove={move} on:mouseleave={() => { hover = null }}></div>
+        <div class="overlay" data-marks>
+          {#each marks as m (m.key)}
+            <span class="mark {m.tone}" data-mark={m.tone} {@attach at(m.x, m.y, 5)}>{m.ch}</span>
+          {/each}
+        </div>
+      </div>
+      <p data-hover>{hover ? `${hover.x},${hover.y}${stage ? ` '${stage.look(hover.x, hover.y).ch}'` : ''}` : 'x,y under the pointer'}</p>
+    </div>
+
+    <aside class="stack">
+      <section class="stack" data-selected>
+        <h2>Selected</h2>
+        {#if current}
+          <p><code>{current.kind}</code> {current.ident ?? ''} at {where.x ?? where.from},{where.y}{#if current.kind === 'Pacer'} to {where.to}{/if}</p>
+          {#if current.kind === 'Door'}
+            <label>Door to <input type="text" value={where.to} aria-label="Door target" on:change={(e) => retarget(e.target.value)} /></label>
+          {/if}
+          <p class="cluster"><small>Arrows move · Delete removes</small> <button class="btn ghost danger" on:click={removeSelected}>Remove</button></p>
+        {:else}
+          <p>Click a piece, a door or the cat's row to select it.</p>
+        {/if}
+      </section>
+
+      <section class="stack">
+        <h2>Problems {issues.length ? `(${issues.length})` : ''}</h2>
+        {#if written.error}<p class="danger">{written.error}</p>{/if}
+        {#if issues.length}
+          <ul class="stack" data-problems>
+            {#each issues as p, i (i)}<li class="danger">{p.text}</li>{/each}
+          </ul>
+        {:else}
+          <p class="success" data-problems>The spawn reaches every door.</p>
+        {/if}
+      </section>
+
+      {#if mode === 'place'}
+        <section class="stack">
+          <h2>Pieces</h2>
+          <div class="cluster" data-pieces>
+            {#each stamps as s (s.ident)}
+              <button class="btn piece" class:primary={chosen === s} class:outlined={chosen !== s} title={s.file ? `${s.ident} — imports it from pieces/${s.file}` : s.ident} on:click={() => { chosen = s }}><pre>{s.piece ? s.piece.art : 'n'}</pre><small>{s.ident}{s.file ? ' +' : ''}</small></button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      <section class="stack">
+        <h2>Spawn and doors</h2>
+        <p data-spawn>Spawn {spawn.x},{spawn.y}</p>
+        {#each doors as d (`${d.x},${d.y}`)}<p>Door to {d.to} at {d.x},{d.y}</p>{/each}
+      </section>
+
+      <section class="stack">
+        <h2>Palette</h2>
+        <ul class="stack palette" data-palette>
+          {#each Object.entries(colors) as [key, hexes] (key)}
+            <li class="cluster"><code>{key}</code>
+              {#each hexes as hex, i (i)}<input type="color" value={hex} aria-label={`${key} color ${i + 1}`} on:input={(e) => color(key, i, e.target.value)} />{/each}
+            </li>
+          {/each}
+        </ul>
+      </section>
+
+      <section class="stack">
+        <h2>Paste art</h2>
+        <textarea class="art" data-import bind:value={pasted} spellcheck="false" wrap="off" rows="6" aria-label="Art to recognize as pieces" placeholder="A block drawn from the pieces at hand"></textarea>
+        <button class="btn outlined" disabled={!pasted.trim()} on:click={importArt}>Place as pieces</button>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<style>
+  .editor { padding: var(--space-md); }
+  .panes { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: var(--space-md); align-items: start; }
+  .frame { position: relative; display: inline-block; }
+  .preview { cursor: crosshair; }
+  .overlay { position: absolute; inset: 0; pointer-events: none; }
+  .mark { width: 1ch; height: 1lh; pointer-events: none; background: color-mix(in srgb, var(--tone-ink) 40%, transparent); }
+  .art { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.2; white-space: pre; overflow-x: auto; width: 100%; }
+  .piece pre { margin: 0; font-size: 11px; line-height: 1.1; }
+  .palette input[type="color"] { inline-size: 2rem; block-size: 1.5rem; padding: 0; border: 0; }
+  aside { max-height: calc(100vh - 6rem); overflow-y: auto; }
+</style>

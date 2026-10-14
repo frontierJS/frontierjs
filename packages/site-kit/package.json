@@ -1,0 +1,46 @@
+{
+  "name": "@frontierjs/site-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The engine a marketing site takes as a dependency: the shell, the build, blocks and themes. The site that depends on it is its content/ folder.",
+  "type": "module",
+  "bin": {
+    "site-kit": "./bin/site-kit.js"
+  },
+  "exports": {
+    "./vite": "./config/vite.js",
+    "./collection": "./src/collection.js",
+    "./tel": "./src/tel.js",
+    "./check": "./check/run.js",
+    "./check/schema/*": "./check/schema/*.js",
+    "./blocks/*.mesa": "./src/blocks/*.mesa",
+    "./blocks/*": "./src/blocks/*.mesa",
+    "./layouts/*.mesa": "./src/layouts/*.mesa",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node ../../scripts/tmp-run.mjs 'node test/blocks.mjs && node test/preset.mjs && node test/content.mjs && node test/dialect.mjs && bun test/images.mjs && node test/words-build.mjs && node test/content-build.mjs && bun test/check.mjs && bun test/fetch.mjs'",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "dependencies": {
+    "happy-dom": "^20.11.6",
+    "linkedom": "^0.18.12",
+    "rehype-slug": "^6.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "turndown": "^7.2.4",
+    "unified": "^11.0.5"
+  },
+  "peerDependencies": {
+    "@frontierjs/css": "*",
+    "@frontierjs/mesa": "*",
+    "@frontierjs/sierra": "*",
+    "@frontierjs/toolbelt": "*",
+    "vite": "^8.3.2"
+  },
+  "devDependencies": {
+    "acorn": "^8.0.0"
+  }
+}

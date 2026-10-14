@@ -1,0 +1,7 @@
+<script>
+  // The square — where a member walks in.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Square from '@/scenes/Square.mesa'
+</script>
+
+<WalkIn slug="square"><Square /></WalkIn>

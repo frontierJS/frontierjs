@@ -15,16 +15,21 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CLIENT_CAPABILITIES_META_KEY } from '@modelcontextprotocol/server'
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server'
 import { createClient }  from '@frontierjs/litestone'
+import { parse } from '@frontierjs/litestone/parser'
+import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcpPlugin } from '../src/plugin.ts'
 import type { McpOptions } from '../src/plugin.ts'
+import { projectTools, schemaViews } from '../src/projection.ts'
+import type { ServiceShape } from '../src/projection.ts'
+import { answersOneRow } from '../src/breadcrumbs.ts'
 
 const SCHEMA = readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
@@ -42,6 +47,8 @@ let base: string
 let narrowBy: McpOptions['narrow'] | null = null
 // What a `customers.find` hook last saw as the call's transport.
 let seenTransport: string | null = null
+// What an `orders.patch` hook last saw as the call's `base`.
+let seenBase: unknown = undefined
 
 beforeAll(async () => {
   // `Credential.value` is `@encrypted`, so the client refuses to open without a
@@ -56,6 +63,12 @@ beforeAll(async () => {
       { id: 'staff',   isAdmin: true },   // ADMINISTRATOR — 5
       { id: 'shopper' },                  // USER — 4
       { id: 'reader',  isAdmin: true, scopes: ['orders:read'] },   // staff's standing, a key's reach
+      // The other rungs a session can stand on, for the ladder the views are swept over.
+      { id: 'unverified',  verifiedAt: null },        // VISITOR — 1
+      { id: 'unactivated', activatedAt: null },       // READER — 2
+      { id: 'roleless',    role: '' },                // CREATOR — 3
+      { id: 'owner',       isOwner: true },           // OWNER — 6
+      { id: 'sysadmin',    isSystemAdmin: true },     // SYSADMIN — 7
     ],
   })
 
@@ -78,6 +91,10 @@ beforeAll(async () => {
     refund: move('refund'),
     methods: ['find', 'get', 'create', 'patch', 'remove', 'pay', 'refund'],
     scope:   { read: 'orders:read', write: 'orders:write' },
+    // Taken off once seen: Order declares no `@@sync(field)`, so the Data
+    // boundary would refuse the base by name, and what is asked here is only
+    // whether it crossed.
+    hooks: { before: { patch: [(c: { base?: unknown }) => { seenBase = c.base ?? null; delete c.base }] } },
   }))
   // `mint` is FJS-1221's shape: a system write, returned as it came back.
   type Creds = { asSystem(): { credential: { create(a: unknown): Promise<unknown> } } }
@@ -393,6 +410,24 @@ describe('the answer is structured: the object a view reads is the text an agent
     expect(r.structuredContent).toEqual(JSON.parse(r.content![0].text))
   })
 
+  test('a refusal carries the body HTTP answers the same call with, so a view rebuilds code and data', async () => {
+    // A unique collision: the Data boundary's refusal, with the column in `data`.
+    const row  = { reference: 'ORD-51', total: 100 }
+    const http = await fetch(base.replace(/\/mcp$/, '/orders'), {
+      method:  'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer test-token-staff' },
+      body:    JSON.stringify(row),
+    })
+    const wire = await http.json() as Record<string, unknown>
+    const r    = (await callTool('orders_create', row, 'staff')).body as { result?: { isError?: boolean; content?: Array<{ text: string }>; structuredContent?: Record<string, unknown> } }
+    expect(r.result?.isError).toBe(true)
+    expect(r.result?.structuredContent).toEqual(wire)
+    expect(r.result?.structuredContent?.code).toBe(http.status)
+    expect(r.result?.content![0].text).toBe(wire.message)
+    // The half `toFieldErrors` reads: without it the message lands on the form, not under the field.
+    expect(r.result?.structuredContent?.data).toEqual([expect.objectContaining({ path: ['reference'] })])
+  })
+
   test('a scalar answer rides in the text alone, and nothing fails', async () => {
     const r = result(await callTool('credentials_tally', {}, 'staff'))
     expect(r.content![0].text).toBe('3')
@@ -628,7 +663,7 @@ describe('a one-row tool\'s model is offered as a view, from the same list as th
     expect(await uris('staff')).not.toContain('ui://shop/Credential') // …its screen is not
   })
 
-  test('the pair: Order reads at 4, so a stranger is a server with no resources and a shopper is offered it', async () => {
+  test('the pair: Order reads at 1, so a stranger is a server with no resources and a shopper is offered it', async () => {
     // Not an empty list: the SDK installs the resources handlers with the first
     // registration, so a caller offered none sees no capability and -32601.
     const stranger = await views()
@@ -716,6 +751,70 @@ describe('a one-row tool\'s model is offered as a view, from the same list as th
   })
 })
 
+// ─── the views, over every standing ───────────────────────────────────────────
+//
+// The pairs above are two callers a rung apart. This is the claim they sample,
+// at every rung a session can stand on and for the scoped key: a standing that
+// cannot call a model's one-row tool cannot load its screen, and one that can
+// is offered it. SYSTEM is no session's standing, so it is the levels route's.
+
+describe('every fixture standing is offered the views of exactly the one-row tools it is offered', () => {
+
+  // Read off what the plugin reads — the app's services and its parsed schema —
+  // so the expected set is the projection's answer, not a list written here.
+  const parsed = parse(SCHEMA)
+  const views  = schemaViews(parsed.schema, generateJsonSchema as never)
+  const shapes = () => {
+    const services = (app as unknown as { services: { list(): string[]; get(n: string): { describe(): ServiceShape } } }).services
+    return services.list().map(n => services.get(n).describe())
+  }
+  const documented = new Set(readdirSync(VIEWS).map(f => f.replace(/\.html$/, '')))
+
+  // Where the answer changes: Order reads at 1, Customer at 4, and the key's
+  // scope reaches orders alone. A sweep that answered one list at every rung
+  // passes the equality below and fails this.
+  const RUNGS: Array<[label: string, token: string | undefined, level: number, models: string[]]> = [
+    ['stranger',    undefined,     0, []],
+    ['unverified',  'unverified',  1, ['Order']],
+    ['unactivated', 'unactivated', 2, ['Order']],
+    ['roleless',    'roleless',    3, ['Order']],
+    ['shopper',     'shopper',     4, ['Customer', 'Order']],
+    ['staff',       'staff',       5, ['Customer', 'Order']],
+    ['owner',       'owner',       6, ['Customer', 'Order']],
+    ['sysadmin',    'sysadmin',    7, ['Customer', 'Order']],
+    ['reader',      'reader',      5, ['Order']],
+  ]
+
+  const listed = async (token?: string) => {
+    const r = await rpc('resources/list', {}, token)
+    return ((r.body as { result?: { resources?: Array<{ uri: string }> } }).result?.resources ?? []).map(v => v.uri).sort()
+  }
+  const uri = (model: string) => `ui://shop/${model}`
+
+  for (const [label, token, level, models] of RUNGS) {
+    test(`${label}: the resource list is the documented models of its one-row tools, and no other view reads`, async () => {
+      const offered = new Set((await list(token)).map(t => t.name))
+      const graded  = projectTools(shapes(), views, level).tools
+      // Every listed tool is one the projection graded in at this level, so the
+      // models below are read off the real list rather than a level's guess.
+      expect([...offered].filter(n => !graded.some(t => t.name === n)), label).toEqual([])
+
+      const expected = new Set(graded
+        .filter(t => offered.has(t.name) && answersOneRow(t) && documented.has(t.model as string))
+        .map(t => t.model as string))
+      expect(await listed(token), label).toEqual([...expected].map(uri).sort())
+      expect([...expected].sort(), label).toEqual(models)
+
+      for (const model of documented) {
+        if (expected.has(model)) continue
+        const read = await rpc('resources/read', { uri: uri(model) }, token)
+        expect((read.body as { error?: unknown }).error, `${label} reads ${model}`).toBeDefined()
+        expect(read.text, `${label} reads ${model}`).not.toContain('<!doctype html>')
+      }
+    })
+  }
+})
+
 describe('a declared ui.root that cannot be read refuses the boot (FJS-D955)', () => {
   const boot = async (root: string) => {
     const db  = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
@@ -739,5 +838,37 @@ describe('a declared ui.root that cannot be read refuses the boot (FJS-D955)', (
   test('a relative root is refused rather than resolved from the cwd', async () => {
     const message = await boot('dist/mcp')
     expect(message).toContain('absolute')
+  })
+})
+
+// ─── a call option beside the arguments ───────────────────────────────────────
+
+describe('the base a view read rides _meta', () => {
+
+  const patch = (meta?: Record<string, unknown>) => rpc('tools/call', {
+    name: 'orders_patch', arguments: { id: 1, data: { reference: 'ORD-1' } },
+    ...(meta ? { _meta: meta } : {}),
+  }, 'staff')
+
+  test('a base in _meta reaches the call as ctx.base, and its absence is absence', async () => {
+    // `@@sync(field)`'s merge input, which no tool argument spells: sent by
+    // `@frontierjs/sierra/mcp`'s relay under this key, which it restates.
+    const row = { id: 1, reference: 'ORD-1', total: 2500 }
+    seenBase = undefined
+    expect((await patch({ 'frontierjs/base': row })).text).not.toContain('"isError":true')
+    expect(seenBase).toEqual(row)
+
+    seenBase = undefined
+    expect((await patch()).text).not.toContain('"isError":true')
+    expect(seenBase).toBeNull()
+  })
+
+  test('a base that is not a row is refused by name before the service runs', async () => {
+    seenBase = undefined
+    const r = await patch({ 'frontierjs/base': [1, 2] })
+    expect(r.text).toContain('"isError":true')
+    expect(r.text).toContain("frontierjs/base")
+    expect(r.text).toContain('a list')
+    expect(seenBase).toBeUndefined()
   })
 })

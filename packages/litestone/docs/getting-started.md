@@ -12,7 +12,7 @@ bun add @frontierjs/litestone
 bunx litestone init              # creates schema.lite, litestone.config.js and migrations/
 bunx litestone migrate create initial
 bunx litestone migrate apply     # builds ./development.db — the config's default db
-bunx litestone studio            # browser UI at http://localhost:8502
+bunx litestone studio            # browser UI at http://localhost:5502
 ```
 
 `init` writes one model to start from; the rest of this page runs against it:

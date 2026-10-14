@@ -120,8 +120,7 @@ const dirs = {
   // served from an origin with no application server behind it. A peer of
   // `web/` and never a routesDir inside it: a page built at one moment and read
   // at another is a different set of answers about config, tests and release.
-  // See core/site-surface.js. `fli ksite:*` uses this directory too, with its
-  // own `content/` layout — same folder, different generation.
+  // See core/site-surface.js.
   site:      env.SITE_DIR      || 'site',
   mobile:    env.MOBILE_DIR    || 'mobile',
   extension: env.EXTENSION_DIR || 'extension',
@@ -1261,9 +1260,6 @@ function buildPaths() {
     siteIslands:    resolve(r, d.site, 'src/islands'),
     siteComponents: resolve(r, d.site, 'src/components'),
     siteResources:  resolve(r, d.site, 'src/resources'),
-    // ksite's layout, not the surface's — `fli ksite:fetch` writes here.
-    siteContent:    resolve(r, d.site, 'content'),
-    siteMedia:      resolve(r, d.site, 'content/media'),
     mobile:        resolve(r, d.mobile),
     extension:     resolve(r, d.extension),
     desktop:       resolve(r, d.desktop),

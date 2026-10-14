@@ -113,10 +113,10 @@ describe('allowFailure — a non-zero exit the caller is asking about', () => {
 })
 
 // ── The corpus ───────────────────────────────────────────────────────────────
-// Every shipped command, read as source. `command`, `dry` and `describe` are
-// destructured off before the check, so they are legal here too.
+// Every shipped command, read as source. What `context.exec` destructures off
+// before the check is legal here too.
 
-const OWN = new Set(['command', 'dry', 'describe', 'allowFailure'])
+const OWN = new Set(['command', 'args', 'dry', 'describe', 'allowFailure'])
 
 function markdownFiles(dir, out = []) {
   for (const name of readdirSync(dir)) {

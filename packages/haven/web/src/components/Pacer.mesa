@@ -1,0 +1,19 @@
+<script>
+  // Pacer.mesa — scenery that walks a row of the scene back and forth, sits,
+  // and walks back: the tavern cat. No one is told where it is; the shared
+  // clock puts it on the same cell on every terminal (`pacerAt` in stage.js).
+  export let name
+  export let y
+  export let from
+  export let to
+  export let ms
+  export let rest
+  export let fg
+  export let right  // frames walking right
+  export let left   // frames walking left
+  export let sit    // frames sitting
+
+  const scene = $context.scene
+  var mark = scene.pace({ name, y, from, to, ms, rest, fg, right, left, sit })
+  $.onDestroy(() => mark.remove())
+</script>

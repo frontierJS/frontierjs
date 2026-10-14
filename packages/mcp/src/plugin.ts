@@ -38,7 +38,7 @@ import { CLIENT_CAPABILITIES_META_KEY, McpServer, WebStandardStreamableHTTPServe
 import { RESOURCE_MIME_TYPE, getUiCapability, registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
-import { CALL_OPTIONS_AT, LEVELS, principalGateLevel, scopeRefusal, toDataPrincipal, toFrameworkError, withholdProtected } from '@frontierjs/junction'
+import { BadRequest, CALL_OPTIONS_AT, LEVELS, errorBody, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
@@ -548,8 +548,13 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
   // is outside, and an *is this call from inside* check must say so (`FJS-D609`).
   const opts   = { auth: { user }, transport: 'mcp' } as Record<string, unknown>
   const since  = Date.now()
+  const base   = ctx?.mcpReq?._meta?.[BASE_META]
 
   try {
+    if (base !== undefined) {
+      if (!isRecord(base)) throw new BadRequest(`_meta['${BASE_META}'] is the row the writer read, and this is ${Array.isArray(base) ? 'a list' : base === null ? 'null' : typeof base}`)
+      opts.base = base
+    }
     // `app.service()` is the in-process caller and answers the app whole; an
     // agent is on a wire, so what it is handed is what HTTP would hand it
     // (`FJS-D473`) -- a system write's `@secret` included. Under `strategy
@@ -583,20 +588,37 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
     if (ctx?.mcpReq?._meta?.[AWAIT_META] !== true) return answer
     return await held(app, call, since, ctx, answer)
   } catch (err) {
-    const fe = toFrameworkError(err, app)
-    // A 4xx is the caller's own mistake and the message is written for them —
-    // *which* field, *which* level. A 5xx message is not: it can carry a table
-    // name or a file path, and `sanitizeError` only runs on the transport's own
-    // error path, never on one re-emitted here.
-    const code = fe.code ?? 500
-    const text = code < 500
-      ? fe.message
-      : `${tool.name} failed. The API logged the reason.`
+    const body = await refusalBody(app, tool, err)
+    const code = body.code ?? 500
     await recordCall(app, call.trail, tool, a, user, {
       outcome: code === 401 || code === 403 ? 'refused' : code < 500 ? 'rejected' : 'failed',
-      code, ...(code < 500 ? { message: fe.message } : {}),
+      code, ...(code < 500 ? { message: body.message } : {}),
     })
-    return { content: [{ type: 'text', text }], isError: true }
+    // The text is for an agent and the object for a view: the view rebuilds
+    // `code` and `data` from it as the client does from an HTTP body, and a
+    // validation refusal with no `data` lands nothing under its field.
+    return { content: [{ type: 'text', text: body.message }], structuredContent: body, isError: true }
+  }
+}
+
+/**
+ * The refusal body every other wire sends — `errorBody()`, the call's
+ * protected values redacted out of `data`, and a 5xx message replaced and
+ * logged with the correlation id it is replaced by. A 5xx message can carry a
+ * table name or a file path, so it is never re-emitted here on its own.
+ *
+ * Redaction needs the call's client. When there is none to be had — the
+ * tenant would not resolve, which may be the very refusal — `data` goes as
+ * null, since a unique violation's `data` can carry the value it collided on.
+ */
+async function refusalBody(app: App, tool: Tool, err: unknown): Promise<ReturnType<typeof errorBody>> {
+  const ctx   = (db: unknown) => ({ app, locals: { db }, model: tool.model ?? undefined, service: tool.service }) as never
+  const appDb = (app as { db?: unknown }).db
+  if (appDb) return errorBody(err, ctx(appDb))
+  try {
+    return await app.withDb((db: unknown) => errorBody(err, ctx(db)))
+  } catch {
+    return { ...errorBody(err, ctx(null)), data: null }
   }
 }
 
@@ -705,6 +727,16 @@ interface CallResult {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v)
 
+/**
+ * The row a write was made against, for `@@sync(field)`'s per-column merge
+ * (`FJS-D334`) -- the call option `base`, which no tool argument spells. Sent
+ * by an MCP App view's relay (`@frontierjs/sierra/mcp`, which restates the
+ * key), and read for any tool as every transport reads it: untrusted input to
+ * a comparison, never authority. A host that drops a request's `_meta` sends
+ * the write without it, and a moved `@version` then answers 409.
+ */
+const BASE_META = 'frontierjs/base'
+
 /** The slice of the SDK's handler context this file reads. */
 interface HandlerCtx {
   mcpReq?: {
@@ -745,6 +777,11 @@ async function held(app: App, call: CallScope, since: number, ctx: HandlerCtx, a
   return answer
 }
 
+/**
+ * A tool's arguments → the service call. An MCP App view builds these
+ * arguments in `@frontierjs/sierra/mcp`'s `toolCall()`, which cannot import
+ * this, so a shape changed here moves sierra's `test/mcp-relay.test.js` too.
+ */
 function invoke(
   caller: Record<string, (...a: unknown[]) => Promise<unknown>>,
   tool:   Tool,

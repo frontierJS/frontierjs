@@ -63,7 +63,7 @@ if (!await must($, await probe.pageEval({
   name:     'the form saved',
   retries:  24,
 }), {
-  likely: 'a form that stays put was refused — the field errors are on the page, and the console feed on 8503 has the call',
+  likely: 'a form that stays put was refused — the field errors are on the page, and the console feed on 5503 has the call',
 })) return
 
 // It LANDED on the detail screen, and until now nothing here asked what that

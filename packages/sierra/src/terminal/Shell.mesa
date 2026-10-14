@@ -12,19 +12,61 @@
   // push the list past the screen, and `fli dev:tui --list` prints them whole.
   export let state  // () => { app, note, routes, patterns, refused }
   export let onopen = null
+  export let onmove = null  // (step) => focus the control `step` away
+  export let onmode = null  // ({ mode, field }) => the line Mode.mesa paints
 
   let path = ''
   const go = () => { if (path.trim()) onopen?.(path.trim()) }
+
+  // The keys are modal, and focus sets the mode: landing on a text field is
+  // INSERT, where the field takes every key but Esc. Anywhere else, or on a
+  // field after Esc, is NORMAL: `i` types into the field again and a letter
+  // types nothing. h j k l reach this as the arrows (shell.js). Esc out of
+  // INSERT stops here, so a dialog or the shell's back hears only a second one.
+  const NOT_TEXT = new Set(['checkbox', 'radio', 'file', 'button', 'submit', 'reset'])
+  const types = (el) => el?.tagName === 'TEXTAREA' || (el?.tagName === 'INPUT' && !NOT_TEXT.has(el.type))
+
+  let mode  = 'normal'
+  let field = false
+  const set = (m) => { mode = m; onmode?.({ mode, field }) }
+  const focusin = (e) => {
+    field = types(e.target)
+    set(field ? 'insert' : 'normal')
+  }
+  const keydown = (e) => {
+    if (e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return
+    const typing = types(e.target)
+    if (mode === 'insert' && typing) {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      set('normal')
+      return
+    }
+    if (!typing) return
+    if (e.key === 'i') set('insert')
+    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete') e.preventDefault()
+  }
+
+  // The arrows move between the list's own buttons only: a route reads them.
+  // Prevented, so shell.js does not move focus a second time for a j or k.
+  const ARROW = { ArrowDown: 1, ArrowUp: -1 }
+  const arrow = (e) => {
+    if (!ARROW[e.key]) return
+    e.preventDefault()
+    onmove?.(ARROW[e.key])
+  }
 </script>
 
+<mesa:window on:keydown={keydown} on:focusin={focusin} />
 <h1>{state().app}</h1>
 {#if state().note}
   <p>{state().note}</p>
 {/if}
 {#if state().routes}
-  <p>Tab moves, Enter opens, Esc goes back, Ctrl+C quits</p>
+  <p>Tab or j/k moves, Enter opens, Esc goes back, Ctrl+C quits</p>
   {#each state().routes as r (r.path)}
-    <button on:click={() => onopen?.(r.path)}>{r.path}</button>
+    <button on:click={() => onopen?.(r.path)} on:keydown={arrow}>{r.path}</button>
   {:else}
     <p>No route without a param lowers yet.</p>
   {/each}

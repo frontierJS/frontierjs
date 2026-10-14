@@ -40,7 +40,7 @@ flags:
     char: p
     type: number
     description: Port to serve on, with --as=serve
-    defaultValue: 8501
+    defaultValue: 5501
   open:
     type: boolean
     description: Open the browser once the server is up, with --as=serve (--no-open to skip)

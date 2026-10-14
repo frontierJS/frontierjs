@@ -160,12 +160,13 @@ export function viewBootSource({ schemas = null, schemaFailure = null, styleshee
 /**
  * The generated entry for one view.
  *
- * Three lines, generated for the widget build's reason: identical in every
- * copy, so the build knows them instead. `view` is the module whose default
- * export is mounted — the resource file itself where it has a markup half,
- * and the generated form (`viewFormSource`) where it has none. The boot is
- * imported first either way, and the resource file is reached through the
- * view, so it is still imported after the boot.
+ * Generated for the widget build's reason: identical in every copy, so the
+ * build knows it instead. `view` is the module whose default export is
+ * mounted — the resource file itself where it has a markup half, and the
+ * generated form (`viewFormSource`) where it has none. The resource file's
+ * exports go to `startView` either way, since the row the host sends is read
+ * through its Resource. The boot is imported first, so it is evaluated before
+ * the resource file whichever import reaches that file.
  *
  * @param {{ name: string, entry: string }} resource
  * @param {{ boot: string, view?: string, runtime?: string }} opts
@@ -176,9 +177,10 @@ export function viewEntrySource(resource, { boot, view = resource.entry, runtime
 // One view, one document. The host loads this and nothing else.
 import ${JSON.stringify(boot)}
 import View from ${JSON.stringify(view)}
-import { mountView } from ${JSON.stringify(runtime)}
+import * as Resource from ${JSON.stringify(resource.entry)}
+import { startView } from ${JSON.stringify(runtime)}
 
-export default mountView(View, { name: ${JSON.stringify(resource.name)} })
+export default startView(View, { name: ${JSON.stringify(resource.name)}, module: Resource })
 `
 }
 
@@ -209,7 +211,8 @@ export function hasMarkupHalf(source, parseHTML) {
  *
  * What `fli make:resource` writes as the file's markup half, cut to what a
  * view has: no cancel (there is no page to go back to), no caption prop, one
- * submit. The resource is picked off the module at runtime — the file exports
+ * submit, locked where the model's gate says no caller edits a row. The
+ * resource is picked off the module at runtime — the file exports
  * it under the service's name, which the build does not know and does not
  * guess (`resourceIn`). `method` is not stated: `save()` creates when the
  * record has no id and patches when it has one, and that decision has one
@@ -229,14 +232,17 @@ export function viewFormSource(resource, { runtime = VIEW_RUNTIME, kit = '@front
   import Button from ${JSON.stringify(`${kit}/components/forms/Button.mesa`)}
 
   const resource = resourceIn(Resource, ${JSON.stringify(resource.name)})
+  // A view has no level of its own, so only a SYSTEM or LOCKED gate answers
+  // no here; the server grades every save regardless (Invariant 6).
+  const locked   = !resource.can('update')
 </script>
 
 <script>
   export let record = undefined
 </script>
 
-<Form {resource} bind:record={record}>
-  <Button slot="actions" type="submit">Save</Button>
+<Form {resource} bind:record={record} disabled={locked}>
+  <Button slot="actions" type="submit" disabled={locked}>Save</Button>
 </Form>
 `
 }

@@ -8,6 +8,7 @@ examples:
   - fli ghist --days 365 --by week
   - fli ghist --lines
   - fli ghist --author Jordan
+  - fli ghist --claude
   - fli ghist --json
 flags:
   days:
@@ -36,6 +37,11 @@ flags:
     type: string
     description: Only commits touching this path, from the repo root
     defaultValue: ''
+  claude:
+    char: c
+    type: boolean
+    description: A second chart under the commits — Claude Code output tokens per bucket, from ~/.claude/projects
+    defaultValue: false
   height:
     type: number
     description: Rows the chart is tall
@@ -49,7 +55,21 @@ flags:
 
 <script>
 import { execFileSync } from 'child_process'
-import { resolve as joinPath } from 'path'
+import { resolve as joinPath, join } from 'path'
+import { readdirSync, readFileSync, statSync, existsSync } from 'fs'
+import { homedir } from 'os'
+
+// Every session transcript written since `since`, subagents included. A
+// `tool-results/` folder holds no transcript and is never read.
+const transcripts = (dir, since, out = []) => {
+  if (!existsSync(dir)) return out
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name)
+    if (e.isDirectory()) { if (e.name !== 'tool-results') transcripts(p, since, out) }
+    else if (e.name.endsWith('.jsonl') && statSync(p).mtimeMs >= since) out.push(p)
+  }
+  return out
+}
 </script>
 
 `git log` answers one commit at a time; the shape of the work — which weeks
@@ -62,6 +82,12 @@ weeks.
 
 `--lines` makes the height lines changed instead, which is the reading that
 tells a rename sweep from a day of small fixes.
+
+`--claude` draws a second chart under it on the same columns: Claude Code
+output tokens, read from the session transcripts under `~/.claude/projects/`
+whose working directory is inside this repo. Output, not total, because total
+is mostly cache reads and measures context size times turns rather than work.
+A headless session is a `claude -p` run — a fix loop, not a person.
 
 ```js
 const root = $.git.repoRoot($.paths.root) ?? $.paths.root
@@ -86,7 +112,24 @@ catch (e) { log.error(`git log failed — ${e.message.split('\n')[0]}`); return 
 
 const series = buildSeries(parseLog(text), { from: ymd(from), to: ymd(today), by })
 
-if (flag.json) { console.log(JSON.stringify(series, null, 2)); return }
+let claude = null
+if (flag.claude) {
+  const { tallySession, mergeSession, CLAUDE_ZERO } = await import(joinPath(global.fliRoot, 'core/claude-usage.js'))
+  const projects = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects')
+  const days = new Map(), seen = new Set()
+  // A project folder is its cwd with every other character a dash, so the prefix
+  // narrows which folders are read and the transcript's own cwd decides.
+  const slug = root.replace(/[^A-Za-z0-9]/g, '-')
+  const dirs = existsSync(projects) ? readdirSync(projects).filter(d => d.startsWith(slug)) : []
+  for (const file of dirs.flatMap(d => transcripts(join(projects, d), from.getTime()))) {
+    const s = tallySession(readFileSync(file, 'utf8'), { seen })
+    if (!s.cwd || (s.cwd !== root && !s.cwd.startsWith(root + '/'))) continue
+    mergeSession(days, s, { subagent: file.includes('/subagents/') })
+  }
+  claude = buildSeries(days, { from: ymd(from), to: ymd(today), by, zero: CLAUDE_ZERO })
+}
+
+if (flag.json) { console.log(JSON.stringify(claude ? { ...series, claude: claude.buckets } : series, null, 2)); return }
 
 const value = flag.lines ? (b) => b.added + b.deleted : (b) => b.commits
 const s = summarize(series, value)
@@ -103,12 +146,31 @@ echo.lines(renderChart(series, {
   dim: chalk.dim,
 }))
 console.log('')
-if (!s.commits) { log.warn('no commits in range'); return }
-console.log('  ' + [
+if (!s.commits) log.warn('no commits in range')
+else console.log('  ' + [
   `${n(s.commits)} commits`,
   `${chalk.green(`+${n(s.added)}`)} ${chalk.red(`-${n(s.deleted)}`)}`,
   `${s.active}/${s.buckets} ${by}s active`,
   `busiest ${by === 'week' ? 'week of ' : ''}${s.busiest.date} (${n(value(s.busiest))})`,
 ].join(chalk.dim('  ·  ')))
 console.log('')
+
+if (claude) {
+  const { compact } = await import(joinPath(global.fliRoot, 'core/claude-usage.js'))
+  const sum = (k) => claude.buckets.reduce((a, b) => a + b[k], 0)
+  const busiest = claude.buckets.reduce((a, b) => (b.output > a.output ? b : a), claude.buckets[0])
+  console.log(`  ${chalk.bold(`Claude output tokens per ${by}`)}${chalk.dim(` · sessions in ${root}`)}`)
+  console.log('')
+  echo.lines(renderChart(claude, { height: flag.height, width, value: (b) => b.output, bar: chalk.magenta, dim: chalk.dim, label: compact }))
+  console.log('')
+  if (!sum('output')) { log.warn('no Claude sessions in range'); return }
+  console.log('  ' + [
+    `${n(sum('sessions'))} sessions${chalk.dim(` (${n(sum('headless'))} headless)`)}`,
+    `${compact(sum('output'))} output`,
+    `${compact(sum('total'))} total`,
+    `${claude.buckets.filter(b => b.output).length}/${claude.buckets.length} ${by}s active`,
+    `busiest ${by === 'week' ? 'week of ' : ''}${busiest.date} (${compact(busiest.output)})`,
+  ].join(chalk.dim('  ·  ')))
+  console.log('')
+}
 ```

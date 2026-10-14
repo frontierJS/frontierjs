@@ -234,14 +234,65 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
    cut with the gap.
    **Built 2026-10-12** (`FJS-D926`, `FJS-D932`): `config/images.js`. On the
    Luminous Heart port a phone at 3x fetches 60% fewer image bytes and a
-   desktop 75% fewer; ksite grades 4/4. Left: `sizes` stated by the ksite blocks that know their
-   layout (logo, hero), art direction, and the `/_img/` cache header
-   (`site-kit-images.md` § Left).
+   desktop 75% fewer; ksite grades 4/4.
+   **Leftovers done 2026-10-13.** Variants are `assets/<name>-<hash>.<w>.webp`,
+   so Sierra's one cache rule serves them immutable (`FJS-2755`). `Image`
+   forwards `sizes` and the hero's background states `100vw`; the logo was
+   measured and left (89 of 99 client logos are SVG). `Image` no longer
+   guesses a height, and the step derives it from the photo, so ksite's
+   `/about-us/` stops jumping 238 px on load. Exact pixel diff after load:
+   identical on ksite and Luminous Heart at five widths; ksite grades 4/4.
+   Art direction stays on demand (`FJS-D607`), and so does the move into
+   Sierra (`FJS-D608`) (`site-kit-images.md` § Left).
 
 **Phase 4 — a second client** (ksite step 2). Cut one from the engine and
 count every file it writes that is not under `content/`. The target is zero,
 and each file is either fixed or a line saying why it stays. FJS-1494 (a client
-block replacing an engine block) is measured here.
+block replacing an engine block) is measured here. The client is Luminous
+Heart, whose port Phase 3 step 2 already names; its legacy repo kept a list
+of the ten engine files it edited (`KSITE-CHANGES.md`), which is the fork
+this phase has to show is gone.
+
+**Done 2026-10-13: three files, against the legacy repo's 282.** The table,
+file by file, is `fjs-prototypes/ksite/PLAN.md` § Phase 4, step 2.
+
+1. [x] The cut: Luminous Heart's `content/` in an empty directory, site-kit
+   and ksite installed as packed tarballs, and only what the build refuses
+   without written by hand. Count each file outside `content/` against the
+   legacy repo's.
+   **Done.** The client writes `package.json`, `bun.lock` and `.gitignore`.
+   Its build matches Luminous Heart's linked build: the same files, every
+   page the same apart from asset hashes, and a byte-identical stylesheet.
+   Four of the six dependencies are framework peers, named only because the
+   published versions are older than the workspace's (Phase 5). The deploy
+   files (`wrangler.jsonc`, `worker/`, the Plausible proxy) are not written
+   yet, and belong to `site-hosting.md` step 4 and `FJS-2775`.
+2. [x] Grade the ten `KSITE-CHANGES.md` rows against site-kit: fixed in the
+   engine, moot, or still needed. One still needed in an engine file is the
+   FJS-1494 case.
+   **Done.** Five were already fixed: the opening `====`, `width` driving
+   images, the content files engine blocks hard-imported, Nav's crash on a
+   missing route, and kickers. The `hours.md` key and the Routify error are
+   moot. `.services` stays as the template's look, and the client restyles it
+   in its own stylesheet, which is content. Two were open in the engine:
+   non-E.164 `tel:` links and `overflow-x: hidden`. No row needs a client
+   block to replace an engine block, so FJS-1494 stays open until a client
+   needs that.
+3. [x] Fix in the engine each row 2 leaves open, and delete the client's
+   workaround for it.
+   **Done.** `telHref` (`@frontierjs/site-kit/tel`) is the prose pass's and
+   ksite's three blocks', which clears `tel-format` on all 23 pages. ksite's
+   `html` and `body` clip rather than hide, and Luminous Heart's override is
+   deleted. Its sticky header stays pinned at 390 and 1280 px; forcing
+   `hidden` back unpins it.
+4. [x] Prove: the cut's build against Luminous Heart's linked build, ksite's
+   four baselines and an exact diff of its build, site-kit's suite and the
+   website's `bun run test`.
+   **Done.** ksite's baselines pass 4/4. Screenshots of its four routes at
+   five widths are byte-identical before and after. Luminous Heart's seven
+   routes at five widths are byte-identical with and without its override.
+   The site-kit suite passes 160 checks, and the website's `bun run test`
+   passes.
 
 **Phase 5 — an upgrade with no copy** (ksite step 3). Change the engine, bump
 it, and both clients take it with no file copied. Then delete `fli ksite:*`,
@@ -250,6 +301,48 @@ and ship the codemod (or alias) for every client `theme.scss` that imports
 declares it as a peer: bun fetches a peer's metadata from the registry, so a
 peer on an unpublished package fails every `bun install`, workspace included. Moving site-kit out of `website/` and publishing it is
 decided here, once a published engine has been proved.
+
+Ruled 2026-10-13 with the owner: the bump is proved on a local registry
+before anything reaches npm, site-kit moves to `packages/` now, `@kobami/ksite`'s
+registry is picked at the real publish, and `ksite:fetch` becomes site-kit's.
+
+1. [x] Move site-kit to `packages/site-kit`, every caller in the same change,
+   and drop the `website/packages/*` workspace glob. It is a framework
+   package to be published, and `fli ws:pub` reads `packages/*` only.
+   **Done 2026-10-14 (`FJS-D988`).** It has a Packages-table row and a
+   `typecheck` script (clean), and its `CHANGES.md` is `docs/CHANGES.md`. A
+   `link:` consumer holds the old path until `bun link` is run in the new
+   one, which ksite and Luminous Heart both needed.
+2. [x] Delete `fli ksite:*`. `fetch` (a page or sitemap to Markdown and
+   images) is generic by `FJS-D604`'s test, so it becomes `site-kit fetch`
+   writing `content/routes`. Luminous Heart's `port/convert.mjs` and the
+   `theme.scss` rewrite (`@/themes/` to `@ksite/themes/`, a codemod and not
+   an alias) read the legacy dialect, so they become `@kobami/ksite`'s bin.
+   **Done 2026-10-14.** `fli ksite:*`, `make:fetch-config` and `core/peer.js`
+   are deleted, and so are fli's `linkedom` and `turndown`. `site-kit fetch`
+   is `fetch/run.js`, with a test against a site it serves. `ksite port`
+   (`packages/ksite/port/convert.js`) takes Luminous Heart's two lists as
+   `--drop-words` and `--drop-blocks`, names every legacy file it does not
+   port rather than dropping it, and reproduces Luminous Heart's `content/`
+   byte for byte, apart from its hand-written `llms.txt`.
+3. [x] Prove the bump on a local registry: publish the four framework peers,
+   site-kit and ksite at one version, install ksite's site and the Luminous
+   Heart cut from it, change the engine, publish the next version, update
+   both clients, and diff. The proof is a saved script, not a scratch one.
+   **Done 2026-10-14.** `bun run proof:upgrade` in `fjs-prototypes/ksite`
+   (`baseline/upgrade.mjs`, the Luminous Heart site as its argument) passes
+   16 of 16. Each client is `content/` and a `package.json` naming only
+   site-kit and ksite, and builds the same files as its linked build. After
+   site-kit 0.1.1 and ksite 0.7.1 are published, `bun update` takes both,
+   the build carries both changes, and nothing but `package.json` and
+   `bun.lock` changed. ksite declared site-kit as a peer and installed. The
+   first run found [`FJS-2842`](../ISSUES.md#fjs-2842): a registry install
+   could not compile Markdown or prerender, because mesa's optional peers had
+   only ever come from the workspace. site-kit now depends on them.
+4. [ ] The real publish, behind the owner's go: the framework peers through
+   `fli ws:pub`, site-kit's first release, `@kobami/ksite`'s registry picked,
+   ksite declaring site-kit as a peer, and the Luminous Heart cut dropping the
+   four peers it names only because npm was behind.
 
 **Phase 6 — the backlog, on demand.** A block moves when a site that is
 moving names it (`FJS-D607`), the § 4 tooling follows `FJS-D608`, and the

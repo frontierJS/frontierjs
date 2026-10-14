@@ -1,0 +1,56 @@
+{
+  "name": "@frontierjs/haven",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Haven \u2014 a place in the terminal anyone with fli installed can walk into. An FJS application, not a library.",
+  "type": "module",
+  "imports": {
+    "#paint": {
+      "browser": "./web/src/paint.browser.js",
+      "default": "./web/src/paint.js"
+    },
+    "#cell": {
+      "browser": "./web/src/cell.browser.js",
+      "default": "./web/src/cell.js"
+    },
+    "#sign-in": {
+      "browser": "./web/src/sign-in.browser.js",
+      "default": "./web/src/sign-in.js"
+    }
+  },
+  "license": "MIT",
+  "author": "FrontierJS",
+  "scripts": {
+    "dev": "bun run api & bun run web & wait",
+    "api": "HAVEN_SESSION_KEY=${HAVEN_SESSION_KEY:-haven-dev-only} bun --watch api/index.ts",
+    "web": "cd web && vite -c config/vite.config.js",
+    "scenes": "vite -c editor/vite.config.js",
+    "start": "bun api/index.ts",
+    "tui": "cd web && bun ../node_modules/@frontierjs/sierra/src/tools/tui.js",
+    "test": "node ../../scripts/tmp-run.mjs 'bun test'",
+    "frames": "bun web/test/frames.mjs",
+    "verify:explore": "bun web/test/verify-explore.mjs",
+    "verify:browser": "bun web/test/verify-browser.mjs",
+    "verify:scenes": "bun editor/test/verify-scenes.mjs",
+    "verify:fresh": "bun tests/verify-fresh.mjs",
+    "typecheck": "node ../../scripts/typecheck.mjs",
+    "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts"
+  },
+  "dependencies": {
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/litestone": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/sierra": "workspace:*",
+    "@frontierjs/toolbelt": "workspace:*",
+    "@opentui/core": "0.5.17"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "devDependencies": {
+    "@frontierjs/css": "workspace:*",
+    "@frontierjs/testing": "workspace:*",
+    "bun-types": "^1.3.14",
+    "vite": "^8.3.2"
+  }
+}

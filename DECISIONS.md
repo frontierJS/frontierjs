@@ -27,9 +27,9 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
-### <a id="fjs-d976"></a>2026-10-14 · `FJS-D976` — Q1 — The noun — `town`, which is what the screen draws and gives the rooms their words: square, tavern, door.
+### <a id="fjs-d976"></a>2026-10-14 · `FJS-D976` — Q1 — The noun — `haven`, which is what the screen draws and gives the rooms their words: square, tavern, door.
 
-Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **B** was picked over **A** (`matrix`, the name it was asked for).
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **B** was picked over **A** (`matrix`, the name it was asked for).
 
 The paper's recommendation, taken as written: Matrix is the ecosystem's federated chat protocol and `fli matrix` reads as a client for it, which is *familiarity vs. precision* resolved the way § IV resolves it.
 
@@ -1379,6 +1379,20 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d981"></a>2026-10-13 · `FJS-D981` — Q5 — How a machine proves it is the same member — An Ed25519 key pair: `signRequest({ privateKey })` and `verifyRequest({ publicKey })` sign the one canonical string, and the login mints an ordinary session.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (no signature: the first run is answered a long-lived token, and the token is the identity).
+
+The paper had planned a login signed with `signRequest()` and a session minted by `bearerClaim(...).mint()`. Neither works. `signRequest` is an HMAC, so it needs a secret both sides hold, and a stranger's server holds nothing; and a `bearerClaim` principal has no id (`FJS-D342`). The socket's `conn.user` comes only from `IAuth.verifySession`, so a bearer-only member joins no room and `@createdBy` has no id to stamp. A buys what B cannot: one key is one identity on every Haven server (2.3's `--api`), a session can expire because the key mints the next one, and the private key never travels. What it costs is the key-pair form in toolbelt. B's identity would be a token that can never expire, because losing it loses the nick.
+
+**The key pair is a second form of the one scheme, not a second scheme.** It signs the same canonical string with the same freshness window and nonce. Only the last step differs, and the value's prefix names which: `v1-ed25519=` beside `v1-sha256=`. A side that verifies the other scheme answers by name (*signature is v1-sha256 and this side verifies v1-ed25519*) rather than *does not match*, for the reason the version prefix exists. Keys are base64url strings (raw public, PKCS#8 private), because a key is written to a file and sent in a JSON body.
+
+**The login verifies with toolbelt directly, not through `createApp({ credentials })` (`FJS-D475`).** That door turns a signature into a principal, and an unknown key is no principal yet. The login's answer is a token. The session is a `Session` row with `@@trait(Grant)`, read back by Haven's own `IAuth`. `@frontierjs/auth` reads `sys.user` and an email, and a member has neither.
+
+The nine (§ V), answered after the code (late, and named as such). **Origin:** one canonical string for both forms, and one key encoding, read and written only in `signature.js`. **Concept:** no new noun; *session*, *Grant* and *mint* already exist. **Complexity:** it is the problem's, since a stranger's server shares no secret with the machine. **Predictability:** the key pair rides the same headers, window and nonce as the HMAC. **Derived:** the member is derived from the key on every login. **Owner:** the verify is toolbelt's. The login's nonce memory is a second copy of `credentials.ts`'s private `remember()`; it moves into junction when a second caller wants one, and until then it is stated here. **Boundary:** the client sends a signed body and gets back a bearer token, so it needs to know nothing else. **Failure:** each refusal names its reason, and a taken nick is a 409. **Silence:** *a login the key did not sign makes nothing* is guarded by `login.test.ts`; four of its rows go red with the verify skipped (measured). *The scheme is named* is guarded by `signature.spec.js`. Adjudication: *paved road vs. the workaround*, resolved by extending the owner (toolbelt) rather than writing a verifier in the app. Tier: Register.
+
+*Lives in:* `packages/toolbelt/src/signature/signature.js` (`generateSigningKeys`, the `privateKey`/`publicKey` forms) · `packages/haven/api/src/login.ts` · `packages/haven/api/src/auth.ts` · `packages/haven/db/schema.lite` (`Session`) · `packages/toolbelt/test/specs/signature.spec.js` · `packages/haven/api/test/login.test.ts`.
 
 ### <a id="fjs-d669"></a>2026-10-13 · `FJS-D669` — How does a picker learn which related rows a create policy will accept, and does `fli advise` name the case the schema cannot carry — Both: A for the one-hop `==` auth() shape the derivation can state, B's advise rule for every create conjunct it cannot (`||`, `in`, a computed claim).
 
@@ -3778,13 +3792,14 @@ tests in `test/elegance-fixes.test.ts`.
 
 ### <a id="fjs-d970"></a>2026-10-13 · `FJS-D970` — Does search span models — Yes, over ONE shared index: `db.$search(q, { models, limit, offset, prefix })` reads `_search`, graded per model inside the query, ranked on one bm25 scale.
 
-Asked in [`IDEAS/cross-model-search.md`](IDEAS/cross-model-search.md). **E** was picked over **A** (each app composes N per-model `search()` calls and groups by kind — linear's `search.service.ts`), **B** (`@@searchable(title, subtitle, link)`), **C** (a junction route fanning out N per-model calls) and **D** (a sierra function making N graded `find({ $search })` calls and grouping).
+Asked in [`IDEAS/shipped/cross-model-search.md`](IDEAS/shipped/cross-model-search.md). **E** was picked over **A** (each app composes N per-model `search()` calls and groups by kind — linear's `search.service.ts`), **B** (`@@searchable(title, subtitle, link)`), **C** (a junction route fanning out N per-model calls) and **D** (a sierra function making N graded `find({ $search })` calls and grouping).
 
-linear's Q4 measured that bm25 is not comparable across indexes (−0.981 as an issue title, −3.287 as a comment body for the same text) and that both shorter spellings leak or starve. Both findings held, and both were about PER-MODEL indexes. The paper's gate rebuilt the same rows into one `_search(model UNINDEXED, rid UNINDEXED, title, body)` and the pair scored −6.925 and −6.925: one vocabulary, one scale. So the premise moved and the finding is kept — the policy still goes INSIDE the query, before the limit — which is why the owner is litestone and not sierra: each model's branch is the `visibleWhere` + correlated `EXISTS` its own `search()` already builds (`FJS-262`, `FJS-1692`), composed with `OR` under one `MATCH`. `FJS-D333` stands: `search()` keeps its verb because FTS5 is another engine on another table, and `_search` is one more of those. The three fixed by this ruling, so a second builder cannot re-derive them:
+linear's Q4 measured that bm25 is not comparable across indexes (−0.981 as an issue title, −3.287 as a comment body for the same text) and that both shorter spellings leak or starve. Both findings held, and both were about PER-MODEL indexes. The paper's gate rebuilt the same rows into one `_search(model UNINDEXED, rid UNINDEXED, title, body)` and the pair scored −6.925 and −6.925: one vocabulary, one scale. So the premise moved and the finding is kept — the policy still goes INSIDE the query, before the limit — which is why the owner is litestone and not sierra: each model's branch is the `visibleWhere` + correlated `EXISTS` its own `search()` already builds (`FJS-262`, `FJS-1692`), composed with `OR` under one `MATCH`. `FJS-D333` stands: `search()` keeps its verb because FTS5 is another engine on another table, and `_search` is one more of those. The four fixed by this ruling, so a second builder cannot re-derive them:
 
 - **Membership and title are derived, never declared.** A model is in `_search` because it declares `@@fts`; its `title` is the column `@@label` names, its `body` the `@@fts` columns joined. A `@@fts` model with no `@@label` is refused at parse with the fix in the message. B was refused for restating both and for `-able` (`FJS-D249`).
 - **`models` names accessors (`['issue', 'comment']`) and the default is every `@@fts` model.** Which models a palette holds is the call site's — junction's `search` service names them at its mount — so *should ELA's mail be in ⌘K* is answered where the app is, with no schema word. A hit is `{ model, id, title, sub, _rank, _snippet }`, `model` the accessor, `sub` from `x-identify`.
 - **`_search` is `trigram` whatever the models' own tokenizers, and the title weight is 10**, placed by column index — `bm25()` weights are positional over every declared column, `UNINDEXED` included, so `bm25(_search, 3, 1)` weights `model` and changes nothing; the gate's first run did exactly that. The gate's small corpus ranked the same under `trigram` and `unicode61` at 3; the spanning test's fixture (40 rows sharing one word) did not — under `trigram` a bare body edged a title carrying four other words (−2.046 against −2.036) while `unicode61` held, and 5 and 10 both hold under both. 10 is the margin the paper measured, so it is the weight (amended 2026-10-13, the same day, from the test's measurement). `trigram` is chosen because a short word is then a match rather than `FJS-2332`'s scan, except below three characters where the scan fallback is still owed.
+- **A model whose gate or capability refuses the caller holds no hit for them, and a caller refused every model named is refused by the first refusal's name.** maid.tech's Roles read different models (a Closer holds `Contact.read` alone), and one refused branch had made the whole call a 403, hiding the models the caller may read. Dropping the branch matches a row its policy hides; refusing when nothing is left keeps *may read nothing* from reading as *found nothing* (amended 2026-10-14 by the owner, over dropping always and over keeping the 403 for the app to narrow). `search-spanning.test.ts` § a model the caller may not read.
 
 Costs taken knowingly: text is indexed twice while the per-model `_fts` tables stay (step 4.3 prices reading them from `_search`), and the differ learns a table no model owns. Lives in `packages/litestone/src/core/ddl.js` (the table and triggers), `client.js` (`$search`), junction's `search` service and sierra's `paletteSource`; the plan is the paper's § Plan.
 
@@ -7265,6 +7280,12 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d986"></a>2026-10-14 · `FJS-D986` — Sign-in inside the iframe — The host's standing only: the view acts as whatever the MCP session resolved, as 3.4 already writes, and a refused `tools/call` lands as the refusal under the form through `toFieldErrors`. No elevation path; asked again when the MCP Apps spec stabilizes an elevation message.
+
+Asked in [`IDEAS/agent-client-ui.md`](IDEAS/agent-client-ui.md) § Open questions. **A** was picked over **B** (on a 401 or 403 the view asks the host (`ui/open-link`) to open the app's `/auth` in a browser tab, and the user retries. Adds a Phase 3 step against a message the spec may still change), **C** (hold Phase 3 until the protocol has a stable elevation answer).
+
+The paper's recommendation, taken as written: 3.4 is already A, and the server enforces every call (Invariant 6), so a too-low standing is a visible refusal, never a leak. B builds against an unstable message; C blocks the client half on a question it does not need answered to work.
 
 ### <a id="fjs-d624"></a>2026-10-13 · `FJS-D624` — Are a raw `app.ws` route's frames handled one at a time, in arrival order, and is that the default or the route's choice — Ordered by default for a raw route: each socket's frames run on one chain, and `maxInFlight` bounds the queue length rather than concurrency. `channels()` marks its handler set (as `SESSION_SOCKET` already does) to keep concurrency. No new option; a raw route that wants concurrency fires and forgets inside its own handler.
 
@@ -11150,17 +11171,24 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d987"></a>2026-10-13 · `FJS-D987` — The terminal shell's keys are modal — Focus sets the mode: a text field is INSERT and takes every key but Esc; anywhere else, or a field after Esc, is NORMAL, where h j k l are the arrows, a j or k the page leaves alone moves focus, `i` types into the field again, and a letter types nothing. The mode line sits in a footer under the page.
+
+Picked by the owner over **vim proper** (start NORMAL everywhere, `i` or Enter to type), **list screen only**, and **later**. Auto-insert costs no key before typing and keeps every drive that types into a field working unchanged; what it gives up is j and k leaving a field without an Esc or a Tab first.
+
+**The mode is Sierra's shell's, not Mesa's runtime's.** The runtime delivers keys as a browser does (`FJS-D809`), and a browser has no modes. What the runtime added is what a DOM handler already reads — `tagName`, and `type` on an input — and `footerOf(renderer)`, a strip beside the scrolling page, because a mode line at the top scrolls away on any list taller than the screen. **Esc out of INSERT is stopped at the window**, so a dialog closes and the shell goes back on the second Esc, not the first. **The arrows stay the route's**: a Haven scene walks on them, so the shell moves focus with them only between its own list buttons. **h j k l are renamed to the arrows before the runtime makes a keydown of them**, in a key listener `shell.js` adds ahead of the first mount, so a route reading arrows walks on vim's keys without knowing a mode exists, and the browser, which has none, is untouched. A route that acts on an arrow prevents it; that is what tells the shell a j was a step and not a move of focus.
+*Lives in:* `packages/sierra/src/terminal/Shell.mesa` (the keys), `shell.js` (h j k l as the arrows, and j or k moving focus), `Mode.mesa` (the line), `packages/mesa/src/runtime-terminal.js` (`footerOf`, `tagName`). *Proved by:* `example/web/test/verify-tui.mjs` (the modes), `packages/haven/web/test/verify-explore.mjs` (h j k l walking), `packages/mesa/test/terminal/specs/footer.spec.mjs` (the footer, `tagName`, `type`).
+
 ### <a id="fjs-d979"></a>2026-10-14 · `FJS-D979` — Q4 — A box that hides what is under it — One opaque treatment lowered in `runtime-terminal.js`, so no color is written in a `.mesa`.
 
-Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **B** was picked over **A** (leave it to the app, the same attach helper as Q3).
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **B** was picked over **A** (leave it to the app, the same attach helper as Q3).
 
 The paper's recommendation, taken as written: every dialog and dropdown on a terminal needs it, and a color in a `.mesa` is Invariant 13's failure.
 
-**Built 2026-10-13, and the treatment is no new class: it is `@frontierjs/css`'s surface lineage.** `surface.css`'s base rule already gives `surface`, `card`, `tile`, `alert`, `toast`, `dialog`, `popover`, `drawer` and `band` a background, so a terminal box carrying one blanks its cells before its children draw, and `outlined` or `ghost` — the two variants that set that background `transparent` — keep it see-through. A browser and a terminal then agree on which boxes hide what is under them, and an app writes the class it already writes. `glass` is the one divergence: translucent in a browser, opaque on a terminal, which has no half-covered cell. Mesa is a leaf and cannot import the stylesheet, so `src/terminal/tags.js` holds the two lists and `test/terminal-tags.test.js` holds them to `surface.css`; a `class:` naming one of them toggles it as the attribute does. Proven by `test/terminal/specs/town.spec.mjs`, the paper's probe kept. The nine were answered after the code was green, not before.
+**Built 2026-10-13, and the treatment is no new class: it is `@frontierjs/css`'s surface lineage.** `surface.css`'s base rule already gives `surface`, `card`, `tile`, `alert`, `toast`, `dialog`, `popover`, `drawer` and `band` a background, so a terminal box carrying one blanks its cells before its children draw, and `outlined` or `ghost` — the two variants that set that background `transparent` — keep it see-through. A browser and a terminal then agree on which boxes hide what is under them, and an app writes the class it already writes. `glass` is the one divergence: translucent in a browser, opaque on a terminal, which has no half-covered cell. Mesa is a leaf and cannot import the stylesheet, so `src/terminal/tags.js` holds the two lists and `test/terminal-tags.test.js` holds them to `surface.css`; a `class:` naming one of them toggles it as the attribute does. Proven by `test/terminal/specs/haven.spec.mjs`, the paper's probe kept. The nine were answered after the code was green, not before.
 
-### <a id="fjs-d978"></a>2026-10-14 · `FJS-D978` — Q3 — Placing a figure on a cell — Leave it to the app: an attach helper in the town's `web/`.
+### <a id="fjs-d978"></a>2026-10-14 · `FJS-D978` — Q3 — Placing a figure on a cell — Leave it to the app: an attach helper in Haven's `web/`.
 
-Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **A** was picked over **B** (lower `style:position|left|top` in `runtime-terminal.js`, which `specs/style.spec.mjs` currently pins as inert).
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (lower `style:position|left|top` in `runtime-terminal.js`, which `specs/style.spec.mjs` currently pins as inert).
 
 The paper's recommendation, taken as written: placement by cell is a thing only a game wants, and an attach is the escape hatch for exactly that.
 
@@ -13454,11 +13482,97 @@ work, not a decision.)*
 
 ## Repo conventions
 
-### <a id="fjs-d977"></a>2026-10-14 · `FJS-D977` — Q2 — Where the client lives — A package that is an FJS app, `web/` and all, and `fli town` runs its `web/` the way `fli dev:tui` runs an app's own, against a hosted `--api`.
+### <a id="fjs-d997"></a>2026-10-14 · `FJS-D997` — A Haven scene is a component tree, and its picture is a generated file — A scene is a `.mesa` file: `<Scene>` provides `$context.scene` and every piece, door and pacer is a child component that stamps its cells and claims its footprint through it, the shape Threlte gives a Three.js scene in Svelte. The art is no longer typed: `src/scenes/<Name>.frame.txt` is rendered from the tree, committed beside it and pinned by `scenes.test.js`, so a scene is still read as a picture in a diff. Recognition (`compose()`) leaves the runtime and stays only as the editor's paste-art importer.
 
-Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **B** was picked over **A** (inside `packages/cli`, which then gains mesa, OpenTUI and the Junction client as optional peers).
+Ruled by the owner, over the hybrid (art stays the source, only live things become components) and over leaving it. Amends `IDEAS/haven.md` Phase 5's goal and Done-when, the 2026-10-13 *doors stay text* ruling inside 5.3 (a door is now `<Door x y to>` or a house's `door=`, placed; it REPLACES the wall cell under it, the one overlap a stage allows), and `FJS-D995` (a member's scene row holds placements and a palette, never a stranger's glyphs).
+
+**Why.** Art as source held only what sits still: the cat was a `pacers` array, fire a palette flag, and every next ask — a window lit at night, a sign showing the count, a door that swings — was another config array beside the text. Recognition was a glyph fight that grew with the vocabulary (`_` roof against `_` wall, `|` table against `|` wall, a house in eleven parts because no two are one width), and both scenes were in the end stamped by a script rather than typed, so the text had already lost authoring and kept only reading. Reading is a print, and a committed frame is that print. Conversion is cheap both ways: the tree renders to the frame, and `compose().matches` is the importer.
+
+**The nine**, answered before the first edit: one origin (the tree; the frame is generated and graded); no new noun (Scene, Piece, Door, stamp all exist); the complexity removed was ours; a scene now composes like every other Mesa UI; walkability, doors and the picture are derived; `Scene.mesa` owns the context, `#paint` the buffer, `#cell` `at()`, and `look()` and `compose()` as painters are deleted rather than paralleled; a piece knows `stamp` and `claim` and nothing else; two pieces on one cell refuse at mount naming the cell; the frame test fails when the render drifts. *Doctrine vs. discovery* was the hearing: the text editor works, and solves the thing being dropped. Register.
+
+*Lives in:* `packages/haven/web/src/components/Scene.mesa`, `web/src/stage.js`, `web/src/scenes/*.mesa` and `*.frame.txt`, `web/test/scenes.test.js`; the plan is `IDEAS/haven.md` 5.5–5.8.
+
+### <a id="fjs-d996"></a>2026-10-14 · `FJS-D996` — Q13 — Where the framework quarter's state comes from — The deploy bakes it in: `PROJECT_STATE.md` headlines and the last CI result, current as of the deploy.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (the server polls the repository's host), **C** (CI posts each result to a Haven endpoint, signed with `signRequest` the way a login is).
+
+the quarter is scenery, so state as current as the last deploy is enough, and it needs no endpoint and no credential; C stays the upgrade if a stale storm is ever the complaint.
+
+### <a id="fjs-d995"></a>2026-10-14 · `FJS-D995` — Q14 — A scene a member draws — A scene becomes data: its art and palette are a row, and the editor writes to the API. The built-in scenes stay `.js` files.
+
+**Status:** amended-by [`FJS-D997`](#fjs-d997) — the row holds placements (piece, cell, door, palette), not art: a scene is a component tree, and a stranger's glyphs never reach a screen. The built-in scenes are `.mesa` files.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (a member's house is a scene file sent as a pull request, reviewed like any other change).
+
+the live feature is the point; a stranger's art reaching every screen is answered by the mod standing (3.2), which 9.3 waits on, rather than by a pull-request queue.
+
+### <a id="fjs-d994"></a>2026-10-14 · `FJS-D994` — Q12 — What the barkeep costs — No model: the barkeep answers from a search over `docs/`, `VOCABULARY.md` and the package READMEs, quoting the passage and its path.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (a model with a budget per member per day, enforced by the rate limit Haven already runs), **C** (a model only for members with a standing above the default).
+
+The paper's recommendation, taken as written: cut one level simpler. It is a help desk with no bill and no prompt to inject into, and it says what the docs fail to answer before a model is paid to paper over them. B waits until A's misses are counted.
+
+### <a id="fjs-d993"></a>2026-10-14 · `FJS-D993` — Q11 — Where footprints live — The API keeps a ring buffer of recent moves per room in memory and sends it on join. A restart loses it, which scenery can afford.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (each client remembers the moves it saw, so a newcomer sees no footprints).
+
+The paper's recommendation, taken as written: it is the only option where the empty square at 3am shows anything, and a move stays out of the database. B is what a single terminal already has for free and does not answer the ask.
+
+### <a id="fjs-d992"></a>2026-10-14 · `FJS-D992` — Q10 — Where distance is decided — The server: it filters a line's fan-out by the speaker's and each listener's positions in presence. A whisper is a Message with a `toId` and a read policy, because a row is readable through `messages.find` by anyone in the room whatever its fan-out did.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (the client: every socket receives every line and draws the ones in range. A whisper is a Message with a `toId`, as in A).
+
+The paper's recommendation, taken as written: under B any modified client hears the whole square. Distance is fan-out only in both, so the one privacy promise, the whisper, has to be a policy either way. Note that `say` reads a position from presence, a frame a client sends and the server bounds only to `MAX_CELL`.
+
+### <a id="fjs-d991"></a>2026-10-14 · `FJS-D991` — Q9 — Where what a machine has seen is kept — On the machine: `~/.fli/haven/seen/<room>` in the terminal and IndexedDB in a browser, a `#seen` twin in the package's `imports` map (`FJS-D985`).
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (a row per member per scene holding a bitmap of seen cells).
+
+The paper's recommendation, taken as written: a member IS a machine's key (`FJS-D981`), so a row remembers nothing a file does not. B's cost is a write on every step that uncovers a cell.
+
+### <a id="fjs-d990"></a>2026-10-14 · `FJS-D990` — Q8 — Whether a scene beside a scene is its own Room — Each scene is its own Room and channel, and crossing a border reconnects the way a door does today (`setSocketQuery`, `FJS-2834`).
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (one world channel: every figure's move goes to every member online, and each client draws only what is in its viewport).
+
+The paper's recommendation, taken as written: presence per room comes free and a move fans out only to its scene. B sends every move to everyone, and Junction's 10-per-second presence cap is per member, so the frames per member grow with how many are online. A's cost is a reconnect at every border, which 6.2 measures.
+
+### <a id="fjs-d988"></a>2026-10-14 · `FJS-D988` — How a site-kit upgrade is proved, where site-kit lives, and who owns the import from an existing site — The bump is proved on a local registry before anything reaches npm; site-kit is `packages/site-kit`; `fli ksite:*` is deleted, and its `fetch` is `site-kit fetch`.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) Phase 5, four forks, each answered with the recommendation:
+
+- **The proof is a local registry** over **a real npm publish now** and **versioned tarballs**. Verdaccio serves `@frontierjs/*` and `@kobami/*` from its own storage with no uplink, so npm's copies, behind the workspace, never answer; everything else proxies to npm. A registry is what a client upgrades from, and a tarball path is not: a peer's metadata is fetched from the registry (the reason ksite could not declare site-kit until now), and a caret range only means something there. The proof is `fjs-prototypes/ksite/baseline/upgrade.mjs`. The real publish is its own step, behind the owner's go.
+- **site-kit moves to `packages/` now** over **at the real publish**. It is a framework package that will be published, and `fli ws:pub`, the Packages table and the `snapshots` phase read `packages/*`. The `website/packages/*` workspace glob is gone with it; the website is a consumer.
+- **`@kobami/ksite`'s registry is picked at the real publish.** The local proof needs none, and the `@kobami` npm scope's owner is not established.
+- **`fetch` (a page or sitemap to Markdown) is site-kit's**, over deleting it with the group or moving it to `@kobami/ksite`. By `FJS-D604`'s test, a site that is not a cleaning company would use it unchanged. `make:fetch-config` goes with it: its template is the config documented in site-kit's README. The legacy-to-site-kit converter reads ksite's legacy dialect, so it is `@kobami/ksite`'s bin (`ksite port`). The `theme.scss` import becomes `@ksite/themes/` by that codemod, and no `@/` alias is added (*preservation vs. evolution*: every legacy client goes through the converter anyway).
+
+- **Owner.** Publishing stays `fli ws:pub`'s. The import is site-kit's and the legacy conversion is the preset's, so `fli` keeps neither, and `core/peer.js`, which existed only for `ksite:fetch`, is deleted.
+- **Silence.** "A bump reaches a client with no copy" is `upgrade.mjs`: a client builds from `content/` and two dependencies, the files it builds match its linked build, N+1 carries both packages' changes, and the update touches only `package.json` and `bun.lock`. The proof found [`FJS-2842`](ISSUES.md#fjs-2842) on its first run.
+
+### <a id="fjs-d985"></a>2026-10-14 · `FJS-D985` — Q7 — Where the browser Haven's routes live — One `web/`, two targets: the terminal build `fli dev:tui` runs today and a browser build `fli dev` runs, from the same routes and `sierra.config.js`, with the two attaches and `sign-in.js` resolved per target. `FJS-D38` already says a surface is a compiler backend over one authoring model, and Invariant 3 gains the sentence that one directory may build for more than one target.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (a second surface, `site/` or `browser/`, holding its own routes that import the shared `Scene.mesa` and scenes. Invariant 3 unchanged).
+
+The paper's recommendation, taken as written: B's routes are three one-line files that re-export the first's, a copy whose only job is to satisfy a reading of a layout rule; and the per-target attach is the mechanism `FJS-D978` already chose for placing a figure, so A adds a resolver where B adds a directory.
+
+### <a id="fjs-d982"></a>2026-10-14 · `FJS-D982` — Q6 — How a machine with no checkout gets the client, and how it stays the server's version — Publish `@frontierjs/haven`. The server states the version it runs at `GET /haven/client` (`{ package, version }`, read from its own `package.json`). `fli haven` installs exactly that version into `~/.fli/haven/<version>/` on first sight, then imports its `web/src/sign-in.js` as it does now. A checkout's sibling Haven still wins, the way `dev:tui` runs the app in front of it. There is no floor: the client is always the server's. A version npm does not have is refused by name.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (publish `@frontierjs/haven`. `fli haven` installs `latest`, sends its version on `POST /haven/login`, and the server refuses a client below a declared floor by name), **C** (the server serves its own client source, and `fli haven` downloads and runs it).
+
+The paper's recommendation, taken as written: it keeps junction's direction (the server states, the client acts), derives the version from the deployed package instead of keeping a floor by hand, and closes the version gap rather than refusing it. B adds a floor someone has to remember to raise. C runs code from whatever `--api` names, which gives a private server's operator code execution on every visitor's machine. A's trust is npm's, the same as `bunx fli` itself.
+
+### <a id="fjs-d977"></a>2026-10-14 · `FJS-D977` — Q2 — Where the client lives — A package that is an FJS app, `web/` and all, and `fli haven` runs its `web/` the way `fli dev:tui` runs an app's own, against a hosted `--api`.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **B** was picked over **A** (inside `packages/cli`, which then gains mesa, OpenTUI and the Junction client as optional peers).
 
 The paper's recommendation, taken as written: the cli declares no framework package today and `dev:tui` already resolves the runtime from the app it runs; B keeps that and versions the client with its server.
+
+### <a id="fjs-d984"></a>2026-10-13 · `FJS-D984` — Invariant 13 governs styling, not content: a terminal scene's palette is its pixels, and hex is how it says them.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) 4.1. **Content** was picked over **Tones** (a palette names `@frontierjs/css` tones and a terminal theme maps them) and **Leave open**. A Haven scene is an art grid plus a `paint` grid naming `palette` entries (`packages/haven/web/src/scenes/`), drawn into an OpenTUI frame buffer by `web/src/paint.js`. A hearth needs four oranges and a fountain three blues, and the tone set has one of each, so tones would narrow the drawing to the vocabulary built for UI chrome. An image's pixels were never styled by tones either; a palette is that, typed by hand. The line is the thing drawn: chrome around a scene (a bubble, the input line, the roster) stays in tones and treatments, and a cell of the art is content. The nine, answered after the build and named as late: the paint grid is a second drawing beside the art, so `web/test/scenes.test.js` pins its shape and its letters; nothing in the suite asserts that a color reaches the screen (the drive reads characters), which is recorded as unenforced.
+
+### <a id="fjs-d983"></a>2026-10-13 · `FJS-D983` — Global fli tooling has no environment, so it takes a 5 where the env digit goes: 5500–5509.
+
+7/8/9 is the test/dev/prod of a PROJECT. A tool run from `~/` (`fli gui`, studio, devtools, the proxy fallback, Haven) has no project and so no environment to be in, and filing it as dev/tooling/project 0 (8500–8509) put it in a dev space that does not exist when no app is open. The block keeps its tooling digit and slots: 5500 gui · 5501 pmap · 5502 studio · 5503 devtools · 5504 proxy · 5505 Haven. No project port in any env can reach it, so the guard that refused dev/tooling/project 0 is gone and 8500 is an ordinary slot again. `decode()` reads the leading 5 as env `global`. **`fli gui` run IN a project is that project's GUI**, so it takes the project's tooling row for the env — 8500 dev, 7500 `--test`, 9500 `--production` for project 0, plus a scaffolded app's `fli dev` slot as the service digit so the app on 8001 has its GUI on 8501 (`guiPort()`); 5500 is the GUI only where there is no project. 5500 is VS Code Live Server's default; `strictPort` makes that collision loud. Lives in `packages/cli/core/ports.js` § GLOBAL, `docs/PORTS.md`.
 
 ### <a id="fjs-d971"></a>2026-10-13 · `FJS-D971` — Does a static app's `document` reach the dev shell, and who applies it — Sierra applies `document` to `index.html` for `target: 'static'`, in dev and in the build (`build/document-shell.js`), through the serializer `wrapDocument()` uses (`documentParts()` in `prerender.js`). An attribute stated on `index.html` and in `document` both is refused, naming both. The wider rule is ruled with it — **Vite dev runs what the static build ships** — and only `document` is built: `_redirects` and host functions in dev wait until a site needs one there.
 
@@ -16373,7 +16487,7 @@ page, which ships no app script, but it applies to any app the step serves once
 it moves into Sierra.
 
 Work: `FJS-2737`.
-*Lives in:* `website/packages/site-kit/config/images.js` · `website/packages/site-kit/test/images.mjs`.
+*Lives in:* `packages/site-kit/config/images.js` · `packages/site-kit/test/images.mjs`.
 
 ### <a id="fjs-d926"></a>2026-10-12 · `FJS-D926` — Which codec and which formats a site-kit build's responsive images use — `Bun.Image`, WebP only, on every host.
 

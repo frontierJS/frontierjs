@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url'
 
 import { runnables, probeState, KINDS, appDirs, driveRows, readCommands, readPage, tasks } from '../core/runnables.js'
 import { WORK_FILE } from '../core/repo-work.js'
+import { guiPort } from '../core/ports.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -174,7 +175,11 @@ describe('tools', () => {
 
   test('the command that starts one is matched by its own port default', () => {
     const gui = tools().find(t => t.name === 'gui')
-    expect(gui.port).toBe(8500)
+    // Matched on the reserved 5500, reported on this project's dev tooling
+    // port — the one `fli gui` binds when it is run here. The slot digit is
+    // whatever this machine's sessions.lock gave the workspace.
+    expect(gui.port).toBe(guiPort(REPO))
+    expect(Math.floor(gui.port / 10)).toBe(850)
     // The alias, because that is what a person types and what every example uses.
     expect(gui.start).toBe('fli gui')
     expect(gui.source).toMatch(/commands\/fli\/gui\.md$/)
@@ -187,14 +192,14 @@ describe('tools', () => {
     expect(tools().find(t => t.name === 'devtools').start).toBeNull()
   })
 
-  test('studio is startable, because its command and the schema agree on 8502', () => {
+  test('studio is startable, because its command and the schema agree on 5502', () => {
     // This assertion is the whole of `FJS-557`. The reserved slot answered
     // nothing and the tool ran on 5001, which the scheme had never heard of —
     // so the documented port was free and the tool was outside the range. The
     // symptom was this tile having no start button, and it is the only thing
     // that noticed.
     const studio = tools().find(t => t.name === 'studio')
-    expect(studio.port).toBe(8502)
+    expect(studio.port).toBe(5502)
     expect(studio.start).toBe('fli studio')
     expect(studio.source).toMatch(/commands\/db\/studio\.md$/)
   })
@@ -210,14 +215,14 @@ describe('the tools group is derived, not listed', () => {
     const { GLOBAL } = await import('../core/ports.js')
     const before = runnables(REPO).filter(r => r.kind === 'tool').length
 
-    GLOBAL.__probe = 8509
+    GLOBAL.__probe = 5509
     try {
       const tools = runnables(REPO).filter(r => r.kind === 'tool')
       expect(tools.length).toBe(before + 1)
 
       const added = tools.find(t => t.name === '__probe')
-      expect(added.port).toBe(8509)
-      // No command declares 8509, so it answers null rather than a guess.
+      expect(added.port).toBe(5509)
+      // No command declares 5509, so it answers null rather than a guess.
       expect(added.start).toBeNull()
       expect(added.source).toBe('packages/cli/core/ports.js')
     } finally {
@@ -294,7 +299,7 @@ describe('the readers repo-map shares', () => {
     const cmds = readCommands(dir, REPO, [])
     const gui = cmds.find(c => c.name === 'fli:gui')
     expect(gui.alias).toBe('gui')
-    expect(gui.port).toBe(8500)
+    expect(gui.port).toBe(5500)
     // Almost every command takes no port, and null is the answer for those.
     expect(cmds.filter(c => c.port !== null).length).toBeLessThan(cmds.length / 2)
   })

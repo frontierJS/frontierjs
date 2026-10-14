@@ -1,13 +1,13 @@
 ---
 id: site-kit-images
 status: partial
-dated: 2026-10-12
+dated: 2026-10-13
 ---
 
 # Proposal — responsive images for a site-kit build
 
-**Status: PARTIAL. Built 2026-10-12 as `website/packages/site-kit/config/images.js`
-(`FJS-D926`, `FJS-D932`); § Left is what remains. Do not cite as behavior.** The
+**Status: PARTIAL. Built 2026-10-12 as `packages/site-kit/config/images.js`
+(`FJS-D926`, `FJS-D932`); § Left's *Still open* is what remains. Do not cite as behavior.** The
 gap is [`FJS-2737`](../ISSUES.md#fjs-2737). `site-kit-parity.md` § 4 listed it,
 `FJS-D608` placed it in site-kit until a second consumer needs it, and
 `site-kit-plan.md` Phase 3 step 6 sequences it.
@@ -110,9 +110,11 @@ file in `dist/`:
 - **Widths:** 480, 1080 and 1920 for a source wider than 1920. A narrower
   source gets the widths below it plus its own width as the largest
   candidate. Nothing is upscaled; `Bun.Image` would upscale if asked.
-- **Output:** written to `dist/_img/<name>.<hash8>.<width>.webp`. The hash
+- **Output:** written to `dist/assets/<name>-<hash8>.<width>.webp`. The hash
   comes from the source bytes, which removes legacy's basename collision and
-  makes every variant safe to serve with an immutable cache header.
+  makes every variant safe to serve with an immutable cache header. It is
+  Vite's directory and name shape, so Sierra's one cache rule
+  (`isHashedAsset`) already answers it immutable (`FJS-2755`).
 - **Cache:** content-addressed under `node_modules/.cache/site-kit/images`,
   keyed by (transformer, source hash, width, quality). An unchanged photo costs
   a file copy rather than an encode.
@@ -125,6 +127,9 @@ file in `dist/`:
   source's own width, an encode no smaller than the source is dropped and the
   original stands as that candidate.
 - **Dimensions:** intrinsic `width`/`height` are added where the tag has none.
+  A tag stating one gets the other from the photo's aspect, since a guessed
+  pair reserves a box of the wrong shape. A stated pair is kept: a theme may
+  crop through it.
 - **`src`:** the original stays as the fallback, and the original file stays in
   `dist/`, because `og:image` and direct links point at it.
 
@@ -162,18 +167,28 @@ same run fetched 75%, 86% and 87% less; the gap is `Image`'s default
 
 ## Left
 
-- **`sizes` on blocks that know their layout.** ksite's header logo and the
-  home hero render `width="768"` and `width="560"` while laid out far smaller
-  or full-bleed, so an eager image (no `auto`) picks a candidate for the wrong
-  box. The fix is in the block (`sizes` stated), not the step.
-- **`Image`'s default box is fictional.** It renders `width="768"
-  height="430"` whatever the photo is, so a 900×921 portrait reserves a
-  landscape box and the page jumps when it loads, as legacy's did. The step
-  keeps a stated pair. Correcting it means the block states the real size or
-  states none; a theme that crops through the `height` attribute decides which.
+**Closed 2026-10-13:**
+- **`sizes` on blocks that know their layout.** `Image` forwards `sizes`, and
+  `PageHero`'s background states `100vw` (176 legacy pages set one, most with
+  no width, so the derived `sizes` said 768 px for a full-bleed photo). The
+  logo was measured and left alone: 89 of 99 client logos are SVG, which the
+  step skips, and the raster ones lay out 110 to 500 px wide at the nav's
+  72 px height, so no one stated width fits them. The home hero is content
+  that states its own `width`.
+- **`Image`'s fictional box.** It no longer defaults `height`, and the step
+  derives it from the photo when only `width` is stated. No default-box image
+  on ksite or Luminous Heart was cropped through its attributes, which was the
+  fork. Exact pixel diff after load: identical, ksite 4 routes and Luminous
+  Heart 22, at five widths. Before load, ksite's `/about-us/` reserved 238 px
+  too little and now reserves exactly. Luminous Heart's theme sets
+  `width: auto` on its gallery, so those images reserve nothing before load
+  whatever their attributes say. That is the client's stylesheet.
+- **An immutable cache header for variants** (`FJS-2755`), by moving them
+  under the rule that already exists. A host sees it once `_headers` is
+  emitted from that rule (`site-hosting.md` step 2).
+
+**Still open:**
 - **Art direction**, under `FJS-D607` as above.
-- **An immutable cache header for `/_img/*`**, which belongs to Sierra's host
-  files (`site-hosting.md`, `FJS-D919`).
 - **Moving into Sierra** ahead of the offline shell, once a non-site-kit app
   needs it (`FJS-D608`); the refusal of `offline` lifts with it.
 

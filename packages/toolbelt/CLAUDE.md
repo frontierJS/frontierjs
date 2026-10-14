@@ -145,6 +145,10 @@ src/bearer/          what a bearer secret looks like at rest — `fingerprint`
                      junction's resolver is TypeScript
 src/signature/       what a signed machine-to-machine request is — canonical
                      string, sign, verify. Three signers existed and no verifier.
+                     Two forms of one scheme: a shared `secret` (`v1-sha256=`)
+                     or an Ed25519 key pair (`v1-ed25519=`,
+                     `generateSigningKeys`) for a stranger whose server
+                     shares nothing with it (`FJS-D981`).
                      Also `mintToken`/`readToken`: a short, case-safe token over
                      ONE id for a plus-address — lower-case Crockford base32, an
                      80-bit MAC over `purpose:id`, expiry read from the id's ULID

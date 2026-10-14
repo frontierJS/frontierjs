@@ -11,7 +11,7 @@ import { test, expect, describe } from 'bun:test'
 import { spawnSync }              from 'node:child_process'
 import { readFileSync }           from 'node:fs'
 import { resolve }                from 'node:path'
-import { parsePlan, renderPlan, reissued, phaseOf } from '../core/plan.js'
+import { parsePlan, renderPlan, reissued, phaseOf, tickStep } from '../core/plan.js'
 
 const REPO = resolve(import.meta.dir, '../../..')
 
@@ -128,7 +128,29 @@ describe('parsePlan', () => {
     expect(rows).toContain('→ ☐ 2.2 Rotate and flip')
     expect(rows).toContain('⊘ 2.3 Touch drags')
     expect(rows).toContain('1 ruled · 1 open')
+    // The open one carries the id `fli decide --file` answers it by; the ruled one does not.
+    expect(rows).toMatch(/\? Q1 — Which axis\? \S+:q1-which-axis/)
+    expect(rows).not.toMatch(/Q2 — Settled\? \S+:/)
     expect(rows).toContain('blocked by 1 open question')
+  })
+})
+
+describe('tickStep', () => {
+
+  test('ticks the named open box and nothing else on the page', () => {
+    const out = tickStep(PLAN, '2.2')
+    const was = PLAN.split('\n')
+    const now = out.split('\n')
+    expect(now[29]).toBe('- [x] 2.2 Rotate and flip')
+    expect(now.filter((l, i) => l !== was[i])).toEqual(['- [x] 2.2 Rotate and flip'])
+    expect(parsePlan(out).next.id).toBe('2.2a')
+  })
+
+  test('a done, dropped, fenced or absent step is null', () => {
+    expect(tickStep(PLAN, '2.1')).toBeNull()
+    expect(tickStep(PLAN, '2.3')).toBeNull()
+    expect(tickStep(PLAN, '9.9')).toBeNull()
+    expect(tickStep(PLAN, '7.1')).toBeNull()
   })
 })
 

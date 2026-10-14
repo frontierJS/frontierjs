@@ -87,9 +87,9 @@ const row = (over) => ({ id: 'surface:x/web', name: 'web', ...over })
 describe('the host', () => {
 
   test('a port the browser appended is not part of the name', () => {
-    // The proxy answers on 8504 when 80 needs a privileged bind, so every Host
+    // The proxy answers on 5504 when 80 needs a privileged bind, so every Host
     // it sees carries a port that is the PROXY's and never the target's.
-    expect(hostOnly('example.localhost:8504')).toBe('example.localhost')
+    expect(hostOnly('example.localhost:5504')).toBe('example.localhost')
     expect(hostOnly('example.localhost')).toBe('example.localhost')
   })
 
@@ -98,7 +98,7 @@ describe('the host', () => {
   })
 
   test('an IPv6 literal keeps its brackets', () => {
-    expect(hostOnly('[::1]:8504')).toBe('[::1]')
+    expect(hostOnly('[::1]:5504')).toBe('[::1]')
   })
 
   test('no Host header at all is an empty name, not a crash', () => {

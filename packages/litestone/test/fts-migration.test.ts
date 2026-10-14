@@ -180,6 +180,21 @@ describe('the shared _search index through a migration', () => {
     expect(plan(db, V2).diff.hasChanges).toBe(false)
   })
 
+  it('is recreated and backfilled when its own definition changes', () => {
+    const db = new Database(':memory:')
+    migrate(db, FTS)
+    db.run(`INSERT INTO note (id, title, body) VALUES (1, 'alpha', 'hello world')`)
+    // The shape before FJS-2845, when model was UNINDEXED.
+    db.run(`DROP TABLE "_search"`)
+    db.run(`CREATE VIRTUAL TABLE "_search" USING fts5(model UNINDEXED, rid UNINDEXED, title, body, tokenize='trigram')`)
+    db.run(`INSERT INTO "_search"(model, rid, title, body) SELECT 'note', rowid, title, body FROM note`)
+    const sql = migrate(db, FTS)
+    expect(sql).toContain(`DROP TABLE IF EXISTS "_search"`)
+    expect(db.query(`SELECT rid FROM "_search" WHERE "_search" MATCH '{model} : "note"'`).all()).toEqual([{ rid: 1 }])
+    expect(spans(db, 'hello')).toEqual([{ model: 'note', rid: 1, title: 'alpha' }])
+    expect(plan(db, FTS).diff.hasChanges).toBe(false)
+  })
+
   it('goes when the last @@fts model loses it', () => {
     const db = new Database(':memory:')
     migrate(db, FTS)

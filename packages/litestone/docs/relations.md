@@ -409,6 +409,7 @@ model Account {
   orderCount Int      @from(Order, count: true)
   revenue    Float    @from(Order, sum: amount)
   biggest    Float?   @from(Order, max: amount)
+  typical    Float?   @from(Order, avg: amount)        // null when there are no orders
   lastOrder  Order?   @from(Order, last: true)         // the whole row, not a column
   hasBig     Boolean  @from(Order, exists: true, where: "amount > 100")
 }

@@ -69,7 +69,8 @@
     "verify:batch": "bun web/test/verify-batch.mjs",
     "verify:retro": "bun web/test/verify-retro.mjs",
     "verify:payroll": "bun web/test/verify-payroll.mjs",
-    "verify:mcp": "bun web/test/verify-mcp.mjs"
+    "verify:mcp": "bun web/test/verify-mcp.mjs",
+    "verify:mcp-view": "bun web/test/verify-mcp-view.mjs"
   },
   "dependencies": {
     "@frontierjs/auth": "workspace:*",
@@ -92,6 +93,7 @@
   "devDependencies": {
     "@frontierjs/cli": "workspace:*",
     "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
     "vite": "^8.3.2",
     "ws": "^8.20.0"
   }

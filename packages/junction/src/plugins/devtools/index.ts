@@ -14,7 +14,7 @@
 //     auth: (req) => req.headers.get('x-admin-key') === process.env.ADMIN_KEY
 //   }))
 //
-// Then open http://localhost:8503
+// Then open http://localhost:5503
 
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -23,8 +23,8 @@ import { collectHealth, collectMetrics } from '../../transport/health.ts'
 
 export interface DevtoolsOptions {
   /**
-   * Default 8503 — the console's slot in the framework's global tooling block
-   * (8500-8509, `packages/cli/core/ports.js`). A literal rather than an import
+   * Default 5503 — the console's slot in the framework's global tooling block
+   * (5500-5509, `packages/cli/core/ports.js`). A literal rather than an import
    * because junction does not depend on the CLI; the number is assigned there
    * and restated here, so moving it means moving both.
    *
@@ -188,7 +188,7 @@ function crossSite(req: Request, selfOrigins: string[]): boolean {
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
 export function devtools(opts: DevtoolsOptions = {}) {
-  const port       = opts.port       ?? 8503
+  const port       = opts.port       ?? 5503
   const hostname   = opts.hostname   ?? '127.0.0.1'
   const maxEntries = opts.maxEntries ?? 200
   const _redactKeys = [...DEFAULT_REDACT, ...(opts.redact ?? [])].map(k => k.toLowerCase())
@@ -339,7 +339,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
     // `needsHost` start phase, so a boot without a port — `_startForTest()`,
     // and every snapshot generator through it — skips this entirely. It used to
     // bind in register(), which meant `junction surface` opened a real listener
-    // on 8503 as a side effect of describing an app, and would have thrown
+    // on 5503 as a side effect of describing an app, and would have thrown
     // outright had anything else held the port (`FJS-419`).
     ready(app: import('../../core/app.ts').App): void {
       // ── Start admin server ─────────────────────────────────────────
@@ -378,7 +378,7 @@ export function devtools(opts: DevtoolsOptions = {}) {
       // are caught and logged by the start phase, so an EADDRINUSE here left the
       // app running with the console reporting `disabled` — which is a lie: it
       // was asked for and it failed. Worse, the port is held by a PREVIOUS run
-      // of the same console, so anything pointed at 8503 gets stale data from a
+      // of the same console, so anything pointed at 5503 gets stale data from a
       // process nobody meant to be talking to (`FJS-420`). Measured: a drive
       // asserted against the last run's queue and reported half its checks red.
       try {

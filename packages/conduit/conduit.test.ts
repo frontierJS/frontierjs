@@ -4949,7 +4949,7 @@ describe('a target whose address comes per send (FJS-1667)', () => {
     const r = receiver()
     try {
       const strict = await conduitWith(hookTarget())
-      for (const address of [`${r.url}/x`, 'http://169.254.169.254/latest/meta-data/', 'https://127.0.0.1/x', 'https://localhost:8503/api/jobs/1/retry']) {
+      for (const address of [`${r.url}/x`, 'http://169.254.169.254/latest/meta-data/', 'https://127.0.0.1/x', 'https://localhost:5503/api/jobs/1/retry']) {
         const result = await strict.send({ target: 'hook:slack', address, method: 'POST', body: {} })
         expect(result.error?.kind).toBe('invalid_request')
         expect(result.error?.retryable).toBe(false)

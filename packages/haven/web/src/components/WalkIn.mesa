@@ -1,0 +1,38 @@
+<script>
+  // WalkIn.mesa — a route's whole body: sign this client in, ask the socket
+  // for this scene's room, read the room's row, then let the scene in. The
+  // scene waits for the row, since its channel is named by the row's id
+  // (`api/src/rooms.ts`), and reads it as `$context.room`.
+  //
+  // A page left open across a deploy is told by the server's build
+  // (`x-fjs-build`, read into `status.stale`); a terminal has no bundle the
+  // server built, so the line never shows there.
+  import { status } from '@frontierjs/sierra/resource'
+  import { rooms }  from '@/resources/Room.mesa'
+  import { walkIn } from '@/walk-in.js'
+
+  export let slug
+
+  let room  = null
+  let error = ''
+
+  $context.room = room
+
+  // Without a watch in this file the template reads `status.stale` once, at mount.
+  $: status.stale
+
+  walkIn(slug)
+    .then(() => rooms.service.find({ slug }))
+    .then((res) => {
+      room = res.data?.[0] ?? null
+      if (!room) error = `This server has no ${slug}.`
+    })
+    .catch((e) => { error = e.message })
+</script>
+
+{#if status.stale}<p>The haven has moved on since this page loaded. Reload to walk in with it.</p>{/if}
+{#if room}
+  <slot />
+{:else}
+  <p>{error || 'Walking in…'}</p>
+{/if}

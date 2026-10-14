@@ -26,6 +26,10 @@
 // guessed at; the panel asks Claude instead. It goes through the same ledger,
 // so its diff and its undo are a run's.
 //
+// Make a plan is the ask with nothing to pick: a new feature has no element on
+// the page yet. It runs the Workbench's Build plan prompt and writes PLAN.md at
+// the app root, which the Workbench's Open plan then carries out step by step.
+//
 // An undo puts back each file's whole original when the file is still exactly
 // what the run left; anything else means another writer has been in it, and a
 // whole-file restore would take their work with ours. Then it reverses the
@@ -38,12 +42,12 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
-import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, PANEL_EFFORTS, editEffort, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
+import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, IMAGE_TYPES, PANEL_EFFORTS, buildPlanPrompt, editEffort, editPrompt, resumeCommand, runAsk } from './ask-claude.js'
 import { askContext, findAppRoot, findGuides } from './ask-context.js'
 import { previewScope } from './preview.js'
 
@@ -59,6 +63,7 @@ const MAX_IMAGES  = 5
 const MAX_IMAGE   = 5 * 1024 * 1024
 const ASK_BODY    = MAX_BODY + MAX_IMAGES * MAX_IMAGE
 const BASE64      = /^[A-Za-z0-9+/]+={0,2}$/
+const PLAN_FILE   = 'PLAN.md'
 
 /** True when the request came from a page this dev server served. */
 export function sameOrigin(req) {
@@ -584,19 +589,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     const chips = readChips(body)
     if (chips.error) return reply(res, 400, { error: chips.error })
     const { picks, data } = askContext(root, readPicks(body.picks))
-    const guides = findGuides(root)
-    // The schema, and never the rest of the app root: api/.env sits there, and
-    // on a shared dev server the person asking is not always the owner.
-    const app = findAppRoot(root)
-    const reads = [...guides.map(g => g.dir), ...(app ? [resolve(app, 'db')] : [])]
-    // The log is a narrow column: a guide is named by its package and an app
-    // file from the Vite root, as the prompt names them.
-    const prefixes = [
-      ...guides.map(g => [g.dir + sep, `@frontierjs/${g.pkg}/`]),
-      [root + sep, ''],
-      ...(app && app !== root ? [[app + sep, relative(root, app) + sep]] : []),
-    ]
-    const shortPaths = text => prefixes.reduce((t, [from, to]) => t.replaceAll(from, to), text)
+    const { guides, reads, shortPaths } = reach()
 
     const run = `${boot}.${++seq}`
     const ledger = createLedger(root)
@@ -641,10 +634,90 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     res.end()
   }
 
-  function hold(run, ledger, ask) {
+  // Make a plan: a goal with no element to pick, written as a plan file at the
+  // app root (`FJS-D966`) by a new session that may edit that file and nothing
+  // else — the Workbench's Build plan, run from the page. Its ledger is rooted
+  // at the app, since the file sits outside the Vite root, so the diff and the
+  // Undo are an ask's.
+  async function plan(req, res) {
+    if (current) return reply(res, 409, { error: 'Claude is already working on a change — stop it first' })
+    let body
+    try { body = await readJson(req) } catch (e) { return reply(res, 400, { error: e.message }) }
+    const goal = String(body.goal ?? '').trim()
+    if (!goal) return reply(res, 400, { error: 'say what the plan is for' })
+    const { guides, app, reads, shortPaths } = reach()
+    const home = app ?? root
+    const file = join(home, PLAN_FILE)
+    const top = (await sh('git', ['rev-parse', '--show-toplevel'], root)).out.trim()
+    // The path the Workbench's Open plan takes: from the checkout it pins.
+    const path = top && !outside(top, file) ? relative(top, file) : file
+
+    const run = `${boot}.${++seq}`
+    const ledger = createLedger(home)
+    let held = false
+    res.statusCode = 200
+    res.setHeader('content-type', 'application/x-ndjson')
+    res.setHeader('cache-control', 'no-store')
+    const send = e => { if (!res.writableEnded) res.write(JSON.stringify(e) + '\n') }
+    send({ type: 'run', id: run })
+
+    const out = runAsk({
+      root, bin,
+      edit:   file,
+      reads,
+      effort: editEffort(null, body.effort),
+      prompt: buildPlanPrompt({ goal, path: file, page: body.page, guides }),
+      onEvent: e => {
+        if (e.type === 'read' || e.type === 'edit' || e.type === 'write') return ledger.see(e)
+        // A fresh session each time, never the panel's conversation: a
+        // follow-up ask resumes with the Vite root to edit, not the plan.
+        if (e.type === 'session') return
+        if (e.type === 'tool') e.text = shortPaths(e.text)
+        if (e.type === 'landed' || e.type === 'refused') return ledger.result(e)
+        if (e.type === 'result') {
+          e.edits = ledger.count
+          if (e.edits) {
+            send({ type: 'diff', files: ledger.diff() })
+            send({ type: 'plan', path })
+          }
+          if (!held) { held = true; hold(run, ledger) }
+        }
+        send(e)
+      },
+    })
+    if (out.error) { send({ type: 'error', text: out.error }); return res.end() }
+    current = { child: out.child, run }
+    res.on('close', () => { if (current?.run === run) stop() })
+    await out.done
+    if (current?.run === run) current = null
+    if (!held) hold(run, ledger)
+    res.end()
+  }
+
+  // What a run may read besides the Vite root, and its tool lines shortened
+  // to the names the prompt uses.
+  function reach() {
+    const guides = findGuides(root)
+    // The schema, and never the rest of the app root: api/.env sits there, and
+    // on a shared dev server the person asking is not always the owner.
+    const app = findAppRoot(root)
+    const reads = [...guides.map(g => g.dir), ...(app ? [resolve(app, 'db')] : [])]
+    // The log is a narrow column: a guide is named by its package and an app
+    // file from the Vite root, as the prompt names them.
+    const prefixes = [
+      ...guides.map(g => [g.dir + sep, `@frontierjs/${g.pkg}/`]),
+      [root + sep, ''],
+      ...(app && app !== root ? [[app + sep, relative(root, app) + sep]] : []),
+    ]
+    return { guides, app, reads, shortPaths: text => prefixes.reduce((t, [from, to]) => t.replaceAll(from, to), text) }
+  }
+
+  // A run with no `ask` is a plan's: undoable, and never Submit's — a plan is
+  // carried out in the Workbench, and committed off its Diff tab.
+  function hold(run, ledger, ask = null) {
     runs.set(run, ledger)
     if (runs.size > 20) runs.delete(runs.keys().next().value)
-    if (!ledger.count) return
+    if (!ledger.count || !ask) return
     for (const f of ledger.touched()) touched.set(f, (touched.get(f) ?? 0) + 1)
     asks.set(run, ask)
   }
@@ -792,6 +865,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
         if (refused) return reply(res, refused.status, { error: refused.error })
         if (path === '/__fjs/ask') return ask(req, res)
         if (path === '/__fjs/ask/text') return text(req, res)
+        if (path === '/__fjs/ask/plan') return plan(req, res)
         if (path === '/__fjs/ask/handoff') return handoff(req, res)
         if (path === '/__fjs/ask/stop') return reply(res, 200, { stopped: stop() })
         if (path === '/__fjs/ask/status') {

@@ -34,7 +34,7 @@ Measured, not read off a status file.
 | **Query → call, correlated** | `packages/junction/src/core/litestone.ts` | junction taps the scoped client's `$tapQuery`, stamps `ctx.telemetryId`, re-emits as `litestone.query`, and registers the unsubscribe on `ctx._cleanups` |
 | The query event itself | litestone `QueryEvent` | model, database, operation, **sql, params**, duration, actorId |
 | The zero-cost gate | `telemetryEnabled()` | `hasListeners()` false → no UUID, no event object, no `performance.now()`. Litestone has the same check in `fireQuery` |
-| A viewer | `packages/junction/src/plugins/devtools/` | its own server on 8503, a **200-entry in-memory ring**, a `redact` list, the jobs panel, `/api/state`, `/api/health`. Refuses to bind under `NODE_ENV=production` with no `auth` |
+| A viewer | `packages/junction/src/plugins/devtools/` | its own server on 5503, a **200-entry in-memory ring**, a `redact` list, the jobs panel, `/api/state`, `/api/health`. Refuses to bind under `NODE_ENV=production` with no `auth` |
 | Policy source text | `policyExprToString`, `packages/litestone/src/core/policy.js` | round-trips an `@@allow`/`@@deny` AST back to the syntax it was written in. Already feeds `db/access.snapshot.md` |
 | Policy debug | `plog`, same file | `console.log` behind `policyDebug: true \| 'verbose'` — the only channel a denial has today, and it is stdout |
 | The declared surface, committed | `access.snapshot.md` · `principal.snapshot.md` · `surface.snapshot.md` | gates, predicates, protected fields, transition gates; who a caller becomes and off which request |
@@ -78,7 +78,7 @@ jobs, mail, a dev-time store, click into the past. This is the tier FJS lacks
 entirely, and it is the tier people mean when they say they miss Telescope.
 
 **Watch it live.** Phoenix LiveDashboard, the .NET Aspire dashboard. Metrics,
-processes, a call feed, nothing kept. **This is where devtools on 8503 already
+processes, a call feed, nothing kept. **This is where devtools on 5503 already
 sits** — which is why the parity gap is a store and a viewer rather than a
 rewrite.
 
@@ -203,7 +203,7 @@ observed in production. Dev on by default, production off or sampled.
 
 ### Phase 4 — the viewer (M)
 
-Extend devtools on 8503 rather than opening a fifth surface; it already has the
+Extend devtools on 5503 rather than opening a fifth surface; it already has the
 server, the auth refusal and the fail-closed behavior under
 `NODE_ENV=production`. Three panes: the span tree; the query with the
 policy-contributed part of its WHERE marked as such; and **the decision pane** —

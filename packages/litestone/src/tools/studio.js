@@ -239,13 +239,13 @@ export async function cmdStudio(cfg) {
   const { diffSchemas, generateMigrationSQL, summarizeDiff } = await import('../core/migrate.js')
   const { columnPlan }    = await import('../export.js')
 
-  // 8502 is dev/tooling/project 0/service 2 in the framework's port scheme —
+  // 5502 is slot 2 of global tooling in the framework's port scheme —
   // the block reserved whole for tools somebody runs beside whatever app they
   // are working on, so the URL is the same tomorrow. Written as a literal
   // because this package sits below the CLI that owns the formula. It was 5001
   // for its whole life, which the scheme had never heard of: the reserved slot
   // answered nothing and the tool sat outside the range (`FJS-557`).
-  const port        = parseInt(getFlag('port') ?? '8502', 10)
+  const port        = parseInt(getFlag('port') ?? '5502', 10)
 
   // ── --host without --token ────────────────────────────────────────────────
   // Refused here, before the schema is read and before a database is opened, so
@@ -1877,8 +1877,24 @@ export async function cmdStudio(cfg) {
             // Locate the model block by brace depth rather than by regex over
             // the whole file — a doc comment inside a model may contain braces,
             // and `model X {` may sit anywhere in a multi-model file.
-            const openIdx = lines.findIndex(l => new RegExp(`^\\s*model\\s+${modelName}\\s*\\{`).test(l))
-            if (openIdx < 0) return json({ error: `model ${modelName} not found in ${absPath}` }, 400)
+            //
+            // A model an imported fragment declares has no block here, and the
+            // fragment is a package's file this app must not edit, so the fix is
+            // said the way every other app-side statement about such a model is:
+            // an `extend model` block, reusing the app's own if it has one.
+            const attr    = `@@index([${columns.join(', ')}])`
+            const openIdx = lines.findIndex(l => new RegExp(`^\\s*(?:extend\\s+)?model\\s+${modelName}\\s*\\{`).test(l))
+            if (openIdx < 0) {
+              const tail   = source.endsWith('\n') ? source : source + '\n'
+              const updated = `${tail}\nextend model ${modelName} {\n  ${attr}\n}\n`
+              const parsed  = parseDraft(updated)
+              if (!parsed.valid) return json({ error: `Would not parse: ${parsed.errors?.[0]?.message ?? parsed.errors?.[0] ?? 'unknown'}` }, 400)
+              writeFileSync(absPath, updated, 'utf8')
+              return json({
+                ok: true, added: attr, model: modelName, line: tail.split('\n').length + 2, path: absPath,
+                note: `${modelName} is declared by an imported fragment, so the index is written as an extend model block. The index does not exist until a migration runs.`,
+              })
+            }
             let depth = 0, closeIdx = -1
             for (let i = openIdx; i < lines.length; i++) {
               const bare = lines[i].replace(/\/\/.*$/, '').replace(/\/\/\/.*$/, '')
@@ -1887,8 +1903,7 @@ export async function cmdStudio(cfg) {
             }
             if (closeIdx < 0) return json({ error: `model ${modelName} block is not closed` }, 400)
 
-            const attr = `@@index([${columns.join(', ')}])`
-            const body_ = lines.slice(openIdx + 1, closeIdx)
+            const body_= lines.slice(openIdx + 1, closeIdx)
             if (body_.some(l => l.replace(/\s/g, '').includes(attr.replace(/\s/g, ''))))
               return json({ error: `${modelName} already declares ${attr}` }, 400)
 

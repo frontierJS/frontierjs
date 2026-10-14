@@ -1,5 +1,6 @@
 // src/core/workbench-diff.ts — a pinned checkout's working tree against HEAD,
-// or a branch's against the commit it was cut from, for the workbench's diff panel.
+// or a branch's against the commit it was cut from, for the workbench's diff
+// panel; and the commit made off it.
 //
 // The tree, not the run: another session may share the checkout, so what a
 // run changed and what the tree holds are not separable from git alone. The
@@ -13,7 +14,7 @@
 // change a hundred thousand lines, and the panel is a card in a grid.
 
 import { execFileSync }                   from 'node:child_process'
-import { closeSync, openSync, readSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
 import { join }                           from 'node:path'
 import { treeOf }                         from './workbench-branch.ts'
 
@@ -27,6 +28,8 @@ export type DiffFile = {
   hunks:  DiffHunk[]
   /** Lines past `MAX_FILE_LINES` were left out; `adds`/`dels` still count them. */
   cut:    boolean
+  /** The object id of the file as the tree holds it when read; null where it is gone. */
+  blob:   string | null
 }
 
 export const MAX_FILES       = 150
@@ -59,7 +62,7 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
     }
     const head = line.match(/^diff --git a\/(.*) b\/(.*)$/)
     if (head) {
-      file = { path: head[2], status: 'modified', adds: 0, dels: 0, hunks: [], cut: false }
+      file = { path: head[2], status: 'modified', adds: 0, dels: 0, hunks: [], cut: false, blob: null }
       files.push(file)
       hunk = null
       continue
@@ -89,16 +92,29 @@ function addLine(file: DiffFile, hunk: DiffHunk, line: DiffLine) {
 
 const lineCount = (f: DiffFile) => f.hunks.reduce((n, h) => n + h.lines.length, 0)
 
-function git(root: string, argv: string[]): string | null {
+function git(root: string, argv: string[], input?: string): string | null {
+  try { return gitOrThrow(root, argv, input) } catch { return null }
+}
+
+function gitOrThrow(root: string, argv: string[], input?: string): string {
   try {
     return execFileSync('git', ['-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', '--no-optional-locks', '-C', root, ...argv], {
-      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     })
-  } catch { return null }
+  } catch (e) {
+    throw new Error(String((e as { stderr?: unknown }).stderr ?? '').trim() || (e as Error).message)
+  }
+}
+
+/** Each path's object id as the tree holds it now; a path that is gone is absent. */
+function blobsOf(root: string, paths: string[]): Map<string, string> {
+  const here = paths.filter(p => existsSync(join(root, p)))
+  const ids  = here.length ? (git(root, ['hash-object', '--stdin-paths'], here.join('\n') + '\n') ?? '').split('\n') : []
+  return new Map(here.map((p, i) => [p, ids[i] ?? '']))
 }
 
 function untrackedFile(root: string, path: string): DiffFile {
-  const file: DiffFile = { path, status: 'untracked', adds: 0, dels: 0, hunks: [], cut: false }
+  const file: DiffFile = { path, status: 'untracked', adds: 0, dels: 0, hunks: [], cut: false, blob: null }
   let buf: Buffer
   try {
     const size = statSync(join(root, path)).size
@@ -158,5 +174,43 @@ export function readDiff(root: string, base: string | null = null): { files: Dif
     }
     cut = true
   }
+  const blobs = blobsOf(root, files.map(f => f.path))
+  for (const f of files) f.blob = blobs.get(f.path) ?? null
   return { files, total, cut: cut || files.some(f => f.cut) }
+}
+
+// ─── the commit ───────────────────────────────────────────────────────
+
+/**
+ * The chosen files, as the tree holds them, committed on HEAD — through
+ * `git commit --only`, so what anyone else staged stays staged and uncommitted,
+ * and the checkout's own commit hooks run. Each file carries the `blob` the
+ * diff showed: the tree is shared, and a file another session wrote since is
+ * refused by name rather than committed with lines nobody read.
+ */
+export function commitFiles(root: string, chosen: { path: string, blob: string | null }[], message: string):
+  | { commit: string, files: string[] }
+  | { refused: string, files?: string[] } {
+  if (!message.trim()) return { refused: 'a commit needs a message' }
+  if (!chosen.length)  return { refused: 'no files chosen' }
+  const tracked   = (git(root, ['diff', '--name-only', '--no-renames', '-z', 'HEAD']) ?? '').split('\0').filter(Boolean)
+  const untracked = new Set((git(root, ['ls-files', '--others', '--exclude-standard', '-z']) ?? '').split('\0').filter(Boolean))
+  const changed   = new Set([...tracked, ...untracked])
+  const paths     = chosen.map(f => f.path)
+  const unchanged = paths.filter(p => !changed.has(p))
+  if (unchanged.length) return { refused: `${unchanged.join(', ')} ${unchanged.length === 1 ? 'holds' : 'hold'} nothing to commit`, files: unchanged }
+  const now   = blobsOf(root, paths)
+  const moved = chosen.filter(f => (now.get(f.path) ?? null) !== (f.blob ?? null)).map(f => f.path)
+  if (moved.length) return { refused: `${moved.join(', ')} changed since the diff was read — read it again`, files: moved }
+
+  const added = paths.filter(p => untracked.has(p))
+  try {
+    if (added.length) gitOrThrow(root, ['add', '--', ...added])
+    gitOrThrow(root, ['commit', '--quiet', '--only', '--file=-', '--', ...paths], message.trim() + '\n')
+  } catch (e) {
+    // A refused commit leaves the tree as it found it, untracked files included.
+    if (added.length) git(root, ['reset', '--quiet', '--', ...added])
+    return { refused: `git refused the commit: ${(e as Error).message}` }
+  }
+  return { commit: gitOrThrow(root, ['rev-parse', 'HEAD']).trim(), files: paths }
 }

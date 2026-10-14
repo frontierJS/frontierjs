@@ -107,7 +107,7 @@ beforeEach(async () => {
 })
 
 describe('the identity epoch', () => {
-  test('the export exists — junction/index.js calls it from _tokenChanged', () => {
+  test('the export exists — junction/index.js calls it from _identityChanged', () => {
     // The seam, asserted rather than assumed: this module holds no client, so
     // *when did the identity change* is owned on the other side of the import.
     expect(typeof resetResourcesForIdentityChange).toBe('function')

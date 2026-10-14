@@ -893,7 +893,7 @@ const CHECKS = {
   // (`FJS-2277`). `portFor()` in `@frontierjs/cli/core/ports.js` is the way to
   // ask (`FJS-D857`).
   //
-  // The pattern is text: a number in 7000–8999 (8500–8509 is fli tooling's)
+  // The pattern is text: a number in 7000–8999
   // on a line that says `localhost`, `listen` or `port`. A fixture such as
   // `memory: 8192` says none of those, which the rule's own test holds.
   // `port` is a word and not a substring: `export` and `import` hold it, and a
@@ -908,7 +908,7 @@ const CHECKS = {
         if (!/localhost|127\.0\.0\.1|listen/i.test(line) && !/(?<![a-z])port|Port|(?<![A-Z])PORT/.test(line)) return
         for (const m of line.matchAll(/(?<![\w-])[78]\d{3}(?![\w-])/g)) {
           const n = Number(m[0])
-          if (n < 7000 || (n >= 8500 && n <= 8509)) continue
+          if (n < 7000) continue
           findings.push({
             file: path,
             line: i + 1,

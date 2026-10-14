@@ -1,0 +1,7 @@
+<script module>
+// src/resources/Member.mesa — who walked in. A figure in presence carries a
+// member id and nothing else, so the nick over it is read here.
+import { createResource } from '@frontierjs/sierra/resource'
+
+export const members = createResource('members', { model: 'Member' })
+</script>

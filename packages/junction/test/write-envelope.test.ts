@@ -92,6 +92,14 @@ describe('a base row means the same thing on both transports', () => {
     expect(r.data).toEqual({ body: 'two' })
   })
 
+  test('an in-process caller states it the same way', async () => {
+    // `app.service()` is what an mcp tool call and an in-process replay reach
+    // the boundary through, and its context is built apart from both wires'.
+    const svc = app.service('probe')
+    expect((await svc.patch('ROW-1', { body: 'two' }, { base: BASE })).base).toEqual(BASE)
+    expect((await svc.patch('ROW-1', { body: 'two' })).base).toBeNull()
+  })
+
   test('with no base the body is the data and ctx.base is null, on both', async () => {
     const http = await patch(overHttp,   { body: 'two' })
     const ws   = await patch(overSocket, { body: 'two' })

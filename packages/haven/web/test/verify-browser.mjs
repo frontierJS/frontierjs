@@ -1,0 +1,285 @@
+/**
+ * web/test/verify-browser.mjs — a terminal and a browser tab in one room
+ * (`IDEAS/haven.md` 5.2). Started by `bun run verify:browser`; needs Chrome,
+ * util-linux `script`, and no TTY of its own.
+ *
+ * One set of routes, two targets (`FJS-D985`). Haven's API runs in this
+ * process over a fresh test database. Sam is Sierra's terminal shell under a
+ * pty, signed in the way `fli haven` signs a machine in. Bea is a headless
+ * Chrome tab on this package's own Vite dev server, which builds the same
+ * routes with the browser twins of `#paint`, `#cell` and `#sign-in`, and
+ * signs in with a WebCrypto key it keeps in IndexedDB. Every check reads one
+ * client's figure, line or art off the OTHER client's screen: Sam's figure
+ * and line in Bea's tab, Bea's in Sam's terminal, and the art row for row.
+ * Then Bea reloads and is the same member, walks through the left house's
+ * door, and the terminal sees the square empty of her.
+ *
+ * The tab is read by geometry, never by the DOM's own bookkeeping: a cell's
+ * glyph is whatever `elementFromPoint` finds at that cell's center, counted
+ * in the art's `ch`/`lh` cells. A figure whose units disagreed with the art's
+ * would read as the art under it.
+ *
+ * Traps:
+ * - The server states a build (`FJS_BUILD`) and the page is served as
+ *   another (`VITE_FJS_BUILD`), so the page must say it is stale. Both are
+ *   set here; a dev server of Haven's own states no build and says nothing.
+ * - The dev server is this drive's own, on a port nobody answers on; one
+ *   that already answers is refused rather than reused (`FJS-740`).
+ * - A move past 10 a second is dropped by the server in silence, so each
+ *   step waits for the screen before the next.
+ */
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
+import { join } from 'node:path'
+
+import { createTestEnv } from '@frontierjs/testing'
+
+import { openChrome } from '../../../mesa/src/drive.js'
+import { buildHavenApp } from '../../api/src/app.ts'
+import { signIn } from '../../api/test/sign-in.ts'
+import { cellOf, terminal, until } from './terminal.mjs'
+import { stageOf } from './stage.mjs'
+
+const WEB  = join(import.meta.dir, '..')
+const square = await stageOf('Square')
+const tavern = await stageOf('Tavern')
+const VITE = join(WEB, '../node_modules/.bin/vite')
+
+let failed = 0
+const check = (ok, label, evidence = '') => {
+  console.log(`${ok ? '✓' : '✗'} ${label}`)
+  if (!ok) { failed++; if (evidence) console.log(evidence) }
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+const freePort = () => new Promise((resolve) => {
+  const s = createServer()
+  s.listen(0, () => { const { port } = s.address(); s.close(() => resolve(port)) })
+})
+const answers = (url) => fetch(url).then(() => true, () => false)
+
+// ─── Haven ─────────────────────────────────────────────────────────
+
+process.env.FJS_BUILD = 'haven-server-build'
+const env = await createTestEnv({
+  schema: join(WEB, '../db/schema.lite'),
+  listen: true,
+  api:    ({ db }) => buildHavenApp({ db, sessionKey: 'verify-browser', port: 0 }),
+})
+await env.system.room.create({ data: { slug: 'square', name: 'The square' } })
+await env.system.room.create({ data: { slug: 'tavern', name: 'The tavern' } })
+const API = `http://localhost:${env.port}`
+
+// ─── the browser build ────────────────────────────────────────────────
+
+const webPort = await freePort()
+const WEB_URL = `http://localhost:${webPort}`
+if (await answers(WEB_URL)) {
+  console.log(`✗ ${WEB_URL} already answers — refusing to drive a server this run did not start`)
+  process.exit(1)
+}
+const vite = spawn(VITE, ['-c', 'config/vite.config.js'], {
+  cwd: WEB, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+  env: { ...process.env, API_PORT: String(env.port), WEB_PORT: String(webPort), VITE_FJS_BUILD: 'haven-page-build' },
+})
+let viteLog = ''
+vite.stdout.on('data', (d) => { viteLog += d })
+vite.stderr.on('data', (d) => { viteLog += d })
+const stopVite = () => { try { process.kill(-vite.pid, 'SIGTERM') } catch {} }
+process.on('exit', stopVite)
+
+const served = await until(async () => (await fetch(WEB_URL).then((r) => r.text(), () => '')).includes('id="app"'), 30000)
+check(served, `the browser haven's dev server answers on ${webPort}`, viteLog)
+if (!served) { stopVite(); await env.close(); process.exit(1) }
+
+// ─── Sam, in a terminal ───────────────────────────────────────────────
+
+const sam = await signIn(env.port, 'sam')
+const term = terminal(API, sam.token, square)
+const { x: sx, y: sy } = square.spawn
+
+check(await until(() => term.screen().includes('j/k moves, Enter opens')), 'the terminal lists the square', term.screen())
+term.shell.stdin.write('\r')
+check(await until(() => term.at(sx, sy) === '@' && term.screen().includes('1 here')), 'Sam walks into the square', term.screen())
+
+const samX = sx + 4
+for (let x = sx + 1; x <= samX; x++) {
+  term.shell.stdin.write('\x1b[C')
+  await until(() => term.at(x, sy) === '@', 3000)
+}
+check(term.at(samX, sy) === '@', 'and four steps right', term.screen())
+
+// ─── Bea, in a browser tab ────────────────────────────────────────────
+
+const browser = await openChrome({ windowSize: '1400,1000' })
+
+/** What the tab draws on scene cells `x`..`x+width-1` of row `y`, read at each cell's center. */
+const tabCells = (x, y, width = 1) => browser.evaluate(`
+  const pre = document.querySelector('pre[data-art]')
+  if (!pre) return null
+  const box   = pre.parentElement
+  const lines = pre.textContent.split('\\n')
+  const cols  = Math.max(...lines.map((l) => l.length))
+  const r  = box.getBoundingClientRect()
+  const cw = r.width / cols
+  const lh = r.height / lines.length
+  let out = ''
+  for (let i = 0; i < ${width}; i++) {
+    const px = r.left + (${x} + i + 0.5) * cw
+    const py = r.top + (${y} + 0.5) * lh
+    const el = document.elementFromPoint(px, py)
+    if (el && pre.contains(el)) { out += lines[${y}]?.[${x} + i] ?? ' '; continue }
+    const fig = el?.closest('p')
+    if (fig && box.contains(fig)) {
+      const fr = fig.getBoundingClientRect()
+      out += fig.textContent[Math.floor((px - fr.left) / cw)] ?? ' '
+      continue
+    }
+    out += '?'
+  }
+  return out
+`)
+const tabText = () => browser.evaluate('return document.body.innerText')
+
+await browser.navigate(`${WEB_URL}/?nick=bea`)
+check(await until(async () => (await tabText()).includes('2 here') && (await tabText()).includes('· sam')),
+  "Bea's tab walks in through a signed login, two here, and names Sam", await tabText())
+check(await tabCells(sx, sy) === '@', "Bea's tab draws her own figure where a figure walks in", await tabCells(sx, sy))
+check(await tabCells(samX, sy) === 'S', "Bea's tab draws Sam's figure on the cell Sam walked to", await tabCells(samX - 2, sy, 5))
+check(await until(() => term.at(sx, sy) === 'B' && term.screen().includes('2 here') && term.screen().includes('· bea')),
+  "Sam's terminal draws Bea's figure where she walked in, and names her", term.screen())
+
+// ─── the art is one art ───────────────────────────────────────────────
+
+const shape = await browser.evaluate(`
+  const lines = document.querySelector('pre[data-art]').textContent.split('\\n')
+  return { rows: lines.length, cols: Math.max(...lines.map((l) => l.length)), top: lines[0], bottom: lines[lines.length - 1] }
+`)
+const artRows = square.picture()
+check(shape.rows === artRows.length && shape.cols === Math.max(...artRows.map((r) => r.length)),
+  `the tab draws the scene at ${shape.cols}×${shape.rows}, the terminal's size`, JSON.stringify(shape))
+const termTop    = cellOf(term.screen(), 0, 0, shape.cols, square)
+const termBottom = cellOf(term.screen(), 0, artRows.length - 1, shape.cols, square)
+check(shape.top.trimEnd() === termTop.trimEnd() && shape.bottom.trimEnd() === termBottom.trimEnd(),
+  "the tab's top and bottom rows of art are the terminal's", `tab:  ${shape.top}\nterm: ${termTop}\ntab:  ${shape.bottom}\nterm: ${termBottom}`)
+
+// A cell the palette colors and no clock moves, read for its color in the tab.
+const still = (() => {
+  for (let y = 0; y < artRows.length; y++)
+    for (let x = 0; x < artRows[y].length; x++) {
+      const a = square.look(x, y, 0)
+      if (a.fg && a.ch !== ' ' && square.look(x, y, 1e7).fg === a.fg) return { x, y, fg: a.fg }
+    }
+  return null
+})()
+const drawn = still && await browser.evaluate(`
+  const pre = document.querySelector('pre[data-art]')
+  const lines = pre.textContent.split('\\n')
+  const r = pre.parentElement.getBoundingClientRect()
+  const cw = r.width / Math.max(...lines.map((l) => l.length)), lh = r.height / lines.length
+  const el = document.elementFromPoint(r.left + (${still?.x} + 0.5) * cw, r.top + (${still?.y} + 0.5) * lh)
+  return getComputedStyle(el).color
+`)
+const rgb = (hex) => `rgb(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`
+check(still && drawn === rgb(still.fg), `the tab colors a cell from the scene's palette (${still?.x},${still?.y} ${still?.fg})`, String(drawn))
+
+const tick = square.tickOf()
+const art = () => browser.evaluate(`return document.querySelector('pre[data-art]').innerHTML`)
+const before = await art()
+check(!tick || await until(async () => await art() !== before, tick * 4), `and keeps it moving on the wall clock, every ${tick}ms`)
+
+// ─── Bea walks and speaks ─────────────────────────────────────────────
+
+// Left, away from Sam: a bubble is eight cells wide, and two that overlap
+// cover each other, so each line is read where only its own bubble is.
+const beaX = sx - 6
+for (let x = sx - 1; x >= beaX; x--) {
+  await browser.press('ArrowLeft')
+  await until(async () => await tabCells(x, sy) === '@', 3000)
+  await sleep(150)
+}
+check(await tabCells(beaX, sy) === '@', 'six ArrowLefts move Bea six cells in her tab', await tabCells(beaX - 1, sy, 8))
+check(await until(() => term.at(beaX, sy) === 'B' && term.at(sx, sy) !== 'B'),
+  "Sam's terminal sees Bea's figure move to the same cell", term.screen())
+
+await browser.type('hi sam')
+await browser.press('Enter')
+check(await until(() => term.at(beaX, sy - 1, 8) === '(hi sam)'),
+  "Bea's line shows as a bubble over her figure in Sam's terminal", term.screen())
+
+term.shell.stdin.write('hi bea')
+await until(() => term.screen().includes('hi bea'))
+term.shell.stdin.write('\r')
+check(await until(async () => await tabCells(samX, sy - 1, 8) === '(hi bea)'),
+  "Sam's line shows as a bubble over his figure in Bea's tab", await tabCells(samX, sy - 1, 8))
+
+check(await until(async () => (await tabText()).includes('Reload to walk in with it')),
+  'a server on another build than the page says so on the page (x-fjs-build)', await tabText())
+
+// ─── the key is the member ────────────────────────────────────────────
+
+const kept = await browser.evaluate(`
+  const db = await new Promise((r, j) => { const o = indexedDB.open('haven'); o.onsuccess = () => r(o.result); o.onerror = () => j(o.error) })
+  const keys = await new Promise((r) => { const q = db.transaction('keys').objectStore('keys').get('machine'); q.onsuccess = () => r(q.result) })
+  return keys?.publicKey ?? null
+`)
+check(typeof kept === 'string', "the tab keeps its key in IndexedDB, not in the page's storage", String(kept))
+
+await browser.navigate(`${WEB_URL}/`)
+check(await until(async () => (await tabText()).includes('2 here') && await tabCells(sx, sy) === '@'),
+  'a reload walks in again, with no nick asked for', await tabText())
+const beas = await env.system.member.findMany({ where: { nick: 'bea' } })
+check(beas.length === 1 && beas[0].publicKey === kept, 'and is the same member, by the same key', JSON.stringify(beas))
+
+// ─── the door ─────────────────────────────────────────────────────────
+
+/** Arrow keys from `from` to `to` over walkable cells, breadth first. */
+function route(scene, from, to) {
+  const key = (p) => `${p.x},${p.y}`
+  const prev = new Map([[key(from), null]])
+  const queue = [from]
+  const STEPS = [['ArrowLeft', -1, 0], ['ArrowRight', 1, 0], ['ArrowUp', 0, -1], ['ArrowDown', 0, 1]]
+  while (queue.length) {
+    const p = queue.shift()
+    if (p.x === to.x && p.y === to.y) break
+    for (const [k, dx, dy] of STEPS) {
+      const n = { x: p.x + dx, y: p.y + dy }
+      if (prev.has(key(n)) || scene.doorAt(n.x, n.y) || !scene.walkable(n.x, n.y)) continue
+      prev.set(key(n), { p, k, n })
+      queue.push(n)
+    }
+  }
+  const keys = []
+  for (let at = prev.get(key(to)); at; at = prev.get(key(at.p))) keys.unshift({ k: at.k, n: at.n })
+  return keys
+}
+
+const door = square.doors[0]
+const inFront = { x: door.x, y: door.y + 1 }
+const path = route(square, square.spawn, inFront)
+let walked = path.length > 0
+for (const { k, n } of path) {
+  await browser.press(k)
+  if (!await until(async () => await tabCells(n.x, n.y) === '@', 3000)) { walked = false; break }
+  await sleep(120)
+}
+check(walked, `Bea walks ${path.length} steps to the left house's door in her tab`, await tabText())
+await browser.press('ArrowUp')
+check(await until(async () => (await tabText()).includes('The tavern · 1 here') && await tabCells(tavern.spawn.x, tavern.spawn.y) === '@'),
+  'stepping onto it opens the tavern in the tab, Bea inside its door', await tabText())
+check(await until(() => term.screen().includes('The square · 1 here') && !term.screen().includes('· bea')),
+  "Sam's terminal sees the square without her", term.screen())
+
+check(browser.errors.length === 0, 'the tab threw nothing and logged no error', browser.errors.join('\n'))
+
+// ─── done ─────────────────────────────────────────────────────────────
+
+term.shell.stdin.write('\x03')
+const code = await Promise.race([term.exited, sleep(5000).then(() => 'timeout')])
+if (code === 'timeout') term.shell.kill('SIGKILL')
+await browser.close()
+stopVite()
+await env.close()
+
+console.log(failed ? `\n${failed} failed` : '\nall passed')
+process.exit(failed ? 1 : 0)

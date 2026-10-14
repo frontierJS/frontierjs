@@ -248,7 +248,7 @@ port in 7100–8199, an upper bound.
     cannot disagree about the number. B makes every hand-made `git worktree add` a
     chore that teaches nothing, and C is the parent's ports, the silent wrong answer.
 - ~~**Does `fli check` flag a port literal in a test dir?**~~ **Answered 2026-10-10 (`FJS-D859`): A — yes, `error`, landing after the 52 files move, so `structure` fails the next one.** A number in 7000–8999
-  (8500–8509 excepted) beside `localhost`, `listen` or `port` in a `test/` or
+  (5500–5509 excepted) beside `localhost`, `listen` or `port` in a `test/` or
   `tests/` directory, in an app with a `db/`.
   - **A** — yes, `error`, landing after the 52 files move, so `structure` fails the
     next one.

@@ -12,10 +12,10 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { pathToFileURL } from 'url'
-import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port,
-         GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
+import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port, ENV, CAT,
+         GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort, guiPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
          readLock, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
          portStatus, parseDockerPorts } from '../core/ports.js'
@@ -554,7 +554,7 @@ describe('readsPortVar — would this surface follow a slot', () => {
 })
 
 describe('the global tooling block', () => {
-  test('every assigned tool is inside 8500-8509', () => {
+  test('every assigned tool is inside 5500-5509', () => {
     for (const [name, p] of Object.entries(GLOBAL)) {
       expect(p, name).toBeGreaterThanOrEqual(GLOBAL_RANGE.first)
       expect(p, name).toBeLessThanOrEqual(GLOBAL_RANGE.last)
@@ -566,27 +566,31 @@ describe('the global tooling block', () => {
     expect(new Set(ps).size).toBe(ps.length)
   })
 
-  test('the formula refuses the whole block, not just the taken slots', () => {
-    // Reserving only what is currently assigned hands the next free slot to an
-    // app, and the collision surfaces as a tool that has quietly moved.
-    for (let serviceId = 0; serviceId <= 9; serviceId++) {
-      expect(() => port('tooling', { env: 'dev', projectId: 0, serviceId }))
-        .toThrow(/reserved for global tooling/)
+  test('no project port in any env can land in the block', () => {
+    // A tool has no project, so its digit is not an env: the formula cannot
+    // hand an app a number a tool already answers on.
+    for (const env of Object.keys(ENV)) {
+      for (const category of Object.keys(CAT)) {
+        for (let projectId = 0; projectId <= 9; projectId++) {
+          for (let serviceId = 0; serviceId <= 9; serviceId++) {
+            expect(isReservedToolingPort(port(category, { env, projectId, serviceId }))).toBe(false)
+          }
+        }
+      }
     }
   })
 
-  test('an app that is not project 0 may still take a tooling port', () => {
-    expect(port('tooling', { env: 'dev', projectId: 1 })).toBe(8510)
+  test('dev tooling for project 0 is an ordinary slot', () => {
+    expect(port('tooling', { env: 'dev', projectId: 0 })).toBe(8500)
   })
 
-  test('test and prod tooling are not reserved — nobody types those', () => {
-    expect(port('tooling', { env: 'test', projectId: 0 })).toBe(7500)
-    expect(port('tooling', { env: 'prod', projectId: 0 })).toBe(9500)
+  test('a tool decodes as global, not as an env', () => {
+    expect(decode(GLOBAL.haven)).toMatchObject({ env: 'global', category: 'tooling', serviceId: 5 })
   })
 
   test('a free slot in the block is reserved but not assigned', () => {
-    expect(isReservedToolingPort(8509)).toBe(true)
-    expect(isGlobalPort(8509)).toBe(false)
+    expect(isReservedToolingPort(5509)).toBe(true)
+    expect(isGlobalPort(5509)).toBe(false)
     expect(isGlobalPort(GLOBAL.devtools)).toBe(true)
   })
 })
@@ -664,5 +668,38 @@ describe('parseDockerPorts — what docker ps published', () => {
   test('a range expands, and an unpublished container contributes nothing', () => {
     const out = 'a\timg\t0.0.0.0:9000-9001->9000-9001/tcp\nb\timg\t3306/tcp\n'
     expect(parseDockerPorts(out).map(r => [r.port, r.container])).toEqual([[9000, 9000], [9001, 9001]])
+  })
+})
+
+describe('where fli gui listens', () => {
+  test('outside a project there is no env, so it is the global slot', () => {
+    expect(guiPort(null)).toBe(GLOBAL.gui)
+  })
+
+  test('in a project it is that project\'s tooling port for the env', () => {
+    const root = mkdtempSync(join(tmpdir(), 'gui-'))
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'basecamp' }))
+      expect(guiPort(root)).toBe(8520)
+      expect(guiPort(root, { env: 'test' })).toBe(7520)
+      expect(guiPort(root, { env: 'prod' })).toBe(9520)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+})
+
+describe('a scaffolded app\'s gui takes its slot', () => {
+  test('two scaffolded apps get the gui beside their own web port', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gui-slot-'))
+    const lockFile = join(dir, 'sessions.lock')
+    try {
+      const a = join(dir, 'a'), b = join(dir, 'b')
+      for (const r of [a, b]) { mkdirSync(r); writeFileSync(join(r, 'package.json'), JSON.stringify({ name: basename(r) })) }
+      writeFileSync(lockFile, JSON.stringify({ [a]: { env: 'dev', slot: 0 }, [b]: { env: 'dev', slot: 1 } }))
+      expect(guiPort(a, { lockFile })).toBe(8500)
+      expect(guiPort(b, { lockFile })).toBe(8501)
+      // A registered project owns its tens digit and has no slot to add.
+      writeFileSync(join(b, 'package.json'), JSON.stringify({ name: 'basecamp' }))
+      expect(guiPort(b, { lockFile })).toBe(8520)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

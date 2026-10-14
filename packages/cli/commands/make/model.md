@@ -38,14 +38,7 @@ flags:
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 
-// Regular English plurals only, matching Sierra's registry in reverse.
-// Irregulars are not guessed: `fli make:resource Person --service people`.
-const servicePlural = (model) => {
-  const a = model.charAt(0).toLowerCase() + model.slice(1)
-  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
-  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
-  return a + 's'
-}
+const { servicePlural } = await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 // ─── The stanza ───────────────────────────────────────────────────────────────
 // Litestone's scalars are String, Int, Float, Boolean, DateTime, Bytes, Json and

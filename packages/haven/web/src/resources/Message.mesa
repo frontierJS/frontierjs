@@ -1,0 +1,8 @@
+<script module>
+// src/resources/Message.mesa — a line said in a room. A bubble is the newest
+// one per member, so a scene loads a room's lines newest first and the live
+// store places each pushed line at the top.
+import { createResource } from '@frontierjs/sierra/resource'
+
+export const messages = createResource('messages', { model: 'Message' })
+</script>
