@@ -6,7 +6,7 @@ dated: 2026-10-13
 
 # Idea — Haven: a place in the terminal anyone with `fli` installed can walk into
 
-**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phases 6–9 — exploration, a Haven that lives, inhabitants, building and play — are proposed and none is started.** Dated 2026-10-13. The
+**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phases 6–9 — exploration, a Haven that lives, inhabitants, building and play — are proposed and none is started. The deploy is the last step (10.1, by the owner), and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
 probe below is now `packages/mesa/test/terminal/specs/haven.spec.mjs`; everything
 past Phase 0 is argument. Do not cite this file as describing behavior — see
 `VERIFYING.md`.
@@ -244,8 +244,16 @@ exercised end to end (3.2). The hosted Haven is Phase 10.
   of mesa, so a terminal app declares it, and Haven now does. Publishing to
   npm is the owner's call, after use.
 - [~] 3.1a The deploy — moved to 10.1, the last step (owner, 2026-10-14).
-- [ ] 3.2 The mod standing, a ban exercised end to end.
-- [ ] 3.3 The history pane in the tavern, and what `forgetting.md` says about retention.
+- [ ] 3.2 The mod standing, a ban exercised end to end. Today only
+  `asSystem()` sets `Member.bannedAt` (`@guarded`, `db/schema.lite`); a mod
+  is a standing the gate grants, never a hook (Invariant 6). Proof: a drive
+  where a mod bans a member, and the banned member then reads an empty room
+  while an unbanned one beside it still sees the room (Haven's `CLAUDE.md` trap: a ban
+  answers `[]`, not 403).
+- [ ] 3.3 The history pane in the tavern, and Message retention.
+  `Message` says it is "removed only by retention" but declares none; the
+  `@@index([roomId, createdAt])` is already there for the pane. Read
+  `IDEAS/forgetting.md` and `FJS-D748` before picking a window.
 
 ### Phase 4 — Scenery
 
@@ -422,9 +430,10 @@ blocks it is made of: paint is RECOGNIZED, never typed at scene scale.
   editor (Vite) and wipes its state, so the history crosses in
   `sessionStorage`, kept only when the file is still the text it was saved
   with.
-- [ ] 5.4 The editor in VS Code. The same page in a webview from
-  `frontierjs-vscode`, opened from a scene file. Only once 5.7 is used enough
-  to want it beside the file.
+- [~] 5.4 The editor in VS Code — parked: it waits on 5.7 being used enough
+  to want it beside the file, and comes back as a new step at the end when
+  it is. The same page in a webview from `frontierjs-vscode`, opened from a
+  scene file.
 - [x] 5.5 The stage (`FJS-D997`). `web/src/stage.js` is `createStage({ slug,
   palette, spawn })`: a registry of claims — `stamp(name, x, y, cells,
   { floor })` answering a handle with `move` and `remove`, `door(x, y, to)`,
@@ -499,38 +508,40 @@ nobody has walked near is drawn blank.
 
 **The reading** (2026-10-14). Haven feels static because a scene is the
 screen: 97×26, all of it drawn at once, so there is nothing past the edge.
-Nothing in the drawing pipeline needs that to be true. `compose()` recognizes
-a scene once, `look()` answers one cell at a tick, and `at()` places a box on a
-cell, so a world larger than the screen is a slice and an offset. The 26-row
+Nothing in the drawing pipeline needs that to be true. A stage's size is its
+claims' extent (`web/src/stage.js`, 5.5), `stage.look()` answers one cell at a
+tick, and `at()` places a box on a cell, so a world larger than the screen is a
+slice and an offset. The 26-row
 cap in Haven's traps is the VIEWPORT's, from `--frame`'s 100×30, and stays;
 a scene's art is bounded only by the server's `MAX_CELL` (255) in `api/src/rooms.ts`.
 FJS-D985's "never a forked world" holds: both targets show the same viewport.
 
-- [ ] 6.1 The camera. A scene's art may exceed 97×26; `Scene.mesa` draws the
+- [ ] 6.1 The camera. A stage may exceed 97×26; `Scene.mesa` draws the
   viewport's slice of it, and the camera follows the figure with a deadzone
   (about 8 columns and 4 rows from an edge) so it pans rather than jitters.
-  `paint()` takes the camera as an offset, `at(x - cam.x, y - cam.y)` places a
+  `paint(stage)` takes the camera as an offset, `at(x - cam.x, y - cam.y)` places a
   figure, and a figure or bubble outside the slice is not drawn. A speaker off
   the edge is a marker on the edge facing them, so a line is never lost.
   `scenes.test.js`'s rules are unchanged; a drive walks past the first edge.
 - [ ] 6.2 Borders. The square opens onto a road, the docks and the woods, each
-  its own scene. Crossing a border cell is a door with no
-  `n`: the client walks into the next scene at the matching cell on its
-  facing edge. Needs Q8. Measure the reconnect at a border, since a door hides
+  its own scene and its own Room (`FJS-D990`). A border is a `<Door>` run
+  along an edge: the client walks into the next scene at the matching cell on
+  its facing edge. Measure the reconnect at a border, since a door hides
   it behind a scene change and a border cannot.
 - [ ] 6.3 Light and fog. A figure sees a radius around itself, line of sight
   cast over `walkable`; a cell seen before and out of sight now is drawn dim,
   a cell never seen is blank. A palette entry with `light: r` is a source —
   the lamps, the hearth, the tavern's candles — so a lit corner is seen from
   across the room and the tavern's back corners are dark. A pure function
-  beside `look()` (`litAt(scene, x, y, from, tick)`), so both targets and a
+  over the stage beside `look()` (`litAt(stage, x, y, from, tick)`), so both targets and a
   `--frame` agree; the terminal drive reads characters, so it reads the blank.
 - [ ] 6.4 The map. `m` draws every scene this machine has seen, at one glyph
-  per few cells, with the figure's position marked. Needs Q9.
+  per few cells, with the figure's position marked. What a machine has seen
+  is kept on that machine (`FJS-D991`).
 - [ ] 6.5 Secrets. A cellar under the tavern behind a door in the floor, a
   plank in the woods' fence, a door that is there only at night (7.2). A
-  hidden door is one the spawn's flood fill in `scenes.test.js` reaches only
-  through another hidden door, so the test learns the word rather than
+  hidden door is `<Door hidden>`, and one the spawn's flood fill in
+  `scenes.test.js` reaches only through another hidden door is allowed, so the test learns the word rather than
   excusing the cell.
 
 ### Phase 7 — Haven lives
@@ -542,7 +553,8 @@ footprints, and a line said at one end of the square does not reach the other.
 - [ ] 7.1 Hearing by distance. A line said is heard within a radius of the
   speaker, `!` before it shouts to the whole scene, and `/w <nick>` whispers
   to one member. This is what makes walking over to someone mean something.
-  Needs Q10.
+  The server filters who hears a line, and a whisper is a Message row with a
+  `toId` and a read policy (`FJS-D992`).
 - [ ] 7.2 Night and day. The wall clock the pacers already share runs a cycle
   (an hour of real time is a day, to start): a palette entry gains a night
   `fg`, the lamps light at dusk, and 6.3's radius shrinks after dark. Nothing
@@ -554,7 +566,7 @@ footprints, and a line said at one end of the square does not reach the other.
 - [ ] 7.4 Footprints. Where somebody walked in the last few minutes, fading.
   An empty square at 3am still says somebody went into the woods ten minutes
   ago. A move is never a row, so this is the room's memory of moves and not
-  a model. Needs Q11.
+  a model: the API keeps the recent moves per room in memory (`FJS-D993`).
 - [ ] 7.5 The notice board. A board on the square's wall: stand beside it, press
   `e`, read what is pinned and pin a line. This is the part of Haven that
   works when nobody is on. A first cut is the board's own Room and its
@@ -576,12 +588,14 @@ and the crier announces a new member's first walk-in.
   drawn from the figure's own recent cells on every screen, so nothing is
   sent for it.
 - [ ] 8.3 Haven's crier: a system member who announces a member's first
-  walk-in, a release, a push to `main`. Its lines are Messages said through
-  `asSystem()`; where a push comes from is Q13's question.
-- [ ] 8.4 The barkeep, an agent behind the bar: "ask the barkeep about row
-  policies" makes Haven the framework's help desk, through `mcpPlugin()`
-  with the gate as its permission model. A librarian in the square is the same
-  agent with `docs/` on its shelf. Needs Q12.
+  walk-in and a release. Its lines are Messages said through `asSystem()`.
+  The repo's state reaches Haven only at deploy (`FJS-D996`), so a push to
+  `main` is announced when the deploy that carries it lands, not live.
+- [ ] 8.4 The barkeep, behind the bar: "ask the barkeep about row policies"
+  makes Haven the framework's help desk. No model (`FJS-D994`): it answers
+  from a search over `docs/`, `VOCABULARY.md` and the package READMEs,
+  quoting the passage and its path, and counts the questions it could not
+  answer, since that count is what would justify a model later.
 
 ### Phase 9 — Building and play
 
@@ -598,11 +612,12 @@ drew stands in a scene where the other walks into it.
   the Litestone quarry, the Junction crossroads, the Mesa workshop, the
   Caravan stables. Inside, a wall reads its `PROJECT_STATE.md`; a red CI run
   is a storm over its roof and a release is a festival day in the square.
-  Walking the quarter is walking the repo. Needs Q13.
+  Walking the quarter is walking the repo. The state is baked in at deploy:
+  `PROJECT_STATE.md` headlines and the last CI result (`FJS-D996`).
 - [ ] 9.3 Plots. A member claims an empty lot, places their house in 5.7's
   editor, and the house is a Room they own — a row of placements and a
   palette, never a stranger's glyphs (`FJS-D995` as `FJS-D997` amends it). Strangers drawing art is a
-  moderation surface, so this waits on 3.2's mod standing. Needs Q14.
+  moderation surface, so this waits on 3.2's mod standing.
 
 ### Phase 10 — Hosted
 

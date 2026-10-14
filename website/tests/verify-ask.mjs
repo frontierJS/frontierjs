@@ -124,6 +124,15 @@ process.stdin.on('end', async () => {
       .map(c => ({ type: c.source.media_type, width: Buffer.from(c.source.data, 'base64').readUInt32BE(16) }))))
   }
   say({ type: 'system', subtype: 'init', session_id: '5acea7bb-3850-44cf-81dc-97688510acda' })
+  // Make a plan: the one path the prompt names, written whole.
+  const plan = (prompt.match(/^Write a plan at \\\`([^\\\`]+)\\\`/) || [])[1]
+  if (plan) {
+    create(plan, '---\\nid: PLAN\\nstatus: proposed\\n---\\n\\n### Phase 0 — Groundwork\\n\\n- [ ] 0.1 Read the leads page\\n')
+    await sleep(300)
+    say({ type: 'assistant', message: { content: [{ type: 'text', text: 'Wrote the plan.' }] } })
+    say({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0, num_turns: 2 })
+    return
+  }
   if (!prompt.includes('content/routes/index.mesa')) {
     say({ type: 'result', subtype: 'error_during_execution', is_error: true })
     return
@@ -353,6 +362,32 @@ try {
       check('the undo put the route back byte for byte', file() === SOURCE)
       await until(`!document.querySelector('#note') && document.querySelector('#title')`, 10_000, 'the page lost the section again')
     }
+
+    // ── Make a plan: a goal with nothing to pick ─────────────────────────
+    // The Send button is found by its words: the header's toggle carries the
+    // same name as its label.
+    const sendPlan = `[...document.querySelectorAll('button')].find(b => b.textContent === 'Make a plan')`
+    const PLAN = join(ROOT, 'PLAN.md')
+    await evaluate(`${button('Make a plan')}.click(); return true`)
+    check('Make a plan turns the box into a goal, and Send into Make a plan',
+      await evaluate(`return ${button('Make a plan')}.getAttribute('aria-pressed') === 'true' && !!document.querySelector('textarea[placeholder^="What should the new feature do"]') && !!${sendPlan}`))
+    check('the picks and the chips step aside while planning',
+      await evaluate(`return !document.querySelector('[data-pick]')?.offsetParent && ![...document.querySelectorAll('button')].some(b => b.textContent === 'Behavior' && b.offsetParent)`))
+    const doneBefore = await count('/^done\\b/gm')
+    await evaluate(`document.querySelector('textarea[placeholder^="What should the new feature do"]').focus(); return true`)
+    await type('A leads export')
+    await evaluate(`${sendPlan}.click(); return true`)
+    if (await until(`${panelText}.includes('The plan is at PLAN.md') && (${panelText}.match(/^done\\b/gm) || []).length > ${doneBefore} && ${undoOf()}`, 10_000, 'the plan run ended naming the plan, with an undo offered')) {
+      check('the plan was written at the root', existsSync(PLAN) && readFileSync(PLAN, 'utf8').includes('### Phase 0'))
+      const argv = JSON.parse(readFileSync(join(ROOT, 'bin', 'argv.json'), 'utf8'))
+      check('in a fresh session that may edit that one file', !argv.includes('--resume') && JSON.stringify(argv.filter(a => a.startsWith('Edit('))) === JSON.stringify([`Edit(/${PLAN})`, `Edit(/${PLAN}/**)`]), argv.filter(a => /^(Edit|--resume)/.test(a)))
+      const log = await evaluate(`return ${panelText}`)
+      check('the panel shows the goal and the new file all added', log.includes('Make a plan: A leads export') && /PLAN\.md\s+\(new file\)\n\+ ---/.test(log))
+      await undo()
+      check('the undo removed the plan', !existsSync(PLAN))
+    }
+    await pickAt('#title')
+    check('a pick goes back to asking', await evaluate(`return ${button('Make a plan')}.getAttribute('aria-pressed') === 'false' && !!document.querySelector('textarea[placeholder^="What should change"]') && !!${button('Send')}`))
 
     // ── another writer in the file since: their line stays ────────────────
     if (await ask(`Change this heading's text to exactly: ${AFTER}`)) {

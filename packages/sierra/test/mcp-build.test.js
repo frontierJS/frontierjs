@@ -2,8 +2,8 @@
  * test/mcp-build.test.js — what an MCP App view IS, and what the loop writes.
  *
  * The claims a host settles — the iframe loads the document, a call leaves as
- * `tools/call`, nothing reaches the app's origin — are plan step 4.3's drive
- * (`IDEAS/agent-client-ui.md`). What can be settled here decides what gets
+ * `tools/call`, nothing reaches the app's origin — are `example`'s
+ * `verify:mcp-view`. What can be settled here decides what gets
  * built at all: which files are views, what the two generated modules say and
  * in which order, that a built view is ONE file with its runtime and its
  * stylesheet inside, and what a failed or stale build leaves in a directory

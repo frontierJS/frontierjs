@@ -11,7 +11,7 @@
  * and so is the handshake that opens a view (`startView()`).
  *
  * What only a real host and a real `/mcp` settle — the plugin accepting these
- * arguments, a save landing — is plan step 4.3's drive.
+ * arguments, a save landing — is `example`'s `verify:mcp-view`.
  */
 
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'

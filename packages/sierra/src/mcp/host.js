@@ -10,7 +10,8 @@
  *
  * Written here rather than imported from `@modelcontextprotocol/ext-apps`,
  * whose `App` is ~420 kB with its SDK and zod inside every view. Its host half,
- * `AppBridge`, is the oracle this is graded against (plan step 4.3).
+ * `AppBridge`, is the oracle this is graded against (`example`'s
+ * `verify:mcp-view`).
  */
 
 /**

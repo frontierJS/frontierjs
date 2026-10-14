@@ -88,20 +88,28 @@ export const PLAN_SHAPE = [
 
 export const BUILD_PLAN_RULES = [
   'You are writing a plan, not carrying it out. Build nothing, edit no source file; the one file you write is the plan.',
-  'Before writing Phase 0, read the `CLAUDE.md` of each package the goal touches and the realm hazards skill under `.claude/skills/` that covers it, and check `DECISIONS.md` for a ruling that already settles part of the goal.',
   'Each step names the files it touches and the test or drive that proves it. A step that cannot name its proof is not a step yet.',
 ].join('\n\n')
 
+// What to read before Phase 0. A checkout of this workspace has its packages'
+// CLAUDE.md, the realm skills and DECISIONS.md; an app asked from the page has
+// none of them and may not read its own root, so it reads the guides and the
+// schema — sent after the other, it spends its turns on denied reads.
+export const PLAN_READ_REPO = 'Before writing Phase 0, read the `CLAUDE.md` of each package the goal touches and the realm hazards skill under `.claude/skills/` that covers it, and check `DECISIONS.md` for a ruling that already settles part of the goal.'
+export const PLAN_READ_APP  = 'Before writing Phase 0, read `db/schema.lite` and the guide below for each package the goal touches. Nothing else outside the Vite root is readable here, so do not look for one.'
+
 /** Build plan: the goal, the shape, and the one path the session may write.
  *  From the ask panel it also carries the framework guides an app reads in
- *  place of this repo's skills, and the page it was asked from. */
-export function buildPlanPrompt({ goal, path, page = null, guides = [], today = new Date().toISOString().slice(0, 10) } = {}) {
+ *  place of this repo's skills — a list, even an empty one, is the app's
+ *  case — and the page it was asked from. */
+export function buildPlanPrompt({ goal, path, page = null, guides = null, today = new Date().toISOString().slice(0, 10) } = {}) {
   const asked = String(goal ?? '').trim().slice(0, 8000)
   return [
     `Write a plan at \`${path}\` for the goal below. Today is ${today}.`,
     BUILD_PLAN_RULES,
+    guides ? PLAN_READ_APP : PLAN_READ_REPO,
     PLAN_SHAPE,
-    guides.length ? guideList(guides) : null,
+    guides?.length ? guideList(guides) : null,
     page ? `Asked from the page: ${String(page).slice(0, 300)}` : null,
     `The goal:\n\n${asked}`,
   ].filter(Boolean).join('\n\n')

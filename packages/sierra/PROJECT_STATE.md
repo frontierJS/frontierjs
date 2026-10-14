@@ -44,9 +44,9 @@ them off a diff.
 
 ## What is NOT built
 
-- **An MCP App view a host can run.** `build/mcp-build.js` builds one document
-  per resource file and `test/mcp-build.test.js` proves the shape with a real build; what is not
-  there is the rest of what makes it a screen: the relay is built (`mcpApp()`,
+- **An MCP App view in a REAL host.** `build/mcp-build.js` builds one document
+  per resource file and `test/mcp-build.test.js` proves the shape with a real build;
+  the relay is built (`mcpApp()`,
   plan step 3.1, every call a `tools/call` to the host, and a refusal thrown
   with the `code` and `data` HTTP would have, 3.2), and the handshake opens a
   view (`startView()`, 3.3: `ui/initialize`, the tool's row read through the
@@ -54,9 +54,12 @@ them off a diff.
   generated form locked over a gate only the application writes; 3.5, no
   live pushes — no socket, so `stale` never fires; 3.6, a `@@sync` write is
   never held there and a `field` save carries its base as `_meta`; 3.7, the
-  record is the tool's answer, `detailQuery` or not), but no drive loads a view in a host (4.3). `fli mcp:build`
-  (→ `sierra mcp --out`) writes them to `api/dist/mcp/` — 36 over `example`,
-  476–477 kB each — and none of them has run in a real host yet.
+  record is the tool's answer, `detailQuery` or not), and a submit is
+  dispatched in place, since a frame without `allow-forms` drops the browser's
+  (`FJS-2849`). `fli mcp:build` (→ `sierra mcp --out`) writes them to
+  `api/dist/mcp/` — 36 over `example` — and `example`'s `verify:mcp-view` runs
+  the Product view in ext-apps' reference `AppBridge` on a third origin (4.3).
+  None has run in Claude or an inspector yet (4.4).
   `IDEAS/agent-client-ui.md` § The plan is the order.
 
 - **A detail-view generator.** The table and filter bar are generated —

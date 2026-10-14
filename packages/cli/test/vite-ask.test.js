@@ -933,7 +933,7 @@ say({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.5 }
 // Each guardrail is a sentence the prompt must keep: losing *do only this step*
 // runs the plan in one session, losing *commit nothing* commits for the owner.
 
-import { buildPlanPrompt, stepPrompt, nextHandoff, HANDOFF_MAX } from '../core/ask-claude.js'
+import { buildPlanPrompt, stepPrompt, nextHandoff, HANDOFF_MAX, PLAN_READ_APP, PLAN_READ_REPO } from '../core/ask-claude.js'
 
 describe('plan prompts', () => {
   const step  = { id: '2.2', title: 'Rotate and flip', box: 'open', phase: '2' }
@@ -951,6 +951,8 @@ describe('plan prompts', () => {
     expect(p).toContain('dated:` today')
     expect(p).not.toContain('one guide per package')
     expect(p).not.toContain('Asked from the page')
+    expect(p).toContain(PLAN_READ_REPO)
+    expect(p).not.toContain(PLAN_READ_APP)
   })
 
   test('from the ask panel it carries the guides an app reads, and the page', () => {
@@ -960,6 +962,9 @@ describe('plan prompts', () => {
     expect(p).toContain('- /r/sierra/AGENTS.md — routes and resources')
     expect(p).toContain('Asked from the page: http://localhost:8010/leads')
     expect(p.indexOf('Asked from the page')).toBeLessThan(p.indexOf('The goal:'))
+    expect(p).toContain(PLAN_READ_APP)
+    expect(p).not.toContain('.claude/skills/')
+    expect(buildPlanPrompt({ goal: 'export', path: '/app/PLAN.md', guides: [] })).toContain(PLAN_READ_APP)
   })
 
   test('stepPrompt carries the step, its phase and every guardrail', () => {

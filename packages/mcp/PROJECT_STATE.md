@@ -22,8 +22,10 @@ inside the API that is already running; `projectTools()` is what it serves.
   `FJS-D955`): `<root>/<Model>.html` is served at `ui://<server>/<Model>` and
   every one-row tool of that model carries `_meta.ui.resourceUri`, both read
   off one per-request set after `narrow` and the key's scopes — pinned at
-  every rung a session stands on and for a scoped key (plan 4.1), and over
-  `example`'s built views by `verify:mcp` (plan 4.2). `ui` absent is
+  every rung a session stands on and for a scoped key (plan 4.1), over
+  `example`'s built views by `verify:mcp` (plan 4.2), and a view's handshake,
+  read and save run through ext-apps' reference `AppBridge` by
+  `verify:mcp-view` (plan 4.3). `ui` absent is
   text-only tools. A tool answer carries its object in `structuredContent`,
   the value the socket would have handed a client, beside the text, and a
   refusal carries junction's `errorBody()` there — the body HTTP answers the
@@ -36,9 +38,10 @@ inside the API that is already running; `projectTools()` is what it serves.
   (`@frontierjs/sierra/mcp`, plan 3.1): its per-verb arguments restate
   `invoke()`'s, so a change to what a tool takes moves sierra's
   `test/mcp-relay.test.js` too.
-- **185 tests over eleven files, plus a drive.** `example`: `verify:mcp` is the only
+- **185 tests over eleven files, plus two drives.** `example`: `verify:mcp` is the only
   place a real MCP client connects, the only one over an app with no `app.db`, and
-  the only one serving views `fli mcp:build` wrote. `test/projection.test.ts` is the rules against a
+  the only one serving views `fli mcp:build` wrote; `verify:mcp-view` is the
+  only one running a view in a host. `test/projection.test.ts` is the rules against a
   real `.lite` fixture; `test/plugin.test.ts` boots a real Junction app over a
   real Litestone client on a real port and speaks JSON-RPC to it.
 

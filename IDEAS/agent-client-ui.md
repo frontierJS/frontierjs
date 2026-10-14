@@ -140,7 +140,7 @@ in the plugin rather than in a directory.
    host that refuses every message but `tools/call`. The projection half is
    `packages/mcp/test/plugin.test.ts` § every fixture standing (4.1), and
    over a real app's built views `example`'s `verify:mcp` (4.2); the browser
-   drive is owed (4.3), and until it exists that half reads `none`.
+   half is `example`'s `verify:mcp-view` (4.3).
 
 **Adjudications in tension (§ IV):** *batteries vs. smallness* — `mcp` is a
 battery, and `resources/read` plus the relay adapter land inside it, severable
@@ -1116,7 +1116,7 @@ Done when: the three tests below are green in CI and the drive is a row in
   refusal is `FJS-D955`'s (*ergonomics vs. strictness*, what it destroys is
   the surface in production) and building views on every `bun run api` costs
   each drive the build. Tier: Assessment; nothing in `DECISIONS.md` is overridden.
-- [ ] 4.3 A browser drive over mesa's `test/browser/drive.mjs` harness. The fake
+- [x] 4.3 A browser drive over mesa's `test/browser/drive.mjs` harness. The fake
   host serves from a SECOND origin, as the spec requires of a host and its
   sandbox (`widget/serve.js` is already the cross-origin shape), with the iframe
   under `sandbox="allow-scripts allow-same-origin"`. It answers `ui/initialize`
@@ -1124,6 +1124,71 @@ Done when: the three tests below are green in CI and the drive is a row in
   method. Asserts: the form renders the row, a patch round-trips, the iframe's
   failed-request count is zero and no request reaches the app's origin. Lands
   in `example` as a drive.
+  Done 2026-10-14 as `example`'s `verify:mcp-view` (bun, Chrome; 29 checks).
+  **The fake host is ext-apps' `AppBridge`**, bundled at start with
+  `Bun.build` (`web/test/fixtures/mcp-host/host.js`) and built with no MCP
+  client, so it answers `ui/initialize` itself, `tools/call` through a handler
+  posting to the host page's own origin — where the drive's MCP client, the
+  host's server half, makes the call against the real `/mcp` — and refuses
+  every other request `-32601`, which the drive asks from the frame. That is
+  3.1's oracle, and it is why no fake is written: a host restating the spec
+  agrees with a view that misread it the same way. `@modelcontextprotocol/ext-apps`
+  is an `example` devDependency at the version `@frontierjs/mcp` pins.
+  **Three origins**: the API, the host page (7117) and the sandbox (7118),
+  which serves the bytes `resources/read` answered under the CSP the listing's
+  `_meta.ui.csp` asks for — `connect-src 'none'`, since the plugin declares no
+  domain. Over the Product view at the administrator's standing: the row
+  `products_get` answered fills the form with no `tools/call`; the frame
+  opens with `ui/initialize` and sends nothing outside the four a view may;
+  its size is reported and the frame sized to it; `hostContext.theme: 'dark'`
+  is `theme-dark` on `<html>` and a `host-context-changed` to light moves it;
+  a description typed through the input pipeline and saved with a trusted
+  click leaves as ONE `products_patch` carrying `description` and nothing else
+  of the record, and the app holds it; the frame's only request is its
+  document, by Chrome per frame and by the sandbox server's own log; no
+  request of any page reaches the API; nothing fails and nothing is logged.
+  The harness is mesa's `src/drive.js` (`openChrome`), which `drive.mjs` runs
+  on — an app's drive is a script, as `verify:widget` is. **One thing the step
+  did not know: every save in a view was dead** (`FJS-2849`). Without
+  `allow-forms` the browser aborts a submission before the `submit` event, so
+  the kit's `<Form>` never heard its button, and Chrome said so only in its
+  `Log` domain, which no console listener reads — the drive now reads it, and
+  it is where a CSP refusal is said too. `startView` installs `submitInPlace()`
+  (`@frontierjs/sierra/mcp`): a submit button's click is cancelled and the
+  `submit` event dispatched on its form, with native validation asked first
+  where a form wants it; Enter in a field arrives as the same click, asserted
+  by a probe that stops the event before `<Form>` writes. Red with the call
+  removed: 7 of 29 fail — the five save rows, Enter, and the browser's log.
+  This answers three `none`s left above: 2.3's wire, 3.1's cross-package half
+  and 3.3's method strings. 3.4's locked form RENDERED and 3.6's merge from a
+  view stay `none`: the drive opens one view, Product, which is neither.
+  **The nine, answered late** — after green, the fork in the fix taken
+  without one first. Origin — the CSP is read off the listing's own
+  `_meta.ui.csp`, the expected row off the tool's answer, the URI off the
+  tool's pointer; the submit is the form's own `submit` event, dispatched.
+  Concept — none; *host* and *sandbox* are the spec's, and the one
+  dependency is `@frontierjs/mcp`'s own at its pin, in `example` alone. A
+  second drive rather than a section of `verify:mcp`, which needs no browser
+  — `verify:widget` beside `verify:cart` is the split. Complexity — one
+  listener in the view runtime; a fixture page and a drive, which builds the
+  views a second time. Predictability — a
+  view's form submits as a page's does whatever flags the host grants;
+  `verify:widget`'s shape, one origin more. Derived — nothing typed but the
+  administrator's email and the theme pair the example declares. Owner — the
+  view runtime owns *runs in a host's sandbox*, as 2.3's `persist: false`
+  does, and the kit's `<Form>` is unchanged; the drive's host is ext-apps'.
+  Boundary — the listener reads a submit button's `form` and dispatches on it,
+  knowing no field. Failure — a host withholding `allow-forms` no longer
+  matters; one withholding `allow-scripts` runs no view at all, which is the
+  spec's floor. Silence — must stay true: *a view saves in a frame granted
+  `allow-scripts allow-same-origin` and nothing else, through the reference
+  host, with no request of its own* — fails in `example`: `verify:mcp-view`;
+  *a submit button's click is one submit, its activation cancelled* —
+  `packages/sierra/test/mcp-relay.test.js` § submitInPlace. Adjudication:
+  *paved road vs. workaround* — the fix in the owner of the condition rather
+  than a `type="button"` and a click handler in the kit, which every page
+  that does have `allow-forms` would carry for one host's sake. Tier:
+  Assessment; nothing in `DECISIONS.md` is overridden.
 - [ ] 4.4 A real host, by hand: the MCPJam inspector or Claude Desktop. Dated in
   `packages/mcp/PROJECT_STATE.md`, not asserted.
 

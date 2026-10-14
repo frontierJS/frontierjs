@@ -103,7 +103,11 @@ src/
                          against it — and mounted as `record`; size reported
                          on a ResizeObserver; teardown unmounts. A refusal, a
                          cancel or an unspellable read is said IN THE PAGE,
-                         since a sandbox shows no console.
+                         since a sandbox shows no console. `submitInPlace()`
+                         dispatches a form's submit itself: a frame without
+                         `allow-forms` drops the browser's before `<Form>`
+                         hears it, and says so only in Chrome's own log
+                         (`FJS-2849`).
                          `mountView`, the mount it ends in; `resourceIn(module, name)`, the file's
                          Resource picked off its exports for the generated form
                          (known by `save` + `formFields`, two objects refused);
@@ -902,7 +906,7 @@ rather than picking a service method.
 prerender, islands or static-safety. **`bun run test:widgets` for anything
 touching `src/widget/` or `build/widget-build.js`**; `test/mcp-build.test.js` runs a
 REAL build of one resource file for `build/mcp-build.js`, `test/mcp-relay.test.js`
-the relay's tool table and the handshake against a stand-in parent window, and no drive loads a view in a host yet (plan step 4.3) — it builds the fixture and
+the relay's tool table and the handshake against a stand-in parent window, and `example`'s `verify:mcp-view` runs a built view in ext-apps' reference host on a third origin. `test:widgets` builds the fixture and
 drives a plain host page in Chrome, which is the only place shadow isolation,
 custom element upgrade and a delegated click inside a shadow root are decidable.
 **`bun run test:installable` for `postbuild/manifest.js`** — the grader restates

@@ -293,6 +293,9 @@ const PROTOCOL_VERSION = '2026-01-26'
  * host's sandbox shows the person no console: a refused tool call, a cancelled
  * one, a read the relay cannot spell, a file with no Resource.
  *
+ * A form's submit is dispatched by the view itself (`submitInPlace`), since a
+ * host may withhold `allow-forms`.
+ *
  * @param {Function} View  the component the build mounts
  * @param {{ name?: string, module: Record<string, unknown> }} options
  *   `module` is the resource file's exports, which the row is read through
