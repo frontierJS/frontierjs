@@ -56,8 +56,9 @@
  *   tree goes through `up`, which steps from the dialog to that place, so its
  *   events still bubble through the component that wrote it.
  * - A box with no background leaves the cells beneath it showing, and a
- *   background is a color. A modal dialog blanks its own cells instead, and
- *   the backdrop sets the dim bit on everything drawn before it.
+ *   background is a color. A modal dialog, and a box whose class a browser
+ *   paints opaque (`opaque`), blank their own cells instead, and the
+ *   backdrop sets the dim bit on everything drawn before it.
  * - The engine fits a column of boxes into its parent's height by shrinking
  *   them, so a page taller than the screen painted its rows over each other.
  *   A mount goes into the renderer's document (`documentOf`), a box the size
@@ -65,7 +66,7 @@
  */
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind, pickerHidden } from './terminal/tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind, pickerHidden, opaque } from './terminal/tags.js'
 import { htmlEntitiesToText } from './entities.js'
 
 // A terminal is a running client with no DOM: `$.onMount` runs and a watch is
@@ -408,10 +409,7 @@ class DialogBox extends BoxRenderable {
   // Blank under a modal dialog: the page behind it is drawn first and would
   // show through every cell the dialog leaves empty.
   renderBefore = function (buffer) {
-    if (!this.__home) return
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) buffer.setCell(this.screenX + x, this.screenY + y, ' ', CLEAR, CLEAR, 0)
-    }
+    if (this.__home || this.__opaque) blank.call(this, buffer)
   }
 }
 
@@ -446,6 +444,14 @@ class DetailsBox extends BoxRenderable {
 }
 
 const CLEAR = RGBA.fromValues(0, 0, 0, 0)
+
+/** A box's `renderBefore` that writes a space to each of its cells, so
+ *  nothing drawn before it shows through one its children leave empty. */
+function blank(buffer) {
+  for (let y = 0; y < this.height; y++) {
+    for (let x = 0; x < this.width; x++) buffer.setCell(this.screenX + x, this.screenY + y, ' ', CLEAR, CLEAR, 0)
+  }
+}
 
 // ─── the current renderer ─────────────────────────────────────────────
 
@@ -668,8 +674,10 @@ export function element(tag, attrs = {}) {
  * The one owner of an attribute on a terminal node, static or live: the
  * emitter hands a static attribute to `element()`, which routes it here, and
  * a live one arrives from a render effect. `null` and `false` remove, as on
- * the DOM path; a name with no terminal meaning (`class`, `aria-*`) is kept
- * on `__attrs` and paints nothing. An `href` makes an `<a>` a link (`link`).
+ * the DOM path; a name with no terminal meaning (`aria-*`) is kept on
+ * `__attrs` and paints nothing. A `class` paints nothing either, except that
+ * one a browser paints opaque blanks the box (`opaque`). An `href` makes an
+ * `<a>` a link (`link`).
  *
  * `value` is the control's current text, the way the DOM property is: the
  * engine emits `input` when its value is written, which a DOM program write
@@ -735,6 +743,7 @@ export function set_attribute(node, name, value) {
     if (!present && node.__home) leaveTopLayer(node)
     return
   }
+  if (name === 'class') { paintOpaque(node); return }
   if (name === 'href' && node.__tag === 'a') { link(node, present); return }
   if (name === 'size' && node instanceof Field) { node.minWidth = parseInt(value, 10) > 0 ? parseInt(value, 10) : 20; return }
   if (name === 'disabled') {
@@ -743,6 +752,23 @@ export function set_attribute(node, name, value) {
     node.focusable = node.__canFocus && !present
     if (present && node.focused) node.blur()
   }
+}
+
+/**
+ * `class:name={on}` on a terminal node. It paints nothing, as the `class`
+ * attribute paints nothing, except a name `opaque` reads, which are the only
+ * ones the emitter sends here.
+ */
+export function toggle_class(node, name, on) {
+  (node.__toggled ??= new Set())[on ? 'add' : 'delete'](name)
+  paintOpaque(node)
+}
+
+/** Blank `node` or stop, from its `class` and its `class:` names together. */
+function paintOpaque(node) {
+  if (!(node instanceof BoxRenderable)) return
+  node.__opaque = opaque([node.__attrs.class ?? '', ...(node.__toggled ?? [])].join(' '))
+  if (!(node instanceof DialogBox)) node.renderBefore = node.__opaque ? blank : undefined
 }
 
 /**

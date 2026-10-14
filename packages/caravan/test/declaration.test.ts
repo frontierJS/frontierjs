@@ -292,3 +292,32 @@ describe('registrations — the declaration, not the clock', () => {
     expect(q.registrations()[0]!.retryDelay).toEqual([1000, 2000])
   })
 })
+
+// ─── What loading says ───────────────────────────────────────
+
+describe('the load line', () => {
+  const loadLines = async (env: string | undefined): Promise<string[]> => {
+    const seen: string[] = []
+    const real = console.log
+    const was = process.env.FLI_DEV
+    console.log = (...a: unknown[]) => { seen.push(String(a[0])) }
+    if (env === undefined) delete process.env.FLI_DEV
+    else process.env.FLI_DEV = env
+    try {
+      await makeQueue({ jobsDir: CRON_FIXTURES }).start()
+    } finally {
+      console.log = real
+      if (was === undefined) delete process.env.FLI_DEV
+      else process.env.FLI_DEV = was
+    }
+    return seen.filter(l => l.startsWith('[Caravan] Loaded'))
+  }
+
+  it('is printed on an ordinary boot', async () => {
+    expect(await loadLines(undefined)).toEqual(['[Caravan] Loaded 1 job handler'])
+  })
+
+  it('is left out under fli dev, whose summary is the boot', async () => {
+    expect(await loadLines('1')).toEqual([])
+  })
+})

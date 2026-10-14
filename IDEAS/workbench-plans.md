@@ -136,11 +136,29 @@ path that `fli plan` parses, shown in a Plan tab.
     and a review where the pin asks for one.
   - Red and not this step's: basecamp typecheck 13 against a baseline of 12, and
     `db/schema.d.ts` / generated-migration tests — the dirty litestone parser.
-- [ ] 1.2 The Build plan form: goal, path with the default for the checkout
+- [x] 1.2 The Build plan form: goal, path with the default for the checkout
   (`IDEAS/<slug>.md` where `IDEAS/` exists, else `PLAN.md`), runs `askArgv`
   in edit mode on that path.
-- [ ] 1.3 The Plan tab renders phases, steps and boxes, the first open box
+  - The form IS the Plan tab while the pin has no plan, and *New plan* opens it
+    again over one. The pins answer carries `hasIdeas` (beside `checkable`); the
+    slug is toolbelt's `slug(goal, { max: 48 })`, and the path follows the goal
+    until it is typed in.
+  - The drive is `verify:provision` § The Plan tab, on a checkout of its own so
+    the plan chat and file reach nothing the preview cuts. Its stand-in claude
+    writes a fixture plan to the path the prompt names and records its argv:
+    the rule is `Edit(//<abs path>)` — Claude Code's absolute form — and the
+    mode is `dontAsk`, never `bypassPermissions`.
+- [x] 1.3 The Plan tab renders phases, steps and boxes, the first open box
   marked.
+  - Reread whenever the card's rev moves while the tab shows, so a box ticked
+    mid-run is drawn. `next` is `aria-current="step"` with a *next* badge, the
+    tab reads `Plan · <id>` (`Plan ✓` with no open box), findings fold under
+    their step, a dropped step is struck with its reason, and the unruled `Q`s
+    are a warning callout — answering them is 4.3.
+  - Red and not this step's: `verify:provision` stops at *Start app put no port
+    on the card* in the Run tab, three runs of three (`FJS-2831`).
+  - Phase 1's *Done when* — a real build against `example/` — is not run: it
+    spends up to `ASK_BUDGET_USD` and is the owner's to start.
 
 ### Phase 2 — Go
 
@@ -178,6 +196,9 @@ letter in the tab, and Next resumes.
 - [ ] 5.1 Several plans per pin.
 - [ ] 5.2 A *needs you* notification (item 3 of `workbench.md`).
 - [ ] 5.3 A commit affordance off the Diff tab.
+- [ ] 5.4 Build plan in the ask panel (`vite-ask-client.js`) — a *Make a plan*
+  button beside the pick, because a pick is an element on the page and a new
+  feature has none to select.
 
 ## Open questions (owner)
 

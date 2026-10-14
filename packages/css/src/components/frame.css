@@ -238,6 +238,29 @@
   }
 }
 
+/*
+ * ── Sidebar footer — the last block, pinned to the bottom ────────────
+ *
+ *   <nav class="sidebar" aria-label="Main">
+ *     <ul class="navlist">…</ul>
+ *     <div class="sidebar-footer">the signed-in person, sign out</div>
+ *   </nav>
+ *
+ * The Sidebar becomes a flex column only when it holds one, and only then:
+ * `.sidebar > :last-child` would push a lone nav list to the bottom of
+ * every full-height Sidebar, and a column on every Sidebar would change
+ * the layout of the ones that never asked. The padding is the least gap
+ * a short Screen leaves between the links and the footer.
+ */
+.sidebar:has(> .sidebar-footer) {
+  display:        flex;
+  flex-direction: column;
+}
+.sidebar-footer {
+  margin-block-start:  auto;
+  padding-block-start: var(--space-lg);
+}
+
 /* ── Screen — the routed page body ───────────────────────────────────
  * Owns the space between its children, as Card, Container and Pane do;
  * that rule is in cards.css, one rule for the four of them. */
@@ -344,6 +367,19 @@
    * but this rule should not be the thing that decides that.
    */
   .sidebar-toggle {
+    display: revert;
+  }
+}
+
+/*
+ * A rail opens under the pointer or the keyboard's focus, and a touch
+ * screen has neither (a tap is not :focus-visible), so at md and up it
+ * shows its icons and never their names. The toggle reaches the drawer,
+ * where they are written out. A `title` per link would not: a touch
+ * screen draws no tooltip, and a mouse has already opened the rail.
+ */
+@media (hover: none) {
+  .shell:has(> .sidebar.rail) .sidebar-toggle {
     display: revert;
   }
 }

@@ -102,6 +102,10 @@
   function onClickAway(e) {
     if (!open) return
     if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
+    // A row asking `data-confirm` is answered in a panel outside this one.
+    // Pressing its confirm button must not unmount the row, or the re-fired
+    // click lands on a detached element and the guarded handler never runs.
+    if (panelEl?.querySelector('[data-confirm]') && e.target?.closest?.('[data-confirm-panel]')) return
     closeMenu()
   }
 

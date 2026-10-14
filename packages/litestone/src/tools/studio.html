@@ -2577,13 +2577,19 @@ function getFKCols() {
   const model = schema.models.find(m => m.name === currentTable)
   if (!model) return {}
   const map = {}
-  for (const field of model.fields) {
-    const rel = field.attributes.find(a => a.kind === 'relation')
-    if (rel?.fields) {
-      // rel.fields is the FK column, rel.references is the target column
-      const fkName = Array.isArray(rel.fields) ? rel.fields[0] : rel.fields
-      map[fkName] = { table: field.type.name, col: Array.isArray(rel.references) ? rel.references[0] : rel.references }
-    }
+  // rel.fields are the FK columns, rel.references the target columns. A column
+  // two relations share links to the narrower one: `scheduleId` is a Schedule
+  // before it is half of a (scheduleId, shiftId) key.
+  const rels = model.fields
+    .map(field => ({ field, rel: field.attributes.find(a => a.kind === 'relation') }))
+    .filter(r => r.rel?.fields)
+    .sort((a, b) => [].concat(a.rel.fields).length - [].concat(b.rel.fields).length)
+  for (const { field, rel } of rels) {
+    const fks  = [].concat(rel.fields)
+    const refs = [].concat(rel.references ?? [])
+    fks.forEach((fkName, i) => {
+      if (!(fkName in map)) map[fkName] = { table: field.type.name, col: refs[i] }
+    })
   }
   return map
 }
@@ -7357,7 +7363,7 @@ async function openRowDetail() {
       <strong>${esc(p.table)}</strong>
       <span class="text-muted">via ${esc(p.fk)} = ${esc(String(p.value))}</span>
       ${p.row ? `<span>${esc(p.row.name ?? p.row.displayName ?? p.row.email ?? p.row.title ?? ('#' + p.value))}</span>` : '<span class="cell-null">missing</span>'}
-      <button class="btn ghost cell-fk" onclick="drawerJump('${esc(p.table)}', ${esc(JSON.stringify(String(p.value)))})">open →</button>
+      ${p.jump == null ? '' : `<button class="btn ghost cell-fk" onclick="drawerJump('${esc(p.table)}', ${esc(JSON.stringify(String(p.jump)))})">open →</button>`}
     </li>`).join('') : none
   const childRows = d.children.length ? d.children.map(c => `
     <li class="list-row">

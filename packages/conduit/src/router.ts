@@ -106,7 +106,10 @@ export class Router {
         return new HttpTransport(descriptor, this.credentials, httpOpts)
 
       case 'websocket': {
-        const ws = new WebSocketTransport(descriptor, this.credentials)
+        const ws = new WebSocketTransport(descriptor, this.credentials, {
+          timeout_ms:         httpOpts.timeout_ms,
+          max_response_bytes: httpOpts.max_response_bytes,
+        })
         // Guarded: this fires from a reconnect timer with no caller to
         // catch it, so a throwing observer would surface as an unhandled
         // rejection rather than a failed request.

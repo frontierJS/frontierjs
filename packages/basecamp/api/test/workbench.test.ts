@@ -430,6 +430,68 @@ describe('the plan', () => {
     expect(plan.parsed!.steps.map((s: { id: string, box: string }) => [s.id, s.box])).toEqual([['0.1', 'done'], ['0.2', 'open']])
   })
 
+  const PLAN = [
+    '# Widget', '', '## Plan', '',
+    '### Phase 0 — Groundwork', '', 'Goal: a widget.', 'Done when: it renders.', '',
+    '- [x] 0.1 Draw it', '  - drawn', '- [ ] 0.2 Ship it', '',
+  ]
+
+  test('Go refuses with no plan, an unwritten one, a finished one, and while a run is live', async () => {
+    const { bin, seen } = fakeClaude({ sleep: 300 })
+    const wb = createWorkbench({ dir: join(tmp, 'wb-go-refuse'), bin })
+    const dir = repo('go-refuse')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    expect(await wb.go(id)).toEqual({ refused: expect.stringContaining('has no plan') })
+
+    await wb.buildPlan(id, { goal: 'x', path: 'PLAN.md' })
+    expect(await wb.go(id)).toEqual({ refused: expect.stringContaining('working') })
+    await until(async () => !wb.getPin(id)!.pid)
+    expect(await wb.go(id)).toEqual({ refused: expect.stringContaining('nothing is written at PLAN.md') })
+
+    writeFileSync(join(dir, 'PLAN.md'), PLAN.join('\n').replace('- [ ] 0.2', '- [x] 0.2'))
+    expect(await wb.go(id)).toEqual({ refused: expect.stringContaining('every step of PLAN.md is done') })
+    expect(seen()).toHaveLength(1)
+    expect(wb.getPin(id)!.plan!.steps).toEqual({})
+  })
+
+  test('Go: the first open box\'s step prompt in the shown chat, recorded with the registers\' high-water marks', async () => {
+    const { bin, seen } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-go'), bin })
+    const dir = repo('go')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'go', registers: { prefix: 'GO' } }))
+    writeFileSync(join(dir, 'ISSUES.md'), [
+      '# Issues', '', '## S3 — medium', '',
+      '| Id | Area | Title | Status | Verified | Detail |', '| --- | --- | --- | --- | --- | --- |',
+      '| <a id="go-041"></a>GO-041 | api | **A thing** | open | 2026-10-01 | — |', '',
+    ].join('\n'))
+    writeFileSync(join(dir, 'DECISIONS.md'), '# Decisions\n\n## GO-D7 — A ruling\n')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    const built = await wb.buildPlan(id, { goal: 'ship the widget', path: 'PLAN.md' })
+    if (!('chat' in built)) throw new Error(built.refused)
+    await until(async () => existsSync(bin + '.seen') && !wb.getPin(id)!.pid)
+    writeFileSync(join(dir, 'PLAN.md'), PLAN.join('\n'))
+
+    const before = Date.now()
+    expect(await wb.go(id)).toEqual({ step: '0.2', chat: built.chat })
+    await until(async () => seen().length === 2 && !wb.getPin(id)!.pid)
+
+    const run = seen()[1]
+    expect(run.argv[run.argv.indexOf('--resume') + 1]).toBe(SESSION)
+    expect(run.argv.some((a: string) => a.startsWith('Edit('))).toBe(false)
+    expect(run.input).toContain('Carry out step 0.2 of the plan at `PLAN.md`: Ship it')
+    expect(run.input).toContain('Phase 0 — Groundwork, done when: it renders.')
+    expect(run.input).toContain('Commit nothing.')
+
+    const step = wb.getPin(id)!.plan!.steps['0.2']
+    expect(step).toEqual({ chat: built.chat, startedAt: expect.any(String), registerHigh: { issue: 41, decision: 7 } })
+    expect(Date.parse(step.startedAt)).toBeGreaterThanOrEqual(before - 1000)
+    expect((await wb.readPlan(id))!.steps).toEqual({ '0.2': step })
+  })
+
   test('Build plan waits for a run in the checkout, like any message to another chat', async () => {
     const { bin } = fakeClaude({ sleep: 400 })
     const wb = createWorkbench({ dir: join(tmp, 'wb-plan-busy'), bin })

@@ -121,6 +121,15 @@ export function nextId(doc) {
   return `${doc.prefix}-${String(max + 1).padStart(width, '0')}`
 }
 
+/** The highest issue and decision numbers the registers hold, 0 where there
+ *  are none. A row filed after this read is numbered above both, which is how
+ *  a workbench step's own rows are told from what was there before it. */
+export function registerHigh(root) {
+  const doc = readRegisters(root)
+  if (!doc.prefix) return { issue: 0, decision: 0 }
+  return { issue: Number(nextId(doc).slice(doc.prefix.length + 1)) - 1, decision: nextDecisionNumber(root) - 1 }
+}
+
 // ─── where the row goes ───────────────────────────────────────────────────────
 
 // The first line under the separator of the table below the `##` heading the

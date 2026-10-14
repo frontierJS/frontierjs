@@ -298,6 +298,56 @@ export function composeWrapper(pageFile, layoutChain, { elementChildren = true }
     `  export let staticPage = null\n  if (staticPage) _setStaticPage(staticPage)\n</script>\n${template}\n`
 }
 
+const esc = (v) => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+
+// `meta`, `links` and `bodyAttrs` carry values read from a row, so every
+// value is escaped. A NAME is written bare, and one holding a space or `=`
+// would add an attribute of the caller's choosing -- refused, not stripped.
+const attrs = (obj) => Object.entries(obj ?? {})
+  .filter(([, v]) => v !== undefined && v !== null && v !== false)
+  .map(([k, v]) => {
+    if (!/^[a-zA-Z_:][-a-zA-Z0-9_:.]*$/.test(k))
+      throw new Error(`[Sierra] document: '${k}' is not an attribute name`)
+    return v === true ? ` ${k}` : ` ${k}="${esc(v)}"`
+  }).join('')
+
+/**
+ * The `document` keys as HTML. One serializer for the prerendered page and for
+ * the `index.html` shell (`document-shell.js`), so the two cannot escape differently.
+ */
+export function documentParts({
+  lang = '', htmlClass = '',
+  meta = [], links = [], jsonLd = [], bodyClass = '', bodyAttrs = {}, head = '', bodyEnd = '',
+} = {}) {
+  const metaTags = (meta ?? []).map((m) => `\n  <meta${attrs(m)}>`).join('')
+  const relTags = (links ?? []).map((l) => `\n  <link${attrs(l)}>`).join('')
+
+  // JSON inside <script> ends at the first `</script`, and `<!--` changes how
+  // the parser reads the rest, so `<` is written as its JSON escape: the text
+  // parses back to the same value and can no longer close the element.
+  const ldTags = [].concat(jsonLd ?? [])
+    .map((d) => `\n  <script type="application/ld+json">${JSON.stringify(d).replace(/</g, '\\u003c')}</script>`)
+    .join('')
+
+  // The theme class belongs on <html> and not on <body>, because that is where
+  // the switcher writes it — `theme/index.js` says why the element is not a
+  // knob, and a prerendered page has to agree with the script that will move it
+  // later. Baked on <body> instead, the two are different elements: the
+  // switcher sets <html class="theme-elite">, the file still says
+  // <body class="theme-default">, and every token both of them define resolves
+  // to the baked one for the whole page. The switch changes nothing a person
+  // can see and there is no error (`FJS-501`).
+  return {
+    htmlAttr: (lang ? ` lang="${esc(lang)}"` : '') + (htmlClass ? ` class="${esc(htmlClass)}"` : ''),
+    tags: metaTags + relTags + ldTags,
+    head: head ? `\n  ${head}` : '',
+    bodyAttr: (bodyClass ? ` class="${esc(bodyClass)}"` : '') + attrs(bodyAttrs),
+    bodyEnd: bodyEnd ? `\n${bodyEnd}` : '',
+  }
+}
+
 /**
  * Wrap rendered body HTML in a document.
  *
@@ -312,33 +362,7 @@ export function wrapDocument(bodyHTML, {
   bodyClass = '', htmlClass = '',
   meta = [], links = [], jsonLd = [], bodyAttrs = {}, head = '', bodyEnd = '',
 } = {}) {
-  const esc = (v) => String(v ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-
-  // `meta`, `links` and `bodyAttrs` carry values read from a row, so every
-  // value is escaped. A NAME is written bare, and one holding a space or `=`
-  // would add an attribute of the caller's choosing -- refused, not stripped.
-  const attrs = (obj) => Object.entries(obj ?? {})
-    .filter(([, v]) => v !== undefined && v !== null && v !== false)
-    .map(([k, v]) => {
-      if (!/^[a-zA-Z_:][-a-zA-Z0-9_:.]*$/.test(k))
-        throw new Error(`[Sierra] document: '${k}' is not an attribute name`)
-      return v === true ? ` ${k}` : ` ${k}="${esc(v)}"`
-    }).join('')
-
-  const metaTags = (meta ?? []).map((m) => `\n  <meta${attrs(m)}>`).join('')
-  const relTags = (links ?? []).map((l) => `\n  <link${attrs(l)}>`).join('')
-
-  // JSON inside <script> ends at the first `</script`, and `<!--` changes how
-  // the parser reads the rest, so `<` is written as its JSON escape: the text
-  // parses back to the same value and can no longer close the element.
-  const ldTags = [].concat(jsonLd ?? [])
-    .map((d) => `\n  <script type="application/ld+json">${JSON.stringify(d).replace(/</g, '\\u003c')}</script>`)
-    .join('')
-
-  const rawHead = head ? `\n  ${head}` : ''
-  const rawBodyEnd = bodyEnd ? `\n${bodyEnd}` : ''
+  const parts = documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass, bodyAttrs, head, bodyEnd })
 
   // One <style id="mHASH"> per component when the renderer supplies the split,
   // rather than one anonymous blob.
@@ -367,18 +391,6 @@ export function wrapDocument(bodyHTML, {
     .map((href) => `\n  <link rel="stylesheet" href="${esc(href)}">`)
     .join('')
 
-  const bodyAttr = (bodyClass ? ` class="${esc(bodyClass)}"` : '') + attrs(bodyAttrs)
-
-  // The theme class belongs on <html> and not on <body>, because that is where
-  // the switcher writes it — `theme/index.js` says why the element is not a
-  // knob, and a prerendered page has to agree with the script that will move it
-  // later. Baked on <body> instead, the two are different elements: the
-  // switcher sets <html class="theme-elite">, the file still says
-  // <body class="theme-default">, and every token both of them define resolves
-  // to the baked one for the whole page. The switch changes nothing a person
-  // can see and there is no error (`FJS-501`).
-  const htmlAttr = htmlClass ? ` class="${esc(htmlClass)}"` : ''
-
   // Omitted rather than emitted empty. A `<meta name="description" content="">`
   // is a page telling a crawler it has no description, which is worse than
   // saying nothing and letting the crawler read the page.
@@ -387,14 +399,14 @@ export function wrapDocument(bodyHTML, {
     : ''
 
   return `<!DOCTYPE html>
-<html lang="${esc(lang)}"${htmlAttr}>
+<html${parts.htmlAttr}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title ?? '')}</title>${descTag}${metaTags}${relTags}${ldTags}${linkTags}${styleTag}${rawHead}
+  <title>${esc(title ?? '')}</title>${descTag}${parts.tags}${linkTags}${styleTag}${parts.head}
 </head>
-<body${bodyAttr}>
-${bodyHTML}${rawBodyEnd}
+<body${parts.bodyAttr}>
+${bodyHTML}${parts.bodyEnd}
 </body>
 </html>
 `

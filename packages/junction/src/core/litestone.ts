@@ -117,6 +117,7 @@ interface LitestoneClientApi {
   $transaction?: <T>(fn: (tx: LitestoneClient) => Promise<T>) => Promise<T>
   $schema?: unknown
   $claimsFor?: (principal: unknown) => Promise<Record<string, unknown>>
+  $search?: (q: string, opts?: { models?: string[]; limit?: number; offset?: number; prefix?: boolean }) => Promise<Array<Record<string, unknown>>>
   $rawDbs?: Record<string, unknown>
   $close?: () => void
 }

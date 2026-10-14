@@ -1147,7 +1147,11 @@ a host-page route change), and a script included twice produces one widget, not 
 ### The document around a prerendered page
 
 Sierra assembles it — Vite's HTML transform never runs on these files, so what
-`index.html` gives the SPA has to be stated here:
+`index.html` gives the SPA has to be stated here. **And only here:** Sierra applies
+the same `document` to `index.html` in dev and in the build, so the dev page carries
+what every built page does. An attribute stated in both — a body class in
+`document.bodyClass` and on `index.html`'s `<body>` — fails with both names
+(`FJS-D971`):
 
 - **The stylesheets the build emitted are linked automatically.** Without that a
   prerendered page carries every class name the app uses and none of the rules

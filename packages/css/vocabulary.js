@@ -645,11 +645,15 @@ const ANATOMY = {
   <header class="topbar">
     <button class="btn ghost square sidebar-toggle" aria-label="Open navigation" aria-expanded="false">&#9776;</button>
   </header>
-  <nav class="sidebar">&hellip;</nav>
+  <nav class="sidebar">
+    &hellip;
+    <div class="sidebar-footer">&hellip;</div>
+  </nav>
   <main class="screen">&hellip;</main>
 </div>`,
     parts: [
-      ['.sidebar-toggle', 'The control that reveals the Sidebar below 768px. The Shell decides when it exists; opening it is the app’s job', 'optional'],
+      ['.sidebar-footer', 'The last block of the Sidebar, pinned to the bottom of a full-height one: the signed-in person, sign out. A Sidebar holding one lays out as a column', 'optional'],
+      ['.sidebar-toggle','The control that reveals the Sidebar below 768px. The Shell decides when it exists; opening it is the app’s job', 'optional'],
     ],
   },
 

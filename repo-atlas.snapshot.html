@@ -1101,6 +1101,16 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 }
 
 
+.sidebar:has(> .sidebar-footer) {
+  display:        flex;
+  flex-direction: column;
+}
+.sidebar-footer {
+  margin-block-start:  auto;
+  padding-block-start: var(--space-lg);
+}
+
+
 .screen {
   grid-area: screen;
   padding:   var(--screen-pad);
@@ -1151,6 +1161,13 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 @media (max-width: 767px) {
   
   .sidebar-toggle {
+    display: revert;
+  }
+}
+
+
+@media (hover: none) {
+  .shell:has(> .sidebar.rail) .sidebar-toggle {
     display: revert;
   }
 }

@@ -1475,14 +1475,20 @@ export async function cmdStudio(cfg) {
           for (const f of model.fields) {
             const rel = f.attributes.find(a => a.kind === 'relation')
             if (!rel?.fields?.length) continue
-            const fk     = Array.isArray(rel.fields) ? rel.fields[0] : rel.fields
-            const refCol = (Array.isArray(rel.references) ? rel.references[0] : rel.references) ?? 'id'
-            if (row[fk] == null) continue
+            // A composite key names its parent by every pair, and a parent is
+            // `where`-d on all of them: one column alone is some other row.
+            const fks  = [].concat(rel.fields)
+            const refs = fks.map((_, i) => [].concat(rel.references ?? [])[i] ?? 'id')
+            if (fks.some(k => row[k] == null)) continue
+            const fk     = fks.join(', ')
+            const value  = fks.length === 1 ? row[fks[0]] : fks.map(k => row[k]).join(', ')
+            const target = activeDb.$schema.models.find(m => m.name === f.type.name)
+            const where  = Object.fromEntries(fks.map((k, i) => [refs[i], row[k]]))
             const targetAccessor = modelToAccessor(f.type.name)
-            try {
-              const parent = await tableDb[targetAccessor].findFirst({ where: { [refCol]: row[fk] }, withDeleted: true })
-              parents.push({ relation: f.name, table: f.type.name, fk, value: row[fk], row: parent })
-            } catch { parents.push({ relation: f.name, table: f.type.name, fk, value: row[fk], row: null }) }
+            let parent = null
+            try { parent = await tableDb[targetAccessor].findFirst({ where, withDeleted: true }) } catch {}
+            const targetId = target?.fields.find(x => x.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+            parents.push({ relation: f.name, table: f.type.name, fk, value, jump: parent?.[targetId] ?? (fks.length === 1 ? row[fks[0]] : null), row: parent })
           }
 
           // hasMany children — other models with a belongsTo FK pointing here
@@ -1492,10 +1498,12 @@ export async function cmdStudio(cfg) {
             for (const f of other.fields) {
               const rel = f.attributes.find(a => a.kind === 'relation')
               if (!rel?.fields?.length || f.type.name !== model.name) continue
-              const fk = Array.isArray(rel.fields) ? rel.fields[0] : rel.fields
+              const fks  = [].concat(rel.fields)
+              const refs = fks.map((_, i) => [].concat(rel.references ?? [])[i] ?? idField)
               try {
-                const count = await tableDb[modelToAccessor(other.name)].count({ where: { [fk]: row[idField] } })
-                children.push({ table: other.name, fk, count })
+                const where = Object.fromEntries(fks.map((k, i) => [k, row[refs[i]]]))
+                const count = await tableDb[modelToAccessor(other.name)].count({ where })
+                children.push({ table: other.name, fk: fks.join(', '), count })
               } catch {}
             }
           }

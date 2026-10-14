@@ -1,0 +1,24 @@
+<script>
+  // confirm-in-dropdown.mesa -- a destructive row of a DropdownMenu that
+  // confirms itself, the shape of an app screen's "⋯ → Delete".
+  import DropdownMenu    from '../../../components/overlay/DropdownMenu.mesa'
+  import DropdownItem    from '../../../components/overlay/DropdownItem.mesa'
+  import ConfirmProvider from '../../../components/overlay/ConfirmProvider.mesa'
+  import Button          from '../../../components/forms/Button.mesa'
+
+  let ran = []
+
+  const did = (what) => { ran = [...ran, what] }
+</script>
+
+<ConfirmProvider />
+
+<DropdownMenu>
+  {#snippet trigger()}
+    <Button id="more" variant="ghost">More</Button>
+  {/snippet}
+  <DropdownItem id="remove" tone="danger" data-confirm="Remove it?"
+                data-confirm-label="Remove" onclick={() => did('remove')}>Remove</DropdownItem>
+</DropdownMenu>
+
+<output id="ran">{ran.join('|')}</output>

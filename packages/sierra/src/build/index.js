@@ -30,7 +30,9 @@ import { markdownLayoutsPlugin } from './markdown-layouts.js'
 import { expandGlobs } from './glob-expand.js'
 import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
+import { documentShellPlugin } from './document-shell.js'
 import { fsAllowPlugin } from './fs-allow-plugin.js'
+import { widgetDevPlugin } from './widget-build.js'
 import { envFlagsPlugin } from './env-flags-plugin.js'
 import { askPlugin } from './ask-plugin.js'
 import { devlinePlugin } from './devline-plugin.js'
@@ -141,6 +143,9 @@ export function createSierraViteConfig(config = {}) {
     // and in dev this process IS the Node — so the page can be seen with its
     // data instead of correctly empty.
     if (config.dev?.staticData ?? true) sierraPlugins.push(staticDataPlugin(config, sierraContext))
+    // index.html carries what every prerendered page does, so a static app
+    // states `document` once rather than again in the shell.
+    if (target === 'static') sierraPlugins.push(documentShellPlugin(config))
     sierraPlugins.push(virtualSierraPlugin(config, sierraContext))
     // The island bundle is a second Vite build, so it needs its own plugin
     // instances — a factory, not the array. Reusing the live instances would
@@ -167,6 +172,9 @@ export function createSierraViteConfig(config = {}) {
   sierraPlugins.push(devtoolsPlugin(config))
   // Dev only: a linked checkout's worker files sit outside Vite's allow list (FJS-1601)
   sierraPlugins.push(fsAllowPlugin())
+  // Dev only: `virtual:sierra-widgets` embeds every widget, and a stylesheet
+  // goes to the shadow root instead of the document (FJS-1990)
+  if (target === 'widget') sierraPlugins.push(widgetDevPlugin(config.widgets))
 
   // `@` → the surface's own src/. A plugin rather than an alias entry below,
   // because the base is the Vite root and that is not known until the app's own

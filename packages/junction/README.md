@@ -1332,6 +1332,32 @@ const schema = jsonSchemaToJunctionSchema('Post', jsonSchema, 'create')
 // Returns a Junction Schema object — pass to createSchema()
 ```
 
+### One search across models — `searchService()`
+
+A palette that finds an issue, a comment and a project in one ranked list is
+one call to litestone's `db.$search` (`FJS-D970`), and `searchService` is its
+route. The mount names the models the palette holds; a caller may narrow that
+list and never widen it.
+
+```typescript
+import { searchService } from '@frontierjs/junction/search'
+
+app.services.register(searchService({ models: ['issue', 'comment', 'project'] }))
+```
+
+```
+GET /search?q=quasar                    every mounted model, ranked on one scale
+GET /search?q=quasar&models=issue       a subset; a model outside the mount is a 400 naming it
+GET /search?q=quasar&$limit=8           the limit is spent only on rows the caller may read
+```
+
+A hit is `{ model, id, title, sub, _rank, _snippet }`, unchanged from
+`$search`. The grade is the caller's client, so a hit is never a row the caller
+may not read. An empty `q` answers `[]`, the last word is a prefix, and a query
+key other than `q` and `models` is refused by name. Each mounted model declares
+`@@fts` and `@@label`; one that does not fails on the first call with
+litestone's own refusal. `name:` moves the route from `/search`.
+
 ---
 
 ## Transactions

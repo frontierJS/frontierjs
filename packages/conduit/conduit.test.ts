@@ -1495,6 +1495,105 @@ describe('WebSocket transport — auth on the upgrade', () => {
   })
 })
 
+// ─── WebSocket honors the per-target settings http honors (FJS-1727) ───
+
+describe('WebSocket transport — per-target settings', () => {
+  // Answers after `delayMs` with `body`; records the frames it was sent.
+  function wsReplier(opts: { delayMs?: number; body?: unknown } = {}) {
+    const frames: Record<string, any>[] = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(req, server) { return server.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+      websocket: {
+        message(ws, raw) {
+          const msg = JSON.parse(String(raw))
+          frames.push(msg)
+          setTimeout(() => ws.send(JSON.stringify({ id: msg.id, type: 'response', body: opts.body ?? { ok: true } })), opts.delayMs ?? 0)
+        }
+      }
+    })
+    return { frames, url: `ws://localhost:${server.port}`, stop: () => server.stop(true) }
+  }
+
+  it('timeout_ms bounds the request, and the answer says timeout', async () => {
+    const s = wsReplier({ delayMs: 400 })
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets(), { timeout_ms: 80 })
+    try {
+      const started = Date.now()
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      expect(result.error!.kind).toBe('timeout')
+      expect(Date.now() - started).toBeLessThan(350)
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('a request timeout_ms wins over the target\'s', async () => {
+    const s = wsReplier({ delayMs: 400 })
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets(), { timeout_ms: 5_000 })
+    try {
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy', timeout_ms: 80 })
+      expect(result.error!.kind).toBe('timeout')
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('max_response_bytes refuses an oversized answer as invalid_response', async () => {
+    const s = wsReplier({ body: { blob: 'x'.repeat(5_000) } })
+    const target = outpostTarget({ protocol: 'websocket', address: s.url })
+    const t = new WebSocketTransport(target, secrets(), { max_response_bytes: 1_000 })
+    try {
+      const result = await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      expect(result.error!.kind).toBe('invalid_response')
+      expect(result.error!.retryable).toBe(false)
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('the request frame carries headers, query and the idempotency key', async () => {
+    const s = wsReplier()
+    const target = outpostTarget({
+      protocol: 'websocket', address: s.url,
+      headers:     { 'X-Target': 'constant' },
+      idempotency: { header: 'PayPal-Request-Id' },
+    })
+    const t = new WebSocketTransport(target, secrets())
+    try {
+      await t.send({
+        target: target.id, method: 'POST', path: '/deploy',
+        headers: { 'X-Caller': 'one' },
+        query:   { tag: ['a', 'b'], page: 2, skip: undefined },
+        idempotency_key: 'key-1',
+      })
+      const f = s.frames[0]
+      expect(f.headers).toEqual({ 'x-target': 'constant', 'x-caller': 'one', 'paypal-request-id': 'key-1' })
+      expect(f.query).toEqual({ tag: ['a', 'b'], page: '2' })
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('idempotency.auto mints one key for a non-idempotent request', async () => {
+    const s = wsReplier()
+    const target = outpostTarget({ protocol: 'websocket', address: s.url, idempotency: { auto: true } })
+    const t = new WebSocketTransport(target, secrets())
+    try {
+      await t.send({ target: target.id, method: 'POST', path: '/deploy' })
+      await t.send({ target: target.id, method: 'GET', path: '/deploy' })
+      expect(s.frames[0].headers['idempotency-key']).toMatch(/^[0-9a-f-]{36}$/)
+      expect(s.frames[1].headers?.['idempotency-key']).toBeUndefined()
+    } finally { t.destroy(); s.stop() }
+  })
+
+  it('the router hands a target\'s resilience to its websocket transport', async () => {
+    const s = wsReplier({ delayMs: 400 })
+    const c = createConduit({ credentials: secrets() })
+    await c.register(outpostTarget({
+      id: 'ws:slow', protocol: 'websocket', address: s.url, resilience: { timeout_ms: 80 },
+    }))
+    try {
+      const result = await c.send({ target: 'ws:slow', method: 'POST', path: '/deploy' })
+      expect(result.error!.kind).toBe('timeout')
+    } finally { c.destroy?.(); s.stop() }
+  })
+})
+
 // ─── WebSocket connection lifecycle (§2.1, §2.2) ─────────────
 
 describe('WebSocket transport — connection lifecycle', () => {

@@ -39,15 +39,17 @@ const SETTLE_MS = 15000
  * @param {{root: string, runner: string, rows: {surface: string, script: string}[],
  *          env: object, echo: Function, onExit: Function,
  *          compact?: boolean, title?: string, settleMs?: number,
- *          columns?: number}} opts
+ *          columns?: number, onSummary?: Function}} opts
  * @returns {{ done: Promise<number>, restart: (opts?: {compact?: boolean}) => Promise<void>,
- *             readonly compact: boolean, frontUrl: () => string | undefined }}
+ *             readonly compact: boolean, readonly summarized: boolean,
+ *             frontUrl: () => string | undefined }}
  *   `done` resolves with the first non-zero exit code, or 0, when the surfaces
  *   exit on their own; a restart's stop does not resolve it.
  */
 export function runSurfaces({
   root, runner, rows, env, echo, onExit,
   compact = true, title = '', settleMs = SETTLE_MS, columns = process.stdout.columns,
+  onSummary = () => {},
 }) {
   const width = Math.max(...rows.map(r => r.surface.length))
   // A child's stdout is a pipe here, so vite and bun drop their color unless told.
@@ -131,12 +133,14 @@ export function runSurfaces({
     })
     last = 0; speaker = null
     for (const f of g.held.splice(0)) f()
+    g.printed = true
+    onSummary()
   }
 
   // ─── one generation of children ─────────────────────────────────────────────
 
   const start = (isCompact) => {
-    const g = { compact: isCompact, started: Date.now(), ready: new Map(), summarized: !isCompact, held: [], children: [], stopping: false, timer: null }
+    const g = { compact: isCompact, started: Date.now(), ready: new Map(), summarized: !isCompact, printed: !isCompact, held: [], children: [], stopping: false, timer: null }
     gen = g
     const childEnv = { ...baseEnv }
     if (isCompact) childEnv[DEV_ENV] = '1'
@@ -205,6 +209,8 @@ export function runSurfaces({
   return {
     done,
     get compact() { return gen.compact },
+    // Not `gen.summarized`, which is set before the first line of it is written.
+    get summarized() { return gen.printed },
     frontUrl: () => frontUrl(gen),
     async restart({ compact: next = gen.compact } = {}) {
       await stop(gen)

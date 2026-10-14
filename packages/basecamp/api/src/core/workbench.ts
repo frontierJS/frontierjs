@@ -66,7 +66,9 @@
 // A pin may carry a PLAN — a Phases-of-Steps file in the checkout (`FJS-D966`),
 // parsed by the cli's `parsePlan` on every read and never cached, because the
 // session edits it. Build plan writes it from a goal in a session that may edit
-// that one file and nothing else (`askArgv({ edit })`, `buildPlanPrompt`).
+// that one file and nothing else (`askArgv({ edit })`, `buildPlanPrompt`). Go
+// sends the first open box's `stepPrompt` into the shown chat and records the
+// step on the pin with the registers' high-water marks (`registerHigh`).
 //
 // A log can be megabytes (a verbose stream carries every tool result whole), and
 // the grid asks for status every second or two, so each log is read
@@ -303,12 +305,19 @@ type AskClaude = {
   readAskEvent:  (event: unknown) => Array<Record<string, any>>
   resumeCommand: (root: string, session: string) => string | null
   reviewPrompt:  (o: { request?: string }) => string
+  stepPrompt:    (o: { path: string, step: Record<string, any>, phase?: Record<string, any> | null }) => string
 }
 let askClaude: Promise<AskClaude> | null = null
 const loadAskClaude = () => askClaude ??= import('@frontierjs/cli/core/ask-claude.js') as Promise<AskClaude>
-type PlanMod = { parsePlan: (text: string, o?: { file?: string }) => Record<string, any> }
+type PlanMod = {
+  parsePlan: (text: string, o?: { file?: string }) => Record<string, any>
+  phaseOf:   (plan: Record<string, any>, step: Record<string, any>) => Record<string, any> | null
+}
 let planMod: Promise<PlanMod> | null = null
 const loadPlan = () => planMod ??= import('@frontierjs/cli/core/plan.js') as Promise<PlanMod>
+type FileMod = { registerHigh: (root: string) => PlanStep['registerHigh'] }
+let fileMod: Promise<FileMod> | null = null
+const loadFile = () => fileMod ??= import('@frontierjs/cli/core/file.js') as Promise<FileMod>
 
 /** A plan's path, relative to its checkout: a markdown file inside it. */
 export function planPathRefusal(input: unknown): string | null {
@@ -1000,6 +1009,31 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return { chat: chat.id, path }
   }
 
+  /** Go: the plan's first open box, sent into the shown chat. Refused while
+   *  any run is live rather than queued: the marks are read when the step
+   *  starts, and read under a run still filing they would hand its rows to
+   *  this step. */
+  async function go(id: string): Promise<{ step: string, chat: string } | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    if (!p.plan) return { refused: `${p.name} has no plan — Build plan writes one` }
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — Go starts the next step once it is done` }
+    const plan = await readPlan(id)
+    if (!plan?.parsed) return { refused: `nothing is written at ${p.plan.path} yet` }
+    const step = plan.parsed.next
+    if (!step) return { refused: `every step of ${p.plan.path} is done` }
+    const chat = chatIn(p)!
+    const [{ stepPrompt }, { phaseOf }, { registerHigh }] = await Promise.all([loadAskClaude(), loadPlan(), loadFile()])
+    const record: PlanStep = { chat: chat.id, startedAt: new Date().toISOString(), registerHigh: registerHigh(p.path) }
+    const sent = await send(id, stepPrompt({ path: p.plan.path, step, phase: phaseOf(plan.parsed, step) }), chat.id)
+    if ('refused' in sent) return sent
+    const now = getPin(id)!
+    updatePin(id, { plan: { ...now.plan!, steps: { ...now.plan!.steps, [step.id]: record } } })
+    return { step: step.id, chat: chat.id }
+  }
+
   // ─── follow-ups ───────────────────────────────────────────────────────
 
   /** After a run with nothing queued: the checks where the checkout has them,
@@ -1149,6 +1183,6 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
     send, stop, fresh, select, close, seen, check, review, fork, land, archive, archiveRefusal, recordOpened,
-    runnables, run, halt, output, readPlan, buildPlan,
+    runnables, run, halt, output, readPlan, buildPlan, go,
   }
 }

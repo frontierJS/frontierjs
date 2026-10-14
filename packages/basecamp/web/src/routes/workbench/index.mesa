@@ -25,6 +25,11 @@ title: Workbench
   // package.json scripts (api core/workbench-run.ts) -- and leaves it running
   // on the API's machine; what is up comes on the same poll.
   //
+  // The Plan tab is a Phases-of-Steps file in the checkout (fli's
+  // core/plan.js), reread whenever the card's rev moves while it shows. With
+  // no plan it is the Build plan form: a goal and a path, written by a new
+  // chat that may edit that one file.
+  //
   // A BRANCH is a pin forked from another (api core/workbench-branch.ts): a
   // worktree of its own, drawn right after its parent, with Land and Archive
   // where the parent has Fork.
@@ -36,6 +41,7 @@ title: Workbench
   // localStorage.
   import { ago }       from '../../datetime.js'
   import { markdownText } from '@frontierjs/toolbelt/markdown'
+  import { slug }      from '@frontierjs/toolbelt/inflect'
   import { workbench } from '../../resources/Workbench.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -144,6 +150,12 @@ title: Workbench
       for (const [key, open] of Object.entries(logOpen)) {
         const [id, row] = key.split(' ')
         if (open && shows(id, 'run') && (runOf(id, row)?.running || was[id]?.runs?.find(r => r.id === row)?.running)) refreshLog(id, row)
+      }
+      // The plan is read while its session writes it: the file is small and
+      // a box ticked mid-run is the progress worth showing.
+      for (const s of answer.status) {
+        const p = pins.find(x => x.id === s.id)
+        if (p && shows(s.id, 'plan') && planRev[s.id] !== s.rev) loadPlan(p, s.rev)
       }
       // A diff is not re-read while a run is still moving the tree under it.
       for (const s of answer.status)
@@ -378,6 +390,7 @@ title: Workbench
     if (!p.missing) out.push({ key: 'diff', label: diffs[p.id] ? `Diff · ${diffs[p.id].total}` : 'Diff' })
     if (!p.missing) out.push({ key: 'run', tone: serving(p.id).length ? 'success' : '',
                                label: serving(p.id).length ? `Run · ${serving(p.id).length} up` : 'Run' })
+    if (!p.missing) out.push({ key: 'plan', label: planLabel(p) })
     const c = status[p.id]?.checks
     if (c) out.push({ key: 'checks', tone: CHECKS_TONE[c.state],
                       label: checksLabel(c) + (c.drives ? ` · ${plural(c.drives, 'drive')} to run` : '') })
@@ -405,6 +418,7 @@ title: Workbench
     tabs = { ...tabs, [p.id]: key }
     if (key === 'diff')  loadDiff(p.id)
     if (key === 'run')   loadRunnables(p.id)
+    if (key === 'plan')  loadPlan(p)
     if (key === 'chat')  scrollToEnd(p.id)
   }
 
@@ -752,6 +766,70 @@ title: Workbench
     if (r.exit != null) return { tone: 'text-danger', text: `✗ exited ${r.exit}` }
     return { tone: 'text-muted', text: 'ended' }
   }
+
+  // ─── the Plan tab ────────────────────────────────────────────────────
+  // The position is the first open box (`next`), derived by the parser and
+  // marked here; nothing on this screen writes the file. Go runs that box in
+  // the shown chat, and the API records when.
+
+  let plans     = {}
+  let planDraft = {}
+  let building  = {}
+  let going     = {}
+  const planRev = {}
+
+  async function loadPlan(p, rev = status[p.id]?.rev) {
+    planRev[p.id] = rev
+    if (!p.plan) { plans = { ...plans, [p.id]: null }; return }
+    try { plans = { ...plans, [p.id]: await workbench.service.invoke('plan', p.id) } } catch (err) { error = `${p.name}: ${err.message}` }
+  }
+
+  const parsedOf = (id) => plans[id]?.parsed ?? null
+
+  function planLabel(p) {
+    const parsed = parsedOf(p.id)
+    if (!p.plan || !parsed) return 'Plan'
+    return parsed.next ? `Plan · ${parsed.next.id}` : 'Plan ✓'
+  }
+
+  // The path follows the goal until it is typed in; after that it is the
+  // owner's.
+  const defaultPlanPath = (p, goal) => p.hasIdeas ? `IDEAS/${slug(goal, { max: 48 }) || 'plan'}.md` : 'PLAN.md'
+  const draftOf  = (p) => planDraft[p.id] ?? { goal: '', path: null, open: false }
+  const pathOf   = (p) => draftOf(p).path ?? defaultPlanPath(p, draftOf(p).goal)
+  const drafting = (p) => !p.plan || draftOf(p).open
+  function setDraft(p, patch) { planDraft = { ...planDraft, [p.id]: { ...draftOf(p), ...patch } } }
+
+  async function buildPlan(p, e) {
+    e?.preventDefault()
+    const goal = draftOf(p).goal.trim()
+    if (!goal) return
+    building = { ...building, [p.id]: true }
+    try {
+      if (!await act('buildPlan', p, { goal, path: pathOf(p) })) return
+      planDraft = { ...planDraft, [p.id]: null }
+      lastState[p.id] = 'working'
+      fetchedAt[p.id] = -1
+      await loadPins()
+      const now = pins.find(x => x.id === p.id)
+      if (now) await loadPlan(now)
+    } finally { building = { ...building, [p.id]: false } }
+  }
+
+  async function go(p) {
+    going = { ...going, [p.id]: true }
+    try {
+      if (!await act('go', p)) return
+      lastState[p.id] = 'working'
+      fetchedAt[p.id] = -1
+      status = { ...status, [p.id]: { ...status[p.id], state: 'working', running: status[p.id]?.chat } }
+      await loadPins()
+      const now = pins.find(x => x.id === p.id)
+      if (now) await loadPlan(now)
+    } finally { going = { ...going, [p.id]: false } }
+  }
+
+  const BOX = { open: '☐', done: '☑', dropped: '⊘' }
 
   // ─── folding ─────────────────────────────────────────────────────────
   // The card's mode folds a side; a click on one message flips it against
@@ -1139,6 +1217,90 @@ title: Workbench
                     {/each}
                   {/if}
                 {/each}
+              </div>
+
+            {:else if tabOf(p) === 'plan'}
+              <div class="workbench-panel stack text-sm workbench-plan" id={`workbench-plan-${p.id}`} role="tabpanel" aria-labelledby={`workbench-tab-plan-${p.id}`}>
+                {#if drafting(p)}
+                  <form class="stack workbench-plan-build" on:submit={(e) => buildPlan(p, e)}>
+                    <p class="text-muted">A new chat reads the checkout and writes the plan — it may edit that one file and nothing else, so it cannot start building.</p>
+                    <Textarea label="Goal" name="goal" rows={3} value={draftOf(p).goal}
+                              placeholder="What the plan is for, in a sentence or a paragraph"
+                              oninput={(e) => setDraft(p, { goal: e.target.value })} />
+                    <Input label="Path in the checkout" name="path" value={pathOf(p)}
+                           hint={p.hasIdeas ? 'Beside the other papers in IDEAS/.' : 'This checkout has no IDEAS/, so the plan sits at its root.'}
+                           oninput={(e) => setDraft(p, { path: e.target.value })} />
+                    <div class="cluster">
+                      <Button type="submit" disabled={!draftOf(p).goal.trim() || building[p.id] || status[p.id]?.state === 'working'}
+                              title={status[p.id]?.state === 'working' ? 'A chat here is working — one run at a time in a checkout' : null}>Build plan</Button>
+                      {#if p.plan}
+                        <Button variant="ghost" onclick={() => setDraft(p, { open: false })}>Cancel</Button>
+                      {/if}
+                    </div>
+                  </form>
+                {:else}
+                  <div class="cluster">
+                    <code>{p.plan.path}</code>
+                    {#if parsedOf(p.id)?.title}<strong>{markdownText(parsedOf(p.id).title)}</strong>{/if}
+                    <span class="cluster workbench-runrow-end">
+                      <Button size="xs" variant="ghost" onclick={() => setDraft(p, { open: true })}
+                              title="Write a new plan; this file stays where it is">New plan</Button>
+                    </span>
+                  </div>
+                  {#if !plans[p.id]}
+                    <p class="text-muted">Reading the plan…</p>
+                  {:else if !parsedOf(p.id)}
+                    <p class="text-muted">{status[p.id]?.state === 'working' ? 'The plan session is writing it…' : `Nothing at ${p.plan.path} yet.`}</p>
+                  {:else}
+                    {#if parsedOf(p.id).blocking?.length}
+                      <Callout tone="warning" title={plural(parsedOf(p.id).blocking.length, 'open question')}>
+                        {#each parsedOf(p.id).blocking as q}
+                          <div>{markdownText(q.question)}</div>
+                        {/each}
+                      </Callout>
+                    {/if}
+                    {#if !parsedOf(p.id).phases.length}
+                      <p class="text-muted">No <code>### Phase N</code> heading in it yet.</p>
+                    {/if}
+                    {#each parsedOf(p.id).phases as ph (ph.n)}
+                      <section class="stack workbench-phase" data-phase={ph.n}>
+                        <h3 class="text-sm">Phase {ph.n}{ph.title ? ` — ${ph.title}` : ''}</h3>
+                        {#if ph.goal}<div class="text-muted">Goal: {markdownText(ph.goal)}</div>{/if}
+                        {#if ph.doneWhen}<div class="text-muted">Done when: {markdownText(ph.doneWhen)}</div>{/if}
+                        <ol class="workbench-steps">
+                          {#each ph.steps as st (st.id)}
+                            <li class={`workbench-step ${st.box}`} data-step={st.id} data-box={st.box}
+                                aria-current={parsedOf(p.id).next?.id === st.id ? 'step' : null}>
+                              <div class="cluster">
+                                <span class="workbench-box" aria-label={st.box}>{BOX[st.box]}</span>
+                                <strong>{st.id}</strong>
+                                <span class="workbench-step-title">{markdownText(st.title)}</span>
+                                {#if parsedOf(p.id).next?.id === st.id}
+                                  <Badge tone="info">next</Badge>
+                                  <span class="cluster workbench-runrow-end">
+                                    <Button size="xs" onclick={() => go(p)} disabled={going[p.id] || status[p.id]?.state === 'working'}
+                                            title={status[p.id]?.state === 'working' ? 'A chat here is working — Go starts the next step once it is done' : `Run ${st.id} in the shown chat`}>Go</Button>
+                                  </span>
+                                {/if}
+                              </div>
+                              {#if plans[p.id].steps?.[st.id]}
+                                <div class="text-muted workbench-step-ran">Started {new Date(plans[p.id].steps[st.id].startedAt).toLocaleString()}</div>
+                              {/if}
+                              {#if st.reason}<div class="text-muted">dropped: {markdownText(st.reason)}</div>{/if}
+                              {#if st.notes.length}
+                                <details class="workbench-notes">
+                                  <summary class="text-muted">{plural(st.notes.length, 'finding')}</summary>
+                                  <ul>{#each st.notes as n}<li>{markdownText(n)}</li>{/each}</ul>
+                                </details>
+                              {/if}
+                            </li>
+                          {/each}
+                        </ol>
+                        {#if ph.done}<div class="text-success">{markdownText(ph.done)}</div>{/if}
+                      </section>
+                    {/each}
+                  {/if}
+                {/if}
               </div>
 
             {:else if tabOf(p) === 'checks'}
@@ -1597,6 +1759,17 @@ title: Workbench
     overflow-wrap: anywhere;
     font-size: var(--text-xs);
   }
+
+  .workbench-plan code { overflow-wrap: anywhere; }
+  .workbench-phase { padding-block: var(--space-xs); border-block-end: var(--border-width) solid var(--tint-rule); }
+  .workbench-steps { list-style: none; margin: 0; padding: 0; }
+  .workbench-step { padding: var(--space-2xs) var(--space-xs); border-radius: var(--field-radius); }
+  .workbench-step[aria-current='step'] { background: var(--surface-sunken); outline: var(--border-width) solid var(--tint-rule); }
+  .workbench-step.dropped .workbench-step-title { text-decoration: line-through; }
+  .workbench-step-title { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+  .workbench-box { font-family: var(--font-mono); }
+  .workbench-notes > summary { cursor: pointer; }
+  .workbench-notes ul { margin: var(--space-2xs) 0 0; padding-inline-start: var(--space-md); }
 
   .workbench-drive { margin-block-start: var(--space-xs); }
   .workbench-drive code { display: block; overflow-wrap: anywhere; }

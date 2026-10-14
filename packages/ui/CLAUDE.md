@@ -492,6 +492,11 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     `t.evaluate` is a template literal, so a backtick inside a comment in it
     ends the string and the spec fails to parse — which reads as the drive
     being broken rather than the spec. It has bitten twice.
+  - **This browser is a touch screen to CSS.** Headless Chrome answers
+    `(hover: none)`, and CDP's `setEmulatedMedia` has no hover feature, so a
+    rule gated on `(hover: hover)` never matches and a moved mouse opens
+    nothing. Open such a thing with the keyboard (`:focus-visible`), or launch
+    Chrome with `--blink-settings` as basecamp's `verify-screens` does.
   - **`--verbose` prints the passing assertions.** A spec that THROWS half way
     reports one failure and no clue how far it got; the rows are the only
     record.

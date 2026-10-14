@@ -185,18 +185,16 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
      unpublished site-kit fails `bun install` (as Phase 5 says), so ksite
      imports `@frontierjs/site-kit/check` without declaring it until Phase 5.
      The first run on frontierjs.com found `FJS-2829`.
-   - **Waits on a ruling.** `document` in dev. Sierra applies it only to a
-     prerendered page, and README says `index.html` states the dev half.
-     For a site-kit site the dev `index.html` is the kit's or a preset's, so
-     ksite states its body id twice and its lead loader twice (`index.html`
-     and `src/main.js` beside `document`). **A** — Sierra's dev applies
-     `document` for a `static` target, so a static app states it once.
-     **B** — site-kit's shell applies it, for site-kit sites only.
-     **C** — leave the restatement. **Recommend A**: Sierra owns the
-     translation of `document` to HTML (Invariant 4), and a static app with
-     its own `index.html` restates the same keys there. Re-running the lead loader
-     after each client navigation stays ksite's: it mirrors how its widget
-     binds, and an analytics loader re-run would double-count.
+   - **`document` in dev: done 2026-10-13 (`FJS-D971`, A).** Sierra
+     applies `document` to `index.html` for a `static` target, in dev and in
+     the build, through `wrapDocument()`'s own serializer; an attribute
+     stated in both places is refused naming both. The probe found three
+     restaters, not one (ksite, `example/site`, the `fli make:site`
+     scaffold), and all three now state it once. ksite's `src/main.js` keeps
+     re-running the lead loader per navigation, reading the list from the
+     page's `bodyEnd` scripts instead of restating the URL. ksite's `dist/`
+     is identical apart from the stylesheet hash, which moved with two
+     `@frontierjs/css` tokens from another lane.
    - **Stays, by the test.** The theme, its Uno preset and `rehype-content.js`'s
      heading and link classes (the look; a repo package ships no utility
      classes, Invariant 13). The shell (`Page`, `Header`, `Footer`,
@@ -223,10 +221,10 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
      and reads `content/settings/_redirects`. A preset's `functions/`
      is found at the package root `loadPreset` returns, the way `public/` is,
      so Sierra's functions option takes directories in order (the site's
-     first) rather than one. The `document`-in-dev ruling is the first case
-     of a wider rule: Vite dev runs what the static build ships, which later
-     includes host functions (ksite's lead loader posts to one) and
-     `_redirects`. One ruling should cover all three.
+     first) rather than one. `FJS-D971` ruled the wider rule with
+     `document`: Vite dev runs what the static build ships. Host functions
+     (ksite's lead loader posts to one) and `_redirects` in dev are built
+     when a site first needs one there.
 6. Responsive images ([`FJS-2737`](../ISSUES.md#fjs-2737)), the first client's
    largest gap: the Luminous Heart port ships 20 MB of photos at source size.
    `site-kit-images.md` holds the measurement, the prior art and the design: a

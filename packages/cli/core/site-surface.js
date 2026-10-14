@@ -108,9 +108,9 @@ export default {
   // link from resolving one level up from where its author meant.
   trailingSlash: 'always',
 ${dbLine}
-  // The document Sierra wraps each prerendered page in. The build's stylesheets
-  // are linked automatically; this is the other half of what index.html does
-  // for the SPA. The theme is BAKED rather than switched — a prerendered page
+  // The document Sierra wraps each prerendered page in, and applies to
+  // index.html too, so it is stated here only. The build's stylesheets are
+  // linked automatically. The theme is BAKED rather than switched — a prerendered page
   // has no switcher and its first paint must be right with no JavaScript at
   // all — and it is the same class the SPA applies at runtime, not a second
   // mechanism.
@@ -201,11 +201,11 @@ export function siteIndexHtml({ appName = 'app' } = {}) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${appName}</title>
   </head>
-  <body class="app theme-default">
+  <body>
     <!-- The DEV shell. A built page does not use this file: each route is
          prerendered into its own HTML, wrapped in the \`document\` block from
-         config/sierra.config.js. Keep the body class in both, or the dev server
-         and the built site are two different themes.
+         config/sierra.config.js. Sierra applies that block here too, so the
+         body class is stated there and only there.
 
          Never mention the closing body tag inside a comment — Vite injects the
          built script at the first textual match and does not skip comments, so

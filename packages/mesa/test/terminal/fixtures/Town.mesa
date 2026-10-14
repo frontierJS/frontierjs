@@ -1,0 +1,31 @@
+<script>
+  let x = 4
+  let said = ''
+  let lines = 0
+
+  // The engine's own placement fields: `style:` paints nothing on a terminal.
+  // A factory the template calls, so a move re-runs it with the new cell.
+  const at = (col, row) => (el) => {
+    el.position = 'absolute'
+    el.left = col
+    el.top = row
+    el.zIndex = 10
+  }
+
+  const keydown = (e) => {
+    if (e.key === 'ArrowRight') x++
+    else if (e.key === 'ArrowLeft') x--
+    else if (e.key === 'Enter') said = ['hi all', 'o k'][lines++ % 2]
+  }
+</script>
+
+<mesa:window on:keydown={keydown} />
+<pre>
+################################
+################################
+################################
+</pre>
+<p {@attach at(x, 2)}>@</p>
+{#if said}<p class="surface" {@attach at(x, 1)}>({said})</p>{/if}
+{#if said}<p class="surface outlined" {@attach at(x, 0)}>[{said}]</p>{/if}
+{#if said}<p class:card={said === 'hi all'} {@attach at(x + 12, 1)}>&lt;{said}&gt;</p>{/if}

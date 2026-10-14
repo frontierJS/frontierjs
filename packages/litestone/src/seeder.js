@@ -258,13 +258,34 @@ export class Factory {
       .filter(Boolean)
     if (!candidates.length) return null
     if (candidates.length > 1) {
-      const names = candidates.map(c => c.fields[0]).join(', ')
+      const names = candidates.map(c => c.fields.length > 1 ? `(${c.fields.join(', ')})` : c.fields[0]).join(', ')
       throw new Error(
         `Factory(${this.model}): "${childModel}" has more than one relation to ` +
         `"${parentModel}" (${names}) — pass { fk: '…' } to say which.`
       )
     }
-    return { fk: candidates[0].fields[0], pk: candidates[0].references?.[0] ?? 'id' }
+    const { fields, references } = candidates[0]
+    return { fk: fields, pk: fields.map((_, i) => references?.[i] ?? 'id') }
+  }
+
+  /**
+   * What a required foreign key bound to a filtered `@values` set demands of its
+   * parent: the set's `where` is SQL, so only a single `column = literal` is
+   * inverted, and anything else yields {} and the parent keeps its defaults.
+   * Without it the chain builds the parent at its @default and the set refuses
+   * the key, so no fixture exists for the child.
+   */
+  _setDemands(fkName, parentModel, pk) {
+    const bind = this._modelDef()?.fields.find(f => f.name === fkName)?.attributes.find(a => a.kind === 'values')
+    const vs   = bind && this._schema.valuesets?.find(v => v.name === bind.set)
+    if (!vs?.where || vs.source !== parentModel || (vs.valueField ?? pk) !== pk) return {}
+    const m = /^\s*(\w+)\s*=\s*(?:'([^']*)'|(-?\d+(?:\.\d+)?))\s*$/.exec(vs.where)
+    const col = m && this._modelDef(parentModel)?.fields.find(f => f.name === m[1])
+    if (!col || col.type.kind === 'relation' || col.type.array) return {}
+    const value = m[2] ?? Number(m[3])
+    const en    = this._schema.enums?.find(e => e.name === col.type.name)
+    if (en && !en.values.some(v => v.name === value)) return {}
+    return { [col.name]: value }
   }
 
   // ── Chain methods ────────────────────────────────────────────────────────────
@@ -425,8 +446,10 @@ export class Factory {
         )
       }
 
-      const parent = this._factoryFor(field.type.name)
+      let parent = this._factoryFor(field.type.name)
         .withParents({ ...opts, depth: depth - 1, _seen: seen })
+      const demands = fks.length === 1 ? this._setDemands(fks[0], field.type.name, pks[0]) : {}
+      if (Object.keys(demands).length) parent = parent.state(demands)
       clone = clone.withRelation(field.name, parent, fks, pks, { fresh, auto: true })
       for (const fk of fks) claimed.add(fk)
     }
@@ -608,7 +631,8 @@ export class Factory {
           `relation back to "${this.model}". Pass { fk: '…' }.`
         )
       }
-      const overrides = { ...(child.overrides ?? {}), [fk]: row[pk] }
+      const overrides = { ...(child.overrides ?? {}) }
+      for (const [f, p] of _keyPairs(fk, pk)) overrides[f] = row[p]
       row[child.name] = await factory.createMany(child.count, overrides)
     }
   }

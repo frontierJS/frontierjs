@@ -319,3 +319,91 @@ test('frame: a group label carrying an icon keeps it in the closed rail, centred
 
   cleanup();
 });
+
+test('frame: with no hover, a rail gets the drawer toggle above md and a sidebar does not', function () {
+  /*
+   * Nothing on a touch screen opens a rail: no pointer hovers it and a tap
+   * is not :focus-visible, so the drawer is the only place its names are
+   * written out. Headless Chrome answers (hover: none), so this page is
+   * that screen.
+   */
+  assert.ok(matchMedia('(hover: none) and (min-width: 768px)').matches,
+    'this page should be a no-hover screen above md, or the test measures nothing');
+  function toggleIn(sidebarClass) {
+    return el(
+      '<div class="shell sidebar-first">' +
+        '<header class="topbar"><button class="btn sidebar-toggle" aria-label="Open navigation">=</button></header>' +
+        '<nav class="' + sidebarClass + '" aria-label="Main"></nav>' +
+      '</div>',
+      '.sidebar-toggle'
+    );
+  }
+
+  assert.notEqual(style(toggleIn('sidebar rail'), 'display'), 'none', 'beside a rail the toggle is drawn');
+  cleanup();
+  assert.equal(style(toggleIn('sidebar'), 'display'), 'none', 'beside a sidebar, which shows every name, it is not');
+  cleanup();
+});
+
+/* ── The sidebar foot ─────────────────────────────────────────────── */
+
+/*
+ * A full-height Sidebar whose Screen is taller than its nav, with a foot
+ * after the links. Measured from the foot's bottom edge to the Sidebar's
+ * content box, since the Sidebar's padding is what a foot sits inside.
+ */
+function footedSidebar(sidebarClass, footed) {
+  var shell = el(
+    '<div class="shell sidebar-first" style="inline-size:1000px;min-block-size:600px">' +
+      '<style>.t-foot, .t-foot * { transition: none !important; }</style>' +
+      '<header class="topbar">Leads</header>' +
+      '<nav class="' + sidebarClass + ' t-foot" aria-label="Main">' +
+        '<ul class="navlist"><li><a class="navlink" href="#a"><span class="navlink-text">Leads</span></a></li></ul>' +
+        (footed ? '<div class="sidebar-footer"><span class="navlink-text">Sam, signed in</span></div>' : '') +
+      '</nav>' +
+      '<main class="screen" style="min-block-size:500px">The page.</main>' +
+    '</div>'
+  );
+  return {
+    sidebar: shell.querySelector('.sidebar'),
+    list:    shell.querySelector('.navlist'),
+    foot:    shell.querySelector('.sidebar-footer'),
+  };
+}
+
+function footGap(f) {
+  var pad = parseFloat(style(f.sidebar, 'padding-bottom'));
+  return f.sidebar.getBoundingClientRect().bottom - pad - f.foot.getBoundingClientRect().bottom;
+}
+
+test('frame: a sidebar-footer sits at the bottom of a full-height sidebar', function () {
+  var f = footedSidebar('sidebar', true);
+
+  assert.ok(Math.abs(footGap(f)) < 1,
+    'the foot should end at the Sidebar\'s content edge, got ' + footGap(f) + 'px short');
+  assert.ok(f.foot.getBoundingClientRect().top > f.list.getBoundingClientRect().bottom + 100,
+    'and the links stay at the top, with the gap between them');
+
+  cleanup();
+});
+
+test('frame: and so does it in a rail, closed or open', function () {
+  var f = footedSidebar('sidebar rail', true);
+
+  assert.ok(Math.abs(footGap(f)) < 1, 'closed, the foot should be at the bottom, got ' + footGap(f) + 'px short');
+  f.list.querySelector('.navlink').focus();
+  assert.ok(Math.abs(footGap(f)) < 1, 'open, the foot should be at the bottom, got ' + footGap(f) + 'px short');
+
+  f.list.querySelector('.navlink').blur();
+  cleanup();
+});
+
+test('frame: a sidebar with no foot lays out as it always did', function () {
+  var f = footedSidebar('sidebar', false);
+
+  assert.equal(style(f.sidebar, 'display'), 'block', 'no foot, no flex column');
+  assert.ok(f.list.getBoundingClientRect().top < f.sidebar.getBoundingClientRect().top + 100,
+    'and the links stay at the top');
+
+  cleanup();
+});

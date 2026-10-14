@@ -1076,7 +1076,7 @@ export async function createTestEnv(opts = {}) {
               if (f.type.kind !== 'relation' || f.type.array) return false
               const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
               if (!rel) return false
-              if (!model.fields.find(x => x.name === rel.fields[0])?.type.optional) return false
+              if (!rel.fields.some(k => model.fields.find(x => x.name === k)?.type.optional)) return false
               return _tenantKind(schema, schema.models.find(m => m.name === f.type.name)) !== 'unscoped'
             }).map(f => f.name)
 
@@ -1970,8 +1970,7 @@ export function generateFactory(schema, modelName, options = {}) {
     if (field.type.kind !== 'relation') continue
     const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
     if (!rel) continue
-    const fkName = Array.isArray(rel.fields) ? rel.fields[0] : rel.fields
-    if (fkName) fkFields.add(fkName)
+    for (const fkName of [].concat(rel.fields)) fkFields.add(fkName)
   }
 
   return function definition(seq, rng) {
@@ -3252,8 +3251,8 @@ async function _seedForTenant(schema, modelName, tenant, chain, parents = new Ma
     const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
     if (!rel) continue
 
-    const fk = rel.fields[0]
-    if (fk === column) continue
+    const fks = rel.fields
+    if (fks.includes(column)) continue
 
     // An OPTIONAL scoping relation is filled by default, and that is the whole
     // difference between grading a delegated model and grading a degenerate
@@ -3261,7 +3260,7 @@ async function _seedForTenant(schema, modelName, tenant, chain, parents = new Ma
     // all and `asSystem()`'s alone (`FJS-D481`) — so seeding it unparented
     // grades the orphan rule and says nothing about the rows the app actually
     // holds. `optional: false` seeds that shape on purpose, once.
-    if (!optional && model.fields.find(f => f.name === fk)?.type.optional) continue
+    if (!optional && fks.some(fk => model.fields.find(f => f.name === fk)?.type.optional)) continue
 
     // Only a SCOPED parent has to be in this tenant. An exempt or unscoped one
     // is shared by construction and `withParents` builds it for free.
@@ -3276,7 +3275,9 @@ async function _seedForTenant(schema, modelName, tenant, chain, parents = new Ma
                                  { seen: new Set([...seen, modelName]), depth: depth - 1, optional, actor })
       parents.set(key, row)
     }
-    overrides[fk] = row[rel.references?.[0] ?? _idField(schema, field.type.name)]
+    fks.forEach((fk, i) => {
+      overrides[fk] = row[rel.references?.[i] ?? _idField(schema, field.type.name)]
+    })
   }
 
   // Where the tenant column is itself a foreign key, the claim names a parent
@@ -3329,7 +3330,8 @@ function _tenantMove(schema, model, tenant, parents) {
     if (!rel) continue
     const parent = parents.get(`${field.type.name}|${tenant}`)
     if (!parent) continue
-    return { [rel.fields[0]]: parent[rel.references?.[0] ?? _idField(schema, field.type.name)] }
+    return Object.fromEntries(rel.fields.map((fk, i) =>
+      [fk, parent[rel.references?.[i] ?? _idField(schema, field.type.name)]]))
   }
   return null
 }
@@ -3447,17 +3449,28 @@ async function _freshParents(schema, modelName, chain, overrides = {}) {
   const model    = schema.models.find(m => m.name === modelName)
   const insisted = model ? insistedKeys(model) : new Set()
   const out      = {}
+  const rels     = []
   for (const field of model?.fields ?? []) {
     if (field.type.kind !== 'relation' || field.type.array) continue
     const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
-    if (!rel) continue
-    const fk    = rel.fields[0]
-    const fkDef = model.fields.find(f => f.name === fk)
-    if (fkDef?.type.optional && !insisted.has(fk)) continue
+    if (rel) rels.push({ field, rel })
+  }
+  // The widest key first: a column two relations share is fixed by the first
+  // parent, and the second is built UNDER that value -- built on its own it
+  // carries an unrelated one and the composite key names no row.
+  rels.sort((a, b) => b.rel.fields.length - a.rel.fields.length)
+  for (const { field, rel } of rels) {
+    const fks   = rel.fields
+    const pks   = fks.map((_, i) => rel.references?.[i] ?? _idField(schema, field.type.name))
+    const fkDef = model.fields.find(f => f.name === fks[0])
+    if (fkDef?.type.optional && !fks.some(fk => insisted.has(fk))) continue
+    if (fks.every(fk => fk in out)) continue
     const parent = chain(field.type.name)
     if (!parent) continue
-    const row = await parent.createOne(overrides[field.name] ?? {})
-    out[fk] = row[rel.references?.[0] ?? _idField(schema, field.type.name)]
+    const fixed = {}
+    fks.forEach((fk, i) => { if (fk in out) fixed[pks[i]] = out[fk] })
+    const row = await parent.createOne({ ...fixed, ...(overrides[field.name] ?? {}) })
+    fks.forEach((fk, i) => { out[fk] = row[pks[i]] })
   }
   return out
 }

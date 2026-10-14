@@ -3111,18 +3111,19 @@ async function cmdDoctor() {
                     const tableName = resolveTableName(model)
 
                     // Find FK fields — fields with @relation(fields:[..])
+                    // One entry per relation: a composite key is ONE lookup over all
+                    // its columns, so it is indexed by an index that LEADS with them.
                     const fkFields = []
                     for (const f of model.fields) {
                       const rel = f.attributes?.find(a => a.kind === 'relation' && a.fields)
-                      if (rel) {
-                        const fkCol = Array.isArray(rel.fields) ? rel.fields[0] : rel.fields
-                        if (fkCol) fkFields.push(fkCol)
-                      }
+                      const cols = rel ? [].concat(rel.fields).filter(Boolean) : []
+                      if (cols.length) fkFields.push(cols)
                     }
 
                     if (!fkFields.length) continue
 
-                    // Get indexed columns for this table from sqlite_master
+                    // Every leading run of columns of every index on this table,
+                    // as a sorted key -- the order of a lookup's columns is free.
                     let indexedCols = new Set()
                     try {
                       const indexes = db2.query(
@@ -3131,18 +3132,19 @@ async function cmdDoctor() {
                       for (const idx of indexes) {
                         try {
                           const cols = db2.query(`PRAGMA index_info("${idx.name}")`).all()
-                          // First column of a multi-column index is what matters for
-                          // selectivity on a single-column FK lookup.
-                          if (cols[0]) indexedCols.add(cols[0].name)
+                          for (let n = 1; n <= cols.length; n++) {
+                            if (!cols[n - 1]?.name) break
+                            indexedCols.add(cols.slice(0, n).map(c => c.name).sort().join('\0'))
+                          }
                         } catch {}
                       }
                     } catch { continue }
 
-                    const unindexedFks = fkFields.filter(c => !indexedCols.has(c))
+                    const unindexedFks = fkFields.filter(cols => !indexedCols.has([...cols].sort().join('\0')))
                     if (unindexedFks.length) {
-                      const cols = unindexedFks.join(', ')
+                      const cols = unindexedFks.map(c => c.join('+')).join(', ')
                       warn(perfLabel, `${model.name}: FK column${unindexedFks.length>1?'s':''} not indexed`,
-                        `${cols} — add @@index([${unindexedFks[0]}]) to ${model.name}`)
+                        `${cols} — add @@index([${unindexedFks[0].join(', ')}]) to ${model.name}`)
                     }
                   }
 

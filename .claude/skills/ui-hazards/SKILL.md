@@ -18,6 +18,7 @@ Detail: `references/routes-prerender-and-static.md`
 - **A static route that produced no page fails the build where it was broken, and warns where it opted out.**
 - **A server render answers every browser global as a wide desktop, so only a mobile-first branch bakes correctly.**
 - **`renderComponent` reuses a compiled tree, so `<script module>` state is shared across every render in the process.**
+- **In a sidebar or rail the Shell draws the nav twice, and the drawer's copy is mounted while it is closed.**
 
 ## Live stores and records
 Detail: `references/live-stores-and-records.md`

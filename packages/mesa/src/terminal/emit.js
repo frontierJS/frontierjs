@@ -27,7 +27,7 @@
 import { xNode, Q, PRESERVE_WHITESPACE } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
-import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind } from './tags.js'
+import { TERMINAL_TAGS, TERMINAL_EVENTS, isInline, inputKind, SURFACES, SEE_THROUGH } from './tags.js'
 
 const IDENT = /^[A-Za-z_$][\w$]*$/
 
@@ -384,7 +384,17 @@ export function buildTerminal(ctx) {
       line(ind, '}, { a: undefined });')
     }
     // `n.styles` and `n.classes` are CSS, and a terminal paints no CSS: they
-    // are inert here as a static `style` or `class` and the scoped rules are.
+    // are inert here as a static `style` and the scoped rules are. A `class:`
+    // naming a surface or a see-through variant is the exception, as it is
+    // for the `class` attribute (`opaque`).
+    for (const c of n.classes) {
+      if (!SURFACES.includes(c.name) && !SEE_THROUGH.includes(c.name)) continue
+      dep(c.expr)
+      line(ind, '$$runtime.render((__prev) => {')
+      line(ind + 1, `var __c; try { __c = !!(${c.expr.code}); } catch (e) { __c = $$runtime.contain(e, __prev.c); }`)
+      line(ind + 1, `if (__prev.c !== __c) $$tui.toggle_class(${el}, ${q1(c.name)}, __prev.c = __c);`)
+      line(ind, '}, { c: undefined });')
+    }
     if (preserves(n)) { preEdges(n, startsPre, endsPre); inPre++ }
     if (!field && !childless(n)) emitChildren(n.children, el, ind)
     if (preserves(n)) inPre--

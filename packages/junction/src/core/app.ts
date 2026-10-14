@@ -514,14 +514,14 @@ export interface App {
   /**
    * Claim a namespace on the app, failing loudly if it is already taken.
    *
-   * Plugins attach their surface by plain assignment — `app.conduit = instance`,
-   * `app.jobs = caravan`, `app.notify = fn`. Two plugins claiming one name is a
-   * silent last-write-wins, and the loser simply stops working with no error
+   * Two plugins attaching one name by plain assignment is a silent
+   * last-write-wins, and the loser simply stops working with no error
    * anywhere. This is the runtime complement to the augmentable-interface
    * pattern (AppConduit / AppJobs / AppNotify) that already handles the types.
    *
-   * It assigns the REAL property, so augmented types keep resolving:
+   * It defines the REAL property, so augmented types keep resolving:
    * `app.claim('conduit', c)` still leaves `app.conduit` typed as AppConduit.
+   * The property is non-writable, so a later `app.conduit = other` throws.
    *
    *   app.claim('conduit', instance)   // throws if anything already claimed it
    *
@@ -1579,7 +1579,10 @@ export function createApp(opts: AppOptions = {}): App {
           `owning plugin expose the other's surface deliberately.`
         )
       }
-      ;(app as unknown as Record<string, unknown>)[name] = value
+      // Non-writable, so `app.jobs = other` throws instead of winning silently.
+      // Configurable so the owner can release the name (stop() does, for
+      // serviceCache) -- a plain assignment cannot.
+      Object.defineProperty(app, name, { value, enumerable: true, writable: false, configurable: true })
     },
 
     setAuth(auth: import('../auth/types.ts').SessionVerifier): void {
@@ -1742,7 +1745,7 @@ export function createApp(opts: AppOptions = {}): App {
       const svcCache = app.serviceCache as { destroy(): void } | undefined
       if (svcCache) {
         try { svcCache.destroy() } catch {}
-        app.serviceCache = undefined
+        delete app.serviceCache
       }
 
       // Detach signal handlers so a stopped app can be garbage-collected

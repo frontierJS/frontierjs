@@ -486,3 +486,27 @@ describe('a hand-written definition names its own foreign keys', () => {
     expect(e2.dayId).toBe(otherDay.id)
   })
 })
+
+// FJS-2814 — a required foreign key into a filtered valueset: the parent was
+// built at its @default, which the set's where refuses, so no fixture existed.
+describe('withParents() builds a parent the child\'s @values where admits', () => {
+  const SCHEMA = (where: string) => `
+    enum OfferType { service package }
+    model Offer { id Int @id @default(autoincrement()); name String; type OfferType @default(service); parts Part[] }
+    valueset OfferPackage { source Offer; where "${where}" }
+    model Part { id Int @id @default(autoincrement()); packageId Int @values(OfferPackage)
+      package Offer @relation(fields: [packageId], references: [id]) }`
+
+  test('an equality on a column is laid over the parent', async () => {
+    for (const where of ["type = 'package'", "type='package'"]) {
+      const { factories, db } = await makeTestClient(SCHEMA(where), { autoFactories: true })
+      const part = await factories.part.withParents().createOne()
+      expect((await db.offer.findUnique({ where: { id: part.packageId } })).type).toBe('package')
+    }
+  })
+
+  test('a where it cannot invert leaves the parent alone', async () => {
+    const { factories } = await makeTestClient(SCHEMA("type <> 'service'"), { autoFactories: true })
+    await expect(factories.part.withParents().createOne()).rejects.toThrow()
+  })
+})

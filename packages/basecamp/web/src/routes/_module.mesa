@@ -402,7 +402,8 @@ siteName: Basecamp
   <header class="topbar">
     <span class="cluster">
       <!-- `.sidebar-toggle` decides WHEN this control exists — the package
-           hides it above 767px, where the real sidebar is back. Opening the
+           hides it above 767px, where the real sidebar is back, except
+           beside a rail on a screen with no hover. Opening the
            drawer is the app's job and is the `navOpen` flag below. -->
       {#if session.user}
         <button class="btn ghost square sidebar-toggle" aria-label="Open navigation"

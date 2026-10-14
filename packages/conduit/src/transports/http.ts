@@ -72,7 +72,7 @@ class ResponseTooLargeError extends Error {
 
 // Methods safe to replay. A retried GET or DELETE lands the caller in the
 // same state; a retried POST bills for a second server.
-const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'])
+export const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'])
 
 // Failure codes that mean no request reached the target — the connection was
 // never established, so nothing can have been applied.

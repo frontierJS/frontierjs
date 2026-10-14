@@ -113,6 +113,7 @@
     {@attach panelAnim}
     role="dialog"
     aria-modal="false"
+    data-confirm-panel
     aria-labelledby={titleId}
   >
     <strong id={titleId}>{title}</strong>

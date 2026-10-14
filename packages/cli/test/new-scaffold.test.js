@@ -33,6 +33,16 @@ test('scaffoldWidgetSurface with no name scaffolds rather than refusing', () => 
   expect(existsSync(join(root, 'widgets/src/Embeds/HelloWidget.mesa'))).toBe(true)
 })
 
+// FJS-1990: importing a .mesa mounts nothing, so a dev.js that only imported
+// the starter widget showed an empty tag and no error.
+test('the dev harness entry loads the module that embeds every widget', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fjs-new-widget-dev-'))
+  roots.push(root)
+  scaffoldWidgetSurface({ root })
+  const dev = readFileSync(join(root, 'widgets/src/dev.js'), 'utf8')
+  expect(dev).toContain("import 'virtual:sierra-widgets'")
+})
+
 test('the first commit comes after the initial migration is written', () => {
   const migration = NEW_MD.indexOf("migrate create initial")
   const commit    = NEW_MD.indexOf("git commit -m")

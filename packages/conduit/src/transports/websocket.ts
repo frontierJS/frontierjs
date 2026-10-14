@@ -5,6 +5,7 @@
 // ============================================================
 
 import { BaseTransport } from './base.ts'
+import { DEFAULT_MAX_BYTES, DEFAULT_TIMEOUT_MS, IDEMPOTENT_METHODS } from './http.ts'
 import { ConduitStreamError, CredentialError } from '../types.ts'
 import type {
   ConduitRequest,
@@ -18,7 +19,6 @@ import type {
 const RECONNECT_ATTEMPTS = 5
 const RECONNECT_BACKOFF  = [1000, 2000, 4000, 8000, 16000]
 const PING_INTERVAL_MS   = 30_000
-const REQUEST_TIMEOUT_MS = 15_000
 
 // Wire protocol — every message over the WebSocket has this shape
 interface WireMessage {
@@ -26,6 +26,11 @@ interface WireMessage {
   type:    'request' | 'response' | 'stream_chunk' | 'stream_end' | 'error' | 'ping' | 'pong'
   method?: string
   path?:   string
+  // Lowercased names, the target's constant headers under the caller's, and the
+  // idempotency key under the target's header name. Credentials are not here:
+  // they authenticate the upgrade, not the frame.
+  headers?: Record<string, string>
+  query?:   Record<string, string | string[]>
   body?:   unknown
   // Set on a request that expects a stream of chunks rather than a single
   // response. This lives on the envelope, not inside `body`: injecting a
@@ -37,9 +42,10 @@ interface WireMessage {
 }
 
 type PendingRequest = {
-  resolve: (msg: WireMessage) => void
-  reject:  (err: Error) => void
-  timer:   ReturnType<typeof setTimeout>
+  resolve:  (msg: WireMessage) => void
+  reject:   (err: Error) => void
+  oversize: () => void
+  timer:    ReturnType<typeof setTimeout>
 }
 
 // Internal stream event — keeps the end signal out of ConduitChunk.
@@ -64,8 +70,44 @@ export class WebSocketTransport extends BaseTransport {
 
   onReconnect?: (target: string) => void
 
-  constructor(descriptor: TargetDescriptor, credentials: CredentialResolver) {
+  // The same two numbers an http target declares. `max_response_bytes` bounds
+  // one inbound frame; retry and deadline are not applied here.
+  constructor(
+    descriptor:  TargetDescriptor,
+    credentials: CredentialResolver,
+    private opts: { timeout_ms?: number; max_response_bytes?: number } = {},
+  ) {
     super(descriptor, credentials)
+  }
+
+  // The envelope's headers, query and idempotency key, built once per send so
+  // a stream and a one-shot request say the same thing.
+  private frameFor(req: ConduitRequest): Pick<WireMessage, 'method' | 'path' | 'headers' | 'query' | 'body'> {
+    // Minted per send, never per frame, for the same reason http mints it once:
+    // a caller replaying the send must present the key the first one did.
+    const auto = this.descriptor.idempotency?.auto === true
+    const key  = req.idempotency_key
+      ?? (auto && !IDEMPOTENT_METHODS.has(req.method.toUpperCase()) ? crypto.randomUUID() : undefined)
+
+    const headers = this.mergeHeaders(
+      key ? { [this.idempotencyHeader()]: key } : undefined,
+      this.descriptor.headers,
+      req.headers,
+    )
+
+    const query: Record<string, string | string[]> = {}
+    for (const [k, v] of Object.entries(req.query ?? {})) {
+      if (v === undefined || v === null) continue
+      query[k] = Array.isArray(v) ? v.map(String) : String(v)
+    }
+
+    return {
+      method:  req.method,
+      path:    req.path,
+      ...(Object.keys(headers).length ? { headers } : {}),
+      ...(Object.keys(query).length   ? { query }   : {}),
+      body:    req.body,
+    }
   }
 
   async send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
@@ -103,7 +145,7 @@ export class WebSocketTransport extends BaseTransport {
         req.signal?.removeEventListener('abort', cancel)
         this.pending.delete(id)
         resolve(this.fail('timeout', 'WS request timed out', { retryable: true }))
-      }, REQUEST_TIMEOUT_MS)
+      }, req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS)
       req.signal?.addEventListener('abort', cancel, { once: true })
 
       this.pending.set(id, {
@@ -123,16 +165,16 @@ export class WebSocketTransport extends BaseTransport {
           this.pending.delete(id)
           resolve(this.fail('connection_failed', err.message, { retryable: true }))
         },
+        oversize: () => {
+          clearTimeout(timer)
+          req.signal?.removeEventListener('abort', cancel)
+          this.pending.delete(id)
+          resolve(this.fail('invalid_response', `Response exceeded ${this.maxBytes} bytes and was discarded`, { retryable: false }))
+        },
         timer
       })
 
-      this.sendWire(ws, {
-        id,
-        type:   'request',
-        method: req.method,
-        path:   req.path,
-        body:   req.body
-      })
+      this.sendWire(ws, { id, type: 'request', ...this.frameFor(req) })
     })
   }
 
@@ -180,14 +222,8 @@ export class WebSocketTransport extends BaseTransport {
       notify?.()
     })
 
-    this.sendWire(ws, {
-      id,
-      type:   'request',
-      method: req.method,
-      path:   req.path,
-      body:   req.body,      // passed through untouched
-      stream: true
-    })
+    // The body passes through untouched.
+    this.sendWire(ws, { id, type: 'request', ...this.frameFor(req), stream: true })
 
     try {
       while (!done) {
@@ -358,6 +394,26 @@ export class WebSocketTransport extends BaseTransport {
 
     if (msg.type === 'pong') return
 
+    // The cap is on the frame, the unit this transport reads. A frame over it
+    // ends the request or stream it answers rather than being delivered.
+    if (typeof e.data === 'string' && Buffer.byteLength(e.data) > this.maxBytes) {
+      const listener = this.streamListeners.get(msg.id)
+      if (listener) {
+        listener({
+          done:  true,
+          error: {
+            kind:      'invalid_response',
+            target:    this.descriptor.id,
+            protocol:  this.protocol,
+            message:   `A frame exceeded ${this.maxBytes} bytes and was discarded`,
+            retryable: false,
+          }
+        })
+      }
+      this.pending.get(msg.id)?.oversize()
+      return
+    }
+
     if (msg.type === 'stream_chunk') {
       this.streamListeners.get(msg.id)?.({
         done:  false,
@@ -397,6 +453,10 @@ export class WebSocketTransport extends BaseTransport {
       clearInterval(this.pingTimer)
       this.pingTimer = null
     }
+  }
+
+  private get maxBytes() {
+    return this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
   }
 
   private sendWire(ws: WebSocket, msg: WireMessage) {

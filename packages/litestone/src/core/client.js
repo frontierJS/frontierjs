@@ -5780,7 +5780,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Row by row, as the single-row verbs are: a copy a plugin derives from
     // these rows goes stale and fails open when a bulk write is not heard
     // (FJS-1725). A delete is heard by afterDelete above.
-    if (rows?.length && (plan.op === 'create' || plan.op === 'update') && plugins?.hearsWrites) {
+    if (rows?.length && (plan.op === 'create' || plan.op === 'update' || plan.op === 'remove') && plugins?.hearsWrites) {
       for (const r of rows) await plugins.afterWrite(modelName, LOG_OP[plan.op], read(r, { mode: 'single', hydrateFrom: true }), ctx)
     }
     if (plan.logs && rows?.length) emitLogs(LOG_OP[plan.op], rows, { system: plan.system, written: writtenOf(plan) })
@@ -5967,6 +5967,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
     const vis = visibleWhere('removeMany', where, { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf })
     if (!softDelete) return deletePlan('removeMany', where, vis, mode, needRows)
+    // A soft remove is an UPDATE, so afterDelete never hears it; the stamped
+    // rows reach onAfterWrite as remove() does.
+    const needStamped = needRows || !!plugins?.hearsWrites
 
     const where0 = and(whereFragment(vis.where), vis.policy)
     // The where's binds then the policy's, in the order the SQL reads them; the
@@ -5975,9 +5978,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const final  = sealed.sql ? { sql: sealed.sql, params: sealed.params } : null
     const ts     = nowISO(ctx.now)
     const sets   = sqlJoin([sqlFragment(_deletedAtSet, [ts]), ...stampSets(['deletedAt']).map(t => sqlFragment(t))], ', ')
-    const stmt   = frag(sqlJoin([KW.update, T, KW.set, sets, final && KW.where, final, needRows && KW.returning], ''))
+    const stmt   = frag(sqlJoin([KW.update, T, KW.set, sets, final && KW.where, final, needStamped && KW.returning], ''))
     return {
-      verb: 'removeMany', op: 'remove', statements: [{ ...stmt, data: null }], count: null, returning: needRows,
+      verb: 'removeMany', op: 'remove', statements: [{ ...stmt, data: null }], count: null, returning: needStamped,
       where: final, args: { where }, query: stmt, prefetch: false, moves: null, exclusion: null, post: false,
       softCascade: { ts }, batch: false, logs: tableHasLogWork, system: null,
       announce: { mode, event: 'remove', operation: 'removeMany', where },
@@ -8109,7 +8112,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // The conflict half's post-update rule reads the row as it is now, which
       // only RETURNING carries — updateMany's reason (FJS-1730).
       const _usPost = ctx.hasPolicies && !!shape.policy['post-update']
-      const _usNeedRows = tableHasLogWork || _usWantRows || _usPost
+      const _usNeedRows = tableHasLogWork || _usWantRows || _usPost || !!plugins?.hearsWrites
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
       // The conflict half is an update and is graded as one — without this a
       // caller below the update gate overwrote any row by naming its key
@@ -8364,6 +8367,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (_usCreated?.length) emitLogs('create', _usCreated, { system, written: _usCreatedW })
         if (_usUpdated?.length) emitLogs('update', _usUpdated, { system, written: _usUpdatedW })
       }
+      if (plugins?.hearsWrites && _usCreated) {
+        for (const r of _usCreated) await plugins.afterWrite(modelName, 'create', read(r, { mode: 'single', hydrateFrom: true }), ctx)
+        for (const r of _usUpdated) await plugins.afterWrite(modelName, 'update', read(r, { mode: 'single', hydrateFrom: true }), ctx)
+      }
       // At the `rows` tier the split is known, so each half announces truthfully.
       // The COLLECTION form has to pick one for the whole batch and picks
       // `update`: to a list every row named here now exists with new values, and
@@ -8506,6 +8513,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // is one that changed state, not one that was created — and to a list
       // holding the default (live) filter it arrives exactly as a patch does.
       for (const r of restoredRows) fireRowEvent('update', 'restore', r)
+      if (plugins?.hearsWrites) for (const r of restoredRows) await plugins.afterWrite(modelName, 'update', r, ctx)
       return restoredRows
     },
 

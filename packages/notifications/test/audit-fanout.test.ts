@@ -49,7 +49,6 @@ describe('audit 1.5 — a failed transport after a committed one', () => {
       send: async () => { attempts++; throw new Error('smtp down') },
       batch: async () => { throw new Error('smtp down') },
     }))
-    h.app.mail = { send: async () => { attempts++; throw new Error('smtp down') } }
 
     await expect(h.app.notify(bob, new InvoiceDue())).rejects.toBeInstanceOf(NotificationDeliveryError)
     expect((await h.rows()).length).toBe(1)
@@ -105,7 +104,6 @@ describe('audit 1.5 — a failed transport after a committed one', () => {
       send: async () => { throw new Error('smtp down') },
       batch: async () => { throw new Error('smtp down') },
     }))
-    h.app.mail = { send: async () => { throw new Error('smtp down') } }
     await expect(h.app.notify(bob, new InvoiceDue())).rejects.toBeInstanceOf(NotificationDeliveryError)
     expect((await h.rows()).length).toBe(1)
     expect(h.sent.length).toBe(0)

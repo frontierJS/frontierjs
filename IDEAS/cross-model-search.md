@@ -291,8 +291,10 @@ Done when: 0.2 is green under `bun:sqlite` and under the sqlite-wasm drive.
 Goal: one round trip per keystroke, graded by the Data boundary.
 Done when: a junction test mounts the service with two of three models and the third is refused by name.
 
-- [ ] 2.1 `search` service, `find({ q, models })` → `$.db.$search`, mounted the way `account` is; the mount names the models the palette holds.
-- [ ] 2.2 `models` outside the mount list refused by name, in the same voice as 1.4.
+- [x] 2.1 `search` service, `find({ q, models })` → `$.db.$search`, mounted the way `account` is; the mount names the models the palette holds.
+  - `searchService({ models, name })` at `@frontierjs/junction/search`, registered with `app.services.register`. `q` and `models` are reserved query keys; any other key is a 400 by name, an empty `q` answers `[]`, `prefix` is always on.
+- [x] 2.2 `models` outside the mount list refused by name, in the same voice as 1.4.
+  - `junction/test/search-service.test.ts`: two of three `@@fts` models mounted, the third a 400 naming it over HTTP and internally. A mounted model without `@@fts` answers litestone's `CapabilityNotDeclaredError` (400) on the first call.
 
 ### Phase 3 — UI
 

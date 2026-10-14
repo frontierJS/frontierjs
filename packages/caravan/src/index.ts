@@ -18,6 +18,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { jsonLoss, jsonLossAdvice } from '@frontierjs/toolbelt/json'
 import { REDACTED } from '@frontierjs/toolbelt/redact'
+import { DEV_ENV } from '@frontierjs/toolbelt/devline'
 import { LEVELS, levelPasses, levelName, gradeStanding } from '@frontierjs/toolbelt/gate'
 import type { Database }                            from 'bun:sqlite'
 import { openDb, buildStatements, aggregateStats, reclaimFreePages, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
@@ -333,7 +334,9 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     if (jobFilesLoaded || !jobsDir) return
     jobFilesLoaded = true
     const loaded = await autoloadJobs(jobsDir, caravan)
-    if (loaded.length > 0) {
+    // Under `fli dev` the count is boot noise between the summary and the
+    // first request; a verbose run starts without the variable and prints it.
+    if (loaded.length > 0 && !process.env[DEV_ENV]) {
       console.log(`[Caravan] Loaded ${loaded.length} job handler${loaded.length > 1 ? 's' : ''}`)
     }
   }

@@ -67,3 +67,54 @@ describe('onAfterWrite hears a bulk write row by row (FJS-1725)', () => {
     db.$close()
   })
 })
+
+const SOFT = `
+  database main { path ":memory:" }
+  model Doc {
+    id        Int       @id
+    title     String
+    deletedAt DateTime?
+    @@softDelete
+  }
+`
+
+async function softClient(plugin: Plugin) {
+  const db: any = await createClient({ schema: SOFT, db: ':memory:', plugins: [plugin] })
+  await autoMigrate(db)
+  return db
+}
+
+describe('the other bulk verbs are heard too (FJS-2821)', () => {
+  test('upsertMany — a create for an inserted row, an update for one that existed', async () => {
+    const w = new Writes()
+    const db = await softClient(w)
+    await db.doc.create({ data: { id: 1, title: 'a' } })
+    w.written.length = 0
+    await db.doc.upsertMany({ data: [{ id: 1, title: 'a2' }, { id: 2, title: 'b' }] })
+    expect(w.written.map(([, op, r]) => [op, r?.id, r?.title]).sort()).toEqual([['create', 2, 'b'], ['update', 1, 'a2']])
+    db.$close()
+  })
+
+  test('removeMany on a soft-delete model — one delete per row, as remove() is heard', async () => {
+    const w = new Writes()
+    const db = await softClient(w)
+    await db.doc.createMany({ data: [{ id: 1, title: 'a' }, { id: 2, title: 'b' }, { id: 3, title: 'c' }] })
+    w.written.length = 0
+    const { count } = await db.doc.removeMany({ where: { id: { in: [1, 2] } } })
+    expect(count).toBe(2)
+    expect(w.written.map(([, op, r]) => [op, r?.id]).sort()).toEqual([['delete', 1], ['delete', 2]])
+    for (const [, , r] of w.written) expect(r.deletedAt).not.toBeNull()
+    db.$close()
+  })
+
+  test('restore — one write per row brought back', async () => {
+    const w = new Writes()
+    const db = await softClient(w)
+    await db.doc.createMany({ data: [{ id: 1, title: 'a' }, { id: 2, title: 'b' }] })
+    await db.doc.removeMany({ where: {} })
+    w.written.length = 0
+    await db.doc.restore({ where: { id: 1 } })
+    expect(w.written.map(([, op, r]) => [op, r?.id])).toEqual([['update', 1]])
+    db.$close()
+  })
+})

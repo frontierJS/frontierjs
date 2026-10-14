@@ -146,6 +146,12 @@ src/
   of a store is a `TargetDescriptor` by assertion (`FJS-728`). Adding a field
   means `RESILIENCE_FIELDS`, the router's merge or `Resilience`, **and**
   `EXTRA_KEYS`; a value that JSON cannot carry means the store too.
+- **A `websocket` target honors the same descriptor as http, field by field**
+  (`FJS-D586`): `timeout_ms`, `max_response_bytes` (one inbound frame), and the
+  request frame's `headers` (target constant, then caller, plus the idempotency
+  key under the target's header name) and `query`. Credentials stay on the
+  upgrade, never in a frame. A new descriptor field reaches `WebSocketTransport`
+  through the router's `opts`, or it stops at this transport in silence.
 - **`max_concurrent` defaults to 64 and unlimited was never unbounded.** A burst
   past the pool queues INSIDE it with the per-attempt timer already running, so
   the wait is charged to the target as a timeout and opens its breaker: 5000

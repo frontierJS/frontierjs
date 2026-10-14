@@ -165,6 +165,40 @@ describe('imported reads nothing here watches', () => {
     expect(ctx.analysis.warnings.join('\n')).toMatch(/'s\.n' is read by 'const d' but no '\$: s\.n' watch covers it/)
   })
 
+  // `var` is the stated snapshot, so a destructure spelled with it is as silent
+  // as `var x = s.n`; the synthetic temp a call-initialized pattern is bound to
+  // must not read as a `const` the author wrote (FJS-2794).
+  it('is silent for a `var` destructure of a call over an import, as for `var x = s.n`', async () => {
+    const opts = { filename: '/S.mesa', dev: false, css: false, externalReactivityHints: 'strict', warning: () => {} }
+    const warned = async (decl) => (await compileSource(`<script>
+  import { s } from './store.js'
+  ${decl}
+  function f(q) { return { a: q, b: 1 } }
+</script>
+<p>{a}{b}</p>`, opts)).analysis.warnings.join('\n')
+    expect(await warned('var { a, b } = f(s.n)')).not.toMatch(/watch covers it/)
+    expect(await warned('var [a, b] = f(s.n)')).not.toMatch(/watch covers it/)
+    expect(await warned('const { a, b } = f(s.n)')).toMatch(/'s\.n' is read by 'const \$\$pattern_\d+'/)
+  })
+
+  // A leaf route's `const id = page.params.id` is fixed for the component's
+  // life (a param change remounts it), so `var` is the answer, not a watch
+  // (FJS-2795).
+  it('offers `var` beside the watch when a const is what reads the import', async () => {
+    const opts = { filename: '/S.mesa', dev: false, css: false, externalReactivityHints: 'strict', warning: () => {} }
+    const viaConst = await compileSource(`<script>
+  import { s } from './store.js'
+  const d = s.n * 2
+</script>
+<p>{d}</p>`, opts)
+    expect(viaConst.analysis.warnings.join('\n')).toMatch(/Add '\$: s\.n'.* or read it once in a `var`/)
+    const viaTemplate = await compileSource(`<script>
+  import { s } from './store.js'
+</script>
+<p>{s.n}</p>`, opts)
+    expect(viaTemplate.analysis.warnings.join('\n')).not.toContain('`var`')
+  })
+
   // Svelte's spelling of a reactive read compiles to a derivation over the raw
   // import, so it never re-runs — the ksite shell layout kept the first page's
   // meta across every client navigation, and this was the one site unwarned.

@@ -242,8 +242,9 @@ describe('failure paths', () => {
   })
 
   test('a failing email does not stop the in-app record — transports are isolated', async () => {
-    const iso = await makeApp()
-    iso.app.mail = { send: async () => { throw new Error('SMTP down') } }
+    const iso = await makeApp({ noMailer: true })
+    const down = async () => { throw new Error('SMTP down') }
+    iso.app.configure(mailerPlugin({ send: down, batch: down }))
     const before = (await iso.rows()).length
 
     await expect(iso.app.notify({ id: 'u11', email: 'q@r.test' }, new Welcome(['inApp', 'email'])))

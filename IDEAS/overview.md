@@ -733,6 +733,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `field-workforce.md` — Field workforce coordination: the stressor that completes a loop example already half-owns
 - `kernel-and-projections.md` — Kernel and projections: the structure the seed thesis implies
 - `manual-order.md` — A position a person drags, declared on the column
+- `town.md` — the town: a terminal village anyone with `fli` installed can walk into; one hosted FJS app, `web/` lowered to the terminal, sprites probed
 - `mesa-kit-primitives.md` — the primitives the Mesa kit keeps re-writing
 - `no-port-app.md` — the app with no port: vendor-hosted and never-deployed as release artifact kinds
 - `on-page-editing.md` — the ask panel's next four moves, ranked by what on-page editors love; § Prompt economy is what a pick sends the model

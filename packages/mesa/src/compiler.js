@@ -3618,7 +3618,7 @@ export function analyzeScript(raw, ast) {
         if (!name) {
           // Pattern declarator — attempt to expand into flat identifier vars.
           if (d.id.type === 'ObjectPattern' || d.id.type === 'ArrayPattern') {
-            const initExpr = d.init ? patternSource(d.init, {}, node) : 'undefined'
+            const initExpr = d.init ? patternSource(d.init, { snapshot: node.kind === 'var' }, node) : 'undefined'
             expandPattern(d.id, initExpr, node.kind, node)
           } else {
             passthroughDeclStarts.add(node.start)
@@ -7963,6 +7963,9 @@ function _checkExternalReactivity(ctx, imports) {
   const sites = _collectTemplateExpressions(ctx.DOM.body).map((expr) => ({ expr, where: 'template' }))
   for (const v of Object.values(vars ?? {})) {
     if (!(v.kind === 'const' || v.isWritableDerived) || v.isProp || !v.initRaw) continue
+    // The temp a `var { a } = f(x)` is bound to is `const` only in the emitted
+    // code; the author wrote `var`, the stated snapshot.
+    if (v.snapshot) continue
     if (/^(Arrow)?FunctionExpression$|^ClassExpression$/.test(v.initNode?.type ?? '')) continue
     sites.push({ expr: v.initRaw, where: v.isWritableDerived ? `$: ${v.name} =` : `const ${v.name}` })
   }
@@ -8006,7 +8009,10 @@ function _checkExternalReactivity(ctx, imports) {
             const hint =
               `'${path}' is read ${at} but no '$: ${path}' watch covers it. ` +
               `Imported objects are inert — the read compiles to a static value and will ` +
-              `not update when '${name}' mutates. Add '$: ${path}' to the script block.`
+              `not update when '${name}' mutates. Add '$: ${path}' to the script block` +
+              // A const fixed for the component's life (a leaf route's `const id =
+              // page.params.id` — a param change remounts it) needs no watch.
+              (where.startsWith('const ') ? `, or read it once in a \`var\` if it never changes while this component lives.` : `.`)
             ctx.analysis.warnings.push(hint)
             // Named apart from the other warnings because it is true only of
             // code that re-renders in a browser: a static build that publishes

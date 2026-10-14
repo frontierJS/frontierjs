@@ -254,11 +254,16 @@ log[verbose ? 'info' : 'detail'](composed.map(r => `${runner} run ${r.script}`).
 if (flag.dry) return
 
 const title = [(manifest.name ?? '').replace(/^@[^/]+\//, ''), at].filter(Boolean).join(chalk.dim(' · '))
-const run = runSurfaces({ root, runner, rows: composed, env, echo, onExit: tty.onExit, compact: !verbose, title })
+let footer = null
+const run = runSurfaces({
+  root, runner, rows: composed, env, echo, onExit: tty.onExit, compact: !verbose, title,
+  onSummary: () => footer?.update(),
+})
 
 if (tty.interactive) {
   const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
-  const footer = tty.live(() => [
+  // The keys wait for the summary, so the first thing on screen is whether the app came up.
+  footer = tty.live(() => run.summarized && [
     `${chalk.bold('o')} open`, `${chalk.bold('r')} restart`,
     `${chalk.bold('v')} ${run.compact ? 'verbose' : 'compact'}`, `${chalk.bold('q')} quit`,
   ].map(chalk.dim))

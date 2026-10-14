@@ -183,6 +183,15 @@ describe('app.claim', () => {
     expect(app.conduit).toBe(conduitLike)
   })
 
+  it('a plain assignment to a claimed name is refused, and the claim survives', async () => {
+    const app = await createTestApp()
+    const first = { id: 'first' }
+    app.claim('held', first)
+
+    expect(() => { (app as unknown as Record<string, unknown>).held = { id: 'other' } }).toThrow()
+    expect((app as unknown as Record<string, unknown>).held).toBe(first)
+  })
+
   it('two plugins claiming one name fail loudly rather than last-write-wins', async () => {
     const app = await createTestApp()
     const first  = { id: 'first' }

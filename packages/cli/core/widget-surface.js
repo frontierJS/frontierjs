@@ -152,12 +152,13 @@ export function widgetIndexHtml({ appName = 'app', name, tag } = {}) {
 `
 }
 
-export function widgetDevEntry({ name } = {}) {
+export function widgetDevEntry() {
   return `// widgets/src/dev.js — the dev harness entry, not part of any bundle.
-// \`sierra widgets\` generates its own entry per widget; this file exists so
-// \`vite dev\` has something to load while a widget is being written.
+// \`sierra widgets\` generates its own entry per widget; this one is served by
+// Sierra's dev plugin and calls the same embed() for every widget in
+// src/Embeds/, with each stylesheet routed to its shadow root.
 
-import './Embeds/${name}.mesa'
+import 'virtual:sierra-widgets'
 `
 }
 
@@ -315,7 +316,7 @@ export function scaffoldWidgetSurface({
     ['config/sierra.config.js',       widgetSierraConfig({ prefix })],
     ['config/vite.config.js',         widgetViteConfig({ port: devPort })],
     ['index.html',                    widgetIndexHtml({ appName, name, tag: widgetTag(name, prefix) })],
-    ['src/dev.js',                    widgetDevEntry({ name })],
+    ['src/dev.js',                    widgetDevEntry()],
     [`src/Embeds/${name}.mesa`,       widgetStarter({ name, prefix })],
     [`test/${widgetTag(name, prefix)}.html`, widgetHostPage({ name, prefix, appName, servePort })],
     ['deploy/serve.js',               widgetServeEntry({ servePort })],

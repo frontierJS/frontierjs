@@ -175,6 +175,24 @@ export const pickerHidden = (hidden, cls) =>
   (hidden != null && hidden !== false) || (typeof cls === 'string' && cls.split(/\s+/).includes('visually-hidden'))
 
 /**
+ * `@frontierjs/css`'s surface lineage — the classes `surface.css` gives a
+ * background — and the variants that set that background `transparent`. A
+ * terminal box shows what is under it through every cell it leaves empty, a
+ * space in its text included, so a box a browser paints opaque is blanked
+ * before its children draw (`opaque`, FJS-D979). `test/terminal-tags.test.js`
+ * holds both lists to `surface.css`.
+ */
+export const SURFACES    = ['surface', 'card', 'tile', 'alert', 'toast', 'dialog', 'popover', 'drawer', 'band']
+export const SEE_THROUGH = ['outlined', 'ghost']
+
+/** Whether a box of class `cls` hides what is under it. */
+export const opaque = (cls) => {
+  if (typeof cls !== 'string') return false
+  const names = cls.split(/\s+/)
+  return names.some((n) => SURFACES.includes(n)) && !names.some((n) => SEE_THROUGH.includes(n))
+}
+
+/**
  * The roles a browser lays out inside a line, beside text, rather than as a
  * block of their own. With every tag the table marks `inline`, these are
  * what a terminal box lays side by side, and what keeps the white space

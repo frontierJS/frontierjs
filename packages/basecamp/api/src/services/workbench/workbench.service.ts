@@ -19,6 +19,7 @@
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
 //   POST /workbench/:id           buildPlan   { goal, path } — a new chat writing the plan at path, allowed to edit that file and no other
+//   POST /workbench/:id           go          the plan's first open box, run in the shown chat; refused while any run is live
 //   POST /workbench/:id           fork        { slug?, preview? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run;
 //                                             with preview, Open: a preview Environment and its rows (`core/preview.ts`), routed to the branch's web port
 //   POST /workbench/:id           freeze      a preview's web/ built and released by digest; the hostname serves the build
@@ -42,7 +43,7 @@
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
 import { existsSync }              from 'node:fs'
-import { dirname }                 from 'node:path'
+import { dirname, join }           from 'node:path'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { localMachineRefusal }     from '../../core/env.ts'
 import { describeRepo }            from '../../core/local-git.ts'
@@ -52,7 +53,7 @@ import { db, ws }                  from '../../core/resource.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
 const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'buildPlan', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'buildPlan', 'go', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
 
 export function createWorkbenchService(app: BasecampApp) {
   // Read per call: services are built inside createApp, before app.ts claims it.
@@ -111,6 +112,9 @@ export function createWorkbenchService(app: BasecampApp) {
             missing,
             git:    missing ? null : await describeRepo(dirname(p.path), p.path),
             checkable: !missing && !!doneScript(p.path),
+            // Where Build plan writes by default: IDEAS/<slug>.md beside the
+            // other papers, PLAN.md where the checkout has none (FJS-D966).
+            hasIdeas:  !missing && existsSync(join(p.path, 'IDEAS')),
             status: await wb().status(p),
           }
         })),
@@ -157,6 +161,13 @@ export function createWorkbenchService(app: BasecampApp) {
       const p = pinned()
       const r = await wb().buildPlan(p.id, { goal: body().goal, path: body().path })
       if ('refused' in r) throw new BadRequest(r.refused)
+      return r
+    },
+
+    async go() {
+      const p = pinned()
+      const r = await wb().go(p.id)
+      if ('refused' in r) throw new Conflict(r.refused)
       return r
     },
 

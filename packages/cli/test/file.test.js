@@ -11,7 +11,7 @@ import { join }   from 'path'
 import { spawn }  from 'child_process'
 import { tmpdir } from 'os'
 
-import { fileIssue }        from '../core/file.js'
+import { fileIssue, registerHigh } from '../core/file.js'
 import { readRegisters }    from '../core/registers.js'
 import { runRegisterCheck } from '../core/register-check.js'
 
@@ -87,6 +87,22 @@ describe('filing a row', () => {
     expect(fileIssue({ root, ...input, title: '  ' }).reason).toBe('--title is required')
     expect(fileIssue({ root, ...input, severity: 'S1' }).reason).toContain('no `## S1` table')
     expect(file(root)).toBe(ISSUES.join('\n'))
+  })
+})
+
+describe('the high-water marks', () => {
+  test('the highest issue and decision anywhere; a row filed after the read is above it', () => {
+    const root = project()
+    writeFileSync(join(root, '.project', 'DECISIONS.md'), '# Decisions\n\n## ELA-D3 — A ruling\n')
+    expect(registerHigh(root)).toEqual({ issue: 7, decision: 3 })
+    fileIssue({ root, ...input })
+    expect(registerHigh(root)).toEqual({ issue: 8, decision: 3 })
+  })
+
+  test('a root declaring no registers holds nothing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-file-'))
+    dirs.push(root)
+    expect(registerHigh(root)).toEqual({ issue: 0, decision: 0 })
   })
 })
 

@@ -142,6 +142,7 @@ src/
                          litestone's parser out of it (`FJS-2318`)
     slot-rewrite.js      compile-time slot rewriting
     prerender.js         routes declaring `render: static` → HTML
+    document-shell.js    a static app's `document` applied to index.html, dev and build
     island-bundle.js     one chunk per island the static build needs
     prune-unreachable.js what a static build may publish: the emitted pages walked;
                          `bundleUnreachable` says so from the tree BEFORE the

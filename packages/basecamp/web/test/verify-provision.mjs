@@ -147,15 +147,41 @@ writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
 // card's WORKING state is on screen for a poll or two, and leaves a file in
 // the checkout so the card's dirty count has something to follow.
 const WORKBENCH = join(SCRATCH, 'workbench')
+// A Build plan prompt names its file; the stand-in writes this there, with
+// its argv beside it, since only the real claude can enforce the edit scope.
+// A Go prompt names a step, and the stand-in ticks that box as a session would.
+const PLAN_FIXTURE = `# Sign-up form
+
+### Phase 0 — Groundwork
+
+Goal: the form exists.
+Done when: it posts.
+
+- [x] 0.1 Read the schema
+  - It has an email column.
+- [ ] 0.2 Write the form
+- [~] 0.3 A captcha — dropped: nobody asked
+
+## Open questions (owner)
+
+- **Q1 — Which mail provider?**
+  - **A** — the one configured
+  - **B** — a second
+  - **Recommend A** — nothing new
+`
 const FAKE_CLAUDE = join(SCRATCH, 'fake-claude')
 writeFileSync(FAKE_CLAUDE, `#!/usr/bin/env node
 const fs = require('fs')
 const input = fs.readFileSync(0, 'utf8')
+const plan = input.match(/^Write a plan at \`([^\`]+)\`/)
+const step = input.match(/^Carry out step (\\S+) of the plan at \`([^\`]+)\`/)
 const out = l => process.stdout.write(JSON.stringify(l) + '\\n')
 out({ type: 'system', subtype: 'init', session_id: '5acea7bb-3850-44cf-81dc-97688510acda' })
 out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'bun test' } }] } })
 setTimeout(() => {
   fs.writeFileSync('claude-was-here.txt', input)
+  if (plan) { fs.writeFileSync(plan[1], ${JSON.stringify(PLAN_FIXTURE)}); fs.writeFileSync('claude-argv.txt', process.argv.join('\\n')) }
+  if (step) fs.writeFileSync(step[2], fs.readFileSync(step[2], 'utf8').replace('- [ ] ' + step[1], '- [x] ' + step[1]))
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Done: ' + input }] } })
   out({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.42, num_turns: 3 })
 }, /slow/.test(input) ? 20000 : 3000)
@@ -1280,6 +1306,65 @@ try {
   check('Archive removes the branch\'s card and its tree, and keeps wb/try',
     !spawnSync('ls', [join(TREE, spawnSync('ls', [TREE], { encoding: 'utf8' }).stdout.trim())], { encoding: 'utf8' }).stdout.includes('try')
       && /wb\/try/.test(spawnSync('git', ['-C', ALPHA, 'branch', '--list', 'wb/*'], { encoding: 'utf8' }).stdout))
+
+  // ─── The Plan tab ──────────────────────────────────────────────────────
+  // A checkout of its own, so the plan chat and the file it writes reach
+  // nothing the preview below cuts. It has IDEAS/, so the path defaults
+  // beside the papers and follows the goal as it is typed.
+  console.log('\n  the Plan tab — Build plan, then the plan read off its boxes')
+  const DELTA = join(SCRATCH, 'elsewhere', 'delta')
+  mkdirSync(join(DELTA, 'IDEAS'), { recursive: true })
+  gitIn(DELTA, 'init', '-q', '-b', 'main')
+  const deltaPin = (await call('POST', '/workbench', 'pin', { path: DELTA })).body
+  await goto('/workbench/')
+  const deltaTile = `document.querySelector('.workbench-dock #workbench-${deltaPin?.id} .workbench-tile-open')`
+  // With the branch archived the stage has room, so it may be drawn there
+  // already; from the dock, a click stages it.
+  const delta = `document.querySelector('#workbench-grid article#workbench-${deltaPin?.id}')`
+  await until(`!!(${delta} || ${deltaTile})`, v => v, 'the plan checkout was drawn nowhere')
+  await evaluate(`${deltaTile}?.click()`)
+  await until(`!!${delta}?.dataset.state`, v => v, 'the plan checkout never reached the stage')
+  await tab(delta, 'plan')
+  const goalBox = `${delta}.querySelector('.workbench-plan-build textarea')`
+  const pathBox = `${delta}.querySelector('.workbench-plan-build input[name=path]')`
+  await until(`!!${goalBox}`, v => v, 'a checkout with no plan showed no Build plan form')
+  check('with no plan the Plan tab is the Build plan form, its button held until there is a goal',
+    await evaluate(`${button(delta, 'Build plan')}.disabled`))
+  await evaluate(`(() => { const t = ${goalBox}; t.value = 'Ship the sign-up form'; t.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  const defaulted = await until(`${pathBox}.value`, v => v === 'IDEAS/ship-the-sign-up-form.md', 'the path did not follow the goal into IDEAS/')
+  check('the path defaults to IDEAS/<slug>.md where the checkout has IDEAS/, following the goal', true, defaulted)
+  await evaluate(`${button(delta, 'Build plan')}.click()`)
+  await until(`${delta}.dataset.state`, s => s === 'working', 'Build plan started no run')
+  check('Build plan starts a run in the checkout', true)
+  const steps = `[...${delta}.querySelectorAll('.workbench-step')].map(li => li.dataset.step + ':' + li.dataset.box + (li.getAttribute('aria-current') ? '*' : '')).join(' ')`
+  const drawnSteps = await until(steps, t => t.split(' ').length === 3, 'the plan the session wrote was never drawn', 15_000)
+  check('the tab draws the plan off the file — each step with its box, the first open one marked',
+    drawnSteps === '0.1:done 0.2:open* 0.3:dropped', drawnSteps)
+  check('…and the tab names the next step', /Plan · 0\.2/.test(await evaluate(`${delta}.querySelector('[data-tab=plan]').textContent`)))
+  check('…with the phase\'s goal, a finding folded under its step, and the open question',
+    await evaluate(`(() => { const t = ${delta}.querySelector('.workbench-plan').textContent
+      return /Goal: the form exists/.test(t) && /1 finding/.test(t) && /1 open question/.test(t) && /Which mail provider/.test(t) })()`))
+  const sent = spawnSync('cat', [join(DELTA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout
+  const argv = spawnSync('cat', [join(DELTA, 'claude-argv.txt')], { encoding: 'utf8' }).stdout.split('\n')
+  const planFile = join(DELTA, 'IDEAS', 'ship-the-sign-up-form.md')
+  check('the session was handed the goal and the path, and may edit that file',
+    /^Write a plan at `IDEAS\/ship-the-sign-up-form\.md`/.test(sent) && /Ship the sign-up form/.test(sent)
+      && argv.some(a => a.includes(`Edit(/${planFile})`)), argv.join(' ').slice(0, 400))
+  check('the plan chat is not a work session', !argv.includes('bypassPermissions'), argv.join(' ').slice(0, 400))
+  await until(`${delta}.dataset.state`, s => s !== 'working', 'the plan run never finished')
+  await evaluate(`${button(delta, 'Go')}.click()`)
+  await until(`${delta}.dataset.state`, s => s === 'working', 'Go started no run')
+  const started = await until(`${delta}.querySelector('[data-step="0.2"] .workbench-step-ran')?.textContent ?? ''`, t => /Started/.test(t), 'the step Go started was not marked on the tab')
+  check('Go starts a run on the next box, and the tab marks the step started', true, started)
+  const ticked = await until(steps, t => t === '0.1:done 0.2:done 0.3:dropped', 'the box the session ticked was never drawn', 15_000)
+  check('…and the box the step session ticked is drawn, with nothing open left', /Plan ✓/.test(await evaluate(`${delta}.querySelector('[data-tab=plan]').textContent`)), ticked)
+  const stepSent = spawnSync('cat', [join(DELTA, 'claude-was-here.txt')], { encoding: 'utf8' }).stdout
+  check('the step session was handed the step and its plan, and told to commit nothing',
+    /^Carry out step 0\.2 of the plan at `IDEAS\/ship-the-sign-up-form\.md`: Write the form/.test(stepSent) && /Commit nothing\./.test(stepSent), stepSent.slice(0, 200))
+  check('the unpinned plan checkout goes', (await call('POST', `/workbench/${deltaPin?.id}`, 'unpin')).status === 200)
+  await goto('/workbench/')
+  await until(`!!${delta}`, v => !v, 'the unpinned plan checkout was still drawn')
+  await until(`!!${card}?.dataset.state`, v => v, 'alpha left the stage with the plan checkout')
 
   // ─── The Run tab ────────────────────────────────────────────────────────
   // What the checkout declares, started from the card: alpha's own `fli dev`

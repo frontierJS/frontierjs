@@ -186,7 +186,7 @@ they share `surface-header` / `surface-body` / `surface-footer`.
 | Section | `section-header` |
 | Toast | `toast-stack` *(one per app, not one per Toast)* |
 | Tooltip | `tooltip-anchor` |
-| Shell | `sidebar-toggle` |
+| Shell | `sidebar-footer` `sidebar-toggle` |
 | Facts | `dt` `dd` — real elements, no class, on purpose |
 | Code | `code` inside `<pre class="code">` |
 

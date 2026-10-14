@@ -174,6 +174,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./commitments` | `src/plugins/commitments/index.ts` | yes |
 | exports | `./devtools` | `src/plugins/devtools/index.ts` | yes |
 | exports | `./export` | `src/plugins/export/index.ts` | yes |
+| exports | `./search` | `src/plugins/search/index.ts` | yes |
 | exports | `./metrics` | `src/plugins/metrics/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
 | exports | `./channels` | `src/transport/channels.ts` | yes |

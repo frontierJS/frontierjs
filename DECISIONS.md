@@ -27,6 +27,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d976"></a>2026-10-14 · `FJS-D976` — Q1 — The noun — `town`, which is what the screen draws and gives the rooms their words: square, tavern, door.
+
+Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **B** was picked over **A** (`matrix`, the name it was asked for).
+
+The paper's recommendation, taken as written: Matrix is the ecosystem's federated chat protocol and `fli matrix` reads as a client for it, which is *familiarity vs. precision* resolved the way § IV resolves it.
+
 ### <a id="fjs-d837"></a>2026-10-09 · `FJS-D837` — What the kit is called and what one entry holds — `@frontierjs/toolbelt/aria`, keyed by the css `VOCAB` term; an entry is `{ role, requires: [relationships], tracks: { state: attribute } }`.
 
 Asked in [`IDEAS/accessibility.md`](IDEAS/accessibility.md) § Open questions. **A** was picked over **B** (`@frontierjs/toolbelt/a11y`, the same entry, plus the page-level kind as entries keyed by layout), **C** (no kit noun: a `role` and `aria` column added to each `ANATOMY` entry in `packages/css/vocabulary.js`).
@@ -11144,6 +11150,26 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d979"></a>2026-10-14 · `FJS-D979` — Q4 — A box that hides what is under it — One opaque treatment lowered in `runtime-terminal.js`, so no color is written in a `.mesa`.
+
+Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **B** was picked over **A** (leave it to the app, the same attach helper as Q3).
+
+The paper's recommendation, taken as written: every dialog and dropdown on a terminal needs it, and a color in a `.mesa` is Invariant 13's failure.
+
+**Built 2026-10-13, and the treatment is no new class: it is `@frontierjs/css`'s surface lineage.** `surface.css`'s base rule already gives `surface`, `card`, `tile`, `alert`, `toast`, `dialog`, `popover`, `drawer` and `band` a background, so a terminal box carrying one blanks its cells before its children draw, and `outlined` or `ghost` — the two variants that set that background `transparent` — keep it see-through. A browser and a terminal then agree on which boxes hide what is under them, and an app writes the class it already writes. `glass` is the one divergence: translucent in a browser, opaque on a terminal, which has no half-covered cell. Mesa is a leaf and cannot import the stylesheet, so `src/terminal/tags.js` holds the two lists and `test/terminal-tags.test.js` holds them to `surface.css`; a `class:` naming one of them toggles it as the attribute does. Proven by `test/terminal/specs/town.spec.mjs`, the paper's probe kept. The nine were answered after the code was green, not before.
+
+### <a id="fjs-d978"></a>2026-10-14 · `FJS-D978` — Q3 — Placing a figure on a cell — Leave it to the app: an attach helper in the town's `web/`.
+
+Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **A** was picked over **B** (lower `style:position|left|top` in `runtime-terminal.js`, which `specs/style.spec.mjs` currently pins as inert).
+
+The paper's recommendation, taken as written: placement by cell is a thing only a game wants, and an attach is the escape hatch for exactly that.
+
+### <a id="fjs-d972"></a>2026-10-14 · `FJS-D972` — Q3 — Which layouts ship in Phase 2 — `sidebar`, `rail` and `topbar`. The topbar draws `groups` flat, and portal's More menu stays out.
+
+Asked in [`IDEAS/app-shell.md`](IDEAS/app-shell.md) § Open questions. **B** was picked over **A** (`sidebar` and `rail` only. The topbar apps keep their own `_module.mesa` over `ui/nav`).
+
+The paper's recommendation, taken as written: the scaffold, example and portal are topbar shells, and Phase 4 cannot put a new app on the Shell without one. Portal's overflow menu is the single-caller field the contract leaves out.
+
 ### <a id="fjs-d672"></a>2026-10-13 · `FJS-D672` — Who sorts when a `<Table>` has no `onsort`: the Table locally, the caller only, or an explicit opt-in — The Table sorts locally when no `onsort` is stated: it owns the sort, so `rows` reach the row snippet ordered by `orderBy`. `onsort` stays the "the sort lives elsewhere (URL, server)" switch. A caller that sorts server-side behind `bind:orderBy` is sorted a second time, harmlessly for a stable sort on the same key. The comparator is a fact with one owner, `comparatorFor`/`compareValues` in junction's `query-values.ts`; `@frontierjs/ui` depends on toolbelt only, so that comparator would have to move down to `@frontierjs/toolbelt/query` first. The case it gets wrong in silence is a Table over ONE PAGE of a server list with no `onsort` (basecamp's `apps/index.mesa` and `deployments/index.mesa` pass `rows={list.rows}` and no `onsort`): it sorts the page, not the list. The switch already exists, `onsort={list.sort}` (ELA's `forms`, `actions`, `integrations` screens), so a list handle's Table states it.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the affordance needs `onsort`: no `onsort`, no button, whatever the column says. `bind:orderBy` retires (the Table never owns the sort, it only states the move), the `orderBy = next` branch is deleted, and the datatable spec's bound-sort cases move to `onsort`. Smallest change, but every local-data table has to hand-write the sort that `columns()` already promised), **C** (an explicit opt-in prop (`sort="local"`) beside `onsort`. Honest, but a new option on a component whose default is the broken case, and `columns()` still marks everything sortable).
@@ -13427,6 +13453,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d977"></a>2026-10-14 · `FJS-D977` — Q2 — Where the client lives — A package that is an FJS app, `web/` and all, and `fli town` runs its `web/` the way `fli dev:tui` runs an app's own, against a hosted `--api`.
+
+Asked in [`IDEAS/town.md`](IDEAS/town.md) § Open questions. **B** was picked over **A** (inside `packages/cli`, which then gains mesa, OpenTUI and the Junction client as optional peers).
+
+The paper's recommendation, taken as written: the cli declares no framework package today and `dev:tui` already resolves the runtime from the app it runs; B keeps that and versions the client with its server.
+
+### <a id="fjs-d971"></a>2026-10-13 · `FJS-D971` — Does a static app's `document` reach the dev shell, and who applies it — Sierra applies `document` to `index.html` for `target: 'static'`, in dev and in the build (`build/document-shell.js`), through the serializer `wrapDocument()` uses (`documentParts()` in `prerender.js`). An attribute stated on `index.html` and in `document` both is refused, naming both. The wider rule is ruled with it — **Vite dev runs what the static build ships** — and only `document` is built: `_redirects` and host functions in dev wait until a site needs one there.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) Phase 3 step 5. **A** was picked over **B** (site-kit's shell applies it, for site-kit sites only) and **C** (leave the restatement). The probe found three apps stating it twice, not one: ksite (`<body id="app">` and its lead loader in `src/main.js`), `example/site` (`<body class="app theme-default">`), and the scaffold `fli make:site` writes into every new site surface. B fixes the first only. Sierra already owns turning `document` into HTML (Invariant 4), so the dev shell reuses the same serializer rather than adding a second one.
+
+Why refuse rather than merge: a merge rule (shell wins, or `document` wins) is a second answer to which copy is true, and the build already gives one, since a prerendered page has only `document`. Why the build too: a static app whose home route is not prerendered publishes the shell as `dist/index.html`, and that page must match the others. Why the plugin is limited to `static`: an SPA has no `document`, and its `index.html` is the whole of its page. Re-running ksite's lead loader after each client navigation stays ksite's. `src/main.js` now reads the loader list from the page (the `bodyEnd` scripts) instead of restating the URL. Proved by `packages/sierra/test/document-shell.test.js`: a real dev server's `transformIndexHtml`, a real build's `dist/index.html`, head tags byte-identical to a prerendered page's, and the refusal.
 
 ### <a id="fjs-d962"></a>2026-10-13 · `FJS-D962` — Who owns the pre-ship site check, and how a preset adds to it — `site-kit check <dir>` is the check every site-kit site has, and a preset's `./preset` export returns a fourth key, `rules`, a list of `{ id, group, stage, run }`; a preset rule whose id a kit rule has replaces it.
 

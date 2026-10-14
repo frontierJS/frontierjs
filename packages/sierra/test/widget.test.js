@@ -17,7 +17,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { discoverWidgets, widgetEntrySource, CSS_PLACEHOLDER, widgetCssPlugin } from '../src/build/widget-build.js'
+import { discoverWidgets, widgetEntrySource, CSS_PLACEHOLDER, widgetCssPlugin, widgetDevSource, widgetDevPlugin, inlineStyleImports, DEV_WIDGETS_ID } from '../src/build/widget-build.js'
 import { kebab, CSS_MARK } from '../src/widget/index.js'
 import { tmpDir } from './tmp.js'
 
@@ -167,5 +167,42 @@ describe('the CSS swap', () => {
     const bundle = { 'W.js': entry('`') }
     run(bundle)
     expect(bundle['W.js'].code).toContain('css:""')
+  })
+})
+
+// ─── the dev harness (FJS-1990) ───────────────────────────────────────────────
+
+describe('dev harness', () => {
+  test('the dev module embeds every widget, so importing the .mesa is not all it does', () => {
+    const src = widgetDevSource(discoverWidgets(dir), { prefix: 'fjs-' })
+    expect(src.match(/\bembed\(C\d/g)).toHaveLength(3)
+    expect(src).toContain('name:   "Counter"')
+    expect(src).toContain('prefix: "fjs-"')
+    expect(src).toContain('...(M0.widget ?? {})')
+  })
+
+  test('a stylesheet import is routed to the shadow root, not the document', () => {
+    const out = inlineStyleImports(`import './kit.css'\nimport x from './y.js'\nimport "./z.scss";\n`)
+    expect(out).toContain(`import __sierraWidgetCss0 from './kit.css?inline'`)
+    expect(out).toContain(`import __sierraWidgetCss1 from "./z.scss?inline"`)
+    expect(out).toContain(`import x from './y.js'`)
+    expect(out).not.toMatch(/import\s+['"]\.\/kit\.css['"]/)
+  })
+
+  test('an import already asking for ?inline or a named binding is left alone', () => {
+    const src = `import css from './a.css?inline'\nimport './b.css?url'\n`
+    expect(inlineStyleImports(src)).toBe(src)
+  })
+
+  test('the plugin serves the virtual module over the widgets dir and rewrites CSS imports', () => {
+    const p = widgetDevPlugin({ dir: '.', prefix: 'fjs-' })
+    p.configResolved({ root: dir })
+    const id = p.resolveId(DEV_WIDGETS_ID)
+    expect(id).toBe('\0' + DEV_WIDGETS_ID)
+    expect(p.resolveId('./other.js')).toBeNull()
+    expect(p.load(id)).toContain('embed(C0')
+    expect(p.transform(`import './a.css'`, '/x/A.mesa').code).toContain('?inline')
+    expect(p.transform(`import './a.css'`, '\0virtual:thing')).toBeNull()
+    expect(p.apply).toBe('serve')
   })
 })

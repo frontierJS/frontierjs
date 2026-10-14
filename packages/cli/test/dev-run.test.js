@@ -33,14 +33,19 @@ const say = (line) => `console.log(${JSON.stringify(line)});`
 
 async function run(root, surfaces, opts = {}) {
   const out = []
-  const { done } = runSurfaces({
+  let handle = null, summaryAt = null
+  // What a footer asking `summarized` would see at each line written.
+  const seen = []
+  handle = runSurfaces({
     root, runner: process.execPath,
     rows: surfaces.map(s => ({ surface: s, script: s })),
-    env: process.env, echo: (l) => out.push(plain(l)), onExit: () => {},
+    env: process.env, onExit: () => {},
+    echo: (l) => { out.push(plain(l)); seen.push(handle?.summarized ?? false) },
+    onSummary: () => { summaryAt ??= { lines: out.length, summarized: handle.summarized } },
     columns: 0, ...opts,
   })
-  const code = await done
-  return { out, code }
+  const code = await handle.done
+  return { out, code, seen, summaryAt }
 }
 
 describe('compact', () => {
@@ -63,6 +68,19 @@ describe('compact', () => {
     const head = out.findIndex(l => l.includes('probe'))
     expect(head).toBeLessThan(summary)
     expect(out[head]).toMatch(/^  READY  probe  in \d+\.\ds$/)
+  })
+
+  // The key footer waits on `summarized`; drawn mid-summary it splits the rows.
+  test('summarized is false for every summary line and true when onSummary runs', async () => {
+    const root = app({
+      api: say(formatDevLine({ ready: { url: 'http://localhost:1/api', rows: [{ name: 'Junction', facts: [] }] } })),
+      web: say(formatDevLine({ ready: { url: 'http://localhost:2/', rows: [{ name: 'Sierra', facts: [] }] } })),
+    })
+    const { out, seen, summaryAt } = await run(root, ['api', 'web'], { title: 'probe' })
+    const last = out.findIndex(l => l.includes('http://localhost:2/'))
+    expect(summaryAt.summarized).toBe(true)
+    expect(summaryAt.lines).toBeGreaterThan(last)
+    expect(seen.slice(0, last + 1).every(s => s === false)).toBe(true)
   })
 
   test('a surface that exits before reporting lets everything it said through', async () => {

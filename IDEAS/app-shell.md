@@ -299,8 +299,32 @@ Done when: the ui drive opens it in Chrome at 1280 and 375 wide, signed in and o
   `{#each}` row's attributes are one effect that tracks what `current()` reads at run
   time; the spec stayed green with it removed, and the `ui-hazards` Mesa entry now
   says where it is owed. Removing the drawer-close watch turns the spec red
-- [ ] 2.3 `layout="rail"` and `layout="topbar"` (Q3)
-- [ ] 2.4 A ui-hazards row and the ui `AGENTS.md` row
+- [x] 2.3 `layout="rail"` and `layout="topbar"` (Q3). **Built, on Q3's B (`FJS-D972`);
+  `shell.spec.mjs` is 73 checks.** A rail is the sidebar's markup with `.rail`, and
+  `layout` may change while mounted, which is collapsing for good. Sign out leaves a
+  rail for the topbar, because its word is clipped to two letters there, and leaves
+  that layout's drawer too, so one button is on screen. `foot(where)` is also told
+  `'rail'` and `'topbar'`. A topbar draws the groups flat with no labels, puts the
+  section bar at the head of the Screen, and wraps below md with no drawer, as
+  example and portal do. **2.1's touch question is answered with no `title`**: a
+  touch screen draws no tooltip, and a mouse has already opened the rail. Instead,
+  frame.css shows `.sidebar-toggle` beside a `.sidebar.rail` under `(hover: none)`
+  at every width, so the drawer is where a touch screen reads the names. A css
+  frame.spec test covers it, and removing the rule turns the Shell spec red.
+  **Headless Chrome is that touch screen**: it answers `(hover: none)`, and
+  `Emulation.setEmulatedMedia` has no hover feature, so the drive opens the rail
+  with the keyboard. The mouse half (no toggle beside a rail) is unenforced
+  (`decision-rules`, answered after the code)
+- [x] 2.4 A ui-hazards row and the ui `AGENTS.md` row. **Written.** The hazard is that
+  a sidebar or rail draws the nav twice and the drawer's copy stays mounted while
+  closed, so every snippet is instantiated twice and an unscoped selector matches two
+  links (§ Routes, prerender and static). The `AGENTS.md` row sits in the Layout table
+  and carries `show`'s one silent case: a predicate that throws shows its entry
+
+**Done 2026-10-13.** The Shell draws all three layouts from the contract, and
+`shell.spec.mjs` opens it at 1280 and 375 wide, signed in and out. A rail on a touch
+screen reads its names in the drawer, not in a tooltip, and headless Chrome turned out
+to be that touch screen.
 
 ### Phase 3 — Callers
 
@@ -346,7 +370,7 @@ app it writes builds.
     has no caller, and C is a second statement maidtech already makes twice. The
     refusal is owed either way: a key that does nothing and says nothing is the
     defect. B is the move the day a second page lands under one bare directory.
-- **Q3 — Which layouts ship in Phase 2?**
+- ~~**Q3 — Which layouts ship in Phase 2?**~~ **Answered 2026-10-14 (`FJS-D972`): B — `sidebar`, `rail` and `topbar`. The topbar draws `groups` flat, and portal's More menu stays out.**
   - **A** — `sidebar` and `rail` only. The topbar apps keep their own
     `_module.mesa` over `ui/nav`.
   - **B** — `sidebar`, `rail` and `topbar`. The topbar draws `groups` flat, and
