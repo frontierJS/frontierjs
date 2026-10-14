@@ -50,6 +50,8 @@ export type UserStatus = 'pending_verification' | 'active' | 'suspended'
 
 export type WorkspaceStatus = 'active' | 'suspended'
 
+export type ProvisionStepName = 'start' | 'create' | 'poll' | 'timeout'
+
 export type SecretKind = 'ssh_key' | 'provider_key' | 'registry_auth' | 'tls_cert' | 'notification' | 'generic'
 
 export type ServerStatus = 'pending' | 'provisioning' | 'installing' | 'online' | 'unreachable' | 'draining' | 'stopped' | 'destroying' | 'destroyed'
@@ -156,6 +158,84 @@ export interface WorkspaceMemberAdd {
 export interface WorkspaceMemberRole {
   userId: string
   role: WorkspaceRole
+}
+
+/**
+ * What the dashboards service's widget verbs accept. Which subject a kind takes
+ * is `kinds.ts`'s, so the pairing stays the method's; the shape is stated here.
+ */
+export interface WidgetAdd {
+  kind: WidgetKind
+  serverId?: string | null
+  appId?: string | null
+  config?: unknown | null
+  cols?: number | null
+}
+
+export interface WidgetUpdate {
+  widgetId: string
+  kind?: WidgetKind | null
+  serverId?: string | null
+  appId?: string | null
+  config?: unknown | null
+  cols?: number | null
+}
+
+export interface WidgetRemove {
+  widgetId: string
+}
+
+export interface DashboardReorder {
+  ids: string[]
+}
+
+/**
+ * What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
+ */
+export interface AppFromBlueprint {
+  blueprintId: string
+  environmentId: string
+  name?: string | null
+  values?: unknown | null
+}
+
+export interface AppPlace {
+  serverId: string
+  replicaIndex?: number | null
+}
+
+export interface AppUnplace {
+  serverId: string
+  replicaIndex?: number | null
+}
+
+/**
+ * What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
+ * 0..100 is clamped by the method, so it is not narrowed here.
+ */
+export interface FlagOverrideSet {
+  environmentId: string
+  isEnabled?: boolean | null
+  rollout?: number | null
+  variantKey?: string | null
+}
+
+export interface FlagOverrideClear {
+  environmentId: string
+}
+
+export interface ServerProvision {
+  name: string
+  role?: ServerRole | null
+  accountId: string
+  region: string
+  size: string
+  image: string
+}
+
+export interface ServerProvisionStep {
+  step: ProvisionStepName
+  enrollToken?: string | null
 }
 
 // ── Models ───────────────────────────────────────────────────────────────────

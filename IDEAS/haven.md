@@ -558,11 +558,26 @@ FJS-D985's "never a forked world" holds: both targets show the same viewport.
   the same way and sees Sam where the first screen never reached. Found: a
   bubble kept inside the view is pushed off its figure's cell near the right
   edge, so the drive reads it where the figure stands inside the slack.
-- [ ] 6.2 Borders. The square opens onto a road, the docks and the woods, each
-  its own scene and its own Room (`FJS-D990`). A border is a `<Door>` run
-  along an edge: the client walks into the next scene at the matching cell on
-  its facing edge. Measure the reconnect at a border, since a door hides
-  it behind a scene change and a border cannot.
+- [x] 6.2 Borders. The square opens onto a road, the docks and the woods, each
+  its own scene and its own Room (`FJS-D990`). A border is a `<Door>` with a
+  `w` or an `h`: one mark, a run of door cells along an edge sharing one
+  `to`, and the scene across has the run back on its facing edge. A step
+  onto any door is `goto(to, { from, x, y })` — the route left and the cell
+  stepped on — and the next scene's `arrival()` (`stage.js`) stands the
+  figure beside its door whose `to` is `from`, nearest that cell: a border
+  is crossed at the matching row, and a door is come out of rather than
+  spawned away from, which closes the tavern's door dropping a figure at the
+  square's spawn. `scenes.test.js` pairs every door with a door back and
+  every run's cell with one across at its row, and `arrival()` with the
+  cell beside it. Measured (`verify:explore`): the crossing — a new route,
+  the socket cycled into the road's room, presence synced, the road drawn
+  with the figure in it — took 202 and 336 ms from the key over two runs, with the API in the same
+  process; the reconnect is most of it. The doors are claimed after the
+  scene's script runs, so the move to the arrival is a presence update at
+  mount: one made in `$.onMount` has no owning scope and its leave never
+  runs, which `verify:browser` caught as a Mesa warning. Found: a drive that
+  took `doors[0]` as the tavern's door broke when the borders claimed first;
+  a door is found by its `to`.
 - [ ] 6.3 Light and fog. A figure sees a radius around itself, line of sight
   cast over `walkable`; a cell seen before and out of sight now is drawn dim,
   a cell never seen is blank. A palette entry with `light: r` is a source —

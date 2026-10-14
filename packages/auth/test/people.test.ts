@@ -320,3 +320,20 @@ describe('over /mcp', () => {
     expect(await h.sys.user.findFirst({ where: { id: u.userId } })).not.toBeNull()
   })
 })
+
+// FJS-1949. `fli auth:create-user --account` and the seed both need a person
+// made inside an account in one call, not made and then moved.
+describe('createUser places the person in an account (FJS-1949)', () => {
+  test('accountId lands on the row and the session', async () => {
+    const email = `placed-${Date.now()}-${seq++}@example.com`
+    const made = await h.auth.createUser({ email, password: PW, accountId: 'sparkle' })
+    expect((await h.sys.user.findFirst({ where: { id: made.userId } })).accountId).toBe('sparkle')
+    expect(made.accountId).toBe('sparkle')
+  })
+
+  test('no accountId leaves the column null', async () => {
+    const email = `unplaced-${Date.now()}-${seq++}@example.com`
+    const made = await h.auth.createUser({ email, password: PW })
+    expect((await h.sys.user.findFirst({ where: { id: made.userId } })).accountId).toBeNull()
+  })
+})

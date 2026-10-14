@@ -8,7 +8,8 @@
 // shows, which pans as the figure walks (6.1) — so a figure's cell on screen
 // is its stage cell less the view's corner. Figures and bubbles are `at()`
 // boxes over it, a layer up, so they cover the art without the art knowing
-// they are there. The buffer is the view's size, made again when that
+// they are there. A pacer is drawn on lit cells only: the cat in a dark
+// corner is not seen. The buffer is the view's size, made again when that
 // changes: the editor asking for the whole stage, or a piece mounted past
 // the edge of a stage smaller than the view.
 //
@@ -18,10 +19,10 @@
 // same cell. The timer is unref'd, so a `--frame` render exits when its work
 // is done rather than when the water stops.
 import { FrameBufferRenderable, RGBA } from '@opentui/core'
-import { pacerAt } from './stage.js'
+import { INK as INK_HEX, pacerAt } from './stage.js'
 
 const CLEAR = RGBA.fromValues(0, 0, 0, 0)
-const INK   = RGBA.fromHex('#c8c8c8')
+const INK   = RGBA.fromHex(INK_HEX)
 
 const colors = new Map()
 const rgba = (hex) => {
@@ -62,7 +63,7 @@ export const paint = (stage) => (box) => {
       if (row < 0 || row >= v.h) continue
       ;[...text].forEach((ch, i) => {
         const col = x + i - v.x
-        if (ch !== ' ' && col >= 0 && col < v.w) buf.setCell(col, row, ch, rgba(p.fg) ?? INK, CLEAR)
+        if (ch !== ' ' && col >= 0 && col < v.w && stage.light(x + i, y) === 'lit') buf.setCell(col, row, ch, rgba(p.fg) ?? INK, CLEAR)
       })
     }
     fb.requestRender()

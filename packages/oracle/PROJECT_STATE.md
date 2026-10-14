@@ -28,7 +28,6 @@ Planned 2026-10-10. **Access defects come before features**, because getting acc
    - `FJS-D683`: what a backfill and a split look like in the operations document. Blocks `FJS-1787`.
 2. **Where the finding the person approves and the rule emit writes disagree.** These need no ruling. `FJS-2549` was this class and is closed.
    - `FJS-2552`: the finding says an administrator writes, and the emitted `@@allow` refuses one.
-   - `FJS-1881`: a child's `publicWhen` ignores its parent, so an unpublished shop's active listings are public.
    - `FJS-1885`: emit writes `@system` moves on models whose row policy admits no system principal, so the commitment never fires.
    - Do the same pass on the **`inferred` check** ([answer.js](src/answer.js) `GUESS`). It is a word match, and in the corpus it refused 2 of 21 first answers whose "not stated" explained an omission rather than an inference. That cost a turn each (`IDEAS/oracle-reasoning.md` § 8).
 3. **The two S2 holes**, once their rulings land.

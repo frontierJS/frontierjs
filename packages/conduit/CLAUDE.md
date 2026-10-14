@@ -127,7 +127,13 @@ src/
   believed collapsed is a second charge. `idempotency.auto` mints one **per
   `send()`, never per attempt**, or every replay is a fresh request under a
   fresh key. It is on the target because it asserts what the far end does, and
-  it is off by default for the same reason.
+  it is off by default for the same reason. **A key the target reads from the
+  JSON body is `idempotency.field`** (Telnyx's `command_id`), http and unix only
+  and refused beside `header`: without it the caller sent the key as a body
+  field and claimed `replayable`, which is false for a dial (`FJS-1877`). A body
+  the key cannot be written into is refused, not sent bare. `meta.replays` says
+  how many times the ladder sent the request again, so a collapsed duplicate's
+  refusal is not read as the first attempt failing.
 - **Every refusal belongs in `put()`, not in `register()`.** `init()` writes
   `opts.targets` straight through `put()`, so a rule that lives in `register()`
   is one a STATIC target — the way a provider is actually declared — never
@@ -143,8 +149,10 @@ src/
   under `resilience` is refused at `register()` **by name**, which is the finding
   rather than tidiness: `timeout_ms` written beside `resilience` instead of inside it
   was accepted and ignored, and TypeScript cannot see it — a descriptor read out
-  of a store is a `TargetDescriptor` by assertion (`FJS-728`). Adding a field
-  means `RESILIENCE_FIELDS`, the router's merge or `Resilience`, **and**
+  of a store is a `TargetDescriptor` by assertion (`FJS-728`). The descriptor's own
+  keys are refused the same way (`FJS-1951`): `DESCRIPTOR_FIELDS` is a `Record`
+  over the interface, so a field added without a line there fails the typecheck.
+  Adding a field means `DESCRIPTOR_FIELDS`, `RESILIENCE_FIELDS`, the router's merge or `Resilience`, **and**
   `EXTRA_KEYS`; a value that JSON cannot carry means the store too.
 - **A `websocket` target honors the same descriptor as http, field by field**
   (`FJS-D586`): `timeout_ms`, `max_response_bytes` (one inbound frame), and the

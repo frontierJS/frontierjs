@@ -1,0 +1,80 @@
+<script>
+  // Runner.mesa — a boy who runs in through a door with an errand for this
+  // member: walking into the scene asks `#errand` for one, and he comes in
+  // once it answers, so the wait for the fetch reads as his run. He is drawn
+  // on this screen only and never sent: the errand is this machine's, and the
+  // room is anybody's.
+  //
+  // A route places him (`routes/tavern.mesa`), never a scene file: a scene's
+  // picture is pinned by `scenes.test.js` and its file is the editor's, and
+  // neither may run a command.
+  import { at } from '#cell'
+  import { nextErrand, markDelivered } from '#errand'
+
+  // The `to` of the door he comes in by.
+  export let door = '/'
+
+  const scene = $context.scene
+  const STEP_MS = 120
+
+  let boy    = null   // { x, y } on the stage; null until he is through the door
+  let errand = null   // shown once he stops
+  let view   = scene.view
+  $.onDestroy(scene.subscribe(() => { view = scene.view }))
+
+  // Leaving the room aborts the fetch, so no boy arrives in the next one.
+  const ctl    = new AbortController()
+  const timers = []
+  $.onDestroy(() => { ctl.abort(); timers.forEach(clearTimeout) })
+
+  /** The cells he runs: the door, one in, then along the wall, while the floor allows. */
+  function path(d) {
+    const IN = [[0, -1], [0, 1], [1, 0], [-1, 0]].find(([dx, dy]) => scene.walkable(d.x + dx, d.y + dy))
+    if (!IN) return [{ x: d.x, y: d.y }]
+    const [ax, ay] = IN[0] ? [0, 1] : [1, 0]
+    const out = [{ x: d.x, y: d.y }]
+    let c = { x: d.x + IN[0], y: d.y + IN[1] }
+    for (let i = 0; i < 4 && scene.walkable(c.x, c.y); i++) {
+      out.push(c)
+      c = { x: c.x + ax, y: c.y + ay }
+    }
+    return out
+  }
+
+  function runIn(e) {
+    const d = scene.doors.find((o) => o.to === door)
+    if (!d) return
+    const cells = path(d)
+    cells.forEach((c, i) => timers.push(setTimeout(() => { boy = c }, i * STEP_MS)))
+    timers.push(setTimeout(() => {
+      errand = e
+      if (e.id) markDelivered(e.id)
+    }, cells.length * STEP_MS))
+  }
+
+  $.onMount(() => {
+    nextErrand({ signal: ctl.signal })
+      .then((e) => { if (e) runIn(e) })
+      .catch((e) => { if (!ctl.signal.aborted) runIn({ id: null, title: `the runner tripped: ${e.message}`, url: '' }) })
+  })
+
+  /** What he says, a row each over where he stands, kept inside the view. */
+  function note(e, b, v) {
+    const rows = [`(! ${e.title})`, e.url].filter(Boolean).map((t) => t.slice(0, v.w))
+    return rows.map((text, i) => ({
+      key:  i,
+      text,
+      x:    Math.max(0, Math.min(b.x - v.x, v.w - text.length)),
+      y:    Math.max(0, b.y - v.y - rows.length + i),
+    }))
+  }
+</script>
+
+{#if boy}
+  <p {@attach at(boy.x - view.x, boy.y - view.y, 11)}>&</p>
+  {#if errand}
+    {#each note(errand, boy, view) as r (r.key)}
+      <p class="surface" {@attach at(r.x, r.y, 12)}>{r.text}</p>
+    {/each}
+  {/if}
+{/if}

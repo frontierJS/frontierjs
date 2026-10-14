@@ -100,7 +100,7 @@ uuuuu
     y: { fg: ['#fde047', '#fbbf24', '#fef08a'], chars: 'i!i', ms: 300, flicker: true },
     m: { fg: '#7f1d1d' },
     M: { fg: '#b91c1c' },
-    h: { fg: ['#ef4444', '#f97316', '#facc15', '#fb923c'], chars: '^*^"', ms: 110, flicker: true },
+    h: { fg: ['#ef4444', '#f97316', '#facc15', '#fb923c'], chars: '^*^"', ms: 110, flicker: true, light: 6 },
   }
 </script>
 
@@ -124,4 +124,5 @@ uuuuu
     right={['-=^.^=', '~=^.^=']}
     left={['=^.^=-', '=^.^=~']}
     sit={['=^.^=', '=^.^=', '=^.^=', '=^-^=']} />
+  <slot />
 </Scene>

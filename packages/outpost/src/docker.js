@@ -461,14 +461,22 @@ export function createDocker({
     published,
     healthCheck,
 
-    /** An operator's script, run as this process's user. There is no sandbox
-     *  and Basecamp says so on the screen that submits one. */
+    /** An operator's script, as root over the box. The unit is sandboxed and the
+     *  script is not: it runs in a transient unit the manager starts, so it
+     *  never inherits this process's namespace (`FJS-D602`). Basecamp says so
+     *  on the screen that submits one. */
     async exec({ command, timeoutSeconds }) {
       if (!command) throw new Error('exec needs a command')
       // `timeout_s` is the caller's number, and `0` or `null` from a Job saved
       // that way must not reach `run` as "never kill" (`FJS-1857`).
       if (!(timeoutSeconds > 0)) timeoutSeconds = 300
-      const result = await run(['sh', '-c', command], { timeoutMs: timeoutSeconds * 1_000 })
+      // Killing the systemd-run client leaves its unit running, so the unit
+      // carries the bound itself and the client's is the backstop.
+      const result = await run([
+        'systemd-run', '--pipe', '--wait', '--collect', '--quiet',
+        `--property=RuntimeMaxSec=${Math.ceil(timeoutSeconds)}`,
+        '--', 'sh', '-c', command,
+      ], { timeoutMs: (timeoutSeconds + 10) * 1_000 })
       return { exit_code: result.exitCode, stdout: result.stdout, stderr: result.stderr }
     },
   }

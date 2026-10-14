@@ -95,6 +95,15 @@ export function createWorkspacesService(app: BasecampApp) {
     return $.db.asSystem().workspaceMember
   }
 
+  /** The three roster writes go through the caller's own client, re-claimed to
+   *  the workspace being addressed by `stampSelfAsWorkspace`, so the schema's
+   *  gate, `@@allow` and `@@deny(update, userId == auth().id)` hold them and
+   *  not a restatement here. `leave` and `transferOwnership` stay system: both
+   *  write the caller's own row, which that deny exists to refuse. */
+  function memberWrites(): any {
+    return $.db.workspaceMember
+  }
+
   return createService({
     name:  'workspaces',
     scope: keyScope('workspaces'),
@@ -237,7 +246,7 @@ export function createWorkspacesService(app: BasecampApp) {
         throw new Conflict('User is already a member of this workspace')
 
       const next = role ?? 'developer'
-      return members().create({
+      return memberWrites().create({
         data: { workspaceId: wsId, userId: target, role: next, capabilities: grantsFor(next),
                 invitedBy: actor(), invitedAt: new Date().toISOString() },
       })
@@ -246,23 +255,11 @@ export function createWorkspacesService(app: BasecampApp) {
     async setMemberRole() {
       const { userId: target, role } = $.data as { userId: string; role: WorkspaceRole }
 
-      // FJS-410. `role` is what core/gate.ts grades every gate from, so a
-      // caller naming their OWN userId with `role: 'owner'` was granting
-      // themselves level 6 — measured through this method, no throw, 200, the
-      // trail recording a legitimate-looking role change.
-      //
-      // `WorkspaceMember` denies it at the Data boundary as well
-      // (`@@deny('update', userId == auth().id)`), and that is the rule that
-      // covers a job, a hub screen and a `fli db:repl` session — but not this
-      // path: `members()` is `asSystem()`, because membership is what decides
-      // access and cannot be read through the caller it is deciding about. So
-      // the one door a person actually walks through is the one door the
-      // boundary rule cannot hold, and the refusal is stated here.
-      if (target === sessionOf().userId)
-        throw new Forbidden(
-          'You cannot change your own role in a workspace. Ask another owner or administrator.'
-        )
-
+      // FJS-410. `role` is what core/gate.ts grades every gate from, so naming
+      // your OWN userId with `role: 'owner'` granted level 6. The write below
+      // is the caller's own client, so `WorkspaceMember`'s
+      // `@@deny('update', userId == auth().id)` refuses it; the read stays
+      // system because standing cannot be read through the caller it grades.
       const wsId   = $.id as string
       const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
       if (!member) throw new NotFound('Member not found')
@@ -287,10 +284,18 @@ export function createWorkspacesService(app: BasecampApp) {
       // Re-stamped, not merged. A role IS a default set (core/capabilities.ts),
       // so leaving the old grants behind would make a demotion change the word
       // on the screen and nothing about what the person may actually do.
-      return members().update({
+      //
+      // A deny on update FILTERS the row out rather than throwing, so a refused
+      // write answers null — and a 200 carrying null reads as a role changed.
+      const updated = await memberWrites().update({
         where: { id: member.id },
         data:  { role, capabilities: grantsFor(role) },
       })
+      if (!updated)
+        throw new Forbidden(
+          'You cannot change your own role in a workspace. Ask another owner or administrator.'
+        )
+      return updated
     },
 
     async removeMember() {
@@ -305,7 +310,7 @@ export function createWorkspacesService(app: BasecampApp) {
 
       // Hard delete: WorkspaceMember has no @@softDelete — a revoked membership
       // should stop matching, not linger as a tombstone the role hooks read.
-      await members().delete({ where: { id: member.id } })
+      await memberWrites().delete({ where: { id: member.id } })
       return { workspace_id: wsId, user_id: target, removed: true }
     },
 

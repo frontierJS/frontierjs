@@ -287,7 +287,14 @@ export class HttpTransport extends BaseTransport {
    * `open`, a 2xx answers the unread `Response` in place of its decoded body.
    */
   private async exchange<T>(req: ConduitRequest, open: boolean): Promise<ConduitResult<T>> {
-    const retries  = this.opts.retry_limit ?? DEFAULT_RETRY_LIMIT
+    const tally  = { replays: 0 }
+    const result = await this.ladder<T>(req, open, tally)
+    result.meta.replays = tally.replays
+    return result
+  }
+
+  private async ladder<T>(req: ConduitRequest, open: boolean, tally: { replays: number }): Promise<ConduitResult<T>> {
+    const retries = this.opts.retry_limit ?? DEFAULT_RETRY_LIMIT
     const deadline = performance.now() + (this.opts.deadline_ms ?? DEFAULT_DEADLINE_MS)
     let   attempt  = 0
 
@@ -377,6 +384,7 @@ export class HttpTransport extends BaseTransport {
       if (attempt === retries)          return result  // exhausted
 
       attempt++
+      tally.replays = attempt
       this.opts.onRetry?.(sent, result.error, attempt)
 
       // A stated Retry-After beats our own ladder. Ignoring it and retrying at
@@ -436,8 +444,24 @@ export class HttpTransport extends BaseTransport {
       // BigInt, and send() must never throw at the caller (§2.4).
       const isGet   = method === 'GET'
       const encoding = this.descriptor.encoding ?? 'json'
-      const rawBody = (!isGet && req.body !== undefined)
-        ? serialize(req.body, encoding)
+      // A key the target reads from the body is written in here, before the
+      // bytes are made, so the signer hashes what is sent. A body it cannot be
+      // written into is refused: sent without, the retry it licensed would be
+      // the duplicate the key exists to prevent.
+      const field = this.descriptor.idempotency?.field
+      let   body  = req.body
+      if (field !== undefined && req.idempotency_key !== undefined && !isGet) {
+        const plain = typeof body === 'object' && body !== null && !Array.isArray(body)
+        if (body !== undefined && (!plain || encoding === 'binary')) {
+          return this.fail('invalid_request', `Target '${this.descriptor.id}' reads its idempotency key from the body field '${field}', and this body is not an object it can be written into`, { retryable: false })
+        }
+        if (plain && field in (body as object)) {
+          return this.fail('invalid_request', `The body already holds '${field}', which is where target '${this.descriptor.id}' reads its idempotency key: pass idempotency_key and leave the field out`, { retryable: false })
+        }
+        body = { ...(body as object | undefined), [field]: req.idempotency_key }
+      }
+      const rawBody = (!isGet && body !== undefined)
+        ? serialize(body, encoding)
         : undefined
 
       const { res, url: finalUrl } = await this.dispatch(url, method, async (target) => {
@@ -454,7 +478,7 @@ export class HttpTransport extends BaseTransport {
             'Content-Type': CONTENT_TYPE[encoding],
             'Accept':       'application/json',
           },
-          req.idempotency_key ? { [this.idempotencyHeader()]: req.idempotency_key } : undefined,
+          req.idempotency_key && field === undefined ? { [this.idempotencyHeader()]: req.idempotency_key } : undefined,
           this.descriptor.headers,
           req.headers,
         )

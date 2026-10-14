@@ -254,6 +254,13 @@ export function createFlagsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
+    // The override verbs write a FlagOverride row by hand, so autoValidate never
+    // sees their payload: each names a `type` in db/schema.lite instead.
+    methods: ['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+              { method: 'setOverride',   input: 'FlagOverrideSet' },
+              { method: 'clearOverride', input: 'FlagOverrideClear' },
+              'resolve'],
+
     async find() {
       const { limit, offset } = getPagination()
       const type = $.query.type as string | undefined
@@ -335,7 +342,6 @@ export function createFlagsService(app: BasecampApp) {
       const { environmentId, isEnabled, rollout, variantKey } =
         ($.data ?? {}) as Record<string, unknown>
 
-      if (!environmentId) throw new BadRequest('environmentId is required')
       await environmentInWorkspace(environmentId as string)
 
       if (variantKey != null) {
@@ -368,7 +374,6 @@ export function createFlagsService(app: BasecampApp) {
     async clearOverride() {
       const flag = await getScoped('featureFlag', 'Flag')
       const { environmentId } = ($.data ?? {}) as Record<string, string>
-      if (!environmentId) throw new BadRequest('environmentId is required')
 
       const existing = await db().flagOverride.findFirst({
         where: { flagId: flag.id, environmentId },

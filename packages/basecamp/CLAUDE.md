@@ -146,7 +146,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           own log — never `children.js`, whose in-memory table a `bun --watch`
           restart would lose with the server still up. The checkout's OWN fli,
           and no FLI_PORT_* or PORT of this API's; Unpin and Archive stop it.
-          A pin may carry PLANS (`plans: [{ path, steps }]`, IDEAS/workbench-plans.md),
+          A pin may carry PLANS (`plans: [{ path, steps }]`, IDEAS/shipped/workbench-plans.md),
           and `plan` is the path of the SHOWN one, as `chat` is for chats — Go,
           Next, tick and decide act on it; `openPlan` shows one, adding a file
           already written, and `closePlan` forgets one here and keeps the file.
@@ -338,9 +338,11 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   axis.** `admin` and `owner` hold the same grid, because what separates them is
   the workspace itself, so a subset test cannot see an admin minting an owner
   (`FJS-410`) while the ladder cannot see a sideways grant (`FJS-529`). Both are
-  checked. It stays a hook because all three membership writers are `asSystem()`,
-  which has no principal — *what you hold* is undefined there, not merely
-  skipped — and litestone's own `Capability[]` guard covers every other door.
+  checked. It stays a hook because the grade is of the ROLE handed out, which litestone's
+  `Capability[]` guard does not see. `addMember`, `setMemberRole` and
+  `removeMember` write on the caller's own client (`FJS-2356`), so that guard,
+  the model's gate and `@@deny(update, userId == auth().id)` all apply; a
+  fixture seeding an admin stamps `grantsFor(role)` or the guard refuses them.
   **The three `capability-ladder` warnings from `fli check` are answered, not
   ignored**: the gates stay steep because the grant table is bounded by them, so
   the ladder still catches a grant mis-stamped by a bug or a migration.

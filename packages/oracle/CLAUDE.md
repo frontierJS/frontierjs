@@ -43,6 +43,8 @@ mockup/          the old React recognizer. Not a workspace member, not ported,
   at gate 0 a child delegates to `check(parent, 'update')`, or to nothing when
   the parent holds no update policy; `check(shop)` let every signed-in caller
   read and add to the orders of a published shop (`FJS-1789`).
+  A child's own `publicWhen` is ANDed with `check(via)` under such a parent,
+  or an active listing in a draft shop is public (`FJS-1881`).
 - **A create is an AND.** The caller is the owner/author the row names AND may
   read the parent. Either alone files a row under somebody else's name or
   under a parent the caller cannot see.

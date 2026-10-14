@@ -17,7 +17,10 @@
   // slice drawn, and this figure is the one it follows, so it pans when the
   // figure nears an edge. A figure outside the view is not drawn, and a
   // speaker outside it is their line as a marker on the edge facing them,
-  // so a line is never lost to the pan.
+  // so a line is never lost to the pan. The figure is also the one that
+  // SEES (6.3): the stage lights what it can see, and another figure
+  // standing in the dark is not drawn — their line is, over the dark cell,
+  // since the room is heard whole until 7.1.
   //
   // A line beginning `/` is a command and never a Message: `/ban <nick>` and
   // `/unban <nick>` are an ordinary patch of the member's `bannedAt`, which the
@@ -28,8 +31,14 @@
   // a line being typed is never walked away from by a Left meant for it. In
   // the terminal shell's NORMAL mode h j k l arrive as the arrows, and a step
   // is prevented so the shell does not also move focus for a j or a k. A step
-  // onto a door is a navigation, and the next route's walk-in cycles the
-  // socket into that room.
+  // onto a door is a navigation carrying where it was stepped through
+  // (`from`, `x`, `y` in the query), the next route's walk-in cycles the
+  // socket into that room, and its scene stands the figure beside the door
+  // that leads back (`arrival()` in stage.js) — a border is crossed at the
+  // matching row, and a door is come out of. The arrival is read at mount,
+  // once the pieces have claimed their cells, and the figure moved to it;
+  // the presence itself is made here, in the component's own scope, since
+  // one made in `$.onMount` has no owner and its leave never runs.
   //
   // PageUp opens the room's history over the art and pages back through it,
   // PageDown pages forward and closes it past the newest line, as a
@@ -40,10 +49,10 @@
   // leave the route on the Esc.
   import { presence }    from '@frontierjs/sierra/presence'
   import { useStore }    from '@frontierjs/sierra/resource'
-  import { goto }        from '@frontierjs/sierra/router'
+  import { goto, page }  from '@frontierjs/sierra/router'
   import { members }     from '@/resources/Member.mesa'
   import { messages }    from '@/resources/Message.mesa'
-  import { createStage } from '@/stage.js'
+  import { createStage, arrival } from '@/stage.js'
   import { at }          from '#cell'
   import { paint }       from '#paint'
 
@@ -68,6 +77,7 @@
   let view = stage.view
   $.onDestroy(stage.subscribe(() => { view = stage.view }))
   $: stage.follow(x, y)
+  $: { if (here) stage.see(x, y) }
   let draft = ''
   let note  = ''
   let nicks = {}
@@ -82,6 +92,15 @@
   // top-level const that reads a prop or a `let` is derived — made when it is
   // first read, inside whatever effect reads it, and again on every step.
   var here = room ? presence(`room:${room.id}`, { meta: { ...spawn } }) : null
+  $.onMount(() => {
+    if (!here) return
+    const { from, x: fx, y: fy } = page.query
+    const start = arrival(stage, { from, x: fx, y: fy })
+    if (start.x === x && start.y === y) return
+    x = start.x
+    y = start.y
+    here.updateMeta({ x, y })
+  })
 
   const { get: lines, unsubscribe } = useStore(messages.store)
   $.onDestroy(unsubscribe)
@@ -108,8 +127,10 @@
   const cell   = (m) => ({ x: m.meta?.x ?? spawn.x, y: m.meta?.y ?? spawn.y })
   const inView = (c, v) => c.x >= v.x && c.x < v.x + v.w && c.y >= v.y && c.y < v.y + v.h
 
-  /** The other figures on screen, each at its cell of the view. */
-  const figures = (h, v) => h.others.filter((m) => inView(cell(m), v)).map((m) => ({ m, x: cell(m).x - v.x, y: cell(m).y - v.y }))
+  /** The other figures on screen and in the light, each at its cell of the view. */
+  const figures = (h, v) => h.others
+    .filter((m) => inView(cell(m), v) && stage.light(cell(m).x, cell(m).y) === 'lit')
+    .map((m) => ({ m, x: cell(m).x - v.x, y: cell(m).y - v.y }))
 
   /**
    * The newest line of each member standing here, over where they stand, in
@@ -184,7 +205,7 @@
     const nx = x + step[0]
     const ny = y + step[1]
     const door = stage.doorAt(nx, ny)
-    if (door) { goto(door.to); return }
+    if (door) { goto(door.to, { from: page.pathname, x: nx, y: ny }); return }
     if (!stage.walkable(nx, ny)) return
     x = nx
     y = ny

@@ -178,7 +178,8 @@ export function createServersService(app: BasecampApp) {
       'providers',
       // `provision` is a person spending money; `provisionStep` is the job it
       // dispatched, and is internalOnly.
-      'provision', 'provisionStep',
+      { method: 'provision', input: 'ServerProvision' },
+      { method: 'provisionStep', input: 'ServerProvisionStep' },
       // `destroy` is a person, with a typed confirmation; `destroyStep` is the
       // job. `reconcile` reads a cloud and writes nothing.
       'destroy', 'destroyStep',
@@ -233,7 +234,6 @@ export function createServersService(app: BasecampApp) {
     // ── create ────────────────────────────────────────────────────────
     async create() {
       const data = $.data as Record<string, unknown>
-      if (!data?.name?.toString().trim()) throw new BadRequest('name is required')
 
       // The slug was derived by deriveSlug in before/create. `workspaceId` is
       // not read here and is not in the uniqueness clause: the declaration
@@ -492,9 +492,6 @@ export function createServersService(app: BasecampApp) {
     async provision() {
       const data = ($.data ?? {}) as Record<string, unknown>
       const { name, role, accountId, region, size, image } = data as Record<string, string>
-
-      for (const [key, value] of Object.entries({ name, accountId, region, size, image }))
-        if (!value) throw new BadRequest(`${key} is required to provision a machine`)
 
       const account = await db().secret.findFirst({ where: { id: accountId } })
       if (!account) throw new NotFound(`Provider account '${accountId}' not found`)

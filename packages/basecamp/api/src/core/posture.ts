@@ -279,7 +279,7 @@ const CONTROLS: { id: string; group: string; severity: Severity; hardenedAtInsta
       : { ok: false, message: 'The clock is not synchronized' }
   } },
 
-  { id: 'outpost.sandbox', group: 'outpost', severity: 'low', grade: (r) => {
+  { id: 'outpost.sandbox', group: 'outpost', severity: 'low', hardenedAtInstall: true, grade: (r) => {
     if (!r.outpost_unit) return unknown('systemd-analyze security could not score the outpost unit')
     return r.outpost_unit.exposure <= SANDBOX_MAX
       ? { ok: true,  message: `outpost.service exposure ${r.outpost_unit.exposure}` }

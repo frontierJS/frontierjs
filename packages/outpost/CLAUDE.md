@@ -28,6 +28,13 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   makes. A plain-http `OUTPOST_PUBLIC_URL` is refused at start, because Basecamp
   would register no target for it and the machine would look healthy.
 
+- **The unit is sandboxed and `/exec` is not** (`FJS-1761`, `FJS-D602`).
+  `installScript()`'s unit writes only `/var/lib/outpost`, `/etc/basecamp` and
+  bun's install dir, and `exec` runs its command as `systemd-run --pipe --wait`,
+  a transient unit outside that namespace. A new write path in this package
+  needs a `ReadWritePaths` entry there, or it fails on a machine and in no test.
+  Killing the systemd-run client does not stop its unit, so the timeout is
+  `RuntimeMaxSec` on the unit. Never run on a machine (`FJS-257`).
 - **The route bodies are basecamp's wire contract and they are snake_case.**
   `app_id`, `timeout_s`, `keep_images`, `server_id`. Inside is camelCase. A route
   that passes a body straight through addresses a container called

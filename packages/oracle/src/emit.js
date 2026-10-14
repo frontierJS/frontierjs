@@ -397,10 +397,14 @@ function accessFor(m, of, backs) {
       terms.update.push(member)
     }
     // One term, every entry holding: checkAnswer's finding reads the entries
-    // with *and*, and that sentence is what the person approves.
+    // with *and*, and that sentence is what the person approves. Under a
+    // parent with a public read the condition also needs that parent read:
+    // standing alone it made an active listing public inside a draft shop.
     if (a.publicWhen) {
       const when = Object.entries(a.publicWhen).map(([k, v]) => `${k} == ${typeof v === 'string' ? `'${v}'` : v}`)
-      terms.read.push(when.length > 1 ? `(${when.join(' && ')})` : when[0])
+      const own = when.length > 1 ? `(${when.join(' && ')})` : when[0]
+      const parent = a.via && m.links.find(l => l.name === a.via).to
+      terms.read.push(parent && open(parent) ? `(check(${a.via}) && ${own})` : own)
     }
   }
 

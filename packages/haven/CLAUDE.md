@@ -2,8 +2,8 @@
 
 An FJS app laid out like `basecamp` (`FJS-D977`): `db/`, `api/`, and one `web/`
 built for two targets (`FJS-D985`) — the terminal (`fli haven`, `fli dev:tui`)
-and a browser (`bun run web`, `fli dev`). Three modules differ per target and
-nothing else: `#paint`, `#cell` and `#sign-in`, the package's `imports`, whose
+and a browser (`bun run web`, `fli dev`). Four modules differ per target and
+nothing else: `#paint`, `#cell`, `#sign-in` and `#errand`, the package's `imports`, whose
 `browser` condition Vite takes and Bun does not. The plan, and the first open
 box, is `IDEAS/haven.md`.
 
@@ -27,12 +27,13 @@ box, is `IDEAS/haven.md`.
 | `api/test/retention.test.ts` | seven lines in one burst keep exactly three, a room under the count is untouched, a second sweep finds nothing, and the app has the sweep on its clock |
 | `api/test/client.test.ts` | the stated version is the manifest's, answered with no session |
 | `api/test/sign-in.ts` | a test's machine walking in, with the signed request's parts kept for a test that tampers with them |
-| `web/src/routes/` | `index.mesa` the square, `tavern.mesa` the tavern — each one `WalkIn` around its scene |
+| `web/src/routes/` | `index.mesa` the square, `tavern.mesa`, `road.mesa`, `woods.mesa`, `docks.mesa` — each one `WalkIn` around its scene; the tavern's passes its scene a `<Runner />` |
 | `web/src/components/WalkIn.mesa` | a route's body: asks the socket for the scene's room, reads its Room row, then provides it as `$context.room` and lets the scene in |
 | `web/src/components/Scene.mesa` | one room drawn (`FJS-D997`): makes a stage, provides it as `$context.scene`, paints it with `#paint`; and with a `$context.room`, a figure per `presence()` member, a bubble per member's newest line, the input line — a line beginning `/` is a command, `/ban <nick>` and `/unban <nick>`, an ordinary patch of `bannedAt`; a step onto a door is `goto`; PageUp opens the room's history over the art and pages back through it, PageDown forward and closed past the newest, Esc closes. With no room it is a picture |
-| `web/src/components/Piece.mesa` · `Row.mesa` · `Door.mesa` · `Pacer.mesa` | what a scene is made of — each claims cells on the stage it is inside and draws nothing itself: a piece at `x, y`, a piece `n` times `step` apart, a door that replaces the wall cell under it, a sprite pacing a row |
-| `web/src/stage.js` | `createStage()`: the cells a scene's pieces claim, one owner per cell (two pieces on one cell throw naming both), `walkable`, `doorAt`, `look()` — how a cell is painted at a tick — `pacerAt()`, `picture()`, and `marks`, every placed thing in order, which the editor moves; `view`, the slice a screen draws (`VIEW`, 97×26, at most), `follow(x, y)`, which pans it when the figure comes within `EDGE` of a side, and `showAll()`, the editor's; the pure `follow()` a drive mirrors a terminal's view with; `stages` by slug, for a test or a drive |
-| `web/src/scenes/Square.mesa` · `Tavern.mesa` | each scene as a tree: its one-off piece blocks and palette in `<script>`, its `<Scene>` of placed tags after. The square is 160 cells wide, a screen and two thirds, its frame its own `framed(159, 26)`; the tavern one screen |
+| `web/src/components/Piece.mesa` · `Row.mesa` · `Door.mesa` · `Pacer.mesa` | what a scene is made of — each claims cells on the stage it is inside and draws nothing itself: a piece at `x, y`, a piece `n` times `step` apart, a door that replaces the wall cell under it — with a `w` or an `h` a run of door cells, a border along an edge — a sprite pacing a row |
+| `web/src/components/Runner.mesa` | a boy who runs in through a door with `#errand`'s answer, drawn on this screen only and never sent; placed by a route, inside the scene's `<slot />`, so a scene's picture and its test run no command |
+| `web/src/stage.js` | `createStage()`: the cells a scene's pieces claim, one owner per cell (two pieces on one cell throw naming both), `walkable`, `doorAt`, `look()` — how a cell is painted at a tick — `arrival()`, where a figure stands having come through a door (beside the door back to `from`, nearest the cell crossed, so a border is crossed at its row), `pacerAt()`, `picture()`, and `marks`, every placed thing in order, which the editor moves; `view`, the slice a screen draws (`VIEW`, 97×26, at most), `follow(x, y)`, which pans it when the figure comes within `EDGE` of a side, and `showAll()`, the editor's; the pure `follow()` a drive mirrors a terminal's view with; `stages` by slug, for a test or a drive |
+| `web/src/scenes/Square.mesa` · `Tavern.mesa` · `Road.mesa` · `Woods.mesa` · `Docks.mesa` | each scene as a tree: its one-off piece blocks and palette in `<script>`, its `<Scene>` of placed tags after. The square is 160 cells wide, a screen and two thirds, its frame its own `framed(159, 26)`, with borders east onto the road, west into the woods and south down to the docks; every other scene one screen |
 | `web/src/scenes/*.frame.txt` | each scene's picture, rendered from the tree and pinned by `scenes.test.js`; `bun run frames` rewrites them, and the diff is the review |
 | `web/src/pieces/` | `piece()` and the pieces any scene may use, each a small art and its paint: `frame`, `tree`, `lamp`, `bench`, `table`, `barrel` |
 | `web/src/paint.js` | `#paint` in the terminal: `paint(stage)` — the attach that draws the stage's `view` and its pacers into an OpenTUI frame buffer in color, on the wall clock, redrawn on the shortest step and on any claim or pan changing |
@@ -41,15 +42,17 @@ box, is `IDEAS/haven.md`.
 | `web/src/cell.browser.js` | `#cell` in a browser: `left`/`top` in `ch`/`lh`, margin and padding zeroed so a bubble's glyph lands on its cell |
 | `web/src/sign-in.js` | `#sign-in` in the terminal: the key at `~/.fli/haven/key.json` (made 0600 on the first run), a signed login on every run, and `sessionToken()` — the `HAVEN_TOKEN` `fli haven` handed over. `fli haven` imports this file by path, so the door versions with the server |
 | `web/src/sign-in.browser.js` | `#sign-in` in a browser: the same signed login over a WebCrypto key kept in IndexedDB, once per page load; a first login's nick is `?nick=`, else `guest-` and the key's first six characters |
+| `web/src/errand.js` | `#errand` in the terminal: `nextErrand()` runs `HAVEN_ERRAND` through `sh -c` for one `{ id, title, url }` (unset, none), and `markDelivered(id)` keeps it in `~/.fli/haven/errands.json` for a day |
+| `web/src/errand.browser.js` | `#errand` in a browser: no errand, since a page runs no command on its machine |
 | `web/src/walk-in.js` | `walkIn(slug)`: `#sign-in`'s token, the room as the socket's query, then the token — target-neutral |
 | `web/src/main.js` · `App.mesa` · `web/index.html` | the browser's entry and root; the terminal shell mounts a route itself and never reads them |
 | `web/config/vite.config.js` | the browser build: 5506 (`havenWeb`) or `WEB_PORT`/`FLI_PORT_FE`, `strictPort`, the API's paths proxied to 5505 or `API_PORT` |
 | `web/src/resources/` | `rooms`, `members`, `messages` |
 | `web/test/stage.mjs` | a scene mounted headless through Sierra's terminal loader: its stage and the frame the terminal drew — `scenes.test.js`'s and both drives' |
-| `web/test/scenes.test.js` | each scene's picture is its `.frame.txt`, and the terminal draws its view's slice of it from the spawn and from the far corner; `follow()` pans only near an edge and stays inside the stage; a glyph and a color at every tick; every door reached from the spawn; a pacer walks floor only; the stage's own rules — a cell claimed twice refused, a door over a wall, a moved piece freeing its cells |
+| `web/test/scenes.test.js` | each scene's picture is its `.frame.txt`, and the terminal draws its view's slice of it from the spawn and from the far corner; `follow()` pans only near an edge and stays inside the stage; a glyph and a color at every tick; every door reached from the spawn, leading to a scene with a door back, and every border cell paired with one across at its row; a pacer walks floor only; the stage's own rules — a cell claimed twice refused, a door over a wall, a door run as one mark, `arrival()`, a moved piece freeing its cells |
 | `web/test/frames.mjs` | `bun run frames`: every scene's picture rewritten |
 | `tests/verify-fresh.mjs` | a machine with no checkout: this tree packed into a Verdaccio that never proxies `@frontierjs/*`, then a bare `oven/bun` container runs `bunx @frontierjs/cli haven` twice — installed, drawn, one member |
-| `web/test/verify-explore.mjs` | two terminals: a pty shell walks and speaks, a `fli haven --frame /` sees it, each sees the other; then the door to the tavern and back, the key is the member, a mod bans; then east off the first screen — the view follows, the frame from the spawn carries the line as a marker on its edge, and a third terminal walking the same way sees the figure where the first screen never reached |
+| `web/test/verify-explore.mjs` | two terminals: a pty shell walks and speaks, a `fli haven --frame /` sees it, each sees the other; then the door to the tavern and back out beside it, the key is the member, a mod bans; then east off the first screen — the view follows, the frame from the spawn carries the line as a marker on its edge, and a third terminal walking the same way sees the figure where the first screen never reached; then over the border into the road at the matching row, the crossing timed, and back |
 | `web/test/verify-browser.mjs` | a pty terminal and a CDP tab on this package's own Vite server in one room, each read off the other's screen — figures, lines, the art row for row and the palette, the stale-build line; then a reload is the same member and the tab's door empties the terminal's square |
 | `web/test/terminal.mjs` | the pty shell, its screen replayed from cursor moves, and a scene cell read off it against a stage's picture through the view that screen has — both drives' |
 | `editor/` | the scene editor (`IDEAS/haven.md` 5.7), served by `fli haven:scenes` or `bun run scenes` on 5507 (`havenScenes`) — a tool on this machine, never a Haven route |
@@ -122,6 +125,19 @@ box, is `IDEAS/haven.md`.
   its teardown is never placed, with nothing failing but the picture. The
   same for `Scene.mesa`'s `stage` and `here`: a presence made in a lazy const
   is made inside the effect that first reads it, and again on every step.
+- **A step onto a door carries `from`, `x` and `y` in the query, and the next
+  scene reads them at mount.** `arrival()` finds the door back by `to ===
+  from`, so a scene reached by a path its doors do not spell (`/road` for
+  `/road/`) spawns the figure instead, with nothing said; `page.pathname` is
+  the spelling. The move to the arrival is a presence update at mount, after
+  the pieces have claimed, so another screen may draw the figure at the spawn
+  for one frame first; a drive reads it where it arrives.
+- **A border's two runs are two statements, one per scene.** A run that
+  stops short of the other's drops a crossing figure beside the nearest cell
+  of it; `scenes.test.js` pairs every cell of a run with one across at its
+  row, which is the only thing that says so.
+- **`stage.doors` is in claim order, and a border claims first.** A drive
+  that wants the tavern's door finds it by its `to`.
 - **A piece's cells are claimed once; a second piece on a cell throws at
   mount, naming the cell and both.** A door is the one claim allowed over
   another. A scene that mounts is therefore a scene with no overlap, and the

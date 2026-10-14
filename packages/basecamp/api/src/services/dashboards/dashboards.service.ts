@@ -175,8 +175,7 @@ export function createDashboardsService(app: BasecampApp) {
    *  through a dashboard that `getScoped` has already put inside the
    *  workspace, so a widget id from another tenant answers the same 404 as one
    *  that never existed. */
-  async function widgetOf(dashboardId: string, widgetId?: string) {
-    if (!widgetId) throw new BadRequest('widgetId is required')
+  async function widgetOf(dashboardId: string, widgetId: string) {
     const widget = await db().dashboardWidget.findFirst({ where: { id: widgetId, dashboardId } })
     if (!widget) throw new NotFound(`Widget '${widgetId}' not found on this dashboard`)
     return widget
@@ -199,7 +198,11 @@ export function createDashboardsService(app: BasecampApp) {
     // with it. Naming the six means the absence is real; it also throws at
     // construction on a method this service does not have.
     methods: ['find', 'get', 'create', 'patch', 'remove', 'restore',
-              'kinds', 'addWidget', 'updateWidget', 'removeWidget', 'reorder'],
+              'kinds',
+              { method: 'addWidget',    input: 'WidgetAdd' },
+              { method: 'updateWidget', input: 'WidgetUpdate' },
+              { method: 'removeWidget', input: 'WidgetRemove' },
+              { method: 'reorder',      input: 'DashboardReorder' }],
 
     async find() {
       const { limit, offset } = getPagination()
@@ -285,9 +288,8 @@ export function createDashboardsService(app: BasecampApp) {
     async addWidget() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
       const input     = ($.data ?? {}) as WidgetInput
-      if (!input.kind) throw new BadRequest('kind is required')
 
-      const columns = await resolveWidget(input.kind, input)
+      const columns = await resolveWidget(input.kind as string, input)
 
       // Appended. Position is dense only by convention — `reorder` rewrites the
       // whole set — so the next one goes after the last, not at count+1, which
@@ -315,7 +317,7 @@ export function createDashboardsService(app: BasecampApp) {
     async updateWidget() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
       const input     = ($.data ?? {}) as WidgetInput
-      const widget    = await widgetOf(dashboard.id as string, input.widgetId)
+      const widget    = await widgetOf(dashboard.id as string, input.widgetId as string)
 
       // The kind is immutable. Changing it changes what the card is, and every
       // subject and config key it validated against — that is a new widget, and
@@ -339,7 +341,7 @@ export function createDashboardsService(app: BasecampApp) {
     // ── removeWidget ─────────────────────────────────────────────────
     async removeWidget() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
-      const widget    = await widgetOf(dashboard.id as string, ($.data as WidgetInput)?.widgetId)
+      const widget    = await widgetOf(dashboard.id as string, ($.data as WidgetInput).widgetId as string)
 
       // Hard delete: DashboardWidget declares no @@softDelete. A card taken off
       // a board is not history — it is a layout decision, and the audit trail
@@ -355,7 +357,7 @@ export function createDashboardsService(app: BasecampApp) {
     // last writer's intent the one on screen.
     async reorder() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
-      const ids       = (($.data ?? {}) as { ids?: string[] }).ids
+      const ids       = ($.data as { ids?: string[] }).ids
       if (!Array.isArray(ids) || !ids.length) throw new BadRequest('ids must be a non-empty array of widget ids')
 
       const widgets = await db().dashboardWidget.findMany({

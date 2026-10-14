@@ -13,9 +13,39 @@ export const tree = {
   params: [],
   children: [
   {
+      id: "docks",
+      path: "/docks/",
+      file: "src/routes/docks.mesa",
+      companion: null,
+      layout: null,
+      meta: JSON.parse("{}"),
+      params: [],
+      children: [],
+    },
+  {
+      id: "road",
+      path: "/road/",
+      file: "src/routes/road.mesa",
+      companion: null,
+      layout: null,
+      meta: JSON.parse("{}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "tavern",
       path: "/tavern/",
       file: "src/routes/tavern.mesa",
+      companion: null,
+      layout: null,
+      meta: JSON.parse("{}"),
+      params: [],
+      children: [],
+    },
+  {
+      id: "woods",
+      path: "/woods/",
+      file: "src/routes/woods.mesa",
       companion: null,
       layout: null,
       meta: JSON.parse("{}"),
@@ -28,7 +58,10 @@ export const tree = {
 // Component factory map — resolved lazily by the router on navigation
 export const components = {
   'root': () => import('../src/routes/index.mesa'),
+  'docks': () => import('../src/routes/docks.mesa'),
+  'road': () => import('../src/routes/road.mesa'),
   'tavern': () => import('../src/routes/tavern.mesa'),
+  'woods': () => import('../src/routes/woods.mesa'),
 }
 
 
@@ -49,17 +82,26 @@ export const layouts = {
 // Flat URL arrays for route table consumers (sitemap, llms.txt, deploys)
 export const all = [
   "/",
-  "/tavern/"
+  "/docks/",
+  "/road/",
+  "/tavern/",
+  "/woods/"
 ]
 
 export const published = [
   "/",
-  "/tavern/"
+  "/docks/",
+  "/road/",
+  "/tavern/",
+  "/woods/"
 ]
 
 export const indexed = [
   "/",
-  "/tavern/"
+  "/docks/",
+  "/road/",
+  "/tavern/",
+  "/woods/"
 ]
 
 export const redirects = []

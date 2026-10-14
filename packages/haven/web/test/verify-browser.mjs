@@ -20,6 +20,8 @@
  * would read as the art under it.
  *
  * Traps:
+ * - Each screen is fogged for its own figure (6.3), so the art is compared
+ *   where the tab draws it, and the color cell is one the tab's figure sees.
  * - The server states a build (`FJS_BUILD`) and the page is served as
  *   another (`VITE_FJS_BUILD`), so the page must say it is stale. Both are
  *   set here; a dev server of Haven's own states no build and says nothing.
@@ -38,6 +40,7 @@ import { openChrome } from '../../../mesa/src/drive.js'
 import { buildHavenApp } from '../../api/src/app.ts'
 import { signIn } from '../../api/test/sign-in.ts'
 import { cellOf, terminal, until } from './terminal.mjs'
+import { litAt } from '../src/stage.js'
 import { stageOf } from './stage.mjs'
 
 const WEB  = join(import.meta.dir, '..')
@@ -159,17 +162,26 @@ const artRows = square.picture()
 const view = square.view
 check(shape.rows === view.h && shape.cols === view.w && square.width > view.w,
   `the tab draws the view at ${shape.cols}×${shape.rows}, the terminal's size, of a square ${square.width} wide`, JSON.stringify(shape))
-const termTop    = cellOf(term.screen(), 0, 0, shape.cols, square)
-const termBottom = cellOf(term.screen(), 0, view.h - 1, shape.cols, square)
-check(shape.top.trimEnd() === termTop.trimEnd() && shape.bottom.trimEnd() === termBottom.trimEnd(),
-  "the tab's top and bottom rows of art are the terminal's", `tab:  ${shape.top}\nterm: ${termTop}\ntab:  ${shape.bottom}\nterm: ${termBottom}`)
+// Each screen is fogged for its own figure (6.3): Bea at the spawn sees the
+// bottom wall round her, and Sam, who started there, has seen every cell she
+// sees and four columns more. So the tab's bottom row is a part of the
+// terminal's, glyph for glyph, and the top wall — nobody has walked near it
+// — is blank on both.
+const termTop    = cellOf(term.screen(), 0, 0, shape.cols, square).padEnd(shape.cols)
+const termBottom = cellOf(term.screen(), 0, view.h - 1, shape.cols, square).padEnd(shape.cols)
+const drawnCols  = [...shape.bottom].map((ch, i) => (ch !== ' ' ? i : -1)).filter((i) => i >= 0)
+const darkCol    = [...artRows[view.h - 1]].findIndex((ch, i) => ch !== ' ' && !litAt(square, i, view.h - 1, square.spawn))
+check(drawnCols.length > 0 && drawnCols.every((i) => shape.bottom[i] === termBottom[i]) && drawnCols.length < artRows[view.h - 1].trim().length,
+  `the tab's bottom row of art, ${drawnCols.length} lit cells of it, is the terminal's cell for cell`, `tab:  ${shape.bottom}\nterm: ${termBottom}`)
+check(darkCol >= 0 && shape.bottom[darkCol] === ' ' && termBottom[darkCol] === ' ' && shape.top.trim() === '' && termTop.trim() === '',
+  `and the wall at ${darkCol},${view.h - 1} and the whole top wall are blank on both: nobody has walked near them`, `tab:  ${shape.bottom}\nterm: ${termBottom}\ntab:  ${shape.top}\nterm: ${termTop}`)
 
-// A cell the palette colors and no clock moves, read for its color in the tab.
+// A cell the palette colors, no clock moves, and Bea sees from the spawn, read for its color in the tab.
 const still = (() => {
   for (let y = 0; y < view.h; y++)
     for (let x = 0; x < view.w; x++) {
       const a = square.look(x, y, 0)
-      if (a.fg && a.ch !== ' ' && square.look(x, y, 1e7).fg === a.fg) return { x, y, fg: a.fg }
+      if (a.fg && a.ch !== ' ' && square.look(x, y, 1e7).fg === a.fg && litAt(square, x, y, square.spawn)) return { x, y, fg: a.fg }
     }
   return null
 })()
@@ -264,7 +276,7 @@ function route(scene, from, to) {
   return keys
 }
 
-const door = square.doors[0]
+const door = square.doors.find((d) => d.to === '/tavern/')
 const inFront = { x: door.x, y: door.y + 1 }
 const path = route(square, square.spawn, inFront)
 let walked = path.length > 0

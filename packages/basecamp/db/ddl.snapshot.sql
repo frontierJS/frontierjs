@@ -383,6 +383,7 @@ CREATE TABLE IF NOT EXISTS "credential" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_credential_userId_type" ON "credential" ("userId", "type");
 CREATE INDEX IF NOT EXISTS "idx_credential_type_value" ON "credential" ("type", "value");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_credential_type_value" ON "credential" ("type", "value") WHERE ((("type" != 'password' AND "type" != 'totp') AND "type" != 'totpPending') AND "type" != 'recoveryCode');
 
 CREATE TABLE IF NOT EXISTS "session" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

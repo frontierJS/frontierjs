@@ -70,7 +70,7 @@ export function reviewPrompt({ request = '' } = {}) {
 
 // ─── a plan run from the workbench ───────────────────────────────────────────
 //
-// Three prompts, one per button (`IDEAS/workbench-plans.md`). The plan FILE is
+// Three prompts, one per button (`IDEAS/shipped/workbench-plans.md`). The plan FILE is
 // the handoff: a step ends by writing what it found under its box, so Next is
 // a fresh session told to read the file. The sentences are constants because
 // the test asserts each guardrail is still in the prompt — a prompt that loses

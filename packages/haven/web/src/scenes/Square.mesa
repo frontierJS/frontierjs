@@ -3,7 +3,9 @@
   // fountain in the middle, the hedges and flowers along the bottom; and east
   // of the first screen, three more houses, the well, the market stall and the
   // signpost, which the view pans to as a figure walks there (6.1). The
-  // tavern's door is the left house's. The picture this draws is
+  // tavern's door is the left house's. Three edges are borders
+  // (`IDEAS/haven.md` 6.2): east onto the road, west into the woods, and a
+  // gap in the hedge south down to the docks. The picture this draws is
   // `square.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
@@ -178,7 +180,8 @@ eeeeeee
     d: { fg: '#92400e' },
     S: { fg: '#a16207' },
     s: { fg: '#fbbf24' },
-    y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true },
+    y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 1 },
+    Y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 4 },
     t: { fg: '#166534' },
     T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
     u: { fg: '#78350f' },
@@ -193,6 +196,9 @@ eeeeeee
 
 <Scene slug="square" palette={PALETTE} spawn={{ x: 31, y: 21 }}>
   <Piece of={frame} />
+  <Door  x={159} y={1} h={24} to="/road/" />
+  <Door  x={1}   y={1} h={24} to="/woods/" />
+  <Door  x={47}  y={25} w={6} to="/docks/" />
   <Piece of={tavern} x={4}  y={1} />
   <Door  x={20} y={10} to="/tavern/" />
   <Piece of={houseA} x={40} y={2} />
@@ -211,7 +217,8 @@ eeeeeee
   <Row of={hedge} y={23} x={53} n={10} />
   <Row of={hedge} y={23} x={67} n={12} />
   <Row of={hedge} y={23} x={83} n={10} />
-  <Row of={flower} y={24} x={6} n={29} step={3} />
+  <Row of={flower} y={24} x={6}  n={14} step={3} />
+  <Row of={flower} y={24} x={54} n={13} step={3} />
   <Piece of={houseA} x={100} y={2} />
   <Piece of={houseB} x={122} y={1} />
   <Piece of={houseC} x={143} y={2} />

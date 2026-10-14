@@ -1,0 +1,7 @@
+<script>
+  // The docks — south of the square, through the gap in the hedge.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Docks from '@/scenes/Docks.mesa'
+</script>
+
+<WalkIn slug="docks"><Docks /></WalkIn>

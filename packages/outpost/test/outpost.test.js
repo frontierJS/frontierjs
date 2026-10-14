@@ -502,6 +502,22 @@ describe('what the machine is asked to do', () => {
     expect(body.stdout).toContain('Validate')
   })
 
+  // FJS-1761 (FJS-D602): the unit is sandboxed, so `/exec` leaves it. A command
+  // run by this process would be confined to the Outpost's own directories.
+  test('/exec runs the command in a transient unit outside the sandbox', async () => {
+    const fake = fakeRunner()
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+    })
+    await send(server, 'POST', '/exec', { command: 'apt-get -y upgrade', timeout_s: 60 })
+    const [argv] = fake.calls
+    expect(argv.slice(0, 1)).toEqual(['systemd-run'])
+    expect(argv).toEqual(expect.arrayContaining(['--pipe', '--wait', '--collect']))
+    // A killed systemd-run client leaves its unit running, so the unit carries the bound.
+    expect(argv).toContain('--property=RuntimeMaxSec=60')
+    expect(argv.slice(argv.indexOf('--'))).toEqual(['--', 'sh', '-c', 'apt-get -y upgrade'])
+  })
+
   test('a volume prune answers only what it actually removed', async () => {
     // Basecamp forgets exactly these rows. A volume still held by a container
     // fails here and must not appear, or a full disk becomes invisible.

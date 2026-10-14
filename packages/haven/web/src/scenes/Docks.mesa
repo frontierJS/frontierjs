@@ -1,0 +1,105 @@
+<script>
+  // Docks.mesa — the docks south of the square: a stone quay with crates,
+  // barrels, bollards and lamps, a pier out over the water, and a boat
+  // moored beside it. The north edge is a border into the square
+  // (`IDEAS/haven.md` 6.2), and the square's south edge is the run back.
+  // The picture this draws is `docks.frame.txt`, which `scenes.test.js`
+  // pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { piece }  from '@/pieces/index.js'
+  import { frame }  from '@/pieces/frame.js'
+  import { lamp }   from '@/pieces/lamp.js'
+  import { barrel } from '@/pieces/barrel.js'
+
+  // The water is one block with the pier and the boat cut out of it, since
+  // a cell has one owner; the boat brings its own water round it.
+  const PIER = { x: 46, w: 8, rows: 13 }
+  const BOAT = { x: 56, y: 3, w: 18, h: 6 }
+  const waterRow = (dy) => [...Array(92)].map((_, dx) => {
+    const x = 3 + dx
+    if (dy < PIER.rows && x >= PIER.x && x < PIER.x + PIER.w) return ' '
+    if (dy >= BOAT.y && dy < BOAT.y + BOAT.h && x >= BOAT.x && x < BOAT.x + BOAT.w) return ' '
+    return '~'
+  }).join('')
+  const rows = [...Array(16)].map((_, dy) => waterRow(dy))
+  const water = piece('water', rows.join('\n'), rows.map((r) => r.replace(/~/g, 'b')).join('\n'))
+
+  const quay = (width) => piece('quay', '_'.repeat(width), 'q'.repeat(width))
+  const quayW = quay(43)
+  const quayE = quay(41)
+
+  const pier = piece('pier', [...Array(PIER.rows)].map(() => '='.repeat(PIER.w)).join('\n'),
+    [...Array(PIER.rows)].map(() => 'u'.repeat(PIER.w)).join('\n'), { floor: true })
+
+  const boat = piece('boat', String.raw`
+~~~~~~~~|~~~~~~~~~
+~~~~~~~~|~~~~~~~~~
+~~~\____|____/~~~~
+~~~~\________/~~~~
+~~~~~'------'~~~~~
+~~~~~~~~~~~~~~~~~~
+`, String.raw`
+bbbbbbbbubbbbbbbbb
+bbbbbbbbubbbbbbbbb
+bbbuuuuuuuuuubbbbb
+bbbbuuuuuuuuubbbbb
+bbbbbuuuuuuuubbbbb
+bbbbbbbbbbbbbbbbbb
+`)
+
+  const crate = piece('crate', String.raw`
+ _____
+|_|_|_|
+|_|_|_|
+`, String.raw`
+ wwwww
+wwwwwww
+wwwwwww
+`)
+
+  const bollard = piece('bollard', 'o', 'q')
+
+  const signpost = piece('signpost', String.raw`
+^[square]
+    |
+   _|_
+`, String.raw`
+eeeeeeeee
+    l
+   lll
+`)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    q: { fg: '#9ca3af' },
+    u: { fg: '#92400e' },
+    w: { fg: '#b45309' },
+    e: { fg: '#a16207' },
+    l: { fg: '#9ca3af' },
+    y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 1 },
+    Y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 4 },
+    b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
+  }
+</script>
+
+<Scene slug="docks" palette={PALETTE} spawn={{ x: 49, y: 5 }}>
+  <Piece of={frame} />
+  <Door  x={47} y={0} w={6} to="/" />
+  <Piece of={quayW} x={3}  y={8} />
+  <Piece of={quayE} x={54} y={8} />
+  <Piece of={water} x={3}  y={9} />
+  <Piece of={pier}  x={46} y={9} />
+  <Piece of={boat}  x={56} y={12} />
+  <Piece of={crate} x={10} y={3} />
+  <Piece of={crate} x={18} y={3} />
+  <Piece of={barrel} x={30} y={4} />
+  <Piece of={barrel} x={36} y={4} />
+  <Piece of={lamp} x={60} y={3} />
+  <Piece of={lamp} x={84} y={3} />
+  <Piece of={bollard} x={20} y={7} />
+  <Piece of={bollard} x={70} y={7} />
+  <Piece of={signpost} x={66} y={1} />
+</Scene>

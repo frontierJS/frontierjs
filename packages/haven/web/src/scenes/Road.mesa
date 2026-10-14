@@ -1,0 +1,95 @@
+<script>
+  // Road.mesa — the road east of the square: a dirt road across the middle,
+  // fenced on both sides with a gap in each, a milestone, a cart pulled up
+  // on the verge, trees, and the signpost back. The west edge is a border
+  // into the square (`IDEAS/haven.md` 6.2), and the square's east edge is
+  // the run back. The picture this draws is `road.frame.txt`, which
+  // `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+  import { tree }  from '@/pieces/tree.js'
+
+  // The road is floor, walked on: its edges are a line of dust and its
+  // middle a scatter, so a figure on it stands on the art.
+  const road = piece('road', [
+    '.'.repeat(93),
+    '  . '.repeat(23) + ' ',
+    ' .  '.repeat(23) + ' ',
+    '.'.repeat(93),
+  ].join('\n'), [
+    'o'.repeat(93),
+    '  o '.repeat(23) + ' ',
+    ' o  '.repeat(23) + ' ',
+    'o'.repeat(93),
+  ].join('\n'), { floor: true })
+
+  const fence = (posts) => piece('fence', '|--'.repeat(posts) + '|', 'fff'.repeat(posts) + 'f')
+  const fenceW = fence(12)
+  const fenceE = fence(14)
+
+  const milestone = piece('milestone', String.raw`
+ .-.
+ |I|
+ |_|
+`, String.raw`
+ qqq
+ qeq
+ qqq
+`)
+
+  const cart = piece('cart', String.raw`
+   ___________
+  /___________\
+  |  ,  ,  ,  |
+--O-----------O--
+`, String.raw`
+   uuuuuuuuuuu
+  uuuuuuuuuuuuu
+  u  h  h  h  u
+uuOuuuuuuuuuuuOuu
+`)
+
+  const signpost = piece('signpost', String.raw`
+<[square]
+    |
+   _|_
+`, String.raw`
+eeeeeeeee
+    l
+   lll
+`)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    o: { fg: ['#a16207', '#854d0e', '#a16207'], ms: 2000, wave: true },
+    q: { fg: '#9ca3af' },
+    e: { fg: '#a16207' },
+    u: { fg: '#92400e' },
+    O: { fg: '#78350f' },
+    h: { fg: ['#fde047', '#facc15'], ms: 900, flicker: true, light: 3 },
+    l: { fg: '#9ca3af' },
+    t: { fg: '#166534' },
+    T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
+  }
+</script>
+
+<Scene slug="road" palette={PALETTE} spawn={{ x: 10, y: 12 }}>
+  <Piece of={frame} />
+  <Door  x={1} y={1} h={24} to="/" />
+  <Piece of={road} x={3} y={11} />
+  <Piece of={fenceW} x={3}  y={9} />
+  <Piece of={fenceE} x={52} y={9} />
+  <Piece of={fenceW} x={3}  y={16} />
+  <Piece of={fenceE} x={52} y={16} />
+  <Piece of={tree} x={6}  y={1} />
+  <Piece of={tree} x={82} y={1} />
+  <Piece of={tree} x={40} y={17} />
+  <Piece of={tree} x={75} y={17} />
+  <Piece of={milestone} x={60} y={5} />
+  <Piece of={cart} x={24} y={4} />
+  <Piece of={signpost} x={5} y={18} />
+</Scene>

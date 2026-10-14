@@ -21,10 +21,13 @@ import { stages } from '../src/stage.js'
 
 export const WEB = join(import.meta.dir, '..')
 
-/** Every scene, the file's name and its slug. */
+/** Every scene: the file's name, its slug, and the route it is drawn at — what a door's `to` names. */
 export const SCENES = [
-  { name: 'Square', slug: 'square' },
-  { name: 'Tavern', slug: 'tavern' },
+  { name: 'Square', slug: 'square', path: '/' },
+  { name: 'Tavern', slug: 'tavern', path: '/tavern/' },
+  { name: 'Road',   slug: 'road',   path: '/road/' },
+  { name: 'Woods',  slug: 'woods',  path: '/woods/' },
+  { name: 'Docks',  slug: 'docks',  path: '/docks/' },
 ]
 
 let loader = null

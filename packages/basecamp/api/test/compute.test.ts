@@ -644,6 +644,21 @@ describe('a machine claims its own credential', () => {
     expect(probe.exitCode).toBe(0)
   })
 
+  // FJS-1761: the process that answers a network port must not be able to write
+  // anywhere on the box. `/exec` leaves the unit through systemd-run (FJS-D602),
+  // so the sandbox is not what stops an operator's recipe.
+  test('outpost.service is sandboxed to its own directories', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const script = installScript()
+    const unit = /cat > \/etc\/systemd\/system\/outpost\.service <<UNITEOF\n([\s\S]*?)\nUNITEOF/.exec(script)?.[1] ?? ''
+    expect(unit).toContain('NoNewPrivileges=yes')
+    expect(unit).toContain('ProtectSystem=strict')
+    expect(unit).toContain('PrivateTmp=yes')
+    expect(unit).toMatch(/^ReadWritePaths=.*\/var\/lib\/outpost/m)
+    expect(unit).toMatch(/^ReadWritePaths=.*\/etc\/basecamp/m)
+    expect(unit).toMatch(/^ReadWritePaths=.*\$BUN_INSTALL/m)
+  })
+
   test('the install is a script bash can parse', async () => {
     const { installScript } = await import('../src/providers/compute/enrollment.ts')
     const run = Bun.spawnSync(['bash', '-n'], { stdin: new TextEncoder().encode(installScript()) })

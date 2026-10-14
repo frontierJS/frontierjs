@@ -1,13 +1,14 @@
 ---
 id: workbench-plans
-status: proposed
+status: shipped
 dated: 2026-10-13
 ---
 
 # Idea — a plan run from the Workbench: Build, Go, Next
 
-**Status: PROPOSED.** Item 4 of [`workbench.md`](workbench.md) (a check before
-*done*) and the handoff it still does by hand. The Workbench runs a chat per
+**Status: SHIPPED 2026-10-14, all of Phases 0–5, ruled `FJS-D966`–`FJS-D969`.**
+Item 4 of [`workbench.md`](../workbench.md) (a check before *done*) and the
+handoff it still does by hand. The Workbench runs a chat per
 pinned checkout (`packages/basecamp/api/src/core/workbench.ts`); the argv is
 `packages/cli/core/ask-claude.js`. A plan's shape is ruled (`FJS-D927`,
 `doc-hygiene` § A plan's shape).

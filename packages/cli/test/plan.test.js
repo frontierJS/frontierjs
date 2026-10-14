@@ -158,7 +158,7 @@ describe('fli plan', () => {
   const fli = (...args) => spawnSync(process.execPath, [resolve(import.meta.dir, '../bin/fli.js'), 'plan', ...args], { cwd: REPO, encoding: 'utf8' })
 
   test('--json prints the parse of a real paper, next is an open box', () => {
-    const out = fli('IDEAS/workbench-plans.md', '--json')
+    const out = fli('IDEAS/shipped/workbench-plans.md', '--json')
     expect(out.status).toBe(0)
     const plan = JSON.parse(out.stdout)
     expect(plan.phases.length).toBeGreaterThanOrEqual(5)

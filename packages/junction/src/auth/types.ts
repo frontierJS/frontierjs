@@ -342,6 +342,7 @@ export interface CreateUserInput {
   password?:    string
   name?:        string
   role?:        string
+  accountId?:   string
   workspaceId?: string
   metadata?:    Record<string, unknown>
 }

@@ -1,7 +1,9 @@
 <script>
-  // The tavern — through the left house's door in the square.
+  // The tavern — through the left house's door in the square. The runner
+  // comes in behind a member who walks in, with an errand from `HAVEN_ERRAND`.
   import WalkIn from '@/components/WalkIn.mesa'
+  import Runner from '@/components/Runner.mesa'
   import Tavern from '@/scenes/Tavern.mesa'
 </script>
 
-<WalkIn slug="tavern"><Tavern /></WalkIn>
+<WalkIn slug="tavern"><Tavern><Runner /></Tavern></WalkIn>

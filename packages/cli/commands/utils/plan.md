@@ -3,7 +3,7 @@ title: utils:plan
 description: A plan read off its boxes — phases, steps, the first open step, and the questions that block it
 alias: plan
 examples:
-  - fli plan IDEAS/workbench-plans.md
+  - fli plan IDEAS/shipped/workbench-plans.md
   - fli plan PLAN.md --json
 args:
   -

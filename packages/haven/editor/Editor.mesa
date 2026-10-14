@@ -335,7 +335,7 @@
           if (el.kind === 'Pacer') el.mark.move(s.from, s.y)
           else { el.mark.move(s.x, s.y); if (el.kind === 'Door') el.mark.retarget(s.to) }
         } else {
-          const mark = s.kind === 'Door' ? stage.door(s.x, s.y, s.to) : s.kind === 'Pacer' ? stage.pace(s.spec) : stage.stamp(s.piece, s.x, s.y)
+          const mark = s.kind === 'Door' ? stage.door(s.x, s.y, s.to, { w: s.w, h: s.h }) : s.kind === 'Pacer' ? stage.pace(s.spec) : stage.stamp(s.piece, s.x, s.y)
           el = added(s.id, s.kind, s.ident, s.file, mark)
         }
         next.push(el)

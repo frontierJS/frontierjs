@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-63 model(s) · 40 enum(s) · 2 database(s)
+63 model(s) · 41 enum(s) · 2 database(s)
 audit → trail · main → sqlite
 ```
 
@@ -47,6 +47,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NotificationKind` | `alert_firing` · `alert_resolved` · `dependency_vulnerable` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `posture_failed` · `server_unreachable` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
+| `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
 | `ServerEventKind` | `came_online` · `cleanup_failed` · `cleanup_queued` · `cleanup_ran` · `created` · `destroy_finished` · `destroy_requested` · `drain_cancelled` · `drain_started` · `enrollment_issued` · `posture_failed` · `posture_restored` · `provision_created` · `provision_ready` · `provision_requested` · `provision_timeout` · `reboot_requested` · `recipe_failed` · `recipe_ran` · `removed` · `status_sync_ignored` · `status_synced` · `sync_failed` · `sync_no_account` · `sync_requested` · `sync_unrecognized` · `sync_unsupported` · `unreachable` · `volume_removed` · `volumes_pruned` |
@@ -476,6 +477,7 @@ table `credential` · db `main` · gate `8`
 | `value` | `String` | no | — | @guarded · **required on write** |
 
 ```
+@@unique(type, value), where: ((("type" != 'password' AND "type" != 'totp') AND "type" != 'totpPending') AND "type" != 'recoveryCode')
 @@index(type, value)
 @@index(userId, type)
 ```
@@ -786,6 +788,7 @@ table `environment` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@allow('update', isProtected == false || auth().level >= 5)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
@@ -1785,10 +1788,13 @@ table `variable` · db `main` · gate `2.4.4.4` · @@softDelete
 @@unique(environmentId, key), where: "appId" IS NULL
 @@index(environmentId)
 @@check(secret = 0 OR value IS NULL)
+@@allow('create', appId != null || environment.isProtected == false || auth().level >= 5)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@allow('delete', appId != null || environment.isProtected == false || auth().level >= 5)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@allow('update', appId != null || environment.isProtected == false || auth().level >= 5)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 

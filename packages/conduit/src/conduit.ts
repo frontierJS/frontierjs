@@ -48,7 +48,27 @@ const RESILIENCE_FIELDS = {
   max_concurrent:     { min: 1,  integer: false, infinite: true  },
 } as const
 
+// A `Record` over the interface's own keys, so a field added to
+// `TargetDescriptor` without a line here fails the typecheck rather than being
+// refused at runtime as unknown.
+const DESCRIPTOR_FIELDS: Record<keyof TargetDescriptor, true> = {
+  id: true, kind: true, protocol: true, address: true, auth: true,
+  encoding: true, headers: true, trace: true, pinned_cert: true,
+  follow_redirects: true, address_from: true, destinations: true, origins: true,
+  idempotency: true, resilience: true, registered_at: true, last_seen_at: true,
+}
+
 function assertDescriptor(descriptor: TargetDescriptor): void {
+  // The same finding as `RESILIENCE_FIELDS` one level up: `policy:`, the name
+  // before `resilience`, registered with its numbers dropped (`FJS-1951`).
+  for (const key of Object.keys(descriptor)) {
+    if (!Object.hasOwn(DESCRIPTOR_FIELDS, key)) {
+      throw new TypeError(
+        `Target '${descriptor.id}': unknown field '${key}'. Known fields: ${Object.keys(DESCRIPTOR_FIELDS).join(', ')}`,
+      )
+    }
+  }
+
   // Refused here rather than in the transport. A followed hop rebuilds its
   // headers for the new address, and for these two auth types that is either a
   // signature bound to a path and query that are no longer the ones being
@@ -222,11 +242,22 @@ function assertIdempotency(descriptor: TargetDescriptor): void {
 
   const where = `Target '${descriptor.id}' idempotency`
   if (typeof spec !== 'object' || spec === null || Array.isArray(spec)) {
-    throw new TypeError(`${where}: expected { header?, auto? }`)
+    throw new TypeError(`${where}: expected { header?, field?, auto? }`)
   }
   for (const key of Object.keys(spec)) {
-    if (key !== 'header' && key !== 'auto') {
-      throw new TypeError(`${where}: unknown field '${key}'. Known fields: header, auto`)
+    if (key !== 'header' && key !== 'field' && key !== 'auto') {
+      throw new TypeError(`${where}: unknown field '${key}'. Known fields: header, field, auto`)
+    }
+  }
+  if (spec.field !== undefined) {
+    if (typeof spec.field !== 'string' || spec.field.trim() === '') {
+      throw new TypeError(`${where}: 'field' must be a non-empty string`)
+    }
+    if (spec.header !== undefined) {
+      throw new TypeError(`${where}: 'field' and 'header' name two places and the target reads one`)
+    }
+    if (descriptor.protocol !== 'http' && descriptor.protocol !== 'unix') {
+      throw new TypeError(`${where}: 'field' is for an http target, this one is '${descriptor.protocol}'`)
     }
   }
   // An empty or whitespace header name reaches `mergeHeaders`, which lowercases

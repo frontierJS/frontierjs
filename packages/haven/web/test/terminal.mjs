@@ -6,10 +6,11 @@
  * Traps:
  * - The screen is a cell-diff patch, never a frame: `screen()` replays the
  *   cursor moves (example's `verify-tui.mjs` is where it was learned).
- * - A figure's cell is counted from the picture's top-left, which sits at a
+ * - A figure's cell is counted from the art's top-left, which sits at a
  *   different row in the shell (under its heading) and in `--frame` (top
- *   line). `cellOf` finds the corner first, from the stage's own picture
- *   (`stage.mjs`), so a drive hands it the scene it is reading.
+ *   line), and the art is fogged, so `cellOf` finds the room's status line
+ *   under it and counts up; a drive hands it the scene it is reading for
+ *   the view's size.
  * - A screen draws the stage's VIEW, which follows that screen's own figure
  *   (`stage.js`), so a cell is read through the view that screen has: the
  *   drive's stage's own unless the drive says otherwise, and a drive that
@@ -59,19 +60,26 @@ export function screen(stream, rows = 30, cols = 100) {
 /**
  * What is drawn on stage cells `x`..`x+width-1` of row `y` in a frame that
  * shows `view` of the stage — the drawn slice's own corner is the origin.
- * A cell outside the view is null.
+ * A cell outside the view is null, and so is a frame with no room on it.
+ *
+ * The art is fogged (`stage.js`, 6.3), so no row of it is sure to be drawn;
+ * the room's status line under it is, `view.h` rows below the art's top and
+ * at its left. A cell the frame leaves blank reads as a space, or as '' past
+ * the trimmed end of its line.
  */
 export function cellOf(frame, x, y, width = 1, stage, view = stage.view) {
-  const corner = stage.picture()[view.y].slice(view.x, view.x + view.w).trimEnd()
-  const lines = frame.split('\n')
-  const mark = corner.trim()
-  const top = lines.findIndex((l) => l.includes(mark))
-  if (top === -1) return null
+  const lines  = frame.split('\n')
+  const status = lines.findIndex((l) => / · \d+ here\b/.test(l))
+  if (status === -1) return null
   const col = x - view.x, row = y - view.y
   if (col < 0 || row < 0 || col >= view.w || row >= view.h) return null
-  const left = lines[top].indexOf(mark) - corner.indexOf(mark)
+  const top  = status - view.h
+  const left = lines[status].search(/\S/)
   return (lines[top + row] ?? '').slice(left + col, left + col + width)
 }
+
+/** Whether `cellOf` read a cell the frame left blank — not one outside it. */
+export const blank = (s) => s !== null && s.trim() === ''
 
 /**
  * Sierra's interactive shell over Haven's routes, under a pty, signed in

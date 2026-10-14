@@ -1,10 +1,14 @@
 # Haven — Project State
 
-**Phases 1 and 2 of `IDEAS/haven.md` are built, and 3.1–3.2.** 1.1 is the schema, 1.2 the
-API, 1.3 the signed login, 2.1 the square in a terminal, 2.2 the tavern and its
-door, 2.3 `fli haven`, 3.1 the server naming its client, 3.2 the mod standing
-and the ban end to end. Next: 3.3, the history pane and retention; the deploy
-is the last step (10.1).
+**Phases 1, 2, 3, 4 and 5 of `IDEAS/haven.md` are built (5.4, the VS Code
+editor, aside), and 6.1.** 1.1 is the schema, 1.2 the API, 1.3 the signed
+login, 2.1 the square in a terminal, 2.2 the tavern and its door, 2.3 `fli
+haven`, 3.1 the server naming its client, 3.2 the mod standing and the ban end
+to end, 3.3 the history pane and retention by count, Phase 4 color and motion,
+Phase 5 scenes as component trees, the browser target and the scene editor,
+6.1 the view that follows a figure across a square wider than a screen, 6.2
+the road, the woods and the docks across the square's borders. Next: 6.3,
+light and fog; the deploy is the last step (10.1).
 
 ## What exists
 
@@ -28,17 +32,27 @@ is the last step (10.1).
   between them that cycles the socket into the other room. `web/src/sign-in.js`
   is this machine's key and signed login, which `fli haven`
   (`packages/cli/commands/haven/walk.md`) runs before the shell.
-  `web/test/verify-explore.mjs` — 34 checks over two live terminals, the
-  second walking in through `fli haven`, the first a mod.
+  `web/test/verify-explore.mjs` — 54 checks over three live terminals, the
+  second walking in through `fli haven`, the first a mod, the third walking
+  past the first screen's edge.
+- A scene bigger than a screen (6.1): the stage's `view` is the 97×26 slice a
+  screen draws, following that screen's figure with eight columns and four
+  rows of slack; the square is 160 cells wide, with a well, a stall and a
+  signpost east of the first screen. A speaker outside the view is their line
+  as a marker on the edge facing them.
+- Borders (6.2): the square's east edge opens onto the road, its west into
+  the woods, and a gap in its hedge south down to the docks — each its own
+  scene, route and Room. A border is a `<Door>` run along the edge, and a
+  figure crosses at the matching row, beside the run back; any door is come
+  out of, not spawned away from. `verify:explore` times the crossing.
 - The same `web/` built for a browser (5.2, `FJS-D985`): `bun run web` on
   5506, the routes unchanged, `#paint`/`#cell`/`#sign-in` resolved to their
   `.browser.js` twins by the package's `imports` conditions; the key kept in
-  IndexedDB. `web/test/verify-browser.mjs` — 23 checks, a pty terminal and a
+  IndexedDB. `web/test/verify-browser.mjs` — 27 checks, a pty terminal and a
   CDP tab in one room, each read off the other's screen.
 
 ## What is not here yet
 
 Nothing is published: a machine with no checkout walks in only through
 `verify:fresh`'s registry. There is no hosted Haven, so such a machine must
-pass `--api`, and a checkout's default origin is `localhost:5505`, where `bun run api` listens. Arriving through a door
-puts a figure on the scene's spawn, not beside the door it came out of. There is no logout route: `auth.logout` revokes, but nothing mounts it.
+pass `--api`, and a checkout's default origin is `localhost:5505`, where `bun run api` listens. There is no logout route: `auth.logout` revokes, but nothing mounts it.

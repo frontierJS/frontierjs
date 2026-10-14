@@ -75,11 +75,12 @@ are many cards.
 
 ## Before any of it
 
-V1 runs with every permission, and `/mcp` may expose `workbench.send` as an agent
-tool. If it does, an admin key can start such a run on the owner's machine. That
-hole was being closed when this paper was written; check it before the Workbench
-leaves the owner's machine. Separately, no real `claude -p` had run through V1 yet,
-only a stand-in.
+V1 runs with every permission. `/mcp` offers no agent the workbench, and
+`agentGuard` refuses a key that calls it anyway (`api-keys/scopes.ts`), so an
+admin key cannot start such a run. Real `claude -p` has run through the ask
+panel's argv (`verify:ask --real`, the plan probes of
+[`shipped/workbench-plans.md`](shipped/workbench-plans.md) 5.4); a full Build
+plan against `example/` has not.
 
 ## Sources
 

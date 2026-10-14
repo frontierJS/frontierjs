@@ -258,6 +258,9 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`
 - **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`
+- **input** — `fromBlueprint` takes `AppFromBlueprint`
+- **input** — `place` takes `AppPlace`
+- **input** — `unplace` takes `AppUnplace`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -277,6 +280,9 @@ name when it declares none.
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
+| before | `fromBlueprint` | `validateInput` |
+| before | `place` | `validateInput` |
+| before | `unplace` | `validateInput` |
 
 ### `audit` · model `AuditEvent`
 
@@ -409,6 +415,10 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 - **custom methods** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
+- **input** — `addWidget` takes `WidgetAdd`
+- **input** — `removeWidget` takes `WidgetRemove`
+- **input** — `reorder` takes `DashboardReorder`
+- **input** — `updateWidget` takes `WidgetUpdate`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `kinds` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -429,6 +439,10 @@ name when it declares none.
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
+| before | `addWidget` | `validateInput` |
+| before | `updateWidget` | `validateInput` |
+| before | `removeWidget` | `validateInput` |
+| before | `reorder` | `validateInput` |
 
 ### `dependencies` · model `Dependency`
 
@@ -545,6 +559,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
 - **custom methods** — `setOverride`, `clearOverride`, `resolve`
+- **input** — `clearOverride` takes `FlagOverrideClear`
+- **input** — `setOverride` takes `FlagOverrideSet`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `setOverride` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -563,6 +579,8 @@ name when it declares none.
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
+| before | `setOverride` | `validateInput` |
+| before | `clearOverride` | `validateInput` |
 
 ### `fleet` · model `fleetByProvider`
 
@@ -649,6 +667,11 @@ name when it declares none.
 
 - **methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **custom methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
+- **input** — `createBot` takes `NewBot`
+- **input** — `setFlag` takes `FlagChange`
+- **input** — `setSystemAdmin` takes `SystemAdminChange`
+- **input** — `setUserStatus` takes `UserStatusChange`
+- **input** — `setWorkspaceStatus` takes `WorkspaceStatusChange`
 - **who may call** —
   - `overview` — standing 7 or above — declared `gate: 7`
   - `workspaces` — standing 7 or above — declared `gate: 7`
@@ -669,6 +692,11 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+| before | `setWorkspaceStatus` | `validateInput` |
+| before | `setUserStatus` | `validateInput` |
+| before | `setSystemAdmin` | `validateInput` |
+| before | `createBot` | `validateInput` |
+| before | `setFlag` | `validateInput` |
 
 ### `hub-config` · model `HubConfig`
 
@@ -1048,6 +1076,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
 - **custom methods** — `events`, `feed`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `sync`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **input** — `provision` takes `ServerProvision`
+- **input** — `provisionStep` takes `ServerProvisionStep`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -1079,12 +1109,13 @@ name when it declares none.
 | before | `patch` | `requireWorkspaceRole` → `autoValidate` |
 | before | `remove` | `requireWorkspaceRole` |
 | before | `logEvent` | `internalOnly` |
-| before | `provisionStep` | `internalOnly` |
+| before | `provisionStep` | `internalOnly` → `validateInput` |
 | before | `destroyStep` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
+| before | `provision` | `validateInput` |
 
 ### `sessions`
 
@@ -1223,8 +1254,10 @@ name when it declares none.
 
 ### `workspaces` · model `Workspace`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
 - **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
+- **input** — `addMember` takes `WorkspaceMemberAdd`
+- **input** — `setMemberRole` takes `WorkspaceMemberRole`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
   - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
@@ -1241,8 +1274,8 @@ name when it declares none.
 | before | `create` | `stampOwnership` → `autoValidate` |
 | before | `patch` | `requireWorkspaceRole` → `autoValidate` |
 | before | `remove` | `requireWorkspaceRole` |
-| before | `addMember` | `requireWorkspaceRole` → `refuseGrantAboveOwn` |
-| before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` |
+| before | `addMember` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
+| before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` → `validateInput` |
 | before | `removeMember` | `requireWorkspaceRole` |
 | before | `transferOwnership` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |

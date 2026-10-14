@@ -1,0 +1,95 @@
+<script>
+  // Woods.mesa — the woods west of the square: trees in no rows, a path
+  // worn between them from the east edge, a stump, a fallen log, mushrooms,
+  // and the signpost back. The east edge is a border into the square
+  // (`IDEAS/haven.md` 6.2), and the square's west edge is the run back. The
+  // picture this draws is `woods.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Row   from '@/components/Row.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+  import { tree }  from '@/pieces/tree.js'
+
+  // The path is floor, walked on.
+  const path = piece('path', [
+    ' . '.repeat(31),
+    '.  '.repeat(31),
+  ].join('\n'), [
+    ' o '.repeat(31),
+    'o  '.repeat(31),
+  ].join('\n'), { floor: true })
+
+  const stump = piece('stump', String.raw`
+ ___
+(___)
+ |_|
+`, String.raw`
+ uuu
+uuuuu
+ uuu
+`)
+
+  const log = piece('log', String.raw`
+ ________
+(________)
+`, String.raw`
+ uuuuuuuu
+uuuuuuuuuu
+`)
+
+  const shroom = piece('shroom', String.raw`
+ _
+(_)
+ |
+`, String.raw`
+ p
+ppp
+ l
+`)
+
+  const signpost = piece('signpost', String.raw`
+[square]>
+    |
+   _|_
+`, String.raw`
+eeeeeeeee
+    l
+   lll
+`)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    o: { fg: ['#a16207', '#854d0e', '#a16207'], ms: 2000, wave: true },
+    u: { fg: '#78350f' },
+    e: { fg: '#a16207' },
+    l: { fg: '#9ca3af' },
+    p: { fg: ['#f472b6', '#fb7185', '#f472b6', '#e879f9'], ms: 1500, flicker: true },
+    t: { fg: '#166534' },
+    T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
+  }
+</script>
+
+<Scene slug="woods" palette={PALETTE} spawn={{ x: 88, y: 12 }}>
+  <Piece of={frame} />
+  <Door  x={96} y={1} h={24} to="/" />
+  <Piece of={path} x={3} y={12} />
+  <Piece of={tree} x={4}  y={1} />
+  <Piece of={tree} x={20} y={3} />
+  <Piece of={tree} x={38} y={1} />
+  <Piece of={tree} x={56} y={2} />
+  <Piece of={tree} x={72} y={1} />
+  <Piece of={tree} x={8}  y={16} />
+  <Piece of={tree} x={28} y={18} />
+  <Piece of={tree} x={46} y={15} />
+  <Piece of={tree} x={64} y={18} />
+  <Piece of={tree} x={82} y={16} />
+  <Piece of={stump} x={34} y={9} />
+  <Piece of={log}   x={20} y={10} />
+  <Piece of={shroom} x={34} y={4} />
+  <Piece of={shroom} x={40} y={22} />
+  <Piece of={shroom} x={76} y={9} />
+  <Piece of={signpost} x={84} y={6} />
+</Scene>

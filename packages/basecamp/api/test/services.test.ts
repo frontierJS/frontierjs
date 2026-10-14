@@ -829,11 +829,10 @@ describe('an outpost endpoint takes a signature or nothing', () => {
 // `WorkspaceMember.role` is the column core/gate.ts reads every level from, so
 // the three methods that write it are the three methods that write standing.
 //
-// The schema denies a self-update at the Data boundary (`FJS-410`), and that is
-// what covers a job, a hub screen and a `fli db:repl` session — but not these:
-// membership is what decides access, so it cannot be read through the caller it
-// is deciding about, and all three writers go through `asSystem()`, the one
-// context every policy is bypassed in. Measured before the fix, through this
+// The schema denies a self-update at the Data boundary (`FJS-410`). The three
+// writers go through the caller's own client (`FJS-2356`), so that deny holds
+// the door a person walks through too; a refused update answers null, which
+// `setMemberRole` turns into a 403. Measured before `FJS-410`, through this
 // harness: an admin naming their own userId with `role: 'owner'` got no throw,
 // a 200, and OWNER(6).
 //
@@ -849,7 +848,8 @@ describe('a workspace role is not a thing you may hand yourself', () => {
     const mk = async (role: string) => {
       const u = await sys.user.create({ data: { email: `${role}-${uniq()}@x.co`, accountId: wsRow.accountId } })
       await sys.workspaceMember.create({
-        data: { workspaceId: ws.id, userId: u.id, role, acceptedAt: new Date().toISOString() } })
+        data: { workspaceId: ws.id, userId: u.id, role, capabilities: grantsFor(role as any),
+                acceptedAt: new Date().toISOString() } })
       return u
     }
     const admin = await mk('admin')
@@ -3507,5 +3507,72 @@ describe('workspace member verbs declare their input', () => {
       { userId: owner.userId, role: 'wizard' })).rejects.toThrow(/role/)
     await expect(env.as(owner).service('invitations').create(
       { email: `bad-${Date.now()}@x.co`, role: 'wizard' })).rejects.toThrow(/role/)
+  })
+})
+
+// FJS-2865. A machine's provision payload is the schema's `type`, so a missing
+// field, a role outside ServerRole and a key nothing declares are each a 400
+// naming the field, before the vendor is asked anything.
+describe('server provisioning declares its input', () => {
+  test('each names a type in the seed', () => {
+    const inputs = (env.app.services.get('servers') as any).describe().inputs
+    expect(inputs.provision).toBe('ServerProvision')
+    expect(inputs.provisionStep).toBe('ServerProvisionStep')
+  })
+
+  test('a missing field and a role outside the enum are refused naming the field', async () => {
+    const full = { name: 'x', accountId: 'a', region: 'nyc3', size: 's', image: 'i' }
+    const { size: _size, ...noSize } = full
+    await expect(env.as(owner).service('servers').call('provision', undefined, noSize))
+      .rejects.toThrow(/size/)
+    await expect(env.as(owner).service('servers').call('provision', undefined,
+      { ...full, role: 'wizard' })).rejects.toThrow(/role/)
+    await expect(env.as(owner).service('servers').call('provisionStep', 'nope',
+      { step: 'dance' })).rejects.toThrow(/step/)
+  })
+})
+
+describe('flag override verbs declare their input', () => {
+  test('each names a type in the seed', () => {
+    const inputs = (env.app.services.get('flags') as any).describe().inputs
+    expect(inputs.setOverride).toBe('FlagOverrideSet')
+    expect(inputs.clearOverride).toBe('FlagOverrideClear')
+  })
+
+  test('a missing environmentId is refused naming the field', async () => {
+    await expect(env.as(owner).service('flags').call('setOverride', 'nope', { isEnabled: true }))
+      .rejects.toThrow(/environmentId/)
+    await expect(env.as(owner).service('flags').call('clearOverride', 'nope', {}))
+      .rejects.toThrow(/environmentId/)
+  })
+})
+
+describe('dashboard widget verbs and app placement declare their input', () => {
+  test('each names a type in the seed', () => {
+    const dash = (env.app.services.get('dashboards') as any).describe().inputs
+    expect(dash.addWidget).toBe('WidgetAdd')
+    expect(dash.updateWidget).toBe('WidgetUpdate')
+    expect(dash.removeWidget).toBe('WidgetRemove')
+    expect(dash.reorder).toBe('DashboardReorder')
+    const apps = (env.app.services.get('apps') as any).describe().inputs
+    expect(apps.fromBlueprint).toBe('AppFromBlueprint')
+    expect(apps.place).toBe('AppPlace')
+    expect(apps.unplace).toBe('AppUnplace')
+  })
+
+  test('a kind outside WidgetKind and a missing id are refused naming the field', async () => {
+    await expect(env.as(owner).service('dashboards').call('addWidget', 'nope', { kind: 'confetti' }))
+      .rejects.toThrow(/kind/)
+    await expect(env.as(owner).service('dashboards').call('removeWidget', 'nope', {}))
+      .rejects.toThrow(/widgetId/)
+    await expect(env.as(owner).service('dashboards').call('reorder', 'nope', { ids: 'a', extra: 1 }))
+      .rejects.toThrow(/ids|extra/)
+    await expect(env.as(owner).service('apps').call('place', 'nope', {}))
+      .rejects.toThrow(/serverId/)
+    await expect(env.as(owner).service('apps').call('fromBlueprint', undefined, { blueprintId: 'b' }))
+      .rejects.toThrow(/environmentId/)
+    // The app screen's Unplace sends the replica it is removing.
+    await expect(env.as(owner).service('apps').call('unplace', 'nope', { serverId: 's', replicaIndex: 0 }))
+      .rejects.toThrow(/not found/i)
   })
 })

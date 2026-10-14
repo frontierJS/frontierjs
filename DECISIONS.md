@@ -13628,25 +13628,25 @@ Adjudication: *batteries vs. smallness* — the check is a battery of site-kit a
 
 ### <a id="fjs-d969"></a>2026-10-14 · `FJS-D969` — Q4 — Who ticks the box — The session, by instruction; the UI reparses and offers a manual tick when the box did not move.
 
-Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (the UI, on the result event).
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (the UI, on the result event).
 
 The paper's recommendation, taken as written: the findings under the step need the session anyway, and a box the UI ticks can tick a step that was not done.
 
 ### <a id="fjs-d968"></a>2026-10-14 · `FJS-D968` — Q3 — Does a step commit — Never; the step prompt says so, and the owner commits off the Diff tab.
 
-Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (a pin option, *commit each step*).
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (a pin option, *commit each step*).
 
 The paper's recommendation, taken as written: no option, and it matches the rule that a session commits only when asked.
 
 ### <a id="fjs-d967"></a>2026-10-14 · `FJS-D967` — Q2 — What is Next: a fresh session, or a fork of the last one — A fresh chat; the plan file is the carry.
 
-Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (`--fork-session`, which keeps the context and its cost).
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (`--fork-session`, which keeps the context and its cost).
 
 The paper's recommendation, taken as written: a fresh session is the flow being replaced, and Fork stays as the escape hatch when the context is worth paying for.
 
 ### <a id="fjs-d966"></a>2026-10-14 · `FJS-D966` — Q1 — Where does a plan live — A markdown file in the checkout, at a path the owner gives: `IDEAS/<slug>.md` in this repo, `PLAN.md` at an app's root.
 
-Asked in [`IDEAS/workbench-plans.md`](IDEAS/workbench-plans.md) § Open questions. **A** was picked over **B** (a file under `WORKBENCH_DIR`, beside the pin's logs).
+Asked in [`IDEAS/shipped/workbench-plans.md`](IDEAS/shipped/workbench-plans.md) § Open questions. **A** was picked over **B** (a file under `WORKBENCH_DIR`, beside the pin's logs).
 
 The paper's recommendation, taken as written: the session edits it natively, it diffs and commits with the work, and a plan already is a file in this repo.
 

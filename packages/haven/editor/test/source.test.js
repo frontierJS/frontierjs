@@ -95,7 +95,7 @@ test('every tag binds to the mark the scene drew for it, in order', () => {
   const cat = tavernEls.find((e) => e.kind === 'Pacer')
   expect(placeOf(cat)).toEqual({ y: 12, from: 66, to: 86 })
   const door = tavernEls.find((e) => e.kind === 'Door')
-  expect(placeOf(door)).toEqual({ x: 48, y: 25, to: '/' })
+  expect(placeOf(door)).toEqual({ x: 48, y: 25, to: '/', w: 1, h: 1 })
   expect(cellsOf(door)).toEqual([{ x: 48, y: 25 }])
 })
 

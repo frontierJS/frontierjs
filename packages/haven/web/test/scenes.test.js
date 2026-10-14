@@ -10,13 +10,15 @@ import { test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
-import { pacerAt, createStage, follow, VIEW, EDGE } from '../src/stage.js'
+import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT } from '../src/stage.js'
 import { piece } from '../src/pieces/index.js'
 
 const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
 
-for (const { name, slug } of SCENES) {
+const scenes = new Map()   // path → its stage, for the border across
+for (const { name, slug, path } of SCENES) {
   const { stage, frame, capture } = await mountScene(name)
+  scenes.set(path, stage)
   const expected = readFileSync(join(WEB, 'src/scenes', `${slug}.frame.txt`), 'utf8').replace(/\n$/, '').split('\n')
 
   test(`${slug}: the stage's picture is ${slug}.frame.txt`, () => {
@@ -95,6 +97,42 @@ for (const { name, slug } of SCENES) {
     }
   })
 
+  test(`${slug}: every door leads to a scene with a door back, and a border has its run across at the matching row`, () => {
+    const path = SCENES.find((s) => s.slug === slug).path
+    for (const d of stage.doors) {
+      const there = scenes.get(d.to)
+      expect({ door: d.to, known: !!there, back: !!there?.doors.some((b) => b.to === path) }).toEqual({ door: d.to, known: true, back: true })
+    }
+    // A figure crossing a run lands beside the cell across at its row or
+    // column, so a run that stops short drops it beside a cell it never crossed.
+    for (const run of stage.marks.filter((m) => m.kind === 'door' && (m.w > 1 || m.h > 1))) {
+      const there = scenes.get(run.to)
+      for (let dy = 0; dy < run.h; dy++) for (let dx = 0; dx < run.w; dx++) {
+        const cell = { x: run.x + dx, y: run.y + dy }
+        const across = there.doors.find((b) => b.to === path && (run.h > 1 ? b.y === cell.y : b.x === cell.x))
+        expect({ border: run.to, at: `${cell.x},${cell.y}`, across: !!across }).toEqual({ border: run.to, at: `${cell.x},${cell.y}`, across: true })
+        const landed = arrival(there, { from: path, ...cell })
+        expect(Math.abs(landed.x - across.x) + Math.abs(landed.y - across.y)).toBe(1)
+      }
+    }
+  })
+
+  test(`${slug}: from the spawn a figure sees round itself, not the whole scene, and every light's halo`, () => {
+    const { spawn } = stage
+    expect(litAt(stage, spawn.x, spawn.y, spawn)).toBe(true)
+    const cells = []
+    for (let y = 0; y < stage.height; y++) for (let x = 0; x < stage.width; x++) if (expected[y][x] !== ' ') cells.push({ x, y })
+    const lit = cells.filter((c) => litAt(stage, c.x, c.y, spawn))
+    expect(lit.length).toBeGreaterThan(0)
+    expect(lit.length).toBeLessThan(cells.length)
+    for (const l of stage.lights) {
+      expect(Object.values(stage.palette).some((e) => e.light === l.r)).toBe(true)
+      expect(litAt(stage, l.x, l.y, { x: stage.width - 1, y: stage.height - 1 })).toBe(true)
+    }
+    // The picture is the art whoever stands where: fog is drawn, never claimed.
+    expect(stage.picture()).toEqual(expected)
+  })
+
   for (const p of stage.pacers) {
     test(`${slug}: the ${p.name} paces floor only, end to end and back`, () => {
       for (let x = p.from; x <= p.to; x++) expect({ x, floor: stage.walkable(x, p.y) }).toEqual({ x, floor: true })
@@ -147,6 +185,59 @@ test('a stage shows the view it is told to follow and the whole of itself to the
 const wall  = piece('wall', '|', 'w')
 const table = piece('table', 'o|o', 'tct')
 
+test('a figure sees within SIGHT over floor, a wall blocks the line, and a light is seen from anywhere', () => {
+  const stage = createStage({ slug: 'probe', palette: { w: { fg: '#ffffff' }, y: { fg: '#ffff00', light: 2 } }, spawn: { x: 0, y: 0 } })
+  stage.stamp(piece('far', '.', 'w'), 60, 20)
+  stage.stamp(piece('wall', '|\n|\n|', 'w\nw\nw'), 25, 9)
+  stage.stamp(piece('lamp', 'o', 'y'), 50, 2)
+  const me = { x: 20, y: 10 }
+  expect(litAt(stage, 20, 10, me)).toBe(true)
+  expect(litAt(stage, 20 - 2 * SIGHT, 10, me)).toBe(true)
+  expect(litAt(stage, 20 - 2 * SIGHT - 1, 10, me)).toBe(false)
+  expect(litAt(stage, 20, 10 - SIGHT, me)).toBe(true)
+  expect(litAt(stage, 20, 10 - SIGHT - 1, me)).toBe(false)
+  expect(litAt(stage, 25, 10, me)).toBe(true)     // the wall itself is seen
+  expect(litAt(stage, 27, 10, me)).toBe(false)    // the cell behind it is not
+  expect(litAt(stage, 27, 13, me)).toBe(true)     // round its end it is
+  expect(litAt(stage, 50, 2, me)).toBe(true)      // the lamp, from across the stage
+  expect(litAt(stage, 52, 3, me)).toBe(true)      // and its halo
+  expect(litAt(stage, 55, 3, me)).toBe(false)     // which ends
+  expect(stage.lights).toEqual([{ x: 50, y: 2, r: 2 }])
+  expect(litAt(stage, 60, 20, null)).toBe(true)
+})
+
+test('a stage with a seer draws lit cells, remembers them dim, and blanks the rest; with none it draws everything', () => {
+  const stage = createStage({ slug: 'probe', palette: { w: { fg: '#ff0000' }, k: { fg: ['#ffffff', '#000000'], chars: 'ab', ms: 100 } }, spawn: { x: 0, y: 0 } })
+  stage.stamp(piece('wall', '|', 'w'), 2, 0)
+  stage.stamp(piece('water', '~', 'k'), 3, 0)
+  stage.stamp(piece('post', '!', ' '), 4, 0)
+  stage.stamp(piece('far', '#', 'w'), 40, 5)
+  expect(stage.light(40, 5)).toBe('lit')
+  expect(stage.look(40, 5, 0)).toEqual({ ch: '#', fg: '#ff0000', bg: undefined })
+  const drawn = []
+  stage.subscribe(() => drawn.push(1))
+  stage.see(3, 2)
+  expect(drawn).toEqual([1])
+  expect(stage.light(2, 0)).toBe('lit')
+  expect(stage.light(40, 5)).toBe('dark')
+  expect(stage.look(40, 5, 0)).toEqual({ ch: ' ', fg: undefined, bg: undefined })
+  expect(stage.look(3, 0, 100)).toEqual({ ch: 'b', fg: '#000000', bg: undefined })
+  stage.see(30, 2)
+  expect(stage.light(2, 0)).toBe('dim')
+  expect(stage.light(40, 5)).toBe('lit')
+  expect(stage.look(2, 0, 0)).toEqual({ ch: '|', fg: dim('#ff0000'), bg: undefined })
+  expect(stage.look(4, 0, 0)).toEqual({ ch: '!', fg: dim(INK), bg: undefined })
+  expect(stage.look(3, 0, 100)).toEqual({ ch: 'a', fg: dim('#ffffff'), bg: undefined })   // a memory does not move
+  expect(stage.look(1, 0, 0)).toEqual({ ch: ' ', fg: undefined, bg: undefined })
+  expect(dim('#ff0000')).toBe('#660000')
+  // A piece placed in the dark is not seen until the figure comes near.
+  stage.stamp(piece('crate', '#', 'w'), 16, 5)
+  expect(stage.light(16, 5)).toBe('dark')
+  stage.stamp(piece('crate', '#', 'w'), 31, 0)
+  expect(stage.light(31, 0)).toBe('lit')
+  expect(stage.picture()[0].length).toBe(41)
+})
+
 test('two pieces on one cell are refused naming the cell and both', () => {
   const stage = createStage({ slug: 'probe', spawn: { x: 0, y: 0 } })
   stage.stamp(table, 0, 0)
@@ -163,6 +254,37 @@ test('a door replaces the wall under it and comes back when removed', () => {
   door.remove()
   expect(stage.picture()).toEqual(['  |'])
   expect(stage.doorAt(2, 0)).toBeNull()
+})
+
+test('a door with a size is a run of door cells, one mark, moved and removed together', () => {
+  const stage = createStage({ slug: 'probe', spawn: { x: 0, y: 0 } })
+  stage.stamp(piece('wall', '|\n|\n|\n|', 'w\nw\nw\nw'), 0, 0)
+  const run = stage.door(0, 1, '/east/', { h: 3 })
+  expect(stage.marks).toEqual([expect.objectContaining({ kind: 'piece' }), expect.objectContaining({ kind: 'door', x: 0, y: 1, w: 1, h: 3 })])
+  expect(stage.picture()).toEqual(['|', 'n', 'n', 'n'])
+  expect(stage.doors).toEqual([{ x: 0, y: 1, to: '/east/' }, { x: 0, y: 2, to: '/east/' }, { x: 0, y: 3, to: '/east/' }])
+  run.retarget('/west/')
+  expect(stage.doorAt(0, 3)).toEqual({ x: 0, y: 3, to: '/west/' })
+  run.move(2, 0)
+  expect(stage.picture()).toEqual(['| n', '| n', '| n', '|  '])
+  run.remove()
+  expect(stage.picture()).toEqual(['|', '|', '|', '|'])
+  expect(stage.doors).toEqual([])
+})
+
+test('a figure arrives beside the door that leads back, nearest the cell it crossed, else at the spawn', () => {
+  const stage = createStage({ slug: 'probe', spawn: { x: 5, y: 5 } })
+  stage.stamp(piece('wall', '|\n|\n|\n|\n|\n|\n|\n|\n|\n|', 'w'.repeat(19).replace(/ww/g, 'w\n')), 9, 0)
+  stage.door(9, 2, '/', { h: 5 })
+  stage.stamp(piece('wall', '---', 'www'), 2, 0)
+  stage.door(3, 0, '/tavern/')
+  expect(arrival(stage, { from: '/', x: 0, y: 4 })).toEqual({ x: 8, y: 4 })
+  expect(arrival(stage, { from: '/', x: 0, y: 0 })).toEqual({ x: 8, y: 2 })
+  expect(arrival(stage, { from: '/tavern/', x: 40, y: 20 })).toEqual({ x: 3, y: 1 })
+  expect(arrival(stage, { from: '/nowhere/', x: 0, y: 0 })).toEqual({ x: 5, y: 5 })
+  expect(arrival(stage, {})).toEqual({ x: 5, y: 5 })
+  stage.stamp(piece('crate', '#', 'w'), 3, 1)
+  expect(arrival(stage, { from: '/tavern/', x: 0, y: 0 })).toEqual({ x: 5, y: 5 })
 })
 
 test('a moved piece frees the cells it left, and a removed one frees them all', () => {

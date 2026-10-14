@@ -356,6 +356,31 @@ describe('emitted access, on a real client', () => {
       env.close()
     }
   })
+
+  // `isActive` stood alone as a read term, so a draft shop's active listings
+  // were read by everybody.
+  test('a child publicWhen under a public parent holds only where the parent is read (FJS-1881)', async () => {
+    const a = { entities: [
+      { name: 'Shop', rung: 'novel', why: 'probe', fields: [{ name: 'published', type: 'bool', required: true }], links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }], access: { public: ['read'], publicWhen: { published: true }, why: 'the storefront' } },
+      { name: 'Listing', rung: 'novel', why: 'probe', fields: [{ name: 'isActive', type: 'bool', required: true }], links: [{ name: 'shop', to: 'Shop', required: true }], access: { via: 'shop', public: ['read'], publicWhen: { isActive: true }, why: 'active listings are for sale' } },
+    ] }
+    const { text } = emit(a, { scaffold: SCAFFOLD })
+    expect(text).toContain('check(shop) && isActive == true')
+    const env = await createTestEnv({ schema: text })
+    try {
+      const sys = env.system
+      const owner = await sys.user.create({ data: { email: 'o@example.com' } })
+      const draft = await sys.shop.create({ data: { published: false, ownerId: owner.id } })
+      const live = await sys.shop.create({ data: { published: true, ownerId: owner.id } })
+      const listing = (shop, isActive) => sys.listing.create({ data: { shopId: shop.id, isActive } })
+      await listing(draft, true)
+      await listing(live, false)
+      const shown = await listing(live, true)
+      expect((await env.actingAs(null).listing.findMany({})).map(l => l.id)).toEqual([shown.id])
+    } finally {
+      env.close()
+    }
+  })
 })
 
 describe('checkAnswer refuses', () => {

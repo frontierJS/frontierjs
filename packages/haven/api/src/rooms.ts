@@ -32,6 +32,9 @@ export const FIRST_ROOM = 'square'
 export const ROOMS = [
   { slug: 'square', name: 'The square' },
   { slug: 'tavern', name: 'The tavern' },
+  { slug: 'road',   name: 'The road' },
+  { slug: 'woods',  name: 'The woods' },
+  { slug: 'docks',  name: 'The docks' },
 ] as const
 
 /** Creates whichever of ROOMS the database lacks. Run by the entry point and not

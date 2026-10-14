@@ -247,6 +247,83 @@ type WorkspaceMemberRole {
   role   WorkspaceRole
 }
 
+/// What the dashboards service's widget verbs accept. Which subject a kind takes
+/// is `kinds.ts`'s, so the pairing stays the method's; the shape is stated here.
+type WidgetAdd {
+  kind     WidgetKind
+  serverId String?
+  appId    String?
+  config   Json?
+  cols     Int?
+}
+
+type WidgetUpdate {
+  widgetId String
+  kind     WidgetKind?
+  serverId String?
+  appId    String?
+  config   Json?
+  cols     Int?
+}
+
+type WidgetRemove {
+  widgetId String
+}
+
+type DashboardReorder {
+  ids String[]
+}
+
+/// What `apps.fromBlueprint`, `apps.place` and `apps.unplace` accept.
+type AppFromBlueprint {
+  blueprintId   String
+  environmentId String
+  name          String?
+  values        Json?
+}
+
+type AppPlace {
+  serverId     String
+  replicaIndex Int?
+}
+
+type AppUnplace {
+  serverId     String
+  replicaIndex Int?
+}
+
+/// What `flags.setOverride` and `flags.clearOverride` accept. A rollout outside
+/// 0..100 is clamped by the method, so it is not narrowed here.
+type FlagOverrideSet {
+  environmentId String
+  isEnabled     Boolean?
+  rollout       Int?
+  variantKey    String?
+}
+
+type FlagOverrideClear {
+  environmentId String
+}
+
+/// `servers.provision` and the job's `provisionStep` accept these. A catalog
+/// size, region and image are checked against the vendor by the method; the
+/// shape is the schema's, so a missing field is a 400 naming it.
+enum ProvisionStepName { start create poll timeout }
+
+type ServerProvision {
+  name      String @trim @length(1, 80)
+  role      ServerRole?
+  accountId String
+  region    String
+  size      String
+  image     String
+}
+
+type ServerProvisionStep {
+  step        ProvisionStepName
+  enrollToken String?
+}
+
 enum SecretKind     { ssh_key provider_key registry_auth tls_cert notification generic }
 enum ServerStatus   { pending provisioning installing online unreachable draining stopped destroying destroyed }
 enum ServerRole     { general build database gateway worker }
@@ -766,12 +843,12 @@ model WorkspaceMember {
   // asSystem() bypasses this for the hub and the setup path.
   @@deny('update', userId == auth().id)
 
-  // What this cannot reach is the door a person walks through:
-  // `workspaces.setMemberRole` writes through asSystem(), because membership
-  // is what decides access and cannot be read through the caller it is
-  // deciding about — and asSystem() bypasses every policy here. The refusals
-  // that hold that path are in the service tier (core/hooks.ts §
-  // refuseRoleAboveOwn, and the self-check in setMemberRole itself).
+  // `workspaces.addMember`, `setMemberRole` and `removeMember` write through
+  // the caller's own client, so this deny holds the door a person walks
+  // through; only their reads (and `leave`, `transferOwnership`, which write
+  // the caller's own row) are asSystem(). A refused update answers null, which
+  // setMemberRole turns into a 403. The grade of what is being handed out is
+  // core/hooks.ts § refuseGrantAboveOwn.
 
   // A model with no @@allow for an operation is OPEN, and litestone says so at
   // parse. With only the deny above, a scoped client read every workspace's

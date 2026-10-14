@@ -361,6 +361,14 @@ BASECAMP_URL=$BASECAMP_URL
 ENVEOF
 chmod 0600 /etc/basecamp/outpost.env
 
+# The sandbox bounds what a flaw in any route can write to the Outpost's own
+# directories (its apps and static origin, the cert, bun's cache) and keeps it
+# from gaining privilege. It is root still, because Docker access is
+# root-equivalent and a non-root User= would buy nothing. The /exec route leaves
+# the unit through systemd-run (FJS-D602), so a recipe is not confined by it.
+# StateDirectory creates /var/lib/outpost before the namespace is built: a
+# ReadWritePaths entry that does not exist yet fails the start on a fresh box.
+# posture: outpost.sandbox
 cat > /etc/systemd/system/outpost.service <<UNITEOF
 [Unit]
 Description=Basecamp Outpost
@@ -372,6 +380,17 @@ EnvironmentFile=/etc/basecamp/outpost.env
 ExecStart=$BUN_INSTALL/bin/bunx --bun @frontierjs/outpost@${OUTPOST_VERSION}
 Restart=always
 RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ReadWritePaths=/var/lib/outpost /etc/basecamp $BUN_INSTALL -$HOME/.docker
+StateDirectory=outpost
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

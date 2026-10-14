@@ -5,6 +5,7 @@ alias: create-user
 examples:
   - fli auth:create-user alice@acme.com
   - fli auth:create-user alice@acme.com --name "Alice Chen" --role admin
+  - fli auth:create-user alice@acme.com --account acme --role admin
   - fli auth:create-user alice@acme.com --password secret --dry
 args:
   -
@@ -22,6 +23,11 @@ flags:
     type: string
     description: "User role: user, admin"
     defaultValue: user
+  account:
+    char: a
+    type: string
+    description: Account (tenant) id to put the user in — for an app tenanted by row
+    defaultValue: ''
   password:
     char: p
     type: string
@@ -69,6 +75,7 @@ const user = await sys.user.create({
     name:          input.name || null,
     role:          input.role,
     emailVerified: true,
+    ...(input.accountId ? { accountId: input.accountId } : {}),
   }
 })
 
@@ -134,6 +141,7 @@ if (flag.dry) {
   log.dry(`Would create user: ${arg.email}`)
   log.dry(`  name: ${flag.name || '(none)'}`)
   log.dry(`  role: ${flag.role}`)
+  if (flag.account) log.dry(`  account: ${flag.account}`)
   return
 }
 
@@ -152,10 +160,11 @@ try {
       ...process.env,
       FLI_CREATE_USER: JSON.stringify({
         schemaPath,
-        email:    arg.email,
+        email:     arg.email,
         password,
-        name:     flag.name,
-        role:     flag.role,
+        name:      flag.name,
+        role:      flag.role,
+        accountId: flag.account,
       }),
     },
   })

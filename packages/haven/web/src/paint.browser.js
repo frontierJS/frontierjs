@@ -60,12 +60,13 @@ export const paint = (stage) => (box) => {
       for (let col = 0; col < v.w; col++) cells.push(stage.look(v.x + col, v.y + row, ms))
       grid.push(cells)
     }
-    // A pacer's spaces are not drawn, as in the terminal: the art shows through.
+    // A pacer's spaces are not drawn, as in the terminal, and neither is a
+    // pacer on a cell the figure cannot see: the art shows through.
     for (const p of stage.pacers) {
       const { x, y, text } = pacerAt(p, ms)
       ;[...text].forEach((ch, i) => {
         const cell = grid[y - v.y]?.[x + i - v.x]
-        if (cell && ch !== ' ') grid[y - v.y][x + i - v.x] = { ch, fg: p.fg, bg: cell.bg }
+        if (cell && ch !== ' ' && stage.light(x + i, y) === 'lit') grid[y - v.y][x + i - v.x] = { ch, fg: p.fg, bg: cell.bg }
       })
     }
     const frag = document.createDocumentFragment()

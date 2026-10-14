@@ -12,7 +12,7 @@
 const PLACED = {
   Piece: ['x', 'y'],
   Row:   ['x', 'y'],
-  Door:  ['x', 'y', 'to'],
+  Door:  ['x', 'y', 'to', 'w', 'h'],
   Pacer: ['y', 'from', 'to'],
 }
 
@@ -40,7 +40,7 @@ export const added = (id, kind, ident, file, mark) => ({ id, kind, ident, file, 
 /** Where an element stands, as its tag's attributes. */
 export function placeOf(el) {
   const m = el.mark
-  if (el.kind === 'Door')  return { x: m.x, y: m.y, to: m.to }
+  if (el.kind === 'Door')  return { x: m.x, y: m.y, to: m.to, w: m.w, h: m.h }
   if (el.kind === 'Pacer') return { y: m.spec.y, from: m.spec.from, to: m.spec.to }
   return { x: m.x, y: m.y }
 }
@@ -48,7 +48,11 @@ export function placeOf(el) {
 /** The cells an element covers, for a click to find it and a mark to show it. */
 export function cellsOf(el) {
   const m = el.mark
-  if (el.kind === 'Door') return [{ x: m.x, y: m.y }]
+  if (el.kind === 'Door') {
+    const out = []
+    for (let dy = 0; dy < m.h; dy++) for (let dx = 0; dx < m.w; dx++) out.push({ x: m.x + dx, y: m.y + dy })
+    return out
+  }
   if (el.kind === 'Pacer') {
     const out = []
     for (let x = m.spec.from; x <= m.spec.to; x++) out.push({ x, y: m.spec.y })
@@ -140,14 +144,17 @@ export function editsOf(parsed, state, baseColors) {
     if (!el) { (edits.remove ??= []).push(tag.id); continue }
     const changed = {}
     for (const key of PLACED[tag.kind]) {
-      const was = tag.attrs[key] ?? (key === 'x' || key === 'y' ? 0 : undefined)
+      // A tag writes no `x` for 0 and no size for one cell, the components' defaults.
+      const was = tag.attrs[key] ?? (key === 'x' || key === 'y' ? 0 : key === 'w' || key === 'h' ? 1 : undefined)
       if (el[key] !== was) changed[key] = el[key]
     }
     if (Object.keys(changed).length) (edits.elements ??= {})[tag.id] = changed
   }
   for (const el of state.els) {
     if (el.id < parsed.elements.length) continue
-    const attrs = el.kind === 'Door' ? { x: el.x, y: el.y, to: el.to } : { of: { expr: el.ident }, x: el.x, y: el.y }
+    const attrs = el.kind === 'Door'
+      ? { x: el.x, y: el.y, to: el.to, w: el.w > 1 ? el.w : undefined, h: el.h > 1 ? el.h : undefined }
+      : { of: { expr: el.ident }, x: el.x, y: el.y }
     const add = { kind: el.kind, attrs }
     if (el.file) add.import = { ident: el.ident, file: el.file }
     ;(edits.add ??= []).push(add)

@@ -16,6 +16,10 @@
     "#sign-in": {
       "browser": "./web/src/sign-in.browser.js",
       "default": "./web/src/sign-in.js"
+    },
+    "#errand": {
+      "browser": "./web/src/errand.browser.js",
+      "default": "./web/src/errand.js"
     }
   },
   "license": "MIT",

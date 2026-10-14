@@ -10,7 +10,14 @@
 // replaces the wall cell under it, which is what a door in a wall is.
 //
 // Walkable is unclaimed, or claimed by a `floor` piece; a door is stepped
-// onto only to go through, so it is not. The server bounds a move to whole
+// onto only to go through, so it is not. A door with a size is a run of door
+// cells along an edge — a border into the scene beside this one — and
+// `arrival()` says where a figure stands having come through one: beside
+// the door that leads back, at the matching row or column, so the two
+// scenes agree on a crossing without naming each other's cells. A border
+// whose far side has no run at that row drops the figure beside the nearest
+// cell of it; `scenes.test.js` pairs every edge door with one across.
+// The server bounds a move to whole
 // cells and nothing finer (`api/src/rooms.ts`), so a client that walks through
 // a wall walks through it on its own screen and every other one.
 //
@@ -20,6 +27,19 @@
 // on the stage, so a pan is a `changed()` like a moved piece and `#paint`
 // has one subscription; a stage no bigger than VIEW never pans. The editor
 // asks for the whole stage instead.
+//
+// Light and fog (`IDEAS/haven.md` 6.3). Once a scene says which figure
+// SEES (`see(x, y)`), a cell is lit when it is within SIGHT of that figure
+// with nothing opaque between — a claimed cell that is not floor blocks the
+// line — or within the radius of a palette entry with `light: r`, which is
+// seen from anywhere in the room: a lamp's halo across the square, the
+// hearth from the tavern door. Light passes through walls where sight does
+// not, because a hearth is ringed by its own frame cells and a fire nobody
+// could see is no fire. A cell lit once and not now is dim — its glyph at
+// the clock's first step in a darkened color, a memory that does not move
+// — and one never lit is blank. With no seer every cell is lit: the
+// picture, the editor, a test. `litAt()` is the pure answer, so a drive
+// and both targets agree on which cells a screen shows.
 //
 // A cycling cell steps on a shared clock. `wave` offsets each cell by its
 // column and row, so a row of water rolls; `flicker` draws each cell's step
@@ -43,6 +63,60 @@ const stepOf = (style, x, y, ms) => {
 
 const pick = (v, i) => (Array.isArray(v) ? v[i % v.length] : v)
 
+/** The color of a glyph its palette does not color — the terminal's own ink. */
+export const INK = '#c8c8c8'
+
+const dims = new Map()
+/** `hex` at two fifths of its light: what a remembered cell is drawn in. */
+export const dim = (hex) => {
+  if (!hex) return hex
+  let d = dims.get(hex)
+  if (!d) dims.set(hex, d = '#' + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * 0.4).toString(16).padStart(2, '0')).join(''))
+  return d
+}
+
+const STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+
+/** How far a figure sees, in rows; a column counts half, since a cell is twice as tall as it is wide. */
+export const SIGHT = 7
+
+const within = (a, b, r) => ((a.x - b.x) / 2) ** 2 + (a.y - b.y) ** 2 <= r * r
+
+/** Whether nothing opaque stands strictly between `a` and `b`: every cell the line crosses is one a figure could stand on. */
+function clear(stage, a, b) {
+  let { x, y } = a
+  const dx = Math.abs(b.x - x), dy = Math.abs(b.y - y)
+  const sx = x < b.x ? 1 : -1, sy = y < b.y ? 1 : -1
+  let err = dx - dy
+  for (;;) {
+    const e2 = 2 * err
+    if (e2 > -dy) { err -= dy; x += sx }
+    if (e2 < dx)  { err += dx; y += sy }
+    if (x === b.x && y === b.y) return true
+    if (!stage.walkable(x, y)) return false
+  }
+}
+
+/**
+ * Whether the cell `x, y` of `stage` is lit for a figure standing at `from`:
+ * within SIGHT of it with a clear line, or within the radius of a light.
+ * Everything is lit for no figure. An opaque cell is also seen when a floor
+ * cell beside it is: a line skimming along a hedge meets the hedge's own
+ * nearer cells first, and a wall seen that way would show two cells of it.
+ */
+export function litAt(stage, x, y, from) {
+  if (!from) return true
+  const cell = { x, y }
+  if (within(from, cell, SIGHT)) {
+    if (clear(stage, from, cell)) return true
+    if (!stage.walkable(x, y) && STEPS.some(([dx, dy]) => {
+      const n = { x: x + dx, y: y + dy }
+      return stage.walkable(n.x, n.y) && within(from, n, SIGHT) && clear(stage, from, n)
+    })) return true
+  }
+  return stage.lights.some((l) => within(l, cell, l.r))
+}
+
 /** The most cells a screen shows: a 100×30 terminal with the status and input lines under the art. */
 export const VIEW = { w: 97, h: 26 }
 
@@ -65,6 +139,22 @@ export function follow(view, fig, extent) {
   const w = Math.min(VIEW.w, extent.width)
   const h = Math.min(VIEW.h, extent.height)
   return { x: axis(view.x, w, fig.x, EDGE.x, extent.width), y: axis(view.y, h, fig.y, EDGE.y, extent.height), w, h }
+}
+
+/**
+ * Where a figure stands on `stage` having come through a door: beside the
+ * door here that leads back to `from`, the one nearest the cell `{ x, y }`
+ * it stepped onto there — so a border is crossed at the matching row or
+ * column, and a door is come out of rather than spawned away from. The
+ * spawn when no door here leads back, or none has floor beside it.
+ */
+export function arrival(stage, { from, x, y } = {}) {
+  const back = from ? stage.doors.filter((d) => d.to === from) : []
+  if (!back.length) return { ...stage.spawn }
+  const near = (d) => Math.abs(d.x - x) + Math.abs(d.y - y)
+  const door = back.reduce((a, b) => (near(b) < near(a) ? b : a))
+  const beside = STEPS.map(([dx, dy]) => ({ x: door.x + dx, y: door.y + dy })).find((c) => stage.walkable(c.x, c.y))
+  return beside ?? { ...stage.spawn }
 }
 
 /**
@@ -98,6 +188,10 @@ export function createStage({ slug, palette = {}, spawn }) {
   let eye   = { x: 0, y: 0 }   // the view's top-left
   let fig   = null             // the figure followed, re-followed when the extent changes
   let whole = false
+  let seer  = null             // the figure that sees; null lights every cell
+  let lights  = []             // every cell whose palette entry has a light, with its radius
+  let visible = new Set()      // 'x,y' lit for the seer now
+  let seen    = new Set()      // 'x,y' lit for the seer at any time
 
   const key = (x, y) => `${x},${y}`
   const extent = () => {
@@ -109,11 +203,26 @@ export function createStage({ slug, palette = {}, spawn }) {
       if (y + 1 > height) height = y + 1
     }
   }
+  const relight = () => {
+    lights = []
+    for (const [k, c] of claims) {
+      const r = palette[c.key]?.light
+      if (!r) continue
+      const [x, y] = k.split(',').map(Number)
+      lights.push({ x, y, r })
+    }
+    if (!seer) return
+    visible = new Set()
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      if (litAt(stage, x, y, seer)) { const k = key(x, y); visible.add(k); seen.add(k) }
+    }
+  }
   // A painter that fails must not fail the claim it was told about: the
   // stage is right and the picture is late, which the next tick repairs.
   const changed = () => {
     extent()
     if (fig) eye = follow({ ...eye }, fig, { width, height })
+    relight()
     for (const fn of listeners) { try { fn() } catch (e) { console.error(e) } }
   }
   const drop = (mark) => { const i = marks.indexOf(mark); if (i !== -1) marks.splice(i, 1) }
@@ -166,6 +275,23 @@ export function createStage({ slug, palette = {}, spawn }) {
     /** The whole stage as the view, for the editor's preview. */
     showAll() { whole = true; changed() },
 
+    /** This figure sees from here: what it lights now is lit, what it lit once is dim, the rest dark. A step redraws. */
+    see(x, y) {
+      seer = { x, y }
+      relight()
+      for (const fn of listeners) { try { fn() } catch (e) { console.error(e) } }
+    },
+
+    /** Every light on the stage, `{ x, y, r }`. */
+    get lights() { return lights },
+
+    /** How this cell stands to the seer: `'lit'`, `'dim'` (lit once, not now) or `'dark'`; lit everywhere with no seer. */
+    light(x, y) {
+      if (!seer) return 'lit'
+      const k = key(x, y)
+      return visible.has(k) ? 'lit' : seen.has(k) ? 'dim' : 'dark'
+    },
+
     /** A piece's cells, claimed at `x, y`; the mark moves or removes them. */
     stamp(piece, x, y) {
       const cellsAt = (px, py) => piece.cells.map((c) => [px + c.dx, py + c.dy, { ch: c.ch, key: c.key, name: piece.name, floor: piece.floor }])
@@ -189,16 +315,28 @@ export function createStage({ slug, palette = {}, spawn }) {
       return mark
     },
 
-    /** A door on a cell, replacing whatever is drawn there; stepping onto it is `goto(to)`. */
-    door(x, y, to) {
-      let under = null
-      const put = (px, py) => { under = claims.get(key(px, py)) ?? null; claim(px, py, { ch: 'n', key: 'd', name: 'door', floor: false, door: mark.to }) }
-      const lift = () => { if (under) claims.set(key(mark.x, mark.y), under); else claims.delete(key(mark.x, mark.y)) }
+    /**
+     * A door on a cell, replacing whatever is drawn there; stepping onto it
+     * is `goto(to)`. With a size it is a run of door cells sharing one `to`
+     * — a border along an edge (`IDEAS/haven.md` 6.2) — and one mark.
+     */
+    door(x, y, to, { w = 1, h = 1 } = {}) {
+      const under = new Map()   // 'x,y' → the cell the door replaced
+      const each = (px, py, fn) => { for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) fn(px + dx, py + dy) }
+      const put = (px, py) => each(px, py, (cx, cy) => {
+        under.set(key(cx, cy), claims.get(key(cx, cy)) ?? null)
+        claim(cx, cy, { ch: 'n', key: 'd', name: 'door', floor: false, door: mark.to })
+      })
+      const lift = () => each(mark.x, mark.y, (cx, cy) => {
+        const was = under.get(key(cx, cy))
+        if (was) claims.set(key(cx, cy), was); else claims.delete(key(cx, cy))
+      })
       const mark = {
-        kind: 'door', x, y, to,
+        kind: 'door', x, y, to, w, h,
         move(nx, ny) {
           if (nx === mark.x && ny === mark.y) return
           lift()
+          under.clear()
           put(nx, ny)
           mark.x = nx
           mark.y = ny
@@ -206,7 +344,7 @@ export function createStage({ slug, palette = {}, spawn }) {
         },
         retarget(nto) {
           mark.to = nto
-          claims.get(key(mark.x, mark.y)).door = nto
+          each(mark.x, mark.y, (cx, cy) => { claims.get(key(cx, cy)).door = nto })
           changed()
         },
         remove() { lift(); drop(mark); changed() },
@@ -262,18 +400,23 @@ export function createStage({ slug, palette = {}, spawn }) {
       return !c || (c.floor && !c.door)
     },
 
-    /** How one cell looks `ms` into the clock: `{ ch, fg, bg }`, colors undefined for the terminal's own. */
+    /**
+     * How one cell looks `ms` into the clock: `{ ch, fg, bg }`, colors
+     * undefined for the terminal's own. A dark cell is blank; a dim one is
+     * its glyph at the clock's first step, darkened.
+     */
     look(x, y, ms = 0) {
+      const light = stage.light(x, y)
+      if (light === 'dark') return { ch: ' ', fg: undefined, bg: undefined }
       const c = claims.get(key(x, y))
       const ch = c?.ch ?? ' '
       const style = c && c.key !== ' ' ? palette[c.key] : null
-      if (!style) return { ch, fg: undefined, bg: undefined }
-      const step = style.ms ? stepOf(style, x, y, ms) : 0
-      return {
-        ch: style.chars ? pick([...style.chars], step) : ch,
-        fg: pick(style.fg, step),
-        bg: pick(style.bg, step),
-      }
+      const step = style?.ms && light === 'lit' ? stepOf(style, x, y, ms) : 0
+      const out = style
+        ? { ch: style.chars ? pick([...style.chars], step) : ch, fg: pick(style.fg, step), bg: pick(style.bg, step) }
+        : { ch, fg: undefined, bg: undefined }
+      if (light === 'dim' && ch !== ' ') { out.fg = dim(out.fg ?? INK); out.bg = dim(out.bg) }
+      return out
     },
 
     /** Whether this cell's glyph is changed by the clock. */

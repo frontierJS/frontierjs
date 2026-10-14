@@ -4358,6 +4358,21 @@ describe('per-target resilience', () => {
     expect((await conduit.resolve('typo'))?.resilience?.timeout_ms).toBe(1)
   })
 
+  // FJS-1951: the same failure one level up. `policy:` is the spelling before
+  // the rename to `resilience`, and a descriptor still carrying it registered
+  // with its numbers dropped.
+  it('refuses an unknown descriptor key by name', async () => {
+    const conduit = createConduit({ credentials: secrets() })
+    await conduit.init()
+
+    await expect(conduit.register(providerTarget({
+      id: 'old', policy: { timeout_ms: 1 },
+    } as unknown as Partial<TargetDescriptor>))).rejects.toThrow(/unknown field 'policy'/)
+
+    await conduit.register(providerTarget({ id: 'old', resilience: { timeout_ms: 1 } }))
+    expect((await conduit.resolve('old'))?.resilience?.timeout_ms).toBe(1)
+  })
+
   it('refuses a value that cannot mean anything', async () => {
     const conduit = createConduit({ credentials: secrets() })
     await conduit.init()
@@ -4569,6 +4584,105 @@ describe('the idempotency key', () => {
     await expect(conduit.register(providerTarget({
       id: 'x', idempotency: { autoo: true } as unknown as { auto: boolean },
     }))).rejects.toThrow(/unknown field 'autoo'/)
+  })
+
+  // `FJS-1877`: Telnyx reads its key from the JSON body (`command_id`), so a
+  // header the target never reads left the caller claiming `replayable` in
+  // place of the key, which is false for a dial.
+  it('travels in the body field a target names, the same key on every attempt', async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    const headers: Array<string | null> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        bodies.push(await req.json() as Record<string, unknown>)
+        headers.push(req.headers.get('idempotency-key'))
+        return new Response('down', { status: 503 })
+      },
+    })
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [
+          providerTarget({
+            id: 'telnyx', address: `http://localhost:${server.port}`,
+            idempotency: { field: 'command_id', auto: true },
+            resilience: { retry_limit: 1, deadline_ms: 10_000 },
+          }),
+        ],
+      })
+      await conduit.init()
+
+      const res = await conduit.send({ target: 'telnyx', method: 'POST', path: '/dial', body: { to: '+1' } })
+
+      expect(bodies).toHaveLength(2)
+      expect(bodies[0]!.to).toBe('+1')
+      expect(bodies[0]!.command_id).toMatch(/^[0-9a-f-]{36}$/)
+      expect(bodies[1]!.command_id).toBe(bodies[0]!.command_id)
+      // In the body or the header, never both: the target reads one.
+      expect(headers).toEqual([null, null])
+      expect(res.error?.retryable).toBe(true)
+      // The result says it was a replay, so a collapsed duplicate's refusal
+      // is not read as the first attempt failing.
+      expect(res.meta.replays).toBe(1)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  it('states no replays when the first attempt answered', async () => {
+    const rec = recorder(() => Response.json({ ok: true }))
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({ id: 'plain', address: rec.url })],
+      })
+      await conduit.init()
+      const res = await conduit.send({ target: 'plain', method: 'POST', path: '/', body: {} })
+      expect(res.meta.replays).toBe(0)
+    } finally {
+      rec.stop()
+    }
+  })
+
+  it('names a body the key cannot be written into, rather than sending it without', async () => {
+    const rec = recorder(() => Response.json({ ok: true }))
+    try {
+      const conduit = createConduit({
+        credentials: secrets(),
+        targets: [providerTarget({ id: 'telnyx', address: rec.url, idempotency: { field: 'command_id' } })],
+      })
+      await conduit.init()
+
+      const bare = await conduit.send({
+        target: 'telnyx', method: 'POST', path: '/', body: ['a'], idempotency_key: 'k1',
+      })
+      expect(bare.error?.kind).toBe('invalid_request')
+      expect(bare.error?.message).toMatch(/command_id/)
+
+      const clash = await conduit.send({
+        target: 'telnyx', method: 'POST', path: '/', body: { command_id: 'mine' }, idempotency_key: 'k1',
+      })
+      expect(clash.error?.kind).toBe('invalid_request')
+      expect(rec.seen).toHaveLength(0)
+    } finally {
+      rec.stop()
+    }
+  })
+
+  it('refuses a field beside a header, and a field with nowhere to write it', async () => {
+    const conduit = createConduit({ credentials: secrets() })
+    await conduit.init()
+
+    await expect(conduit.register(providerTarget({
+      id: 'x', idempotency: { field: 'command_id', header: 'X-Key' },
+    }))).rejects.toThrow(/'field' and 'header' name two places/)
+    await expect(conduit.register(providerTarget({
+      id: 'x', idempotency: { field: ' ' },
+    }))).rejects.toThrow(/'field' must be a non-empty string/)
+    await expect(conduit.register(providerTarget({
+      id: 'x', protocol: 'websocket', address: 'ws://localhost:1', idempotency: { field: 'command_id' },
+    }))).rejects.toThrow(/'field' is for an http target/)
   })
 })
 

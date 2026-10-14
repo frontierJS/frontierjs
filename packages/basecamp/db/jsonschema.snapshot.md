@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-111 definitions · 63 models · 1 view · 7 types · 40 enums · 0 other
+123 definitions · 63 models · 1 view · 18 types · 41 enums · 0 other
 ```
 
 ## Definitions
@@ -101,6 +101,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `UserKind` | enum |
 | `UserStatus` | enum |
 | `WorkspaceStatus` | enum |
+| `ProvisionStepName` | enum |
 | `SecretKind` | enum |
 | `ServerStatus` | enum |
 | `ServerRole` | enum |
@@ -136,6 +137,17 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `FlagChange` | type |
 | `WorkspaceMemberAdd` | type |
 | `WorkspaceMemberRole` | type |
+| `WidgetAdd` | type |
+| `WidgetUpdate` | type |
+| `WidgetRemove` | type |
+| `DashboardReorder` | type |
+| `AppFromBlueprint` | type |
+| `AppPlace` | type |
+| `AppUnplace` | type |
+| `FlagOverrideSet` | type |
+| `FlagOverrideClear` | type |
+| `ServerProvision` | type |
+| `ServerProvisionStep` | type |
 
 ## Enums
 
@@ -154,6 +166,7 @@ validates, and a select that silently drops an option.
 - `UserKind` — `human`, `bot`, `ai`
 - `UserStatus` — `pending_verification`, `active`, `suspended`
 - `WorkspaceStatus` — `active`, `suspended`
+- `ProvisionStepName` — `start`, `create`, `poll`, `timeout`
 - `SecretKind` — `ssh_key`, `provider_key`, `registry_auth`, `tls_cert`, `notification`, `generic`
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
@@ -1569,3 +1582,136 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `role` | `WorkspaceRole` | yes | — | — | — |
 
 **On create**: required — `userId`, `role`
+
+### `WidgetAdd`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `kind` | `WidgetKind` | yes | — | — | — |
+| `serverId` | `string`? | — | — | — | — |
+| `appId` | `string`? | — | — | — | — |
+| `config` | `json`? | — | — | — | — |
+| `cols` | `integer`? | — | — | — | — |
+
+**On create**: required — `kind`
+
+### `WidgetUpdate`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `widgetId` | `string` | yes | — | — | — |
+| `kind` | `WidgetKind`? | — | — | — | — |
+| `serverId` | `string`? | — | — | — | — |
+| `appId` | `string`? | — | — | — | — |
+| `config` | `json`? | — | — | — | — |
+| `cols` | `integer`? | — | — | — | — |
+
+**On create**: required — `widgetId`
+
+### `WidgetRemove`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `widgetId` | `string` | yes | — | — | — |
+
+**On create**: required — `widgetId`
+
+### `DashboardReorder`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `ids` | `string[]` = `[]` | yes | — | — | — |
+
+**On create**: required — `ids`
+
+### `AppFromBlueprint`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `blueprintId` | `string` | yes | — | — | — |
+| `environmentId` | `string` | yes | — | — | — |
+| `name` | `string`? | — | — | — | — |
+| `values` | `json`? | — | — | — | — |
+
+**On create**: required — `blueprintId`, `environmentId`
+
+### `AppPlace`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `serverId` | `string` | yes | — | — | — |
+| `replicaIndex` | `integer`? | — | — | — | — |
+
+**On create**: required — `serverId`
+
+### `AppUnplace`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `serverId` | `string` | yes | — | — | — |
+| `replicaIndex` | `integer`? | — | — | — | — |
+
+**On create**: required — `serverId`
+
+### `FlagOverrideSet`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `environmentId` | `string` | yes | — | — | — |
+| `isEnabled` | `boolean`? | — | — | — | — |
+| `rollout` | `integer`? | — | — | — | — |
+| `variantKey` | `string`? | — | — | — | — |
+
+**On create**: required — `environmentId`
+
+### `FlagOverrideClear`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `environmentId` | `string` | yes | — | — | — |
+
+**On create**: required — `environmentId`
+
+### `ServerProvision`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `role` | `ServerRole`? | — | — | — | — |
+| `accountId` | `string` | yes | — | — | — |
+| `region` | `string` | yes | — | — | — |
+| `size` | `string` | yes | — | — | — |
+| `image` | `string` | yes | — | — | — |
+
+**On create**: required — `name`, `accountId`, `region`, `size`, `image`
+
+### `ServerProvisionStep`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `step` | `ProvisionStepName` | yes | — | — | — |
+| `enrollToken` | `string`? | — | — | — | — |
+
+**On create**: required — `step`

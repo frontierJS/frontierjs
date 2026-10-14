@@ -750,6 +750,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `specifications.md` — Specifications: the truths FrontierJS is one implementation of
 - `stressor-questions.md` — The stressor questions, as one catalog
 - `tenant-authored-workflows.md` — A state machine the TENANT fills in, still enforced at the Data boundary
+- `tunnel.md` — `fli tunnel <port>`: a dev port on a public URL with the visitor's address intact; Bun refuses PROXY protocol, so the own relay is `ssh -R` into Outpost's Caddy
 - `ui-ontology.md` — the UI realm's primitives: what a screen is made of, read against fifty years of naming it
 - `version-compatibility.md` — Version compatibility: what a version number here promises
 - `workbench.md` — the Workbench after V1: what comes next, ranked against prior art

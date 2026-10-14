@@ -266,7 +266,16 @@ export interface TargetDescriptor {
   // cannot discover and a caller should not have to restate per call. Off by
   // default: minting a key for a target that ignores it turns *we did not
   // retry your charge* into four charges.
-  idempotency?:    { header?: string; auto?: boolean }
+  //
+  // `field` is where a target that reads its key from the JSON body (Telnyx's
+  // `command_id`) names it, in place of `header`: the key is written into the
+  // request body under that name. Naming the location is what lets the claim
+  // made be the true one, *this target collapses duplicates* — without it the
+  // caller claims `replayable` and sends the key as an ordinary body field,
+  // which asserts a harmlessness a dial does not have. Beside `header` it is
+  // refused: the target reads one place. Only an http or unix target has a body
+  // to write into.
+  idempotency?:    { header?: string; field?: string; auto?: boolean }
 
   // What this target costs when it misbehaves. Every field falls back to the
   // conduit-wide option of the same name, so a descriptor that states nothing
@@ -512,6 +521,15 @@ export interface ResponseMeta {
   // 0 where nothing was sent — an unknown target, a shed request, a breaker
   // refusal — which is what those calls cost.
   duration_ms: number
+
+  // How many times the ladder sent this request again after the first attempt.
+  // A target that collapses duplicates answers a replay with what it did for
+  // the first, or refuses it as a duplicate; a result that does not say it was
+  // a replay reads that refusal as the first attempt failing. Per send, which
+  // `onRetry` is not: it is conduit-wide. The same number a call's `onRetry`
+  // was called with last; a remint is not an attempt and is not counted.
+  // Stamped by the http and unix transports.
+  replays?:    number
 
   // The response's headers, lowercased. Absent when nothing was sent — a
   // breaker refusal, an unknown target, a body that would not serialize.

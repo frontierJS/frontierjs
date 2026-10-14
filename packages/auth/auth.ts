@@ -1727,6 +1727,8 @@ export function createLitestoneAuth(
             email: data.email,
             name:  data.name  ?? null,
             role:  data.role  ?? 'user',
+            // The app's tenant column (db/user.lite), as `createInvitation` writes it.
+            ...(data.accountId != null ? { accountId: data.accountId } : {}),
           }
         })
         if (hashed) await tx.credential.create({ data: { userId: row.id, type: 'password', value: hashed } })

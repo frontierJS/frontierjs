@@ -2474,7 +2474,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">152 rows · 257 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">152 rows · 258 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>a migration, db/migrations/, or a column whose KIND of time changed</td>
       <td>example: verify:migrate — the only thing that reads the committed files, since autoMigrate means nothing else ever does</td>
@@ -2977,8 +2977,8 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td><span class="tally"><b>packages/cli</b>bun run test</span></td>
     </tr><tr data-row>
       <td>what a Release is made of — core/release.js, the step ORDER in steps-docker/, .dockerignore, core/build-check.js</td>
-      <td>bun run ci's deployJournalCycle, whose an unchanged redeploy mints the same Release is the only assertion that can see a build context that moves on its own. The digest is a term of the id since 04c-journal, so anything that changes the bytes changes the Release — which is the point, and is what makes a stray .db-wal in the context visible instead of merely wasteful</td>
-      <td><span class="sub">—</span></td>
+      <td>.: ci (its deployJournalCycle), whose an unchanged redeploy mints the same Release is the only assertion that can see a build context that moves on its own. The digest is a term of the id since 04c-journal, so anything that changes the bytes changes the Release — which is the point, and is what makes a stray .db-wal in the context visible instead of merely wasteful</td>
+      <td><span class="tally"><b>.</b>ci</span></td>
     </tr><tr data-row>
       <td>jetty — the adapter, the harbor, resources/</td>
       <td>example: verify:extension — nothing else here loads an extension into a profile. The relay itself (page → Harbor → a real Junction app) is packages/jetty: test/phase3.test.js</td>

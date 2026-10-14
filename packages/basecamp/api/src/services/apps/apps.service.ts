@@ -223,9 +223,10 @@ export function createAppsService(app: BasecampApp) {
     // is `@@gate("2.8")`, so the level is stated here rather than read off it.
     methods: [
       'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
-      'logs', 'fromBlueprint',
-      { method: 'place',   gate: LEVELS.USER },
-      { method: 'unplace', gate: LEVELS.USER },
+      'logs',
+      { method: 'fromBlueprint', input: 'AppFromBlueprint' },
+      { method: 'place',   gate: LEVELS.USER, input: 'AppPlace' },
+      { method: 'unplace', gate: LEVELS.USER, input: 'AppUnplace' },
     ],
     // Announced by the service DEFINITION, not by an after hook: `callService`
     // is junction's one announcement point and it excludes `find`/`get` by name,
@@ -376,10 +377,8 @@ export function createAppsService(app: BasecampApp) {
     // described by hand takes, so a blueprint app is not a second kind of app.
     async fromBlueprint() {
       const data = ($.data ?? {}) as Record<string, unknown>
-      const { blueprintId, environmentId } = data as Record<string, string | undefined>
+      const { blueprintId, environmentId } = data as Record<string, string>
       const name = typeof data.name === 'string' ? data.name.trim() : ''
-      if (!blueprintId)   throw new BadRequest('fromBlueprint needs a blueprintId')
-      if (!environmentId) throw new BadRequest('fromBlueprint needs an environmentId')
 
       const bp = await db().blueprint.findFirst({
         where:   { id: blueprintId },
@@ -430,8 +429,7 @@ export function createAppsService(app: BasecampApp) {
 
     async place() {
       const data     = $.data as Record<string, unknown>
-      const serverId = data.serverId as string | undefined
-      if (!serverId) throw new BadRequest('place needs a serverId')
+      const serverId = data.serverId as string
 
       const target = await getScoped('app', 'App')
 
@@ -462,8 +460,7 @@ export function createAppsService(app: BasecampApp) {
 
     async unplace() {
       const data     = $.data as Record<string, unknown>
-      const serverId = data.serverId as string | undefined
-      if (!serverId) throw new BadRequest('unplace needs a serverId')
+      const serverId = data.serverId as string
 
       const target = await getScoped('app', 'App')
 

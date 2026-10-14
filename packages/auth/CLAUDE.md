@@ -216,8 +216,8 @@ index.ts     public API
   registration** (`FJS-D520`, `FJS-1458`): after the row and its credential,
   before the commit, for a password and an identity provider alike, through
   `registerUser()`. It is where a row-tenanted app creates the Account and
-  writes the tenant column; `createUser` passes no column but `email`, `name`
-  and `role`. `db` is the transaction's client — an app write through its own
+  writes the tenant column; `createUser` passes no column but `email`, `name`,
+  `role` and a stated `accountId` (`fli auth:create-user --account`). `db` is the transaction's client — an app write through its own
   client falls outside it and survives a rollback.
 - **One ordering rule: a hook runs BEFORE the thing it can refuse.** So none is
   handed what its refusal would have prevented — `onLogin` has no session id,

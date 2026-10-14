@@ -1,11 +1,16 @@
 <script>
   // Door.mesa — a door on a cell of the scene it is inside: drawn as an `n`
-  // over whatever wall is there, and stepping onto it is `goto(to)`.
+  // over whatever wall is there, and stepping onto it is `goto(to)`. With a
+  // `w` or an `h` it is a run of door cells — a border along an edge into the
+  // scene beside this one (`IDEAS/haven.md` 6.2) — and the scene across has a
+  // run back on its facing edge, so a figure crosses at the matching row.
   export let x
   export let y
   export let to
+  export let w = 1
+  export let h = 1
 
   const scene = $context.scene
-  var mark = scene.door(x, y, to)
+  var mark = scene.door(x, y, to, { w, h })
   $.onDestroy(() => mark.remove())
 </script>
