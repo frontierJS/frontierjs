@@ -393,6 +393,23 @@ function emittedSize({ defs, models, updatePatch }) {
 }
 
 /**
+ * `generateSchemas()` with the reason kept when it answers null.
+ *
+ * A found schema.lite that produced no client schema leaves every generated
+ * form empty and every can() answering yes from no declaration, on an app that
+ * boots and renders. The log is not where anyone looks, so what was said is
+ * kept for the page to say too (`FJS-1649`) — by `virtual:sierra` in the SPA
+ * and by the boot of a built view.
+ *
+ * @returns {Promise<{ generated: object|null, failure: string|null }>}
+ */
+export async function clientSchemas(schemaPath, warn, root = process.cwd()) {
+  const said = []
+  const generated = await generateSchemas(schemaPath, (msg) => { said.push(msg); warn?.(msg) }, root)
+  return { generated, failure: generated ? null : (said.join('\n') || 'no client schema was generated') }
+}
+
+/**
  * Vite plugin. Watches the .lite file and invalidates virtual:sierra on change,
  * so editing the schema updates `make()` defaults without a restart.
  *
@@ -404,24 +421,17 @@ export function schemaPlugin(config, sierraContext) {
   let root = process.cwd()
   let schemaPath = null
 
-  let said = []
-  const warn = (msg) => { said.push(msg); console.warn(`[Sierra] schema: ${msg}`) }
+  const warn = (msg) => console.warn(`[Sierra] schema: ${msg}`)
 
-  // A found schema.lite that produced no client schema leaves every generated
-  // form empty and every can() answering yes from no declaration, on an app
-  // that boots and renders. The dev server's log is not where anyone looks, so
-  // what was said there is kept for virtual:sierra to say in the page too
-  // (`FJS-1649`).
   async function generate() {
-    said = []
-    const generated = await generateSchemas(schemaPath, warn, root)
+    const { generated, failure } = await clientSchemas(schemaPath, warn, root)
     sierraContext.schemaDefs    = generated?.defs   ?? null
     sierraContext.schemaModels  = generated?.models ?? null
     sierraContext.schemaUpdate  = generated?.updatePatch ?? null
     sierraContext.schemaRead    = generated?.readPatch ?? null
     sierraContext.deviceSchema  = generated?.device?.parsed ?? null
     sierraContext.deviceModels  = generated?.device?.models ?? null
-    sierraContext.schemaFailure = generated ? null : (said.join('\n') || 'no client schema was generated')
+    sierraContext.schemaFailure = failure
     return generated
   }
 

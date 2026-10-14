@@ -5428,6 +5428,20 @@ function validate(schema) {
       if (!field)     errors.push(`Model '${model.name}': @@label references unknown field '${attr.field}'`)
       else if (why)   errors.push(`Model '${model.name}': @@label(${attr.field}) — ${why}`)
     }
+
+    // A @@fts model is in the shared `_search` index, and its hit is titled by
+    // the display column (FJS-D970). Refused here rather than titled by a guess
+    // — the per-model `search()` works without one, so a model missing it would
+    // search fine alone and come back untitled in a palette with nothing saying
+    // which model forgot.
+    const ftsAttr = model.attributes.find(a => a.kind === 'fts')
+    if (ftsAttr && !labelAttrs.length) {
+      const candidate = ftsAttr.fields.find(name => {
+        const f = model.fields.find(x => x.name === name)
+        return f && !labelFieldRefusal(f, schema)
+      }) ?? ftsAttr.fields[0]
+      errors.push(`Model '${model.name}': @@fts without @@label — a hit in the shared search index is titled by the display column, and this model names none. Add @@label(${candidate})`)
+    }
   }
 
   // ── Exclusion scopes ─────────────────────────────────────────────────────

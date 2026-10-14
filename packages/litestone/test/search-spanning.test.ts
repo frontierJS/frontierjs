@@ -45,10 +45,11 @@ model Comment {
   id      String @id
   issueId String
   issue   Issue  @relation(fields: [issueId], references: [id])
+  author  String
   body    String
   @@allow('read', check(issue))
   @@fts([body])
-  @@label(body)
+  @@label(author)
 }
 
 model Note {
@@ -68,11 +69,12 @@ beforeAll(async () => {
   // so a leak is a hit under the other team and nothing else.
   for (const t of ['t1', 't2']) {
     await sys.team.create({ data: { id: t, ownerId: t === 't1' ? 'ana' : 'bo' } })
-    // Q4's planted pair: identical text as a title and as a body.
+    // Q4's planted pair: identical text as a title and as a body. A comment is
+    // titled by its author, so its words are in the BODY column alone.
     await sys.issue.create({ data: { id: `${t}-i-title`, teamId: t, title: 'quasar lattice' } })
     await sys.issue.create({ data: { id: `${t}-i-long`,  teamId: t, title: 'Rebuild the quasar lattice index nightly', description: 'cron it' } })
-    await sys.comment.create({ data: { id: `${t}-c-body`, issueId: `${t}-i-title`, body: 'quasar lattice' } })
-    await sys.comment.create({ data: { id: `${t}-c-long`, issueId: `${t}-i-title`, body: 'Long thread about the quasar lattice migration, the lattice rebuild, and why the quasar step is slow' } })
+    await sys.comment.create({ data: { id: `${t}-c-body`, issueId: `${t}-i-title`, author: 'ana', body: 'quasar lattice' } })
+    await sys.comment.create({ data: { id: `${t}-c-long`, issueId: `${t}-i-title`, author: 'ana', body: 'Long thread about the quasar lattice migration, the lattice rebuild, and why the quasar step is slow' } })
     // Decoys: twenty rows that match, all readable only by this team's owner.
     for (let n = 0; n < 20; n++) {
       await sys.issue.create({ data: { id: `${t}-decoy-${n}`, teamId: t, title: `quasar decoy ${n}` } })
@@ -111,6 +113,8 @@ describe('$search — one index across models', () => {
   it('titles each hit from @@label and names the accessor', async () => {
     const [hit] = await db.$setAuth({ id: 'ana' }).$search('nightly')
     expect(hit).toMatchObject({ model: 'issue', id: 't1-i-long', title: 'Rebuild the quasar lattice index nightly' })
+    const [c] = await db.$setAuth({ id: 'ana' }).$search('thread')
+    expect(c).toMatchObject({ model: 'comment', id: 't1-c-long', title: 'ana' })
   })
 
   it('narrows to the accessors named, and refuses one outside @@fts by name', async () => {

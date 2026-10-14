@@ -1500,7 +1500,7 @@ Opt out of STRICT tables for this model.
 
 tier: **situational** · legal in: in a model
 
-Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English.
+Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English. It also puts the model in the shared _search index that db.$search() ranks across models, titled by the @@label column, so a model declaring this and no @@label is refused at parse.
 
 ```lite
 @@fts([title, body], tokenize: porter)

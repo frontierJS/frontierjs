@@ -213,6 +213,7 @@ describe('$search answers the list envelope', () => {
         id   Int    @id
         body String
         @@fts([body])
+        @@label(body)
       }`,
     }) as unknown as AnyClient
     const t = (db as unknown as Record<string, { create(a: unknown): Promise<unknown> }>).doc!
@@ -230,6 +231,7 @@ describe('$search answers the list envelope', () => {
         id   Int    @id
         body String
         @@fts([body])
+        @@label(body)
       }`,
     }) as unknown as AnyClient
     const t = (db as unknown as Record<string, { create(a: unknown): Promise<unknown> }>).doc!
@@ -315,6 +317,7 @@ describe('$search answers the list envelope', () => {
         id   Int    @id
         name String
         @@fts([name], tokenize: trigram)
+        @@label(name)
       }`,
     }) as unknown as Record<string, { createMany(a: unknown): Promise<unknown> }>
     const names = ['mini-redis', 'c++ guide', 'someone@gmail.com', 'rust: the book', '(512) 555-1234', "o'brien"]

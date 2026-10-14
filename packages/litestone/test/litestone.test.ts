@@ -520,7 +520,7 @@ describe('DDL', () => {
       model Message { id Int @id
         body String
         title String?
-        @@fts([body, title]) }
+        @@fts([body, title])  @@label(body) }
     `)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain('message_fts')
@@ -1798,6 +1798,7 @@ const SCHEMA = `
     createdAt DateTime @default(now())
 
     @@fts([body, title])
+    @@label(body)
     @@index([userId])
   }
 `
@@ -3208,6 +3209,7 @@ describe('client — @@fts + @@softDelete', () => {
       deletedAt DateTime?
       @@softDelete
       @@fts([title, body])
+      @@label(title)
     }`
 
   async function notes(n = 3) {
@@ -3357,8 +3359,8 @@ describe('client — @@fts + @@softDelete', () => {
     // FTS index that had silently stopped updating. It keeps working and reports
     // nothing. The stamp trigger is no longer among them (`FJS-531`): the client
     // writes `@updatedAt` itself, so there is none to put back.
-    const before = parse(`model Note { id Int @id  title String  keep String  updatedAt DateTime  @@fts([title]) }`)
-    const after  = parse(`model Note { id Int @id  title String  updatedAt DateTime  @@fts([title]) }`)
+    const before = parse(`model Note { id Int @id  title String  keep String  updatedAt DateTime  @@fts([title])  @@label(title) }`)
+    const after  = parse(`model Note { id Int @id  title String  updatedAt DateTime  @@fts([title])  @@label(title) }`)
     const raw = new Database(tmpDb('fts-rebuild' + Math.random().toString(36).slice(2)))
     for (const stmt of splitStatements(generateDDL(before.schema)))
       if (!stmt.startsWith('PRAGMA')) raw.run(stmt)
@@ -5116,6 +5118,7 @@ describe('optimizeFts', () => {
       body  String
       title String?
       @@fts([body, title])
+      @@label(body)
     }
   `
 
@@ -5383,6 +5386,7 @@ const needsSchema = (extra: string[]) => `
     summary   String @computed
 ${extra.map(f => `    ${f} String @computed`).join('\n')}
     @@fts([name])
+    @@label(name)
   }
   model Book {
     id       Int    @id
@@ -10495,6 +10499,7 @@ describe('hook coverage — every declared operation (FJS-288)', () => {
       deletedAt DateTime?
       @@softDelete
       @@fts([title])
+      @@label(title)
     }`
 
   async function hookDb(seen: string[]) {
@@ -13248,7 +13253,7 @@ describe('snapshot / restore', () => {
 
   test('FTS shadow tables are left alone and search still works', async () => {
     const { db } = await makeTestClient(
-      `model Doc { id Int @id @default(autoincrement()); title String; body String; @@fts([title, body]) }`)
+      `model Doc { id Int @id @default(autoincrement()); title String; body String; @@fts([title, body])  @@label(title) }`)
     await db.doc.create({ data: { title: 'anchor', body: 'harbour ledger' } })
     const snap = snapshot(db)
     expect(Object.keys(snap.main)).toEqual(['doc'])   // no doc_data / doc_idx / …
@@ -14746,6 +14751,7 @@ describe('@derived', () => {
         author Author @relation(fields: [authorId], references: [id])
         hot Boolean @derived(score > 50)
         @@fts([title])
+        @@label(title)
       }`, 'drv-paths')
     await db.author.create({ data: { id: 1, name: 'a' } })
     await db.post.create({ data: { id: 1, title: 'alpha bright', authorId: 1, score: 90 } })
@@ -18298,6 +18304,7 @@ const FROM_WRITE_SCHEMA = `
     score     Float   @computed
     @@softDelete
     @@fts([name])
+    @@label(name)
   }
   model Book {
     id       Int @id
@@ -24064,27 +24071,27 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
   // through the same FTS5 virtual table.
 
   test('parses bare @@fts (default unicode61 tokenizer)', () => {
-    const r = parse(`model P { id Int @id; title String; @@fts([title]) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title])  @@label(title) }`)
     expect(r.valid).toBe(true)
     const a = r.schema.models[0].attributes.find((x: any) => x.kind === 'fts')
     expect((a as any).tokenize).toBe('unicode61')
   })
 
   test('parses @@fts(tokenize: trigram)', () => {
-    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: trigram)  @@label(title) }`)
     expect(r.valid).toBe(true)
     const a = r.schema.models[0].attributes.find((x: any) => x.kind === 'fts')
     expect((a as any).tokenize).toBe('trigram')
   })
 
   test('parses @@fts(tokenize: porter)', () => {
-    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: porter) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: porter)  @@label(title) }`)
     expect(r.valid).toBe(true)
     expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'fts').tokenize).toBe('porter')
   })
 
   test('rejects unknown tokenizer with allowed-list hint', () => {
-    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: superfuzzy) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: superfuzzy)  @@label(title) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("unknown tokenizer")
     expect(r.errors.join('\n')).toContain('unicode61')
@@ -24092,23 +24099,26 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
   })
 
   test('rejects unknown named argument', () => {
-    const r = parse(`model P { id Int @id; title String; @@fts([title], stem: true) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], stem: true)  @@label(title) }`)
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toContain("expected 'tokenize'")
   })
 
   test('DDL: default tokenizer emits no tokenize clause (back-compat)', () => {
-    const r = parse(`model P { id Int @id; title String; @@fts([title]) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title])  @@label(title) }`)
     const ddl = generateDDL(r.schema)
     // Confirm the FTS5 CREATE VIRTUAL TABLE has no `tokenize=` clause —
     // this preserves bit-for-bit DDL parity with pre-Stage-A schemas that
     // didn't specify a tokenizer.
-    expect(ddl).toContain('USING fts5(')
-    expect(ddl).not.toContain('tokenize=')
+    // The model's OWN index; the shared `_search` ahead of it is trigram by
+    // ruling (FJS-D970), whatever this model declares.
+    const own = ddl.slice(ddl.indexOf('"p_fts" USING fts5('))
+    expect(own).toContain('USING fts5(')
+    expect(own).not.toContain('tokenize=')
   })
 
   test("DDL: non-default tokenizer emits tokenize='...' clause", () => {
-    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: trigram) }`)
+    const r = parse(`model P { id Int @id; title String; @@fts([title], tokenize: trigram)  @@label(title) }`)
     const ddl = generateDDL(r.schema)
     expect(ddl).toContain("tokenize='trigram'")
   })
@@ -24119,6 +24129,7 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
         id   Int    @id
         name String
         @@fts([name], tokenize: trigram)
+        @@label(name)
       }
     `, 'fts-trigram')
     await db.flavor.createMany({ data: [
@@ -24149,6 +24160,7 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
         id   Int    @id
         body String
         @@fts([body], tokenize: porter)
+        @@label(body)
       }
     `, 'fts-porter')
     await db.article.createMany({ data: [
@@ -24174,6 +24186,7 @@ describe('@@fts(tokenize: ...) — FTS5 tokenizer selection', () => {
         title String
         body  String
         @@fts([title, body])
+        @@label(title)
       }
     `, 'fts-default-tokenizer')
     await db.post.createMany({ data: [
@@ -26649,6 +26662,7 @@ describe('every read applies the filter, the policy and the gate', () => {
       tenantId Int
       ownerId  Int
       @@fts([title])
+      @@label(title)
       @@allow('read', ownerId == auth().id)
     }`
 
@@ -26687,7 +26701,7 @@ describe('every read applies the filter, the policy and the gate', () => {
 
   test('a @@gate refuses every read, including the three that never asked', async () => {
     const gated = await makeDb(
-      `model Vault { id Int @id @default(autoincrement())  name String  @@fts([name])  @@gate("7") }`,
+      `model Vault { id Int @id @default(autoincrement())  name String  @@fts([name])  @@label(name)  @@gate("7") }`,
       'read-surface-gate',
       { plugins: [new GatePlugin({ getLevel: () => 4 })] },
     )

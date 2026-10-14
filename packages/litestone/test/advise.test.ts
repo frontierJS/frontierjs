@@ -225,31 +225,32 @@ describe('fts-over-a-column-search-cannot-read', () => {
         title String
         body  String @encrypted
         @@fts([title, body])
+        @@label(title)
       }`, ID)
     expect(f.map(x => [x.field, x.severity])).toEqual([['body', 'error']])
   })
 
   test('@hashed too, for the same reason in one direction', () => {
     const f = findings(`
-      model Doc { id Int @id  title String  body String @hashed  @@fts([title, body]) }`, ID)
+      model Doc { id Int @id  title String  body String @hashed  @@fts([title, body])  @@label(title) }`, ID)
     expect(f.map(x => x.severity)).toEqual(['error'])
   })
 
   test('@guarded is the other half and grades lower — it matches and is then stripped', () => {
     const f = findings(`
-      model Doc { id Int @id  title String  body String? @guarded  @@fts([title, body]) }`, ID)
+      model Doc { id Int @id  title String  body String? @guarded  @@fts([title, body])  @@label(title) }`, ID)
     expect(f.map(x => x.severity)).toEqual(['warn'])
     expect(f[0].message).toContain('snippet')
   })
 
   test('@secret is both and answers with the half that makes search impossible', () => {
     const f = findings(`
-      model Doc { id Int @id  title String  body String? @secret  @@fts([title, body]) }`, ID)
+      model Doc { id Int @id  title String  body String? @secret  @@fts([title, body])  @@label(title) }`, ID)
     expect(f.map(x => x.severity)).toEqual(['error'])
   })
 
   test('silent on an ordinary column', () => {
-    expect(findings(`model Doc { id Int @id  title String  body String  @@fts([title, body]) }`, ID))
+    expect(findings(`model Doc { id Int @id  title String  body String  @@fts([title, body])  @@label(title) }`, ID))
       .toEqual([])
   })
 })

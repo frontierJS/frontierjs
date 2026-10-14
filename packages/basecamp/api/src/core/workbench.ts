@@ -63,6 +63,11 @@
 // is read off the disk — the pid in pins.json, still alive — and a restart loses
 // the queue and nothing else.
 //
+// A pin may carry a PLAN — a Phases-of-Steps file in the checkout (`FJS-D966`),
+// parsed by the cli's `parsePlan` on every read and never cached, because the
+// session edits it. Build plan writes it from a goal in a session that may edit
+// that one file and nothing else (`askArgv({ edit })`, `buildPlanPrompt`).
+//
 // A log can be megabytes (a verbose stream carries every tool result whole), and
 // the grid asks for status every second or two, so each log is read
 // INCREMENTALLY: the bytes since the last read, folded into a cached state.
@@ -132,6 +137,17 @@ export type Pin = {
   opened:   ({ port: number } & Partial<Omit<Opened, 'port'>>) | null
   /** What the Run tab started here, by row id (`core/workbench-run.ts`). */
   runs:     Record<string, RunRecord>
+  /** The plan this checkout is working through: its path in the checkout,
+   *  and each step a Go started, by step id. */
+  plan:     { path: string, steps: Record<string, PlanStep> } | null
+}
+
+/** A step Go started: the chat it ran in, when, and the highest `FJS-###` and
+ *  `FJS-D##` the registers held then — every row above them is the step's. */
+export type PlanStep = {
+  chat:         string
+  startedAt:    string
+  registerHigh: { issue: number, decision: number }
 }
 
 export type Item =
@@ -282,13 +298,26 @@ let previewMod: Promise<Preview> | null = null
 const loadPreview = () => previewMod ??= import('@frontierjs/cli/core/preview.js') as Promise<Preview>
 
 type AskClaude = {
-  askArgv:       (o?: { session?: string | null, fork?: boolean, work?: { budget?: number, hooks?: boolean } }) => string[]
+  askArgv:       (o?: { session?: string | null, fork?: boolean, edit?: string, work?: { budget?: number, hooks?: boolean } }) => string[]
+  buildPlanPrompt: (o: { goal: string, path: string }) => string
   readAskEvent:  (event: unknown) => Array<Record<string, any>>
   resumeCommand: (root: string, session: string) => string | null
   reviewPrompt:  (o: { request?: string }) => string
 }
 let askClaude: Promise<AskClaude> | null = null
 const loadAskClaude = () => askClaude ??= import('@frontierjs/cli/core/ask-claude.js') as Promise<AskClaude>
+type PlanMod = { parsePlan: (text: string, o?: { file?: string }) => Record<string, any> }
+let planMod: Promise<PlanMod> | null = null
+const loadPlan = () => planMod ??= import('@frontierjs/cli/core/plan.js') as Promise<PlanMod>
+
+/** A plan's path, relative to its checkout: a markdown file inside it. */
+export function planPathRefusal(input: unknown): string | null {
+  const path = String(input ?? '').trim()
+  if (!path) return 'name the plan\'s path in the checkout — IDEAS/<slug>.md or PLAN.md'
+  if (path.startsWith('/') || path.split('/').includes('..')) return `'${path}' is not a path inside the checkout`
+  if (!/\.md$/.test(path)) return `'${path}' is not a markdown file`
+  return null
+}
 
 export type Workbench = ReturnType<typeof createWorkbench>
 
@@ -319,7 +348,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return pins.map(p => ({
       chats: [{ id: '1', session: null, forkOf: null }], chat: '1', runChat: null, closedByDay: {},
       review: false, reviewPid: null, from: null, base: null, branch: null, carried: null,
-      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, ...p,
+      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, plan: null, ...p,
     }) as Pin)
   }
 
@@ -379,7 +408,7 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
       budget: DEFAULT_BUDGET, hooks: false, review: false,
       pinnedAt: new Date().toISOString(), seenAt: null, pid: null, reviewPid: null,
       from: null, base: null, branch: null, carried: null,
-      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {},
+      copy: DEFAULT_COPY, setup: null, preview: null, opened: null, runs: {}, plan: null,
     }
     writePins([...pins, next])
     return { pin: next }
@@ -811,11 +840,12 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
     return child
   }
 
-  async function start(p: Pin, chat: Chat, prompt: string) {
+  /** A run in a chat — a work session unless `argv` says otherwise. */
+  async function start(p: Pin, chat: Chat, prompt: string, argv?: string[]) {
     const { askArgv } = await loadAskClaude()
     cancelFollowUps(p)
     const forking = !chat.session && !!chat.forkOf
-    const argv    = askArgv({ session: chat.session ?? chat.forkOf, fork: forking, work: { budget: p.budget, hooks: p.hooks } })
+    argv ??= askArgv({ session: chat.session ?? chat.forkOf, fork: forking, work: { budget: p.budget, hooks: p.hooks } })
     const file    = logFile(p.id, chat.id)
     const child = launch(file, p.path, argv, prompt, async (code, signal) => {
       const still = getPin(p.id)
@@ -935,6 +965,39 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
         ports: running && id.startsWith('app:') ? await servedBy(join(p.path, r.dir), portsLock).catch(() => []) : [],
       }
     }))
+  }
+
+  // ─── the plan ─────────────────────────────────────────────────────────
+
+  /** The pin's plan, parsed off the file now; `parsed` is null until it exists. */
+  async function readPlan(id: string) {
+    const p = getPin(id)
+    if (!p?.plan) return null
+    let text: string
+    try { text = readFileSync(join(p.path, p.plan.path), 'utf8') } catch { return { ...p.plan, parsed: null } }
+    const { parsePlan } = await loadPlan()
+    return { ...p.plan, parsed: parsePlan(text, { file: p.plan.path }) }
+  }
+
+  /** A goal written into a plan at `path`, in a new chat that may edit that
+   *  file and nothing else. The pin's plan is that path from here on. */
+  async function buildPlan(id: string, input: { goal?: unknown, path?: unknown }): Promise<{ chat: string, path: string } | { refused: string }> {
+    const p = getPin(id)
+    if (!p) return { refused: `no pinned checkout '${id}'` }
+    const goal = String(input.goal ?? '').trim()
+    if (!goal) return { refused: 'say what the plan is for' }
+    const bad = planPathRefusal(input.path)
+    if (bad) return { refused: bad }
+    const path = String(input.path).trim()
+    const gone = goneRefusal(p)
+    if (gone) return gone
+    if (alive(p.pid)) return { refused: `a chat in ${p.name} is working — one run at a time in a checkout` }
+    const shown = await fresh(id)
+    const chat  = chatIn(shown!)!
+    const now   = updatePin(id, { plan: { path, steps: {} } })
+    const { askArgv, buildPlanPrompt } = await loadAskClaude()
+    await start(now, chat, buildPlanPrompt({ goal, path }), askArgv({ edit: join(p.path, path) }))
+    return { chat: chat.id, path }
   }
 
   // ─── follow-ups ───────────────────────────────────────────────────────
@@ -1086,6 +1149,6 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock }: {
   return {
     dir: root, readPins, getPin, pin, unpin, configure, statuses, status, transcript, diff,
     send, stop, fresh, select, close, seen, check, review, fork, land, archive, archiveRefusal, recordOpened,
-    runnables, run, halt, output,
+    runnables, run, halt, output, readPlan, buildPlan,
   }
 }

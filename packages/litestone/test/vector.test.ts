@@ -356,7 +356,7 @@ describe('@vector — what the schema accepts', () => {
     expect(refusal(model('embedding Bytes @vector(4) @hashed'))).toBeTruthy()
     expect(refusal(model('embedding Bytes @vector(4) @unique'))).toMatch(/near or far, never equal/)
     expect(refusal(model('embedding Bytes @vector(4) @computed'))).toMatch(/needs a stored column/)
-    expect(refusal(`model Doc {\n  id Int @id\n  embedding Bytes @vector(4)\n  @@fts([embedding])\n}`))
+    expect(refusal(`model Doc {\n  id Int @id\n  title String\n  embedding Bytes @vector(4)\n  @@fts([embedding])\n  @@label(title)\n}`))
       .toMatch(/FTS5 indexes text/)
   })
 

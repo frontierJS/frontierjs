@@ -211,6 +211,7 @@ model Doc {
   title String ${m ? '@map("doc_title")' : ''}
   body  String ${m ? '@map("doc_body")' : ''}
   @@fts([title, body])
+  @@label(title)
 }`
   test('the triggers reference the source table\'s columns', async () => {
     const answers: unknown[] = []

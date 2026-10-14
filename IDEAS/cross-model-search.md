@@ -251,7 +251,17 @@ twice. Scores are bm25, lower is better.
   the grade (one query with a policy branch per model). The grade is
   construction, and its test is § nine, 9.
 
-Verdict: **build E.** The ruling is `FJS-D970`.
+The spanning test's fixture reran it with 40 decoys sharing one word (`quasar`), the four planted rows under `trigram`:
+
+| Title weight | `quasar lattice` title | title + 4 words | bare body | long body | Order |
+| --- | --- | --- | --- | --- | --- |
+| 3 | −2.732 | −2.036 | −2.046 | −1.325 | **bare body over the long title** |
+| 5 | −2.932 | −2.356 | −2.046 | −1.325 | both titles over both bodies |
+| 10 | −3.141 | −2.748 | −2.046 | −1.325 | same, wider |
+
+`unicode61` held at 3 (−2.215 against −2.011). So the two tokenizers do not agree once a word is common, and the weight is 10 — the margin above, now the artefact `search-spanning.test.ts` grades.
+
+Verdict: **build E.** The ruling is `FJS-D970`, weight amended to 10.
 
 ## Plan
 
@@ -269,12 +279,12 @@ Done when: `fli decisions` lists nothing for this paper and the new test fails f
 Goal: every `@@fts` model is in `_search`, kept current by triggers, and `db.$search` answers graded and ranked.
 Done when: 0.2 is green under `bun:sqlite` and under the sqlite-wasm drive.
 
-- [ ] 1.1 Parser: a `@@fts` model without `@@label` is refused with the fix in the message, in `@@label`'s own refusal voice.
-- [ ] 1.2 `ddl.js`: `_search(model UNINDEXED, rid UNINDEXED, title, body)` beside `createFts`, and per model the same three triggers (plus the soft-delete pair where declared).
-- [ ] 1.3 Differ: a model gaining or losing `@@fts`, or changing `@@label` or its `@@fts` list, adds or drops its triggers and rebuilds its rows in `_search`.
-- [ ] 1.4 `client.$search(q, { models, limit, offset, prefix })`: `MATCH` over `_search`, one `EXISTS` branch per model from `visibleWhere`, `bm25` weight 3 placed by column index, step-2 read keyed on `rid` for `id` and `sub`, `FJS-2332`'s scan fallback. A model outside `@@fts` or outside the schema is refused by name.
-- [ ] 1.5 `db:explain @@fts`, the catalog snapshot and `docs/traits.md` say `_search` exists and what `$search` returns.
-- [ ] 1.6 sqlite-wasm drive: the triggers fire and `$search` answers in the browser engine.
+- [x] 1.1 Parser: a `@@fts` model without `@@label` is refused with the fix in the message, in `@@label`'s own refusal voice.
+- [x] 1.2 `ddl.js`: `_search(model UNINDEXED, rid UNINDEXED, title, body)` beside `createFts`, and per model the same three triggers (plus the soft-delete pair where declared).
+- [x] 1.3 Differ: a model gaining or losing `@@fts`, or changing `@@label` or its `@@fts` list, adds or drops its triggers and rebuilds its rows in `_search`.
+- [x] 1.4 `client.$search(q, { models, limit, offset, prefix })`: `MATCH` over `_search`, one `EXISTS` branch per model from `visibleWhere`, `bm25` weight 3 placed by column index, step-2 read keyed on `rid` for `id` and `sub`, `FJS-2332`'s scan fallback. A model outside `@@fts` or outside the schema is refused by name.
+- [x] 1.5 `db:explain @@fts`, the catalog snapshot and `docs/traits.md` say `_search` exists and what `$search` returns.
+- [x] 1.6 sqlite-wasm drive: the triggers fire and `$search` answers in the browser engine.
 
 ### Phase 2 — API
 

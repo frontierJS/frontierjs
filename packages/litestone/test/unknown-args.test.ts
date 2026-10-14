@@ -18,7 +18,7 @@ const ROOT = new URL('..', import.meta.url).pathname
 const SCHEMA = `
 database main { path ":memory:" }
 model Note { id Int @id @default(autoincrement())  body String  n Int @default(0)
-             @@fts([body]) }
+             @@fts([body])  @@label(body) }
 `
 
 async function seeded() {

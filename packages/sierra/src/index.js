@@ -29,4 +29,4 @@ export {
   provideSlot,
 } from './router/index.js'
 
-export { theme, setTheme, toggleTheme, initTheme } from './theme/index.js'
+export { theme, setTheme, toggleTheme, setScheme, initTheme } from './theme/index.js'

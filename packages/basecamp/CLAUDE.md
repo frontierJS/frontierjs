@@ -142,6 +142,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           own log — never `children.js`, whose in-memory table a `bun --watch`
           restart would lose with the server still up. The checkout's OWN fli,
           and no FLI_PORT_* or PORT of this API's; Unpin and Archive stop it.
+          A pin may carry a PLAN (`plan: { path, steps }`, IDEAS/workbench-plans.md):
+          `plan` parses the file through fli's `parsePlan` on every read, and
+          `buildPlan` writes one from a goal in a new chat that may edit THAT
+          FILE and nothing else (`askArgv({ edit })`, `buildPlanPrompt`).
           core/workbench-branch.ts is a BRANCH: Fork snapshots the parent's tree through a temporary index (its real index and HEAD
           are only read), cuts wb/<slug> into a worktree under WORKBENCH_DIR/trees
           and pins it, then sets it up before it answers — the parent's copy

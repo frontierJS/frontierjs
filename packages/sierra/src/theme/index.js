@@ -5,6 +5,7 @@
  *   theme         — plain object: { value: '<theme name>' }
  *   setTheme(v)   — set + persist
  *   toggleTheme() — advance to the next configured theme
+ *   setScheme(s)  — 'light' | 'dark' from a window owner; maps onto theme.system
  *
  * Config (sierra.config.js):
  *   theme: {
@@ -81,6 +82,11 @@ const DEFAULT_THEMES = ['theme-default', 'theme-dark']
 
 let _config = normalize({})
 
+// The light/dark answer somebody who owns the window stated (`setScheme`), or
+// null while the OS query is the only source. Two sources for one answer and
+// the stated one wins: the OS listener below yields to it.
+let _scheme = null
+
 function normalize(config) {
   const themes = Array.isArray(config.themes) && config.themes.length
     ? config.themes
@@ -130,6 +136,7 @@ function normalize(config) {
  */
 export function initTheme(config = {}) {
   _config = normalize(config)
+  _scheme = null
 
   const resolved = resolveTheme()
   _w().value = resolved
@@ -140,6 +147,9 @@ export function initTheme(config = {}) {
   const mq = systemQuery()
   if (!mq) return
   mq.addEventListener('change', () => {
+    // A stated scheme outranks the OS: an MCP host in dark mode over a light
+    // OS said dark, and the OS flipping underneath must not take it back.
+    if (_scheme) return
     // Only react to system changes if the user hasn't persisted an override
     if (_config.persist) {
       const stored = localStorage.getItem(_config.key)
@@ -197,6 +207,34 @@ export function toggleTheme() {
   const list = _config.themes
   const at   = list.indexOf(theme.value)
   setTheme(list[(at + 1) % list.length])
+}
+
+/**
+ * Apply the light/dark answer somebody else owns.
+ *
+ * `scheme` is CSS's word for the pair (`prefers-color-scheme`), and the value
+ * set is the same: `'light'` or `'dark'`. It maps onto the two names
+ * `theme.system` declares, which is what the OS query maps onto — the caller
+ * here is a window owner that answers the OS's question itself, an MCP host
+ * handing a view its `hostContext.theme`. From then on the OS query yields
+ * to it, until the next `initTheme`.
+ *
+ * Not persisted: the answer is the host's, and a view that remembered it
+ * would disagree with the host the next time it opened under the other one.
+ * An unknown word is refused by name and the theme left standing — a host
+ * ahead of the spec is better served by the theme it had than by none.
+ *
+ * @param {'light'|'dark'} scheme
+ */
+export function setScheme(scheme) {
+  if (scheme !== 'light' && scheme !== 'dark') {
+    console.warn(`[Sierra] setScheme: '${scheme}' is not a scheme — 'light' or 'dark'.`)
+    return
+  }
+  _scheme = scheme
+  const next = _config.system[scheme]
+  _w().value = next
+  applyTheme(next)
 }
 
 // ─── Internal ─────────────────────────────────────────────────────────────────

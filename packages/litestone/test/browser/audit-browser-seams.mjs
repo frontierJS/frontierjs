@@ -89,7 +89,7 @@ const EXPECT = {
   'jsonl':              v => v.error && v.code === 'HOST_UNAVAILABLE',
   'cross-process':      v => v.error && v.code === 'HOST_UNAVAILABLE',
   'on-event-hook':      v => v.fired === 1 && v.threw === null && v.landed === 1,
-  'fts':                v => v.hits === 1,
+  'fts':                v => v.hits === 1 && v.spans === 1 && v.model === 'note' && v.title === 'hello wasm world',
   'json':               v => v.second === 2,
   'backup':             v => v.error && v.code === 'HOST_UNAVAILABLE',
   'engine-serialize':   v => v.type === 'Uint8Array' && v.bytes > 0,

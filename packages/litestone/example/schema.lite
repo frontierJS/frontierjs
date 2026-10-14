@@ -194,6 +194,7 @@ model Message {
   @@db(main)
   @@softDelete
   @@fts([body, title])
+  @@label(body)
   @@index([userId])
   @@index([accountId])
   @@index([channel])

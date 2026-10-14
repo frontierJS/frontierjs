@@ -462,18 +462,18 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-policy` `x-transforms` | — |
+| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-claims` `x-litestone-write-policy` `x-transforms` | — |
 | `name` | `string`? | — | — | `x-transforms` | — |
-| `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
-| `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
-| `accountId` | `string`? | — | — | `x-litestone-write-policy` | — |
-| `kind` | `UserKind` = `"human"` | — | — | `x-litestone-write-policy` | — |
-| `status` | `UserStatus` = `"pending_verification"` | — | — | `x-litestone-write-policy` | — |
+| `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `role` | `string` = `"user"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `accountId` | `string`? | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `kind` | `UserKind` = `"human"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `status` | `UserStatus` = `"pending_verification"` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 | `username` | `string`? | — | — | `x-transforms` | — |
 | `displayName` | `string`? | — | — | `x-transforms` | — |
 | `avatarUrl` | `string`? | — | — | — | — |
-| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-write-policy` | — |
-| `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
+| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-write-claims` `x-litestone-write-policy` | — |
+| `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-claims` `x-litestone-write-policy` | — |
 
 **On create**: required — `email` · not accepted — `id`
 

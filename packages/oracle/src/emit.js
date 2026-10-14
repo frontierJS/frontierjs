@@ -250,7 +250,9 @@ function emitModel(m, backs, access, currency, declares) {
   const body = rows.map(([n, t, a]) => `  ${n.padEnd(w0)}  ${a ? `${t.padEnd(w1)}  ${a}` : t}`.trimEnd())
 
   const attrs = []
-  const label = labelField(m)
+  // A @@fts model is refused without @@label (FJS-D970), so a searched entity
+  // with no caption column takes its first searched column as the title.
+  const label = labelField(m) ?? (m.fts.length ? m.fts[0] : null)
   if (label) attrs.push(`@@label(${label})`)
   for (const fk of indexes) attrs.push(`@@index([${fk}])`)
   // A person is a member once, and the row IS the pair: `@@relator(…, once)`

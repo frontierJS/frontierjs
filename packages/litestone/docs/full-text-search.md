@@ -15,6 +15,7 @@ model Message {
 
   @@softDelete
   @@fts([body, title])
+  @@label(body)
   @@index([userId])
 }
 ```
@@ -168,6 +169,7 @@ model SearchIndex {
   @@external
   @@map("search_index")
   @@fts([title, body])
+  @@label(title)
 }
 ```
 
@@ -179,3 +181,52 @@ Litestone will not create the virtual table or triggers — it only exposes `sea
 - Soft-deleted rows are excluded from search results automatically
 - Row-level policies apply to search results — filtered in SQL, not JS
 - FTS index is updated synchronously via triggers on every write
+
+## $search() — one ranked list across models
+
+Every `@@fts` model is also in one shared FTS5 table, `_search`, keyed by
+accessor and rowid: its `title` is the `@@label` column, its `body` the `@@fts`
+columns joined. `db.$search(q)` reads it, grades each hit through its model's
+own read rules before the limit, and ranks everything on one bm25 scale — which
+per-model indexes cannot do, since each scores against its own vocabulary
+(`FJS-D970`). A `@@fts` model with no `@@label` is refused at parse, because a
+hit with no title is a palette entry with nothing to show.
+
+```lite
+model Issue {
+  id    Int    @id
+  title String
+  body  String?
+  @@fts([title, body])
+  @@label(title)
+}
+
+model Comment {
+  id     Int    @id
+  author String
+  body   String
+  @@fts([body])
+  @@label(author)
+}
+```
+
+```js
+await db.issue.create({ data: { id: 1, title: 'quasar lattice', body: 'the plan' } })
+await db.comment.create({ data: { id: 1, author: 'ana', body: 'quasar lattice, again' } })
+
+const hits = await db.$search('quasar lattice')
+// [{ model: 'issue', id: 1, title: 'quasar lattice', sub: null, _rank, _snippet },
+//  { model: 'comment', id: 1, title: 'ana', ... }] — the title match ranks first
+
+const only = await db.$search('quasar', { models: ['comment'], limit: 10 })
+
+if (hits.map(h => h.model).join() !== 'issue,comment' || only.length !== 1) throw new Error('$search changed')
+```
+
+`models` names accessors and defaults to every `@@fts` model; one outside
+`@@fts` is refused by name, as `search()` refuses. `limit`, `offset` and
+`prefix` mean what they mean on `search()`. `sub` is the first `x-identify`
+value the row carries, `null` where the model has none. The index is `trigram`
+whatever the models' own tokenizers, so a word under three characters is a
+scan over title and body, and a query of only such words answers with `_rank`
+null, in index order.

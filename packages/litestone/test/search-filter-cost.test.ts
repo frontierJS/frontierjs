@@ -50,6 +50,7 @@ model Comment {
   deletedAt DateTime?
   @@allow('read', check(issue))
   @@fts([body])
+  @@label(body)
   @@softDelete
 }
 `

@@ -81,6 +81,12 @@ if (serveOnly) {
        *  screen goes on answering in the zone it was mounted in. The teardown
        *  clears it, so a spec cannot leak a zone into the next one. */
       timezone: (id) => browser.cmd('Emulation.setTimezoneOverride', { timezoneId: id ?? '' }),
+      /** Lay the page out at `width` × `height` CSS pixels, so a media query
+       *  answers as it would on that screen — the frame's md breakpoint is
+       *  the case. The window stays 1280 wide; the teardown clears it. */
+      viewport: (width, height = 800) => browser.cmd('Emulation.setDeviceMetricsOverride', {
+        width, height, deviceScaleFactor: 1, mobile: false,
+      }),
       /** One accessibility property of the element `sel` names, as Chrome's
        *  tree reports it — `axProp('[data-all]', 'checked')` is `'mixed'` for
        *  an indeterminate box. A native control's state is mapped by the
@@ -150,6 +156,7 @@ if (serveOnly) {
     }),
     teardown: async (browser) => {
       await browser.cmd('Emulation.setTimezoneOverride', { timezoneId: '' })
+      await browser.cmd('Emulation.clearDeviceMetricsOverride')
       await browser.send('Browser.setDownloadBehavior', { behavior: 'default' })
       await browser.evaluate('return window.kitUnmount();')
     },

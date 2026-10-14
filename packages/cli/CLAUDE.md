@@ -66,7 +66,13 @@ core/
                 `ENCRYPTION_KEY` its `.env.example` names. Only that key: fli
                 can make random bytes and no other blank is fli's to fill
   dev-run.js    `fli dev`'s surfaces as one labeled stream — each its own process
-                group, stopped as one on exit, so a launcher's child never keeps a port
+                group, stopped as one on exit, so a launcher's child never keeps a port.
+                Compact by default: children get `FLI_DEV=1` and print one ready
+                line each (`@frontierjs/toolbelt/devline`), laid out as one summary;
+                every other line is HELD until it prints, never dropped, and a
+                surface that exits or stays silent past `settleMs` releases it
+  open-url.js   a URL in the person's browser — argv, detached; `fli dev`'s `o`,
+                `fli gui --open`, `project:map --as=serve`
   command-parse.js  does every command in a routes tree parse — each compiled
                 with the module the runtime pairs it with, checked by `node
                 --check`, reported at the `.md` line. The `command-parses` rule

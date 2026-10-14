@@ -600,6 +600,19 @@ export interface LockOptions {
   owner?: string
 }
 
+export interface SearchHit {
+  /** The accessor (`issue`), never the model name. */
+  model: string
+  /** The row's primary key — a value, or an object under a composite `@@id`. */
+  id: unknown
+  /** The `@@label` column's value. */
+  title: string | null
+  /** The first `x-identify` value the row carries, or null. */
+  sub: unknown
+  _rank: number | null
+  _snippet: string | null
+}
+
 export interface LitestoneClient {
   // The parsed schema, typed — `generateJsonSchema(db.$schema)` is the
   // documented line, and `unknown` here made it the documented cast.
@@ -778,6 +791,13 @@ export interface LitestoneClient {
   /** True while every SQLite connection answers; throws when one does not, a closed client included. */
   $ping(): true
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
+  /**
+   * One ranked list across every `@@fts` model, graded per model before the
+   * limit (`FJS-D970`). `models` names accessors and defaults to all of them;
+   * one outside `@@fts` is refused by name. `_rank` is bm25 on one scale, null
+   * for a query of only words too short to index.
+   */
+  $search(query: string, opts?: { models?: string[]; limit?: number; offset?: number; prefix?: boolean }): Promise<SearchHit[]>
   /**
    * Runs many per-table query() calls in one snapshot transaction and returns
    * a named-result object keyed by the spec's keys.

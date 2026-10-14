@@ -14,7 +14,8 @@
 //                  change PK, change FK, change CHECK, change @@noStrict,
 //                  add/drop/reorder a UNIQUE the table declares itself
 
-import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
+import { SEARCH_TABLE, createSearchIndex, searchBackfillSql,
+         generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
 // `#host`, for the reason `drivers/jsonl.js` says: a bare node builtin in this
 // graph throws when the module is merely imported in a browser (`FJS-1179`).
 import { createHash } from '#host'
@@ -282,6 +283,13 @@ export function introspect(db) {
     schema.__fts[r.name] = { table: r.name.slice(0, -'_fts'.length), sql: r.sql }
   }
 
+  // The shared search index (FJS-D970) — one table no model owns, so it is
+  // neither in `__fts` nor in the table set INTERNAL hides it from.
+  const searchRow = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`)
+    .get(SEARCH_TABLE)
+  schema.__search = searchRow ? { sql: searchRow.sql } : null
+
   // Everything above reads a NAMED dimension. This reads the statements whole,
   // so the residue tripwire below has something to compare that no reader here
   // had to remember to write. An object SQLite keeps no statement for — an
@@ -537,7 +545,8 @@ export function normalizeTriggerSql(sql) {
 // Trigger names litestone generates, and therefore owns: a trigger matching one
 // of these is ours to drop and recreate, anything else on the table is the
 // app's and is left alone.
-const OWNED_TRIGGER = /_(fts_insert|fts_delete|fts_update|fts_soft_delete|fts_restore|updatedAt)$/
+const OWNED_TRIGGER = /_(fts_insert|fts_delete|fts_update|fts_soft_delete|fts_restore|search_insert|search_delete|search_update|updatedAt)$/
+const SEARCH_TRIGGER = /_search_(insert|delete|update)$/
 
 // ─── Pristine db ──────────────────────────────────────────────────────────────
 // Executes parsed schema DDL against a fresh in-memory db.
@@ -870,7 +879,7 @@ function fksEqual(a, b) {
 
 // ─── Full diff ────────────────────────────────────────────────────────────────
 
-const META_KEYS = new Set(['__views', '__triggers', '__fts', '__sql'])
+const META_KEYS = new Set(['__views', '__triggers', '__fts', '__search', '__sql'])
 
 export function diffSchemas(pristine, live, parseResult, dbName = 'main', { pluralize = false } = {}) {
   // Filter the meta buckets out of the table name sets
@@ -1062,6 +1071,22 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     .filter(([name, l]) => !pristineFts[name] && inScope(l.table))
     .map(([name, l]) => ({ name, table: l.table }))
 
+  // `_search` is not external-content, so there is no 'rebuild' to ask for:
+  // a new or changed index is backfilled from every member table, and a member
+  // whose rows were renumbered (rebuilt) or whose title/body columns moved
+  // (its search triggers changed) is re-indexed on its own.
+  const pristineSearch = pristine.__search ?? null
+  const liveSearch     = live.__search ?? null
+  const changedSearch  = pristineSearch && (!liveSearch || normalizeDdl(liveSearch.sql) !== normalizeDdl(pristineSearch.sql))
+    ? { sql: pristineSearch.sql } : null
+  const droppedSearch  = !!liveSearch && !pristineSearch
+  const searchMembers  = Object.entries(pristineTrigs)
+    .filter(([name]) => SEARCH_TRIGGER.test(name))
+    .map(([, t]) => t.table)
+  const searchBackfills = [...new Set(changedSearch
+    ? searchMembers.filter(inScope)
+    : changedTriggers.filter(t => SEARCH_TRIGGER.test(t.name)).map(t => t.table))]
+
   // A rebuild drops the table, and a trigger the app wrote exists only in the
   // live database — there is nothing to restate it from. Litestone does not
   // support carrying one through a rebuild (FJS-183); what it can do is say so
@@ -1167,12 +1192,16 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     droppedTriggers,
     changedFts,
     droppedFts,
+    changedSearch,
+    droppedSearch,
+    searchBackfills,
     residue,
     hasChanges: newTables.length > 0 || newMatViews.length > 0 ||
                 newViews.length > 0   || changedViews.length > 0 ||
                 droppedTables.length  > 0 || tableDiffs.length > 0 ||
                 changedTriggers.length > 0 || droppedTriggers.length > 0 ||
-                changedFts.length > 0 || droppedFts.length > 0,
+                changedFts.length > 0 || droppedFts.length > 0 ||
+                changedSearch != null || droppedSearch || searchBackfills.length > 0,
   }
 }
 
@@ -1367,7 +1396,8 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
 // from, and the file has to do it before the rest of its statements assume so.
 export function generateMigrationSQL(diffResult, parseResult, { pluralize = false, first = [] } = {}) {
   const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs,
-          changedTriggers, droppedTriggers, changedFts, droppedFts } = diffResult
+          changedTriggers, droppedTriggers, changedFts, droppedFts,
+          changedSearch, droppedSearch, searchBackfills } = diffResult
   const lines = []
 
   lines.push(`PRAGMA foreign_keys = OFF;`)
@@ -1577,6 +1607,15 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     lines.push(``)
   }
 
+  // Before the triggers: a new table's search triggers insert into it.
+  if (changedSearch || droppedSearch) {
+    lines.push(`-- ─── shared search index ${'─'.repeat(43)}`)
+    lines.push(``)
+    lines.push(`DROP TABLE IF EXISTS ${quoteIdent(SEARCH_TABLE)};`)
+    if (changedSearch) lines.push(createSearchIndex())
+    lines.push(``)
+  }
+
   if (changedTriggers?.length || droppedTriggers?.length) {
     lines.push(`-- ─── generated triggers (drop + recreate) ${'─'.repeat(26)}`)
     lines.push(``)
@@ -1584,6 +1623,17 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     for (const t of changedTriggers ?? []) {
       lines.push(`DROP TRIGGER IF EXISTS "${t.name}";`)
       lines.push(t.sql.trim().replace(/;?$/, ';'))
+    }
+    lines.push(``)
+  }
+
+  // After the tables and the triggers: the rows and the rowids are final.
+  if (searchBackfills?.length) {
+    lines.push(`-- ─── shared search index (re-index) ${'─'.repeat(32)}`)
+    lines.push(``)
+    for (const table of searchBackfills) {
+      const model = parseResult.schema.models.find(m => modelToTableName(m, pluralize) === table)
+      if (model) lines.push(...searchBackfillSql(model, table))
     }
     lines.push(``)
   }
@@ -1656,6 +1706,12 @@ export function summarizeDiff(diffResult) {
     lines.push(`  ~ ${f.table}  full-text index ${f.name}  (recreate + rebuild)`)
   for (const f of diffResult.droppedFts ?? [])
     lines.push(`  - ${f.table}  full-text index ${f.name}  (retired)`)
+  if (diffResult.changedSearch)
+    lines.push(`  ~ ${SEARCH_TABLE}  shared search index  (recreate)`)
+  if (diffResult.droppedSearch)
+    lines.push(`  - ${SEARCH_TABLE}  shared search index  (retired)`)
+  for (const t of diffResult.searchBackfills ?? [])
+    lines.push(`  ~ ${t}  re-indexed in ${SEARCH_TABLE}`)
 
   return [...lines, ...leftovers].join('\n')
 }

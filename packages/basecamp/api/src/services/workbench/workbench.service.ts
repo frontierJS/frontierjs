@@ -13,10 +13,12 @@
 //   GET  /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
 //   GET  /workbench/:id           runnables   `fli dev` per app and every package.json script (`core/workbench-run.ts`)
 //   GET  /workbench/:id           output      { row } — the tail of what a started row wrote
+//   GET  /workbench/:id           plan        the pin's plan — its path, the steps Go started, and the file parsed now (null until written)
 //   POST /workbench               pin         { path }
 //   POST /workbench/:id           send        { prompt, chat? } — queued behind a run in the same chat, refused while another chat runs
 //   POST /workbench/:id           check       the checkout's own `fli done`, now
 //   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
+//   POST /workbench/:id           buildPlan   { goal, path } — a new chat writing the plan at path, allowed to edit that file and no other
 //   POST /workbench/:id           fork        { slug?, preview? } — a branch: the tree snapshotted into a worktree, pinned, its copy list and install run;
 //                                             with preview, Open: a preview Environment and its rows (`core/preview.ts`), routed to the branch's web port
 //   POST /workbench/:id           freeze      a preview's web/ built and released by digest; the hostname serves the build
@@ -49,8 +51,8 @@ import { openPreview, freezePreview, thawPreview, retirePreview, type Opened, ty
 import { db, ws }                  from '../../core/resource.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
-const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
+const READS  = ['pins', 'status', 'transcript', 'diff', 'runnables', 'output', 'plan']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'select', 'close', 'seen', 'check', 'review', 'buildPlan', 'fork', 'freeze', 'thaw', 'land', 'archive', 'run', 'halt']
 
 export function createWorkbenchService(app: BasecampApp) {
   // Read per call: services are built inside createApp, before app.ts claims it.
@@ -142,6 +144,20 @@ export function createWorkbenchService(app: BasecampApp) {
       const out = wb().output(p.id, body().row)
       if (!out) throw new NotFound(`Nothing called '${body().row}' was started in ${p.name}`)
       return out
+    },
+
+    async plan() {
+      const p = pinned()
+      const plan = await wb().readPlan(p.id)
+      if (!plan) throw new NotFound(`${p.name} has no plan — Build plan writes one`)
+      return plan
+    },
+
+    async buildPlan() {
+      const p = pinned()
+      const r = await wb().buildPlan(p.id, { goal: body().goal, path: body().path })
+      if ('refused' in r) throw new BadRequest(r.refused)
+      return r
     },
 
     async run() {

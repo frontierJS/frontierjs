@@ -25,7 +25,8 @@ inside the API that is already running; `projectTools()` is what it serves.
   text-only tools. A tool answer carries its object in `structuredContent`,
   the value the socket would have handed a client, beside the text.
   `IDEAS/agent-client-ui.md` Phase 1 is the protocol half;
-  the build (`fli mcp:build`) and the iframe client are not started.
+  the build is Sierra's (`fli mcp:build` writes `api/dist/mcp/`, the
+  directory `ui.root` names) and the iframe client is not started.
 - **173 tests over eleven files, plus a drive.** `example`: `verify:mcp` is the only
   place a real MCP client connects and the only one over an app with no `app.db`. `test/projection.test.ts` is the rules against a
   real `.lite` fixture; `test/plugin.test.ts` boots a real Junction app over a

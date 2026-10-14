@@ -375,6 +375,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./cron (default)` | `src/cron/cron.js` | yes |
 | exports | `./datetime (types)` | `src/datetime/datetime.d.ts` | yes |
 | exports | `./datetime (default)` | `src/datetime/datetime.js` | yes |
+| exports | `./devline (types)` | `src/devline/devline.d.ts` | yes |
+| exports | `./devline (default)` | `src/devline/devline.js` | yes |
 | exports | `./directives (types)` | `src/directives/directives.d.ts` | yes |
 | exports | `./directives (default)` | `src/directives/directives.js` | yes |
 | exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |
@@ -431,8 +433,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 80 files |
-| exports | `./components/*` | `components/*.mesa` | 80 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 81 files |
+| exports | `./components/*` | `components/*.mesa` | 81 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

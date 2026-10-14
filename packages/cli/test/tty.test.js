@@ -30,10 +30,19 @@ const terminal = ({ tty = true, columns = 40 } = {}) => {
     resume() {}, pause() {},
   })
   const out = []
-  const output = { isTTY: tty, columns, write(s) { out.push(String(s)); return true } }
+  // The cursor is state rather than text, so it is kept off `out`.
+  const caret = { shown: true }
+  const output = {
+    isTTY: tty, columns,
+    write(s) {
+      if (s === '\x1b[?25l' || s === '\x1b[?25h') caret.shown = s.endsWith('h')
+      else out.push(String(s))
+      return true
+    },
+  }
   const errput = { isTTY: false, write(s) { out.push(`ERR:${s}`); return true } }
   const press = (k) => input.emit('data', Buffer.from(k))
-  return { input, output, errput, out, press, text: () => out.join('') }
+  return { input, output, errput, out, caret, press, text: () => out.join('') }
 }
 
 const make = (t, opts = {}) => createTty({ input: t.input, output: t.output, errput: t.errput, ...opts })
@@ -288,6 +297,22 @@ describe('live', () => {
     await asked
     expect(t.out.at(-1)).toBe('status')
     await tty.close()
+  })
+
+  test('the cursor hides behind key hints and comes back to be typed at', async () => {
+    const t = terminal(), tty = make(t)
+    const bar = tty.live(() => 'o open · q quit')
+    expect(t.caret.shown).toBe(false)
+    const asked = tty.keys('Go?', { y: 'yes' })
+    expect(t.caret.shown).toBe(true)
+    t.press('y')
+    await asked
+    expect(t.caret.shown).toBe(false)
+    bar.stop()
+    expect(t.caret.shown).toBe(true)
+    tty.live(() => 'status')
+    await tty.close()
+    expect(t.caret.shown).toBe(true)
   })
 
   test('with no terminal it writes nothing and patches nothing', async () => {

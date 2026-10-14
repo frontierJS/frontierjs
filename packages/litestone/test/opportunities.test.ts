@@ -325,7 +325,7 @@ describe('text-model-with-no-search', () => {
 
   test('silent once @@fts is declared', () => {
     expect(found(`model P { id Int @id  name String  description String
-      @@fts([name, description]) }`, ID)).toEqual([])
+      @@fts([name, description])  @@label(name) }`, ID)).toEqual([])
   })
 })
 

@@ -494,6 +494,7 @@ describe('a search box is offered only where the boundary will answer', () => {
       body    String
       slug    String
       @@fts([body, title])
+      @@label(body)
       @@gate("0.0.0.0")
     }
 

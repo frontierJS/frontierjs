@@ -24,6 +24,7 @@ const SCHEMA = `
     body      String
     updatedAt DateTime?
     @@fts([title, body])
+    @@label(title)
   }
 
   model Note {

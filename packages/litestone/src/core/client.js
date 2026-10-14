@@ -9,7 +9,8 @@ import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, mkdirSync, AsyncLocalStorage, processId } from '#host'
 import { resolveAnchor } from './db-path.js'
-import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns } from './ddl.js'
+import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns,
+         SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
 import { buildSealMap, frozenAfterMove, machineWithMove } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
 import { buildEdgeMap, arcCheckExpr, arcDefaultMessage, columnMapFor, mapExprCols } from './ddl.js'
@@ -19,7 +20,7 @@ import {
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
-  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, inList, keyIn, tupleOf, tuplesOf, pairsOn, blobKeyClauses,
+  aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, identifyingKeysFor, inList, keyIn, tupleOf, tuplesOf, pairsOn, blobKeyClauses,
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
@@ -302,6 +303,12 @@ function buildAggHaving(expr, cond, params) {
 // `src/index.js`, so it is on no published surface (`IDEAS/litestone-by-
 // construction.md` § 7.2 — a plan stays internal).
 export const PLAN = Symbol.for('litestone.plan')
+// The two seams `$search` reads a model through (FJS-D970): its EXISTS branch
+// under the one MATCH, and the step-2 read that turns a hit's rowid into `id`
+// and `sub`. Symbol-keyed so a flavor wrapper runs them under its principal and
+// they stay off the enumerable surface.
+export const SEARCH_BRANCH  = Symbol.for('litestone.searchBranch')
+export const SEARCH_RESOLVE = Symbol.for('litestone.searchResolve')
 
 // The seam a many-to-many write announces its OTHER side through:
 // `tbl[JOINED](key)`. A join row is the only thing a connect writes, so the
@@ -8994,6 +9001,56 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       })
     },
 
+    // ── the shared index's view of this model (FJS-D970) ───────────────────
+    // The grade `$search` applies to a hit of this model: the same fold the
+    // per-model search() runs, as a correlated EXISTS on `_search.rid`, so the
+    // two cannot drift. Null when nothing narrows a read of this model.
+    async [SEARCH_BRANCH]({ limit, offset } = {}) {
+      if (!ftsFields) {
+        throw new CapabilityNotDeclaredError(modelName, '$search', '@@fts',
+          `Add @@fts([field1, field2]) and @@label(field) to ${modelName} to put it in the shared index.`)
+      }
+      if (plugins?.hasPlugins) await plugins.beforeRead(modelName, { limit, offset }, ctx)
+      const { where: w, policy } = visibleWhere('search', undefined, {})
+      const params = []
+      let   filter = buildWhereWithEncryption(w, params)
+      if (policy) {
+        filter = filter && filter !== '1=1' ? `(${filter}) AND (${policy.sql})` : policy.sql
+        params.push(...policy.params)
+      }
+      if (!filter || filter === '1=1') return { sql: null, params: [] }
+      return {
+        sql: `EXISTS (SELECT 1 FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(tableName)}.rowid = ${quoteIdent(SEARCH_TABLE)}.rid AND (${filter}))`,
+        params,
+      }
+    },
+
+    // The hits' rows, by rowid, graded again: step 1 already narrowed them, and
+    // this is the half that returns values, so it must not be the one dropped.
+    async [SEARCH_RESOLVE](rids) {
+      const { where: w, policy } = visibleWhere('search', undefined, {})
+      const params = []
+      let   whereSql = buildWhereWithEncryption(w, params)
+      const binds    = []
+      const inSql    = inList('rowid', rids, binds)
+      whereSql = whereSql && whereSql !== '1=1' ? `${inSql} AND (${whereSql})` : inSql
+      params.unshift(...binds)
+      if (policy) { whereSql = `(${whereSql}) AND (${policy.sql})`; params.push(...policy.params) }
+      const rows = readAll(readDb.query(`SELECT rowid AS __rid, * FROM ${quoteIdent(tableName)} WHERE ${whereSql}`).all(...params))
+      const pk       = shape.model.attributes.find(a => a.kind === 'id')?.fields
+                    ?? [shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id']
+      const identify = identifyingKeysFor(shape.model, ctx.schema)
+      const out = new Map()
+      for (const row of rows) {
+        const rid = row.__rid
+        delete row.__rid
+        const id  = pk.length === 1 ? row[pk[0]] : Object.fromEntries(pk.map(k => [k, row[k]]))
+        const sub = identify.map(k => row[k]).find(v => v != null) ?? null
+        out.set(rid, { id, sub })
+      }
+      return out
+    },
+
     // ── delete ──────────────────────────────────────────────────────────────
     async delete(args = {}) {
       return executeWrite(await planDelete(args))
@@ -12522,8 +12579,8 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
-    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12657,8 +12714,8 @@ function makeLockPrimitive(rawWriteDb) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -12715,6 +12772,80 @@ function makeLockPrimitive(rawWriteDb) {
     return authProxy
   }
 
+  // ── $search — one index across models, graded per model (FJS-D970) ────────
+  //
+  // One SQL over `_search`: MATCH, then a branch per model — `model = ?` AND
+  // the model's own fold as an EXISTS — composed with OR before the LIMIT, so
+  // the limit is spent only on rows the caller may read, and bm25 ranks every
+  // model on one scale. Per-model indexes could do neither: the same text
+  // scored differently on each, a ranked UNION leaked and rank-then-grade
+  // starved (linear's Q4). `tablesOf` is the flavor's accessors, so the
+  // branches are graded as the client the call was made on.
+  const _searchAccessors = searchModels(schema).map(m => modelToAccessor(m.name))
+  async function $searchWith(tablesOf, q, { models, limit = 20, offset = 0, prefix = false } = {}) {
+    if (typeof q !== 'string') {
+      throw new TypeError(`$search(query) takes the words to find as a string, got ${q === null ? 'null' : typeof q}`)
+    }
+    let chosen = _searchAccessors
+    if (models != null) {
+      if (!Array.isArray(models)) throw new TypeError(`$search: models names accessors as an array, got ${typeof models}`)
+      for (const m of models) {
+        if (!accessorIndex[m]) {
+          throw new Error(`$search: '${m}' is not a model in this schema. Models in the shared index: ${_searchAccessors.join(', ') || '(none)'}`)
+        }
+      }
+      chosen = [...new Set(models)]
+    }
+    if (!chosen.length) return []
+    // Every model's words go through the index's own tokenizer: trigram, so a
+    // word under three characters is a scan over title and body (FJS-2332).
+    const words = ftsWords(q, { prefix, trigram: true })
+    if (words == null) return []
+
+    const branches = [], params = []
+    for (const acc of chosen) {
+      const b = await tablesOf[acc][SEARCH_BRANCH]({ limit, offset })
+      branches.push(b.sql ? `(model = ? AND ${b.sql})` : `model = ?`)
+      params.push(acc, ...b.params)
+    }
+    const globs      = words.scan.map(() => `(${quoteIdent(SEARCH_TABLE)}.title GLOB ? OR ${quoteIdent(SEARCH_TABLE)}.body GLOB ?)`)
+    const globParams = words.scan.flatMap(g => [g, g])
+
+    let sql, binds
+    if (words.match != null) {
+      sql = `SELECT model, rid, title, ${searchRankExpr()} AS rank, snippet(${quoteIdent(SEARCH_TABLE)}, 3, '<mark>', '</mark>', '…', 15) AS _snippet` +
+            ` FROM ${quoteIdent(SEARCH_TABLE)} WHERE ${quoteIdent(SEARCH_TABLE)} MATCH ?` +
+            globs.map(g => ` AND ${g}`).join('') +
+            ` AND (${branches.join(' OR ')}) ORDER BY rank, model, rid` + pageSql(limit, offset || null)
+      binds = [words.match, ...globParams, ...params]
+    } else {
+      // No MATCH, so no bm25: every rank is null and the hits come in index
+      // order, after any ranked list a caller merges them with.
+      sql = `SELECT model, rid, title, NULL AS rank, NULL AS _snippet FROM ${quoteIdent(SEARCH_TABLE)}` +
+            ` WHERE ${globs.join(' AND ')} AND (${branches.join(' OR ')}) ORDER BY model, rid` + pageSql(limit, offset || null)
+      binds = [...globParams, ...params]
+    }
+
+    const _nt = !!(ctx.onQuery || ctx._queryListeners.size)
+    const t0  = _nt ? performance.now() : 0
+    const hits = rawReadDb.query(sql).all(...binds)
+    emitQuery(ctx, SEARCH_TABLE, 'main', { operation: '$search', args: { query: q, models: chosen, limit, offset }, sql, params: binds, duration: _nt ? performance.now() - t0 : 0, rowCount: hits.length })
+    if (!hits.length) return []
+
+    const byModel = new Map()
+    for (const h of hits) (byModel.get(h.model) ?? byModel.set(h.model, []).get(h.model)).push(h.rid)
+    const resolved = new Map()
+    for (const [acc, rids] of byModel) resolved.set(acc, await tablesOf[acc][SEARCH_RESOLVE](rids))
+
+    const out = []
+    for (const h of hits) {
+      const r = resolved.get(h.model)?.get(h.rid)
+      if (!r) continue
+      out.push({ model: h.model, id: r.id, title: h.title, sub: r.sub, _rank: h.rank, _snippet: h._snippet })
+    }
+    return out
+  }
+
   // ── $scopedBy — bind edge dimensions for subsequent ops (D13) ──────────────────
   // db.$scopedBy({ projectId: 123 }).task.findMany() — chainable with $setAuth.
   // The runtime reads ctx.scopedBy in edge resolve/read/filter, so binding is just
@@ -12731,13 +12862,14 @@ function makeLockPrimitive(rawWriteDb) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
       // Hands the callback THIS proxy — the dimension bindings and the auth on
       // it are what the body was asking for. See $transaction.
       $transaction: (fn) => $transaction(fn, scopedProxy),
+      $search: (q, opts) => $searchWith(tables, q, opts),
       asSystem, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb,
       $lock: lockPrimitive, $locks: lockPrimitive.$locks,
     }
@@ -12951,8 +13083,8 @@ function makeLockPrimitive(rawWriteDb) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
-  clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$readReach', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
       if (prop === 'then')            return undefined

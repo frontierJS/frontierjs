@@ -1,0 +1,95 @@
+<script>
+  // shell.mesa — a Shell as an app's _module.mesa mounts one, with a router
+  // standing in for Sierra's: a click on any link inside is taken, its URL
+  // becomes `path` and `query`, and `isActive` answers against `path` the way
+  // Sierra's does (a prefix at a segment boundary, `exact` for itself only).
+  //
+  // The table holds one of each case the Shell has to draw: an exact `/`, two
+  // entries sharing a path that only `match` tells apart, a group `show`
+  // hides until a level, one whose `show` throws (shown), and one left with
+  // no entries (dropped).
+  //
+  // The controls sit OUTSIDE the Shell so they exist in every branch, signed
+  // out and still restoring included.
+  import Shell from '../../../components/layout/Shell.mesa'
+
+  export let user    = null
+  export let checked = true
+  export let level   = 1
+  export let path    = '/leads/'
+
+  let query    = {}
+  let unread   = 2
+  let signouts = 0
+
+  const bare = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p)
+
+  function isActive(href, { exact = false } = {}) {
+    const here = bare(path)
+    const at = bare(href.split('?')[0])
+    if (exact || here === at) return here === at
+    return here.startsWith(at + '/')
+  }
+
+  function go(e) {
+    const a = e.target.closest?.('a[href]')
+    if (!a) return
+    e.preventDefault()
+    const url = new URL(a.getAttribute('href'), location.origin)
+    path = url.pathname
+    query = Object.fromEntries(url.searchParams)
+  }
+
+  const groups = [
+    { label: null, entries: [
+      { href: '/',        label: 'Today',    icon: 'today', exact: true },
+      { href: '/leads/',  label: 'Leads',    icon: 'users' },
+      { href: '/contacts/?kind=customer', label: 'Clients', icon: 'users',
+        match: (p, q) => p.startsWith('/contacts/') && q.kind === 'customer' },
+      { href: '/contacts/', label: 'Contacts', icon: 'users',
+        match: (p, q) => p.startsWith('/contacts/') && q.kind !== 'customer' },
+    ] },
+    { label: 'Admin', show: (s) => s.level >= 5, entries: [
+      { href: '/settings/', label: 'Settings', icon: 'cog' },
+    ] },
+    { label: 'Help', show: () => { throw new Error('the predicate broke') }, entries: [
+      { href: '/help/', label: 'Docs' },
+    ] },
+    { label: 'Hidden', entries: [
+      { href: '/nowhere/', label: 'Nowhere', show: () => false },
+    ] },
+  ]
+
+  const sections = [
+    { path: '/leads/', tabs: [
+      { href: '/leads/',      label: 'Open', exact: true },
+      { href: '/leads/lost/', label: 'Lost' },
+    ], action: { href: '/contacts/create/', label: 'New lead' } },
+  ]
+
+  async function out() {
+    signouts++
+    await new Promise((r) => setTimeout(r, 60))
+    user = null
+  }
+</script>
+
+<div id="controls">
+  <button type="button" id="restore" on:click={() => checked = true}>Restore</button>
+  <button type="button" id="sign-in" on:click={() => user = { email: 'a@b.c' }}>Sign in</button>
+  <button type="button" id="promote" on:click={() => level = 5}>Promote</button>
+  <button type="button" id="more" on:click={() => unread++}>More</button>
+  <output id="signouts">{signouts}</output>
+</div>
+
+<div id="app" on:click={go}>
+  <Shell {groups} {sections} {path} {query} title="Leads"
+         {user} {level} {checked} {isActive} onsignout={out}>
+    {#snippet brand()}<a href="/" data-brand>Acme</a>{/snippet}
+    {#snippet icon(name)}<svg class="icon" data-icon={name} viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6" /></svg>{/snippet}
+    {#snippet badge(entry)}{#if entry.href === '/leads/'}<span class="badge" data-unread>{unread}</span>{/if}{/snippet}
+    {#snippet foot(where)}<span data-foot={where}>foot</span>{/snippet}
+    {#snippet topbar()}<span id="top-right">right</span>{/snippet}
+    <p id="page">Page at {path}</p>
+  </Shell>
+</div>

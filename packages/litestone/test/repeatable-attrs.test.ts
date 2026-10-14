@@ -41,7 +41,7 @@ describe('an attribute answered twice is refused', () => {
   })
 
   it('a duplicate whose argument has no short spelling still refuses', () => {
-    expect(refusal('model M {\n  id Int @id\n  a String\n  @@fts([a])\n  @@fts([a])\n}')).toContain('@@fts')
+    expect(refusal('model M {\n  id Int @id\n  a String\n  @@fts([a])\n  @@label(a)\n  @@fts([a])\n}')).toContain('@@fts')
   })
 })
 

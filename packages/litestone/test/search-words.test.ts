@@ -49,6 +49,7 @@ for (const tokenize of TOKENIZERS) {
           id   Int    @id @default(autoincrement())
           name String
           @@fts([name], tokenize: ${tokenize})
+          @@label(name)
         }
       ` })
       await db.box.createMany({ data: NAMES.map(name => ({ name })) })
@@ -87,7 +88,7 @@ for (const tokenize of TOKENIZERS) {
 describe('search() refuses by name', () => {
   let db: any
   beforeAll(async () => {
-    db = await createClient({ db: ':memory:', schema: 'model Box {\n  id   Int    @id\n  name String\n  @@fts([name])\n}' })
+    db = await createClient({ db: ':memory:', schema: 'model Box {\n  id   Int    @id\n  name String\n  @@fts([name])\n  @@label(name)\n}' })
   })
   afterAll(() => db.$close())
 
@@ -143,6 +144,7 @@ describe('search() under trigram, a word shorter than three characters', () => {
         deletedAt DateTime?
         @@softDelete
         @@fts([name, email], tokenize: trigram)
+        @@label(name)
       }
     ` })
     await db.contact.createMany({ data: [

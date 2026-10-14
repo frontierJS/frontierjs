@@ -13,6 +13,11 @@
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
 
+CREATE VIRTUAL TABLE IF NOT EXISTS "_search" USING fts5(
+  model UNINDEXED, rid UNINDEXED, title, body,
+  tokenize='trigram'
+);
+
 CREATE TABLE IF NOT EXISTS "credential" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "userId" TEXT NOT NULL,
@@ -220,6 +225,19 @@ END;
 CREATE TRIGGER "product_fts_update" AFTER UPDATE ON "product" BEGIN
   INSERT INTO "product_fts"("product_fts", rowid, "name", "description") VALUES ('delete', old.rowid, old."name", old."description");
   INSERT INTO "product_fts"(rowid, "name", "description") VALUES (new.rowid, new."name", new."description");
+END;
+DROP TRIGGER IF EXISTS "product_search_insert";
+DROP TRIGGER IF EXISTS "product_search_delete";
+DROP TRIGGER IF EXISTS "product_search_update";
+CREATE TRIGGER "product_search_insert" AFTER INSERT ON "product" BEGIN
+  INSERT INTO "_search"(model, rid, title, body) VALUES ('product', new.rowid, new."name", COALESCE(new."name", '') || ' ' || COALESCE(new."description", ''));
+END;
+CREATE TRIGGER "product_search_delete" AFTER DELETE ON "product" BEGIN
+  DELETE FROM "_search" WHERE model = 'product' AND rid = old.rowid;
+END;
+CREATE TRIGGER "product_search_update" AFTER UPDATE ON "product" BEGIN
+  DELETE FROM "_search" WHERE model = 'product' AND rid = old.rowid;
+  INSERT INTO "_search"(model, rid, title, body) VALUES ('product', new.rowid, new."name", COALESCE(new."name", '') || ' ' || COALESCE(new."description", ''));
 END;
 
 -- The colorways this shop has run. `ProductVariant.color` stores the NAME

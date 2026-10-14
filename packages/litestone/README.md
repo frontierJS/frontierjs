@@ -566,6 +566,7 @@ model docs_fts {
   body    String
   @@external
   @@fts([title, body])
+  @@label(title)
 }
 
 // Table owned by another migration tool (e.g. a legacy schema)

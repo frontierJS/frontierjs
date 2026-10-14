@@ -39,7 +39,7 @@ const match = (db: Database, table: string, q: string) =>
 
 describe('@@fts added to a table that holds rows', () => {
   const BEFORE = `model Note {\n  id Int @id\n  body String\n}`
-  const AFTER  = `model Note {\n  id Int @id\n  body String\n  @@fts([body])\n}`
+  const AFTER  = `model Note {\n  id Int @id\n  body String\n  @@fts([body])\n  @@label(body)\n}`
 
   function seeded() {
     const db = new Database(':memory:')
@@ -75,7 +75,7 @@ describe('@@fts added to a table that holds rows', () => {
 })
 
 describe('an existing @@fts that changes', () => {
-  const V1 = `model Note {\n  id Int @id\n  title String @default("")\n  body String\n  @@fts([body])\n}`
+  const V1 = `model Note {\n  id Int @id\n  title String @default("")\n  body String\n  @@fts([body])\n  @@label(body)\n}`
 
   it('gains a column — the index is rebuilt with it, and writes still work', () => {
     const db = new Database(':memory:')
@@ -106,7 +106,7 @@ describe('an existing @@fts that changes', () => {
   it('is removed — the index goes with its triggers', () => {
     const db = new Database(':memory:')
     migrate(db, V1)
-    migrate(db, V1.replace('  @@fts([body])\n', ''))
+    migrate(db, V1.replace('  @@fts([body])\n  @@label(body)\n', ''))
     const left = db.query(`SELECT name FROM sqlite_master WHERE name LIKE 'note_fts%'`).all()
     expect(left).toEqual([])
   })
@@ -117,7 +117,7 @@ describe('a rebuilt table under @@fts', () => {
   // not copy it: the rows are renumbered, and an index keyed on the old rowids
   // points every docid at a different row.
   it('re-indexes, because the copy renumbers the rowids', () => {
-    const V1 = `model Note {\n  id String @id\n  body String\n  legacy String?\n  @@fts([body])\n}`
+    const V1 = `model Note {\n  id String @id\n  body String\n  legacy String?\n  @@fts([body])\n  @@label(body)\n}`
     const db = new Database(':memory:')
     migrate(db, V1)
     db.run(`INSERT INTO note (id, body) VALUES ('a', 'first'), ('b', 'second'), ('c', 'third')`)
@@ -129,5 +129,63 @@ describe('a rebuilt table under @@fts', () => {
     expect(hit).toEqual([{ id: 'c' }])
     db.run(`UPDATE note SET body = 'changed' WHERE id = 'b'`)
     db.run(`INSERT INTO note_fts(note_fts) VALUES('integrity-check')`)
+  })
+})
+
+// The shared index (FJS-D970) is not external-content, so a migration backfills
+// it from each member table where a per-model index says 'rebuild'.
+describe('the shared _search index through a migration', () => {
+  const PLAIN = `model Note {\n  id Int @id\n  title String @default("")\n  body String\n}`
+  const FTS   = `model Note {\n  id Int @id\n  title String @default("")\n  body String\n  @@fts([body])\n  @@label(title)\n}`
+  const spans = (db: Database, q: string) =>
+    db.query(`SELECT model, rid, title FROM "_search" WHERE "_search" MATCH ? ORDER BY rid`).all(q)
+
+  it('is created and backfilled when the first model gains @@fts', () => {
+    const db = new Database(':memory:')
+    migrate(db, PLAIN)
+    db.run(`INSERT INTO note (id, title, body) VALUES (1, 'alpha', 'hello world'), (2, 'beta', 'goodbye')`)
+    const sql = migrate(db, FTS)
+    expect(sql).toContain(`CREATE VIRTUAL TABLE IF NOT EXISTS "_search"`)
+    expect(spans(db, 'hello')).toEqual([{ model: 'note', rid: 1, title: 'alpha' }])
+    db.run(`INSERT INTO note (id, title, body) VALUES (3, 'gamma', 'hello again')`)
+    db.run(`UPDATE note SET body = 'farewell' WHERE id = 1`)
+    db.run(`DELETE FROM note WHERE id = 2`)
+    expect(spans(db, 'hello').map((r: any) => r.rid)).toEqual([3])
+    expect(spans(db, 'farewell').map((r: any) => r.rid)).toEqual([1])
+    expect(plan(db, FTS).diff.hasChanges).toBe(false)
+  })
+
+  it('re-indexes a model whose @@label moved, and only that model', () => {
+    const db = new Database(':memory:')
+    migrate(db, FTS)
+    db.run(`INSERT INTO note (id, title, body) VALUES (1, 'alpha', 'hello world')`)
+    const V2  = FTS.replace('@@label(title)', '@@label(body)')
+    const sql = migrate(db, V2)
+    expect(sql).toContain(`DELETE FROM "_search" WHERE model = 'note'`)
+    expect(sql).not.toContain(`DROP TABLE IF EXISTS "_search"`)
+    expect(spans(db, 'hello')).toEqual([{ model: 'note', rid: 1, title: 'hello world' }])
+    expect(plan(db, V2).diff.hasChanges).toBe(false)
+  })
+
+  it('re-indexes a rebuilt table, because the copy renumbers the rowids', () => {
+    const V1 = `model Note {\n  id String @id\n  body String\n  legacy String?\n  @@fts([body])\n  @@label(body)\n}`
+    const db = new Database(':memory:')
+    migrate(db, V1)
+    db.run(`INSERT INTO note (id, body) VALUES ('a', 'first'), ('b', 'second'), ('c', 'third')`)
+    db.run(`DELETE FROM note WHERE id = 'a'`)
+    const V2 = V1.replace('  legacy String?\n', '')
+    migrate(db, V2)
+    const rid = (id: string) => (db.query(`SELECT rowid FROM note WHERE id = ?`).get(id) as any).rowid
+    expect(spans(db, 'third').map((r: any) => r.rid)).toEqual([rid('c')])
+    expect(plan(db, V2).diff.hasChanges).toBe(false)
+  })
+
+  it('goes when the last @@fts model loses it', () => {
+    const db = new Database(':memory:')
+    migrate(db, FTS)
+    const sql = migrate(db, PLAIN)
+    expect(sql).toContain(`DROP TABLE IF EXISTS "_search"`)
+    expect(db.query(`SELECT name FROM sqlite_master WHERE name = '_search' OR name LIKE 'note_search_%'`).all()).toEqual([])
+    expect(plan(db, PLAIN).diff.hasChanges).toBe(false)
   })
 })

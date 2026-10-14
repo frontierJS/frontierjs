@@ -1,0 +1,180 @@
+<script>
+  // Shell.mesa
+  // The app frame — frame.css's `.shell` — drawn from the `src/lib/nav.js`
+  // table (`@frontierjs/ui/nav`). What every signed-in `_module.mesa` rewrote
+  // is here once: the wait for the session restore, the signed-out frame, the
+  // nav drawn into the sidebar AND a Drawer below md, the drawer closing on
+  // navigation, `aria-current`, the section bar and its toggle.
+  //
+  // This kit cannot import Sierra, so the page and the session arrive as props
+  // from the `_module.mesa` that already reads them, and whether an entry is
+  // current is Sierra's `isActive`, handed in:
+  //
+  //   <Shell {groups} {sections}
+  //          path={page.pathname} query={page.query} title={page.title}
+  //          user={session.user} level={session.level} checked={session.checked}
+  //          {isActive} onsignout={out}>
+  //     {#snippet brand()}<a href="/"><img src="/logo.svg" alt="ELA — home" /></a>{/snippet}
+  //     {#snippet icon(name)}<Icon {name} />{/snippet}
+  //     {#snippet badge(entry)}{#if entry.href === '/leads/'}<Badge>{open}</Badge>{/if}{/snippet}
+  //     {#snippet foot(where)}{#if where === 'sidebar'}<Bell />{/if}{/snippet}
+  //     {#snippet topbar()}…the right-hand cluster…{/snippet}
+  //     <slot />
+  //   </Shell>
+  //
+  // A group's or entry's `show` is called with `{ user, level }` and nothing
+  // else. The session is a watched object mutated in place, so passed whole it
+  // would reach this component once and never again; two scalars re-push.
+
+  import { sectionFor, visible } from '../../nav.js'
+  import { uid } from '../../utils.js'
+  import Drawer from '../overlay/Drawer.mesa'
+
+  export let groups    = []
+  export let sections  = []
+  export let path      = '/'
+  export let query     = {}
+  export let title     = ''
+  export let user      = null
+  export let level     = 0
+  // Default true: an app with no session restore has nothing to wait for.
+  export let checked   = true
+  export let isActive  = undefined
+  export let onsignout = undefined
+  export let layout    = 'sidebar'
+
+  export let brand     = null   // snippet ()
+  export let icon      = null   // snippet (name)
+  export let badge     = null   // snippet (entry) — a count, drawn after the label
+  export let foot      = null   // snippet (where) — 'sidebar' | 'drawer'
+  export let topbar    = null   // snippet ()
+
+  const LAYOUTS = ['sidebar']
+  if (!LAYOUTS.includes(layout))
+    console.warn(`[Shell] layout="${layout}" is not one of ${LAYOUTS.join(', ')}; drawing a sidebar`)
+
+  // With no isActive nothing is ever current, and a nav with no current page
+  // looks like a working nav.
+  if (typeof isActive !== 'function' && (groups.length || sections.length))
+    console.warn('[Shell] no isActive prop — pass Sierra\'s, or no entry is ever current')
+
+  $: shown   = visible(groups, { user, level })
+  $: section = sectionFor(sections, path)
+
+  const ids = uid('shell')
+
+  function current(entry) {
+    if (entry.match) return Boolean(entry.match(path, query ?? {}))
+    return Boolean(isActive?.(entry.href, entry.exact ? { exact: true } : undefined))
+  }
+
+  // Navigating with the drawer open leaves it over the page it went to. A
+  // query-only move (`/contacts/` to `/contacts/?kind=customer`) is a
+  // navigation too.
+  let navOpen = false
+  $: path, query, () => { navOpen = false }
+
+  let signingOut = false
+  async function signOut() {
+    if (signingOut) return
+    signingOut = true
+    try { await onsignout?.() } finally { signingOut = false }
+  }
+</script>
+
+<!--
+  One definition of the nav, rendered in the sidebar and again in the drawer
+  below md. Only one of the two is ever in the accessibility tree: frame.css
+  hides the sidebar at that width, and a closed <dialog> is not exposed.
+
+  Every aria-current here is inside an {#each} row, whose attributes are one
+  effect that tracks whatever its calls read, isActive's own signals
+  included. Lifted out of an {#each}, an expression naming no reactive value
+  is set once at mount and the highlight never moves; it then needs a
+  leading (path, query) read, as Sierra's isActive says.
+
+  The label is a .navlink-text, which a .sidebar.rail fades rather than
+  removes, so it stays the link's name.
+-->
+{#snippet navigation(where)}
+  {@render brand?.()}
+  {#each shown as group, gi}
+    <div>
+      {#if group.label}
+        <div class="navlist-label" id="{ids}-{where}-{gi}">{group.label}</div>
+      {/if}
+      <ul class="navlist" aria-labelledby={group.label ? `${ids}-${where}-${gi}` : null}>
+        {#each group.entries as entry}
+          <li>
+            <a class="navlink" href={entry.href}
+               aria-current={current(entry) ? 'page' : null}
+            >{#if entry.icon}{@render icon?.(entry.icon)}{/if}<span class="navlink-text">{entry.label}</span>{@render badge?.(entry)}</a>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/each}
+  {@render foot?.(where)}
+  {#if onsignout}
+    <div>
+      <button class="btn ghost" type="button" disabled={signingOut} on:click={signOut}>Sign out</button>
+    </div>
+  {/if}
+{/snippet}
+
+{#if !checked}
+  <!-- The restore is in flight: drawing the signed-out frame now is a flash
+       of the wrong page on every cold load. -->
+{:else if user}
+  <div class="shell sidebar-first" {class} {...$attributes}>
+    <a class="skip-link" href="#screen">Skip to content</a>
+
+    <nav class="sidebar stack" aria-label="Main">
+      {@render navigation('sidebar')}
+    </nav>
+
+    <header class="topbar">
+      <div class="cluster">
+        <!-- frame.css shows this below md only; opening the drawer is ours. -->
+        <button class="btn ghost square sidebar-toggle" type="button"
+                aria-label="Open navigation" aria-expanded={navOpen}
+                on:click={() => navOpen = true}>
+          <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z"/>
+          </svg>
+        </button>
+        {#if title}<strong>{title}</strong>{/if}
+        {#if section?.tabs?.length || section?.action}
+          <nav class="cluster" aria-label="Section">
+            {#each section.tabs ?? [] as tab}
+              <a class="navlink" href={tab.href}
+                 aria-current={current(tab) ? 'page' : null}>{tab.label}</a>
+            {/each}
+            {#if section.action}
+              <a class="btn primary" href={section.action.href}>{section.action.label}</a>
+            {/if}
+          </nav>
+        {/if}
+      </div>
+      {#if topbar}
+        <div class="cluster">{@render topbar?.()}</div>
+      {/if}
+    </header>
+
+    <main class="screen" id="screen" tabindex="-1">
+      <slot />
+    </main>
+  </div>
+
+  <Drawer side="left" bind:open={navOpen} title="Navigation">
+    <nav class="stack" aria-label="Main">
+      {@render navigation('drawer')}
+    </nav>
+  </Drawer>
+{:else}
+  <main class="screen" id="screen" {class} {...$attributes}>
+    <div class="container narrow">
+      <slot />
+    </div>
+  </main>
+{/if}

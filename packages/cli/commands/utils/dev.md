@@ -7,6 +7,7 @@ examples:
   - fli dev --dry
   - fli dev --no-check
   - fli dev --debug
+  - fli dev --verbose
   - fli dev --host
 flags:
   check:
@@ -28,6 +29,18 @@ per surface, each line behind its surface's name** (`api │`, `web │`) —
 read as the API's. Any other `dev` (a `&&` chain, a command that is not a
 surface script, a single surface) runs as written. `composedSurfaces` in
 `core/ports.js` decides.
+
+**Each surface says it is up in one line, and the boot banners are
+`--verbose`.** fli starts the servers with `FLI_DEV=1`; Junction and Sierra
+then print a ready line in place of their banners (the format is
+`@frontierjs/toolbelt/devline`), and fli lays them out as one summary — the URL
+and what came up, two lines a surface. A Mesa warning arrives as one line naming
+its file. Nothing else a server prints is dropped: it is held until the summary
+prints, and a surface that exits or never reports (an older package, a custom
+script) lets the summary print without it after 15 seconds. `--verbose` starts
+the servers without the variable, so each prints the banner it always has. In a
+terminal, `o` opens the web surface, `r` restarts every surface, `v` restarts
+them in the other mode, `q` quits.
 
 **An app the ports table does not name gets a slot of its own.** Every app
 `fli new` writes is project 0, so two of them derive the same 8000/8100. `fli
@@ -140,10 +153,12 @@ try {
   process.exit(1)
 }
 
+const verbose = flag.verbose === true
+const at = [session.branch && `branch ${session.branch}`, session.slot && `slot ${session.slot}`].filter(Boolean).join(' · ')
 if (session.rows.length) {
   const where = session.rows.map(r => `${r.label} ${r.port}`).join(' · ')
-  const at = [session.branch && `branch ${session.branch}`, session.slot && `slot ${session.slot}`].filter(Boolean).join(' · ')
-  log.info(at ? `${at} — ${where}` : where)
+  // Compact, the summary names each URL, so the ports are the long version.
+  log[verbose ? 'info' : 'detail'](at ? `${at} — ${where}` : where)
 }
 
 let generatedKey = ''
@@ -235,7 +250,34 @@ if (!composed) {
   return
 }
 
-log.info(composed.map(r => `${runner} run ${r.script}`).join(chalk.dim('  ·  ')))
+log[verbose ? 'info' : 'detail'](composed.map(r => `${runner} run ${r.script}`).join(chalk.dim('  ·  ')))
 if (flag.dry) return
-process.exitCode = await runSurfaces({ root, runner, rows: composed, env, echo, onExit: tty.onExit })
+
+const title = [(manifest.name ?? '').replace(/^@[^/]+\//, ''), at].filter(Boolean).join(chalk.dim(' · '))
+const run = runSurfaces({ root, runner, rows: composed, env, echo, onExit: tty.onExit, compact: !verbose, title })
+
+if (tty.interactive) {
+  const { openUrl } = await import(resolve(global.fliRoot, 'core/open-url.js'))
+  const footer = tty.live(() => [
+    `${chalk.bold('o')} open`, `${chalk.bold('r')} restart`,
+    `${chalk.bold('v')} ${run.compact ? 'verbose' : 'compact'}`, `${chalk.bold('q')} quit`,
+  ].map(chalk.dim))
+  const KEYS = { o: 'open', r: 'restart', v: 'verbose', q: 'quit' }
+  let exited = false
+  run.done.then(() => { exited = true })
+  while (!exited) {
+    const key = await Promise.race([tty.keys(null, KEYS), run.done.then(() => null)])
+    if (key === 'q' || key === null) break
+    if (key === 'o') {
+      const url = run.frontUrl()
+      if (url) openUrl(url)
+    }
+    if (key === 'r') await run.restart()
+    if (key === 'v') await run.restart({ compact: !run.compact })
+    footer.update()
+  }
+  footer.stop()
+  if (!exited) process.kill(process.pid, 'SIGINT')
+}
+process.exitCode = await run.done
 ```

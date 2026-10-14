@@ -26,6 +26,7 @@ model Note {
   title String
   body  String
   @@fts([title, body])
+  @@label(title)
 }
 `
 

@@ -372,6 +372,78 @@ describe('review', () => {
 
 })
 
+describe('the plan', () => {
+
+  test('a pin has no plan until Build plan names one, and a bad path or no goal is refused by name', async () => {
+    const { bin } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-plan-refuse'), bin })
+    const r = wb.pin(repo('plan-refuse'))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    expect(wb.getPin(id)!.plan).toBeNull()
+    expect(await wb.readPlan(id)).toBeNull()
+    expect(await wb.buildPlan(id, { goal: '', path: 'PLAN.md' })).toEqual({ refused: expect.stringContaining('what the plan is for') })
+    expect(await wb.buildPlan(id, { goal: 'x' })).toEqual({ refused: expect.stringContaining('name the plan') })
+    expect(await wb.buildPlan(id, { goal: 'x', path: '../PLAN.md' })).toEqual({ refused: expect.stringContaining('not a path inside') })
+    expect(await wb.buildPlan(id, { goal: 'x', path: '/etc/PLAN.md' })).toEqual({ refused: expect.stringContaining('not a path inside') })
+    expect(await wb.buildPlan(id, { goal: 'x', path: 'PLAN.txt' })).toEqual({ refused: expect.stringContaining('not a markdown file') })
+    expect(wb.getPin(id)!.plan).toBeNull()
+    expect(existsSync(bin + '.seen')).toBe(false)
+  })
+
+  test('Build plan: a new chat that may edit the plan file and nothing else, and the plan reads off the file', async () => {
+    const { bin, seen } = fakeClaude()
+    const wb = createWorkbench({ dir: join(tmp, 'wb-plan-build'), bin })
+    const dir = repo('plan-build')
+    const r = wb.pin(dir)
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    await wb.send(id, 'earlier work')
+    await until(async () => !wb.getPin(id)!.pid && (await wb.status(wb.getPin(id)!)).state === 'done')
+
+    const built = await wb.buildPlan(id, { goal: 'ship the widget', path: 'IDEAS/widget.md' })
+    if (!('chat' in built)) throw new Error(built.refused)
+    expect(built.chat).not.toBe(r.pin.chat)
+    expect(wb.getPin(id)).toMatchObject({ chat: built.chat, plan: { path: 'IDEAS/widget.md', steps: {} } })
+    await until(async () => seen().length === 2 && !wb.getPin(id)!.pid)
+
+    const run = seen()[1]
+    expect(run.cwd).toBe(dir)
+    expect(run.argv).not.toContain('--resume')
+    expect(run.argv[run.argv.indexOf('--permission-mode') + 1]).toBe('dontAsk')
+    expect(run.argv.filter((a: string) => a.startsWith('Edit('))).toEqual([`Edit(/${dir}/IDEAS/widget.md)`, `Edit(/${dir}/IDEAS/widget.md/**)`])
+    expect(run.input).toContain('ship the widget')
+    expect(run.input).toContain('`IDEAS/widget.md`')
+
+    // The session has not written it: the plan is the path, parsed as nothing.
+    expect(await wb.readPlan(id)).toEqual({ path: 'IDEAS/widget.md', steps: {}, parsed: null })
+
+    mkdirSync(join(dir, 'IDEAS'), { recursive: true })
+    writeFileSync(join(dir, 'IDEAS', 'widget.md'), [
+      '# Widget', '', '## Plan', '',
+      '### Phase 0 — Groundwork', '', 'Goal: a widget.', 'Done when: it renders.', '',
+      '- [x] 0.1 Draw it', '  - drawn', '- [ ] 0.2 Ship it', '',
+    ].join('\n'))
+    const plan = (await wb.readPlan(id))!
+    expect(plan.parsed!.title).toBe('Widget')
+    expect(plan.parsed!.next).toMatchObject({ id: '0.2', title: 'Ship it' })
+    expect(plan.parsed!.steps.map((s: { id: string, box: string }) => [s.id, s.box])).toEqual([['0.1', 'done'], ['0.2', 'open']])
+  })
+
+  test('Build plan waits for a run in the checkout, like any message to another chat', async () => {
+    const { bin } = fakeClaude({ sleep: 400 })
+    const wb = createWorkbench({ dir: join(tmp, 'wb-plan-busy'), bin })
+    const r = wb.pin(repo('plan-busy'))
+    if (!('pin' in r)) throw new Error(r.refused)
+    const id = r.pin.id
+    await wb.send(id, 'long work')
+    expect(await wb.buildPlan(id, { goal: 'x', path: 'PLAN.md' })).toEqual({ refused: expect.stringContaining('one run at a time') })
+    expect(wb.getPin(id)!.plan).toBeNull()
+    expect(wb.getPin(id)!.chats).toHaveLength(1)
+    await until(async () => !wb.getPin(id)!.pid)
+  })
+})
+
 describe('diff', () => {
 
   test('a removed line reading "-- x" stays a removed line, and line numbers follow each side', () => {

@@ -47,9 +47,10 @@ them off a diff.
 - **An MCP App view a host can run.** `build/mcp-build.js` builds one document
   per resource file and `test/mcp-build.test.js` proves the shape with a real build; what is not
   there is everything that makes it a screen: `mcpApp()` in `src/mcp/index.js`
-  refuses by name until the relay lands (plan step 3.1), there is no `sierra mcp`
-  command and no `fli mcp:build` (2.4), the host's theme does not reach the
-  document (2.3), and no drive loads a view in a host (4.3).
+  refuses by name until the relay lands (plan step 3.1), `applyHostContext`
+  exists and nothing calls it until the handshake (3.3), and no drive loads a
+  view in a host (4.3). `fli mcp:build` (→ `sierra mcp --out`) writes them to
+  `api/dist/mcp/` — 36 over `example`, ~27 s — and none of them works yet.
   `IDEAS/agent-client-ui.md` § The plan is the order.
 
 - **A detail-view generator.** The table and filter bar are generated —

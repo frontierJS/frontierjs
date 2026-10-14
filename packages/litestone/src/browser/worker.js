@@ -59,6 +59,7 @@ async function handle({ id, op, ...rest }) {
 async function run(op, args) {
   if (op === 'open')  return open(args)
   if (op === 'call')  return call(args)
+  if (op === 'search') return search(args)
   if (op === 'close') { client?.$close?.(); client = null; return true }
   throw new Error(`[Litestone] unknown worker op '${op}'. Expected: open, call, close.`)
 }
@@ -154,6 +155,13 @@ function call({ flavor, model, method, args = [] }) {
   if (typeof fn !== 'function') throw new Error(`[Litestone] '${model}.${method}' is not a method.`)
 
   return fn.call(table, ...args)
+}
+
+// `$search` is the client's, not a model's, so it has its own op: the shared
+// index spans the models `call` is keyed on (FJS-D970).
+function search({ flavor, args = [] }) {
+  if (!client) throw new Error('[Litestone] no client in this worker — call open() first.')
+  return scopeFor(flavor).$search(...args)
 }
 
 function scopeFor(flavor) {

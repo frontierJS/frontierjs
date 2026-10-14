@@ -1339,6 +1339,11 @@ of the ones it held back.
 With `theme` configured, the post-build pipeline injects an inline `<head>` script that
 applies the persisted preference before first paint, so there is no flash.
 
+`setScheme('light' | 'dark')` is for a page whose window somebody else owns — an MCP
+host handing a view its `hostContext.theme`. It maps onto the pair `theme.system` names,
+the same mapping the OS preference gets, and from then on the OS query yields to it. It is
+never persisted: the answer is the host's.
+
 ---
 
 ## `virtual:sierra`
@@ -1372,7 +1377,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../resource` | client wiring, `status`, auth, `createResource`, `createStore`, `useStore`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
 | `.../field-rules` | the Schema → UI projection alone — `controlFor`, `formFieldList`, `buildFieldRules`, `toFieldErrors`; imports no client |
 | `.../fetch` | `sierraFetch`, `configureFetch` |
-| `.../theme` | `theme`, `setTheme`, `toggleTheme`, `initTheme` |
+| `.../theme` | `theme`, `setTheme`, `toggleTheme`, `setScheme`, `initTheme` |
 | `.../presence` | `presence(channelId, opts)` |
 | `.../analytics` | `initAnalytics`, `configureAnalytics` (the provider alone, for a page whose tag is already in the HTML), `track` |
 | `.../devtools` | `initToolbar` |

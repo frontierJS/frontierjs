@@ -145,9 +145,19 @@ export function createTty({
 
   const erase = () => { if (drawn) { outWrite(ERASE); drawn = '' } }
 
+  // A footer of key hints is not a place to type, and a cursor parked after its
+  // last word reads as one. Shown again for a prompt, a typed line and the shell.
+  let caretHidden = false
+  const caret = (show) => {
+    if (show !== caretHidden) return
+    outWrite(show ? '\x1b[?25h' : '\x1b[?25l')
+    caretHidden = !show
+  }
+
   const draw = () => {
     if (!interactive || lineOpen) return
     const text = footerText()
+    caret(!text || waiting.some(w => w.prompt))
     if (text === drawn) return
     erase()
     if (text) { outWrite(text); drawn = text }
@@ -307,6 +317,7 @@ export function createTty({
       return (async () => {
         enlist()
         erase()
+        caret(true)
         const wasRaw = raw
         if (wasRaw) unlisten()
         // Through the patched stream, so an answer lands above a footer that
@@ -339,6 +350,7 @@ export function createTty({
       return new Promise((resolve) => {
         enlist()
         erase()
+        caret(true)
         const wasRaw = raw
         if (wasRaw) unlisten()
         let typed = ''
@@ -421,6 +433,7 @@ export function createTty({
       render = null
       waiting.length = 0
       erase()
+      caret(true)
       hiding?.()
       unlisten()
       if (titled) outWrite('\x1b]0;\x07')

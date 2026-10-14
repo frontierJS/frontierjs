@@ -15,6 +15,10 @@ import { EXACT_INT_MAX } from './validate.js'
 // come to mean different numbers of floats.
 import { BYTES_PER_DIM } from './vector.js'
 
+// The one spelling of a quoted identifier (Invariant 8); query.js imports
+// pointColumns from here, and both edges are call-time, so the cycle is inert.
+import { quoteIdent } from './query.js'
+
 // ─── Point columns ────────────────────────────────────────────────────────────
 
 /**
@@ -784,6 +788,105 @@ function createFts(model, tableName) {
   return parts.join('\n')
 }
 
+// ─── The shared search index (FJS-D970) ──────────────────────────────────────
+//
+// One FTS5 table holding every @@fts model's rows, so bm25 ranks them on one
+// scale: the same text scored −0.981 as an issue title and −3.287 as a comment
+// body on two per-model indexes, and −6.925 as both on this one. Membership is
+// `@@fts`, the title is the `@@label` column, the body is the @@fts columns
+// joined. Mirrors the table row for row — soft-deleted rows included — and
+// `$search` grades each hit through its model's own `visibleWhere`, the same
+// reason the per-model index above keeps them.
+//
+// Not external-content: the rows span tables, so there is no one content table
+// to point at. That is why a migration backfills with `searchBackfillSql` where
+// a per-model index says 'rebuild'.
+
+export const SEARCH_TABLE   = '_search'
+export const SEARCH_COLUMNS = Object.freeze(['model', 'rid', 'title', 'body'])
+// 10, not the 3 the gate first chose: under trigram a corpus of 40 rows sharing
+// one word let a bare body edge a title carrying four other words at 3 (−2.046
+// against −2.036); 5 and 10 hold, and 10 is the margin the paper measured.
+export const SEARCH_WEIGHTS = Object.freeze({ title: 10 })
+
+// bm25() takes one weight PER DECLARED COLUMN, UNINDEXED ones included, so the
+// title's weight is the third argument. `bm25(_search, 3, 1)` weights `model`
+// and changes nothing, which is what the gate's first run did. Placed by name.
+export function searchRankExpr() {
+  return `bm25(${quoteIdent(SEARCH_TABLE)}, ${SEARCH_COLUMNS.map(c => (SEARCH_WEIGHTS[c] ?? 1).toFixed(1)).join(', ')})`
+}
+
+export function isSearchModel(model) {
+  return model.attributes.some(a => a.kind === 'fts') && !model.attributes.some(a => a.kind === 'external')
+}
+
+export function searchModels(schema) {
+  return schema.models.filter(isSearchModel)
+}
+
+// The title column and the body columns of one model, as SQL column names.
+export function searchColumnsFor(model) {
+  const cmap  = columnMapFor(model)
+  const fts   = model.attributes.find(a => a.kind === 'fts')
+  const label = model.attributes.find(a => a.kind === 'labelField')
+  if (!fts || !label) return null
+  return { title: mapCol(cmap, label.field), body: fts.fields.map(f => mapCol(cmap, f)) }
+}
+
+// trigram whatever the models' own tokenizers: a short word is then a match
+// rather than FJS-2332's scan, and the gate ranked the same under unicode61.
+export function createSearchIndex() {
+  return [
+    `CREATE VIRTUAL TABLE IF NOT EXISTS ${quoteIdent(SEARCH_TABLE)} USING fts5(`,
+    `  model UNINDEXED, rid UNINDEXED, title, body,`,
+    `  tokenize='trigram'`,
+    `);`,
+  ].join('\n')
+}
+
+const searchBodyExpr = (prefix, cols) =>
+  cols.map(c => `COALESCE(${prefix}${quoteIdent(c)}, '')`).join(` || ' ' || `)
+
+export function searchTriggerNames(tableName) {
+  return ['insert', 'delete', 'update'].map(v => `${tableName}_search_${v}`)
+}
+
+function createSearchTriggers(model, tableName) {
+  const cols = searchColumnsFor(model)
+  if (!cols) return null
+  const accessor = modelToAccessor(model.name)
+  const [ins, del, upd] = searchTriggerNames(tableName)
+  // Dropped first for the same reason the per-model triggers are: IF NOT EXISTS
+  // keeps a stale body forever.
+  return [
+    `DROP TRIGGER IF EXISTS ${quoteIdent(ins)};`,
+    `DROP TRIGGER IF EXISTS ${quoteIdent(del)};`,
+    `DROP TRIGGER IF EXISTS ${quoteIdent(upd)};`,
+    `CREATE TRIGGER ${quoteIdent(ins)} AFTER INSERT ON ${quoteIdent(tableName)} BEGIN`,
+    `  INSERT INTO ${quoteIdent(SEARCH_TABLE)}(model, rid, title, body) VALUES ('${accessor}', new.rowid, new.${quoteIdent(cols.title)}, ${searchBodyExpr('new.', cols.body)});`,
+    `END;`,
+    `CREATE TRIGGER ${quoteIdent(del)} AFTER DELETE ON ${quoteIdent(tableName)} BEGIN`,
+    `  DELETE FROM ${quoteIdent(SEARCH_TABLE)} WHERE model = '${accessor}' AND rid = old.rowid;`,
+    `END;`,
+    `CREATE TRIGGER ${quoteIdent(upd)} AFTER UPDATE ON ${quoteIdent(tableName)} BEGIN`,
+    `  DELETE FROM ${quoteIdent(SEARCH_TABLE)} WHERE model = '${accessor}' AND rid = old.rowid;`,
+    `  INSERT INTO ${quoteIdent(SEARCH_TABLE)}(model, rid, title, body) VALUES ('${accessor}', new.rowid, new.${quoteIdent(cols.title)}, ${searchBodyExpr('new.', cols.body)});`,
+    `END;`,
+  ].join('\n')
+}
+
+// Re-index one model's rows: after a rebuild renumbered its rowids, after its
+// title or body columns changed, or when the index itself is new.
+export function searchBackfillSql(model, tableName) {
+  const cols = searchColumnsFor(model)
+  if (!cols) return []
+  const accessor = modelToAccessor(model.name)
+  return [
+    `DELETE FROM ${quoteIdent(SEARCH_TABLE)} WHERE model = '${accessor}';`,
+    `INSERT INTO ${quoteIdent(SEARCH_TABLE)}(model, rid, title, body) SELECT '${accessor}', rowid, ${quoteIdent(cols.title)}, ${searchBodyExpr('', cols.body)} FROM ${quoteIdent(tableName)};`,
+  ]
+}
+
 
 // ─── The stamp columns ────────────────────────────────────────────────────────
 // A field carrying `@updatedAt` is stamped by the CLIENT, on create and on
@@ -1201,6 +1304,9 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
 
   const sorted = topoSort(schema.models)
 
+  // Before the tables: each @@fts model's triggers write into it.
+  if (searchModels(schema).length) sections.push(createSearchIndex())
+
   for (const model of sorted) {
     // @@external — table managed outside Litestone, skip DDL entirely
     if (model.attributes.some(a => a.kind === 'external')) continue
@@ -1316,6 +1422,9 @@ export function generateModelDDL(model, schema, { pluralize = false } = {}) {
 
   const fts = createFts(model, tableName)
   if (fts) parts.push(fts)
+
+  const search = createSearchTriggers(model, tableName)
+  if (search) parts.push(search)
 
   return parts.join('\n')
 }

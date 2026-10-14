@@ -276,9 +276,29 @@ Done when: the ui drive opens it in Chrome at 1280 and 375 wide, signed in and o
   for good is toggling the class, which is how basecamp and serpgrid already do it
   (`decision-rules`, answered before the first edit). Touch screens at md and up
   never open it, because there is no hover and a tap is not `:focus-visible`;
-  2.3 decides whether the Shell gives a rail a `title` per entry for them
-- [ ] 2.2 `Shell.mesa`, `layout="sidebar"`: the checked wait, the signed-out frame,
-  the sidebar and `Drawer`, the section bar
+  2.3 decides whether the Shell gives a rail a `title` per entry for them. **basecamp
+  moved onto it now, not in 3.2**: it already wrote `.sidebar.rail`, and its unlayered
+  local width beat the kit's while the kit's negative end margin still landed, so the
+  Screen slid under the open rail. Its `verify:screens` grades the rail (`FJS-2830` stops
+  that drive further on, and is older than this step)
+- [x] 2.2 `Shell.mesa`, `layout="sidebar"`: the checked wait, the signed-out frame,
+  the sidebar and `Drawer`, the section bar. **Built, in `components/layout/`, with
+  `shell.spec.mjs` (38 checks) at 1280 and 375 wide through a new `t.viewport`.** The
+  section bar is in the topbar beside the drawer toggle, as maidtech draws it, and the
+  app's `topbar` snippet is the bar's right-hand cluster. Four departures from the
+  sketch above (`decision-rules`, answered before the first edit): **no `route`
+  prop** — `path` and `query` already move the highlight, and the drawer closes on
+  either, so a query-only move (`/contacts/` to `?kind=customer`) closes it too;
+  **`foot(where)`** is told `'sidebar'` or `'drawer'`, because ela and maidtech both
+  keep their bell out of the drawer (a portaled menu is inert behind a modal);
+  **`onsignout` draws a Sign out button only when given**, disabled while its promise
+  is pending; and **`show` is called with `{ user, level }`**, two scalars, because a
+  session object mutated in place is pushed to a child once and never again. With no
+  `isActive` and a non-empty table the Shell warns, since a nav with no current page
+  looks like a working one. **The leading `(path, query)` read is not owed here**: an
+  `{#each}` row's attributes are one effect that tracks what `current()` reads at run
+  time; the spec stayed green with it removed, and the `ui-hazards` Mesa entry now
+  says where it is owed. Removing the drawer-close watch turns the spec red
 - [ ] 2.3 `layout="rail"` and `layout="topbar"` (Q3)
 - [ ] 2.4 A ui-hazards row and the ui `AGENTS.md` row
 

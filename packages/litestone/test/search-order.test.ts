@@ -35,6 +35,7 @@ model Doc {
   weight  Int    @default(0)
   summary String @computed
   @@fts([title, body])
+  @@label(title)
 }
 `
 

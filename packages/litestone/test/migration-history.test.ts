@@ -273,6 +273,7 @@ describe('a generated migration builds what the schema builds', () => {
       @@softDelete
       @@index([title])
       @@fts([title, body])
+      @@label(title)
     }
   `
 

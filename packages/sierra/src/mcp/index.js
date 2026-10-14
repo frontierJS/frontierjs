@@ -8,15 +8,17 @@
  * in an app does. The widget runtime (`widget/index.js`) is the same shape one
  * surface over: a page this app does not own, a generated entry, one runtime.
  *
- * What is here today is the mount, and the pick of a file's Resource for the
- * form the build generates over a file with no markup half. The relay client
+ * What is here today is the mount, the pick of a file's Resource for the
+ * form the build generates over a file with no markup half, and the host's
+ * context applied to the document. The relay client
  * — `mcpApp()`, the handle `harborApp()` answers for an extension page — is
  * step 3.1 of the plan, and until it lands the boot refuses by name below
  * rather than mounting a view whose every call would fail somewhere a console
  * does not show.
  */
 
-import { mount } from '@frontierjs/mesa/runtime'
+import { mount }     from '@frontierjs/mesa/runtime'
+import { setScheme } from '../theme/index.js'
 
 /**
  * The page's client, relayed through the host — `{ client, registry, user }`,
@@ -64,6 +66,25 @@ export function resourceIn(module, name) {
     `[sierra/mcp] ${name}.mesa exports ${found.length} Resources (${found.map(([k]) => k).join(', ')}) — ` +
     `one Resource per file (Invariant 19), so the view cannot say which one its form is over.`
   )
+}
+
+/**
+ * Apply what the host says about its environment.
+ *
+ * `ctx` is the spec's `McpUiHostContext` — the whole of it on
+ * `ui/initialize`'s answer, and on `ui/notifications/host-context-changed`
+ * ONLY the fields that changed, so a key that is absent is a key that is as
+ * it was, and nothing is reset for it. What is read today is `theme`, the
+ * host's `'light' | 'dark'`, handed to Sierra's switch as the scheme: the
+ * switch owns the class on `<html>` (Bridge index) and maps the word onto the
+ * pair the app declared, which the boot initialized it with. The host's style
+ * variables are later work (plan § Phase 5).
+ *
+ * @param {{ theme?: 'light'|'dark' } & Record<string, unknown>} ctx
+ */
+export function applyHostContext(ctx) {
+  if (!ctx || typeof ctx !== 'object') return
+  if ('theme' in ctx) setScheme(ctx.theme)
 }
 
 /**

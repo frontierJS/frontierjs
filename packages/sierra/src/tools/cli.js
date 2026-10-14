@@ -4,13 +4,14 @@
 //   sierra routes --config config/sierra.config.js          write routes.snapshot.md
 //   sierra routes --config config/sierra.config.js --check  exit 1 if it is stale (CI)
 //   sierra routes --config config/sierra.config.js --stdout
+//   sierra mcp --out /abs/app/api/dist/mcp                    one view per resource file
 //
 // Run it from the app's WEB ROOT — the directory Vite is rooted at, which is
 // what `routesDir` in the config is relative to. The snapshot lands there for
 // the same reason: CI reruns the command from the snapshot's own directory.
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, relative, resolve }             from 'node:path'
+import { basename, isAbsolute, relative, resolve } from 'node:path'
 
 import { buildRoutesSnapshot } from './routes-snapshot.js'
 import { FUNCTIONS_ENTRY }     from '../postbuild/functions.js'
@@ -164,6 +165,52 @@ async function cmdWidgets() {
   }
 }
 
+// ─── mcp ──────────────────────────────────────────────────────────────────────
+//
+// One HTML document per resource file, for an agent host to draw in a sandboxed
+// iframe (`build/mcp-build.js`). Run from `web/`, where the resources are, and
+// written where the API ships them (`FJS-D955`): the output belongs to the
+// surface that serves it, so the directory is TOLD, never derived — a relative
+// `--out` resolved here would be a path crossing a surface from where this
+// happened to run (Invariant 3). `fli mcp:build` supplies `api/dist/mcp`.
+
+async function cmdMcp() {
+  const out = getFlag('out')
+  if (!out)
+    fatal('sierra mcp needs --out <absolute dir> — the API serves the views, so `fli mcp:build` supplies its api/dist/mcp')
+  if (!isAbsolute(out))
+    fatal(`sierra mcp --out must be absolute, got '${out}' — \`fli mcp:build\` supplies the app's own`)
+
+  const configPath = getFlag('config') ?? 'config/sierra.config.js'
+  const absConfig  = resolve(configPath)
+
+  if (!existsSync(absConfig))
+    fatal(`No Sierra config at ${rel(absConfig)} — name one with --config, and run this from the app's web root`)
+
+  const mod    = await import(`file://${absConfig}`)
+  const config = mod.default ?? mod
+
+  const { build }         = await import('vite')
+  const { buildViewsFor } = await import('../build/mcp-build.js')
+
+  let built
+  try {
+    built = await buildViewsFor(config, {
+      outDir:    out,
+      viteBuild: build,
+      log:       (msg) => console.log(`  ·  ${msg}`),
+      warn:      (msg) => console.warn(`  ·  schema: ${msg}`),
+    })
+  } catch (err) {
+    fatal(err.message)
+  }
+
+  if (!built.length) process.exit(0)
+  const generatedCount = built.filter(b => b.generated).length
+  console.log(`\n  ✓  ${built.length} view(s) → ${rel(out)}/` +
+              (generatedCount ? ` (${generatedCount} the generated form)` : '') + '\n')
+}
+
 // ─── site ─────────────────────────────────────────────────────────────────────
 //
 // Serving a prerendered site is a command rather than a flag on the build
@@ -233,21 +280,25 @@ if (cmd === 'routes') {
   await cmdRoutes()
 } else if (cmd === 'widgets') {
   await cmdWidgets()
+} else if (cmd === 'mcp') {
+  await cmdMcp()
 } else if (cmd === 'site') {
   await cmdSite()
 } else {
-  console.log('Usage: sierra <routes|widgets|site> [--config config/sierra.config.js] [--check] [--stdout] [--out <path>]')
+  console.log('Usage: sierra <routes|widgets|mcp|site> [--config config/sierra.config.js] [--check] [--stdout] [--out <path>]')
   console.log()
   console.log('  routes    write the route table snapshot (--check in CI)')
   console.log('  widgets   build one embeddable script per widget in src/Embeds/')
   console.log('            --serve [--port N]  serve dist/embeds with the CORS + cache headers it deploys with')
+  console.log('  mcp       --out <absolute dir>  build one HTML document per src/resources/ file')
+  console.log('            for an agent host to draw; `fli mcp:build` supplies api/dist/mcp')
   console.log('  site      --serve [--port N]  serve a prerendered site with the directory-index,')
   console.log('            cache and 404 answers a static host gives (--dir to point at a build)')
   console.log('            --compile [--out bin/site] [--target T]  the same server and the build')
   console.log('            as one executable (needs bun; T is a bun target, e.g. bun-darwin-arm64)')
   console.log()
-  console.log('  Run from the SURFACE root, not the app root — web/ for routes, widgets/ for')
-  console.log('  widgets, site/ for a site. Each is a Vite root, and every path in a sierra')
+  console.log('  Run from the SURFACE root, not the app root — web/ for routes and mcp, widgets/')
+  console.log('  for widgets, site/ for a site. Each is a Vite root, and every path in a sierra')
   console.log('  config is relative to one; run this a level up and it resolves against the')
   console.log('  wrong directory.')
   process.exit(cmd ? 1 : 0)

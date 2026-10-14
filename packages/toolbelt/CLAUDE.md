@@ -7,7 +7,7 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
+**One kit per subpath.** `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
 `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/query`, `/rank`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
@@ -163,6 +163,13 @@ src/sse/             the `text/event-stream` frame, both ways — `formatEvent`,
                      (`FJS-1581`). `data` is JSON both ways; a line that is not
                      JSON reads as its text. Ships a `.d.ts` — junction's
                      `SseEvent` extends it
+src/devline/         the one line a dev server prints for the `fli dev` that
+                     started it, under `FLI_DEV` — `ready` (URL, one row per
+                     thing it brought up) or `warn` (a file and a message).
+                     Junction and Sierra write it, fli reads it; a line that
+                     does not parse is `null` and printed as ordinary output,
+                     so a drifted writer costs a summary row and never a line.
+                     Ships a `.d.ts` — junction writes it
 src/rank/            the key behind `@rank(scope:)` — a base-62 string compared
                      BYTE by byte, never ending in '0', so there is always room
                      between two. `between` splits a gap at its middle,

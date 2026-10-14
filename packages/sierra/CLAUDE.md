@@ -25,8 +25,10 @@ src/
     generate-route-table.js  writes config/routes.js (a build: routes.build.js); routeTablePath() owns the path
 
   tools/                 — the `sierra` bin, never imported by app code
-    cli.js               `sierra routes` / `sierra widgets` / `sierra site` —
-                         dispatch, --check
+    cli.js               `sierra routes` / `sierra widgets` / `sierra mcp` /
+                         `sierra site` — dispatch, --check. `mcp` refuses a
+                         missing or relative `--out`: the views belong to
+                         `api/`, and only `fli mcp:build` knows where it is
     routes-snapshot.js   the committed routes.snapshot.md
     tui.js               `@frontierjs/sierra/tui`, what `fli dev:tui` runs —
                          under BUN, from the web root: --list, --frame, --api
@@ -88,6 +90,9 @@ src/
     index.js             `mountView`; `resourceIn(module, name)`, the file's
                          Resource picked off its exports for the generated form
                          (known by `save` + `formFields`, two objects refused);
+                         `applyHostContext(ctx)`, the host's `theme` handed to
+                         the switch as a scheme — a key absent from a
+                         `host-context-changed` is a key unchanged;
                          and `mcpApp()` — the relay handle, NOT built: it
                          refuses by name until plan step 3.1, so a built view
                          mounts nothing rather than a form whose every call
@@ -114,6 +119,11 @@ src/
     static-data-plugin.js  dev only — a prerendered route's load(), run in Node
     mesa-plugin.js       Mesa compilation + reactivity hints; `prepareMesaSource`
                          is what a .mesa becomes before Mesa sees it
+    devline-plugin.js    dev only, under `fli dev` (`FLI_DEV`) — Vite's boot banner
+                         replaced by the ready line `fli dev` lays out; INFO is
+                         held until `printUrls()` would have printed, a warning
+                         never is. `mesa-plugin.js` prints its hints as marked
+                         warnings under the same variable
     ask-plugin.js        dev only — turns on `@frontierjs/cli`'s ask panel when
                          the app has the cli, resolved from the Vite root
     mesa-check.js        `@frontierjs/sierra/check` — compile without building,
@@ -151,7 +161,10 @@ src/
                          kit's `<Form>` over the file's own Resource — mounted
                          in its place; `hasMarkupHalf` asks Mesa's parser, not
                          a regex, since a `'</script>'` literal in a script
-                         reads as the end of it and the rest as markup
+                         reads as the end of it and the rest as markup.
+                         `buildViewsFor(config)` is `sierra mcp`'s body: the
+                         plugin list, schema, `<html>` class and theme read off
+                         the config by the SPA's own functions
     static-safety.js     proves a prerendered page is publishable
     refusal.js           an error that prints as its message alone — for a
                          build verdict about the APP, where a stack is noise
@@ -578,7 +591,14 @@ src/
   no pixel (`FJS-308`); `apply: 'attribute'` keeps it for an app that wants it.
   **The element is not a knob**: the no-flash script runs in `<head>`, where
   `<body>` does not exist yet, so `target: 'body'` would only bring the flash
-  back.
+  back. **`setScheme('light' | 'dark')` is the OS's question answered by
+  somebody else** — an MCP host handing a view its `hostContext.theme` — and
+  maps onto `theme.system`; from then on the OS listener yields to it, because
+  a host in dark mode over a light OS said dark and the OS flipping underneath
+  must not take it back. Never persisted: the answer is the host's. A view's
+  boot runs `initTheme` with `persist: false` whatever the app said, since a
+  sandbox without `allow-same-origin` THROWS on a `localStorage` read and a
+  `typeof` guard does not catch a throwing getter.
 - **A field the table has no control for comes back with `control: null` and a
   reason** — an array, a `Json` column, a `readOnly` field, a name the model does
   not have. Filtering those out here would make a column added to `.lite`

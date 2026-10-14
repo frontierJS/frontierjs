@@ -22,7 +22,9 @@ components/
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
               Json · Markdown · BulkBar · …
-  layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item)
+  layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item) ·
+              Shell (the app frame, drawn from a nav.js table; Sierra's
+              page, session and isActive arrive as props)
   overlay/    Modal · Drawer · Popover · Tooltip · DropdownMenu(+Item/Label/
               Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
               CommandPalette

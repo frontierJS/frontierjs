@@ -70,6 +70,7 @@ Detail: `references/driving-a-browser.md`
 
 - **An overlay that is present is not an overlay that is visible.**
 - **Headless Chrome delivers almost no rendering lifecycle after load.**
+- **Headless Chrome answers `(hover: none)` and `(pointer: none)`.**
 
 ## Build output and `@frontierjs/css`
 Detail: `references/build-output-and-frontierjs-css.md`

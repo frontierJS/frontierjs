@@ -49,6 +49,7 @@ model Post {
   createdAt DateTime  @default(now())
 
   @@fts([title, body])
+  @@label(title)
 }
 
 model Tag {
@@ -88,6 +89,7 @@ model Customer {
   createdAt DateTime @default(now())
 
   @@fts([name])
+  @@label(name)
 }
 
 model Contact {

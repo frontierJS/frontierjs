@@ -154,11 +154,13 @@ model Item { id Int @id @default(autoincrement())  name String }`,
 
     // FTS5 is a compile-time option; the official wasm build carries it.
     ['fts', async () => {
-      const db = (await open(`model Note { id Int @id @default(autoincrement())  body String  @@fts([body]) }`)).asSystem()
+      const db = (await open(`model Note { id Int @id @default(autoincrement())  body String  @@fts([body])  @@label(body) }`)).asSystem()
       await db.note.create({ data: { body: 'hello wasm world' } })
       await db.note.create({ data: { body: 'nothing here' } })
-      const hits = await db.note.search('wasm')
-      return { hits: hits.length }
+      const hits  = await db.note.search('wasm')
+      // The shared index's triggers and bm25 on the same wasm build (FJS-D970).
+      const spans = await db.$search('wasm')
+      return { hits: hits.length, spans: spans.length, model: spans[0]?.model, title: spans[0]?.title }
     }],
 
     ['json', async () => {

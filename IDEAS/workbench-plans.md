@@ -116,8 +116,26 @@ Goal: a goal typed in the tab becomes a plan file the tab renders.
 Done when: a one-line goal against `example/` produces a plan at the given
 path that `fli plan` parses, shown in a Plan tab.
 
-- [ ] 1.1 The pin carries `plan: { path, steps } | null`; the service gains
+- [x] 1.1 The pin carries `plan: { path, steps } | null`; the service gains
   `plan` (read + parse) and `buildPlan`.
+  - `steps` is `Record<stepId, { chat, startedAt, registerHigh }>` (`PlanStep`),
+    typed now and empty until 2.1 writes it; a Build plan resets it.
+  - `plan` parses the file through `parsePlan` on every read, never cached;
+    `parsed` is null until the session has written it. No plan is a 404.
+  - `buildPlan { goal, path }` refuses no goal, a path outside the checkout or
+    not `.md`, and any live run in the checkout; it opens a new chat (`fresh`)
+    and runs there with `askArgv({ edit: <abs path> })`.
+  - `askArgv`'s `edit` scoped a DIRECTORY only (`Edit(<p>/**)`), which grants
+    nothing on a file. It now emits `Edit(<p>)` and `Edit(<p>/**)` — no new
+    option (`decision-rules`: C over an `editFile` key or a stat). Measured with
+    a real `claude -p`: the plan file landed, a Write beside it was denied.
+  - For 1.2: edit mode runs at `ASK_BUDGET_USD` ($2) with every setting source
+    dropped, so no `CLAUDE.md` loads unasked and no skill is offered — the
+    prompt's reads are by `Read`. A real build against `example/` is what says
+    whether $2 is enough. The run's follow-ups fire as after any run: `fli done`,
+    and a review where the pin asks for one.
+  - Red and not this step's: basecamp typecheck 13 against a baseline of 12, and
+    `db/schema.d.ts` / generated-migration tests — the dirty litestone parser.
 - [ ] 1.2 The Build plan form: goal, path with the default for the checkout
   (`IDEAS/<slug>.md` where `IDEAS/` exists, else `PLAN.md`), runs `askArgv`
   in edit mode on that path.

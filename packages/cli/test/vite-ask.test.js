@@ -24,16 +24,22 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 describe('askArgv — edit', () => {
 
-  test('Edit and Write scoped to one directory, no settings sources, dontAsk, no Bash', () => {
+  test('Edit and Write scoped to one path, no settings sources, dontAsk, no Bash', () => {
     const argv = askArgv({ edit: '/app/site/' })
+    const at = argv.indexOf('--allowedTools')
     expect(argv[argv.indexOf('--tools') + 1]).toBe('Read,Grep,Glob,Edit,Write')
-    expect(argv[argv.indexOf('--allowedTools') + 1]).toBe('Edit(//app/site/**)')
+    expect(argv.slice(at + 1, at + 3)).toEqual(['Edit(//app/site)', 'Edit(//app/site/**)'])
     expect(argv[argv.indexOf('--setting-sources') + 1]).toBe('')
     expect(argv[argv.indexOf('--permission-mode') + 1]).toBe('dontAsk')
     expect(argv).toContain('--strict-mcp-config')
     expect(JSON.parse(argv[argv.indexOf('--settings') + 1])).toEqual({ disableAllHooks: true })
     expect(argv.some(a => /^(Bash|Write)/.test(a))).toBe(false)
-    expect(argv.filter(a => a.startsWith('Edit('))).toHaveLength(1)
+    expect(argv.filter(a => a.startsWith('Edit('))).toHaveLength(2)
+  })
+
+  test('a file not written yet is a path like a directory: the exact rule is the one that applies', () => {
+    const argv = askArgv({ edit: '/repo/IDEAS/new-plan.md', reads: [] })
+    expect(argv.filter(a => a.startsWith('Edit('))).toEqual(['Edit(//repo/IDEAS/new-plan.md)', 'Edit(//repo/IDEAS/new-plan.md/**)'])
   })
 
   test('a follow-up resumes by id', () => {
@@ -41,11 +47,11 @@ describe('askArgv — edit', () => {
     expect(askArgv({ edit: '/app', session: id }).slice(-2)).toEqual(['--resume', id])
   })
 
-  test('each read directory is a Read rule beside the one Edit rule, and grants no edit', () => {
+  test('each read directory is a Read rule beside the Edit rules, and grants no edit', () => {
     const argv = askArgv({ edit: '/app/web', reads: ['/repo/packages/css/', '/app/db'] })
     const at = argv.indexOf('--allowedTools')
-    expect(argv.slice(at + 1, at + 4)).toEqual(['Edit(//app/web/**)', 'Read(//repo/packages/css/**)', 'Read(//app/db/**)'])
-    expect(argv.filter(a => a.startsWith('Edit('))).toHaveLength(1)
+    expect(argv.slice(at + 1, at + 5)).toEqual(['Edit(//app/web)', 'Edit(//app/web/**)', 'Read(//repo/packages/css/**)', 'Read(//app/db/**)'])
+    expect(argv.filter(a => a.startsWith('Edit('))).toHaveLength(2)
   })
 
 })

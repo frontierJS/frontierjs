@@ -11,7 +11,7 @@ import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 
-import { buildThemeScript, initTheme, setTheme, toggleTheme, themes, theme } from '../src/theme/index.js'
+import { buildThemeScript, initTheme, setTheme, toggleTheme, setScheme, themes, theme } from '../src/theme/index.js'
 import { injectThemeScript } from '../src/postbuild/inject-theme.js'
 import { prefetchHref } from '../src/router/prefetch.js'
 
@@ -162,6 +162,63 @@ describe('injectThemeScript (post-build)', () => {
     const outDir = join(TMP, 'theme-nofile')
     const result = await injectThemeScript(null, outDir)
     expect(result).toBeNull()
+  })
+})
+
+// ─── a stated scheme ─────────────────────────────────────────────────────────
+
+describe('setScheme', () => {
+  // The OS query, faked: a window with matchMedia and nothing else, which is
+  // also what a terminal process looks like (`FJS-2565`) — so `initTheme`
+  // installs its listener and the test can fire it.
+  let fire = null
+  let matches = false
+  beforeEach(() => {
+    fire = null
+    globalThis.window = {
+      matchMedia: () => ({ get matches() { return matches }, addEventListener: (_, fn) => { fire = fn } }),
+    }
+  })
+  afterAll(() => { delete globalThis.window })
+
+  const pair = { themes: ['theme-default', 'theme-dark', 'theme-forest'], system: { light: 'theme-forest', dark: 'theme-dark' } }
+
+  test('maps onto the pair theme.system declares, not onto a name', () => {
+    initTheme({ ...pair, default: 'theme-default' })
+    setScheme('dark');  expect(theme.value).toBe('theme-dark')
+    setScheme('light'); expect(theme.value).toBe('theme-forest')
+  })
+
+  test('a stated scheme holds against a later OS change', () => {
+    matches = false
+    initTheme({ ...pair, default: 'system', persist: false })
+    expect(theme.value).toBe('theme-forest')
+    expect(typeof fire).toBe('function')
+    setScheme('dark')
+    matches = true; fire()
+    expect(theme.value).toBe('theme-dark')
+    matches = false; fire()
+    // The OS flipped back; the host did not.
+    expect(theme.value).toBe('theme-dark')
+  })
+
+  test('and the next initTheme forgets it', () => {
+    initTheme({ ...pair, default: 'system', persist: false })
+    setScheme('dark')
+    initTheme({ ...pair, default: 'system', persist: false })
+    matches = true; fire()
+    expect(theme.value).toBe('theme-dark')
+    matches = false; fire()
+    expect(theme.value).toBe('theme-forest')
+  })
+
+  test('a word that is not a scheme is refused by name and the theme stands', () => {
+    initTheme({ ...pair, default: 'theme-default' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    setScheme('sepia')
+    expect(theme.value).toBe('theme-default')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'sepia' is not a scheme"))
+    warn.mockRestore()
   })
 })
 

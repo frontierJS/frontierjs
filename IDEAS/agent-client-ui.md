@@ -619,15 +619,95 @@ file with no markup half emits the model's default form.
   has a form whose every save the service refuses — a generated form over a
   read-only service is the gate's question (`resource.can`), and the step that
   seeds the record (3.3) is where a view learns what it may do.
-- [ ] 2.3 Theme: `hostContext.theme` from `ui/initialize` becomes the class on
+- [x] 2.3 Theme: `hostContext.theme` from `ui/initialize` becomes the class on
   `<html>`, since Sierra owns the switch (Bridge index). Mapping
   `hostContext.styles.variables` onto `@frontierjs/css` tokens is later work,
   named in Phase 5.
-- [ ] 2.4 The command: `sierra mcp --out <absolute dir>` beside `sierra widgets`
+  Done 2026-10-13: the switch gains `setScheme('light' | 'dark')`
+  (`@frontierjs/sierra/theme`) — the OS's question answered by somebody else,
+  mapped onto `theme.system` as the OS query is, after which the OS listener
+  yields to it until the next `initTheme`; the view runtime gains
+  `applyHostContext(ctx)` (`@frontierjs/sierra/mcp`), which hands `ctx.theme`
+  to it on key PRESENCE, since `host-context-changed` carries only what
+  changed; and the boot runs `initTheme({ ...config.theme, persist: false })`
+  before `mcpApp()`, with `buildViews` taking `theme` beside `htmlClass`.
+  **Nothing calls `applyHostContext` yet** — the handshake is 3.3 — so the
+  bundler drops it from the document, and the real-build test asserts its
+  ABSENCE rather than passing on a dead reference; the unit tests are its
+  proof until then.
+  **The nine, answered before the edit.** Origin — light/dark → name is
+  `theme.system`, the pair the switch already keeps for
+  `prefers-color-scheme`; the host's answer enters the same owner, and the
+  pre-handshake class stays `resolveHtmlClass`. Concept — one word,
+  `scheme`, CSS's own (`prefers-color-scheme`, `color-scheme`) for exactly
+  the value set; the spec's word `theme` collides with Sierra's theme, a name
+  from the app's list. Complexity — one export and a guard in the OS
+  listener, one function in `mcp/index.js`, one boot line. Predictability —
+  the view boots the theme as `virtual:sierra` does; `persist: false` is the
+  one stated difference, because a view has no preference of its own and a
+  sandbox without `allow-same-origin` THROWS on a `localStorage` read
+  (probed in headless Chrome: `typeof localStorage` throws `SecurityError`
+  too, so the switch's own guard would not have caught it). An app with no
+  theme block gets the kit's pair, which `initTheme`'s defaults already are.
+  Derived — the pair from the app's config; absence in a partial context is
+  *unchanged*, the way a patch reads a key (Invariant 9's test). Owner —
+  Sierra's switch (Bridge index); mcp hands over and applies nothing itself.
+  Boundary — `applyHostContext(ctx)` takes the spec's object as sent; the
+  handshake knows no theme name. Failure — an unknown scheme is refused by
+  name with the theme left standing (a host ahead of the spec is better
+  served by the theme it had than by none); the OS listener yields to a
+  stated scheme by design. Silence — must stay true: *a stated scheme holds
+  against a later OS change* — fails in `test/prefetch-theme.test.js` over a
+  faked `matchMedia` fired after `setScheme`; the boot line with
+  `persist: false` is asserted in `test/mcp-build.test.js` § a real build;
+  the wire itself is `none` until 4.3. Adjudications: *paved road vs.
+  workaround* — the guard inside the owner over a boot that rewrites
+  `default: 'system'` to a concrete name, which would restate `normalize()`'s
+  fallback in a generator; *familiarity vs. precision* — the spec's `theme`
+  is the ecosystem's word and `scheme` the precise one here. Tier:
+  Assessment; nothing overridden.
+- [x] 2.4 The command: `sierra mcp --out <absolute dir>` beside `sierra widgets`
   and `sierra site`, run from `web/` and refused without `--out` or with a
   relative one; `fli mcp:build` wraps it and supplies `$.paths.api/dist/mcp`
   (`FJS-D955`). No `sierra.config.js` key for the output: fli is the one
   origin of the app's layout.
+  Done 2026-10-13: `cmdMcp` in `packages/sierra/src/tools/cli.js` is the two
+  refusals and one call to `buildViewsFor(config, { outDir, viteBuild })`
+  (`build/mcp-build.js`), which reads the plugin list, the schema, the
+  `<html>` class and the theme block off the config; `fli mcp:build`
+  (`packages/cli/commands/mcp/`, a new battery namespace beside `outbox:` and
+  `notifications:`) refuses an app with no `api/` and runs it from `web/`.
+  Over `example`: 36 views, 25 the generated form, ~27 s, into the
+  gitignored `example/api/dist/mcp/`. **One thing the step did not know:** the
+  reason a schema produced nothing was assembled inside the schema plugin's
+  closure, and the command needed the same sentence for the boot. It is now
+  `clientSchemas()` in `build/schema-plugin.js`, called by the plugin and by
+  `buildViewsFor`, rather than restated in the CLI.
+  **The nine, answered late (after green), as in 2.1.** Origin — every value
+  a view shares with the SPA comes from the SPA's own reader
+  (`createSierraViteConfig`, `resolveSchemaPath`, `resolveHtmlClass`,
+  `clientSchemas`), and `api/` comes from `$.paths`. Concept — none; `mcp` is
+  the battery's name and `fli mcp:*` follows the battery namespaces.
+  Complexity — two refusals, one call, one helper pulled out of a closure.
+  Predictability — `cmdWidgets`'s shape (config from `--config`,
+  `target: 'widget'`, a `✓ N … →` line), and `mcp:build` is `widgets:build`
+  with one extra flag. Derived — the output directory is told, never computed
+  in Sierra. Owner — fli owns the layout, Sierra the build, and the schema
+  failure sentence now has one owner. Boundary — `--out` must be absolute,
+  refused by name; `buildViews` still takes a relative path for its own unit
+  tests, and that path is not reached from the bin. Failure — a missing
+  `--out`, a relative `--out`, no config and no `api/` each stop with a named
+  sentence and exit 1; a build failure comes through `fatal` with Sierra's own
+  message. Silence — must stay true: *the command builds with the config's
+  schema and theme class, not hand-wired ones*; it fails in
+  `test/mcp-build.test.js` § a real build, which now goes through
+  `buildViewsFor` over a config (the schema found at `db/schema.lite`,
+  `theme-dark` read off `theme.default`), plus § sierra mcp for the two
+  refusals, run as a real subprocess. The fli half is proved only by running
+  it; `command-parse` covers the parse. Adjudication: *paved road vs.
+  workaround*, a shared `buildViewsFor` over a CLI that wires five values by
+  hand, which the test would then have had to wire a second time. Tier:
+  Assessment; `FJS-D955` is the citation and nothing is overridden.
 
 ### Phase 3 — The client half, a relay adapter
 
@@ -649,8 +729,9 @@ Done when: a `createResource(name, { app: mcpApp() })` loads and saves through
   `{}` and a 409 was indistinguishable from a 400.
 - [ ] 3.3 The handshake: `ui/initialize` → `ui/notifications/initialized` → the
   first `ui/notifications/tool-result` seeds the record store → mount →
-  `ui/notifications/size-changed`. `host-context-changed` re-applies the theme;
-  `ui/resource-teardown` unmounts.
+  `ui/notifications/size-changed`. `ui/initialize`'s `hostContext` and every
+  `host-context-changed` go to `applyHostContext` (2.3), which is what puts
+  the function back in the document; `ui/resource-teardown` unmounts.
 - [ ] 3.4 Identity: no boot restore — `account.me` is a route, and a relayed
   client refuses routes by name. `session.ready` resolves at once with
   `user: null`; `resource.can()` is permissive on an unknown answer and the

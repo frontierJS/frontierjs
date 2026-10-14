@@ -76,6 +76,7 @@ model Post {
   createdAt DateTime @default(now())
 
   @@fts([title, body])
+  @@label(title)
 }
 `
 

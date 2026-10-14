@@ -33,7 +33,7 @@ const DEFAULT_DB = '/litestone.db'
 // A method name is anything; a MODEL name is checked against what the worker
 // reported, because a typo there is the failure that otherwise arrives as a
 // message rejected in another thread with no stack a reader recognizes.
-const _CLIENT_KEYS = new Set(['asSystem', '$setAuth', '$scopedBy', '$close', '$models', '$engine', 'then'])
+const _CLIENT_KEYS = new Set(['asSystem', '$setAuth', '$scopedBy', '$close', '$search', '$models', '$engine', 'then'])
 
 /**
  * @param {object} opts
@@ -126,6 +126,7 @@ export async function createBrowserClient({ worker, wasmUrl, schema, db = DEFAUL
       if (key === 'asSystem')  return () => make({ kind: 'system' })
       if (key === '$setAuth')  return (user) => make({ kind: 'auth', user })
       if (key === '$close')    return async () => { try { await post('close') } finally { release() } }
+      if (key === '$search')      return (...args) => post('search', { flavor, args })
       if (key === '$transaction') return () => { throw new Error(REFUSAL) }
       if (key === '$backup')      return () => { throw new Error(BACKUP_REFUSAL) }
 

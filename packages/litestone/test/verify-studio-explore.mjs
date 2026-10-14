@@ -566,7 +566,7 @@ t('preview.ftsShowsItsVirtualTable', await evaluate(`
 
   const b = exFindBlock(src, 'model', model.name);
   const at = src.lastIndexOf('\\n', b.close) + 1;
-  const proposed = src.slice(0, at) + '  @@fts([' + col + '])\\n' + src.slice(at);
+  const proposed = src.slice(0, at) + '  @@fts([' + col + '])\\n' + ((model.attributes || []).some(a => a.kind === 'labelField') ? '' : '  @@label(' + col + ')\\n') + src.slice(at);
 
   const p = await api('/preview', { source: proposed, model: model.name });
   return {

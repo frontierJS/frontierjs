@@ -15,17 +15,20 @@
  * everything inside it* is a claim only a bundle can answer.
  */
 
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, test, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, symlinkSync, rmSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 
 import {
   discoverResources, viewBootSource, viewEntrySource, viewDocument, viewDocumentPlugin,
-  hasMarkupHalf, viewFormSource, buildViews, VIEW_RUNTIME,
+  hasMarkupHalf, viewFormSource, buildViews, buildViewsFor, VIEW_RUNTIME,
 } from '../src/build/mcp-build.js'
-import { resourceIn } from '../src/mcp/index.js'
+import { clientSchemas } from '../src/build/schema-plugin.js'
+import { resourceIn, applyHostContext } from '../src/mcp/index.js'
+import { initTheme, theme } from '../src/theme/index.js'
 // Mesa's parser by relative path, as every in-repo test imports workspace
 // source: the build finds it through findMesaFile, and this is the same file.
 import { parseHTML } from '../../mesa/src/compiler.js'
@@ -83,6 +86,18 @@ describe('the boot', () => {
     expect(src).toContain(`import { mcpApp } from "${VIEW_RUNTIME}"`)
     expect(src).toContain('mcpApp()')
     expect(src).toContain(`import "@frontierjs/css"`)
+  })
+
+  test('boots the app\'s theme as virtual:sierra does, with persist off', () => {
+    // A sandbox without allow-same-origin THROWS on a localStorage read, and a
+    // view has no preference of its own: the host states the scheme.
+    const themed = viewBootSource({ schemas, theme: { themes: ['theme-default', 'theme-dark'], default: 'theme-default', persist: true, key: 'shop_theme' } })
+    expect(themed).toContain(`import { initTheme } from '@frontierjs/sierra/theme'`)
+    expect(themed).toContain(`initTheme({"themes":["theme-default","theme-dark"],"default":"theme-default","persist":false,"key":"shop_theme"})`)
+    // No theme block: the switch's own defaults, which are the kit's pair.
+    expect(src).toContain(`initTheme({"persist":false})`)
+    // Before the relay, so the document is themed whatever the relay does.
+    expect(themed.indexOf('initTheme(')).toBeLessThan(themed.indexOf('mcpApp()'))
   })
 
   test('no schema is said in the page, not swallowed', () => {
@@ -185,6 +200,37 @@ describe('resourceIn', () => {
 
   test('two is refused rather than picked between', () => {
     expect(() => resourceIn({ a: resource(), b: resource() }, 'Pair')).toThrow(/2 Resources \(a, b\)/)
+  })
+})
+
+// ─── the host's context ───────────────────────────────────────────────────
+
+describe('applyHostContext', () => {
+  const pair = { themes: ['theme-default', 'theme-dark'], default: 'theme-default', persist: false }
+  beforeEach(() => initTheme(pair))
+
+  test('the host\'s theme becomes the scheme, on the app\'s own pair', () => {
+    applyHostContext({ theme: 'dark', displayMode: 'inline', locale: 'en-GB' })
+    expect(theme.value).toBe('theme-dark')
+    applyHostContext({ theme: 'light' })
+    expect(theme.value).toBe('theme-default')
+  })
+
+  test('a host-context-changed without a theme key leaves the theme as it was', () => {
+    // The notification carries only what changed (spec: partial update).
+    applyHostContext({ theme: 'dark' })
+    applyHostContext({ displayMode: 'fullscreen' })
+    expect(theme.value).toBe('theme-dark')
+    applyHostContext(null)
+    expect(theme.value).toBe('theme-dark')
+  })
+
+  test('a theme the spec does not name is refused by name, not applied as nothing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    applyHostContext({ theme: 'high-contrast' })
+    expect(theme.value).toBe('theme-default')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("'high-contrast' is not a scheme"))
+    warn.mockRestore()
   })
 })
 
@@ -437,9 +483,7 @@ describe('a real build', () => {
   let built = []
 
   beforeAll(async () => {
-    const { build }                   = await import('vite')
-    const { createSierraViteConfig }  = await import('../src/build/index.js')
-    const { generateSchemas }         = await import('../src/build/schema-plugin.js')
+    const { build } = await import('vite')
 
     mkdirSync(join(TMP, 'db'), { recursive: true })
     mkdirSync(join(TMP, 'src/resources'), { recursive: true })
@@ -455,13 +499,12 @@ describe('a real build', () => {
     // The generated form imports the kit from the app, as the boot does the stylesheet.
     try { symlinkSync(resolve(__dirname, '../../ui'), join(TMP, 'node_modules/@frontierjs/ui'), 'dir') } catch {}
 
-    const schemas    = await generateSchemas(join(TMP, 'db/schema.lite'), () => {}, TMP)
-    const viteConfig = createSierraViteConfig({ target: 'widget', vite: { root: TMP } })
-
-    built = await buildViews({
-      root: TMP, outDir: OUT, htmlClass: 'theme-dark', schemas,
-      plugins: viteConfig.plugins ?? [], viteBuild: build, minify: false,
-    })
+    // Through `sierra mcp`'s own wiring: the schema is FOUND at db/schema.lite
+    // and the `<html>` class is read off `theme.default`, as the SPA's would be.
+    built = await buildViewsFor({
+      vite:  { root: TMP },
+      theme: { themes: ['theme-default', 'theme-dark'], default: 'theme-dark', key: 'fixture_theme' },
+    }, { outDir: OUT, viteBuild: build, minify: false })
 
     files = readdirSync(OUT).sort()
     html  = readFileSync(join(OUT, 'Note.html'), 'utf8')
@@ -504,9 +547,52 @@ describe('a real build', () => {
     expect(html).toContain('mountView(Note, { name: "Note" })')
   })
 
+  test('the switch is booted with the app\'s pair, persist off whatever the app said', () => {
+    // Rollup reprints the literal, so the shape is matched and not the spelling.
+    expect(html).toMatch(/initTheme\(\{\s*"themes":\s*\["theme-default",\s*"theme-dark"\],\s*"default":\s*"theme-dark",\s*"key":\s*"fixture_theme",\s*"persist":\s*false\s*\}\)/)
+    expect(html).not.toContain('localStorage.getItem("fixture_theme")')
+    // `applyHostContext` is NOT in the document yet: nothing calls it until the
+    // handshake (plan step 3.3) and the bundler drops it. Asserting it here
+    // would pass only by a dead reference; the unit tests above are its proof.
+    expect(html).not.toMatch(/function applyHostContext\(/)
+  })
+
   test('the component\'s </script> did not end the element', () => {
     const scripts = html.match(/<script>[\s\S]*?<\/script>/g)
     expect(scripts).toHaveLength(1)
     expect(html).toContain('<\\/script>')
+  })
+})
+
+describe('sierra mcp', () => {
+  const CLI = resolve(__dirname, '../src/tools/cli.js')
+  const run = (...args) => spawnSync(process.execPath, [CLI, 'mcp', ...args], { encoding: 'utf8' })
+
+  // The output belongs to the API surface; a default or a relative path would
+  // be resolved from wherever this ran, which is web/ (`FJS-D955`).
+  test('refuses without --out, naming the command that supplies it', () => {
+    const r = run()
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain('--out <absolute dir>')
+    expect(r.stderr).toContain('fli mcp:build')
+  })
+
+  test('refuses a relative --out by name', () => {
+    const r = run('--out', 'api/dist/mcp')
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain("must be absolute, got 'api/dist/mcp'")
+  })
+})
+
+describe('clientSchemas', () => {
+  // The reason a schema produced nothing reaches the page as well as the log,
+  // so the boot of a view can say why every generated form is empty.
+  test('a null answer keeps what was said as the failure', async () => {
+    const said = []
+    const dir  = tmpDir('mcp-client-schemas')
+    const { generated, failure } = await clientSchemas(join(dir, 'schema.lite'), m => said.push(m), dir)
+    expect(generated).toBeNull()
+    expect(said.length).toBeGreaterThan(0)
+    expect(failure).toBe(said.join('\n'))
   })
 })

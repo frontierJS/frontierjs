@@ -19,11 +19,15 @@
 // with no config drops every MCP tool the account would otherwise lend it.
 //
 // EDIT is the one widening, and it is a path, not a mode: `Edit` and `Write`
-// scoped to one directory, every settings source dropped so no allow rule in a
-// settings file reaches past it, and `dontAsk` so a call outside it is denied
-// rather than accepted by whatever mode the account defaults to. The one
-// `Edit(<dir>/**)` rule covers Write too — measured, for each tool the call
-// inside the scope landed and the one beside it came back as a denial.
+// scoped to one directory or one file, every settings source dropped so no
+// allow rule in a settings file reaches past it, and `dontAsk` so a call
+// outside it is denied rather than accepted by whatever mode the account
+// defaults to. An `Edit` rule covers Write too — measured, for each tool the
+// call inside the scope landed and the one beside it came back as a denial.
+// The path gets two rules, `Edit(<path>)` and `Edit(<path>/**)`, so it may name
+// a file the session has yet to write (the workbench's Build plan) as well as a
+// directory; whichever of the two does not apply grants nothing. Measured with
+// a file path: a Write to it landed and a Write beside it was denied.
 // `reads` adds a `Read(<dir>/**)` rule per directory, which Grep and Glob obey
 // too; with no rule a Read outside the cwd is denied, and so are an app's
 // framework packages, installed at the app root above the Vite root.
@@ -257,6 +261,7 @@ function askFlags({ session, edit, reads, work, fork }) {
     return argv
   }
   if (edit) {
+    const scope = String(edit).replace(/\/+$/, '')
     const argv = [
       '-p',
       '--output-format', 'stream-json',
@@ -266,7 +271,7 @@ function askFlags({ session, edit, reads, work, fork }) {
       '--permission-mode', 'dontAsk',
       '--strict-mcp-config',
       '--tools',           EDIT_TOOLS.join(','),
-      '--allowedTools',    `Edit(/${String(edit).replace(/\/+$/, '')}/**)`, ...reads.map(d => `Read(/${String(d).replace(/\/+$/, '')}/**)`),
+      '--allowedTools',    `Edit(/${scope})`, `Edit(/${scope}/**)`, ...reads.map(d => `Read(/${String(d).replace(/\/+$/, '')}/**)`),
       '--max-budget-usd',  String(ASK_BUDGET_USD),
     ]
     // The reply streams as it is written, and a block's start says what the

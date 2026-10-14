@@ -18,7 +18,7 @@ function migrate(live: Database, source: string) {
 }
 
 const BEFORE = `model Note {\n  id Int @id\n  body String @map("body_text")\n}`
-const AFTER  = `model Note {\n  id Int @id\n  body String @map("body_text")\n  @@fts([body])\n}`
+const AFTER  = `model Note {\n  id Int @id\n  body String @map("body_text")\n  @@fts([body])\n  @@label(body)\n}`
 
 describe('@@fts over a @map field', () => {
   it('reads the index back on a fresh database', () => {
@@ -43,7 +43,7 @@ describe('@@fts over a @map field', () => {
 // A column named for an SQL keyword (FJS-1952): the trigger bodies named the
 // FTS columns bare, so `from` failed the migration with `near "from"`.
 describe('@@fts over a column named for a keyword', () => {
-  const KEYWORDS = `model Message {\n  id Int @id\n  from String?\n  to String?\n  order String?\n  @@fts([from, to, order])\n}`
+  const KEYWORDS = `model Message {\n  id Int @id\n  from String?\n  to String?\n  order String?\n  @@fts([from, to, order])\n  @@label(from)\n}`
 
   it('migrates, indexes, updates and deletes', () => {
     const db = new Database(':memory:')

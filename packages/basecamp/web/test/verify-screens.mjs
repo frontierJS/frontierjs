@@ -137,7 +137,13 @@ await waitFor(BASE, 'the web server')
 await waitFor(`${CF_SINK}/zones`, 'the Cloudflare stand-in')
 
 // ─── Chrome ──────────────────────────────────────────────────────────────
-browser = await openChrome().catch(async (e) => {
+// Headless Chrome answers (hover: none) and (pointer: none), so every rule
+// gated on a mouse is off and a dispatched mouseMoved hovers nothing it opens.
+// The flag reports the desktop this app is used on; setEmulatedMedia has no
+// hover feature.
+browser = await openChrome({
+  args: ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'],
+}).catch(async (e) => {
   console.error(`\n✗ ${e.message}\n`)
   await cleanup()
   process.exit(1)

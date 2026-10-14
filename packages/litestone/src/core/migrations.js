@@ -971,6 +971,8 @@ function onlyDrops(diffResult) {
   if (diffResult.changedViews?.length)   return false
   if (diffResult.changedTriggers?.length) return false
   if (diffResult.changedFts?.length)      return false
+  if (diffResult.changedSearch)           return false
+  if (diffResult.searchBackfills?.length) return false
   for (const t of diffResult.tableDiffs ?? []) {
     if (t.cols?.added?.length)     return false
     if (t.cols?.modified?.length)  return false
