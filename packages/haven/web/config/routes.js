@@ -103,6 +103,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "townhall",
+      path: "/townhall/",
+      file: "src/routes/townhall.mesa",
+      companion: null,
+      layout: null,
+      meta: JSON.parse("{}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "vlad",
       path: "/vlad/",
       file: "src/routes/vlad.mesa",
@@ -147,6 +157,7 @@ export const components = {
   'lane': () => import('../src/routes/lane.mesa'),
   'road': () => import('../src/routes/road.mesa'),
   'tavern': () => import('../src/routes/tavern.mesa'),
+  'townhall': () => import('../src/routes/townhall.mesa'),
   'vlad': () => import('../src/routes/vlad.mesa'),
   'woods': () => import('../src/routes/woods.mesa'),
   'workshop': () => import('../src/routes/workshop.mesa'),
@@ -179,6 +190,7 @@ export const all = [
   "/lane/",
   "/road/",
   "/tavern/",
+  "/townhall/",
   "/vlad/",
   "/woods/",
   "/workshop/"
@@ -195,6 +207,7 @@ export const published = [
   "/lane/",
   "/road/",
   "/tavern/",
+  "/townhall/",
   "/vlad/",
   "/woods/",
   "/workshop/"
@@ -211,6 +224,7 @@ export const indexed = [
   "/lane/",
   "/road/",
   "/tavern/",
+  "/townhall/",
   "/vlad/",
   "/woods/",
   "/workshop/"

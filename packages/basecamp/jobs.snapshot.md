@@ -31,6 +31,7 @@ it re-resolved when it runs. Survives a restart.
 | `deployment:run` | `deployments` | on dispatch | — | 1 | default | **none** |
 | `domain:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
+| `monitor-sweep` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
 | `recipe:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
@@ -40,9 +41,9 @@ it re-resolved when it runs. Survives a restart.
 | `server:provision` | `fleet` | on dispatch | — | 1 | default | **none** |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-15 handler(s), 6 of them on a clock.
+16 handler(s), 7 of them on a clock.
 
-**12 with no timeout.** Absent means no bound, honestly — but a
+**13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a
 single-concurrency queue everything behind it waits (`FJS-295`). Worth knowing
 which ones those are, which is why the column is here rather than omitted when

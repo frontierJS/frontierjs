@@ -31,8 +31,10 @@
   // A line beginning `/` is a command and never a Message. What it can name
   // is `$context.commands` (`commands.js`), the one registry: the actors in
   // this scene add their verbs to it — `Whisper` the `/w`, `Mod` the `/ban`,
-  // `WorldMap` the `/map`, `History` the PageUp and PageDown, and whatever a
-  // route places (`Taskmaster`, `Ledger`) — and this file reads it for the
+  // `WorldMap` the `/map`, `Season` the `/season`, `Weather` the `/weather`, `Hush` the `/hush`, `Emotes` the `/wave`,
+  // `/sit` and `/dance`, `History` the PageUp and
+  // PageDown, and whatever a route places (`Taskmaster`, `Ledger`) — and
+  // this file reads it for the
   // line, Tab, the hints and the keys. The bubbles, the nameplates and the
   // booth are actors too (`Bubbles`, `Nameplates`, `Sitting`).
   //
@@ -57,15 +59,10 @@
   // typed into the line, as in the workshop. Walking into a room keeps its
   // picture for the map (`#seen`).
   //
-  // `a s d f` are the left hand's (`IDEAS/haven.md` 9.4), read only where the
-  // shell took the letter as NORMAL: it prevents a printable key it will not
-  // type, so a key that arrives prevented is a home-row key, and one that
-  // arrives free is a letter going into the line (INSERT, or a browser, which
-  // has no NORMAL). `f` and a letter walks to the nearest member in the light
-  // whose nick starts with it, a step a tick, until beside them, a key, or Esc;
-  // `s` and a character draws this figure as it for SHAPE_MS. Facing is the way
-  // this figure last turned, one more presence key beside `{ x, y }`, which an
-  // arrow into a wall also sets.
+  // `a s d f` are the left hand's (`IDEAS/haven.md` 9.4), verbs `HomeRow`
+  // adds. Facing is the way this figure last turned, one more presence key
+  // beside `{ x, y }`, which an arrow into a wall also sets, and a key is
+  // pressed with it, so a verb the figure faces is asked first.
   //
   // A bolt (`d`, 9.5) is the server's answer, told to the whole room as one
   // `bolt` event: every screen draws the flight cell by cell and, as it
@@ -80,8 +77,8 @@
   // `worn` across doors, since each scene is a fresh mount and its presence
   // is seeded with it; nothing keeps it past the process.
   //
-  // The map and the room's history are modes (`commands.open`): while one is
-  // open the home row is off, and its Esc is read before a step.
+  // The map, the room's history, a waiting operator and a find-walk are modes
+  // (`commands.open`): an open one is handed a key before any verb or step.
   import { presence }    from '@frontierjs/sierra/presence'
   import { getClient }    from '@frontierjs/sierra/resource'
   import { goto, page }  from '@frontierjs/sierra/router'
@@ -90,21 +87,24 @@
   import { rooms }       from '@/resources/Room.mesa'
   import { createStage, arrival, OUTDOORS, worn } from '@/stage.js'
   import { remember }    from '@/map.js'
-  import { createCommands, complete, matches, partial } from '@/commands.js'
+  import { createCommands, createHistory, complete, matches, partial } from '@/commands.js'
   import { cellOf, figures, inView } from '@/crowd.js'
   import { facingOf, FIRST_FACING } from '../../../api/src/facing.ts'
-  import { SHAPE_MS }    from '../../../api/src/shape.ts'
   import { STUN_MS }     from '../../../api/src/bolt.ts'
-  import { createHomeRow, PENDING_MS } from '@/home-row.js'
-  import { findByNick, pathBeside } from '@/paths.js'
   import { stepped, TRACES } from '../../../api/src/memory.ts'
   import WorldMap        from '@/components/WorldMap.mesa'
   import History         from '@/components/History.mesa'
+  import HomeRow         from '@/components/HomeRow.mesa'
   import Bubbles         from '@/components/Bubbles.mesa'
   import Nameplates      from '@/components/Nameplates.mesa'
   import Sitting         from '@/components/Sitting.mesa'
   import Whisper         from '@/components/Whisper.mesa'
   import Mod             from '@/components/Mod.mesa'
+  import Season          from '@/components/Season.mesa'
+  import Weather         from '@/components/Weather.mesa'
+  import Hush            from '@/components/Hush.mesa'
+  import Profile         from '@/components/Profile.mesa'
+  import Emotes          from '@/components/Emotes.mesa'
   import { at, tint }    from '#cell'
   import { paint }       from '#paint'
 
@@ -119,6 +119,8 @@
   // A verb's answer is the note under the art.
   var commands = createCommands()
   $context.commands = commands
+  // Up and Down in the line recall the commands said here; held in memory only.
+  var said = createHistory()
 
   // A snapshot: the room is set before this mounts and never changes under
   // it. Read reactively it would make `here` derived, and a derived presence
@@ -140,6 +142,8 @@
   let facing = FIRST_FACING
   let shape  = null
   let ink    = worn.ink
+  let hushed = null
+  let emote  = null
   let nicks = {}
   $: hints = matches(draft, commands.words({ x, y }))
 
@@ -161,9 +165,6 @@
     here.updateMeta(meta())
   })
   $.onDestroy(() => {
-    stopFind()
-    clearTimeout(shapeTimer)
-    clearTimeout(dueTimer)
     clearInterval(flickTimer)
     for (const t of timers) clearTimeout(t)
   })
@@ -182,7 +183,7 @@
       .then((all = []) => {
         const kind = (k) => all.filter((t) => t.kind === k)
         stage.tread(kind('step'))
-        stage.shatter(kind('struck'))
+        stage.shatter([...kind('struck'), ...kind('taken')])
         stage.scorch(kind('scorch'))
       })
       .catch(() => {})
@@ -216,7 +217,11 @@
   }
   $: { if (here) askNicks(here.get().members.map((m) => m.userId)) }
 
-  const glyph  = (m, names) => (names[m.userId] ?? '?')[0].toUpperCase()
+  // A sitting figure is its initial in lower case.
+  const glyph  = (m, names) => {
+    const g = (names[m.userId] ?? '?')[0]
+    return m.meta?.emote === 'sit' ? g.toLowerCase() : g.toUpperCase()
+  }
   const cell = (m) => cellOf(m, spawn)
 
   // A table's candle burns only while a stool of it is taken.
@@ -224,20 +229,14 @@
   $: { if (here) trackSteps(here.get().others) }
 
   // The shell focuses a route's first control when it mounts it, and this
-  // scene mounts later, once the room's row is read.
-  const focus = (el) => el.focus()
+  // scene mounts later, once the room's row is read. Every focus is NORMAL in
+  // the shell, so a command refocuses the line to leave INSERT (`say`).
+  var input = null
+  const focus = (el) => { input = el; el.focus() }
 
-  // ─── the home row ──────────────────────────────────────────────────────────
-  // Handles, not state a template reads: `var`, so none is derived.
-  var row = createHomeRow()
-  var walking = null
-  var shapeTimer = null
-  var dueTimer = null
-  // 120 ms a step is under the room's 10 moves a second.
-  const FIND_MS = 120
-
+  // ─── the figure ────────────────────────────────────────────────────────────
   function meta() {
-    return { x, y, facing, ...(shape && { shape }), ...(ink && { ink }) }
+    return { x, y, facing, ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }) }
   }
 
   function moveTo(nx, ny) {
@@ -246,48 +245,26 @@
     x = nx
     y = ny
     ink = worn.ink = stage.dyeAt(x, y, Date.now()) ?? ink
+    // A step stands a figure up and ends a wave; `Emotes` sits it again on a seat.
+    emote = null
     here.updateMeta(meta())
     if (walked) tread([{ x, y }])
   }
 
-  function stopFind() {
-    clearInterval(walking)
-    walking = null
-  }
-
-  /** One step toward the member `id`, from where each stands now: they may have moved. */
-  function stepToward(id) {
-    const m = here.get().others.find((o) => o.userId === id)
-    const path = m && pathBeside(stage, { x, y }, cell(m))
-    if (!path?.length) stopFind()
-    else moveTo(path[0].x, path[0].y)
-  }
-
-  function find(letter) {
-    const figs = here.get().others
-      .filter((m) => nicks[m.userId] && stage.light(cell(m).x, cell(m).y) === 'lit')
-      .map((m) => ({ id: m.userId, nick: nicks[m.userId], ...cell(m) }))
-    const found = findByNick(stage, { x, y }, figs, letter)
-    if (!found) { note = `nobody here is called ${letter}…`; return }
-    note = ''
-    if (!found.path.length) return
-    walking = setInterval(() => stepToward(found.figure.id), FIND_MS)
-  }
-
-  function shapeshift(ch) {
-    clearTimeout(shapeTimer)
+  // `HomeRow` walks this figure, and draws it as a character, through these.
+  function where() { return { x, y } }
+  function shapeTo(ch) {
     shape = ch
-    shapeTimer = ch ? setTimeout(() => { shape = null; here.updateMeta(meta()) }, SHAPE_MS) : null
     here.updateMeta(meta())
-    note = ch ? `you are ${ch} for a minute` : 'you are yourself again'
   }
 
   // ─── the bolt ──────────────────────────────────────────────────────────────
-  // One cell of a flight a FLY_MS, kept HOLD_MS once it has landed. Each bolt
-  // has its own timers: a second one arriving mid-flight must not take the
-  // first one's landing with it.
-  const FLY_MS   = 30
+  // An arrow: one head glyph a cell per FLY_MS, leaving the cell behind it, and
+  // gone HOLD_MS after it lands. Each bolt has its own timers: a second one
+  // arriving mid-flight must not take the first one's landing with it.
+  const FLY_MS   = 20
   const HOLD_MS  = 150
+  const HEADS    = { n: '^', e: '>', s: 'v', w: '<' }
   const FLICK_MS = 100
   const BEAM_INK = '#ffe680'
   let beam  = []
@@ -319,7 +296,7 @@
     for (const s of blast.struck ?? []) {
       stun = { ...stun, [s.id]: t + STUN_MS }
       if (me != null && String(s.id) === String(me)) {
-        stopFind()
+        commands.close('find')
         x = s.to.x
         y = s.to.y
         here.updateMeta(meta())
@@ -336,18 +313,28 @@
     if (name !== 'bolt' || !Array.isArray(blast?.flights)) return
     const shot = ++shots
     const longest = Math.max(0, ...blast.flights.map((f) => f.path.length))
-    for (const f of blast.flights) {
-      const ch = f.facing === 'n' || f.facing === 's' ? '|' : '-'
-      f.path.forEach((c, i) => later(() => { beam = [...beam, { key: `${shot}:${c.x},${c.y}`, shot, x: c.x, y: c.y, ch }] }, (i + 1) * FLY_MS))
-    }
+    blast.flights.forEach((f, n) => {
+      const arrow = `${shot}:${n}`
+      f.path.forEach((c, i) => later(() => {
+        beam = [...beam.filter((b) => b.arrow !== arrow), { key: `${arrow}:${c.x},${c.y}`, arrow, shot, x: c.x, y: c.y, ch: HEADS[f.facing] ?? '>' }]
+      }, (i + 1) * FLY_MS))
+    })
     later(() => land(blast), longest * FLY_MS)
     later(() => { beam = beam.filter((b) => b.shot !== shot) }, longest * FLY_MS + HOLD_MS)
+  }
+
+  /** A pickup lifted, by anyone in the room: it draws as nothing until it lies there again. */
+  function onPickup(name, got) {
+    if (name !== 'pickup' || !got?.laid) return
+    stage.shatter([got.laid])
+    if (String(got.by) === String(here.get().self?.userId)) note = `you take ${got.n} ${got.item}${got.n > 1 ? 's' : ''}`
   }
 
   if (room) {
     const client = getClient()
     client?.on('event', onBolt)
-    $.onDestroy(() => client?.off('event', onBolt))
+    client?.on('event', onPickup)
+    $.onDestroy(() => { client?.off('event', onBolt); client?.off('event', onPickup) })
   }
 
   /** The beam's cells in the view and not in the dark, at their cell of the view. */
@@ -358,59 +345,26 @@
   /** A struck figure's glyph is an `x` on every other beat of its second. */
   const face = (id, glyph, stunned, beat) => (stunned[id] && beat ? 'x' : glyph)
 
-  async function fire(volley, way) {
-    try {
-      await rooms.service.invoke('bolt', null, { roomId: room.id, ...(way && { facing: way }), ...(volley && { volley: true }) })
-      note = ''
-    } catch (e) { note = e.message }
-  }
-
-  function run(a) {
-    if (a === true || !a?.act) return
-    stopFind()
-    if (a.act === 'bolt')   fire(false, a.facing)
-    if (a.act === 'volley') fire(true)
-    if (a.act === 'find')   find(a.letter)
-    if (a.act === 'shape')  shapeshift(a.ch)
-    if (a.act === 'chalk')  note = 'chalk is not drawn yet'
-  }
-
-  /** Whether the key was the home row's; a late `d`'s bolt runs, and the key that outran it is asked again. */
-  function homeRow(e) {
-    if (!room || draft || commands.mode) return false
-    if (!row.pending && !(e.defaultPrevented && e.key.length === 1)) return false
-    clearTimeout(dueTimer)
-    const r = row.key(e.key)
-    if (r === null) return false
-    e.preventDefault()
-    run(r)
-    if (r.after === null) return false
-    run(r.after)
-    if (row.pending === 'd') dueTimer = setTimeout(() => run(row.due()), PENDING_MS + 10)
-    return true
-  }
-
   const keydown = (e) => {
     if (room && e.key === 'Tab' && partial(draft) !== null) {
       e.preventDefault()
       draft = complete(draft, commands.words({ x, y }))
       return
     }
-    if (room && commands.press(e.key, { x, y }, e)) return
-    if (walking && e.key === 'Escape') {
-      e.preventDefault()
-      stopFind()
-      return
-    }
-    if (homeRow(e)) return
     if (commands.mode && commands.modeKey(e)) {
       e.preventDefault()
       return
     }
+    if (room && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && (said.browsing || draft.startsWith('/'))) {
+      e.preventDefault()
+      const line = e.key === 'ArrowUp' ? said.prev(draft) : said.next()
+      if (line !== null) draft = line
+      return
+    }
+    if (room && commands.press(e.key, { x, y, facing }, e)) return
     const step = STEP[e.key]
     if (!step || !room || draft) return
     e.preventDefault()
-    stopFind()
     const nx = x + step[0]
     const ny = y + step[1]
     const turned = facingOf({ x, y }, { x: nx, y: ny })
@@ -434,6 +388,7 @@
   async function say() {
     const body = draft.trim()
     if (!body) return
+    if (body.startsWith('/')) { said.push(body); input?.blur(); input?.focus() }
     draft = ''
     note  = ''
     try {
@@ -455,12 +410,17 @@
     {#each flying(beam, view) as b (b.key)}
       <p {@attach at(b.x, b.y, 10)} {@attach tint(BEAM_INK)}>{b.ch}</p>
     {/each}
-    <Bubbles {here} {x} {y} {view} {spawn} />
+    <Bubbles {here} {x} {y} {view} {spawn} {hushed} />
     <WorldMap {stage} route={page.pathname} {x} {y} box={PANE} />
     <History {room} {nicks} box={PANE} {askNicks} />
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
+    <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
     <Mod />
+    <Season {stage} />
+    <Weather {stage} />
+    <Hush {here} hush={(id) => { hushed = id; here.updateMeta(meta()) }} />
+    <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; here.updateMeta(meta()) }} />
   {/if}
 </div>
 {#if here}
@@ -470,4 +430,5 @@
   <form on:submit|preventDefault={say}>
     <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says, PageUp reads back" />
   </form>
+  <Profile {here} {nicks} {stage} {room} {facing} glyph={shape ?? '@'} />
 {/if}

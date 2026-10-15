@@ -30,6 +30,10 @@
  *                           (alt by default) and click an element to open the
  *                           line that wrote it. Default: true. Off means the
  *                           compiler stamps no location attribute either.
+ *   locRoot     {string}    What a stamped location is relative to. Default: the
+ *                           Vite root. A tool served from its own root over
+ *                           sources beside it names them here, or every one is
+ *                           a `../` path the inspector refuses.
  *   compilerPath {string}   Path to compiler.js. Auto-resolved if omitted.
  */
 
@@ -148,6 +152,7 @@ export default function mesaPlugin(options = {}) {
     css         = true,
     hmr         = true,
     inspect     = true,
+    locRoot     = null,
   } = options
 
   // `inspect: { key: 'meta' }` is the same switch with the modifier named.
@@ -159,6 +164,7 @@ export default function mesaPlugin(options = {}) {
 
   /** Root directory (set in configResolved) */
   let root = process.cwd()
+  const locBase = () => (locRoot ? path.resolve(locRoot) : root)
 
   /** True when Vite is in dev/serve mode */
   let isDev = false
@@ -315,7 +321,7 @@ export function __mesa_hot_update(id) {
         }
       }
       if (id === RESOLVED_INSPECT_ID) {
-        return inspectClientSource({ root, key: inspectKey })
+        return inspectClientSource({ root: locBase(), key: inspectKey })
       }
       // Virtual dev client — BroadcastChannel relay between app and devtools page
       if (id === RESOLVED_DEV_CLIENT_ID) {
@@ -386,7 +392,7 @@ export function __mesa_hot_update(id) {
           // Off means no attribute at all: the inspector is the only reader,
           // and an app that turned it off should not pay for the DOM noise.
           loc: isDev && inspectOn,
-          locRoot: root,
+          locRoot: locBase(),
           // An object, never a string: Vite turns a string into `new Error()`,
           // and under Bun that Error's own `line` and `column` — a place in
           // Vite's chunk — are reported as a place in this file (`FJS-1903`).

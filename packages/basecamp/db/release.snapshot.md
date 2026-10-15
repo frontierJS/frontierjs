@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-63 model(s) · 41 enum(s) · 2 database(s)
+67 model(s) · 43 enum(s) · 2 database(s)
 audit → trail · main → sqlite
 ```
 
@@ -40,11 +40,13 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `FlowRunStatus` | `cancelled` · `completed` · `failed` · `pending` · `running` · `waiting` |
 | `FlowStatus` | `active` · `archived` · `draft` · `paused` |
 | `FlowStepStatus` | `completed` · `failed` · `pending` · `running` · `skipped` |
+| `HttpMethod` | `DELETE` · `GET` · `HEAD` · `PATCH` · `POST` · `PUT` |
 | `JobKind` | `one_shot` · `scheduled` · `triggered` · `workflow` |
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
 | `MetricType` | `counter` · `gauge` · `histogram` |
-| `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Server` · `Workspace` |
-| `NotificationKind` | `alert_firing` · `alert_resolved` · `dependency_vulnerable` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `posture_failed` · `server_unreachable` · `weekly_digest` |
+| `MonitorStatus` | `down` · `paused` · `pending` · `up` |
+| `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
+| `NotificationKind` | `alert_firing` · `alert_resolved` · `dependency_vulnerable` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `monitor_down` · `monitor_up` · `posture_failed` · `server_unreachable` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
 | `ProvisionStepName` | `create` · `poll` · `start` · `timeout` |
@@ -1186,6 +1188,131 @@ table `metric_series` · db `main` · gate `8`
 @@index(name)
 ```
 
+### `Monitor`
+
+table `monitor` · db `main` · gate `2.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `acceptedStatus` | `String` | no | `'200-299'` | — |
+| `appId` | `String` | yes | — | — |
+| `body` | `String` | yes | — | — |
+| `channels` | `MonitorChannel[]` | — | — | relation |
+| `checks` | `MonitorCheck[]` | — | — | relation |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `events` | `MonitorEvent[]` | — | — | relation |
+| `failStreak` | `Int` | no | `0` | @system |
+| `headers` | `Json` | no | `'{}'` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `ignoreTls` | `Boolean` | no | `0` | — |
+| `intervalSec` | `Int` | no | `120` | — |
+| `invert` | `Boolean` | no | `0` | — |
+| `lastCheckedAt` | `DateTime` | yes | — | @system |
+| `lastLatencyMs` | `Int` | yes | — | @system |
+| `maxRedirects` | `Int` | no | `10` | — |
+| `method` | `HttpMethod` | no | `'GET'` | — |
+| `name` | `String` | no | — | **required on write** |
+| `nextCheckAt` | `DateTime` | yes | — | @system |
+| `resendEvery` | `Int` | no | `0` | — |
+| `retries` | `Int` | no | `2` | — |
+| `retryIntervalSec` | `Int` | no | `120` | — |
+| `status` | `MonitorStatus` | no | `'pending'` | — |
+| `tags` | `Json` | no | `'[]'` | — |
+| `timeoutMs` | `Int` | no | `10000` | — |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `url` | `String` | no | — | **required on write** |
+| `workspace` | `Workspace` | — | — | relation |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@index(status, nextCheckAt)
+@@index(workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+transition status.markDown: pending, up → down @system
+transition status.markUp: down, pending → up @system
+transition status.pause: down, pending, up → paused @gate(5)
+transition status.resume: paused → pending @gate(5)
+```
+
+### `MonitorChannel`
+
+table `monitor_channel` · db `main` · gate `2.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `channel` | `NotificationChannel` | — | — | relation |
+| `channelId` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `monitor` | `Monitor` | — | — | relation |
+| `monitorId` | `String` | no | — | **required on write** |
+
+```
+@@unique(channelId, monitorId)
+@@index(channelId)
+@@deny('create', !check(channel, tenancy))
+@@deny('create', !check(monitor, tenancy))
+@@deny('delete', !check(channel, tenancy))
+@@deny('delete', !check(monitor, tenancy))
+@@deny('post-update', !check(channel, tenancy))
+@@deny('post-update', !check(monitor, tenancy))
+@@deny('read', !check(channel, tenancy))
+@@deny('read', !check(monitor, tenancy))
+@@deny('update', !check(channel, tenancy))
+@@deny('update', !check(monitor, tenancy))
+```
+
+### `MonitorCheck`
+
+table `monitor_check` · db `main` · gate `2.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `at` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `latencyMs` | `Int` | yes | — | — |
+| `message` | `String` | no | — | **required on write** |
+| `monitor` | `Monitor` | — | — | relation |
+| `monitorId` | `String` | no | — | **required on write** |
+| `ok` | `Boolean` | no | — | **required on write** |
+| `statusCode` | `Int` | yes | — | — |
+
+```
+@@index(monitorId, at)
+@@deny('create', !check(monitor, tenancy))
+@@deny('delete', !check(monitor, tenancy))
+@@deny('post-update', !check(monitor, tenancy))
+@@deny('read', !check(monitor, tenancy))
+@@deny('update', !check(monitor, tenancy))
+```
+
+### `MonitorEvent`
+
+table `monitor_event` · db `main` · gate `2.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `at` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `fromStatus` | `MonitorStatus` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `message` | `String` | no | — | **required on write** |
+| `monitor` | `Monitor` | — | — | relation |
+| `monitorId` | `String` | no | — | **required on write** |
+| `toStatus` | `MonitorStatus` | no | — | **required on write** |
+
+```
+@@index(monitorId, at)
+@@deny('create', !check(monitor, tenancy))
+@@deny('delete', !check(monitor, tenancy))
+@@deny('post-update', !check(monitor, tenancy))
+@@deny('read', !check(monitor, tenancy))
+@@deny('update', !check(monitor, tenancy))
+```
+
 ### `Network`
 
 table `network` · db `main` · gate `2.5` · @@softDelete
@@ -1254,6 +1381,7 @@ table `notification_channel` · db `main` · gate `2.5` · @@softDelete
 | `kind` | `ChannelKind` | no | — | **required on write** |
 | `lastDeliveryAt` | `DateTime` | yes | — | — |
 | `lastTestAt` | `DateTime` | yes | — | — |
+| `monitors` | `MonitorChannel[]` | — | — | relation |
 | `name` | `String` | no | — | **required on write** |
 | `rules` | `AlertRuleChannel[]` | — | — | relation |
 | `secret` | `String` | — | — | transient |
@@ -1894,6 +2022,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `invitations` | `Invitation[]` | — | — | relation |
 | `jobs` | `Job[]` | — | — | relation |
 | `members` | `WorkspaceMember[]` | — | — | relation |
+| `monitors` | `Monitor[]` | — | — | relation |
 | `name` | `String` | no | — | **required on write** |
 | `ownerId` | `String` | no | — | **required on write** |
 | `projects` | `Project[]` | — | — | relation |

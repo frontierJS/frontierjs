@@ -99,6 +99,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           core/server-metrics.ts decides WHICH of a check-in is kept and what
           each reading is called; the heartbeat pushes through app.metrics.record
           core/alerting.ts is the alert comparison, pure — no db, no clock, no app
+          core/probe.ts is the monitor's two judgments, pure: `gradeProbe` (did
+          this request count — accepted codes, invert) and `nextState` (what a
+          failure does: down only past `retries`, page once, `resendEvery`).
+          jobs/monitor-sweep.job.ts probes every due `Monitor` from this process,
+          an outside view, and is the only writer of its `@system` columns; a
+          monitor is `pending` until graded, and paused ones are never picked
+          (`FJS-1557`)
           core/delivery.ts is the ONE owner of how a NotificationChannel is
           reached; `channels.test`, the alert evaluator and the `basecamp.page`
           flow node are its callers

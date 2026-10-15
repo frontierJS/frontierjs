@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-50 services · 41 routes · 17 plugins · prefix (none)
+51 services · 41 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -55,7 +55,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (82)
+### A service hook runs in front of the body (87)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -110,6 +110,11 @@ name, and is as unread as the body.
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `jobs.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `monitors.history` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `monitors.pause` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `monitors.resume` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `monitors.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `monitors.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.members` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -801,6 +806,33 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+
+### `monitors` · model `Monitor`
+
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `history`, `pause`, `resume`, `attachChannel`, `detachChannel`
+- **custom methods** — `history`, `pause`, `resume`, `attachChannel`, `detachChannel`
+- **input** — `attachChannel` takes `MonitorChannelRef`
+- **input** — `detachChannel` takes `MonitorChannelRef`
+- **who may call** —
+  - `history` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `pause` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `resume` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+| before | `attachChannel` | `validateInput` |
+| before | `detachChannel` | `validateInput` |
 
 ### `networks` · model `Network`
 

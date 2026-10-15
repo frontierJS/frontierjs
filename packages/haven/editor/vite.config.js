@@ -16,8 +16,16 @@
 // there too. `@/` is the surface's `src/` as it is for Haven's own build;
 // under a copy it is the copy's parent, so a copied scene's `@/components/`
 // and `@/pieces/` are the copy's.
+//
+// The ask panel (`IDEAS/haven.md` 14.1) is the cli's (`core/vite-ask.js`),
+// imported from the checkout beside this package — `fli haven:scenes` serves
+// only a checkout's editor. It and Mesa's inspector are both rooted at `SRC`,
+// not at this Vite root: a scene is `src/scenes/`, so against `editor/` every
+// pick is a `../` path the inspector refuses, and an ask may edit nothing it
+// is for. The editor's own files are outside `SRC`, so the panel cannot edit
+// the editor.
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import mesa from '@frontierjs/mesa/vite'
@@ -27,6 +35,11 @@ const PORT   = Number(process.env.PORT ?? 5507)
 const SCENES = resolve(process.env.SCENES_DIR ?? join(HERE, '../web/src/scenes'))
 const SRC    = dirname(SCENES)
 const PIECES = join(SRC, 'pieces')
+
+// A variable specifier, so Vite's config bundler leaves the cli unbundled and
+// its `import.meta.url` (where it finds the panel's client) its own.
+const ASK = pathToFileURL(join(HERE, '../../cli/core/vite-ask.js')).href
+const { askPlugin } = await import(ASK)
 
 // A scene is a component, PascalCase; `.frame.txt` beside it is its picture.
 // Any other name is refused rather than resolved, so a request cannot write
@@ -85,7 +98,7 @@ function scenesApi() {
 
 export default defineConfig({
   root:    HERE,
-  plugins: [mesa(), scenesApi()],
+  plugins: [mesa({ locRoot: SRC }), askPlugin({ root: SRC }), scenesApi()],
   resolve: { alias: { '@': SRC } },
   define:  { 'import.meta.env.HAVEN_WEATHER': JSON.stringify(process.env.HAVEN_WEATHER ?? null) },
   // The stage, the cell module and the components are the browser Haven's own

@@ -3,7 +3,9 @@
 // Three halves. Mesa's inspector picks an element (shift+alt-click) and knows
 // nothing about what a pick is for; the client served here registers as its
 // picker and draws the panel; the middleware below runs `claude -p` with Edit
-// scoped to the Vite root. Nothing here reloads anything: the edit is a file
+// scoped to the Vite root, or the `root` it is handed — a tool served from its
+// own root over sources beside it, whose picks Mesa stamps against the same
+// directory (`locRoot`). Nothing here reloads anything: the edit is a file
 // write, and the dev server's own watcher is what the page sees.
 //
 // The middleware is on the DEV SERVER, so it is same-origin with the page —
@@ -560,9 +562,10 @@ export function submission({ preview, asks }) {
  * @param {string} [opts.gh]        the gh executable, likewise
  * @param {string} [opts.tokenKey]  the localStorage key the app's client keeps its token under
  * @param {object|null} [opts.admit]  who may ask; `readAdmit()` of the environment by default
+ * @param {string} [opts.root]      what an ask may edit and a pick's loc is relative to; the Vite root by default
  */
-export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_token', admit = readAdmit() } = {}) {
-  let root = process.cwd()
+export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_token', admit = readAdmit(), root: scope = null } = {}) {
+  let root = scope ? resolve(scope) : process.cwd()
   let current = null           // { child, run } — one question at a time
   const runs = new Map()       // run id → the edits that landed, for an undo
   // What Submit commits and describes, kept past the undo window: a file is the
@@ -853,7 +856,7 @@ export function askPlugin({ bin = 'claude', gh = 'gh', tokenKey = 'junction_toke
     name:  'fli:ask',
     apply: 'serve',
 
-    configResolved(config) { root = resolve(config.root ?? process.cwd()) },
+    configResolved(config) { root = scope ? resolve(scope) : resolve(config.root ?? process.cwd()) },
 
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {

@@ -18,13 +18,16 @@
 
 import type { App, Connection, channels } from '@frontierjs/junction'
 
+import { ITEMS, isItem } from './inventory.ts'
+import type { Inventories } from './inventory.ts'
 import { stepped } from './memory.ts'
 import type { RoomMemory } from './memory.ts'
 import { isFacing } from './facing.ts'
 import type { Facing } from './facing.ts'
 import { standingOf } from './principal.ts'
-import { glyphOf, inkOf } from './shape.ts'
-import { standable, worldFor } from './world.ts'
+import { emoteOf, glyphOf, inkOf } from './shape.ts'
+import type { Emote } from './shape.ts'
+import { pickupAt, standable, worldFor } from './world.ts'
 
 type ChannelsOptions = NonNullable<Parameters<typeof channels>[1]>
 
@@ -34,7 +37,8 @@ export const roomChannelName = (roomId: number | string): string => `room:${room
 /** Where a figure walks in without naming a room. */
 export const FIRST_ROOM = 'square'
 
-/** A row for each scene the client draws. Without one a fresh database walks
+/** A row for each scene the client draws, and the notice board's (7.5), which
+ *  is no scene: its Messages are the pins. Without one a fresh database walks
  *  every visitor in to "This server has no square". */
 export const ROOMS = [
   { slug: 'square', name: 'The square' },
@@ -43,12 +47,14 @@ export const ROOMS = [
   { slug: 'woods',  name: 'The woods' },
   { slug: 'docks',  name: 'The docks' },
   { slug: 'workshop', name: 'The workshop' },
+  { slug: 'townhall', name: 'The town hall' },
   { slug: 'cellar', name: 'The cellar' },
   { slug: 'glade',  name: 'The glade' },
   { slug: 'lane',   name: 'The lane' },
   { slug: 'jordan', name: "Jordan's home" },
   { slug: 'vlad',   name: "Vlad's home" },
   { slug: 'colin',  name: "Colin's home" },
+  { slug: 'board',  name: 'The notice board' },
 ] as const
 
 /** Creates whichever of ROOMS the database lacks. Run by the entry point and not
@@ -71,9 +77,11 @@ const MAX_CELL = 255
  * A figure as the room sees it: where it stands, `typing` while its line has
  * words in it — the booth's flame leans toward it — the way it `facing` (9.4),
  * the `shape` it is drawn as while it is shapeshifted (9.7), and the `ink` a
- * flower dyed it.
+ * flower dyed it, the `hushed` line id its owner cleared from over their
+ * head -- every screen stops drawing their bubble up to that line -- and the
+ * `emote` it is doing (8.1).
  */
-export type RoomMeta = Position & { typing?: true, facing?: Facing, shape?: string, ink?: string }
+export type RoomMeta = Position & { typing?: true, facing?: Facing, shape?: string, ink?: string, hushed?: number, emote?: Emote }
 
 /**
  * The only presence meta a room accepts. Anything else in the frame is dropped
@@ -89,11 +97,13 @@ export function roomMeta (meta: Record<string, unknown>): RoomMeta {
   const facing = isFacing(meta.facing) ? meta.facing : null
   const shape  = glyphOf(meta.shape)
   const ink    = inkOf(meta.ink)
-  return { x, y, ...(meta.typing === true && { typing: true as const }), ...(facing && { facing }), ...(shape && { shape }), ...(ink && { ink }) }
+  const hushed = Number.isInteger(meta.hushed) && (meta.hushed as number) > 0 && (meta.hushed as number) < 1e9 ? (meta.hushed as number) : null
+  const emote  = emoteOf(meta.emote)
+  return { x, y, ...(meta.typing === true && { typing: true as const }), ...(facing && { facing }), ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }) }
 }
 
 type RoomApp = App & {
-  channel: (name: string) => { join: (conn: Connection) => unknown }
+  channel: (name: string) => { join: (conn: Connection) => unknown, send: (event: string, data: unknown) => unknown }
 }
 
 /** The room a connection asked for at the upgrade, or the square. */
@@ -107,10 +117,12 @@ function slugOf (conn: Connection): string {
  * policy and asked again after every committed write, which is what takes a
  * banned member out of the room they are standing in.
  */
-export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory): { setup: (a: App) => void, options: ChannelsOptions } {
+export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory, inventory: Inventories): { setup: (a: App) => void, options: ChannelsOptions } {
   const sys = () => db.asSystem()
+  let app: RoomApp | undefined
   return {
     setup: (a) => {
+      app = a as RoomApp
       const ra = a as RoomApp & { channels: { on: (ev: 'connection', fn: (s: unknown, c: Connection) => unknown) => void } }
       ra.channels.on('connection', async (_session, conn) => {
         if (!conn.user) return
@@ -133,12 +145,23 @@ export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory): 
         if (world && !standable(world, meta.x, meta.y, new Set(memory.live(channel, 'struck').map(t => t.id)))) {
           throw new Error(`Cell ${meta.x},${meta.y} of ${world.slug} is not floor`)
         }
-        if (stepped(was, meta)) memory.add(channel, { kind: 'step', x: meta.x, y: meta.y, by: Number(conn.user?.userId) || undefined })
+        const by = Number(conn.user?.userId) || undefined
+        if (stepped(was, meta)) memory.add(channel, { kind: 'step', x: meta.x, y: meta.y, by })
+        // A pickup is lifted by whoever stands on it first and lies there again
+        // when its trace expires (9.9). A full quiver leaves it for the next.
+        const lying = world && by !== undefined ? pickupAt(world, meta.x, meta.y) : null
+        if (lying && by !== undefined && isItem(lying.item)
+          && inventory.count(by, lying.item) < ITEMS[lying.item].cap
+          && !memory.live(channel, 'taken').some(t => t.id === lying.id)) {
+          inventory.give(by, lying.item, lying.n)
+          const laid = memory.add(channel, { kind: 'taken', x: meta.x, y: meta.y, id: lying.id, by })
+          app?.channel(channel).send('pickup', { item: lying.item, n: lying.n, by, laid: { kind: laid.kind, x: laid.x, y: laid.y, id: laid.id, at: laid.at, until: laid.until } })
+        }
         return meta
       },
       // Arrow keys held down. Past it a move is dropped, and the next one lands.
       presenceUpdatesPerSecond: 10,
-      presenceMetaBytes:        80,
+      presenceMetaBytes:        120,
       // The connection's principal was built at the upgrade, so a ban written
       // since would not reach it; every frame reads the column again.
       claims: async (_name, conn) => conn.user ? await standingOf(db, conn.user.userId) : null,

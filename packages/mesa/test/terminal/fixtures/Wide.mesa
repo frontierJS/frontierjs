@@ -1,0 +1,8 @@
+<script>
+  let line = ''
+  let area = ''
+</script>
+<input bind:value={line} />
+<p>[{line}]</p>
+<textarea bind:value={area}></textarea>
+<p>&lt;{area}&gt;</p>

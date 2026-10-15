@@ -1,0 +1,47 @@
+<script>
+  // TownHall.mesa — the town hall, through the house with the sign east of
+  // the fountain (`IDEAS/haven.md` Phase 15): every open row of
+  // `IDEAS/overview.md` stands here as a person, by wave, the row's number
+  // under their head, and the board of the most wanted hangs along the top.
+  // The head's color is the row's status: pale an idea, amber half done, red
+  // a defect, blue a paper still being argued. Where everyone stands is
+  // computed from `townhall.data.json` (`pieces/townhall.js`), so the room is
+  // as tall as the waves need and the view pans up it from the door at its
+  // foot. What a delegate says, the votes and the board's rows are
+  // `components/Assembly.mesa`'s, placed by the route. The picture this draws
+  // is `townhall.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { framed }     from '@/pieces/frame.js'
+  import { layoutHall } from '@/pieces/townhall.js'
+  import WAVES          from '@/townhall.data.json'
+
+  const hall = layoutHall(WAVES)
+  const frame = framed(hall.width, hall.height)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    w: { fg: '#a16207' },
+    n: { fg: ['#fde68a', '#fcd34d', '#fde68a', '#fef3c7'], ms: 1400, wave: true, light: 1 },
+    l: { fg: '#9ca3af' },
+    i: { fg: '#e5e7eb' },
+    p: { fg: '#fbbf24' },
+    d: { fg: '#ef4444' },
+    q: { fg: '#93c5fd' },
+  }
+</script>
+
+<Scene slug="townhall" layers={INDOORS} palette={PALETTE} spawn={hall.spawn}>
+  <Piece of={frame} />
+  <Door  x={hall.door.x} y={hall.door.y} to="/" />
+  <Piece of={hall.board.piece} x={hall.board.x} y={hall.board.y} />
+  {#each hall.waves as w (w.y)}
+    <Piece of={w.sign} x={w.x} y={w.y} />
+  {/each}
+  {#each hall.delegates as d (d.piece.idea)}
+    <Piece of={d.piece} x={d.x} y={d.y} />
+  {/each}
+  <slot />
+</Scene>

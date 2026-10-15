@@ -9,6 +9,8 @@ import { createClient } from '@frontierjs/litestone'
 import { createHavenAuth }          from './auth.ts'
 import { clientRoute, CLIENT_PATH } from './client.ts'
 import { createCooldowns }         from './bolt.ts'
+import { createInventories }       from './inventory.ts'
+import type { Inventories }        from './inventory.ts'
 import { loginRoute, LOGIN_PATH }  from './login.ts'
 import { createRoomMemory }        from './memory.ts'
 import type { RoomMemory }         from './memory.ts'
@@ -31,8 +33,8 @@ export interface HavenAppOptions {
   mods?:       string[]
 }
 
-/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`), both claimed here. */
-export type HavenApp = App & { memory: RoomMemory, cooldowns: ReturnType<typeof createCooldowns> }
+/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`) and `inventory` what a member carries (`inventory.ts`), all claimed here. */
+export type HavenApp = App & { memory: RoomMemory, cooldowns: ReturnType<typeof createCooldowns>, inventory: Inventories }
 
 export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   const db = opts.db ?? await createClient({ path: SCHEMA, resolveFrom: 'schema' }) as { asSystem: () => any }
@@ -59,7 +61,9 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   const memory = createRoomMemory()
   app.claim('memory', memory)
   app.claim('cooldowns', createCooldowns())
-  const { setup, options } = roomChannels(db, memory)
+  const inventory = createInventories()
+  app.claim('inventory', inventory)
+  const { setup, options } = roomChannels(db, memory, inventory)
   app.configure(channels(setup as never, options))
   // Inside configure() so it registers during start(), after the router is patched.
   const mods  = opts.mods ?? (process.env.HAVEN_MODS ?? '').split(',').map(n => n.trim()).filter(Boolean)

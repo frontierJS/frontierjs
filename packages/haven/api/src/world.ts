@@ -19,13 +19,15 @@ export interface SceneWorld {
   rows: string[]
   doors: { x: number, y: number, to: string, hidden?: true, night?: true }[]
   pieces: { id: string, name: string, fragile?: true, cells: [number, number][] }[]
+  /** Floor pieces that hand an item when stepped on (`inventory.ts`). */
+  pickups: { id: string, item: string, n: number, cells: [number, number][] }[]
   pacers: (PacerSpec & { name: string })[]
 }
 
 const DIR = new URL('../../web/src/scenes/', import.meta.url)
 
 /** Read once and kept: a scene's file changes only with a deploy. */
-type Loaded = { world: SceneWorld, solid: Map<string, SceneWorld['pieces'][number]> }
+type Loaded = { world: SceneWorld, solid: Map<string, SceneWorld['pieces'][number]>, pickup: Map<string, SceneWorld['pickups'][number]> }
 const worlds = new Map<string, Loaded | null>()
 
 function load (slug: string): Loaded | null {
@@ -38,7 +40,9 @@ function load (slug: string): Loaded | null {
       const world = JSON.parse(readFileSync(new URL(`${slug}.world.json`, DIR), 'utf8')) as SceneWorld
       const solid = new Map<string, SceneWorld['pieces'][number]>()
       for (const p of world.pieces) for (const [x, y] of p.cells) solid.set(`${x},${y}`, p)
-      found = { world, solid }
+      const pickup = new Map<string, SceneWorld['pickups'][number]>()
+      for (const p of world.pickups) for (const [x, y] of p.cells) pickup.set(`${x},${y}`, p)
+      found = { world, solid, pickup }
     } catch { /* a room with no scene (a booth) has no world */ }
   }
   worlds.set(slug, found)
@@ -52,6 +56,10 @@ export const worldFor = (slug: string): SceneWorld | null => load(slug)?.world ?
 export function walkable (world: SceneWorld, x: number, y: number): boolean {
   return world.rows[y]?.[x] === '.'
 }
+
+/** The pickup lying on a cell, or null. */
+export const pickupAt = (world: SceneWorld, x: number, y: number): SceneWorld['pickups'][number] | null =>
+  load(world.slug)?.pickup.get(`${x},${y}`) ?? null
 
 /**
  * Whether a figure may stand on a cell: floor, or the cell of a piece that is

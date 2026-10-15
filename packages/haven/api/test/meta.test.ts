@@ -26,6 +26,16 @@ test('typing is carried only as true', () => {
   expect(roomMeta({ x: 1, y: 1, typing: 'yes' })).toEqual({ x: 1, y: 1 })
 })
 
+test('hushed is a line id, and anything else is dropped', () => {
+  expect(roomMeta({ x: 1, y: 1, hushed: 42 })).toEqual({ x: 1, y: 1, hushed: 42 })
+  for (const hushed of [0, -1, 1.5, 1e9, '7', null, {}]) expect(roomMeta({ x: 1, y: 1, hushed })).toEqual({ x: 1, y: 1 })
+})
+
+test('an emote is one of the three, and anything else is dropped', () => {
+  for (const emote of ['wave', 'sit', 'dance'] as const) expect(roomMeta({ x: 1, y: 1, emote })).toEqual({ x: 1, y: 1, emote })
+  for (const emote of ['Wave', 'jump', '', 1, null]) expect(roomMeta({ x: 1, y: 1, emote })).toEqual({ x: 1, y: 1 })
+})
+
 test('the fullest meta fits the presence frame cap', () => {
-  expect(Buffer.byteLength(JSON.stringify(roomMeta({ x: 255, y: 255, typing: true, facing: 'n', shape: '"', ink: '#ffffff' })))).toBeLessThanOrEqual(80)
+  expect(Buffer.byteLength(JSON.stringify(roomMeta({ x: 255, y: 255, typing: true, facing: 'n', shape: '"', ink: '#ffffff', hushed: 999999999, emote: 'dance' })))).toBeLessThanOrEqual(120)
 })

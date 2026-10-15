@@ -3,8 +3,8 @@
  * Started by `bun run verify:bolt`; needs no Chrome and no TTY of its own.
  *
  * Sam and Ana stand in the square under a pty each, Ana eight cells east of
- * Sam, which is the bolt's whole range. Sam's `d` `l` flies a `-` across the
- * cells between them on Sam's screen and Ana's, knocks Ana two cells east on
+ * Sam, which is the bolt's whole range. Sam's `d` `l` flies a `>` arrow along the
+ * cells up to and including hers on Sam's screen and Ana's, knocks Ana two cells east on
  * both, and flickers her `x` for a second before she is `A` again. Then `d`
  * `k` flies north into the tavern's wall and scorches it with a `,` that Ana
  * sees too, and that a third member, who walks in after, is handed.
@@ -83,19 +83,19 @@ const AX = sx + 8
 check(await until(() => sam.at(AX, sy) === 'A'), 'Ana stands eight cells east of Sam, the bolt\'s whole range', sam.screen())
 
 // ─── d l: a bolt that hits ─────────────────────────────────────────────────
-const between = (t) => () => { for (let x = sx + 1; x < AX; x++) if (t.at(x, sy) === '-') return '-'; return ' ' }
+const between = (t) => () => { for (let x = sx + 1; x <= AX; x++) if (t.at(x, sy) === '>') return '>'; return ' ' }
 sam.send('d'); await sleep(80)
 const flightOnSam = watch(between(sam), 900)
 const flightOnAna = watch(between(ana), 900)
 const flicker = watch(() => sam.at(AX + 2, sy), 1800)
 sam.send('l')
 const [onSam, onAna, flick] = await Promise.all([flightOnSam, flightOnAna, flicker])
-check(onSam.includes('-'), "the bolt is a `-` across the cells between them on Sam's screen", sam.screen())
-check(onAna.includes('-'), "and on Ana's, who did not fire it", ana.screen())
+check(onSam.includes('>'), "the bolt is a `>` arrow across the cells up to and including hers on Sam's screen", sam.screen())
+check(onAna.includes('>'), "and on Ana's, who did not fire it", ana.screen())
 check(!['A', 'x'].includes(sam.at(AX, sy)), 'Ana is no longer where she was struck', sam.screen())
 check(flick.includes('x') && flick.at(-1) === 'A', 'she is knocked two cells east, flickers `x` for a second, and is A again', `${flick.join('')}\n${sam.screen()}`)
 check(ana.at(AX + 2, sy) === '@', "and on her own screen the `@` stands at the cell she was knocked to", ana.screen())
-check(!between(sam)().includes('-') && !between(ana)().includes('-'), 'once landed, the flight is gone from both', sam.screen())
+check(!between(sam)().includes('>') && !between(ana)().includes('>'), 'once landed, the flight is gone from both', sam.screen())
 
 // ─── d j: a bolt that scorches ─────────────────────────────────────────────
 // The hedge below is a wall drawn as `,`, the scorch's own glyph, so the shot

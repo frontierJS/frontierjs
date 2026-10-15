@@ -1,0 +1,10 @@
+<script>
+  // The town hall — through the house with the sign east of the fountain.
+  // The delegates stand where the scene puts them; what they say, the votes
+  // and the board are `Assembly.mesa`'s.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Assembly from '@/components/Assembly.mesa'
+  import TownHall from '@/scenes/TownHall.mesa'
+</script>
+
+<WalkIn slug="townhall"><TownHall><Assembly /></TownHall></WalkIn>

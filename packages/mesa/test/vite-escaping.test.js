@@ -252,3 +252,16 @@ describe('the inspector only ever asks the editor for a file under the root', ()
     expect(i.fetched).toEqual(['/__open-in-editor?file=' + encodeURIComponent('/app/src/pages/Home.mesa:12:3')])
   })
 })
+
+describe('`locRoot` moves what a location is relative to, off the Vite root', () => {
+
+  // A tool served from its own root (Haven's scene editor) over sources beside
+  // it: against the Vite root every stamp is a `../` path the inspector refuses.
+  test('the stamp and the inspector both take it', async () => {
+    const plugin = mesaPlugin({ hmr: false, locRoot: '/t/web/src' })
+    plugin.configResolved({ root: '/t/editor', command: 'serve' })
+    const out = await plugin.transform.call({ error: (e) => { throw e }, warn: () => {} }, '<p>hi</p>\n', '/t/web/src/scenes/Square.mesa')
+    expect(out.code).toContain('data-fjs-loc="scenes/Square.mesa:1:1"')
+    expect(plugin.load('\0@frontierjs/mesa-inspect')).toContain('const ROOT = "/t/web/src"')
+  })
+})

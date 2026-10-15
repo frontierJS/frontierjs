@@ -23,7 +23,11 @@
  *   headless with the door, the lamp and the spawn where they were put;
  * - after the save and a reload, Ctrl+Z still undoes the edit before it;
  * - a block of art pasted in is recognized as two tables and placed, and the
- *   spawn they cover is listed as a problem.
+ *   spawn they cover is listed as a problem;
+ * - the ask panel (14.1) is served, the inspector and the ask are rooted at
+ *   the copy's `web/src`, a shift+alt-click on a table picks its tag's line,
+ *   and a send runs `claude` with Edit scoped to `web/src` and that line in
+ *   the prompt; the edit it makes swaps the editor onto the moved table.
  *
  * Traps:
  * - A cell is clicked at its center in the scene box's own `ch`/`lh` units,
@@ -34,10 +38,13 @@
  *   event dispatched, which is what the picker does when it closes.
  * - The copy is `editor/.copy-<pid>/`: a copy under `/tmp` has no
  *   `package.json` above it, and `#paint` resolves to nothing there.
+ * - `claude` is a stub first on the server's PATH, so no model is paid for:
+ *   it records what it was run with and makes one edit to the copy, as
+ *   Claude's Edit tool would.
  */
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import { cpSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { openChrome } from '../../../mesa/src/drive.js'
@@ -78,6 +85,18 @@ cpSync(join(PKG, 'api/src'), join(root, 'api/src'), { recursive: true })
 const SCENE = join(root, 'web/src/scenes/Tavern.mesa')
 const original = readFileSync(SCENE, 'utf8')
 
+const SEEN = join(root, 'claude-seen.json')
+mkdirSync(join(root, 'bin'))
+// Bun, not node: the copy sits under this package's `"type": "module"`.
+writeFileSync(join(root, 'bin/claude'), `#!/usr/bin/env bun
+const fs = require('fs')
+fs.writeFileSync(${JSON.stringify(SEEN)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), input: fs.readFileSync(0, 'utf8') }))
+const scene = ${JSON.stringify(SCENE)}
+fs.writeFileSync(scene, fs.readFileSync(scene, 'utf8').replace('x={10}  y={13}', 'x={12}  y={13}'))
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }) + '\\n')
+`)
+chmodSync(join(root, 'bin/claude'), 0o755)
+
 const port = await freePort()
 const URL_ = `http://localhost:${port}`
 if (await fetch(URL_).then(() => true, () => false)) {
@@ -86,7 +105,7 @@ if (await fetch(URL_).then(() => true, () => false)) {
 }
 const vite = spawn(VITE, ['-c', 'editor/vite.config.js'], {
   cwd: PKG, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, PORT: String(port), SCENES_DIR: join(root, 'web/src/scenes') },
+  env: { ...process.env, PORT: String(port), SCENES_DIR: join(root, 'web/src/scenes'), PATH: `${join(root, 'bin')}:${process.env.PATH}` },
 })
 let viteLog = ''
 vite.stdout.on('data', (d) => { viteLog += d })
@@ -105,10 +124,16 @@ const browser = await openChrome({ windowSize: '1600,1100' })
 const page = (js) => browser.evaluate(js)
 const text = (sel) => page(`return document.querySelector(${JSON.stringify(sel)})?.textContent ?? null`)
 const art  = async () => (await text('pre[data-art]'))?.split('\n') ?? []
-const CTRL = 2, SHIFT = 8
+// What is drawn in the air — a lamp's head, a canopy — is the layer over the
+// art (`paint.browser.js`), not the art.
+const overhead = async () => (await page(`return { t: document.querySelector('pre[data-art]')?.nextElementSibling?.textContent ?? '' }`)).t.split('\n')
+const ALT = 1, CTRL = 2, SHIFT = 8
+// A table's middle row with its left stool at `x`. The candle is `i` lit and
+// `.` unlit, and lit only while a stool is taken, so it is either here.
+const tableAt = (row, x) => /^o\|U  [i.]  U\|o$/.test(row?.slice(x, x + 11) ?? '')
 
-/** Click scene cell `x`,`y` of the preview at its center. */
-async function clickCell(x, y) {
+/** Click scene cell `x`,`y` of the preview at its center, with CDP `modifiers` held. */
+async function clickCell(x, y, modifiers = 0) {
   const p = await page(`
     const box = document.querySelector('pre[data-art]').parentElement
     const lines = box.querySelector('pre[data-art]').textContent.split('\\n')
@@ -117,8 +142,10 @@ async function clickCell(x, y) {
     const lh = r.height / lines.length
     return { x: r.left + (${x} + 0.5) * cw, y: r.top + (${y} + 0.5) * lh }
   `)
+  // The inspector arms on a move with its modifier held, never on the press.
+  if (modifiers) await browser.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, modifiers })
   for (const type of ['mousePressed', 'mouseReleased']) {
-    await browser.cmd('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1, buttons: type === 'mousePressed' ? 1 : 0 })
+    await browser.cmd('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1, buttons: type === 'mousePressed' ? 1 : 0, modifiers })
   }
 }
 
@@ -157,7 +184,7 @@ await clickCell(10, 14)
 check(await selectedIs('table at 9,13'), 'a click on a table selects it, named with its cell', await selected())
 await browser.press('ArrowRight')
 check(await selectedIs('table at 10,13'), 'ArrowRight moves it one cell right', await selected())
-check(await until(async () => (await art())[14].slice(10, 21) === 'o|U  i  U|o'), 'and the art moves with it', (await art())[14])
+check(await until(async () => tableAt((await art())[14], 10)), 'and the art moves with it', (await art())[14])
 check(await saveEnabled(), 'and there is something to save')
 
 await clickCell(84, 16)
@@ -170,7 +197,7 @@ await clickCell(11, 14)
 check(await selectedIs('table at 10,13'), 'the moved table is selected again')
 await browser.press('z', CTRL)
 check(await selectedIs('table at 9,13'), 'Ctrl+Z undoes the move', await selected())
-check(await until(async () => (await art())[14].slice(9, 20) === 'o|U  i  U|o'), 'and the art goes back')
+check(await until(async () => tableAt((await art())[14], 9)), 'and the art goes back')
 await browser.press('z', CTRL | SHIFT)
 check(await selectedIs('table at 10,13'), 'Ctrl+Shift+Z redoes it', await selected())
 
@@ -181,8 +208,8 @@ await page(`[...document.querySelectorAll('[data-pieces] button')].find((b) => b
 await clickCell(40, 20)
 check(await selectedIs('lamp at 40,20'), 'a shared lamp is placed by click where it was clicked', await selected())
 // The lamp's bulb is a `y` cell, which the tavern's palette flickers through `i!i`.
-const lampAt = (row) => row[40] === '(' && row[42] === ')'
-check(await until(async () => lampAt((await art())[20])), 'and drawn there', (await art())[20])
+const lampAt = (row) => row?.[40] === '(' && row?.[42] === ')'
+check(await until(async () => lampAt((await overhead())[20])), 'and drawn there', (await overhead())[20])
 check(await page(`return document.querySelectorAll('pre[data-art]').length`) === 1, 'one preview is on the page')
 check(await page(`return window.__stage.picture()[20].slice(40, 43)`) === '(o)', 'and the edited stage has the lamp', await page(`return window.__stage.picture()[20]`))
 
@@ -243,7 +270,7 @@ dispose()
 
 await page('location.reload()')
 await sleep(500)
-check(await until(async () => (await art()).length === 26 && lampAt((await art())[20])), 'reloaded, the editor opens on the saved file', `${await text('[data-status]')}\n${(await art())[20]}`)
+check(await until(async () => (await art()).length === 26 && lampAt((await overhead())[20])), 'reloaded, the editor opens on the saved file', `${await text('[data-status]')}\n${(await overhead())[20]}`)
 check(!(await saveEnabled()), 'with nothing to save', await text('[data-status]'))
 await clickCell(45, 23)
 await browser.press('z', CTRL)
@@ -262,9 +289,46 @@ await page(`
 `)
 await mode('Place as pieces')
 check(await until(async () => (await text('[data-status]'))?.startsWith('2 piece(s) placed')), 'two tables drawn side by side are placed as two tables', await text('[data-status]'))
-check(await until(async () => (await art())[22].slice(50, 61) === 'o|U  i  U|o' && (await art())[22].slice(64, 75) === 'o|U  i  U|o'), 'with their top-left on the spawn', (await art())[22])
+check(await until(async () => tableAt((await art())[22], 50) && tableAt((await art())[22], 64)), 'with their top-left on the spawn', (await art())[22])
 // A table's top-left is a space, so the spawn under it stays floor; the cell right of it is a wall.
 check(await page(`return window.__stage.walkable(50, 21) && !window.__stage.walkable(51, 21)`), 'the spawn stays floor beside the wall of the first', await text('[data-problems]'))
+
+// ─── the ask panel ────────────────────────────────────────────────────
+
+const COPY_SRC = join(root, 'web/src')
+const client = await fetch(`${URL_}/@frontierjs/cli/ask-client`).then((r) => r.text(), () => '')
+check(client.startsWith('const ASK = '), 'the ask panel is served', client.slice(0, 120))
+check(await page(`return window.__fjsAsk === true && window.__fjsInspect?.root`) === COPY_SRC, "the panel is on the page, and the inspector is rooted at the copy's web/src", String(await page(`return window.__fjsInspect?.root`)))
+
+const now = readFileSync(SCENE, 'utf8')
+const locOf = (needle) => {
+  const at = now.indexOf(needle)
+  const before = now.slice(0, at)
+  return `scenes/Tavern.mesa:${before.split('\n').length}:${at - before.lastIndexOf('\n')}`
+}
+const tableLoc = locOf('<Piece of={table}   x={10}  y={13} />')
+const placed = (at) => page(`return document.querySelector('[data-placed=${JSON.stringify(at)}]')?.getAttribute('data-fjs-loc') ?? null`)
+check(await placed('table at 10,13') === tableLoc, "a placed table carries its tag's line", String(await placed('table at 10,13')))
+check(await placed('the scene') === locOf('<Scene'), "and the stage the <Scene> tag's", String(await placed('the scene')))
+
+const was = await selected()
+await clickCell(11, 14, ALT | SHIFT)
+check(await until(async () => !!(await page(`return document.querySelector('[data-pick=${JSON.stringify(tableLoc)}]')`))), 'shift+alt-click on the table picks it into the panel', await page(`return [...document.querySelectorAll('[data-pick]')].map((e) => e.dataset.pick).join()`))
+check(await selected() === was, 'and the editor never sees the click: its selection is as it was', await selected())
+
+// The panel's box is the one textarea the editor did not write.
+await page(`
+  ;[...document.querySelectorAll('textarea')].find((t) => !t.hasAttribute('data-import')).value = 'move this table two cells right'
+  ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Send').click()
+`)
+check(await until(() => existsSync(SEEN)), 'Send runs claude', `${await page(`return sessionStorage.getItem('fli:ask:log')`)}\n${viteLog.slice(-1500)}`)
+const seen = existsSync(SEEN) ? JSON.parse(readFileSync(SEEN, 'utf8')) : { argv: [], input: '' }
+const edits = seen.argv.filter((a) => a.startsWith('Edit('))
+check(edits.join() === `Edit(/${COPY_SRC}),Edit(/${COPY_SRC}/**)`, "with Edit scoped to the copy's web/src and nothing wider", edits.join())
+check(seen.cwd === COPY_SRC, 'run from it', seen.cwd)
+check(seen.input.includes(tableLoc) && seen.input.includes('move this table two cells right'), "and the table's line and the instruction in the prompt", seen.input.slice(0, 600))
+check(await until(async () => tableAt((await art())[14], 12) && (await page(`return { at: document.querySelector('[data-placed="table at 12,13"]')?.getAttribute('data-fjs-loc') ?? '' }`)).at === tableLoc), "the edit it made reopens the editor on the moved table, at the tag's line", `${(await art())[14]}\n${await text('[data-status]')}`)
+check(await until(async () => (await page(`return { t: document.body.innerText }`)).t.includes('move this table two cells right')), 'and the panel is open again over the conversation')
 
 check(await page(`return window.__errors ?? 0`) === 0, 'the tab threw nothing')
 await browser.close()

@@ -8,7 +8,10 @@
 // are the room's and stay.
 //
 // Target-neutral and pure, so a test lays out a conversation without a
-// screen; `components/Booth.mesa` places what this returns.
+// screen; `components/Booth.mesa` places what this returns. Every width is
+// counted in cells (`cells.js`), since a line may hold an emoji or 中文.
+
+import { cells, clip } from './cells.js'
 
 /** The booth's column: wide enough for a sentence, narrow enough to leave each member a side. */
 export const COLUMN = { w: 50, h: 24 }
@@ -18,13 +21,15 @@ export function wrap(text, width) {
   const rows = []
   let row = ''
   for (let word of text.trim().split(/\s+/)) {
-    while (word.length > width) {
+    while (cells(word) > width) {
       if (row) { rows.push(row); row = '' }
-      rows.push(word.slice(0, width))
-      word = word.slice(width)
+      // A row narrower than the word's first grapheme still takes it, or the loop never ends.
+      const head = clip(word, width) || [...new Intl.Segmenter().segment(word)][0].segment
+      rows.push(head)
+      word = word.slice(head.length)
     }
     if (!row) row = word
-    else if (row.length + 1 + word.length <= width) row += ' ' + word
+    else if (cells(row) + 1 + cells(word) <= width) row += ' ' + word
     else { rows.push(row); row = word }
   }
   if (row) rows.push(row)
@@ -38,8 +43,8 @@ export function wrap(text, width) {
  */
 export function bubble(body, width = COLUMN.w) {
   const rows = wrap(body, width - 4)
-  const inner = Math.max(...rows.map((r) => r.length))
-  return rows.map((r, i) => `${i === 0 ? '( ' : '  '}${r.padEnd(inner)}${i === rows.length - 1 ? ' )' : '  '}`)
+  const inner = Math.max(...rows.map(cells))
+  return rows.map((r, i) => `${i === 0 ? '( ' : '  '}${r}${' '.repeat(inner - cells(r))}${i === rows.length - 1 ? ' )' : '  '}`)
 }
 
 /**
@@ -53,7 +58,7 @@ export function transcript(said, { me, roomId, width = COLUMN.w, height = COLUMN
     if (line.roomId !== roomId) continue
     const mine = String(line.memberId) === String(me)
     bubble(line.body, width).forEach((text, i) => {
-      rows.push({ key: `${line.id}:${i}`, x: mine ? 0 : width - text.length, text })
+      rows.push({ key: `${line.id}:${i}`, x: mine ? 0 : width - cells(text), text })
     })
   }
   return rows.slice(-height).map((r, y) => ({ ...r, y }))

@@ -16,9 +16,11 @@ const SOURCES = Object.fromEntries(SCENES.map(({ name }) => [name, readFileSync(
 
 // ─── the file as text ────────────────────────────────────────────────
 
-// The workshop's benches stand where the register's counts put them, so the
-// file is a loop and the editor refuses it by name.
-for (const { name } of SCENES.filter((s) => s.name !== 'Workshop')) {
+// The workshop's benches stand where the register's counts put them, and the
+// town hall's delegates where the overview's waves do, so each file is a loop
+// and the editor refuses it by name.
+const COMPUTED = ['Workshop', 'TownHall']
+for (const { name } of SCENES.filter((s) => !COMPUTED.includes(s.name))) {
   test(`${name}: read as a flat list of placed tags`, () => {
     const scene = readScene(SOURCES[name])
     expect(scene.slug).toBe(name.toLowerCase())
@@ -32,9 +34,11 @@ for (const { name } of SCENES.filter((s) => s.name !== 'Workshop')) {
   })
 }
 
-test('Workshop: a computed room is refused by name, never read as a flat list', () => {
-  expect(() => readScene(SOURCES.Workshop)).toThrow('a block in the markup')
-})
+for (const name of COMPUTED) {
+  test(`${name}: a computed room is refused by name, never read as a flat list`, () => {
+    expect(() => readScene(SOURCES[name])).toThrow('a block in the markup')
+  })
+}
 
 test('an attribute edit moves only its own characters, and a missing one is added', () => {
   const src = SOURCES.Tavern

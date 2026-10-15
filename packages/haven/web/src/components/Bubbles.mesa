@@ -14,11 +14,12 @@
   export let y
   export let view
   export let spawn
+  export let hushed = null
 
   const { get: lines, unsubscribe } = useStore(messages.store)
   $.onDestroy(unsubscribe)
 </script>
 
-{#each bubbles(here.get(), lines(), x, y, view, spawn) as b (b.key)}
+{#each bubbles(here.get(), lines(), x, y, view, spawn, hushed) as b (b.key)}
   <p class="surface" {@attach at(b.x, b.y, 12)}>{b.text}</p>
 {/each}

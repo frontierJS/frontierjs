@@ -60,7 +60,7 @@ uuOuuuuuuuuuuuOuu
 eeeeeeeee
     l
    lll
-`)
+`, { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },

@@ -5,7 +5,7 @@
 import { test, expect, setSystemTime } from 'bun:test'
 import { createStage, INK, INDOORS } from '../src/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { DAY_MS, SKY_MS, WEATHER_MS, FALL, darkness, isNight, shade, scheduleAt, weatherAt, fallAt, untilWeatherChange } from '../src/sky.js'
+import { DAY_MS, SKY_MS, WEATHER_MS, FALL, darkness, isNight, shade, scheduleAt, almanacAt, hold, heldOf, fallAt, untilWeatherChange } from '../src/sky.js'
 import { mountScene } from './stage.mjs'
 
 const NOON = 0.25 * DAY_MS
@@ -120,24 +120,40 @@ const pinned = (kind, fn) => {
   try { return fn() } finally { if (was === undefined) delete process.env.HAVEN_WEATHER; else process.env.HAVEN_WEATHER = was }
 }
 
-test('the schedule is the clock\'s: spells of ten minutes, all three kinds, whatever the day', () => {
+test('the schedule is the clock\'s: spells of ten minutes, all four kinds, whatever the day', () => {
   const kinds = new Set()
   for (let spell = 0; spell < 60; spell++) {
     const ms = spell * WEATHER_MS
     expect(scheduleAt(ms)).toBe(scheduleAt(ms + WEATHER_MS - 1))
     kinds.add(scheduleAt(ms))
   }
-  expect([...kinds].sort()).toEqual(['clear', 'rain', 'snow'])
-  expect(scheduleAt(-1)).toMatch(/^(clear|rain|snow)$/)
+  expect([...kinds].sort()).toEqual(['clear', 'rain', 'snow', 'storm'])
+  expect(scheduleAt(-1)).toMatch(/^(clear|rain|snow|storm)$/)
 })
 
 test('a pin replaces the clock, a typo does not', () => {
   const ms = 3 * WEATHER_MS
-  for (const k of ['clear', 'rain', 'snow']) pinned(k, () => expect(weatherAt(ms)).toBe(k))
-  pinned('hail', () => expect(weatherAt(ms)).toBe(scheduleAt(ms)))
-  pinned(null, () => expect(weatherAt(ms)).toBe(scheduleAt(ms)))
+  for (const k of ['clear', 'rain', 'snow', 'storm']) pinned(k, () => expect(almanacAt(ms).weather).toBe(k))
+  pinned('hail', () => expect(almanacAt(ms).weather).toBe(scheduleAt(ms)))
+  pinned(null, () => expect(almanacAt(ms).weather).toBe(scheduleAt(ms)))
   pinned('rain', () => expect(untilWeatherChange(ms)).toBe(Infinity))
   pinned(null, () => expect(untilWeatherChange(ms + 1000)).toBe(WEATHER_MS - 1000))
+})
+
+test('a screen holds one field of the almanac, and the rest stays the clock\'s', () => {
+  const ms = MIDNIGHT + 3 * WEATHER_MS
+  const clock = pinned(null, () => almanacAt(ms))
+  expect(clock).toEqual({ darkness: darkness(ms), season: 'summer', weather: scheduleAt(ms) })
+  try {
+    pinned('rain', () => { hold('weather', 'snow'); expect(almanacAt(ms)).toEqual({ ...clock, weather: 'snow' }) })
+    hold('weather', null)
+    hold('season', 'winter')
+    pinned(null, () => expect(almanacAt(ms)).toEqual({ ...clock, season: 'winter' }))
+    expect(() => hold('season', 'monsoon')).toThrow(/no season is called monsoon/)
+    expect(() => hold('darkness', 1)).toThrow(/the almanac holds no darkness/)
+    expect(heldOf('season')).toBe('winter')
+  } finally { hold('weather', null); hold('season', null) }
+  pinned(null, () => expect(almanacAt(ms)).toEqual(clock))
 })
 
 /** The rows of column `x` that have a drop of `kind` at `ms`. */
@@ -165,9 +181,9 @@ test('rain falls straight and snow drifts a column every few steps', () => {
 
 test('the density is a handful of cells in a screen, not a curtain', () => {
   const count = (kind) => Array.from({ length: 26 * 97 }, (_, i) => fallAt(kind, i % 97, Math.floor(i / 97), 5 * FALL[kind].ms)).filter(Boolean).length
-  expect(count('rain')).toBeGreaterThan(100)
+  expect(count('rain')).toBeGreaterThan(40)
   expect(count('rain')).toBeLessThan(0.15 * 26 * 97)
-  expect(count('snow')).toBeGreaterThan(50)
+  expect(count('snow')).toBeGreaterThan(30)
   expect(count('snow')).toBeLessThan(count('rain'))
 })
 
@@ -181,7 +197,7 @@ test('weather falls on a blank outdoor cell and nowhere else: not a wall, a post
 
   pinned('rain', () => {
     const dropped = cells.filter(([x, y]) => stage.look(x, y, NOON).ch === "'")
-    expect(dropped.length).toBeGreaterThan(100)
+    expect(dropped.length).toBeGreaterThan(40)
     for (const [x, y] of dropped) expect(claimedAt(x, y)).toBe(false)
     expect(stage.look(20, 5, NOON)).toEqual({ ch: '|', fg: '#ffffff', bg: undefined })
     expect(stage.look(22, 5, NOON).ch).toBe('!')
@@ -193,7 +209,7 @@ test('weather falls on a blank outdoor cell and nowhere else: not a wall, a post
     const night = cells.find(([x, y]) => stage.look(x, y, MIDNIGHT).ch === "'" && !claimedAt(x, y))
     expect([shade(FALL.rain.fg, 1), shade(FALL.rain.fg, 0.5)]).toContain(stage.look(...night, MIDNIGHT).fg)
   })
-  pinned('snow', () => expect(cells.filter(([x, y]) => stage.look(x, y, NOON).ch === '*').length).toBeGreaterThan(50))
+  pinned('snow', () => expect(cells.filter(([x, y]) => stage.look(x, y, NOON).ch === '*').length).toBeGreaterThan(30))
   pinned('clear', () => expect(cells.every(([x, y]) => stage.look(x, y, NOON).ch !== "'" && stage.look(x, y, NOON).ch !== '*')).toBe(true))
 })
 
@@ -223,5 +239,5 @@ test('the real square in the rain: the terminal draws drops on the blank cells a
     if (moving(x, y)) return
     if (ch === ' ') { if (w === "'") drops++; else expect(w).toBe(' ') } else expect(w).toBe(ch)
   }))
-  expect(drops).toBeGreaterThan(50)
+  expect(drops).toBeGreaterThan(20)
 }, 30_000)

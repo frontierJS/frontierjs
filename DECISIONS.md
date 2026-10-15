@@ -13482,6 +13482,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1017"></a>2026-10-14 · `FJS-D1017` — Q15 — Who may talk to a figure Claude speaks for — A mod only: a model-backed figure answers a line from a `HAVEN_MODS` nick and nothing else.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (anyone, with a budget per member per day — `FJS-D994`'s B) and **C** (no live model: NPCs speak from a line bank, agents only on a private `--api` server).
+
+The two soul agents (14.9) run on the owner's machine in the shared square. Answering mods only keeps the bill the owner's and leaves strangers no prompt to inject, while every member still sees what the agents say. `FJS-D994` stands for the public barkeep, and 14.8's NPC line bank needs no model at run time.
+
 ### <a id="fjs-d1015"></a>2026-10-14 · `FJS-D1015` — A member's scene is mounted as a tree, never built as data — A Room row's placements are mounted by one generic `<Placements>` component that renders the same `<Piece>` and `<Door>` an owner's `.mesa` scene does, so the mounted tree still calls `stamp()` and `FJS-D997` stands unamended. The placement format exists only in the row; what the server and tests read is derived from the tree by `bun run frames`, as `.frame.txt` is.
 
 Ruled by the owner over **B** (the tree compiles to placement data and `createStage` is built from that, amending `FJS-D997` to make the tree authoring only) and **C** (a scene is a placements JSON file, overturning `FJS-D997`). Answers the check `IDEAS/haven.md` 12.1 asked first.

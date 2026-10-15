@@ -11,6 +11,7 @@ import type { Channel } from '@frontierjs/junction'
 import type { HavenApp } from '../app.ts'
 import { boothFor } from '../booth.ts'
 import { FIRST_FACING, isFacing } from '../facing.ts'
+import { ARROWS } from '../inventory.ts'
 import { shoot } from '../play.ts'
 import { roomChannelName } from '../rooms.ts'
 import { worldFor } from '../world.ts'
@@ -73,8 +74,12 @@ export function createRoomsService (app: HavenApp) {
       const world = worldFor(row.slug)
       if (!world) throw new BadRequest('There is nothing to shoot at here')
 
+      // An empty quiver is refused before the cooldown starts, so it costs no wait.
+      const cost = volley === true ? ARROWS.volley : ARROWS.bolt
+      if (a.inventory.count(me, 'arrow') < cost) throw new BadRequest(`You need ${cost} arrow${cost > 1 ? 's' : ''}: you have ${a.inventory.count(me, 'arrow')}`)
       const wait = a.cooldowns.fire(me, volley === true)
       if (wait > 0) throw new TooManyRequests(`The bolt is not ready for ${Math.ceil(wait / 100) / 10}s`)
+      a.inventory.take(me, 'arrow', cost)
 
       const figures = roster.filter(m => m.meta.x !== undefined && m.meta.y !== undefined).map(m => ({ id: m.id, x: m.meta.x!, y: m.meta.y! }))
       const shooter = figures.find(f => f.id === me)!
@@ -83,7 +88,7 @@ export function createRoomsService (app: HavenApp) {
       // The room is told below, by name; the answer is not a Room row for the bus to announce.
       $.dispatch = false
       a.channel(name).send('bolt', blast)
-      return blast
+      return { ...blast, arrows: a.inventory.count(me, 'arrow') }
     },
   })
 }

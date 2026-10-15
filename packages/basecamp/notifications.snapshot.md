@@ -27,11 +27,13 @@ on the definition is what holds it still.
 | `deploy_success` | `inApp` · `email` |
 | `job_failed` | `inApp` · `email` |
 | `member_joined` | `inApp` · `email` |
+| `monitor_down` | `inApp` · `email` |
+| `monitor_up` | `inApp` · `email` |
 | `posture_failed` | `inApp` · `email` |
 | `server_unreachable` | `inApp` · `email` |
 | `weekly_digest` | `inApp` · `email` |
 
-10 notification(s).
+12 notification(s).
 
 Which transports a given send *uses* is not here: `via` is a function of the
 payload and the recipient, so it is a runtime answer. This is the set each

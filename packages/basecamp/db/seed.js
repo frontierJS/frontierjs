@@ -503,6 +503,18 @@ export class BasecampSeeder extends Seeder {
           data: { ruleId: rules[0].id, channelId: channels[0].id },
         })
 
+        // A monitor, seeded PAUSED: the sweep probes whatever is not, and a dev
+        // server that began requesting a third party's URL the moment it booted
+        // is not what a seed is for. It pages `channels[0]`, so the monitor
+        // screen has a delivery target to show.
+        const monitor = await sys.monitor.create({
+          data: { workspaceId: ws.id, name: 'Marketing site', url: 'https://example.com/' },
+        })
+        await sys.monitor.transition(monitor.id, 'pause')
+        if (channels[0]) await sys.monitorChannel.create({
+          data: { monitorId: monitor.id, channelId: channels[0].id },
+        })
+
         // The automation an operator actually wants, and the one this app runs:
         // a failed release pages the workspace's ops channel. Same definition
         // `api/test/automation.test.ts` drives end to end, so the seeded row and
@@ -1118,6 +1130,7 @@ if (import.meta.main) {
       'jobRun', 'job', 'deploymentStep', 'deployment', 'appNetwork', 'appServer',
       'dashboardWidget', 'dashboard', 'recipeRun', 'recipe', 'cleanupRun', 'diskUsage', 'serverPosture',
       'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
+      'monitorChannel', 'monitorEvent', 'monitorCheck', 'monitor',
       'alertEvent', 'alertRuleChannel', 'alertRule', 'notificationChannel',
       'apiKey', 'secret', 'serverNetwork', 'network', 'volume', 'serverEvent',
       'registryImage', 'dependencyUse', 'dependency',

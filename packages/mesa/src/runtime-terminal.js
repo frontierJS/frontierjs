@@ -98,6 +98,7 @@ class FieldArea extends TextareaRenderable {
   }
   handleKeyPress(key) { return this.#edited(() => super.handleKeyPress(key)) }
   handlePaste(event) { this.#edited(() => super.handlePaste(event)) }
+  insertText(text) { joined(this, text, (s) => super.insertText(s)) }
   #edited(run) {
     const before = this.plainText
     const out = run()
@@ -136,6 +137,25 @@ class SelectBox extends BoxRenderable {
 
 const NONE = Symbol('none')
 
+const GRAPHEMES = new Intl.Segmenter()
+
+/**
+ * Insert `text` into a field, joined to the grapheme before the cursor when
+ * it continues that grapheme. The engine reads a key per code point, so a
+ * grapheme typed or pasted as one (👍🏽, 👩‍💻, e + U+0301) arrives as several
+ * inserts, and each past the first leaves the cursor a cluster's width beyond
+ * the text — or, after a combining mark, inside the cluster — where the next
+ * key lands.
+ */
+function joined(field, text, insert) {
+  const at = field.cursorOffset
+  let last = ''
+  for (const g of GRAPHEMES.segment(field.getTextRange(Math.max(0, at - 32), at))) last = g.segment
+  if (!last || [...GRAPHEMES.segment(last + text)].length !== 1) return insert(text)
+  field.deleteCharBackward()
+  insert(last + text)
+}
+
 /**
  * `<input>` as a text field: the engine's, with `password` drawn as a browser
  * draws it. The engine has no mask, so the field holds the real text, edits
@@ -166,6 +186,7 @@ class Field extends InputRenderable {
     }
     this.requestRender()
   }
+  insertText(text) { joined(this, text, (s) => super.insertText(s)) }
   renderSelf(buffer) {
     super.renderSelf(buffer)
     if (!this.__mask) return
@@ -1264,8 +1285,9 @@ const documents = new WeakMap()
  * through the engine and PageUp and PageDown through `onKey`, and a node
  * that takes focus is scrolled into view once a frame has laid it out —
  * before that it has no place, and a route focuses its first control as it
- * mounts. The top layer is beside it on the root, so a modal dialog stays
- * where it is while the page under it moves.
+ * mounts — and again after the terminal is resized. The top layer is
+ * beside it on the root, so a modal dialog stays where it is while the page
+ * under it moves.
  */
 function documentOf(r) {
   let doc = documents.get(r)
@@ -1279,6 +1301,9 @@ function documentOf(r) {
   documents.set(r, doc)
   let focused = null
   r.on('focused_renderable', (node) => { focused = node })
+  // A resize keeps the scroll where it was, so a terminal made shorter leaves
+  // the field being typed in under the bottom edge until focus moves.
+  r.on('resize', () => { focused = r.currentFocusedRenderable })
   r.addPostProcessFn(() => {
     const node = focused
     focused = null

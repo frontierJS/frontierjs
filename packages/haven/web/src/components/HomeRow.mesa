@@ -1,0 +1,144 @@
+<script>
+  // HomeRow.mesa — the left hand's keys (`IDEAS/haven.md` 9.4) as verbs on
+  // `$context.commands`: `a s d f`, read only where the terminal shell took the
+  // letter as NORMAL. The shell prevents a printable key it will not type, so a
+  // key that arrives prevented is a home-row key, and one that arrives free is
+  // a letter going into the line (INSERT, or a browser, which has no NORMAL);
+  // a verb answering false lets it through.
+  //
+  // An operator waits for the key after it (`home-row.js`), and while it waits
+  // it is the registry's mode, handed every key first: the map cannot open
+  // under a half-typed `d`, and a key the operator cannot use is swallowed as
+  // vim swallows one after `d`. A lone `d` fires the way faced once
+  // `PENDING_MS` passes, on its own timer, since no key may come.
+  //
+  // `f` and a letter walks to the nearest member in the light whose nick
+  // starts with it, a step a `FIND_MS`, re-planned toward where they stand now.
+  // The walk is a mode too, so any key stops it — Esc taken, an arrow let go to
+  // step — and so does a bolt landing on this figure (`commands.close`). `s`
+  // and a character draws this figure as it for `SHAPE_MS`; the timer is this
+  // component's, so a door, which mounts the scene again, ends it. A bolt is
+  // the server's answer (`rooms.bolt`); `Scene.mesa` draws the room's `bolt`
+  // event. Draws nothing.
+  import { rooms } from '@/resources/Room.mesa'
+  import { createHomeRow, PENDING_MS } from '@/home-row.js'
+  import { findByNick, pathBeside } from '@/paths.js'
+  import { cellOf } from '@/crowd.js'
+  import { SHAPE_MS } from '../../../api/src/shape.ts'
+
+  export let stage
+  export let here
+  export let spawn
+  export let nicks
+  // A line being typed keeps its letters.
+  export let draft
+  // Where this figure stands, `{ x, y }`, asked afresh at each step.
+  export let where
+  export let moveTo
+  // Draws this figure as a character, or as itself again for null.
+  export let shapeTo
+  export let tell
+
+  var verbs = $context.commands
+  var room  = $context.room
+  // Handles, not state a template reads: `var`, so none is derived.
+  var row = createHomeRow()
+  var dueTimer   = null
+  var shapeTimer = null
+  var walking    = null
+  var waiting    = null   // the operator's mode's close
+  // 120 ms a step is under the room's 10 moves a second.
+  const FIND_MS = 120
+  const WALK = 'find'
+
+  $.onDestroy(() => {
+    clearTimeout(dueTimer)
+    clearTimeout(shapeTimer)
+    clearInterval(walking)
+  })
+
+  async function fire(volley, way) {
+    try {
+      const shot = await rooms.service.invoke('bolt', null, { roomId: room.id, ...(way && { facing: way }), ...(volley && { volley: true }) })
+      tell(shot?.arrows === undefined ? '' : `${shot.arrows} arrow${shot.arrows === 1 ? '' : 's'} left`)
+    } catch (e) { tell(e.message) }
+  }
+
+  // ─── the walk ──────────────────────────────────────────────────────────────
+
+  /** One step toward the member `id`, from where each stands now: they may have moved. */
+  function stepToward(id) {
+    const m = here.get().others.find((o) => o.userId === id)
+    const path = m && pathBeside(stage, where(), cellOf(m, spawn))
+    if (!path?.length) verbs.close(WALK)
+    else moveTo(path[0].x, path[0].y)
+  }
+
+  function find(letter) {
+    const lit = (m) => stage.light(cellOf(m, spawn).x, cellOf(m, spawn).y) === 'lit'
+    const figs = here.get().others
+      .filter((m) => nicks[m.userId] && lit(m))
+      .map((m) => ({ id: m.userId, nick: nicks[m.userId], ...cellOf(m, spawn) }))
+    const found = findByNick(stage, where(), figs, letter)
+    if (!found) { tell(`nobody here is called ${letter}…`); return }
+    tell('')
+    if (!found.path.length) return
+    const close = verbs.open({
+      name: WALK,
+      take: (e) => { close(); return e.key === 'Escape' },
+      closed: () => { clearInterval(walking); walking = null },
+    })
+    walking = setInterval(() => stepToward(found.figure.id), FIND_MS)
+  }
+
+  function shapeshift(ch) {
+    clearTimeout(shapeTimer)
+    shapeTo(ch)
+    shapeTimer = ch ? setTimeout(() => shapeTo(null), SHAPE_MS) : null
+    tell(ch ? `you are ${ch} for a minute` : 'you are yourself again')
+  }
+
+  // ─── the operator ──────────────────────────────────────────────────────────
+
+  function act(a) {
+    if (a === true || !a?.act) return
+    verbs.close(WALK)
+    if (a.act === 'bolt')   fire(false, a.facing)
+    if (a.act === 'volley') fire(true)
+    if (a.act === 'find')   find(a.letter)
+    if (a.act === 'shape')  shapeshift(a.ch)
+    if (a.act === 'chalk')  tell('chalk is not drawn yet')
+  }
+
+  /** Keeps the operator's mode open while one waits, and a lone `d` on its clock. */
+  function settle() {
+    clearTimeout(dueTimer)
+    if (!row.pending) { waiting?.(); return }
+    if (!waiting) waiting = verbs.open({ name: 'operator', take, closed: () => { waiting = null; row.cancel(); clearTimeout(dueTimer) } })
+    if (row.pending === 'd') dueTimer = setTimeout(() => { act(row.due()); settle() }, PENDING_MS + 10)
+  }
+
+  /** A key after an operator; a late `d`'s bolt runs, and the key that outran it is asked again. */
+  function take(e) {
+    const r = row.key(e.key)
+    if (r === null) { settle(); return false }
+    e.preventDefault?.()
+    act(r)
+    if (r.after === null) { settle(); return false }
+    act(r.after)
+    settle()
+    return true
+  }
+
+  for (const key of ['a', 's', 'd', 'f']) {
+    $.onDestroy(verbs.add({
+      key,
+      run: ({ event }) => {
+        if (draft || verbs.mode || !event?.defaultPrevented) return false
+        if (row.key(key) === null) return false
+        settle()
+        return true
+      },
+    }))
+  }
+</script>

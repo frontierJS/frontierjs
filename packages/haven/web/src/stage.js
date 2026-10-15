@@ -23,11 +23,12 @@
 // a wall walks through it on its own screen and every other one.
 //
 // The view is the slice of the stage a screen shows (`IDEAS/haven.md` 6.1):
-// VIEW cells at most, following the figure a scene tells it to with EDGE
-// cells of slack, so it pans only when the figure nears an edge. It lives
-// on the stage, so a pan is a `changed()` like a moved piece and `#paint`
-// has one subscription; a stage no bigger than VIEW never pans. The editor
-// asks for the whole stage instead.
+// the screen's size at most — the terminal's, which `#paint` tells `fit()`
+// (14.6), else VIEW — following the figure a scene tells it to with EDGE
+// cells of slack in proportion, so it pans only when the figure nears an
+// edge. It lives on the stage, so a pan or a resize is a `changed()` like a
+// moved piece and `#paint` has one subscription; a stage no bigger than the
+// screen never pans. The editor asks for the whole stage instead.
 //
 // Light and fog (`IDEAS/haven.md` 6.3). Once a scene says which figure
 // SEES (`see(x, y)`), a cell is lit when it is within SIGHT of that figure
@@ -69,7 +70,9 @@
 //   candle   a piece's `burns` cell is an unlit `.` until one of its seats is taken.
 //   weather  rain or snow (7.3, `sky.js`) on a blank cell -- the air between
 //            the art -- so a drop never hides a wall, a door or a piece, and a
-//            cell under a canopy takes none.
+//            cell under a canopy takes none. A storm adds clouds along the top
+//            and a bolt on the blank cells down to the first thing it strikes;
+//            a tree it strikes burns, then stands charred, then grows back.
 //   steps    a footprint (7.4) on a blank cell somebody stood on in the last
 //            few minutes, fading in thirds; a drop falls in front of it.
 //   scorch   a bolt's `,` (9.5) on the wall it struck, fading in thirds; it
@@ -84,7 +87,7 @@
 // which cell has a drop or a footprint.
 
 import { pacerAt, pick } from '../../api/src/pacer.ts'
-import { darkness, isNight, shade, SKY_MS, hash, weatherAt, fallAt, untilWeatherChange, FALL } from './sky.js'
+import { almanacAt, SEASONS, skyDarkness, isNight, shade, SKY_MS, hash, fallAt, untilWeatherChange, FALL, STRIKE_MS, BURN_MS, CHAR_MS, FIRE_MS, strikeAt, flashAt, cloudAt } from './sky.js'
 import { fadeOf } from '../../api/src/memory.ts'
 import { pieceId } from './world.js'
 import { spotsOf } from './pieces/index.js'
@@ -185,28 +188,55 @@ export function litAt(stage, x, y, from) {
   return stage.lights.some((l) => within(l, cell, l.r))
 }
 
-/** The most cells a screen shows: a 100×30 terminal with the status and input lines under the art. */
-export const VIEW = { w: 97, h: 26 }
+/**
+ * What a terminal shows that is not the art: the shell's scrollbar column
+ * and two spare, and the status, input and mode lines under it. Taken off
+ * less than this, the input line is scrolled off the bottom of the screen.
+ */
+const CHROME = { w: 3, h: 4 }
 
-/** How near an edge the followed figure may come before the view pans. */
+/** The most cells a terminal of `cols` × `rows` shows of a scene (14.6). */
+export function viewFor(cols, rows) {
+  return { w: Math.max(1, cols - CHROME.w), h: Math.max(1, rows - CHROME.h) }
+}
+
+/**
+ * The most cells a screen shows where its size is not known: `--frame`'s
+ * and a drive's 100×30, so a test and a drive read the numbers they always
+ * have. A drive that wants another size states its pty's.
+ */
+export const VIEW = viewFor(100, 30)
+
+/** How near an edge the followed figure may come before a VIEW-sized view pans. */
 export const EDGE = { x: 8, y: 4 }
 
 /**
- * Where the view sits once a figure at `fig` is followed from `view`:
- * VIEW cells or the extent where that is smaller, the figure kept EDGE
- * cells from each edge, and the view kept inside the extent. A figure
- * already inside the slack leaves the view where it is.
+ * EDGE in proportion to a view of `size`, so a zoomed-out terminal keeps as
+ * much of the scene ahead of the figure as VIEW does, and a small one is not
+ * all slack.
  */
-export function follow(view, fig, extent) {
-  const axis = (at, size, f, edge, span) => {
+export function edgeFor(size) {
+  return { x: Math.round(EDGE.x * size.w / VIEW.w), y: Math.round(EDGE.y * size.h / VIEW.h) }
+}
+
+/**
+ * Where the view sits once a figure at `fig` is followed from `view`:
+ * `size` cells (VIEW unless a screen said its own) or the extent where that
+ * is smaller, the figure kept `edgeFor(size)` cells from each edge, and the
+ * view kept inside the extent. A figure already inside the slack leaves the
+ * view where it is.
+ */
+export function follow(view, fig, extent, size = VIEW) {
+  const axis = (at, span, f, edge, whole) => {
     let v = at
     if (f - v < edge) v = f - edge
-    if (v + size - 1 - f < edge) v = f + edge - size + 1
-    return Math.max(0, Math.min(v, span - size))
+    if (v + span - 1 - f < edge) v = f + edge - span + 1
+    return Math.max(0, Math.min(v, whole - span))
   }
-  const w = Math.min(VIEW.w, extent.width)
-  const h = Math.min(VIEW.h, extent.height)
-  return { x: axis(view.x, w, fig.x, EDGE.x, extent.width), y: axis(view.y, h, fig.y, EDGE.y, extent.height), w, h }
+  const edge = edgeFor(size)
+  const w = Math.min(size.w, extent.width)
+  const h = Math.min(size.h, extent.height)
+  return { x: axis(view.x, w, fig.x, edge.x, extent.width), y: axis(view.y, h, fig.y, edge.y, extent.height), w, h }
 }
 
 /**
@@ -229,9 +259,9 @@ export function arrival(stage, { from, x, y, stand } = {}) {
 }
 
 /**
- * @param {{ slug: string, palette?: object, spawn: { x: number, y: number } }} o
+ * @param {{ slug: string, palette?: object, spawn: { x: number, y: number }, season?: string }} o
  */
-export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manual = false }) {
+export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manual = false, season = almanacAt(Date.now()).season }) {
   for (const l of layers) if (!LAYERS.includes(l)) throw new Error(`[${slug}] no layer is called ${l}; the layers are ${LAYERS.join(', ')}`)
   const has  = (name) => layers.includes(name)
   const fog  = has('fog')
@@ -241,7 +271,8 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   const listeners = new Set()
   let width = 0, height = 0
   let eye   = { x: 0, y: 0 }   // the view's top-left
-  let fig   = null             // the figure followed, re-followed when the extent changes
+  let fig   = null             // the figure followed, re-followed when the extent or the screen changes
+  let size  = VIEW             // the most cells the screen shows, until `fit` says its own
   let whole = false
   let seer  = null             // the figure that sees; null lights every cell
   // A piece's own palette entries, for the letters the scene's palette leaves out
@@ -266,7 +297,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   const readopt = () => {
     defaults.clear()
     defaultFrom.clear()
-    for (const m of marks) if (m.kind === 'piece') adopt(m.piece)
+    for (const m of marks) if (m.kind === 'piece') adopt(m.drawn)
   }
   let lights  = []             // every cell whose palette entry has a light, with its radius
   let visible = new Set()      // 'x,y' lit for the seer now
@@ -281,6 +312,8 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   let framing = false          // inside a frame: a change marks it dirty and the frame paints it
   let dirty   = true
   let lookDue = -Infinity      // when the look next changes on its own
+  const bolts = new Map()      // window n → { cells: 'x,y' → glyph, hit: the tree mark struck or null }, geometry only; the weather it struck in is asked at use
+  let treeCells = null         // 'x,y' → the tree mark owning that cell, made at the first storm look and dropped by relight
   let last    = 0              // the ms of the last frame, which is now for a stage stepped by hand
   let timer   = null
 
@@ -297,6 +330,8 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   const relight = () => {
     lights = []
     glow = null
+    bolts.clear()
+    treeCells = null
     for (const [k, c] of claims) {
       const r = entryOf(c.key)?.light
       if (!r) continue
@@ -312,7 +347,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   // How dark a cell is `ms` into the clock: 0 by day or with no sky, 0 on a
   // light source, half the sky inside a light's radius.
   const nightAt = (x, y, ms) => {
-    const d = has('sky') ? darkness(ms) : 0
+    const d = has('sky') ? skyDarkness(ms) : 0
     if (!d) return 0
     if (entryOf(claims.get(key(x, y))?.key)?.light) return 0
     if (!glow) {
@@ -330,7 +365,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   // stage is right and the picture is late, which the next tick repairs.
   const changed = () => {
     extent()
-    if (fig) eye = follow({ ...eye }, fig, { width, height })
+    if (fig) eye = follow({ ...eye }, fig, { width, height }, size)
     relight()
     tell()
   }
@@ -425,6 +460,77 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     if (age < wobble + fall) return { ...c, ch: pick(sink, Math.floor((age - wobble) * sink.length / fall)), floor: false }
     return { ...c, ...c.crumbles, floor: false, name: 'fallen' }
   }
+  // ─── storm ──────────────────────────────────────────────────────────────
+  // A strike is the clock's (`strikeAt`), so every screen has the same one; the
+  // stage turns its seed into a column, and says what it hit from its own claims.
+  const isTree = (m) => m.kind === 'piece' && m.piece.name === 'tree'
+  const treeOwner = (x, y) => {
+    if (!treeCells) {
+      treeCells = new Map()
+      for (const m of marks) if (isTree(m)) for (const c of m.drawn.cells) treeCells.set(key(m.x + c.dx, m.y + c.dy), m)
+    }
+    return treeCells.get(key(x, y))
+  }
+  // Rows 1 and down: row 0 is a framed scene's wall. Half the strikes are aimed
+  // at a tree -- through the roof of the house above it, since the trees stand
+  // in front of houses -- so a bolt with a tree to find does find one on screen.
+  const boltOf = (n) => {
+    let b = bolts.get(n)
+    if (b) return b
+    const s = strikeAt(n)
+    const cells = new Map()
+    let hit = null
+    if (s && width && height > 1) {
+      const jag = (y) => (hash(n, y, 13) % 3) - 1
+      const trees = marks.filter(isTree)
+      let x = s.seed % width
+      let aim = null
+      if (trees.length && hash(n, 3, 4) % 2 === 0) {
+        const t = trees[hash(n, 6, 8) % trees.length]
+        const top = Math.min(...t.drawn.cells.map((c) => c.dy))
+        const tops = t.drawn.cells.filter((c) => c.dy === top)
+        const c = tops[s.seed % tops.length]
+        aim = { x: t.x + c.dx, y: t.y + c.dy, mark: t }
+        let drift = 0
+        for (let y = 1; y < aim.y; y++) drift += jag(y)
+        x = aim.x - drift
+      }
+      x = Math.max(0, Math.min(width - 1, x))
+      for (let y = 1; y < height; y++) {
+        if (aim ? y === aim.y : claims.has(key(x, y)) && (claims.get(key(x, y)).ch !== ' ' || claims.get(key(x, y)).overhead)) {
+          hit = aim ? aim.mark : (claims.get(key(x, y)).name === 'tree' ? treeOwner(x, y) : null)
+          break
+        }
+        const dx = jag(y)
+        cells.set(key(x, y), dx < 0 ? '/' : dx > 0 ? '\\' : '|')
+        x = Math.max(0, Math.min(width - 1, x + dx))
+      }
+    }
+    b = { cells, hit }
+    bolts.set(n, b)
+    return b
+  }
+  // Milliseconds since a bolt last struck tree `m` in a storm, or Infinity.
+  const sinceStruck = (m, ms) => {
+    const last = Math.floor(ms / STRIKE_MS)
+    for (let n = last; n >= last - Math.ceil((BURN_MS + CHAR_MS) / STRIKE_MS); n--) {
+      const s = strikeAt(n)
+      if (s && s.at <= ms && boltOf(n).hit === m && almanacAt(s.at).weather === 'storm') return ms - s.at
+    }
+    return Infinity
+  }
+  const blazing = (ms) => marks.some((m) => isTree(m) && sinceStruck(m, ms) < BURN_MS)
+  // A struck tree's cell: flames across its canopy, then ash-dark until it grows back.
+  const burnt = (out, { x, y, ms }) => {
+    const m = treeOwner(x, y)
+    if (!m || out.ch === ' ') return out
+    const age = sinceStruck(m, ms)
+    if (age >= BURN_MS + CHAR_MS) return out
+    if (age >= BURN_MS) return { ...out, fg: '#3f3f46' }
+    if (!out.overhead) return { ...out, fg: '#44403c' }
+    const f = hash(Math.floor(ms / FIRE_MS), x, y) % 4
+    return f === 3 ? { ...out, fg: '#7c2d12' } : { ...out, ch: f === 2 ? '"' : '^', fg: ['#ef4444', '#f97316', '#fde047'][f] }
+  }
   // A layer: what it does to a cell's look, given `{ x, y, ms, c, light }`.
   const blank = (out) => out.ch === ' ' && !out.bg && !out.overhead
   const fold = {
@@ -432,9 +538,18 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       if (!c?.burns || spotsOf(c.burns.piece, 'seat').some((s) => occupied.has(key(c.burns.x + s.dx, c.burns.y + s.dy)))) return out
       return { ch: '.', fg: '#ffffff', bg: undefined }
     },
-    weather(out, { x, y, ms, light }) {
-      if (light !== 'lit' || !blank(out)) return out
-      const drop = fallAt(weatherAt(ms), x, y, ms)
+    weather(out, at) {
+      const { x, y, ms } = at
+      if (at.c?.name === 'tree') out = burnt(out, at)
+      const kind = almanacAt(ms).weather
+      if (kind === 'storm' && flashAt(ms)) {
+        const bolt = boltOf(Math.floor(ms / STRIKE_MS)).cells.get(key(x, y))
+        if (bolt) return { ch: bolt, fg: '#fef9c3', bg: undefined }
+      }
+      if (at.light !== 'lit' || !blank(out)) return out
+      const cloud = kind === 'storm' ? cloudAt(x, y, ms) : null
+      if (cloud) return { ch: cloud.ch, fg: cloud.fg, bg: undefined }
+      const drop = fallAt(kind, x, y, ms)
       return drop ? { ch: drop.ch, fg: drop.fg, bg: undefined } : out
     },
     steps(out, { x, y, ms, light }) {
@@ -473,11 +588,11 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   const ticks = {
     sky: () => [SKY_MS],
     weather(ms) {
-      const kind = weatherAt(ms)
+      const kind = almanacAt(ms).weather
       // The edge of a spell is a step too: a screen with nothing else moving
       // would otherwise draw the rain up to a sky step late.
       const until = untilWeatherChange(ms)
-      return [...(until < Infinity ? [Math.max(50, Math.min(SKY_MS, until))] : []), ...(FALL[kind] ? [FALL[kind].ms] : [])]
+      return [...(until < Infinity ? [Math.max(50, Math.min(SKY_MS, until))] : []), ...(FALL[kind] ? [FALL[kind].ms] : []), ...(blazing(ms) ? [FIRE_MS] : [])]
     },
     steps: (ms) => fadeTick(steps, STEP_FG.length, ms),
     scorch: (ms) => fadeTick(scorches, SCORCH_FG.length, ms),
@@ -500,13 +615,21 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     /** The slice a screen draws: `{ x, y, w, h }` in the stage's cells. */
     get view() {
       if (whole) return { x: 0, y: 0, w: width, h: height }
-      return { x: eye.x, y: eye.y, w: Math.min(VIEW.w, width), h: Math.min(VIEW.h, height) }
+      return { x: eye.x, y: eye.y, w: Math.min(size.w, width), h: Math.min(size.h, height) }
+    },
+
+    /** The most cells the screen shows (`viewFor`); the figure is followed again, so a resize keeps it on screen. */
+    get size() { return size },
+    fit({ w, h }) {
+      if (w === size.w && h === size.h) return
+      size = { w, h }
+      changed()
     },
 
     /** Keep this figure on screen; a pan redraws. The figure is kept, so a piece mounting later pans too. */
     follow(x, y) {
       fig = { x, y }
-      const next = follow(stage.view, fig, { width, height })
+      const next = follow(stage.view, fig, { width, height }, size)
       if (next.x === eye.x && next.y === eye.y) return
       eye = { x: next.x, y: next.y }
       changed()
@@ -557,13 +680,16 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
 
     /** A piece's cells, claimed at `x, y`; the mark moves or removes them. */
     stamp(piece, x, y) {
-      adopt(piece)
-      const cellsAt = (px, py) => piece.cells.map((c) => [px + c.dx, py + c.dy, { ch: c.ch, key: c.key, name: piece.name, floor: piece.floor || c.seat, overhead: c.overhead, burns: c.burns && mark, crumbles: piece.crumbles }])
+      const inSeason = (s) => piece.seasons?.[s] ?? piece
+      adopt(inSeason(season))
+      const cellsAt = (px, py, drawn = mark.drawn) => drawn.cells.map((c) => [px + c.dx, py + c.dy, { ch: c.ch, key: c.key, name: piece.name, floor: piece.floor || c.seat, overhead: c.overhead, burns: c.burns && mark, crumbles: piece.crumbles }])
       const lift = () => {
-        for (const c of piece.cells) { claims.delete(key(mark.x + c.dx, mark.y + c.dy)); crumbling.delete(key(mark.x + c.dx, mark.y + c.dy)) }
+        for (const c of mark.drawn.cells) { claims.delete(key(mark.x + c.dx, mark.y + c.dy)); crumbling.delete(key(mark.x + c.dx, mark.y + c.dy)) }
       }
       const mark = {
         kind: 'piece', piece, x, y,
+        /** What is drawn: the piece in the stage's season, or the piece itself. */
+        drawn: inSeason(season),
         /** A spot of the piece (`pieces/index.js`) as a cell of the stage. */
         spot(name) {
           const s = piece.spots?.[name]
@@ -580,6 +706,15 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
           changed()
         },
         remove() { lift(); drop(mark); readopt(); changed() },
+        /** Draw the piece as it is in season `s`; a cell the new look claims that another piece holds refuses it, and the old look stays. */
+        season(s) {
+          const next = inSeason(s)
+          if (next === mark.drawn) return
+          lift()
+          try { putAll(cellsAt(mark.x, mark.y, next)) }
+          catch (e) { putAll(cellsAt(mark.x, mark.y)); throw e }
+          mark.drawn = next
+        },
       }
       try { putAll(cellsAt(x, y)) }
       catch (e) { readopt(); throw e }
@@ -691,6 +826,29 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     /** The ms of the frame last run: the clock a `manual` stage is at. */
     get now() { return now() },
 
+    /** The season the stage's pieces are drawn in (`SEASONS`). */
+    get season() { return season },
+
+    /**
+     * Every piece that names its `seasons` drawn as it is in `s`. All or
+     * none: a piece whose new look would land on another's cell refuses the
+     * whole turn, naming the cell, and the stage stays in its season.
+     */
+    toSeason(s) {
+      if (!SEASONS.includes(s)) throw new Error(`no season is called ${s}; the seasons are ${SEASONS.join(', ')}`)
+      const was = season
+      const turned = []
+      try {
+        for (const m of marks) if (m.kind === 'piece' && m.piece.seasons) { m.season(s); turned.push(m) }
+      } catch (e) {
+        for (const m of turned.reverse()) m.season(was)
+        throw e
+      }
+      season = s
+      readopt()
+      changed()
+    },
+
     /** Redraw now — after the palette was edited in place. */
     touch() { changed() },
 
@@ -797,7 +955,8 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     /**
      * Break the pieces `traces` name, `{ id, until }` with an id as `world.js`
      * spells it: each solid cell of the piece draws as nothing and can be
-     * stood on until `until`, then is the piece again. A piece this scene does
+     * stood on until `until`, then is the piece again. A pickup lifted is the
+     * same, its floor cells drawn as nothing. A piece this scene does
      * not place is ignored, since a trace outlives a deploy.
      */
     shatter(traces) {
@@ -808,7 +967,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
         for (const c of m.piece.cells) {
           const k = key(m.x + c.dx, m.y + c.dy)
           const held = claims.get(k)
-          if (!held || held.door || held.floor || held.overhead) continue
+          if (!held || held.door || (held.floor && !m.piece.pickup) || held.overhead) continue
           shattered.set(k, Math.max(shattered.get(k) ?? 0, t.until))
           broke = true
         }

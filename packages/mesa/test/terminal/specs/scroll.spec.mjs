@@ -6,7 +6,8 @@
  * pressed into the screen's height; that focus moving past the bottom edge
  * scrolls the least that shows the node, a link inside prose by its line;
  * that PageDown and PageUp move a screen less one row; that the wheel
- * scrolls and a press after it lands on what is drawn there; and that a
+ * scrolls and a press after it lands on what is drawn there; that a
+ * terminal made shorter keeps the focused control on screen; and that a
  * page that fits shows no scrollbar.
  */
 export const name = 'scroll'
@@ -51,6 +52,13 @@ export async function run(t) {
   await t.press('\x1b[6~')
   await t.click('[ last ]')
   t.ok((await lines(t)).some((l) => text(l) === 'pressed last'), 'a press after scrolling lands on what is drawn there')
+
+  await t.mount(await t.compile('Long'), {}, { width: 40, height: 10 })
+  await t.settle()
+  for (let i = 0; i < 3; i++) await t.tab()
+  t.is(await last(t), '[ last ]', 'focus on the last control, at the bottom edge')
+  await t.resize(40, 7)
+  t.is(await last(t), '[ last ]', 'a terminal made shorter keeps the focused control on screen')
 
   await t.mount(await t.compile('Counter'), {}, { width: 40, height: 10 })
   await t.settle()

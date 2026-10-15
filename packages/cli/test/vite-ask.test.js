@@ -776,6 +776,22 @@ process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_err
     expect(existsSync(seenAt)).toBe(false)
   })
 
+  test('a `root` handed to the plugin is the edit scope, whatever the Vite root is', async () => {
+    const seenAt = join(dir, 'claude-root.json')
+    const bin = join(dir, 'claude-root')
+    writeFileSync(bin, `#!/usr/bin/env node
+require('fs').writeFileSync(${JSON.stringify(seenAt)}, JSON.stringify({ argv: process.argv.slice(2) }))
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false }) + '\\n')
+`)
+    chmodSync(bin, 0o755)
+    const src = join(work, 'src')
+    mkdirSync(src, { recursive: true })
+    const post = await serve({ admit: null, bin, root: src })
+    await post('/__fjs/ask', { instruction: 'add a well' }).catch(() => {})
+    const argv = JSON.parse(readFileSync(seenAt, 'utf8')).argv
+    expect(argv.filter(a => a.startsWith('Edit('))).toEqual([`Edit(/${src})`, `Edit(/${src}/**)`])
+  })
+
   test('a run can be undone from its result, before claude has exited', async () => {
     const bin = join(dir, 'claude-linger')
     writeFileSync(bin, `#!/usr/bin/env node

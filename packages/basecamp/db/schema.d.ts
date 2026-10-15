@@ -80,6 +80,10 @@ export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'timeout'
 
 export type AlertSeverity = 'info' | 'warning' | 'critical'
 
+export type MonitorStatus = 'pending' | 'up' | 'down' | 'paused'
+
+export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
 export type AlertSubject = 'server' | 'volume' | 'series'
 
 export type ComparisonOp = 'gt' | 'gte' | 'lt' | 'lte'
@@ -102,9 +106,9 @@ export type BackupDestination = 'local' | 's3'
 
 export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
-export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace'
+export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
 
-export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'posture_failed' | 'dependency_vulnerable' | 'member_joined' | 'job_failed' | 'weekly_digest'
+export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'monitor_down' | 'monitor_up' | 'posture_failed' | 'dependency_vulnerable' | 'member_joined' | 'job_failed' | 'weekly_digest'
 
 export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update' | 'Variable.create' | 'Variable.delete' | 'Variable.update'
 
@@ -194,6 +198,14 @@ export interface DashboardReorder {
  * is checked against the workspace by the method.
  */
 export interface AlertChannelRef {
+  channelId: string
+}
+
+/**
+ * What `monitors.attachChannel` and `monitors.detachChannel` accept. The
+ * channel is checked against the workspace by the method.
+ */
+export interface MonitorChannelRef {
   channelId: string
 }
 
@@ -3803,6 +3815,252 @@ export type AlertEventOrderBy =
   | { [K in keyof Omit<AlertEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AlertEvent, never>]?: OrderDir }>
 
+// ─── Monitor ─────────────────────────────────────────────────────
+
+export interface Monitor {
+  id: string
+  workspaceId: string
+  name: string
+  appId?: string | null
+  url: string
+  method: HttpMethod
+  headers: unknown
+  body?: string | null
+  intervalSec: number
+  retries: number
+  retryIntervalSec: number
+  timeoutMs: number
+  acceptedStatus: string
+  maxRedirects: number
+  ignoreTls: boolean
+  invert: boolean
+  resendEvery: number
+  tags: unknown
+  status: MonitorStatus
+  failStreak: number
+  lastCheckedAt?: string | null
+  nextCheckAt?: string | null
+  lastLatencyMs?: number | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MonitorCreate {
+  id?: string
+  workspaceId: string
+  name: string
+  appId?: string | null
+  url: string
+  method?: HttpMethod
+  headers?: unknown
+  body?: string | null
+  intervalSec?: number
+  retries?: number
+  retryIntervalSec?: number
+  timeoutMs?: number
+  acceptedStatus?: string
+  maxRedirects?: number
+  ignoreTls?: boolean
+  invert?: boolean
+  resendEvery?: number
+  tags?: unknown
+  status?: MonitorStatus
+  failStreak?: number
+  lastCheckedAt?: string | null
+  nextCheckAt?: string | null
+  lastLatencyMs?: number | null
+}
+
+export interface MonitorUpdate {
+  id?: string
+  workspaceId?: string
+  name?: string
+  appId?: string | null
+  url?: string
+  method?: HttpMethod
+  headers?: unknown
+  body?: string | null
+  intervalSec?: number
+  retries?: number
+  retryIntervalSec?: number
+  timeoutMs?: number
+  acceptedStatus?: string
+  maxRedirects?: number
+  ignoreTls?: boolean
+  invert?: boolean
+  resendEvery?: number
+  tags?: unknown
+  status?: MonitorStatus
+  failStreak?: number
+  lastCheckedAt?: string | null
+  nextCheckAt?: string | null
+  lastLatencyMs?: number | null
+}
+
+export interface MonitorWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  appId?: string | WhereOp<string> | null
+  url?: string | WhereOp<string> | null
+  method?: HttpMethod | WhereOp<HttpMethod> | null
+  headers?: unknown | WhereOp<unknown> | null
+  body?: string | WhereOp<string> | null
+  intervalSec?: number | WhereOp<number> | null
+  retries?: number | WhereOp<number> | null
+  retryIntervalSec?: number | WhereOp<number> | null
+  timeoutMs?: number | WhereOp<number> | null
+  acceptedStatus?: string | WhereOp<string> | null
+  maxRedirects?: number | WhereOp<number> | null
+  ignoreTls?: boolean | WhereOp<boolean> | null
+  invert?: boolean | WhereOp<boolean> | null
+  resendEvery?: number | WhereOp<number> | null
+  tags?: unknown | WhereOp<unknown> | null
+  status?: MonitorStatus | WhereOp<MonitorStatus> | null
+  failStreak?: number | WhereOp<number> | null
+  lastCheckedAt?: string | WhereOp<string> | null
+  nextCheckAt?: string | WhereOp<string> | null
+  lastLatencyMs?: number | WhereOp<number> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  AND?: MonitorWhere[]
+  OR?:  MonitorWhere[]
+  NOT?: MonitorWhere
+}
+
+export type MonitorOrderBy =
+  | { [K in keyof Omit<Monitor, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Monitor, never>]?: OrderDir }>
+
+// ─── MonitorCheck ────────────────────────────────────────────────
+
+export interface MonitorCheck {
+  id: string
+  monitorId: string
+  at: string
+  ok: boolean
+  statusCode?: number | null
+  latencyMs?: number | null
+  message: string
+}
+
+export interface MonitorCheckCreate {
+  id?: string
+  monitorId: string
+  at?: string
+  ok: boolean
+  statusCode?: number | null
+  latencyMs?: number | null
+  message: string
+}
+
+export interface MonitorCheckUpdate {
+  id?: string
+  monitorId?: string
+  at?: string
+  ok?: boolean
+  statusCode?: number | null
+  latencyMs?: number | null
+  message?: string
+}
+
+export interface MonitorCheckWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  monitorId?: string | WhereOp<string> | null
+  at?: string | WhereOp<string> | null
+  ok?: boolean | WhereOp<boolean> | null
+  statusCode?: number | WhereOp<number> | null
+  latencyMs?: number | WhereOp<number> | null
+  message?: string | WhereOp<string> | null
+  AND?: MonitorCheckWhere[]
+  OR?:  MonitorCheckWhere[]
+  NOT?: MonitorCheckWhere
+}
+
+export type MonitorCheckOrderBy =
+  | { [K in keyof Omit<MonitorCheck, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<MonitorCheck, never>]?: OrderDir }>
+
+// ─── MonitorEvent ────────────────────────────────────────────────
+
+export interface MonitorEvent {
+  id: string
+  monitorId: string
+  at: string
+  fromStatus: MonitorStatus
+  toStatus: MonitorStatus
+  message: string
+}
+
+export interface MonitorEventCreate {
+  id?: string
+  monitorId: string
+  at?: string
+  fromStatus: MonitorStatus
+  toStatus: MonitorStatus
+  message: string
+}
+
+export interface MonitorEventUpdate {
+  id?: string
+  monitorId?: string
+  at?: string
+  fromStatus?: MonitorStatus
+  toStatus?: MonitorStatus
+  message?: string
+}
+
+export interface MonitorEventWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  monitorId?: string | WhereOp<string> | null
+  at?: string | WhereOp<string> | null
+  fromStatus?: MonitorStatus | WhereOp<MonitorStatus> | null
+  toStatus?: MonitorStatus | WhereOp<MonitorStatus> | null
+  message?: string | WhereOp<string> | null
+  AND?: MonitorEventWhere[]
+  OR?:  MonitorEventWhere[]
+  NOT?: MonitorEventWhere
+}
+
+export type MonitorEventOrderBy =
+  | { [K in keyof Omit<MonitorEvent, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<MonitorEvent, never>]?: OrderDir }>
+
+// ─── MonitorChannel ──────────────────────────────────────────────
+
+export interface MonitorChannel {
+  id: string
+  monitorId: string
+  channelId: string
+  createdAt: string
+}
+
+export interface MonitorChannelCreate {
+  id?: string
+  monitorId: string
+  channelId: string
+}
+
+export interface MonitorChannelUpdate {
+  id?: string
+  monitorId?: string
+  channelId?: string
+}
+
+export interface MonitorChannelWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  monitorId?: string | WhereOp<string> | null
+  channelId?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: MonitorChannelWhere[]
+  OR?:  MonitorChannelWhere[]
+  NOT?: MonitorChannelWhere
+}
+
+export type MonitorChannelOrderBy =
+  | { [K in keyof Omit<MonitorChannel, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<MonitorChannel, never>]?: OrderDir }>
+
 // ─── Dashboard ───────────────────────────────────────────────────
 
 export interface Dashboard {
@@ -4699,6 +4957,10 @@ export interface ServiceTypes {
   alertRules: AlertRule
   alertRuleChannels: AlertRuleChannel
   alertEvents: AlertEvent
+  monitors: Monitor
+  monitorChecks: MonitorCheck
+  monitorEvents: MonitorEvent
+  monitorChannels: MonitorChannel
   dashboards: Dashboard
   dashboardWidgets: DashboardWidget
   auditEvents: AuditEvent
@@ -4831,7 +5093,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$inTransaction' | '$now'>> {
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$inTransaction' | '$now'>> {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
@@ -4883,6 +5145,10 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere>
   readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere>
   readonly alertEvent: TableClient<AlertEvent, AlertEventCreate, AlertEventUpdate, AlertEventWhere>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere>
+  readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere>
+  readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere>
+  readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere>
   readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere>
   readonly dashboardWidget: TableClient<DashboardWidget, DashboardWidgetCreate, DashboardWidgetUpdate, DashboardWidgetWhere>
   readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere>

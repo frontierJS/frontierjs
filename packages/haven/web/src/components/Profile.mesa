@@ -1,0 +1,68 @@
+<script>
+  // Profile.mesa — the foot of the screen as this member's own card
+  // (`IDEAS/haven.md` 9.9): who they are, which way they face, and what they
+  // carry. It takes the rows a screen has left under the art, so a terminal
+  // exactly as tall as the scene (`--frame`, a drive's pty) draws none, and
+  // `/inv` says the same in the note for a screen too short for it.
+  //
+  // What is carried is the server's (`members.inventory`) and refills on its
+  // clock, which no event announces, so the card asks again every REFRESH_MS
+  // and as soon as a bolt of this member's lands or a pickup of theirs is lifted. Drawn on this screen only.
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { members }   from '@/resources/Member.mesa'
+  import { ITEMS }     from '../../../api/src/inventory.ts'
+
+  export let here
+  export let nicks
+  export let stage
+  export let room
+  export let facing
+  export let glyph
+
+  const REFRESH_MS = 3000
+  const ROWS = 3
+  const WAY = { n: 'north', e: 'east', s: 'south', w: 'west' }
+
+  var verbs  = $context.commands
+  var client = getClient()
+  var timer  = null
+  let held = {}
+
+  async function load() {
+    try { held = await members.service.invoke('inventory', null, {}) } catch { /* the card keeps its last count */ }
+  }
+
+  function onOwn(name, told) {
+    if ((name === 'bolt' || name === 'pickup') && String(told?.by) === String(here.get().self?.userId)) load()
+  }
+
+  load()
+  timer = setInterval(load, REFRESH_MS)
+  client?.on('event', onOwn)
+  $.onDestroy(() => { clearInterval(timer); client?.off('event', onOwn) })
+
+  /** `>>>>>>>>··  8/10`: a mark per item held, a dot per place it could be, up to the cap. */
+  const bar = (item, n) => `${'>'.repeat(n)}${'·'.repeat(Math.max(0, ITEMS[item].start - n))}  ${n}/${ITEMS[item].cap}`
+
+  // The stage's size is set by `#paint` after this mounts, so it is read again
+  // on every change of the stage, as `Scene.mesa` reads its view.
+  let spare = stage.size.h - stage.view.h
+  $.onDestroy(stage.subscribe(() => { spare = stage.size.h - stage.view.h }))
+
+  async function list() {
+    await load()
+    const rows = Object.entries(held).filter(([, n]) => n > 0).map(([item, n]) => `${n} ${item}${n === 1 ? '' : 's'}`)
+    return rows.length ? `you carry ${rows.join(', ')}` : 'you carry nothing'
+  }
+
+  $.onDestroy(verbs.add({ word: 'inv', aliases: ['inventory'], help: '/inv — what you carry', run: list }))
+</script>
+
+{#if spare >= ROWS + 1}
+  <p> </p>
+  <pre>{glyph} {nicks[here.get().self?.userId] ?? '…'} · {room.name} · facing {WAY[facing] ?? '—'}</pre>
+  {#each Object.keys(ITEMS) as item (item)}
+    <pre>{item.padEnd(8)}{bar(item, held[item] ?? 0)}</pre>
+  {/each}
+  <pre>/inv lists what you carry</pre>
+{/if}

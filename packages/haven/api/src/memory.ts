@@ -2,7 +2,7 @@
 // The room's memory (`FJS-D993`): what happened in a room lately, kept by the
 // API in memory per room and sent on join, never a row. A restart loses it,
 // which scenery can afford. Footprints (`IDEAS/haven.md` 7.4), a piece a bolt
-// shattered and the scorch it left (9.5), and chalk (9.8) are all one thing
+// shattered and the scorch it left (9.5), a pickup lifted (9.9), and chalk (9.8) are all one thing
 // here — a trace on a cell that lasts a while — so there is one store and one
 // rule for how long each kind lasts and how many of it a room or a member holds.
 //
@@ -14,15 +14,16 @@ import type { Position } from './rooms.ts'
 
 /** How long each kind lasts, how many a room keeps, and how many one member may hold. */
 export const TRACES = {
-  step:   { ms: 1 * 60_000,  room: 500 },
+  step:   { ms: .05 * 60_000,  room: 500 },
   struck: { ms: 5 * 60_000,  room: 50 },
   scorch: { ms: 2 * 60_000,  room: 100 },
+  taken:  { ms: 2 * 60_000,  room: 50 },
   chalk:  { ms: 10 * 60_000, room: 400, each: 20 },
 } as const satisfies Record<string, { ms: number, room: number, each?: number }>
 
 export type TraceKind = keyof typeof TRACES
 
-/** A trace as it is laid: where, what, and who laid it — `by` is a Member id; `id` names the piece a `struck` one took. */
+/** A trace as it is laid: where, what, and who laid it — `by` is a Member id; `id` names the piece a `struck` or `taken` one took. */
 export type Laid = Position & { kind: TraceKind, by?: number, ch?: string, id?: string }
 
 export type Trace = Laid & { at: number, until: number }

@@ -51,6 +51,9 @@ ppp
  l
 `)
 
+  // Five arrows, lying where the woods are open. Walked onto, so a floor piece.
+  const quiver = piece('quiver', '=>', 'ee', { floor: true, pickup: { item: 'arrow', n: 5 } })
+
   const signpost = piece('signpost', String.raw`
 [square]>
     |
@@ -59,7 +62,7 @@ ppp
 eeeeeeeee
     l
    lll
-`)
+`, { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -95,4 +98,9 @@ eeeeeeeee
   <Piece of={shroom} x={40} y={22} />
   <Piece of={shroom} x={76} y={9} />
   <Piece of={signpost} x={84} y={6} />
+  <Piece of={quiver} x={12} y={14} />
+  <Piece of={quiver} x={31} y={11} />
+  <Piece of={quiver} x={58} y={11} />
+  <Piece of={quiver} x={72} y={15} />
+  <Piece of={quiver} x={44} y={19} />
 </Scene>

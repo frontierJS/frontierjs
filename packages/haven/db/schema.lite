@@ -1,7 +1,9 @@
 /// Haven — Litestone schema
 ///
-/// THE SEED. Three models: a Member is somebody who walked in, a Room is a
-/// scene they stand in, a Message is a line they said there. A MOVE is not
+/// THE SEED. A Member is somebody who walked in, a Room is a scene they stand
+/// in, a Message is a line they said there, and a Vote is their aye or nay on
+/// one delegate of the town hall. A Miss is a question the barkeep could not
+/// answer. A MOVE is not
 /// here — it is a raw channel frame and never a row (`IDEAS/haven.md`).
 ///
 /// ACCESS — every model declares @@gate, read as R.C.U.D.
@@ -60,6 +62,7 @@ model Member {
 
   messages  Message[]
   sessions  Session[]
+  votes     Vote[]
 
   @@auth
 
@@ -137,6 +140,51 @@ model Message {
   @@allow('create', auth().bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id))
 
   @@trail(audit)
+}
+
+/// A member's aye or nay on one idea of `IDEAS/overview.md`, as it stands in
+/// the town hall (`IDEAS/haven.md` Phase 15). One per member and idea: a second
+/// vote changes the first, and withdrawing it removes the row. Cast through
+/// `votes.cast`, which also refuses an idea the hall does not hold.
+model Vote {
+  id        Int      @id
+
+  /// A stamp, as a line's is: a vote is always the caller's own.
+  memberId  Int      @createdBy
+  member    Member   @relation(fields: [memberId], references: [id])
+
+  /// The idea's row number in the overview, `4.21a` -- kept while the row's
+  /// words change, which is why a vote names it and not its title.
+  idea      String   @immutable @regex("^[0-9]+[.][0-9]+[a-z]?$", "an idea is its row number, like 4.21a")
+  aye       Boolean
+  createdAt DateTime @default(now())
+
+  @@unique([memberId, idea])
+
+  /// Every member reads every vote, so the tally is the same on every screen.
+  /// A banned member reads none and is counted in none: their votes are
+  /// filtered out by the member they belong to, so a ban takes them off the
+  /// hall at once and lifting it puts them back.
+  @@gate("3.3.3.3")
+  @@allow('read', auth().bannedAt == null && member.bannedAt == null)
+  @@allow('create', auth().bannedAt == null)
+  @@allow('update', auth().bannedAt == null && memberId == auth().id)
+  @@allow('delete', auth().bannedAt == null && memberId == auth().id)
+
+  @@trail(audit)
+}
+
+/// A question the barkeep could not answer from the books (`IDEAS/haven.md`
+/// 8.4). The count of these is what would justify a model behind the bar
+/// (`FJS-D994`), and the words are what the docs lack. Not who asked: the
+/// question is the finding, and a stranger's name beside it is nobody's use.
+/// Written by `barkeep.ask` as the system; read by the owner, from the database.
+model Miss {
+  id        Int      @id
+  question  String   @trim @length(1, 280)
+  createdAt DateTime @default(now())
+
+  @@gate("8")
 }
 
 /// What a login mints once the signature verifies (`api/src/login.ts`), and

@@ -48,6 +48,14 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A machine stopped checking in. Its apps may still be running — nobody here can tell.',
     email: true,  inApp: true },
 
+  { kind: 'monitor_down', label: 'Monitor down',
+    description: 'A URL Basecamp probes stopped answering, past its retries.',
+    email: true,  inApp: true },
+
+  { kind: 'monitor_up',   label: 'Monitor recovered',
+    description: 'A monitor that was down is answering again.',
+    email: false, inApp: true },
+
   { kind: 'posture_failed', label: 'Server posture failing',
     description: 'A security control on a machine stopped holding — password SSH, an unexpected listener, updates pending.',
     email: true,  inApp: true },

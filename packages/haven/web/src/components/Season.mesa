@@ -1,0 +1,28 @@
+<script>
+  // Season.mesa — `/season <spring|summer|fall|winter|auto>`: hold the
+  // almanac's season, every piece that names its `seasons` (the trees) drawn as
+  // it is then, or hand it back to the clock with `auto`. Drawn on this screen
+  // only and never sent, so two screens in one room may stand in two seasons;
+  // it holds from scene to scene until `auto`, since the next stage is made in
+  // the almanac's season. Draws nothing.
+  import { SEASONS, almanacAt, heldOf, hold } from '@/sky.js'
+
+  export let stage
+
+  var verbs = $context.commands
+  const HELP = `/season ${SEASONS.join('|')}|auto`
+
+  function turn({ args }) {
+    const s = args.trim().toLowerCase()
+    if (!s) return `it is ${stage.season}${heldOf('season') ? ' (held)' : ''} — ${HELP}`
+    if (s !== 'auto' && !SEASONS.includes(s)) return HELP
+    const was = heldOf('season')
+    hold('season', s === 'auto' ? null : s)
+    // A turn refused (a tree's new look on a claimed cell) leaves the stage
+    // where it was, so the hold goes back with it.
+    try { stage.toSeason(almanacAt(Date.now()).season) } catch (e) { hold('season', was); return `the season tripped: ${e.message}` }
+    return s === 'auto' ? `the season follows the clock: ${stage.season}` : `it is ${s}`
+  }
+
+  $.onDestroy(verbs.add({ word: 'season', help: HELP, run: turn }))
+</script>

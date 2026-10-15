@@ -1,0 +1,166 @@
+<script>
+  // Assembly.mesa — the town hall in session (`IDEAS/haven.md` Phase 15).
+  // Standing beside a delegate, they say who they are and the idea they stand
+  // for — its effort, payoff, edge, realms and status, the paper it is argued
+  // in, its aye and nay, and this member's own vote. `/aye` and `/nay` vote for
+  // the delegate beside, the other word changes it, and `/withdraw` takes it
+  // back. A delegate's number is green while more say
+  // aye than nay and red the other way; one this member voted for wears a ✓ or
+  // a ✗ for a head. The board along the top is the most wanted, by aye less nay.
+  //
+  // The counts are the server's (`votes.tally`), asked at the walk-in and
+  // again whenever the hall is told an idea moved — anyone's vote, this one's
+  // included — so every screen in the hall reads the same board. With no
+  // room it is a picture, and none of it is drawn.
+  //
+  // A route places it (`routes/townhall.mesa`), never the scene file: a
+  // scene's picture is pinned. The verbs have no reach: the whole hall is
+  // where a vote is said, and away from a delegate they say so.
+  import { at, tint } from '#cell'
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { votes } from '@/resources/Vote.mesa'
+  import { boardPiece, BOARD_ROWS } from '@/pieces/townhall.js'
+  import { nameOf } from '@/townhall.js'
+  import WAVES from '@/townhall.data.json'
+
+  const scene = $context.scene
+  var verbs = $context.commands
+  var room = $context.room
+
+  const IDEAS = new Map(WAVES.flatMap((w) => w.ideas.map((i) => [i.id, { ...i, wave: w.n }])))
+  const AYE = '#4ade80'
+  const NAY = '#f87171'
+
+  let tally = { ideas: {}, mine: {} }
+  let failed = ''
+  let view = scene.view
+  let me   = scene.seer
+  $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
+
+  function ask() {
+    votes.service.invoke('tally')
+      .then((t) => { tally = t; failed = '' })
+      .catch((e) => { failed = e.message })
+  }
+
+  if (room) {
+    ask()
+    const client = getClient()
+    const heard = (name) => { if (name === 'tallied') ask() }
+    client?.on('event', heard)
+    $.onDestroy(() => client?.off('event', heard))
+  }
+
+  // Every delegate's head on the stage, by idea, read off the marks when first
+  // asked: the scene's pieces claim before anything in its slot draws.
+  var found = null
+  const heads = () => (found ??= scene.marks
+    .filter((m) => m.kind === 'piece' && m.piece.idea)
+    .map((m) => ({ idea: m.piece.idea, ...m.spot('head') })))
+  const boardAt = () => scene.placed(boardPiece)[0]?.spot('inner')
+
+  const beside = (c) => c && heads().find((h) => Math.abs(h.x - c.x) <= 1 && Math.abs(h.y - c.y) <= 1)
+  const countOf = (t, id) => t.ideas[id] ?? { aye: 0, nay: 0 }
+  const net = (c) => c.aye - c.nay
+
+  function cast(aye) {
+    return async () => {
+      const h = beside(me)
+      if (!h) return 'walk up to a delegate first'
+      try {
+        await votes.service.invoke('cast', null, { idea: h.idea, aye })
+      } catch (e) { return e.message }
+      return `${nameOf(h.idea)} hears your ${aye ? 'aye' : 'nay'} for ${h.idea}`
+    }
+  }
+
+  async function withdraw() {
+    const h = beside(me)
+    if (!h) return 'walk up to a delegate first'
+    if (tally.mine[h.idea] === undefined) return `you have no vote on ${h.idea}`
+    try {
+      await votes.service.invoke('cast', null, { idea: h.idea, aye: null })
+    } catch (e) { return e.message }
+    return `your vote on ${h.idea} is withdrawn`
+  }
+
+  if (room) {
+    $.onDestroy(verbs.add({ word: 'aye', help: '/aye — for the delegate beside you', run: cast(true) }))
+    $.onDestroy(verbs.add({ word: 'nay', help: '/nay — against the delegate beside you', run: cast(false) }))
+    $.onDestroy(verbs.add({ word: 'withdraw', help: '/withdraw — take your vote back', run: withdraw }))
+  }
+
+  const dots = (n) => '●'.repeat(n) + '○'.repeat(Math.max(0, 4 - n))
+
+  /** What the delegate beside `c` says: who they are and their idea, then its reading and the vote. */
+  function speech(t, c) {
+    const h = beside(c)
+    const i = h && IDEAS.get(h.idea)
+    if (!i) return null
+    const n = countOf(t, i.id)
+    const mine = t.mine[i.id]
+    const yours = mine === undefined ? '/aye or /nay' : `you said ${mine ? 'aye' : 'nay'} · /withdraw`
+    return {
+      h,
+      lines: [
+        `${nameOf(i.id)}, for ${i.id}: ${i.title}`,
+        `wave ${i.wave} · ${i.effort} ${dots(i.payoff)} ${i.edge} · ${i.realms} · ${i.status} · aye ${n.aye} nay ${n.nay} · ${yours}`,
+        ...(i.paper ? [`IDEAS/${i.paper}`] : []),
+      ],
+    }
+  }
+
+  /** The board's rows: the most wanted by aye less nay, then by aye; nothing net against makes it. A `<pre>`, since outside one the terminal collapses the columns' padding. */
+  function standings(t) {
+    const rows = Object.entries(t.ideas)
+      .filter(([id, c]) => IDEAS.has(id) && net(c) > 0)
+      .sort(([a, x], [b, y]) => net(y) - net(x) || y.aye - x.aye || a.localeCompare(b, undefined, { numeric: true }))
+      .slice(0, BOARD_ROWS)
+      .map(([id, c]) => `${id.padEnd(6)}+${String(net(c)).padEnd(4)}${IDEAS.get(id).title}`)
+    return rows.length ? rows : ['nobody has voted yet — walk up to a delegate and say /aye or /nay']
+  }
+
+  const inView = (x, y, v) => x >= v.x && x < v.x + v.w && y >= v.y && y < v.y + v.h
+
+  /** Everything drawn, in the view's cells. */
+  function placed(t, v, c, f) {
+    if (!room) return []
+    const out = []
+    for (const h of heads()) {
+      const n = countOf(t, h.idea)
+      const mine = t.mine[h.idea]
+      if (mine !== undefined) out.push({ key: `h:${h.idea}`, x: h.x, y: h.y, text: mine ? '✓' : '✗', color: mine ? AYE : NAY, layer: 11 })
+      if (net(n)) {
+        const id = IDEAS.get(h.idea)?.id ?? h.idea
+        out.push({ key: `n:${h.idea}`, x: h.x - Math.floor((id.length - 1) / 2), y: h.y + 1, text: id, color: net(n) > 0 ? AYE : NAY, layer: 11 })
+      }
+    }
+    const board = boardAt()
+    if (board) {
+      const width = boardPiece.art.split('\n')[0].length - 4
+      ;(f ? [`the count tripped: ${f}`] : standings(t)).forEach((text, i) => {
+        out.push({ key: `b:${i}`, x: board.x, y: board.y + i, text: text.slice(0, width), layer: 11, pre: true })
+      })
+    }
+    const said = speech(t, c)
+    if (said) said.lines.forEach((text, i) => out.push({ key: `s:${i}`, x: said.h.x, y: said.h.y + 1 + i, text, layer: 12, surface: true }))
+    return out
+      .filter((o) => o.y >= v.y && o.y < v.y + v.h && (o.surface || inView(o.x, o.y, v)))
+      .map((o) => {
+        const text = o.text.slice(0, v.w)
+        return { ...o, text, x: Math.max(0, Math.min(o.x - v.x, v.w - text.length)), y: o.y - v.y }
+      })
+  }
+</script>
+
+{#each placed(tally, view, me, failed) as o (o.key)}
+  {#if o.surface}
+    <p class="surface" {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
+  {:else if o.pre}
+    <pre {@attach at(o.x, o.y, o.layer)}>{o.text}</pre>
+  {:else if o.color}
+    <p {@attach at(o.x, o.y, o.layer)} {@attach tint(o.color)}>{o.text}</p>
+  {:else}
+    <p {@attach at(o.x, o.y, o.layer)}>{o.text}</p>
+  {/if}
+{/each}

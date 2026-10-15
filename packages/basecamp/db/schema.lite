@@ -280,6 +280,12 @@ type AlertChannelRef {
   channelId String
 }
 
+/// What `monitors.attachChannel` and `monitors.detachChannel` accept. The
+/// channel is checked against the workspace by the method.
+type MonitorChannelRef {
+  channelId String
+}
+
 /// What `alerts.snooze` accepts. The 1..MAX_SNOOZE_MINUTES bound is the
 /// method's, since the ceiling lives in core/alerting.ts.
 type AlertSnooze {
@@ -441,6 +447,11 @@ enum RunStatus      { pending running success failed timeout }
 // gives the column its CHECK, the API its validation and the UI its options,
 // from one place (2026-08-06).
 enum AlertSeverity  { info warning critical }
+/// Where a monitor stands. `pending` is a monitor nothing has graded yet (new,
+/// or back from `paused`); `paused` is one an operator turned off, which the
+/// sweep never picks.
+enum MonitorStatus  { pending up down paused }
+enum HttpMethod     { GET HEAD POST PUT PATCH DELETE }
 // What an alert is ABOUT. Closed rather than free so the evaluator cannot
 // invent a subject nothing measures — the same argument `ChannelKind` makes
 // below. `series` is here because the only thing this app can evaluate today
@@ -542,7 +553,7 @@ enum DependencyKind { dependency dev peer optional }
 /// `asSystem()` are all held to the set too.
 ///
 /// Add a member when a notification starts pointing somewhere new.
-enum NotificationContext { Deployment AlertEvent JobRun Server Workspace }
+enum NotificationContext { Deployment AlertEvent JobRun Server Workspace Monitor }
 
 enum NotificationKind {
   deploy_success
@@ -550,6 +561,8 @@ enum NotificationKind {
   alert_firing
   alert_resolved
   server_unreachable
+  monitor_down
+  monitor_up
   posture_failed
   dependency_vulnerable
   member_joined
@@ -830,6 +843,7 @@ model Workspace {
   apiKeys     ApiKey[]
   jobs        Job[]
   alertRules  AlertRule[]
+  monitors    Monitor[]
   channels    NotificationChannel[]
   flags       FeatureFlag[]
   auditEvents AuditEvent[]
@@ -2313,6 +2327,7 @@ model NotificationChannel {
   deletedAt   DateTime?
 
   rules       AlertRuleChannel[]
+  monitors    MonitorChannel[]
 
   @@gate("2.5")
   @@softDelete
@@ -2419,6 +2434,135 @@ model AlertEvent {
   @@gate("2.8.4.8")
   @@index([ruleId])
   @@index([status])
+}
+
+// ============================================================
+// MONITORS
+// ============================================================
+// A URL Basecamp probes on a schedule, from outside — the half of "is it up"
+// that Outpost's heartbeat cannot answer, since a machine can check in while
+// the app on it serves a 502 (`FJS-1557`, `IDEAS/uptime-monitoring.md`).
+//
+// Who writes what is the whole shape. A person authors the probe's
+// configuration; `jobs/monitor-sweep.job.ts` writes everything the probe
+// learns — `status`, `failStreak`, the stamps — through `asSystem()`, so the
+// counters and stamps are `@system` and there is no `@version` for the two
+// writers to fight over (the rule in this file's header: a row a machine also
+// writes on its own schedule does not carry one). `status` moves only by
+// `@@transitions`, which is why it is not `@system` itself: an operator's
+// pause is a transition they make, and `@system` refuses a caller's write.
+//
+// What is NOT here yet: a credential for the probed URL. A bearer token in
+// `headers` would be returned on every read and logged in the trail, so auth
+// arrives with the service that lifts it into a `Secret`, as a channel's does.
+// What the probe does not model is a monitor kind: HTTP is the only prober, and
+// a second kind adds the column with the prober that reads it.
+
+model Monitor {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  name        String    @trim @length(1, 200)
+  // Optional: a monitor ABOUT an app, so the app page can show its uptime and a
+  // deploy can mute its own monitor. Most monitors watch a client's site that
+  // has no App row. Bare id, no @relation: the app being removed must not take
+  // the history of the URL with it.
+  appId       String?
+  // `@url` is http(s) only, and carries no `@length` for the reason
+  // `HubConfig.baseUrl` gives: a bound alongside it cannot be isolated.
+  url         String    @trim @url
+  method      HttpMethod @default(GET)
+  headers     Json      @default("{}")
+  body        String?
+
+  intervalSec      Int  @default(120)   @gte(60) @lte(86400)
+  // Failures in a row tolerated before the monitor is `down`; the next check
+  // after each comes at `retryIntervalSec`.
+  retries          Int  @default(2)     @gte(0) @lte(10)
+  retryIntervalSec Int  @default(120)   @gte(60)
+  timeoutMs        Int  @default(10000) @gte(1000) @lte(60000)
+  // `200-299,301`: parsed by `core/probe.ts`, which is the one owner of what
+  // counts as a failure.
+  acceptedStatus   String @default("200-299") @trim @length(3, 200)
+  maxRedirects     Int  @default(10)    @gte(0) @lte(20)
+  ignoreTls        Boolean @default(false)
+  // Upside-down: the healthy state is the failure.
+  invert           Boolean @default(false)
+  // Re-page every N checks while down. 0 pages once.
+  resendEvery      Int  @default(0)     @gte(0)
+  tags             Json @default([])
+
+  status        MonitorStatus @default(pending)
+  failStreak    Int       @default(0) @system
+  lastCheckedAt DateTime? @system
+  nextCheckAt   DateTime? @system
+  lastLatencyMs Int?      @system
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  checks      MonitorCheck[]
+  events      MonitorEvent[]
+  channels    MonitorChannel[]
+
+  // `markUp` and `markDown` are the sweep's; the from-lists are what keep a
+  // monitor an operator paused while its probe was in flight `paused`, since a
+  // system client makes only declared moves from the row's current state.
+  @@transitions(status,
+    markUp:   [pending, down] -> up     @system,
+    markDown: [pending, up]   -> down   @system,
+    pause:    [pending, up, down] -> paused  @gate(5),
+    resume:   paused          -> pending @gate(5))
+  @@gate("2.5")
+  @@trail(audit)
+  @@index([workspaceId])
+  @@index([status, nextCheckAt])
+}
+
+// One per probe: the heartbeat bar. Raw and short-lived, like `MetricPoint`.
+model MonitorCheck {
+  id         String   @id @default(uuid())
+  monitorId  String
+  monitor    Monitor  @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  at         DateTime @default(now())
+  ok         Boolean
+  statusCode Int?
+  latencyMs  Int?
+  message    String
+
+  @@gate("2.8")
+  @@index([monitorId, at])
+}
+
+// One per STATE CHANGE: the incidents table.
+model MonitorEvent {
+  id         String        @id @default(uuid())
+  monitorId  String
+  monitor    Monitor       @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  at         DateTime      @default(now())
+  fromStatus MonitorStatus
+  toStatus   MonitorStatus
+  message    String
+
+  @@gate("2.8")
+  @@index([monitorId, at])
+}
+
+// Which channels a monitor pages. `AlertRuleChannel`'s shape.
+model MonitorChannel {
+  id        String              @id @default(uuid())
+  monitorId String
+  monitor   Monitor             @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  channelId String
+  channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime            @default(now())
+
+  @@gate("2.5")
+  @@relator([monitorId, channelId], once)
 }
 
 // ============================================================

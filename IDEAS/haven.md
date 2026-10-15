@@ -751,13 +751,74 @@ footprints, and a line said at one end of the square does not reach the other.
   `steps.test.js`, `memory.test.ts`, `room.test.ts` § footprints and
   `verify:steps` (two ptys and a late `--frame`). Not done: footprints in
   the browser are drawn but no drive reads one there.
-- [ ] 7.5 The notice board. A board on the square's wall: stand beside it, press
+- [x] 7.5 The notice board. A board on the square's wall: stand beside it, press
   `e`, read what is pinned and pin a line. This is the part of Haven that
   works when nobody is on. A first cut is the board's own Room and its
   Messages, with no new model; check it against 3.3's retention, since a
   board's lines are meant to outlive the tavern's.
   - Needs 12.4: the board's `e` is a verb in reach, which is how the line
     input stops holding every letter.
+  - Built: `pieces/board.js` (`noticeBoard`, its `middle` spot) stands right
+    of the fountain at (64, 13), and `components/Notices.mesa`, placed by the
+    square's route in a new `<slot />`, owns it. `e` (a key verb answering
+    false unless the shell took the letter as NORMAL), `/board` (the same, for
+    a browser, which has no NORMAL) and `/pin <line>` all reach 5 cells round
+    the board's middle; a figure there reads a hint under it. The pane is the
+    registry's mode, newest first, PageUp/PageDown, Esc closes. The board is
+    `board` in `ROOMS` and a pin a Message in it: no schema change, the read
+    policy, the rate and 3.3's count of 500 a room are every room's, and the
+    count is what lets a quiet board outlive the tavern. The pins are asked of
+    `messages.service` and never loaded into the store the bubbles read, so a
+    pin is no bubble over its author. Nobody stands in the board's room, so a
+    pin reaches no screen live; the board is read each time it opens. Proved
+    by a throwaway two-pty probe (pinned, read, `e` in NORMAL, out of reach
+    refused, no bubble on either screen) -- no drive kept, as the owner asked.
+- [x] 7.6 The almanac. One `almanacAt(ms)` in `sky.js` answering `{ darkness,
+  season, moon, weather, wind, temp }`, and every layer reads that record
+  instead of asking `darkness`, `weatherAt` and `worn.season` separately.
+  The rule it holds: what the WORLD causes is a pure function of the clock
+  and is sent nowhere; what a MEMBER causes is a trace in `api/src/memory.ts`.
+  Each element in 7.7–7.10 says which side it is on, and all four are on the
+  clock's. A screen override (`/weather`, `/season`, `HAVEN_WEATHER`) replaces
+  one field of the record and nothing else.
+  - Built: `almanacAt(ms)` is `{ darkness, season, weather }` -- `moon`,
+    `wind` and `temp` are each added by its own step, since a field with no
+    reader is not built. `weatherAt` is gone; `skyDarkness`, `flashAt`,
+    `isNight` and the stage's `weather` layer, tick and struck tree read the
+    record. `hold(field, value)` is the one override, `null` handing a field
+    back to the clock, and `heldOf(field)` what is held (`HAVEN_WEATHER` under
+    a screen's hold). `SEASONS` moved to `sky.js` and `seasonAt(ms)` is
+    `summer` until 7.7; `/season` is now a hold with an `auto` like
+    `/weather`'s, and a stage is made in the almanac's season, so `worn`
+    carries the ink alone -- 7.7's override clause is done here. `sky.test.js`
+    holds one field held and the rest the clock's. `verify:glade` and
+    `verify:scenes` pass; `verify:browser` fails only its fog check, as before.
+- [ ] 7.7 The calendar. The season is the real one at the server, by UTC date
+  and meteorological months (Dec–Feb winter), northern hemisphere -- the
+  owner's choice, over a game year of a few real days. The day stays an hour.
+  The season changes pieces' art, so a scene's pinned frame would flip with
+  the month: `stage.mjs` pins it as it pins `clear` weather. Each
+  season weights `scheduleAt`'s spells: no snow outside winter, storms mostly
+  summer, rain mostly spring and fall. A stage is made in the almanac's season
+  (7.6 made `/season` a hold and the stage take the almanac's season, so
+  this step is `seasonAt` reading the date). A piece with no `seasons` is
+  unchanged.
+- [ ] 7.8 Wind. A direction and a strength per weather spell, from the clock's
+  `hash`, stronger in a storm. The rain's slant, snow's drift and the clouds'
+  drift each read it instead of their own numbers, so they agree. Later
+  readers: smoke from a chimney, fire spreading to the next tree downwind.
+- [ ] 7.9 The moon. The real lunar phase on the date (a 29.53-day cycle), to
+  match 7.7's real calendar. A full moon lightens `shade()`'s night and a new
+  moon darkens it; `SIGHT` reads it when the fog returns. Drawn as a glyph in
+  the sky row at night where a scene has open sky.
+- [ ] 7.10 Temperature and aftermath. `tempAt(ms)`, derived from season, hour
+  and weather and never stored, decides what falls: a cold rain spell is snow
+  (the frozen pond, past the plan, reads it too). Aftermath is what a spell
+  leaves on blank outdoor cells after it ends, read from the spells before
+  `ms`, so it is still the clock's: puddles for some minutes after rain, snow
+  cover that builds during a snow spell and melts by temperature. A struck
+  tree's burn and char are aftermath by this rule already; which tree is the
+  stage's, since the almanac knows no geometry.
 
 ### Phase 8 — Inhabitants
 
@@ -766,11 +827,26 @@ standing.
 Done when: a member waves and sits on a bench where a second terminal sees it,
 and the crier announces a new member's first walk-in.
 
-- [ ] 8.1 Emotes. `/wave`, `/sit`, `/dance` animate the figure for a few
+- [x] 8.1 Emotes. `/wave`, `/sit`, `/dance` animate the figure for a few
   ticks. A bench piece names its seats, so `/sit` beside one sits on it. An
   emote is a presence field beside `{ x, y }`, so `position()` in
   `api/src/rooms.ts` widens by one named key and still cuts everything else.
   - Needs 12.3 (`/sit` finds a seat as a spot) and 12.4 (an emote is a verb).
+  - Built: `emote` is a presence key (`EMOTES`, `emoteOf`, `EMOTE_MS` in
+    `api/src/shape.ts`; `roomMeta` drops anything else, and
+    `presenceMetaBytes` is 120 so the fullest meta still fits).
+    `components/Emotes.mesa` says the three verbs and draws them for every
+    figure in view: a wave is a hand beside the figure, a dance an arm either
+    side, turning over every 300 ms for four seconds and ended by its own
+    timer; a sitting figure is its initial in lower case on other screens. A
+    bench names three solo seats (`seat-0`..`seat-2`), so `/sit` beside any
+    seat of any placed piece -- a bench, a bar stool, a table's stool -- within
+    a cell sits on the nearest free one, else where the figure stands, and
+    stepping onto a seat sits too. A step (`moveTo`) ends any emote. Proved by
+    the same throwaway probe: a wave seen and turning over on the other
+    screen, `/sit` onto the bench in lower case, a step standing up, a dance.
+    Not done: a knock-back from a bolt moves the figure without ending its
+    emote, and the bench's seat cells are now walkable in `world.json`.
 - [ ] 8.2 A pet follows its member, one cell behind on the path walked. It is
   drawn from the figure's own recent cells on every screen, so nothing is
   sent for it.
@@ -780,12 +856,23 @@ and the crier announces a new member's first walk-in.
   walk-in and a release. Its lines are Messages said through `asSystem()`.
   The repo's state reaches Haven only at deploy (`FJS-D996`), so a push to
   `main` is announced when the deploy that carries it lands, not live.
-- [ ] 8.4 The barkeep, behind the bar: "ask the barkeep about row policies"
+- [x] 8.4 The barkeep, behind the bar: "ask the barkeep about row policies"
   makes Haven the framework's help desk. No model (`FJS-D994`): it answers
   from a search over `docs/`, `VOCABULARY.md` and the package READMEs,
   quoting the passage and its path, and counts the questions it could not
   answer, since that count is what would justify a model later.
   - Needs 12.4: the barkeep's question is a verb in reach of the bar.
+  - Landed: `/ask <question>` is a verb per bar stool (`Barkeep.mesa`, placed
+    by the tavern's route); `barkeep.ask` searches the books server-side
+    (`api/src/barkeep.ts`: passages by heading, the question's words weighed
+    by rarity, an answer only above `COVER`) and a question it cannot answer
+    is a `Miss` row, so the count is `SELECT count(*) FROM Miss` and the rows
+    say what the docs lack. `docs/*-archive` is left off the shelf. Proved by
+    a pty probe (answer, miss, out of reach, Esc), not a kept drive.
+  - Not done: the server reads the books from a checkout (`HAVEN_BARKEEP_ROOT`,
+    else the repo it sits in), so 10.1's deploy must ship them or the
+    barkeep says he has none. The misses reach the owner only through the
+    database; beside the town hall's count in `fli next` (15.4) is the place.
 - [x] 8.5 Booths. Two members on the stools of one tavern table are walked, by
   their own clients, into a room of their own: them on the left, you on the
   right, the conversation between, each line a bubble that stays and the next
@@ -845,8 +932,8 @@ knocks the other back on both screens and removes neither.
   read it, which may also reopen 7.5's `e` and 11.4's key; the browser's
   line has no NORMAL yet.
   - Needs 12.4: `a s d f` are key verbs, delivered along the facing.
-- [ ] 9.5 `d` deletes: a bolt. It flies about 8 cells the way the figure
-  faces, drawn `-` or `|`, as one event on the room's channel that each
+- [ ] 9.5 `d` deletes: an arrow. It flies the way the figure faces until it
+  hits something, drawn as one head (`>` `<` `^` `v`) moving a cell at a time, as one event on the room's channel that each
   client animates; the server resolves what it hit, so there is one answer.
   A piece shatters and is gone for everyone for about five minutes, then
   grows back. The cat yowls and runs at double speed. A wall takes a `,`
@@ -892,6 +979,20 @@ knocks the other back on both screens and removes neither.
   standing as 9.3 does.
   - Needs 12.2 (the server places chalk on its world) and 12.6 (chalk is
     drawn as a layer).
+- [ ] 9.9 Inventory. What a member carries, in the API's memory beside the
+  room's (`app.inventory`, `api/src/inventory.ts`), never a row and gone on a
+  restart. A count per item; `ITEMS` states each one's start, cap and how
+  often a short count earns one back. Built: the arrow -- ten to start, `d`
+  spends one, `dd` four, an empty quiver is refused before the cooldown
+  starts, one comes back every 20 s below ten -- and `/inv` lists what is
+  held (`members.inventory`). Picking up is built: a floor piece with
+  `pickup: { item, n }` is named in every `world.json` (`pickups`, pinned by
+  `scenes.test.js`), the server hands the item when a figure stands on it and
+  lays a `taken` trace (`TRACES.taken`, two minutes) that is the piece gone for
+  the whole room until it expires, told as a `pickup` event that `Scene.mesa`
+  hides it by; a full quiver leaves it lying. Five quivers of five arrows lie in
+  the woods. Left open: a drive of it on a screen (`verify-bolt.mjs` fires, none
+  walks onto one), and items beyond the arrow.
 
 ### Phase 11 — The workshop
 
@@ -1029,7 +1130,7 @@ Taskmaster and the bar's board are the third and fourth.
   to `slot-3` replace the offsets. `spots.test.js`. Left open: `HomeBoard.mesa`
   and `world.js`'s `FRAGILE` still find a piece by `piece.name`, and an id
   (`piece@x,y`) is not yet a way to find a placement.
-- [ ] 12.4 Verbs in reach. `$context.commands` grows into the one registry:
+- [x] 12.4 Verbs in reach. `$context.commands` grows into the one registry:
   an actor contributes its verbs, `{ word?, key?, help, run, reach? }`, and
   what a member can say is the merge of their own, the room's and those of
   every placement within reach. A mode (the history pane, `/map`, a booth)
@@ -1040,20 +1141,25 @@ Taskmaster and the bar's board are the third and fourth.
   bolt. `Scene.mesa` is cut down to the stage, the presence and the input,
   and `/w`, `/ban`, `/map`, the history pane, the bubbles, the nameplates and
   the booth each become an actor of the Taskmaster's shape.
-  - Half built: `commands.js` is the registry (`createCommands()`: `add`,
-    `words`/`helps`/`find` by reach, `press`, and `open`/`modeKey` for a mode)
-    and `Scene.mesa` reads it for the line, Tab, the hints, the keys and the
-    unknown-command help. `Whisper`, `Mod`, `WorldMap`, `History`, `Bubbles`,
-    `Nameplates` and `Sitting` are actors placed by the scene; `Taskmaster`
-    and `Ledger` add to the same registry, the desk's `/yes` and `/no` now
-    only in Tab and the help within two cells of him (`commands.test.js`,
-    `crowd.test.js`). Left open: the home row, the bolt and `find` are still
-    in `Scene.mesa` and take their keys by hand (9.4/9.5 are the key verbs
-    along the facing), a verb has no `reach` along the facing yet, and the
-    booth route's Esc is its own rather than a mode. `verify:explore`,
-    `verify:bolt` and `verify:workshop` fail on screens that now draw
-    footprints and scorches over the cells they read; they were not
-    re-pinned here.
+  - Built: `commands.js` is the registry (`createCommands()`: `add`,
+    `words`/`helps`/`find` by reach, `press`, and `open`/`modeKey`/`close`
+    for a mode) and `Scene.mesa` reads it for the line, Tab, the hints, the
+    keys and the unknown-command help. `Whisper`, `Mod`, `WorldMap`,
+    `History`, `Bubbles`, `Nameplates`, `Sitting` and `HomeRow` are actors
+    placed by the scene; `Taskmaster`, `Ledger` and `Assembly` add to the
+    same registry, the desk's `/yes` and `/no` only in Tab and the help
+    within two cells of him. The home row is `HomeRow.mesa`: `a s d f` are
+    key verbs that answer false in INSERT, and a waiting operator and a
+    find-walk are modes with a `take`, handed every key first, Esc included;
+    a bolt landing on the figure stops its walk with `close('find')`. A key
+    is pressed with the figure's `facing`, and of two verbs as near, the one
+    faced is asked first. `Scene.mesa`'s keydown is Tab, the open mode,
+    `press`, a step. Proved by `commands.test.js`, `verify:home-row`,
+    `verify:bolt`, `verify:map`, `verify:taskmaster` and `verify:browser`
+    (all but its fog check, off while no scene names `fog`). Left open: the
+    booth route's Esc is its own rather than a mode, and the bolt's flight
+    and stun flicker are drawn in `Scene.mesa`, since a struck figure's
+    glyph is one it draws.
 - [ ] 12.5 Behaviors with a schema. A behavior (the bar's board, the
   Taskmaster, the runner) declares its props as a schema and is attached to
   a placement by `id`, so the editor draws a form for it. The code is still
@@ -1149,6 +1255,125 @@ building their own, and these three are the shape it will produce.
   Room has an owner, and the board draws where the viewer is the owner.
   - Needs 9.3.
 
+### Phase 14 — Claude in Haven
+
+Goal: Claude helps build scenes beside the editor, and two named agents live in
+the square; emoji and denser scenes widen what a scene can draw.
+Done when: a scene made in the editor through its ask panel passes
+`verify:scenes`, and a mod's line to an agent is answered on a second terminal
+while a non-mod's is not.
+
+- [x] 14.1 The ask panel in the scene editor. `editor/vite.config.js` adds the
+  ask plugin (`packages/cli/core/vite-ask.js`, as Sierra's
+  `src/build/ask-plugin.js` loads it) and turns Mesa's inspector on, which a
+  bare `mesa()` leaves off. Its edit scope is the Vite root, `editor/`, while
+  scenes and pieces live in `web/src/`, so the scope widens to `SRC`. Since
+  `FJS-D997` Claude writes `<Piece>` placements into the scene's `.mesa`, and
+  the save already hot-swaps the editor onto it.
+  - Found: a bare `mesa()` has the inspector ON; what was missing is where locs
+    are rooted — `mesa({ locRoot })` and `askPlugin({ root })` both take `SRC`.
+    A placement is no element, so the editor lays a box per tag (its line as
+    the loc) and one for `<Scene>`; and the HMR swap of a scene left the editor
+    on a dead stage, so another writer's edit reloads the page. Unsaved edits
+    are lost to an ask (a trap in `CLAUDE.md`). `verify:scenes` 66 green.
+- [ ] 14.2 The builder's stages. The editor walks a new scene through, in
+  order: the brief (name, mood, size, its doors in the door graph), the
+  blockout (borders, walls, `<Door>`s), the dressing (pieces), the light
+  (lamps, layers, night, weather), the life (pacers, spots, behaviors), the
+  secrets (`<Door hidden>`), and the walk test (every door reachable). The
+  panel's ask is told which stage is open. This is 12.9 given an order, not
+  a second editor.
+  - Needs 12.2 (the door graph and the walk test read `world.json`).
+- [x] 14.3 Emoji in what is said. Probe a bubble, the input line, the history
+  pane and a booth in both targets; Mesa's terminal runtime counts a wide
+  character with `Bun.stringWidth`, so most may already hold. A joined
+  sequence (ZWJ) draws differently per terminal, VS Code's included.
+  - Held: OpenTUI draws 🙂 中文 👍🏽 👩‍💻 🇯🇵 at `Bun.stringWidth` cells and the bubble never tears the art; the browser's emoji font runs ~0.04ch short of 2ch, printed by `verify:emoji`, not asserted. ZWJ per real terminal is not chased.
+  - Broke and fixed: Haven laid bubbles, the booth and history rows out by `length` (`web/src/cells.js` now); the engine reads a key per code point, so a typed skin tone or ZWJ left the cursor past the text and a combining mark landed after the next key (`joined` in mesa's `runtime-terminal.js`, `wide.spec.mjs`).
+- [ ] 14.4 An emoji figure. A figure drawn as an emoji is two cells wide: the
+  stage claims both cells for it, and a step still moves one column. This is
+  9.7's shapeshift taking a wide character.
+- [ ] 14.5 Half-cell art in the terminal. A terminal app cannot set its font
+  size, so detail comes from the glyph instead: a piece authored at twice the
+  rows is lowered to `▀`/`▄` with the top half its `fg` and the bottom its
+  `bg` (sextants for 2×3). Art only — text and figures stay one cell. Check
+  that a palette entry carries a `bg` per cell first.
+- [x] 14.6 The view follows the terminal. `VIEW` is 97×26 whatever the
+  terminal is; taken from the terminal's size instead, zooming out
+  (ctrl+minus) shows more of the scene, and `EDGE` scales with it.
+  `#paint` fits the stage to the renderer (`viewFor`, `stage.fit()`) at the
+  attach and on each `resize`; `VIEW` is `viewFor(100, 30)`, so `--frame`,
+  the tests and every drive keep 97×26, and `verify:view` resizes a pty.
+  Found: the shell's page already overflows by one row at 100×30, and a
+  resize left the input under the bottom edge — Mesa's terminal document now
+  reveals the focused node after a resize as it does on focus.
+- [ ] 14.7 A scene's scale in a browser. `<Scene scale={0.5}>` halves browser
+  Haven's cell size, so the scene draws twice the cells on the same screen.
+  The terminal ignores it and gets 14.6 instead.
+- [ ] 14.8 An NPC's line bank. A figure whose lines are written by Claude
+  offline (`bun run lines`, a file per NPC beside its scene) and picked at
+  random by the clock and a seed. Random replies with no model at run time, so
+  `FJS-D994` stands.
+  - Needs 12.4 (talking to it is a verb in reach).
+- [x] 14.9 Two agents with souls. Each is a member with its own key
+  (`FJS-D981`) and a `souls/<name>.md`; a runner on the owner's machine
+  (`claude -p` under the owner's own Claude login, the soul as its system
+  prompt, the lines it heard as the prompt, no tools — the runner itself says
+  and steps) logs them in and walks them. It answers a line only from a
+  `HAVEN_MODS` nick (`FJS-D1017`), so the bill is the owner's; every member
+  still sees what was said. The two are Ace and Charles.
+  - `bun run agents -- --api <url>` (`agents/agents.js`, souls in
+    `agents/souls/`, keys under `~/.fli/haven/agents/<nick>/`). `Member.role`
+    is `@guarded`, so no client reads a speaker's standing: the runner reads
+    `HAVEN_MODS` (or `--mods`) itself. A line from either agent is never
+    answered, one reply per agent per 8 s; `agents/test/agents.test.js` proves
+    it on a real app with a stub `HAVEN_AGENTS_CLAUDE`. No pty drive yet.
+- [ ] 14.10 An agent at work. A mod hands an agent a task in the square; it
+  runs as a Claude Code session, so Phase 11's feed draws it at its package's
+  bench, and its last words (11.7) come back as its line.
+  - Needs 14.9.
+
+### Phase 15 — The town hall
+
+Goal: the roadmap stands in the haven as people. Every open row of
+`IDEAS/overview.md` is a delegate in the town hall, by wave, and a member
+walks up to one, hears what it stands for and votes aye or nay; every screen in
+the hall reads the same count.
+Done when: two terminals beside one delegate each read a vote the other cast,
+and the board of the most wanted carries it.
+
+- [x] 15.1 The building and the hall. The square's first house past the first
+  screen is the town hall, its sign over the door at (110, 10). `TownHall.mesa`
+  is computed from `web/src/townhall.data.json`, which `bun run townhall`
+  writes from the overview (`townhall.js` `wavesOf`: a struck or settled row
+  has left the hall): a lit sign per wave, a delegate per open row — a head in
+  its status's color with the row's number under it, `PITCH` apart, twelve to
+  a line — and the board along the top. A delegate's name is the idea's
+  (`nameOf`, a hash of the id), so it survives a recount. Pinned by
+  `scenes.test.js`, beside a delegate for every idea and floor round every head.
+- [x] 15.2 The vote. `Vote` (member, idea, aye; one per member and idea) in
+  the schema, read by every member, written by its own member, and a banned
+  member's filtered out by policy, so a ban takes their votes off every count
+  at once. `votes.cast` upserts and refuses an idea the hall's data file does
+  not hold; `votes.tally` answers the counts and the caller's own. The hall's
+  room is told `tallied` with the idea and each screen asks again through its
+  own client. `api/test/votes.test.ts`.
+- [x] 15.3 The assembly. `Assembly.mesa`, placed by the route: beside a
+  delegate they say their name, the idea, its reading, the paper, the count
+  and this member's vote; `/aye`, `/nay`, `/withdraw`; a head this member
+  voted wears ✓ or ✗ and a number goes green or red with the net; the board
+  is the five most wanted by aye less nay. `bun run verify:townhall`.
+- [ ] 15.4 The count reaches the owner. The hall's tally beside `fli next`'s
+  ranking — a read of the hosted server's `votes.tally` that prints the
+  overview's rows with their aye and nay, so what members want is weighed when
+  the waves are re-derived. Not a column in the overview, which would be a
+  second origin for a number the server owns.
+  - Needs 10.1.
+- [ ] 15.5 `/townhall` in a checkout, as `/ledger` is: the overview read again,
+  the data file written and the hall mounted again on it, so a row added today
+  stands in the hall without a restart. The server reads the file once, so
+  this needs the server's read to follow it.
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.
@@ -1177,8 +1402,9 @@ each tagged with the mechanism it would add, cheapest first.
 - **Ships at the docks.** A ship pulls in when a deploy lands, and one stuck at
   sea is a deploy that hung. Pairs with 8.3's crier, which announces the same
   landing.
-- **The petition board.** The town hall pins the owner's open decisions
-  (`fli decisions`); read one, pick an option, and the ruling is written.
+- **The petition board.** The town hall (Phase 15) pins the owner's open
+  decisions (`fli decisions`) beside its board; read one, pick an option, and
+  the ruling is written.
 - **The woods as `ISSUES.md`.** The more open issues, the denser and darker the
   woods; walking in is triage, and closing issues clears the path.
 - **A customer at the bar.** When the `support` skill finds an ELA customer
@@ -1241,6 +1467,11 @@ These need server state:
 
 ## Open questions
 
+- ~~**Q15 — Who may talk to a figure Claude speaks for.**~~ **Answered 2026-10-14 (`FJS-D1017`): A — a mod only: a model-backed figure answers a line from a `HAVEN_MODS` nick and nothing else.** 14.9's agents run on the owner's machine in the shared square.
+  - **A** — a mod only. The bill is the owner's, and `FJS-D994` stands for the public barkeep.
+  - **B** — anyone, with a budget per member per day: `FJS-D994`'s B.
+  - **C** — no live model: NPCs speak from a line bank, agents only on a private `--api` server.
+  - **Recommend A** — a stranger cannot prompt it, so there is no bill to run up and no injection from outside, and the square still sees the agents talk.
 - ~~**Q8 — Whether a scene beside a scene is its own Room.**~~ **Answered 2026-10-14 (`FJS-D990`): A — each scene is its own Room and channel, and crossing a border reconnects the way a door does today (`setSocketQuery`, `FJS-2834`).**
   - **A** — each scene is its own Room and channel, and crossing a border
     reconnects the way a door does today (`setSocketQuery`, `FJS-2834`).

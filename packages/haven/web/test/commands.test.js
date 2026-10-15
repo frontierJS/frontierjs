@@ -140,3 +140,43 @@ test('opening a mode closes the one before it, and a stale close leaves the new 
   expect(c.mode).toBeNull()
   expect(log).toEqual(['map', 'history'])
 })
+
+test('of two keys as near, the one the figure faces is asked first', () => {
+  const c = createCommands()
+  const heard = []
+  c.add({ key: 'e', run: () => { heard.push('west'); return false }, reach: { x: 8, y: 5, within: 3 } })
+  c.add({ key: 'e', run: () => { heard.push('east'); return false }, reach: { x: 12, y: 5, within: 3 } })
+  c.press('e', { ...at(10, 5), facing: 'e' })
+  c.press('e', { ...at(10, 5), facing: 'w' })
+  c.press('e', at(10, 5))
+  expect(heard).toEqual(['east', 'west', 'west', 'east', 'west', 'east'])
+})
+
+test('a mode with a take is handed every key, Esc included, and lets go of what it does not take', () => {
+  const c = createCommands()
+  const log = []
+  const close = c.open({
+    name: 'walk',
+    take: (e) => { log.push(e.key); close(); return e.key === 'Escape' },
+    closed: () => log.push('closed'),
+  })
+  expect(c.modeKey({ key: 'ArrowLeft' })).toBe(false)
+  expect(c.mode).toBeNull()
+  expect(log).toEqual(['ArrowLeft', 'closed'])
+
+  c.open({ name: 'operator', take: () => true })
+  expect(c.modeKey({ key: 'Escape' })).toBe(true)
+  expect(c.mode.name).toBe('operator')
+})
+
+test('close names the mode it closes, and leaves another open', () => {
+  const c = createCommands()
+  const log = []
+  c.open({ name: 'map', closed: () => log.push('map') })
+  expect(c.close('walk')).toBe(false)
+  expect(c.mode.name).toBe('map')
+  expect(c.close('map')).toBe(true)
+  expect(c.mode).toBeNull()
+  expect(log).toEqual(['map'])
+  expect(c.close('map')).toBe(false)
+})

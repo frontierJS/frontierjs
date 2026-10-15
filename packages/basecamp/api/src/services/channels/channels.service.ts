@@ -246,7 +246,7 @@ export function createChannelsService(app: BasecampApp) {
       const channel = await getScoped('notificationChannel', 'Channel')
 
       const res = await deliverToChannel(
-        { conduit: app.conduit as never, sys },
+        { conduit: app.conduit as never, sys: (): any => $.db.asSystem() },
         channel,
         testMessage(channel.name as string),
       )

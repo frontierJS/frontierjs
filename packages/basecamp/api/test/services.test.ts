@@ -3079,6 +3079,15 @@ describe('the trash lists what was deleted, and each service brings its own back
     expect(mine.every((e: any) => e.actorId === owner.userId)).toBe(true)
   })
 
+  // FJS-2881: `test` handed delivery a `sys` it never declared, so every test
+  // send was a ReferenceError before the channel's kind was even read.
+  test('a channel test reaches delivery and answers in its words', async () => {
+    const channel = await (env.system as any).notificationChannel.create({
+      data: { workspaceId: ws.id, name: `Mail ${uniq()}`, kind: 'email', config: { to: 'ops@example.test' } },
+    })
+    await expect(env.as(owner).service('channels').call('test', channel.id)).rejects.toThrow(/needs a mailer/)
+  })
+
   test('recipes, dashboards and secrets answer restore, and a row that is not deleted is a 404', async () => {
     const sys = env.system as any
     const rows = {
@@ -3744,5 +3753,75 @@ describe('preference and ownership verbs declare their input', () => {
   test('a hand-over naming nobody is refused naming userId', async () => {
     await expect(env.as(owner).service('workspaces').call('transferOwnership', ws.id, {}))
       .rejects.toThrow(/userId/)
+  })
+})
+
+// FJS-1557. A monitor's configuration is a person's and its state is the
+// sweep's: a caller cannot set `status`, a viewer cannot author one, and a
+// channel from another workspace cannot be attached.
+describe('monitors', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  const fresh = (over: Record<string, unknown> = {}) =>
+    ({ name: `m-${tag()}`, url: 'https://example.com/', ...over })
+
+  test('an admin authors one, born pending; a viewer reads it and cannot write', async () => {
+    const m = await env.as(owner).service('monitors').create(fresh()) as any
+    expect(m.status).toBe('pending')
+    expect(m.intervalSec).toBe(120)
+
+    const seen = await env.as(viewer).service('monitors').get(m.id) as any
+    expect(seen.id).toBe(m.id)
+    await expect(env.as(viewer).service('monitors').create(fresh())).rejects.toThrow()
+    await expect(env.as(viewer).service('monitors').patch(m.id, { name: 'x' })).rejects.toThrow()
+  })
+
+  test('a caller cannot state the status, and a non-http URL is refused', async () => {
+    const created = await env.as(owner).service('monitors').create(fresh({ status: 'down' })).catch(() => null) as any
+    // Either refused or stripped; what it may never be is accepted as `down`.
+    if (created) expect(created.status).toBe('pending')
+    // A transition column is moved by its declared moves, never by a patch.
+    const m = await env.as(owner).service('monitors').create(fresh()) as any
+    await expect(env.as(owner).service('monitors').patch(m.id, { status: 'up' })).rejects.toThrow()
+    await expect(env.as(owner).service('monitors').patch(m.id, { failStreak: 9 })).rejects.toThrow()
+    await expect(env.as(owner).service('monitors').create(fresh({ url: 'ftp://example.com/' })))
+      .rejects.toThrow(/url/i)
+    await expect(env.as(owner).service('monitors').create(fresh({ intervalSec: 30 })))
+      .rejects.toThrow(/intervalSec/)
+  })
+
+  test('pause and resume are the declared moves, and resume lands on pending', async () => {
+    const m = await env.as(owner).service('monitors').create(fresh()) as any
+    const paused = await env.as(owner).service('monitors').call('pause', m.id) as any
+    expect(paused.status).toBe('paused')
+    const back = await env.as(owner).service('monitors').call('resume', m.id) as any
+    expect(back.status).toBe('pending')
+    // The pair: resuming what is not paused is refused, not a no-op.
+    await expect(env.as(owner).service('monitors').call('resume', m.id)).rejects.toThrow()
+  })
+
+  test('a channel attaches once, detaches, and one from another workspace is not found', async () => {
+    const sys = env.system as any
+    const m   = await env.as(owner).service('monitors').create(fresh()) as any
+    const channel = await sys.notificationChannel.create({ data: {
+      workspaceId: ws.id, name: `c-${tag()}`, kind: 'webhook', config: { url: 'https://hooks.example.com/x' } } })
+
+    const attached = await env.as(owner).service('monitors').call('attachChannel', m.id, { channelId: channel.id }) as any
+    expect(attached.channels.length).toBe(1)
+    await expect(env.as(owner).service('monitors').call('attachChannel', m.id, { channelId: channel.id }))
+      .rejects.toThrow(/already attached/)
+    const detached = await env.as(owner).service('monitors').call('detachChannel', m.id, { channelId: channel.id }) as any
+    expect(detached.channels.length).toBe(0)
+
+    const other = await sys.workspace.create({ data: {
+      accountId: ws.accountId, name: 'Other', slug: `o-${tag()}`, ownerId: owner.userId } })
+    const foreign = await sys.notificationChannel.create({ data: {
+      workspaceId: other.id, name: `f-${tag()}`, kind: 'webhook', config: { url: 'https://hooks.example.com/y' } } })
+    await expect(env.as(owner).service('monitors').call('attachChannel', m.id, { channelId: foreign.id }))
+      .rejects.toThrow(/not found/i)
+  })
+
+  test('another workspace cannot read it', async () => {
+    const m = await env.as(owner).service('monitors').create(fresh()) as any
+    await expect(env.as(outsider).service('monitors').get(m.id)).rejects.toThrow()
   })
 })

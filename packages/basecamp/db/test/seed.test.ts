@@ -88,6 +88,10 @@ const NOT_SEEDED: Record<string, string> = {
   // step along: the evaluator reads a series, a seed run starts no process, so
   // there is nothing for a threshold to be crossed by.
   alert_event:  'a threshold crossed by readings a seed run never took',
+  // The same line for monitors: the seeded monitor is paused, so nothing has
+  // probed it and nothing has changed its state.
+  monitor_check: 'a probe that was never made',
+  monitor_event: 'a state change that never happened',
 
   // Orion. The flow itself IS seeded — an operator authors it, and an
   // automations screen with no flow on it reads as a feature that was never

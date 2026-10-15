@@ -167,7 +167,10 @@ core/
                 since Run, Call, Page and Move are terms and English both
   vite-ask.js   the browser's half: a dev-only Vite plugin serving the panel
                 (`vite-ask-client.js`) and `POST /__fjs/ask`, `/stop`, `/undo`,
-                which run `ask-claude.js` in EDIT mode scoped to the Vite root,
+                which run `ask-claude.js` in EDIT mode scoped to the Vite root
+                (or the `root` it is handed: Haven's scene editor is served
+                from `editor/` and hands `web/src/`, with Mesa's `locRoot`
+                the same, so a pick's loc and the scope agree),
                 reading also each `@frontierjs/*` AGENTS.md (`findGuides`) and
                 the app's `db/` — never the app root, which holds `api/.env`,
                 and `/text`, a text edit with no model (`locateText`) that

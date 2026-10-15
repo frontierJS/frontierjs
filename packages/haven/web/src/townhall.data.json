@@ -1,0 +1,1438 @@
+[
+  {
+    "n": 0,
+    "name": "repairs",
+    "ideas": [
+      {
+        "id": "0.9",
+        "title": "Nothing watches the performance numbers",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "D T",
+        "status": "partial",
+        "paper": "performance-regression-watch.md"
+      }
+    ]
+  },
+  {
+    "n": 1,
+    "name": "make the thesis visible",
+    "ideas": [
+      {
+        "id": "1.3",
+        "title": "Model factories",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "D T",
+        "status": "idea",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "1.4",
+        "title": "quarry — demo data + a persona per gate level",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D T",
+        "status": "idea",
+        "paper": "map-packages.md"
+      },
+      {
+        "id": "1.5",
+        "title": "i18n (lexicon)",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "U",
+        "status": "ruled",
+        "paper": "lexicon.md"
+      },
+      {
+        "id": "1.7",
+        "title": "Lint and format — the blocking half is ruled; the repo's own adoption is not",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "—",
+        "status": "part shipped",
+        "paper": "tooling-decisions.md"
+      },
+      {
+        "id": "1.6",
+        "title": "App manifest — frontier.config.js + frontier.lock",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "A R",
+        "status": "idea",
+        "paper": "app-manifest.md"
+      },
+      {
+        "id": "1.8",
+        "title": "Value sets — where the options in a picker come from",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D A U",
+        "status": "ruled",
+        "paper": ""
+      },
+      {
+        "id": "1.10",
+        "title": "The proving grounds — build the app that finds what is missing",
+        "effort": "L",
+        "payoff": 4,
+        "edge": "—",
+        "realms": "D A U R T",
+        "status": "part shipped",
+        "paper": "proving-grounds.md"
+      },
+      {
+        "id": "1.10a",
+        "title": "fli new --from <schema> — the on-ramp, and the reason it is not built yet",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "D",
+        "status": "idea",
+        "paper": "proving-grounds.md"
+      },
+      {
+        "id": "1.11",
+        "title": "A Json @type(T) column should generate a fieldset, not a textarea",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "U",
+        "status": "deferred",
+        "paper": "typed-json-forms.md"
+      }
+    ]
+  },
+  {
+    "n": 2,
+    "name": "production blockers",
+    "ideas": [
+      {
+        "id": "2.2",
+        "title": "Third-party credentials — who mints them, who spends them",
+        "effort": "L",
+        "payoff": 4,
+        "edge": "stakes",
+        "realms": "A D",
+        "status": "idea",
+        "paper": "third-party-credentials.md"
+      },
+      {
+        "id": "2.3",
+        "title": "Release story (depot)",
+        "effort": "XL",
+        "payoff": 4,
+        "edge": "edge",
+        "realms": "R",
+        "status": "idea",
+        "paper": "offline-first-and-release.md"
+      },
+      {
+        "id": "2.3b",
+        "title": "Release object + journal + fli revert",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "edge",
+        "realms": "R",
+        "status": "idea",
+        "paper": "release-transitions.md"
+      },
+      {
+        "id": "2.3f",
+        "title": "Build once, promote a digest",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "R",
+        "status": "defect",
+        "paper": "deploy-plane.md"
+      },
+      {
+        "id": "2.3g",
+        "title": "The bootstrap ring — who installs Basecamp",
+        "effort": "L",
+        "payoff": 4,
+        "edge": "edge",
+        "realms": "R",
+        "status": "idea",
+        "paper": "deploy-plane.md"
+      },
+      {
+        "id": "2.3h",
+        "title": "The whole app as one executable",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "A",
+        "status": "proposed",
+        "paper": "single-binary.md"
+      },
+      {
+        "id": "2.3i",
+        "title": "Fleet ingress — Caddy on every machine, and where a certificate comes from",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "R",
+        "status": "partial",
+        "paper": "fleet-ingress.md"
+      },
+      {
+        "id": "2.3j",
+        "title": "Cloudflare as Basecamp's first edge adapter, with DNS writes",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "R",
+        "status": "partial",
+        "paper": "cloudflare-edge.md"
+      },
+      {
+        "id": "2.4",
+        "title": "Observability (lantern)",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "parity",
+        "realms": "A D",
+        "status": "idea",
+        "paper": "lantern.md"
+      },
+      {
+        "id": "2.4b",
+        "title": "Traffic analysis (beacon)",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "A R U",
+        "status": "idea",
+        "paper": "traffic-analysis.md"
+      },
+      {
+        "id": "2.4c",
+        "title": "Alerting and error tracking — an app that fails at 3am tells nobody",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "A",
+        "status": "idea",
+        "paper": "alerting.md"
+      },
+      {
+        "id": "2.4d",
+        "title": "Production grading — fli check, aimed at a machine",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "R T",
+        "status": "idea",
+        "paper": "production-grading.md"
+      },
+      {
+        "id": "2.4e",
+        "title": "Server posture — Basecamp grades the machine, not only the app on it",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "R",
+        "status": "idea",
+        "paper": "server-posture.md"
+      },
+      {
+        "id": "2.4f",
+        "title": "PaaS parity — what a self-hosted PaaS does that Basecamp does not",
+        "effort": "XL",
+        "payoff": 4,
+        "edge": "stakes",
+        "realms": "R",
+        "status": "idea",
+        "paper": "paas-parity.md"
+      },
+      {
+        "id": "2.4g",
+        "title": "NoticeIntake — one screen of what needs attention, copied to an AI as one audit packet",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "U",
+        "status": "idea",
+        "paper": "notice-intake.md"
+      },
+      {
+        "id": "2.4h",
+        "title": "Uptime monitoring — Basecamp watches the URL, not only the machine",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "uptime-monitoring.md"
+      },
+      {
+        "id": "2.4i",
+        "title": "A metric store — the time dimension nothing here has",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "A",
+        "status": "partial",
+        "paper": "metric-store.md"
+      },
+      {
+        "id": "2.4j",
+        "title": "Blueprint file and catalog — export, share and import a blueprint",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "D R",
+        "status": "idea",
+        "paper": "blueprint-catalog.md"
+      },
+      {
+        "id": "2.5",
+        "title": "Billing (ledger)",
+        "effort": "L",
+        "payoff": 4,
+        "edge": "parity",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.6",
+        "title": "2FA / TOTP",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "A",
+        "status": "partial",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.7",
+        "title": "Media processing",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "A",
+        "status": "idea",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.8",
+        "title": "Streaming responses",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "A",
+        "status": "partial",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.10",
+        "title": "Form actions — a mutation declared beside its page, working without a bundle",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "A U",
+        "status": "idea",
+        "paper": "form-actions.md"
+      },
+      {
+        "id": "2.11",
+        "title": "Restore — schema-driven, and *proven",
+        "effort": "S",
+        "payoff": 4,
+        "edge": "edge",
+        "realms": "D R",
+        "status": "partial",
+        "paper": "time-travel.md"
+      },
+      {
+        "id": "2.12",
+        "title": "Security advisories and dependency posture",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "—",
+        "status": "partial",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.13",
+        "title": "Inbound integrations — and it is TWO features, not one",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "A",
+        "status": "idea",
+        "paper": "inbound-integrations.md"
+      },
+      {
+        "id": "2.14",
+        "title": "Bulk data — import, export, and the template first",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "bulk-data.md"
+      },
+      {
+        "id": "2.16",
+        "title": "Batch the writes the framework itself makes",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "D",
+        "status": "idea",
+        "paper": "speed-and-footprint.md"
+      },
+      {
+        "id": "2.17",
+        "title": "Push and SMS delivery — one is a driver, the other is not",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes · push is edge",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.18",
+        "title": "Scaling a database-per-account app past one core",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "A D R",
+        "status": "defect",
+        "paper": "scaling.md"
+      },
+      {
+        "id": "2.19",
+        "title": "Permission sets — the grid a ladder cannot express",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "stakes",
+        "realms": "D A",
+        "status": "part-ruled",
+        "paper": "permission-sets.md"
+      },
+      {
+        "id": "2.20",
+        "title": "Partial indexes — where: on @@index",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "D",
+        "status": "idea",
+        "paper": "partial-indexes.md"
+      },
+      {
+        "id": "2.21",
+        "title": "The sysadmin console — one screen for the people who run the app",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "stakes",
+        "realms": "D A U",
+        "status": "partial",
+        "paper": "sysadmin-console.md"
+      },
+      {
+        "id": "2.9",
+        "title": "Rate limiting",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "A",
+        "status": "partial",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.22",
+        "title": "Documentation as a product",
+        "effort": "XL",
+        "payoff": 4,
+        "edge": "stakes",
+        "realms": "—",
+        "status": "partial",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "2.23",
+        "title": "What @frontierjs/ui lacks against a current kit",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "stakes",
+        "realms": "U",
+        "status": "idea",
+        "paper": "ui-kit-gaps.md"
+      },
+      {
+        "id": "2.24",
+        "title": "Building out @frontierjs/site-kit — the order of work",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "UI",
+        "status": "proposed",
+        "paper": "site-kit-plan.md"
+      },
+      {
+        "id": "2.24a",
+        "title": "What @frontierjs/site-kit lacks against legacy ksite",
+        "effort": "L",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "UI",
+        "status": "assessment",
+        "paper": "site-kit-parity.md"
+      },
+      {
+        "id": "2.24b",
+        "title": "site-kit's page structure — what to keep from ksite's schema",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "UI",
+        "status": "idea",
+        "paper": "site-kit-structure.md"
+      },
+      {
+        "id": "2.24c",
+        "title": "Anchored feedback — pins and threads on a site-kit preview",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "anchored-feedback.md"
+      },
+      {
+        "id": "2.24d",
+        "title": "A preview branch — a client edits the UI on live data and submits it for review",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "U R",
+        "status": "idea",
+        "paper": "preview-branch.md"
+      }
+    ]
+  },
+  {
+    "n": 3,
+    "name": "the ecosystem mechanism",
+    "ideas": [
+      {
+        "id": "3.2",
+        "title": "The rig installer",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "only",
+        "realms": "D A U T",
+        "status": "idea",
+        "paper": "rigs.md"
+      },
+      {
+        "id": "3.4",
+        "title": "Derived suites",
+        "effort": "S",
+        "payoff": 4,
+        "edge": "only",
+        "realms": "D T",
+        "status": "part-shipped",
+        "paper": "testing-realm.md"
+      },
+      {
+        "id": "3.5",
+        "title": "Sierra contributing Resources from a package",
+        "effort": "L",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "U",
+        "status": "idea",
+        "paper": "rigs.md"
+      },
+      {
+        "id": "3.6",
+        "title": "A rig registry",
+        "effort": "L",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "—",
+        "status": "idea",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "3.7",
+        "title": "A package ships its own commands",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "—",
+        "status": "idea",
+        "paper": "command-surface.md"
+      },
+      {
+        "id": "3.8",
+        "title": "Teams, memberships and invitations — the rig that should come first",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "edge",
+        "realms": "D A U T",
+        "status": "idea",
+        "paper": "rigs.md"
+      },
+      {
+        "id": "3.9",
+        "title": "The ten Conduit connectors FJS maintains, and the order",
+        "effort": "M each",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "A",
+        "status": "idea",
+        "paper": "conduit-connectors.md"
+      },
+      {
+        "id": "3.10",
+        "title": "What conduit does not do yet",
+        "effort": "S each",
+        "payoff": 1,
+        "edge": "parity",
+        "realms": "A",
+        "status": "idea",
+        "paper": "conduit-batteries.md"
+      }
+    ]
+  },
+  {
+    "n": 4,
+    "name": "the differentiators",
+    "ideas": [
+      {
+        "id": "4.2",
+        "title": "Agent surface (@frontierjs/mcp)",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "only",
+        "realms": "A",
+        "status": "partial",
+        "paper": "agent-surface.md"
+      },
+      {
+        "id": "4.2b",
+        "title": "Every fli command answers a machine",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "—",
+        "status": "idea",
+        "paper": "command-surface.md"
+      },
+      {
+        "id": "4.4c",
+        "title": "Server-only modules — put the boundary in the filename",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "A U R",
+        "status": "idea",
+        "paper": "server-only-boundary.md"
+      },
+      {
+        "id": "4.4a",
+        "title": "Scoped SQL",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D",
+        "status": "defect",
+        "paper": "scoped-sql.md"
+      },
+      {
+        "id": "4.4b",
+        "title": "Route boundary classification",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D U R",
+        "status": "idea",
+        "paper": "static-safety.md"
+      },
+      {
+        "id": "4.6",
+        "title": "Live queries",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "A U",
+        "status": "partial",
+        "paper": "live-queries.md"
+      },
+      {
+        "id": "4.7",
+        "title": "Compliance (marshal)",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D",
+        "status": "idea",
+        "paper": "compliance-from-the-seed.md"
+      },
+      {
+        "id": "4.7a",
+        "title": "Data classification — how a field's sensitivity and retention are declared",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D",
+        "status": "partial",
+        "paper": "data-classification.md"
+      },
+      {
+        "id": "4.7b",
+        "title": "Forgetting — what erasure means, declared per column",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D",
+        "status": "partial",
+        "paper": "forgetting.md"
+      },
+      {
+        "id": "4.8",
+        "title": "Offline-first — the Homestead work",
+        "effort": "L",
+        "payoff": 4,
+        "edge": "only",
+        "realms": "D U",
+        "status": "part shipped",
+        "paper": "homestead.md"
+      },
+      {
+        "id": "4.9",
+        "title": "atlas — the app model as a product",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "—",
+        "status": "partial",
+        "paper": "operational-edge.md"
+      },
+      {
+        "id": "4.10",
+        "title": "Preview environments, and the Audience half",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "R U",
+        "status": "idea",
+        "paper": "release-transitions.md"
+      },
+      {
+        "id": "4.18a",
+        "title": "Membership tenancy",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "only",
+        "realms": "D A",
+        "status": "ruled",
+        "paper": ""
+      },
+      {
+        "id": "4.21",
+        "title": "Time and recurrence declared in the seed",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "time-and-recurrence.md"
+      },
+      {
+        "id": "4.21a",
+        "title": "A row that stops counting — one declaration for expiry, validity and the clock that decides both",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A U",
+        "status": "partial",
+        "paper": "effective-time.md"
+      },
+      {
+        "id": "4.21b",
+        "title": "datetime-kit — functions over epoch milliseconds, wall-clock objects and IANA names",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "—",
+        "status": "partial",
+        "paper": "datetime-kit.md"
+      },
+      {
+        "id": "4.17",
+        "title": "Support mode — bounded, audited impersonation",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D A",
+        "status": "idea",
+        "paper": "compliance-from-the-seed.md"
+      },
+      {
+        "id": "4.16",
+        "title": "Basecamp as the deploy console",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "R",
+        "status": "idea",
+        "paper": "release-transitions.md"
+      },
+      {
+        "id": "4.11",
+        "title": "Provisioning from declarations",
+        "effort": "L",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "R",
+        "status": "idea",
+        "paper": "operational-edge.md"
+      },
+      {
+        "id": "4.12",
+        "title": "Derived suspense boundaries",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "U",
+        "status": "idea",
+        "paper": "derived-suspense.md"
+      },
+      {
+        "id": "4.15",
+        "title": "Declared semantics — the categories the seed should know about",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "edge",
+        "realms": "D",
+        "status": "partial",
+        "paper": "declared-semantics.md"
+      },
+      {
+        "id": "4.13",
+        "title": "Named checkpoints + time travel",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D T R",
+        "status": "idea",
+        "paper": "time-travel.md"
+      },
+      {
+        "id": "4.20",
+        "title": "HTML over the wire",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "A U",
+        "status": "idea",
+        "paper": "html-over-the-wire.md"
+      },
+      {
+        "id": "4.25",
+        "title": "Sandboxes — a tenant with a parent",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A R",
+        "status": "idea",
+        "paper": "sandboxes.md"
+      },
+      {
+        "id": "4.26",
+        "title": "A named variant of a discriminated model",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "schema-variants.md"
+      },
+      {
+        "id": "4.27",
+        "title": "Machinery models — the running list, and how one ships",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A",
+        "status": "idea",
+        "paper": "machinery-models.md"
+      },
+      {
+        "id": "4.28",
+        "title": "Polymorphic relations, refused — @@arc instead",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "D",
+        "status": "argued",
+        "paper": "polymorphic-relations.md"
+      },
+      {
+        "id": "4.29",
+        "title": "A column the TENANT declares, at runtime, that is still segmentable",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D A",
+        "status": "partial",
+        "paper": "tenant-declared-fields.md"
+      },
+      {
+        "id": "4.30",
+        "title": "Provable enforcement — litestone prove, and the sentence nobody else can say",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "only",
+        "realms": "D T",
+        "status": "idea",
+        "paper": "provable-enforcement.md"
+      },
+      {
+        "id": "4.31",
+        "title": "The data layer — analytics, owned",
+        "effort": "XL",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D R",
+        "status": "idea",
+        "paper": "analytics-and-warehouse.md"
+      },
+      {
+        "id": "4.32",
+        "title": "When the TENANT writes the query",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D A",
+        "status": "idea",
+        "paper": "tenant-authored-queries.md"
+      },
+      {
+        "id": "4.33",
+        "title": "The intent recognizer — a customer's words resolved against the app's own seed",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "intent-recognizer.md"
+      },
+      {
+        "id": "4.34",
+        "title": "A template somebody authors at runtime and saves in a row",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "U D",
+        "status": "idea",
+        "paper": "stored-templates.md"
+      },
+      {
+        "id": "4.35",
+        "title": "Access without an account — the bearer claim as a paved road",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D A",
+        "status": "idea",
+        "paper": "bearer-access.md"
+      },
+      {
+        "id": "4.36",
+        "title": "The conversational surface — a chatbot a visitor can talk to",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "A D U",
+        "status": "proposed",
+        "paper": "chat-surface.md"
+      },
+      {
+        "id": "4.37",
+        "title": "Where a row IS — geography in the seed",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "D A U",
+        "status": "partial",
+        "paper": "geo.md"
+      },
+      {
+        "id": "4.40",
+        "title": "membershipClaim read off the schema",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "D A",
+        "status": "idea",
+        "paper": "membership-from-schema.md"
+      },
+      {
+        "id": "4.41",
+        "title": "The wireframe — a screenshot read in the vocabulary becomes components and a draft schema",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "U D",
+        "status": "partial",
+        "paper": "wireframe.md"
+      },
+      {
+        "id": "4.42",
+        "title": "The app CLI — a terminal client derived from the agent surface",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "A",
+        "status": "idea",
+        "paper": "app-cli.md"
+      },
+      {
+        "id": "4.43",
+        "title": "The in-app guide — *I need to set up a new server*, answered with the screen that does it",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "A U",
+        "status": "idea",
+        "paper": "in-app-guide.md"
+      },
+      {
+        "id": "4.49",
+        "title": "Upgrade codemods (shift)",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "only",
+        "realms": "—",
+        "status": "idea",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "4.50",
+        "title": "A balance is the sum of what happened to it, and the schema cannot say so",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "D",
+        "status": "idea",
+        "paper": "ledger.md"
+      },
+      {
+        "id": "4.51",
+        "title": "An FJS operating system — borrow the bottom, own the top",
+        "effort": "XL",
+        "payoff": 1,
+        "edge": "edge",
+        "realms": "A U R",
+        "status": "proposed",
+        "paper": "fjs-os.md"
+      },
+      {
+        "id": "4.52",
+        "title": "A native runtime beneath the seed, not a translator over the TS",
+        "effort": "XL",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "D A R",
+        "status": "proposed",
+        "paper": "runtime-targets.md"
+      },
+      {
+        "id": "4.53",
+        "title": "Calls and media — a huddle, a screen share and a recording from seams the app already has",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "D A U",
+        "status": "proposed",
+        "paper": "calls-and-media.md"
+      },
+      {
+        "id": "4.54",
+        "title": "Browser kit — the ten browser APIs every app wraps by hand, wrapped once as signals",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "U",
+        "status": "proposed",
+        "paper": "browser-kit.md"
+      }
+    ]
+  },
+  {
+    "n": 5,
+    "name": "coherence",
+    "ideas": [
+      {
+        "id": "5.1",
+        "title": "Rule the Context shape",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "—",
+        "status": "idea",
+        "paper": "one-mental-model.md"
+      },
+      {
+        "id": "5.2",
+        "title": "One frontmatter parser",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "—",
+        "status": "idea",
+        "paper": "one-mental-model.md"
+      },
+      {
+        "id": "5.2b",
+        "title": "A generated fli reference, and doc drift as a test failure",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "—",
+        "status": "partial",
+        "paper": "command-surface.md"
+      },
+      {
+        "id": "5.2c",
+        "title": "Flag relations in frontmatter",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "—",
+        "status": "idea",
+        "paper": "command-surface.md"
+      },
+      {
+        "id": "5.2d",
+        "title": "runCommand() — a command a test can run",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "T",
+        "status": "idea",
+        "paper": "command-surface.md"
+      },
+      {
+        "id": "5.3",
+        "title": "Litestone Plugin gets a name; rename the concept",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "D",
+        "status": "idea",
+        "paper": "one-mental-model.md"
+      },
+      {
+        "id": "5.4",
+        "title": "Name Mesa's target set publicly",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "U",
+        "status": "partial",
+        "paper": "one-mental-model.md"
+      },
+      {
+        "id": "5.5",
+        "title": "One target axis in Sierra; jetty becomes extension",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "U",
+        "status": "idea",
+        "paper": "one-mental-model.md"
+      },
+      {
+        "id": "5.6",
+        "title": "Type-check the derivation end to end",
+        "effort": "M",
+        "payoff": 4,
+        "edge": "—",
+        "realms": "—",
+        "status": "partial",
+        "paper": ""
+      },
+      {
+        "id": "5.10",
+        "title": "Page composition — the tier @frontierjs/css never built",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "U",
+        "status": "idea",
+        "paper": "page-composition.md"
+      },
+      {
+        "id": "5.11",
+        "title": "Fill @frontierjs/toolbelt by divergence, not by DRY",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "—",
+        "status": "partial",
+        "paper": "shared-pure-functions.md"
+      },
+      {
+        "id": "5.11a",
+        "title": "What else earns a toolbelt kit",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "—",
+        "status": "idea",
+        "paper": "toolbelt-admissions.md"
+      },
+      {
+        "id": "5.12",
+        "title": "The small sharp edges",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "D U",
+        "status": "idea",
+        "paper": "ecosystem-gaps.md"
+      },
+      {
+        "id": "5.9",
+        "title": "Cascading fields (@@cascade)",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "D",
+        "status": "idea",
+        "paper": "cascading-fields.md"
+      },
+      {
+        "id": "5.16",
+        "title": "Mesa golden compile corpus — scope IDs, not output",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "U · T",
+        "status": "idea",
+        "paper": "committed-artifacts.md"
+      },
+      {
+        "id": "5.17",
+        "title": "The UI kit contract as a committed artifact",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "U",
+        "status": "idea",
+        "paper": "committed-artifacts.md"
+      },
+      {
+        "id": "5.18",
+        "title": "Desktop and mobile — say which, and say it in DECISIONS.md",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "U R",
+        "status": "partial",
+        "paper": "one-mental-model.md"
+      },
+      {
+        "id": "5.20",
+        "title": "CSS delivery — measure the inline route before replacing it",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "U",
+        "status": "idea",
+        "paper": "css-delivery.md"
+      },
+      {
+        "id": "5.21",
+        "title": "The terminal has no tone vocabulary and no owner for a line",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "—",
+        "status": "ruled",
+        "paper": "terminal-surface.md"
+      },
+      {
+        "id": "5.22",
+        "title": "A TUI target — and the measurement that repriced it",
+        "effort": "L",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "U",
+        "status": "ruled",
+        "paper": "terminal-surface.md"
+      },
+      {
+        "id": "5.23",
+        "title": "Styling a child's parts from the parent",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "U",
+        "status": "idea",
+        "paper": "child-part-styling.md"
+      },
+      {
+        "id": "5.27",
+        "title": "The registers as a surface",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "—",
+        "status": "partial",
+        "paper": "registers.md"
+      },
+      {
+        "id": "5.29",
+        "title": "Accessibility has no declaration site",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "U",
+        "status": "idea",
+        "paper": "accessibility.md"
+      },
+      {
+        "id": "5.30",
+        "title": "Runtime state as tables",
+        "effort": "M",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "A",
+        "status": "proposed",
+        "paper": "runtime-state-sqlite.md"
+      },
+      {
+        "id": "5.31",
+        "title": "A thing that must happen later has three correct shapes and no name",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "edge",
+        "realms": "D A",
+        "status": "idea",
+        "paper": "ontology.md"
+      },
+      {
+        "id": "5.32",
+        "title": "Markdown is written three times and nobody decided that",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "parity",
+        "realms": "—",
+        "status": "idea",
+        "paper": "markdown-kit.md"
+      },
+      {
+        "id": "5.36",
+        "title": "A keyed {#each} that animates a row it moves",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "parity",
+        "realms": "U",
+        "status": "idea",
+        "paper": "list-motion.md"
+      },
+      {
+        "id": "5.34",
+        "title": "Entropy — the restatement count, ratcheted",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "proof",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "entropy.md"
+      },
+      {
+        "id": "5.37",
+        "title": "Process entropy — the ladder and the pump",
+        "effort": "M",
+        "payoff": 3,
+        "edge": "proof",
+        "realms": "D A U",
+        "status": "idea",
+        "paper": "process-entropy.md"
+      },
+      {
+        "id": "5.40",
+        "title": "Mental-model load — where it lands, and that it lands differently on an agent",
+        "effort": "S",
+        "payoff": 2,
+        "edge": "—",
+        "realms": "A",
+        "status": "assessment",
+        "paper": "mental-model-load.md"
+      },
+      {
+        "id": "5.49",
+        "title": "Litestone's edge — what it owns, and what it hosts as a battery",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "D",
+        "status": "partial",
+        "paper": "litestone-scope.md"
+      },
+      {
+        "id": "5.50",
+        "title": "Junction's edge — what it owns, and what it hosts as a battery",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "A",
+        "status": "partial",
+        "paper": "junction-scope.md"
+      },
+      {
+        "id": "5.51",
+        "title": "How a package names its own files, graded for the reader that cannot ask",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "A",
+        "status": "proposed",
+        "paper": "package-file-naming.md"
+      },
+      {
+        "id": "5.53",
+        "title": "Consistency — what a caller can rely on after a write",
+        "effort": "S",
+        "payoff": 3,
+        "edge": "—",
+        "realms": "D",
+        "status": "partial",
+        "paper": "consistency.md"
+      },
+      {
+        "id": "5.54",
+        "title": "One console, two targets",
+        "effort": "L",
+        "payoff": 3,
+        "edge": "edge",
+        "realms": "A U D",
+        "status": "proposed",
+        "paper": "one-console.md"
+      }
+    ]
+  }
+]

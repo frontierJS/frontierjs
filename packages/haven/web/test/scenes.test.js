@@ -10,10 +10,11 @@ import { test, expect } from 'bun:test'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
-import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS } from '../src/stage.js'
+import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS, viewFor, edgeFor } from '../src/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { worldOf, worldJson } from '../src/world.js'
+import { worldOf, worldJson, pieceId } from '../src/world.js'
 import { DAY_MS } from '../src/sky.js'
+import HALL from '../src/townhall.data.json'
 
 const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
 // Three quarters into the day is full night, when a `night` door is one.
@@ -109,6 +110,24 @@ for (const { name, slug, path } of SCENES) {
     }
   })
 
+  test(`${slug}: every pickup lies on floor a figure can walk to from the spawn, and world.json names each one`, () => {
+    const lying = stage.marks.filter((m) => m.kind === 'piece' && m.piece.pickup)
+    expect(worldOf(stage).pickups.map((p) => p.id).sort()).toEqual(lying.map(pieceId).sort())
+    const seen = new Set([`${stage.spawn.x},${stage.spawn.y}`])
+    const queue = [stage.spawn]
+    while (queue.length) {
+      const { x, y } = queue.shift()
+      for (const [dx, dy] of STEPS) {
+        const k = `${x + dx},${y + dy}`
+        if (!seen.has(k) && stage.walkable(x + dx, y + dy)) { seen.add(k); queue.push({ x: x + dx, y: y + dy }) }
+      }
+    }
+    for (const m of lying) for (const c of m.piece.cells) {
+      expect({ piece: pieceId(m), x: m.x + c.dx, y: m.y + c.dy, reached: seen.has(`${m.x + c.dx},${m.y + c.dy}`) })
+        .toEqual({ piece: pieceId(m), x: m.x + c.dx, y: m.y + c.dy, reached: true })
+    }
+  })
+
   test(`${slug}: every paint letter a piece uses is defined by the scene's palette or the piece's own`, () => {
     const undefinedLetters = new Set()
     for (const m of stage.marks) {
@@ -171,6 +190,27 @@ for (const { name, slug, path } of SCENES) {
     })
   }
 }
+
+// ─── the town hall ────────────────────────────────────────────────────
+
+// A delegate is a vote's only way in: one standing for a row the overview no
+// longer holds is a vote the service refuses, and a row with nobody is one no
+// member can reach. Both are read off the data file the server checks against.
+test('town hall: a delegate for every idea in townhall.data.json, once each, and nobody else', () => {
+  const stage = scenes.get('/townhall/')
+  const ideas = HALL.flatMap((w) => w.ideas.map((i) => i.id))
+  const standing = stage.marks.filter((m) => m.piece?.idea).map((m) => m.piece.idea)
+  expect([...standing].sort()).toEqual([...ideas].sort())
+})
+
+test('town hall: every delegate has floor either side of their head and a row to walk above it, so each can be stood beside', () => {
+  const stage = scenes.get('/townhall/')
+  for (const m of stage.marks.filter((m) => m.piece?.idea)) {
+    const h = m.spot('head')
+    const open = [[-1, 0], [1, 0], [0, -1]].map(([dx, dy]) => stage.walkable(h.x + dx, h.y + dy))
+    expect({ idea: m.piece.idea, open }).toEqual({ idea: m.piece.idea, open: [true, true, true] })
+  }
+})
 
 // ─── the workshop ─────────────────────────────────────────────────────
 
@@ -337,6 +377,27 @@ test('a stage shows the view it is told to follow and the whole of itself to the
   expect(stage.view).toEqual({ x: 0, y: 0, w: 200, h: 30 })
 })
 
+test('the view takes the terminal\'s size, its slack in proportion, and a resize keeps the figure on screen', () => {
+  expect(VIEW).toEqual(viewFor(100, 30))
+  expect(edgeFor(VIEW)).toEqual(EDGE)
+  expect(edgeFor(viewFor(200, 56))).toEqual({ x: 16, y: 8 })
+  expect(edgeFor(viewFor(50, 17))).toEqual({ x: 4, y: 2 })
+  const stage = createStage({ slug: 'probe', spawn: { x: 0, y: 0 } })
+  stage.stamp(piece('dot', '.', 'f'), 199, 59)
+  stage.follow(120, 10)
+  const wide = viewFor(180, 50)
+  stage.fit(wide)
+  expect(stage.view).toEqual({ x: 200 - wide.w, y: 0, w: wide.w, h: wide.h })
+  const narrow = viewFor(80, 24)
+  stage.fit(narrow)
+  const v = stage.view
+  expect([v.w, v.h]).toEqual([narrow.w, narrow.h])
+  expect(120 - v.x).toBeLessThan(v.w - edgeFor(narrow).x)
+  expect(v).toEqual(follow({ x: 0, y: 0 }, { x: 120, y: 10 }, stage, narrow))
+  stage.fit(viewFor(400, 100))
+  expect(stage.view).toEqual({ x: 0, y: 0, w: 200, h: 60 })
+})
+
 const wall  = piece('wall', '|', 'w')
 const table = piece('table', 'o|o', 'tct')
 
@@ -462,6 +523,22 @@ test('a floor piece is walked on, a wall is not, and the edge is a wall', () => 
   expect(stage.walkable(0, 0)).toBe(true)
   expect(stage.walkable(4, 1)).toBe(false)
   expect(stage.look(1, 1, 0)).toEqual({ ch: ':', fg: '#000000', bg: undefined })
+})
+
+test('a pickup is a floor piece of a known item; lifted it draws as nothing and is walkable until it lies there again', () => {
+  expect(() => piece('arrows', '=>', 'ee', { pickup: { item: 'arrow', n: 5 } })).toThrow(/floor piece/)
+  expect(() => piece('arrows', '=>', 'ee', { floor: true, pickup: { item: 'sword', n: 1 } })).toThrow(/sword/)
+  expect(() => piece('arrows', '=>', 'ee', { floor: true, pickup: { item: 'arrow', n: 0 } })).toThrow(/whole number/)
+  const quiver = piece('quiver', '=>', 'ee', { floor: true, pickup: { item: 'arrow', n: 5 } })
+  const at = 3 * DAY_MS + 1000
+  const stage = createStage({ slug: 'probe', palette: { e: { fg: '#aa0000' } }, spawn: { x: 0, y: 0 }, manual: true })
+  const mark = stage.stamp(quiver, 2, 1)
+  stage.frame(at)
+  expect(stage.look(2, 1, at).ch).toBe('=')
+  stage.shatter([{ id: pieceId(mark), until: at + 500 }])
+  expect(stage.look(2, 1, at).ch).toBe(' ')
+  expect(stage.walkable(2, 1)).toBe(true)
+  expect(stage.look(2, 1, at + 500).ch).toBe('=')
 })
 
 test('a hidden door draws what is under it and is still a door; lifted, the cell is as it was', () => {

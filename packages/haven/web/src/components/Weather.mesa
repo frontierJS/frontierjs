@@ -1,0 +1,23 @@
+<script>
+  // Weather.mesa — `/weather <clear|rain|snow|storm|auto>`: hold the almanac's
+  // weather where you like, or hand it back to the clock with `auto`. Drawn on
+  // this screen only and never sent, so two screens in one room may stand in
+  // two weathers; it holds from scene to scene until `auto`. Draws nothing.
+  import { KINDS, almanacAt, heldOf, hold } from '@/sky.js'
+
+  export let stage
+
+  var verbs = $context.commands
+  const HELP = `/weather ${KINDS.join('|')}|auto`
+
+  function turn({ args }) {
+    const w = args.trim().toLowerCase()
+    if (!w) return `it is ${almanacAt(Date.now()).weather}${heldOf('weather') ? ' (held)' : ''} — ${HELP}`
+    if (w !== 'auto' && !KINDS.includes(w)) return HELP
+    hold('weather', w === 'auto' ? null : w)
+    stage.touch()
+    return w === 'auto' ? `the weather follows the clock: ${almanacAt(Date.now()).weather}` : `it is ${w}`
+  }
+
+  $.onDestroy(verbs.add({ word: 'weather', help: HELP, run: turn }))
+</script>

@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-63 models · 1 view · 64 gated · 0 unrestricted
-49 with row policies · 18 with protected fields · 31 declared moves · 13 @system · 0 @seals
+67 models · 1 view · 68 gated · 0 unrestricted
+53 with row policies · 19 with protected fields · 35 declared moves · 15 @system · 0 @seals
 ```
 
 ## Gates
@@ -60,6 +60,10 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricSeries` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Monitor` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `MonitorChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `MonitorCheck` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `MonitorEvent` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Network` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 1 VISITOR | 8 SYSTEM |
 | `NotificationChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
@@ -362,6 +366,43 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
+### `Monitor`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `MonitorChannel`
+
+- deny **read** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(channel, tenancy)` — "Outside your workspaceId"
+
+### `MonitorCheck`
+
+- deny **read** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+
+### `MonitorEvent`
+
+- deny **read** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(monitor, tenancy)` — "Outside your workspaceId"
+
 ### `Network`
 
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
@@ -559,6 +600,10 @@ rather than refusing the row.
 | `Job` | `lastRunAt` | `@system` |
 | `Job` | `lastRunStatus` | `@system` |
 | `LoginChallenge` | `value` | `@guarded` |
+| `Monitor` | `failStreak` | `@system` |
+| `Monitor` | `lastCheckedAt` | `@system` |
+| `Monitor` | `nextCheckAt` | `@system` |
+| `Monitor` | `lastLatencyMs` | `@system` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `OauthFlow` | `invitation` | `@guarded` |
@@ -617,6 +662,10 @@ caller at once. Everything reachable from the target seals with it.
 | `Job` | `status` | `idle` | running → pending | **application** | — | — |
 | `Job` | `status` | `fail` | running → failed | **application** | — | — |
 | `Job` | `status` | `cancel` | pending, running, failed → cancelled | caller | — | — |
+| `Monitor` | `status` | `markUp` | pending, down → up | **application** | — | — |
+| `Monitor` | `status` | `markDown` | pending, up → down | **application** | — | — |
+| `Monitor` | `status` | `pause` | pending, up, down → paused | caller | 5 ADMINISTRATOR | — |
+| `Monitor` | `status` | `resume` | paused → pending | caller | 5 ADMINISTRATOR | — |
 | `Run` | `status` | `start` | pending → running | caller | — | — |
 | `Run` | `status` | `suspend` | pending, running → waiting | caller | — | — |
 | `Run` | `status` | `resume` | waiting → running | caller | — | — |

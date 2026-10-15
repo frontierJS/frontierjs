@@ -1,0 +1,109 @@
+<script>
+  // Barkeep.mesa — the barkeep behind the tavern's bar (`IDEAS/haven.md` 8.4).
+  // Standing at the bar, `/ask row policies` asks him, and he answers with a
+  // passage of the framework's docs and where it is written, or says the books
+  // do not hold it — which the server counts (`barkeep.ask`, the Miss model).
+  // No model behind the bar (`FJS-D994`).
+  //
+  // The question is a verb, never a Message: a verb per stool, its reach the
+  // stool and the floor in front of it, so `/ask` is in Tab, the hints and the
+  // help anywhere along the bar and nowhere else. He stands behind the stool
+  // nearest whoever is at the bar on this screen. The answer is a pane over
+  // the shelves, the registry's mode, so Esc puts it away, and walking off
+  // from the bar does too. Not over the floor in front of the bar, where it
+  // would cover the figure that asked; over `Bar.mesa`'s board, a layer up,
+  // while it is open.
+  //
+  // Drawn on this screen only. A route places him (`routes/tavern.mesa`),
+  // never the scene file, whose picture is pinned.
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { at } from '#cell'
+  import { cells, clip } from '@/cells.js'
+  import { bar as barPiece } from '@/pieces/bar.js'
+  import { spotsOf } from '@/pieces/index.js'
+
+  const scene = $context.scene
+  var verbs = $context.commands
+  // A stool's reach: three cells, so the reaches of stools six apart meet.
+  const REACH = 3
+  const PANE = { x: 3, y: 1, w: 88, h: 5 }
+  const TITLE = '— the barkeep — Esc puts it away'
+
+  const bar    = scene.placed(barPiece)[0]
+  const stools = bar ? spotsOf(barPiece, 'seat').map((s) => bar.spot(s.name)) : []
+  const middle = stools[Math.floor(stools.length / 2)]
+
+  let me    = scene.seer
+  let view  = scene.view
+  let reply = null   // null, or { asking } while he thinks, or what he said
+  var close = null
+  $.onDestroy(scene.subscribe(() => { me = scene.seer; view = scene.view }))
+
+  const away = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
+  const nearest = (c) => c && stools.filter((s) => away(s, c) <= REACH).sort((a, b) => away(a, c) - away(b, c))[0]
+
+  // Walking off from the bar puts the answer away.
+  $: { if (close && !nearest(me)) close() }
+
+  async function ask({ args }) {
+    if (!args) return 'ask the barkeep about something — /ask row policies'
+    close ??= verbs.open({ name: 'barkeep', closed: () => { reply = null; close = null } })
+    reply = { asking: args }
+    try {
+      const said = await getClient().service('barkeep').invoke('ask', null, { question: args })
+      if (reply?.asking === args) reply = { question: args, ...said }
+    } catch (e) {
+      if (reply?.asking === args) reply = { question: args, failed: e.message }
+    }
+    return ''
+  }
+
+  for (const s of stools) $.onDestroy(verbs.add({ word: 'ask', help: '/ask <question>', reach: { x: s.x, y: s.y, within: REACH }, run: ask }))
+
+  /** `text` in rows of at most `w` cells, broken between words. */
+  function wrap(text, w) {
+    const rows = []
+    let row = ''
+    for (const word of text.split(' ')) {
+      const next = row ? `${row} ${word}` : word
+      if (cells(next) <= w) { row = next; continue }
+      if (row) rows.push(row)
+      row = cells(word) > w ? clip(word, w) : word
+    }
+    if (row) rows.push(row)
+    return rows
+  }
+
+  /** The pane's rows under its title: the quote, then where it is written. */
+  function lines(r) {
+    const w = PANE.w - 2
+    const room = PANE.h - 1
+    if (r.asking) return [`"${clip(r.asking, w - 2)}" — he reaches for a book…`]
+    if (r.failed) return wrap(`he shrugs: ${r.failed}`, w)
+    if (!r.found) return wrap(r.shelf
+      ? `"Not in my books, that one. I've chalked it up — that's ${r.misses} I couldn't answer."`
+      : '"No books behind this bar." This server runs without the docs.', w)
+    const where = wrap(`— ${r.path}${r.heading ? ` § ${r.heading}` : ''}`, w)
+    const quote = wrap(`"${r.text}"`, w).slice(0, Math.max(1, room - where.length))
+    return [...quote, ...where].slice(0, room)
+  }
+
+  $: keeper = bar && (nearest(me) ?? middle)
+  $: shown = keeper && keeper.x >= view.x && keeper.x < view.x + view.w && bar.y - 1 >= view.y && bar.y - 1 < view.y + view.h
+</script>
+
+{#if shown}
+  <p {@attach at(keeper.x - view.x, bar.y - 1 - view.y, 11)}>☻</p>
+{/if}
+{#if reply}
+  <div class="surface pane" {@attach at(PANE.x - view.x, PANE.y - view.y, 14, [PANE.w, PANE.h])}>
+    <p>{TITLE}</p>
+    {#each lines(reply) as l, i (i)}
+      <p>{l}</p>
+    {/each}
+  </div>
+{/if}
+
+<style>
+  .pane p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

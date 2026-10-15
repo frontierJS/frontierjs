@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-127 definitions · 63 models · 1 view · 22 types · 41 enums · 0 other
+139 definitions · 67 models · 1 view · 28 types · 43 enums · 0 other
 ```
 
 ## Definitions
@@ -76,6 +76,10 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `AlertRule` | model |
 | `AlertRuleChannel` | model |
 | `AlertEvent` | model |
+| `Monitor` | model |
+| `MonitorCheck` | model |
+| `MonitorEvent` | model |
+| `MonitorChannel` | model |
 | `Dashboard` | model |
 | `DashboardWidget` | model |
 | `AuditEvent` | model |
@@ -116,6 +120,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `JobStatus` | enum |
 | `RunStatus` | enum |
 | `AlertSeverity` | enum |
+| `MonitorStatus` | enum |
+| `HttpMethod` | enum |
 | `AlertSubject` | enum |
 | `ComparisonOp` | enum |
 | `AlertStatus` | enum |
@@ -142,9 +148,15 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `WidgetRemove` | type |
 | `DashboardReorder` | type |
 | `AlertChannelRef` | type |
+| `MonitorChannelRef` | type |
 | `AlertSnooze` | type |
 | `NetworkAttach` | type |
 | `NetworkDetach` | type |
+| `VolumeReport` | type |
+| `DomainCertUpload` | type |
+| `NotificationPreferenceSave` | type |
+| `NotificationPreferenceReset` | type |
+| `WorkspaceTransfer` | type |
 | `AppFromBlueprint` | type |
 | `AppPlace` | type |
 | `AppUnplace` | type |
@@ -185,6 +197,8 @@ validates, and a select that silently drops an option.
 - `JobStatus` — `pending`, `running`, `failed`, `cancelled`
 - `RunStatus` — `pending`, `running`, `success`, `failed`, `timeout`
 - `AlertSeverity` — `info`, `warning`, `critical`
+- `MonitorStatus` — `pending`, `up`, `down`, `paused`
+- `HttpMethod` — `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `AlertSubject` — `server`, `volume`, `series`
 - `ComparisonOp` — `gt`, `gte`, `lt`, `lte`
 - `AlertStatus` — `firing`, `resolved`
@@ -196,8 +210,8 @@ validates, and a select that silently drops an option.
 - `BackupKind` — `manual`, `scheduled`
 - `BackupDestination` — `local`, `s3`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
-- `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`
-- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `posture_failed`, `dependency_vulnerable`, `member_joined`, `job_failed`, `weekly_digest`
+- `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`, `Monitor`
+- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `monitor_down`, `monitor_up`, `posture_failed`, `dependency_vulnerable`, `member_joined`, `job_failed`, `weekly_digest`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 
 ## Models
@@ -530,6 +544,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `apiKeys` — hasMany `ApiKey`
 - relation `jobs` — hasMany `Job`
 - relation `alertRules` — hasMany `AlertRule`
+- relation `monitors` — hasMany `Monitor`
 - relation `channels` — hasMany `NotificationChannel`
 - relation `flags` — hasMany `FeatureFlag`
 - relation `auditEvents` — hasMany `AuditEvent`
@@ -1168,6 +1183,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `rules` — hasMany `AlertRuleChannel`
+- relation `monitors` — hasMany `MonitorChannel`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1244,6 +1260,90 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `acknowledgedAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `ruleId`, `severity`, `subjectType`, `subjectId`, `message` · not accepted — `id`
+
+### `Monitor`
+
+- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
+- relation `checks` — hasMany `MonitorCheck`
+- relation `events` — hasMany `MonitorEvent`
+- relation `channels` — hasMany `MonitorChannel`
+- transitions on `status` — `markUp`: pending|down → up @system · `markDown`: pending|up → down @system · `pause`: pending|up|down → paused @5 · `resume`: paused → pending @5
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `appId` | `string`? | — | — | — | — |
+| `url` | `string` | yes | — | `format: "uri"` `x-transforms` | — |
+| `method` | `HttpMethod` = `"GET"` | — | — | — | — |
+| `headers` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `body` | `string`? | — | — | — | — |
+| `intervalSec` | `integer` = `120` | — | — | `minimum: 60` `maximum: 86400` | — |
+| `retries` | `integer` = `2` | — | — | `minimum: 0` `maximum: 10` | — |
+| `retryIntervalSec` | `integer` = `120` | — | — | `minimum: 60` | — |
+| `timeoutMs` | `integer` = `10000` | — | — | `minimum: 1000` `maximum: 60000` | — |
+| `acceptedStatus` | `string` = `"200-299"` | — | — | `minLength: 3` `maxLength: 200` `x-transforms` | — |
+| `maxRedirects` | `integer` = `10` | — | — | `minimum: 0` `maximum: 20` | — |
+| `ignoreTls` | `boolean` = `false` | — | — | — | — |
+| `invert` | `boolean` = `false` | — | — | — | — |
+| `resendEvery` | `integer` = `0` | — | — | `minimum: 0` | — |
+| `tags` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `status` | `MonitorStatus` = `"pending"` | — | — | — | — |
+| `failStreak` | `integer` = `0` | — | — | `x-litestone-kind` | — |
+| `lastCheckedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `nextCheckAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `lastLatencyMs` | `integer`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `name`, `url` · not accepted — `id`
+
+### `MonitorCheck`
+
+- gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `monitor` — belongsTo `Monitor` via `monitorId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `monitorId` | `string` | yes | — | — | — |
+| `at` | `string` | — | — | `format: "date-time"` | — |
+| `ok` | `boolean` | yes | — | — | — |
+| `statusCode` | `integer`? | — | — | — | — |
+| `latencyMs` | `integer`? | — | — | — | — |
+| `message` | `string` | yes | — | — | — |
+
+**On create**: required — `monitorId`, `ok`, `message` · not accepted — `id`
+
+### `MonitorEvent`
+
+- gate `read:2 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `monitor` — belongsTo `Monitor` via `monitorId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `monitorId` | `string` | yes | — | — | — |
+| `at` | `string` | — | — | `format: "date-time"` | — |
+| `fromStatus` | `MonitorStatus` | yes | — | — | — |
+| `toStatus` | `MonitorStatus` | yes | — | — | — |
+| `message` | `string` | yes | — | — | — |
+
+**On create**: required — `monitorId`, `fromStatus`, `toStatus`, `message` · not accepted — `id`
+
+### `MonitorChannel`
+
+- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `monitor` — belongsTo `Monitor` via `monitorId` · on delete Cascade
+- relation `channel` — belongsTo `NotificationChannel` via `channelId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `monitorId` | `string` | yes | — | — | — |
+| `channelId` | `string` | yes | — | — | — |
+
+**On create**: required — `monitorId`, `channelId` · not accepted — `id`
 
 ### `Dashboard`
 
@@ -1646,6 +1746,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — `channelId`
 
+### `MonitorChannelRef`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `channelId` | `string` | yes | — | — | — |
+
+**On create**: required — `channelId`
+
 ### `AlertSnooze`
 
 - closed (`additionalProperties: false`)
@@ -1676,6 +1786,63 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `serverId` | `string` | yes | — | — | — |
 
 **On create**: required — `serverId`
+
+### `VolumeReport`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `server_id` | `string` | yes | — | — | — |
+| `volumes` | `string[]` = `[]` | yes | — | — | — |
+
+**On create**: required — `server_id`, `volumes`
+
+### `DomainCertUpload`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `certPem` | `string` | yes | — | `minLength: 1` `maxLength: 100000` | — |
+| `keyPem` | `string` | yes | — | `minLength: 1` `maxLength: 100000` | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+| `issuedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `kind` | `string`? | — | — | — | — |
+
+**On create**: required — `certPem`, `keyPem`, `expiresAt`
+
+### `NotificationPreferenceSave`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `kind` | `NotificationKind` | yes | — | — | — |
+| `email` | `boolean`? | — | — | — | — |
+| `inApp` | `boolean`? | — | — | — | — |
+
+**On create**: required — `kind`
+
+### `NotificationPreferenceReset`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `kind` | `NotificationKind`? | — | — | — | — |
+
+**On create**: required — nothing
+
+### `WorkspaceTransfer`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `userId` | `string` | yes | — | — | — |
+
+**On create**: required — `userId`
 
 ### `AppFromBlueprint`
 

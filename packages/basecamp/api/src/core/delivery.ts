@@ -205,6 +205,43 @@ export async function deliverToChannel(
   return { ok: true }
 }
 
+/**
+ * Deliver one message to every channel in a list, from a cron.
+ *
+ * A subject with no channels reaches nobody, which is legitimate. Silence about
+ * a channel that REFUSED is not, so a failure is logged against `label` and the
+ * pass continues: one dead Slack webhook must not cost every subject after it.
+ * `dedupKey` is built by the caller from the id that is stable across the
+ * trigger and the resolve.
+ */
+export async function fanOutToChannels(
+  app:      { conduit?: unknown },
+  sys:      () => any,
+  channels: Array<Record<string, any> | null | undefined>,
+  msg:      Message,
+  label:    string,
+): Promise<void> {
+  for (const channel of channels) {
+    // `deletedAt` is checked by hand because the read that produced these was
+    // `asSystem()`, which bypasses `@@softDelete` along with everything else —
+    // a retired channel would otherwise still be paged through, and the join
+    // row survives it.
+    if (!channel || channel.isActive === false || channel.deletedAt) continue
+
+    const res = await deliverToChannel({ conduit: app.conduit as never, sys }, channel, msg)
+    if (!res.ok) {
+      console.error(`[${label}] channel '${channel.name}': ${res.error}`)
+      continue
+    }
+    // The stamp means something arrived, which is the only reason it is written
+    // after the send rather than beside it.
+    await sys().notificationChannel.update({
+      where: { id: channel.id },
+      data:  { lastDeliveryAt: new Date().toISOString(), version: channel.version },
+    })
+  }
+}
+
 /** Read one field out of a channel's Secret. asSystem() because `@encrypted`
  *  values are absent from a scoped read — not redacted, absent. */
 async function readCredential(

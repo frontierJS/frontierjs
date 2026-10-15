@@ -46,6 +46,14 @@ test('a bubble is the newest line of each speaker, over where they stand', () =>
   ])
 })
 
+test('a hushed line, and every one before it, is no bubble, and nothing older takes its place', () => {
+  const h = here([{ ...member(2, 10, 6), meta: { x: 10, y: 6, hushed: 9 } }])
+  const lines = [said(9, 2, 'hi'), said(8, 2, 'older'), said(7, 1, 'mine'), said(6, 1, 'first')]
+  expect(bubbles(h, lines, 5, 5, view, spawn).map((b) => b.key)).toEqual(['1:7'])
+  expect(bubbles(h, lines, 5, 5, view, spawn, 7)).toEqual([])
+  expect(bubbles(h, [said(10, 2, 'again'), ...lines], 5, 5, view, spawn, 7).map((b) => b.key)).toEqual(['2:10'])
+})
+
 test('a line from beyond earshot is no bubble, a shout and a whisper are', () => {
   const h = here([member(2, 39, 5)])
   const far = (extra) => bubbles(h, [said(1, 2, 'hello', extra)], 5, 5, view, spawn)

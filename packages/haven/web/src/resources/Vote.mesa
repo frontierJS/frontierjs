@@ -1,0 +1,8 @@
+<script module>
+// src/resources/Vote.mesa — a member's aye or nay on one delegate of the town
+// hall. Read as a count (`tally`) and written by `cast`, never row by row, so
+// the hall asks the service and keeps no store of rows.
+import { createResource } from '@frontierjs/sierra/resource'
+
+export const votes = createResource('votes', { model: 'Vote' })
+</script>

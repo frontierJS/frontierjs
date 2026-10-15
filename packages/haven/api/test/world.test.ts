@@ -6,7 +6,7 @@
 import { test, expect } from 'bun:test'
 
 import { pacerAt } from '../src/pacer.ts'
-import { obstacleAt, standable, walkable, worldFor } from '../src/world.ts'
+import { obstacleAt, pickupAt, standable, walkable, worldFor } from '../src/world.ts'
 
 test('a scene is read by its slug, and a room with no scene has none', () => {
   expect(worldFor('tavern')?.slug).toBe('tavern')
@@ -63,4 +63,16 @@ test('a figure stands on floor, and on a piece only once it is broken; a wall an
   expect(standable(w, sx, sy, new Set([fragile.id]))).toBe(false)
   const door = w.doors[0]
   expect(standable(w, door.x, door.y, new Set(w.pieces.map(p => p.id)))).toBe(false)
+})
+
+test('a pickup lies on floor: each of its cells names it, a cell beside does not, and a scene with none answers null', () => {
+  const w = worldFor('woods')!
+  expect(w.pickups.length).toBeGreaterThan(0)
+  const quiver = w.pickups[0]
+  for (const [x, y] of quiver.cells) {
+    expect(walkable(w, x, y)).toBe(true)
+    expect(pickupAt(w, x, y)).toEqual(quiver)
+  }
+  expect(pickupAt(w, w.spawn.x, w.spawn.y)).toBeNull()
+  expect(worldFor('tavern')!.pickups).toEqual([])
 })

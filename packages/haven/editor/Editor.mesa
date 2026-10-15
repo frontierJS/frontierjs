@@ -114,6 +114,38 @@
     return out
   }
 
+  // What shift+alt-click hands the ask panel (`vite.config.js`). A placement
+  // is a claim on the stage and no element of its own, so the inspector would
+  // find only the scene's box: a box over each tag the file holds carries that
+  // tag's line as its location, and one under them over the whole stage
+  // carries the `<Scene>` tag's, so bare ground asks about the scene. A thing
+  // placed since the last save has no line yet, and no box.
+  const picks = picksOf(els, parsed, source, stage, file)
+  function picksOf(list, read, text, st, f) {
+    if (!read || !st) return []
+    const scene = text.indexOf('<Scene', text.lastIndexOf('</script>'))
+    const out = [{ loc: locIn(f, text, scene), x: 0, y: 0, w: st.width, h: st.height, layer: 1, at: 'the scene' }]
+    for (const el of list) {
+      const tag = read.elements[el.id]
+      if (!tag || tag.id !== el.id) continue
+      const cells = cellsOf(el)
+      const xs = cells.map((c) => c.x), ys = cells.map((c) => c.y)
+      const x = Math.min(...xs), y = Math.min(...ys)
+      out.push({ loc: locIn(f, text, tag.start), x, y, w: Math.max(...xs) - x + 1, h: Math.max(...ys) - y + 1, layer: el.kind === 'Door' ? 3 : 2, at: `${el.ident ?? el.kind} at ${x},${y}` })
+    }
+    return out.map((p) => ({ ...p, key: `${p.loc}@${p.x},${p.y},${p.w},${p.h}` }))
+  }
+
+  // Relative to `src/`, the directory the inspector and the ask are rooted at.
+  function locIn(f, text, offset) {
+    const before = text.slice(0, offset)
+    return `scenes/${f}:${before.split('\n').length}:${offset - before.lastIndexOf('\n')}`
+  }
+
+  // Set at mount rather than written as an attribute: the compiler stamps
+  // every element with the line of THIS file that wrote it.
+  const stamp = (loc) => (el) => { el.setAttribute('data-fjs-loc', loc) }
+
   fetch('/__scenes')
     .then((r) => r.json())
     .then((list) => {
@@ -374,12 +406,30 @@
 
   function move(e) { hover = box ? cellOf(e) : null }
 
+  // Another writer's edit to the open scene (the ask panel's Claude) reaches
+  // the preview by Mesa's HMR, which mounts the scene again on a new stage and
+  // leaves this page bound to the old one, so the page is reloaded onto the
+  // file instead. This page's own Save is told apart by its text.
+  var saving = null
+  function watch() {
+    const hot = import.meta.hot
+    if (!hot) return
+    const on = async (p) => {
+      if (!p.updates.some((u) => u.path.endsWith(`/scenes/${file}`))) return
+      const now = (await fetch('/__scenes').then((r) => r.json())).find((f) => f.file === file)?.source
+      if (now != null && now !== source && now !== saving) location.reload()
+    }
+    hot.on('vite:afterUpdate', on)
+    return () => hot.off?.('vite:afterUpdate', on)
+  }
+
   // The history is kept before the write: the write is a changed module, and
   // Vite can swap this component before the answer arrives. A write that fails
   // leaves a history anchored to a text the file is not, which is dropped.
   async function save() {
     steps = rekeyHistory(steps, remapOf(parsed, els))
     keep(file, output)
+    saving = output
     try {
       const res  = await fetch(`/__scenes/${file}`, { method: 'PUT', body: output })
       const body = await res.json()
@@ -399,7 +449,7 @@
   }
 </script>
 
-<main class="editor stack" {@attach keys}>
+<main class="editor stack" {@attach keys} {@attach watch}>
   <header class="cluster">
     <strong>Haven scenes</strong>
     <select value={file} on:change={pick} aria-label="Scene file">
@@ -419,9 +469,12 @@
 
   <div class="panes">
     <div class="stack">
-      <div class="frame">
-        <div class="preview" data-preview {@attach hold} on:click={click} on:mousemove={move} on:mouseleave={() => { hover = null }}></div>
+      <div class="frame" on:click={click} on:mousemove={move} on:mouseleave={() => { hover = null }}>
+        <div class="preview" data-preview {@attach hold}></div>
         <div class="overlay" data-marks>
+          {#each picks as p (p.key)}
+            <span class="pick" data-placed={p.at} {@attach stamp(p.loc)} {@attach at(p.x, p.y, p.layer, [p.w, p.h])}></span>
+          {/each}
           {#each marks as m (m.key)}
             <span class="mark {m.tone}" data-mark={m.tone} {@attach at(m.x, m.y, 5)}>{m.ch}</span>
           {/each}
@@ -496,9 +549,9 @@
 <style>
   .editor { padding: var(--space-md); }
   .panes { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: var(--space-md); align-items: start; }
-  .frame { position: relative; display: inline-block; }
-  .preview { cursor: crosshair; }
+  .frame { position: relative; display: inline-block; cursor: crosshair; }
   .overlay { position: absolute; inset: 0; pointer-events: none; }
+  .pick { pointer-events: auto; }
   .mark { width: 1ch; height: 1lh; pointer-events: none; background: color-mix(in srgb, var(--tone-ink) 40%, transparent); }
   .art { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.2; white-space: pre; overflow-x: auto; width: 100%; }
   .piece pre { margin: 0; font-size: 11px; line-height: 1.1; }

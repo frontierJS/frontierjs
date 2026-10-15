@@ -4,6 +4,7 @@
 // view, so `Scene.mesa`, `Bubbles.mesa` and `Nameplates.mesa` ask one rule and
 // a test asks it without a terminal.
 import { hears } from '../../api/src/hearing.ts'
+import { cells } from './cells.js'
 
 /** A member's cell from their presence meta; one with none stands at the spawn. */
 export const cellOf = (m, spawn) => ({ x: m.meta?.x ?? spawn.x, y: m.meta?.y ?? spawn.y })
@@ -24,24 +25,29 @@ export const plates = (h, v, names, sx, sy, stage, spawn) => figures(h, v, stage
   .filter((f) => names[f.m.userId] && Math.abs(cellOf(f.m, spawn).x - sx) <= NEAR.x && Math.abs(cellOf(f.m, spawn).y - sy) <= NEAR.y)
   .map((f) => {
     const text = names[f.m.userId]
-    return { key: f.m.connectionId, text, x: Math.max(0, Math.min(f.x, v.w - text.length)), y: Math.min(f.y + 1, v.h - 1) }
+    return { key: f.m.connectionId, text, x: Math.max(0, Math.min(f.x, v.w - cells(text))), y: Math.min(f.y + 1, v.h - 1) }
   })
 
 /**
  * The newest line of each member standing here, over where they stand, in the
  * view's cells. A speaker outside the view is their line pushed to the edge
- * they are past, marked with the way to them.
+ * they are past, marked with the way to them. A speaker's `meta.hushed` is the
+ * newest line they cleared (`/hush`); `mine` is this figure's own, which the
+ * scene holds. That line and any before it draw nothing, and no older line
+ * takes its place.
  */
-export function bubbles(h, said, sx, sy, v, spawn) {
+export function bubbles(h, said, sx, sy, v, spawn, mine = null) {
   const me = h.self?.userId
   const where = new Map(h.others.map((m) => [String(m.userId), cellOf(m, spawn)]))
-  if (me != null) where.set(String(me), { x: sx, y: sy })
+  const hushed = new Map(h.others.map((m) => [String(m.userId), m.meta?.hushed ?? 0]))
+  if (me != null) { where.set(String(me), { x: sx, y: sy }); hushed.set(String(me), mine ?? 0) }
   const out = []
   const seen = new Set()
   for (const line of said ?? []) {
     const who = String(line.memberId)
     if (seen.has(who) || !where.has(who)) continue
     seen.add(who)
+    if (line.id <= hushed.get(who)) continue
     const at = where.get(who)
     if (!hears(line, [at], { x: sx, y: sy })) continue
     let text = line.toId != null ? `(psst: ${line.body})` : `(${line.body})`
@@ -51,7 +57,7 @@ export function bubbles(h, said, sx, sy, v, spawn) {
       else if (at.y < v.y)   text = `^${text}`
       else                   text = `v${text}`
     }
-    const bx = Math.max(0, Math.min(at.x - v.x, v.w - text.length))
+    const bx = Math.max(0, Math.min(at.x - v.x, v.w - cells(text)))
     const by = Math.max(0, Math.min(at.y - v.y - 1, v.h - 1))
     out.push({ key: `${who}:${line.id}`, x: bx, y: by, text })
   }

@@ -13,8 +13,8 @@
 import { FACINGS, STEP, type Facing } from './facing.ts'
 import type { Position } from './rooms.ts'
 
-/** How far a bolt flies, in cells. */
-export const RANGE = 8
+/** A bolt flies until it hits; every scene is walled, so this only bounds a world that is not. */
+export const RANGE = 256
 
 /** How far a struck member is pushed, the way the bolt flew. */
 export const KNOCK = 2

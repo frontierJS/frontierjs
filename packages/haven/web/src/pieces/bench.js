@@ -2,7 +2,11 @@
 // the workshop (`namedBench`).
 import { piece } from './index.js'
 
-export const bench = piece('bench', '[=====]', 'eeeeeee')
+// Three solo seats along the plank, so `/sit` beside a bench sits on it
+// (`Emotes.mesa`); each stands up to the cell in front of it.
+export const bench = piece('bench', '[=====]', 'eeeeeee', {
+  spots: Object.fromEntries([1, 3, 5].map((dx, i) => [`seat-${i}`, { kind: 'seat', dx, dy: 0, stand: { dx, dy: 1 }, solo: true }])),
+})
 
 /** Where the Claude sessions at a bench stand on the row below it, and the slot after the last, where its count is written (`Workers.mesa`). */
 export const SLOTS = Object.fromEntries([0, 1, 2, 3].map((i) => [`slot-${i}`, { dx: 2 + 2 * i, dy: 1 }]))

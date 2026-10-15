@@ -6,12 +6,14 @@
 // attach puts one inside the box it is attached to, sized to the stage, and
 // draws every cell of `stage.view` from `stage.look()` — the slice the screen
 // shows, which pans as the figure walks (6.1) — so a figure's cell on screen
-// is its stage cell less the view's corner. Figures and bubbles are `at()`
-// boxes over it, a layer up, so they cover the art without the art knowing
-// they are there. A pacer is drawn on lit cells only: the cat in a dark
-// corner is not seen. The buffer is the view's size, made again when that
-// changes: the editor asking for the whole stage, or a piece mounted past
-// the edge of a stage smaller than the view.
+// is its stage cell less the view's corner. The view is as big as the
+// terminal less the lines under the art (`viewFor`, 14.6), so zooming the
+// terminal out shows more of the scene, and a resize fits it again round the
+// figure. Figures and bubbles are `at()` boxes over it, a layer up, so they
+// cover the art without the art knowing they are there. A pacer is drawn on
+// lit cells only: the cat in a dark corner is not seen. The buffer is the
+// view's size, made again when that changes: the terminal resized, or a piece
+// mounted past the edge of a stage smaller than the view.
 //
 // The drawing is a paint task on the stage's one clock (`stage.js`): run on
 // any change — a piece moved — and on the look's shortest step. The clock is
@@ -23,7 +25,7 @@
 // sits between the figures' layer (10, 11) and the speech bubbles' (12),
 // which a canopy must not hide.
 import { FrameBufferRenderable, RGBA } from '@opentui/core'
-import { INK as INK_HEX, pacerAt } from './stage.js'
+import { INK as INK_HEX, pacerAt, viewFor } from './stage.js'
 import { at } from './cell.js'
 
 /** The layer of what is overhead: over a figure, under a bubble. */
@@ -85,7 +87,15 @@ export const paint = (stage) => (box) => {
   // editor paints one stage into more than one.
   const stop = stage.task(box, draw, { phase: 'paint' })
 
+  // The renderer's size rather than `process.stdout`'s: `--frame` and a test
+  // render headless with no tty, at the 100×30 that is VIEW.
+  const ctx = box.ctx
+  const fit = () => stage.fit(viewFor(ctx.width, ctx.height))
+  fit()
+  ctx.on('resize', fit)
+
   return () => {
+    ctx.off('resize', fit)
     stop()
     release()
   }

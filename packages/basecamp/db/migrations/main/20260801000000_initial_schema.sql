@@ -408,7 +408,7 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "contextId" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("contextType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Server', 'Workspace')),
+  CHECK ("contextType" IN ('Deployment', 'AlertEvent', 'JobRun', 'Server', 'Workspace', 'Monitor')),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_userId_readAt" ON "notification" ("userId", "readAt");
@@ -421,7 +421,7 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   "email" INTEGER NOT NULL DEFAULT 0,
   "inApp" INTEGER NOT NULL DEFAULT 1,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('deploy_success', 'deploy_failed', 'alert_firing', 'alert_resolved', 'server_unreachable', 'posture_failed', 'dependency_vulnerable', 'member_joined', 'job_failed', 'weekly_digest')),
+  CHECK ("kind" IN ('deploy_success', 'deploy_failed', 'alert_firing', 'alert_resolved', 'server_unreachable', 'monitor_down', 'monitor_up', 'posture_failed', 'dependency_vulnerable', 'member_joined', 'job_failed', 'weekly_digest')),
   UNIQUE ("userId", "kind"),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
@@ -653,6 +653,39 @@ CREATE TABLE IF NOT EXISTS "alert_rule" (
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_alert_rule_workspaceId" ON "alert_rule" ("workspaceId");
+
+CREATE TABLE IF NOT EXISTS "monitor" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "appId" TEXT,
+  "url" TEXT NOT NULL,
+  "method" TEXT NOT NULL DEFAULT 'GET',
+  "headers" TEXT NOT NULL DEFAULT '{}',
+  "body" TEXT,
+  "intervalSec" INTEGER NOT NULL DEFAULT 120,
+  "retries" INTEGER NOT NULL DEFAULT 2,
+  "retryIntervalSec" INTEGER NOT NULL DEFAULT 120,
+  "timeoutMs" INTEGER NOT NULL DEFAULT 10000,
+  "acceptedStatus" TEXT NOT NULL DEFAULT '200-299',
+  "maxRedirects" INTEGER NOT NULL DEFAULT 10,
+  "ignoreTls" INTEGER NOT NULL DEFAULT 0,
+  "invert" INTEGER NOT NULL DEFAULT 0,
+  "resendEvery" INTEGER NOT NULL DEFAULT 0,
+  "tags" TEXT NOT NULL DEFAULT '[]',
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "failStreak" INTEGER NOT NULL DEFAULT 0,
+  "lastCheckedAt" TEXT,
+  "nextCheckAt" TEXT,
+  "lastLatencyMs" INTEGER,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("method" IN ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE')),
+  CHECK ("status" IN ('pending', 'up', 'down', 'paused')),
+  FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_monitor_workspaceId" ON "monitor" ("workspaceId");
+CREATE INDEX IF NOT EXISTS "idx_monitor_status_nextCheckAt" ON "monitor" ("status", "nextCheckAt");
 
 CREATE TABLE IF NOT EXISTS "dashboard" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -914,6 +947,42 @@ CREATE TABLE IF NOT EXISTS "alert_event" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_alert_event_ruleId" ON "alert_event" ("ruleId");
 CREATE INDEX IF NOT EXISTS "idx_alert_event_status" ON "alert_event" ("status");
+
+CREATE TABLE IF NOT EXISTS "monitor_check" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "monitorId" TEXT NOT NULL,
+  "at" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "ok" INTEGER NOT NULL,
+  "statusCode" INTEGER,
+  "latencyMs" INTEGER,
+  "message" TEXT NOT NULL,
+  FOREIGN KEY ("monitorId") REFERENCES "monitor" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_monitor_check_monitorId_at" ON "monitor_check" ("monitorId", "at");
+
+CREATE TABLE IF NOT EXISTS "monitor_event" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "monitorId" TEXT NOT NULL,
+  "at" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "fromStatus" TEXT NOT NULL,
+  "toStatus" TEXT NOT NULL,
+  "message" TEXT NOT NULL,
+  CHECK ("fromStatus" IN ('pending', 'up', 'down', 'paused')),
+  CHECK ("toStatus" IN ('pending', 'up', 'down', 'paused')),
+  FOREIGN KEY ("monitorId") REFERENCES "monitor" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_monitor_event_monitorId_at" ON "monitor_event" ("monitorId", "at");
+
+CREATE TABLE IF NOT EXISTS "monitor_channel" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "monitorId" TEXT NOT NULL,
+  "channelId" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("monitorId", "channelId"),
+  FOREIGN KEY ("monitorId") REFERENCES "monitor" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("channelId") REFERENCES "notification_channel" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_monitor_channel_channelId" ON "monitor_channel" ("channelId");
 
 CREATE TABLE IF NOT EXISTS "dependency_use" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

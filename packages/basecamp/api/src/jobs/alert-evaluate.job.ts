@@ -44,7 +44,7 @@ import { defineJob }        from '@frontierjs/caravan'
 import { isStale }          from '@frontierjs/junction'
 import { runsAsApp }        from './context.ts'
 import { evaluateWindow, describeBreach, isSnoozed } from '../core/alerting.ts'
-import { deliverToChannel } from '../core/delivery.ts'
+import { fanOutToChannels } from '../core/delivery.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import type { Message }     from '../core/delivery.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
@@ -205,32 +205,15 @@ async function fanOut(
     include: { channel: true },
   })
 
-  for (const link of links) {
-    const channel = link.channel
-    // `deletedAt` is checked by hand because this read is `asSystem()`, which
-    // bypasses `@@softDelete` along with everything else — a retired channel
-    // would otherwise still be paged through, and the join row survives it.
-    if (!channel || channel.isActive === false || channel.deletedAt) continue
-
-    const res = await deliverToChannel(
-      { conduit: app.conduit as never, sys: () => db },
-      channel,
-      // The EVENT's id, not the rule's: it is stable across the trigger and the
-      // resolve, which is what lets PagerDuty close the incident it opened
-      // instead of opening a second one. A rule id would collapse two separate
-      // firings of the same rule into one incident.
-      { ...msg, dedupKey: `basecamp:alert:${event.id}` },
-    )
-
-    if (!res.ok) {
-      console.error(`[alert-evaluate] ${rule.name} → channel '${channel.name}': ${res.error}`)
-      continue
-    }
-    // The stamp means something arrived, which is the only reason it is written
-    // after the send rather than beside it.
-    await db.notificationChannel.update({
-      where: { id: channel.id },
-      data:  { lastDeliveryAt: new Date().toISOString(), version: channel.version },
-    })
-  }
+  await fanOutToChannels(
+    app,
+    () => db,
+    links.map((l: any) => l.channel),
+    // The EVENT's id, not the rule's: it is stable across the trigger and the
+    // resolve, which is what lets PagerDuty close the incident it opened
+    // instead of opening a second one. A rule id would collapse two separate
+    // firings of the same rule into one incident.
+    { ...msg, dedupKey: `basecamp:alert:${event.id}` },
+    `alert-evaluate ${rule.name}`,
+  )
 }

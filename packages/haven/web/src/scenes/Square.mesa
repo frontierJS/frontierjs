@@ -2,9 +2,11 @@
   // Square.mesa — the square: the tavern and three houses along the top, the
   // fountain in the middle, the hedges and flowers along the bottom; and east
   // of the first screen, three more houses, the well, the market stall and the
-  // signpost, which the view pans to as a figure walks there (6.1). The
+  // signpost, which the view pans to as a figure walks there (6.1); right of
+  // the fountain, the notice board (7.5), which the route's `Notices` reads. The
   // tavern's door is the left house's, and the workshop's (Phase 11) is the
-  // house beside it, with its sign. Three edges are borders
+  // house beside it, with its sign; the town hall is the first house past
+  // the first screen, with its own. Three edges are borders
   // (`IDEAS/haven.md` 6.2): east onto the road, west into the woods, and a
   // gap in the hedge south down to the docks. The picture this draws is
   // `square.frame.txt`, which `scenes.test.js` pins.
@@ -17,6 +19,7 @@
   import { tree }  from '@/pieces/tree.js'
   import { lamp }  from '@/pieces/lamp.js'
   import { bench } from '@/pieces/bench.js'
+  import { noticeBoard } from '@/pieces/board.js'
 
   // No two houses are one size, so each is its own block; the tavern's sign
   // is part of its house.
@@ -44,28 +47,6 @@ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
  wwwwwwwwwwwwwwdddwwwwwwwwwwwww
 `)
 
-  const houseA = piece('house', String.raw`
-   ~'
-   ||
-  _||_____________
- //\/\/\/\/\/\/\/\\
-/__________________\
- |  []   []   []  |
- |                |
- |  []   .-.  []  |
- |_______|n|______|
-`, String.raw`
-   kk
-   cc
-  rccrrrrrrrrrrrrr
- rRRRRRRRRRRRRRRRRr
-rrrrrrrrrrrrrrrrrrrr
- w  yy   yy   yy  w
- w                w
- w  yy   ddd  yy  w
- wwwwwwwwdddwwwwwww
-`)
-
   const workshop = piece('house', String.raw`
    ~'
    ||
@@ -83,6 +64,30 @@ rrrrrrrrrrrrrrrrrrrr
  rRRRRRRRRRRRRRRRRr
 rrrrrrrrrrrrrrrrrrrr
  w  S ssssssss S  w
+ w                w
+ w  yy   ddd  yy  w
+ wwwwwwwwdddwwwwwww
+`)
+
+  // The town hall (`IDEAS/haven.md` Phase 15), the first house east of the
+  // first screen, its sign over the door as the workshop's is.
+  const townhall = piece('house', String.raw`
+   ~'
+   ||
+  _||_____________
+ //\/\/\/\/\/\/\/\\
+/__________________\
+ | [ TOWN HALL ]  |
+ |                |
+ |  []   .-.  []  |
+ |_______|n|______|
+`, String.raw`
+   kk
+   cc
+  rccrrrrrrrrrrrrr
+ rRRRRRRRRRRRRRRRRr
+rrrrrrrrrrrrrrrrrrrr
+ w S ssss ssss S  w
  w                w
  w  yy   ddd  yy  w
  wwwwwwwwdddwwwwwww
@@ -201,7 +206,7 @@ rrrrrrrrrrr
 eeeeeee
    l
   lll
-`)
+`, { floor: true })
 
   const hedge  = piece('hedge', ',', 'g')
   const flower = piece('flower', '*', 'p', { floor: true })
@@ -248,6 +253,7 @@ eeeeeee
   <Piece of={lamp} x={75} y={14} />
   <Piece of={bench} x={44} y={20} />
   <Piece of={bench} x={56} y={20} />
+  <Piece of={noticeBoard} x={64} y={13} />
   <Row of={hedge} y={23} x={5}  n={10} />
   <Row of={hedge} y={23} x={21} n={12} />
   <Row of={hedge} y={23} x={37} n={10} />
@@ -256,7 +262,8 @@ eeeeeee
   <Row of={hedge} y={23} x={83} n={10} />
   <Row of={flower} y={24} x={6}  n={14} step={3} />
   <Row of={flower} y={24} x={54} n={13} step={3} />
-  <Piece of={houseA} x={100} y={2} />
+  <Piece of={townhall} x={100} y={2} />
+  <Door  x={110} y={10} to="/townhall/" />
   <Piece of={houseB} x={122} y={1} />
   <Piece of={houseC} x={143} y={2} />
   <Piece of={tree} x={99}  y={13} />
@@ -273,4 +280,5 @@ eeeeeee
   <Row of={hedge} y={23} x={129} n={10} />
   <Row of={hedge} y={23} x={143} n={12} />
   <Row of={flower} y={24} x={99} n={19} step={3} />
+  <slot />
 </Scene>

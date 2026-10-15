@@ -7,7 +7,8 @@
 //
 // A row is one character a cell: `.` walkable, `+` a door, `#` anything else
 // — a wall, a piece, a cell off the stage. A `#` that belongs to a placed
-// piece is named by `pieces`, so a bolt can say what it hit.
+// piece is named by `pieces`, so a bolt can say what it hit. A floor piece that
+// is a pickup (`pieces/index.js`) is named by `pickups`, its cells all `.`.
 
 /** Pieces a bolt shatters; every other solid piece is a wall, which takes a scorch. */
 export const FRAGILE = new Set(['barrel', 'crate', 'crates', 'log', 'stump', 'shroom', 'chest', 'bollard'])
@@ -30,9 +31,15 @@ export function worldOf(stage) {
     const cells = m.piece.cells.map((c) => [m.x + c.dx, m.y + c.dy]).filter(([x, y]) => rows[y]?.[x] === '#')
     if (cells.length) pieces.push({ id: pieceId(m), name: m.piece.name, ...(FRAGILE.has(m.piece.name) && { fragile: true }), cells })
   }
+  const pickups = []
+  for (const m of stage.marks) {
+    if (m.kind !== 'piece' || !m.piece.pickup) continue
+    const cells = m.piece.cells.map((c) => [m.x + c.dx, m.y + c.dy]).filter(([x, y]) => rows[y]?.[x] === '.')
+    if (cells.length) pickups.push({ id: pieceId(m), item: m.piece.pickup.item, n: m.piece.pickup.n, cells })
+  }
   const pacers = stage.marks.filter((m) => m.kind === 'pacer')
     .map(({ spec: { name, y, from, to, ms, rest, right, left, sit } }) => ({ name, y, from, to, ms, rest, right, left, sit }))
-  return { slug: stage.slug, width: stage.width, height: stage.height, spawn: stage.spawn, rows, doors, pieces, pacers }
+  return { slug: stage.slug, width: stage.width, height: stage.height, spawn: stage.spawn, rows, doors, pieces, pickups, pacers }
 }
 
 /** The file's text: a row, a piece, a door on a line each, so a diff of a moved piece is one line. */

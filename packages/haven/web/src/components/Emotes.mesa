@@ -1,0 +1,109 @@
+<script>
+  // Emotes.mesa — `/wave`, `/sit` and `/dance` (`IDEAS/haven.md` 8.1): an
+  // emote is a presence key beside `{ x, y }` (`api/src/rooms.ts`), so every
+  // screen draws it, and this actor both says it and draws it for every figure
+  // in view. A wave is a hand beside the figure and a dance an arm either side,
+  // each turning over on the stage's clock for `EMOTE_MS` and ended by this
+  // component's timer, as a shapeshift is; a sitting figure is drawn in lower
+  // case on every other screen, and sits until it steps.
+  //
+  // `/sit` beside a seat sits on it: any `seat` spot of a placed piece (a
+  // bench's, a bar stool, a table's stool) within a cell, not taken, the
+  // nearest first; with none it sits where it stands. Stepping onto a seat
+  // sits too, so a stool walked onto reads as sat on.
+  import { cellOf, figures, inView } from '@/crowd.js'
+  import { spotsOf } from '@/pieces/index.js'
+  import { at } from '#cell'
+  import { EMOTE_MS } from '../../../api/src/shape.ts'
+
+  export let stage
+  export let here
+  export let x
+  export let y
+  export let view
+  export let spawn
+  // This figure's emote, which the scene holds in its presence meta.
+  export let emote
+  // Sets it on this figure, null to end it.
+  export let emoteTo
+  export let moveTo
+
+  var verbs = $context.commands
+  var timer = null
+  var stood = ''
+  $.onDestroy(() => clearTimeout(timer))
+
+  const BEAT_MS = 300
+  // A frame per beat: the cells beside the figure and what is drawn on them.
+  const FRAMES = {
+    wave:  [[{ dx: 1, ch: '/' }], [{ dx: 1, ch: '\\' }]],
+    dance: [[{ dx: -1, ch: '\\' }, { dx: 1, ch: '/' }], [{ dx: -1, ch: '/' }, { dx: 1, ch: '\\' }]],
+  }
+
+  const key = (c) => `${c.x},${c.y}`
+  const away = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))
+
+  /** Every seat on the stage as a cell, with the piece it belongs to. */
+  const seats = () => stage.marks
+    .filter((m) => m.kind === 'piece')
+    .flatMap((m) => spotsOf(m.piece, 'seat').map((s) => ({ x: m.x + s.dx, y: m.y + s.dy, of: m.piece.name })))
+  const onSeat = (c) => seats().some((s) => s.x === c.x && s.y === c.y)
+
+  let beat = 0
+  const moving = (e) => !!FRAMES[e]
+  $.onDestroy(stage.task('emotes', () => {
+    if (moving(emote) || here.get().others.some((m) => moving(m.meta?.emote))) beat = (beat + 1) % 2
+  }, { every: BEAT_MS }))
+
+  /** A wave or a dance for EMOTE_MS, then back to sitting if the figure is on a seat. */
+  function act(name) {
+    clearTimeout(timer)
+    emoteTo(name)
+    timer = setTimeout(() => { if (emote === name) emoteTo(onSeat({ x, y }) ? 'sit' : null) }, EMOTE_MS)
+    return `you ${name}`
+  }
+
+  function sit() {
+    clearTimeout(timer)
+    const me = { x, y }
+    if (onSeat(me)) { emoteTo('sit'); return 'you sit' }
+    const taken = new Set(here.get().others.map((m) => key(cellOf(m, spawn))))
+    const seat = seats()
+      .filter((s) => !taken.has(key(s)) && away(s, me) <= 1)
+      .sort((a, b) => away(a, me) - away(b, me))[0]
+    if (seat) moveTo(seat.x, seat.y)
+    emoteTo('sit')
+    return seat ? `you sit on the ${seat.of}` : 'you sit down where you stand'
+  }
+
+  // A step clears the emote (`Scene.mesa`'s `moveTo`); a step onto a seat sits.
+  function arrived(cx, cy) {
+    const cell = `${cx},${cy}`
+    if (cell === stood) return
+    stood = cell
+    if (onSeat({ x: cx, y: cy }) && emote !== 'sit') { clearTimeout(timer); emoteTo('sit') }
+  }
+  $: arrived(x, y)
+
+  $.onDestroy(verbs.add({ word: 'wave',  help: '/wave',  run: () => act('wave') }))
+  $.onDestroy(verbs.add({ word: 'dance', help: '/dance', run: () => act('dance') }))
+  $.onDestroy(verbs.add({ word: 'sit',   help: '/sit — on the seat beside you, or where you stand', run: sit }))
+
+  /** The cells each emote draws this beat, at their cell of the view. */
+  function drawn(h, v, b, sx, sy, mine) {
+    const out = []
+    const add = (id, c, e) => {
+      for (const f of FRAMES[e]?.[b] ?? []) {
+        const cell = { x: c.x + f.dx, y: c.y }
+        if (inView(cell, v)) out.push({ key: `${id}:${f.dx}`, x: cell.x - v.x, y: cell.y - v.y, ch: f.ch })
+      }
+    }
+    add('me', { x: sx, y: sy }, mine)
+    for (const f of figures(h, v, stage, spawn)) add(f.m.connectionId, cellOf(f.m, spawn), f.m.meta?.emote)
+    return out
+  }
+</script>
+
+{#each drawn(here.get(), view, beat, x, y, emote) as c (c.key)}
+  <p {@attach at(c.x, c.y, 9)}>{c.ch}</p>
+{/each}

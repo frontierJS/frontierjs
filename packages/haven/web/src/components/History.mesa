@@ -9,6 +9,7 @@
   import { useStore } from '@frontierjs/sierra/resource'
   import { messages } from '@/resources/Message.mesa'
   import { at } from '#cell'
+  import { clip } from '@/cells.js'
 
   export let room
   export let nicks
@@ -39,7 +40,7 @@
     const end = Math.max(0, all.length - b)
     return all.slice(Math.max(0, end - ROWS), end).map((l) => ({
       key:  l.id,
-      text: `${names[l.memberId] ?? '…'}${l.toId != null ? ' (whisper)' : ''}: ${l.body}`.slice(0, box.w),
+      text: clip(`${names[l.memberId] ?? '…'}${l.toId != null ? ' (whisper)' : ''}: ${l.body}`, box.w),
     }))
   }
 

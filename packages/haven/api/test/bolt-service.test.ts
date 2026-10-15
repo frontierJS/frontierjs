@@ -14,6 +14,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../src/app.ts'
 import { BOLT_MS, KNOCK, RANGE } from '../src/bolt.ts'
+import { ITEMS } from '../src/inventory.ts'
 import { roomChannelName } from '../src/rooms.ts'
 import { obstacleAt, worldFor } from '../src/world.ts'
 import type { SceneWorld } from '../src/world.ts'
@@ -125,6 +126,19 @@ describe('a bolt', () => {
     expect((await fire(a, tavern.id, { facing: 'w' })).result.flights[0].facing).toBe('w')
   })
 
+  test('spends an arrow, which the caller reads back, and a volley spends four', async () => {
+    const world = worldFor('tavern')!
+    const { x, y } = eastward(world, 4, 'wall')
+    const s = await enter(sam, 'tavern')
+    await stand(s, tavern.id, { x, y, facing: 'e' })
+    expect((await call(s, 'members', 'inventory', {})).result).toEqual({ arrow: ITEMS.arrow.start })
+    expect((await fire(s, tavern.id)).result.arrows).toBe(ITEMS.arrow.start - 1)
+    expect((await call(s, 'members', 'inventory', {})).result).toEqual({ arrow: ITEMS.arrow.start - 1 })
+    // Another member's quiver is their own.
+    const a = await enter(ana, 'tavern')
+    expect((await call(a, 'members', 'inventory', {})).result).toEqual({ arrow: ITEMS.arrow.start })
+  })
+
   test('is not ready again for BOLT_MS, and the refusal names the wait', async () => {
     const world = worldFor('tavern')!
     const { x, y } = eastward(world, 4, 'wall')
@@ -207,5 +221,47 @@ describe('a bolt', () => {
 
     // And beside them, the same member's bolt in their own room flies.
     expect((await fire(s, tavern.id)).type).toBe('service_result')
+  })
+})
+
+describe('a pickup', () => {
+  // The first quiver in the woods, and the floor cell west of it, which is open or the test says so.
+  const quiver = () => {
+    const world = worldFor('woods')!
+    const q = world.pickups[0]
+    const [x, y] = q.cells[0]
+    expect(world.rows[y][x - 1]).toBe('.')
+    return { q, x, y }
+  }
+
+  test('hands its item to whoever steps on it first, tells the room, and lies there again for nobody until it grows back', async () => {
+    const { q, x, y } = quiver()
+    const s = await enter(sam, 'woods'), a = await enter(ana, 'woods')
+    await stand(s, woods.id, { x: x - 1, y })
+    expect((await call(s, 'members', 'inventory', {})).result).toEqual({ arrow: ITEMS.arrow.start })
+    await stand(s, woods.id, { x, y })
+    expect((await call(s, 'members', 'inventory', {})).result).toEqual({ arrow: ITEMS.arrow.start + q.n })
+    const told = events(a, 'pickup')
+    expect(told).toHaveLength(1)
+    expect(told[0].data).toMatchObject({ item: q.item, n: q.n, laid: { kind: 'taken', id: q.id, x, y } })
+
+    // It is taken: the next to stand there gets nothing, and a joiner is told it is gone.
+    await stand(a, woods.id, { x, y })
+    expect((await call(a, 'members', 'inventory', {})).result).toEqual({ arrow: ITEMS.arrow.start })
+    const traces = (await call(a, 'rooms', 'traces', { meta: { id: woods.id } })).result
+    expect(traces.filter((t: any) => t.kind === 'taken').map((t: any) => t.id)).toEqual([q.id])
+  })
+
+  test('is left where it lies when the quiver is full', async () => {
+    const world = worldFor('woods')!
+    const [first, second] = world.pickups
+    const s = await enter(sam, 'woods')
+    const at = (p: typeof first) => stand(s, woods.id, { x: p.cells[0][0], y: p.cells[0][1] })
+    await at(first)
+    await at(second)
+    expect((await call(s, 'members', 'inventory', {})).result.arrow).toBe(ITEMS.arrow.cap)
+    await at(world.pickups[2])
+    expect((await call(s, 'members', 'inventory', {})).result.arrow).toBe(ITEMS.arrow.cap)
+    expect(events(s, 'pickup')).toHaveLength(2)
   })
 })

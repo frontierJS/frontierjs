@@ -140,6 +140,17 @@ function makeT(rows, tmp) {
       await need().setup.mockMouse.drag(a.x, a.y, b.x, b.y)
       await settle()
     },
+    /** The terminal resized to `width` × `height`, as a window or a zoom does. */
+    resize: async (width, height) => {
+      need().setup.resize(width, height)
+      await settle()
+      await settle()
+    },
+    /** The terminal cursor's `[col, row]` as the engine places it, counted from 1. */
+    cursor: async () => {
+      await need().setup.renderOnce()
+      return need().setup.captureSpans().cursor
+    },
     /** The cell attributes (`TextAttributes` bits) of the first cell of `text`. */
     attributesAt: async (text) => {
       const { x, y } = await t.at(text)

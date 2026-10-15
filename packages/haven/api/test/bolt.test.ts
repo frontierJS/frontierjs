@@ -7,6 +7,7 @@
 
 import { test, expect, describe } from 'bun:test'
 
+import { ARROWS, ITEMS, createInventories } from '../src/inventory.ts'
 import { BOLT_MS, KNOCK, RANGE, VOLLEY_MS, createCooldowns, crosses, fly, knockBack, volley, type Figure, type World } from '../src/bolt.ts'
 import { FIRST_FACING, ahead, behind, facingOf, isFacing, opposite } from '../src/facing.ts'
 import { SHAPE_MS, glyphOf } from '../src/shape.ts'
@@ -66,12 +67,11 @@ describe('a glyph a stranger may draw', () => {
 })
 
 describe('a bolt', () => {
-  test('flies its range over open floor and hits nothing', () => {
+  test('flies across open floor until the edge of the scene, which is a wall', () => {
     const { world: w, me } = world(['@............'])
     const f = fly(w, me, 'e')
-    expect(f.hit).toBeNull()
-    expect(f.path.length).toBe(RANGE)
-    expect(f.path.at(-1)).toEqual({ x: RANGE, y: 0 })
+    expect(f.path.length).toBe(12)
+    expect(f.hit).toEqual({ kind: 'wall', at: { x: 13, y: 0 } })
   })
 
   test('stops at a wall, short of it, and says where it struck', () => {
@@ -111,17 +111,15 @@ describe('a bolt', () => {
     expect((fly(open.world, open.me, 'e').hit as any).to).toEqual({ x: 4, y: 0 })
   })
 
-  test('a member past its range is not hit, and one at its range is', () => {
-    const at  = world(['@' + '.'.repeat(RANGE - 1) + 'a'])
-    const out = world(['@' + '.'.repeat(RANGE) + 'a'])
-    expect(fly(at.world, at.me, 'e').hit?.kind).toBe('member')
-    expect(fly(out.world, out.me, 'e').hit).toBeNull()
+  test('a member however far down the line is hit', () => {
+    const far = world(['@' + '.'.repeat(RANGE - 2) + 'a'])
+    expect(fly(far.world, far.me, 'e').hit?.kind).toBe('member')
   })
 
   test('the shooter is not their own target, even sharing a cell', () => {
-    const { world: w, me } = world(['@' + '.'.repeat(RANGE)])
+    const { world: w, me } = world(['@' + '.'.repeat(12)])
     w.members.push({ id: 9, x: me.x, y: me.y })
-    expect(fly(w, me, 'e').hit).toBeNull()
+    expect(fly(w, me, 'e').hit?.kind).toBe('wall')
   })
 
   test('knockBack on its own is the same rule', () => {
@@ -181,5 +179,29 @@ describe('the cooldown', () => {
     cd.fire(1)
     t = BOLT_MS
     expect(cd.fire(1)).toBe(0)
+  })
+})
+
+describe('an inventory', () => {
+  test('starts with a full quiver, spends it, refuses a shot it cannot pay, and earns arrows back by the clock', () => {
+    let t = 0
+    const inv = createInventories({ now: () => t })
+    expect(inv.held(1)).toEqual({ arrow: ITEMS.arrow.start })
+    expect(inv.take(1, 'arrow', ITEMS.arrow.start - 2)).toBe(true)
+    expect(inv.take(1, 'arrow', ARROWS.volley)).toBe(false)
+    expect(inv.count(1, 'arrow')).toBe(2)
+    expect(inv.count(2, 'arrow')).toBe(ITEMS.arrow.start)
+    t += ITEMS.arrow.regenMs * 3 + 5
+    expect(inv.count(1, 'arrow')).toBe(5)
+    t += ITEMS.arrow.regenMs * 100
+    expect(inv.count(1, 'arrow')).toBe(ITEMS.arrow.start)
+  })
+
+  test('a pickup lifts a count to the cap and no further, and the extra does not decay', () => {
+    let t = 0
+    const inv = createInventories({ now: () => t })
+    expect(inv.give(1, 'arrow', 100)).toBe(ITEMS.arrow.cap)
+    t += ITEMS.arrow.regenMs * 10
+    expect(inv.count(1, 'arrow')).toBe(ITEMS.arrow.cap)
   })
 })

@@ -1,0 +1,150 @@
+<script>
+  // Notices.mesa — the notice board on the square (`IDEAS/haven.md` 7.5), the
+  // part of Haven that works when nobody is on. Stand beside the board and
+  // press `e` (or say `/board`, since a browser has no NORMAL to take a bare
+  // letter) to read what is pinned, newest first, over the art; `/pin <line>`
+  // pins one. Both are verbs whose reach is the board, so they are in Tab and
+  // the help only beside it.
+  //
+  // The board is its own Room (`board` in `ROOMS`, `api/src/rooms.ts`) and a
+  // pin is a Message in it, so the read policy, the rate and the retention are
+  // every room's: a count per room, which a board's few lines stay under long
+  // after the tavern's have rolled over. Nobody stands in the board's room, so
+  // a pin reaches nobody live; the board is read afresh each time it opens.
+  // The pins are asked of the service and never loaded into the messages
+  // store, which the scene's bubbles read: a pin is not something said over a
+  // head.
+  //
+  // Placed by the square's route, inside the scene's slot, since the scene file
+  // is the editor's and holds only placed tags.
+  import { members }  from '@/resources/Member.mesa'
+  import { messages } from '@/resources/Message.mesa'
+  import { rooms }    from '@/resources/Room.mesa'
+  import { noticeBoard } from '@/pieces/board.js'
+  import { clip } from '@/cells.js'
+  import { at } from '#cell'
+
+  const scene = $context.scene
+  var verbs = $context.commands
+  // How near counts as beside it, from the middle of its face.
+  const REACH = 5
+  // The pane inside the frame's walls, as the history's; its last row is the footer.
+  const PANE = { x: 1, y: 1, w: 94, h: 24 }
+  const ROWS = PANE.h - 1
+  const LOAD = 100
+
+  const board = scene.placed(noticeBoard)[0]
+  const middle = board && board.spot('middle')
+
+  let room  = null
+  let pins  = []
+  let failed = ''
+  let names = {}
+  let open  = false
+  let back  = 0
+  let me    = scene.seer
+  let view  = scene.view
+  var close = null
+  $.onDestroy(scene.subscribe(() => { me = scene.seer; view = scene.view }))
+  $.onDestroy(() => close?.())
+
+  rooms.service.find({ slug: 'board' })
+    .then((res) => { room = res.data?.[0] ?? null })
+    .catch(() => {})
+
+  const asked = new Set()
+  function askNames(ids) {
+    for (const id of ids) {
+      if (asked.has(id)) continue
+      asked.add(id)
+      members.service.get(id).then((row) => { names = { ...names, [id]: row.nick } }).catch(() => {})
+    }
+  }
+
+  async function read() {
+    const res = await messages.service.find({ roomId: room.id }, { orderBy: '-createdAt', limit: LOAD })
+    pins = res.data ?? []
+    askNames(pins.map((p) => p.memberId))
+  }
+
+  function show() {
+    if (!room) return 'the board is bare here — this server has no board'
+    back = 0
+    open = true
+    close = verbs.open({
+      name: 'board',
+      keys: {
+        PageUp:   (e) => { e.preventDefault?.(); back = Math.min(back + ROWS, Math.max(0, pins.length - ROWS)) },
+        PageDown: (e) => { e.preventDefault?.(); back = Math.max(0, back - ROWS) },
+      },
+      closed: () => { open = false; close = null },
+    })
+    failed = ''
+    read().catch((e) => { pins = []; failed = e.message })
+    return ''
+  }
+
+  async function pin({ args }) {
+    if (!room) return 'the board is bare here — this server has no board'
+    if (!args) return '/pin <line>'
+    await messages.service.create({ roomId: room.id, body: args })
+    if (open) await read()
+    return 'pinned to the board'
+  }
+
+  if (middle) {
+    const reach = { x: middle.x, y: middle.y, within: REACH }
+    $.onDestroy(verbs.add({
+      key: 'e', reach,
+      // A letter the shell did not take as NORMAL is going into the line.
+      run: ({ event }) => {
+        if (verbs.mode || !event?.defaultPrevented) return false
+        show()
+        return true
+      },
+    }))
+    $.onDestroy(verbs.add({ word: 'board', help: '/board — read the notice board', reach, run: show }))
+    $.onDestroy(verbs.add({ word: 'pin', help: '/pin <line> — pin a line to the board', reach, run: pin }))
+  }
+
+  const near = (c) => !!c && !!middle && Math.max(Math.abs(c.x - middle.x), Math.abs(c.y - middle.y)) <= REACH
+
+  const ago = (iso) => {
+    const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000))
+    return Number.isNaN(m) ? '' : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`
+  }
+
+  /** The pane's rows: ROWS pins from `b` newest-first, each `age nick: line`. */
+  function rows(list, b, who, f) {
+    if (f) return [{ key: 'failed', text: clip(`the board could not be read: ${f}`, PANE.w) }]
+    if (!list.length) return [{ key: 'none', text: 'nothing is pinned — /pin <line> pins the first' }]
+    return list.slice(b, b + ROWS).map((p) => ({ key: p.id, text: clip(`${ago(p.createdAt).padStart(3)} ${who[p.memberId] ?? '…'}: ${p.body}`, PANE.w) }))
+  }
+
+  const footer = (b) => `${b ? ` · ${b} newer above` : ''} · /pin <line> · PageUp older · Esc closes —`
+
+  /** The line under the board for a figure beside it, kept inside the view. */
+  function hint(c, v, isOpen) {
+    if (isOpen || !near(c)) return []
+    const text = 'the notice board — e or /board reads it, /pin <line> pins one'
+    const y = board.y + 4 - v.y
+    if (y < 0 || y >= v.h) return []
+    return [{ text, x: Math.max(0, Math.min(board.x - v.x, v.w - text.length)), y }]
+  }
+</script>
+
+{#each hint(me, view, open) as h (h.y)}
+  <p class="surface" {@attach at(h.x, h.y, 12)}>{h.text}</p>
+{/each}
+{#if open}
+  <div class="surface pane" {@attach at(PANE.x, PANE.y, 13, [PANE.w, PANE.h])}>
+    {#each rows(pins, back, names, failed) as r (r.key)}
+      <p>{r.text}</p>
+    {/each}
+    <p>— the notice board · {pins.length} pinned{footer(back)}</p>
+  </div>
+{/if}
+
+<style>
+  .pane p { margin: 0; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

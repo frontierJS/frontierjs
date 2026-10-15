@@ -177,6 +177,19 @@ before Kuma is turned off.
    with tests, the two notification kinds, and the list and edit screens.
    *Proves:* a monitor on a URL that returns 502 goes down after N retries and
    the channel gets one message, then one on recovery.
+   - [x] 1.1 Schema (`Monitor`, `MonitorCheck`, `MonitorEvent`, `MonitorChannel`),
+     `core/probe.ts` (`gradeProbe`, `nextState`), `jobs/monitor-sweep.job.ts`,
+     `monitor_down`/`monitor_up`, the `monitors` service. Proved by
+     `api/test/probe.test.ts`, `api/test/monitor-sweep.test.ts` (a real
+     listener: 502 → retries → one page → recovery) and `services.test.ts`.
+     Differs from the design above: no `kind` column (HTTP is the only prober;
+     the column arrives with the second), no `auth`/`authSecretId` (arrives with
+     the service that lifts a credential into a `Secret`), `status` is not
+     `@system` (a caller's pause is a transition, which `@system` refuses),
+     `@url` stands in for the length bound, `maxRedirects` is counted by hand
+     because `fetch` follows or refuses.
+   - [ ] 1.2 `Monitor.mesa` with its default form, `routes/monitors/index.mesa`
+     (counts, list with the heartbeat bar, recent events) and the edit screen.
 2. **History.** `MonitorHour`, uptime %, the detail chart, the widget, the App
    link and deploy muting.
 3. **Kuma import**, then cert expiry.
