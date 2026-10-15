@@ -278,7 +278,7 @@
     if (!current) return
     const { x, y } = placeOf(current)
     const nx = (current.kind === 'Pacer' ? current.mark.spec.from : x) + dx
-    const ny = (current.kind === 'Pacer' ? current.mark.spec.y : y) + dy
+    const ny = (current.kind === 'Pacer' ? current.mark.spec.y : current.kind === 'Carousel' ? current.mark.spec.top : y) + dy
     // A refused move is no edit, so it leaves no step to undo.
     const before = steps
     remember(`move:${current.id}`)
@@ -365,9 +365,10 @@
         if (el && el.kind !== s.kind) el = null
         if (el) {
           if (el.kind === 'Pacer') el.mark.move(s.from, s.y)
+          else if (el.kind === 'Carousel') el.mark.move(s.x, s.top)
           else { el.mark.move(s.x, s.y); if (el.kind === 'Door') el.mark.retarget(s.to) }
         } else {
-          const mark = s.kind === 'Door' ? stage.door(s.x, s.y, s.to, { w: s.w, h: s.h }) : s.kind === 'Pacer' ? stage.pace(s.spec) : stage.stamp(s.piece, s.x, s.y)
+          const mark = s.kind === 'Door' ? stage.door(s.x, s.y, s.to, { w: s.w, h: s.h }) : s.kind === 'Pacer' ? stage.pace(s.spec) : s.kind === 'Carousel' ? stage.carousel({ ...s.spec, of: s.piece }) : stage.stamp(s.piece, s.x, s.y)
           el = added(s.id, s.kind, s.ident, s.file, mark)
         }
         next.push(el)

@@ -14,6 +14,7 @@ const PLACED = {
   Row:   ['x', 'y'],
   Door:  ['x', 'y', 'to', 'w', 'h'],
   Pacer: ['y', 'from', 'to'],
+  Carousel: ['x', 'top', 'bottom'],
 }
 
 /**
@@ -27,7 +28,7 @@ export function bind(parsed, stage) {
     throw new Error(`the markup places ${tags.length} tags and the stage drew ${marks.length} marks — the editor binds one tag to one mark`)
   }
   return tags.map((t, i) => {
-    const kind = { piece: 'Piece', door: 'Door', pacer: 'Pacer' }[marks[i].kind]
+    const kind = { piece: 'Piece', door: 'Door', pacer: 'Pacer', carousel: 'Carousel' }[marks[i].kind]
     const expected = t.kind === 'Row' ? 'Piece' : t.kind
     if (kind !== expected) throw new Error(`tag ${i} is <${t.kind}> but the stage drew a ${marks[i].kind}`)
     return { id: t.id, kind: t.kind, ident: t.attrs.of ?? null, file: null, mark: marks[i] }
@@ -42,6 +43,7 @@ export function placeOf(el) {
   const m = el.mark
   if (el.kind === 'Door')  return { x: m.x, y: m.y, to: m.to, w: m.w, h: m.h }
   if (el.kind === 'Pacer') return { y: m.spec.y, from: m.spec.from, to: m.spec.to }
+  if (el.kind === 'Carousel') return { x: m.spec.x, top: m.spec.top, bottom: m.spec.bottom }
   return { x: m.x, y: m.y }
 }
 
@@ -58,6 +60,7 @@ export function cellsOf(el) {
     for (let x = m.spec.from; x <= m.spec.to; x++) out.push({ x, y: m.spec.y })
     return out
   }
+  if (el.kind === 'Carousel') return m.cells
   return m.piece.cells.map((c) => ({ x: m.x + c.dx, y: m.y + c.dy }))
 }
 

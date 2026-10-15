@@ -2,7 +2,7 @@
 // back as text.
 //
 // The editor's document is the file's markup: the `<Scene>` tag and the
-// `<Piece>`, `<Row>`, `<Door>` and `<Pacer>` tags inside it, one per line,
+// `<Piece>`, `<Row>`, `<Door>`, `<Pacer>` and `<Carousel>` tags inside it, one per line,
 // each placed by its `x` and `y`. An export splices only what changed into
 // the file's own text — an attribute's value, a removed tag's line, a tag
 // added before `</Scene>`, the spawn, a palette entry's hexes, and the import
@@ -17,8 +17,8 @@
 //
 // Pure: no DOM and no file system, so the round trip is a bun test.
 
-const TAGS = ['Piece', 'Row', 'Door', 'Pacer']
-const TAG  = /<(Piece|Row|Door|Pacer)\b((?:[^>]|>(?!\s*$))*?)\/>/g
+const TAGS = ['Piece', 'Row', 'Door', 'Pacer', 'Carousel']
+const TAG  = /<(Piece|Row|Door|Pacer|Carousel)\b((?:[^>]|>(?!\s*$))*?)\/>/g
 const ATTR = /(\w+)=(?:\{((?:[^{}]|\{[^{}]*\})*)\}|"([^"]*)")/g
 const NUMBER = /^-?\d+$/
 

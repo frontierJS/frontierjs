@@ -47,7 +47,7 @@
   <Piece of={line}   x={44} y={2} />
   <Piece of={flag}   x={46} y={2} />
   <Piece of={lid}    x={71} y={2} />
-  <Carousel name="carousel" of={target} x={72} apart={9} top={4} bottom={21} ms={220} n={4} rail="l" />
+  <Carousel name="carousel" of={target} x={72} apart={9} top={4} bottom={21} ms={250} n={4} rail="l" />
   <Piece of={base}   x={71} y={22} />
   <Piece of={bales}  x={90} y={2} />
   <Piece of={quiver} x={8}  y={18} />

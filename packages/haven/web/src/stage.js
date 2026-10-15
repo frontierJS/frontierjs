@@ -359,7 +359,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
   const readopt = () => {
     defaults.clear()
     defaultFrom.clear()
-    for (const m of marks) if (m.kind === 'piece') adopt(m.drawn); else if (m.kind === 'carousel') adopt(m.of)
+    for (const m of marks) if (m.kind === 'piece') adopt(m.drawn); else if (m.kind === 'carousel') adopt(m.piece)
   }
   let lights  = []             // every cell whose palette entry has a light, with its radius
   let visible = new Set()      // key(x, y) lit for the seer now
@@ -993,23 +993,41 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
      */
     carousel({ name, of, x, apart, top, bottom, ms, n, rail }) {
       adopt(of)
-      const spec = { name, x, apart, top, bottom, ms, n, cells: of.cells.map((c) => [c.dx, c.dy]) }
+      const spec = { name, x, apart, top, bottom, ms, n, rail, cells: of.cells.map((c) => [c.dx, c.dy]) }
       const w = Math.max(...of.cells.map((c) => c.dx)) + 1, mid = Math.floor(w / 2)
-      const lane = []
-      for (let y = top; y <= bottom; y++) {
-        for (let dx = 0; dx < apart + w; dx++) {
-          const chain = dx === mid || dx === apart + mid
-          lane.push([x + dx, y, { ch: chain ? '¦' : ' ', key: chain ? rail : ' ', name }])
+      const laneAt = (lx, top, bottom) => {
+        const out = []
+        for (let y = top; y <= bottom; y++) {
+          for (let dx = 0; dx < apart + w; dx++) {
+            const chain = dx === mid || dx === apart + mid
+            out.push([lx + dx, y, { ch: chain ? '¦' : ' ', key: chain ? rail : ' ', name }])
+          }
         }
+        return out
       }
-      try { putAll(lane) }
+      const lift = () => { for (const [lx, ly] of laneAt(spec.x, spec.top, spec.bottom)) claims.delete(key(lx, ly)) }
+      try { putAll(laneAt(x, top, bottom)) }
       catch (e) { readopt(); throw e }
       carousels.push(spec)
       const mark = {
-        kind: 'carousel', spec, of,
+        kind: 'carousel', spec, piece: of,
         get x() { return spec.x }, get y() { return spec.top },
+        /** The lane's cells, for the editor to find it by. */
+        get cells() { return laneAt(spec.x, spec.top, spec.bottom).map(([cx, cy]) => ({ x: cx, y: cy })) },
+        /** The lane moved whole, its column at `nx` and its top row at `ny`. */
+        move(nx, ny) {
+          if (nx === spec.x && ny === spec.top) return
+          const h = spec.bottom - spec.top
+          lift()
+          try { putAll(laneAt(nx, ny, ny + h)) }
+          catch (e) { putAll(laneAt(spec.x, spec.top, spec.bottom)); throw e }
+          spec.x = nx
+          spec.top = ny
+          spec.bottom = ny + h
+          changed()
+        },
         remove() {
-          for (const [lx, ly] of lane) claims.delete(key(lx, ly))
+          lift()
           const i = carousels.indexOf(spec); if (i !== -1) carousels.splice(i, 1)
           drop(mark); readopt(); changed()
         },
@@ -1024,7 +1042,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
       const out = []
       for (const m of marks) {
         if (m.kind !== 'carousel') continue
-        const { spec, of } = m
+        const { spec, piece: of } = m
         for (const r of ridersAt(spec, ms)) {
           for (const c of of.cells) {
             const y = r.y + c.dy
