@@ -545,7 +545,7 @@ posture report.
     a signed command port on the box that holds the fleet's command key, and a server
     row invites the deploy and drain this record refuses on the host. C gives the
     control plane's own container root on its host to read a config file.
-- **FJS-D944 — What does the report-only host Outpost sign its posture report with?**
+- ~~**FJS-D944 — What does the report-only host Outpost sign its posture report with?**~~ **Answered 2026-10-15 (`FJS-D944`): B — Derived from `ENCRYPTION_KEY` as an HMAC over a fixed label: `fli deploy` writes only the derived value into the host Outpost's config, and the API derives the same value at boot. There is no new variable to generate, lose or rotate.**
   `report.js` signs every POST with `config.secret`, and `outpostCredential`
   (`api/src/core/hooks.ts`) finds the key through `outpostSecretFor(serverId)` —
   `Server.outpostSecretId`, with *no second key that also works*. The host has no

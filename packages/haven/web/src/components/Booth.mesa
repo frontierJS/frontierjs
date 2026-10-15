@@ -11,13 +11,23 @@
   // moment they are. The other standing up first leaves this one with the
   // lines, an empty side where their head was and `<nick> left` under it;
   // the booth stays theirs.
+  //
+  // A game of checkers (`api/src/checkers.ts`, `IDEAS/haven.md` 9.1b) is played
+  // from this line: `/checkers` begins one, `/move c3 d4` makes a move and
+  // `/resign` gives it up, each a call to the `games` service, which is the
+  // only thing that writes the board. The board draws in the middle column
+  // over the conversation, which keeps the rows under it, and every move is
+  // told to the pair by a `checkers` event that each screen answers by reading
+  // the game again.
   import { presence }    from '@frontierjs/sierra/presence'
-  import { useStore }    from '@frontierjs/sierra/resource'
+  import { getClient, useStore } from '@frontierjs/sierra/resource'
   import { goto, page }  from '@frontierjs/sierra/router'
   import { members }     from '@/resources/Member.mesa'
   import { messages }    from '@/resources/Message.mesa'
   import { createStage } from '@/stage.js'
   import { transcript } from '@/booth.js'
+  import { BOARD_H, boardRows, sideFor, status } from '@/checkers.js'
+  import { parseMove, squareName } from '../../../api/src/checkers.ts'
   import Piece           from '@/components/Piece.mesa'
   import { piece }       from '@/pieces/index.js'
   import { candle }      from '@/pieces/candle.js'
@@ -32,6 +42,10 @@
   // stop above it rather than scroll through the flame.
   const CANDLE = { x: 44, y: 20 }
   const SIDE = { me: 2, them: 76, y: 1 }
+  // The board sits in the middle of the column, its status line under it, and
+  // the lines of the conversation take the rows below.
+  const BOARD = { x: MID.x + 16, y: MID.y }
+  const BELOW = BOARD_H + 2
 
   const ME   = '#22d3ee'
   const THEM = '#f59e0b'
@@ -108,6 +122,16 @@
   messages.load({ roomId: room.id }, { orderBy: '-createdAt', limit: 50 })
     .catch((e) => { note = e.message })
 
+  // The game, as the server last said it: null until one is begun.
+  let game = null
+  const client = getClient()
+  const loadGame = () => client?.service('games').invoke('get', null, { roomId: room.id })
+    .then((g) => { game = g }).catch((e) => { note = e.message })
+  loadGame()
+  const heard = (name, data) => { if (name === 'checkers' && (data?.roomId === undefined || data.roomId === room.id)) loadGame() }
+  client?.on('event', heard)
+  $.onDestroy(() => client?.off('event', heard))
+
   // The pair's ids are on the row; which is this member is known once the
   // socket has said so.
   let nicks = {}
@@ -179,11 +203,32 @@
 
   const focus = (el) => el.focus()
 
+  const HELP = '/checkers begins a game · /move c3 d4 (a chain: /move c3 e5 g7) · /resign'
+
+  /** A verb at the table: what it answers is the note, empty when it worked. */
+  async function verb(word, args) {
+    const games = client?.service('games')
+    if (!games) return 'No table to play at'
+    try {
+      if (word === 'checkers') game = await games.invoke('start', null, { roomId: room.id })
+      else if (word === 'move') {
+        const path = parseMove(args)
+        if (!path) return 'A move is squares, like /move c3 d4'
+        game = await games.invoke('move', null, { roomId: room.id, path: path.map(squareName) })
+      }
+      else if (word === 'resign') game = await games.invoke('resign', null, { roomId: room.id })
+      else return `No /${word} here · ${HELP}`
+    } catch (e) { return e.message }
+    return ''
+  }
+
   async function say() {
     const body = draft.trim()
     if (!body) return
     draft = ''
     note  = ''
+    const said = /^\/(\w+)\s*(.*)$/.exec(body)
+    if (said) { note = await verb(said[1].toLowerCase(), said[2]); return }
     try { await messages.save({ roomId: room.id, body }) }
     catch (e) { note = e.message }
   }
@@ -199,11 +244,17 @@
   <Piece of={candle} x={CANDLE.x} y={CANDLE.y} />
   <p {@attach at(SIDE.me, SIDE.y + FACE.h + 1)}>{nicks[meOf(here.get())] ?? 'you'}</p>
   <p {@attach at(SIDE.them, SIDE.y + FACE.h + 1)}>{gone ? `${nicks[themOf(here.get())] ?? 'they'} left` : nicks[themOf(here.get())] ?? '…'}</p>
-  {#each transcript(lines(), { me: meOf(here.get()), roomId: room.id, height: CANDLE.y - MID.y }) as r (r.key)}
-    <p class="surface" {@attach at(MID.x + r.x, MID.y + r.y, 12)}>{r.text}</p>
+  {#if game}
+    {#each boardRows(game, sideFor(game, meOf(here.get()))).map((text, key) => ({ key, text })) as r (r.key)}
+      <p class="surface" {@attach at(BOARD.x, BOARD.y + r.key, 12)}>{r.text}</p>
+    {/each}
+    <p class="surface" {@attach at(MID.x, MID.y + BOARD_H, 12)}>{status(game, { me: meOf(here.get()), nicks })}</p>
+  {/if}
+  {#each transcript(lines(), { me: meOf(here.get()), roomId: room.id, height: CANDLE.y - MID.y - (game ? BELOW : 0) }) as r (r.key)}
+    <p class="surface" {@attach at(MID.x + r.x, MID.y + (game ? BELOW : 0) + r.y, 12)}>{r.text}</p>
   {/each}
 </div>
-<p>You and {nicks[themOf(here.get())] ?? '…'}, across the table{here.get().others.length ? '' : ' · they have stood up'} · Esc stands up</p>
+<p>You and {nicks[themOf(here.get())] ?? '…'}, across the table{here.get().others.length ? '' : ' · they have stood up'} · Esc stands up{game ? '' : ' · /checkers plays'}</p>
 {#if note}<p>{note}</p>{/if}
 <form on:submit|preventDefault={say}>
   <input {@attach focus} bind:value={draft} placeholder="Enter says it, Esc stands up" />

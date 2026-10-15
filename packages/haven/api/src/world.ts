@@ -9,6 +9,8 @@
 import { readFileSync } from 'node:fs'
 
 import type { Obstacle } from './bolt.ts'
+import { cellsOf, inLane, riderOn, ridersAt } from './carousel.ts'
+import type { CarouselSpec } from './carousel.ts'
 import { pacerNow } from './pacer.ts'
 import type { PacerSpec } from './pacer.ts'
 
@@ -22,6 +24,8 @@ export interface SceneWorld {
   /** Floor pieces that hand an item when stepped on (`inventory.ts`). */
   pickups: { id: string, item: string, n: number, cells: [number, number][] }[]
   pacers: (PacerSpec & { name: string })[]
+  /** Targets riding a loop (`carousel.ts`); a bolt is scored on one. */
+  carousels: CarouselSpec[]
 }
 
 const DIR = new URL('../../web/src/scenes/', import.meta.url)
@@ -57,6 +61,19 @@ export function walkable (world: SceneWorld, x: number, y: number): boolean {
   return world.rows[y]?.[x] === '.'
 }
 
+/** The name of the solid piece on a cell, or null for floor, a door or a bare wall. */
+export const pieceAt = (world: SceneWorld, x: number, y: number): string | null =>
+  load(world.slug)?.solid.get(`${x},${y}`)?.name ?? null
+
+/** A carousel's rider by its id, and its cells `ms` into the clock, or null. */
+export function riderOf (world: SceneWorld, id: string, ms: number): { id: string, cells: [number, number][] } | null {
+  for (const c of world.carousels) {
+    const r = ridersAt(c, ms).find(r => r.id === id)
+    if (r) return { id, cells: cellsOf(c, r) }
+  }
+  return null
+}
+
 /** The pickup lying on a cell, or null. */
 export const pickupAt = (world: SceneWorld, x: number, y: number): SceneWorld['pickups'][number] | null =>
   load(world.slug)?.pickup.get(`${x},${y}`) ?? null
@@ -77,13 +94,19 @@ export function standable (world: SceneWorld, x: number, y: number, gone: Readon
  * What stands on a cell `ms` into the clock, or null for open floor. Off the
  * stage and a door are walls; a pacer is where the shared clock puts it, or
  * nowhere once a bolt has scared it out of the scene (`spooked`, its name to
- * the `at` and `dir` of the trace that did).
+ * the `at` and `dir` of the trace that did). A carousel's lane is a wall to a
+ * walk and not to a bolt, which flies through it where no rider is.
  */
 export function obstacleAt (world: SceneWorld, x: number, y: number, ms: number, spooked: ReadonlyMap<string, { at: number, dir?: 1 | -1 }> = new Map()): Obstacle | null {
   for (const p of world.pacers) {
     const s = spooked.get(p.name)
     const at = pacerNow(p, ms, s && { ...s, width: world.width })
     if (at && at.y === y && x >= at.x && x < at.x + at.text.length) return { kind: 'pacer', id: p.name }
+  }
+  for (const c of world.carousels) {
+    if (!inLane(c, x, y)) continue
+    const r = riderOn(c, x, y, ms)
+    return r && { kind: 'target', id: r.id }
   }
   const ch = world.rows[y]?.[x]
   if (ch === '.') return null

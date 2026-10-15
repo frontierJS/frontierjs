@@ -9,6 +9,7 @@
   import { INDOORS } from '@/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { halves } from '@/pieces/halves.js'
   import { frame } from '@/pieces/frame.js'
@@ -179,5 +180,9 @@ wwwwwwwwwwwwww
   <Piece of={cowhide} x={36} y={15} />
   <Piece of={bed}     x={66} y={20} />
   <Piece of={cactus}  x={88} y={17} />
+  <Pacer name="hound" y={13} from={40} to={72} ms={700} rest={160} fg="#92400e"
+    right={["~(_)'>", "~(_).>"]}
+    left={["<'(_)~", "<.(_)~"]}
+    sit={["~(_)->", "~(_)->", "~(_)-> z", "~(_)-> zZ"]} />
   <slot />
 </Scene>

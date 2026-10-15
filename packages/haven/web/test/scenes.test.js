@@ -289,12 +289,16 @@ test('workshop: the taskmaster\'s desk is no bench, stands on the left by the do
 // ─── the cellar ──────────────────────────────────────────────────────
 
 // A secret is a door nothing draws, so the only things that say it is there
-// are these: one way down, hidden, painted as the rug around it, and a figure
-// coming back up standing beside it.
-test('cellar: the one way down is the tavern rug, a door drawn as the rug it is in', () => {
+// are these: one way down and one up from the canal, both hidden, the way
+// down painted as the rug around it, and a figure coming back up standing
+// beside it.
+test('cellar: the one way down is the tavern rug, a door drawn as the rug it is in, and the way up from the canal is hidden too', () => {
   const tavern = scenes.get('/tavern/')
   const ways = [...scenes].flatMap(([path, stage]) => stage.doors.filter((d) => d.to === '/cellar/' && !d.night).map((d) => ({ path, ...d })))
-  expect(ways).toEqual([expect.objectContaining({ path: '/tavern/', hidden: true })])
+  expect(ways).toEqual([
+    expect.objectContaining({ path: '/tavern/', hidden: true }),
+    expect.objectContaining({ path: '/canal/', hidden: true }),
+  ])
   const { x, y } = ways[0]
   expect(tavern.walkable(x, y)).toBe(false)
   const beside = tavern.look(x - 1, y)
@@ -317,10 +321,13 @@ test('cellar: a figure coming up from it stands on the rug beside the hole, not 
 // says either is there, so these are what does: the plank drawn as fence, the
 // oak's foot and the cellar's wall drawn as themselves by day, and each a door
 // at night that leads to the other.
-test('glade: the one way in is a plank of the woods\' fence, drawn as the fence', () => {
+test('glade: the one way in from above is a plank of the woods\' fence, drawn as the fence, and the way up from the canal is hidden too', () => {
   const woods = scenes.get('/woods/')
   const ways = [...scenes].flatMap(([path, stage]) => stage.doors.filter((d) => d.to === '/glade/' && !d.night).map((d) => ({ path, ...d })))
-  expect(ways).toEqual([expect.objectContaining({ path: '/woods/', hidden: true })])
+  expect(ways).toEqual([
+    expect.objectContaining({ path: '/woods/', hidden: true }),
+    expect.objectContaining({ path: '/canal/', hidden: true }),
+  ])
   const { x, y } = ways[0]
   expect(woods.picture()[y][x]).toBe('|')
   expect(woods.look(x, y)).toEqual(woods.look(x, y - 1))

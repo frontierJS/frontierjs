@@ -13,7 +13,7 @@
 // set its cell size, and zooming the terminal is the same thing done by the
 // person at it. Figures and bubbles are `at()` boxes over it, a layer up, so they
 // cover the art without the art knowing they are there. A pacer is drawn on
-// lit cells only: the cat in a dark corner is not seen. The buffer is the
+// lit cells only: the cat in a dark corner is not seen. So is a carousel's rider. The buffer is the
 // view's size, made again when that changes: the terminal resized, or a piece
 // mounted past the edge of a stage smaller than the view.
 //
@@ -99,6 +99,10 @@ export const paint = (stage) => (box) => {
         const col = x + i - v.x
         if (ch !== ' ' && col >= 0 && col < v.w && stage.light(x + i, y) === 'lit') buf.setCell(col, row, ch, rgba(stage.tint(p.fg, x + i, y, ms)) ?? INK, CLEAR)
       })
+    }
+    for (const { x, y, ch, fg } of stage.riders(ms)) {
+      const col = x - v.x, row = y - v.y
+      if (col >= 0 && col < v.w && row >= 0 && row < v.h && stage.light(x, y) === 'lit') buf.setCell(col, row, ch, rgba(stage.tint(fg, x, y, ms)) ?? INK, CLEAR)
     }
     if (bloom) {
       const g = glow.frameBuffer

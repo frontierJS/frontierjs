@@ -1,0 +1,7 @@
+<script>
+  // The market -- north of the road, through the gap in its north fence.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Market from '@/scenes/Market.mesa'
+</script>
+
+<WalkIn slug="market"><Market /></WalkIn>

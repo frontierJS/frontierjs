@@ -1,0 +1,9 @@
+<script>
+  // The archery range — south of the woods, across its border. The scoreboard
+  // is written by `Scores.mesa` from the room's memory.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Scores from '@/components/Scores.mesa'
+  import Range from '@/scenes/Range.mesa'
+</script>
+
+<WalkIn slug="range"><Range><Scores /></Range></WalkIn>

@@ -1380,6 +1380,36 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d1006"></a>2026-10-15 · `FJS-D1006` — How does an Oracle answer limit a move or a write to a membership role — B for moves, A's `roles` for the other ops.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked as the recommendation qualifies it (*B for moves, A's `roles` for the other ops*) over **A** (a `roles` key on the entity's access naming membership role values per operation, `roles: { update: ['finance'], delete: ['finance'] }`, and a move named by key (`roles: { finalize: ['finance'], void: ['finance'] }`); `checkAnswer` refuses a role the container's membership enum lacks, and `FJS-D623`'s `admins` becomes `roles: { update: [...] }` on the container, one key for both. A write the key omits keeps today's member reach), **C** (a role is the product's, so Oracle emits none: the answer states it as an `open` item the emitter prints and the app writes its own gate. This is today's behavior, and Charter's People step stops collecting roles Oracle cannot honour).
+
+B for moves (by <role> where the move is declared, extending by: 'system'), A's roles: { update, delete } on access for plain writes; FJS-D623's admins is renamed to roles: { update } on the container, one key for both. A role the membership enum lacks is refused; an op whose role cannot resolve emits system-only.
+
+### <a id="fjs-d1018"></a>2026-10-15 · `FJS-D1018` — How does a Basecamp monitor reach a private-network target once every probe is graded by junction's `assertPublicUrl` — No escape hatch: every request and every redirect hop is graded, and a private target waits for the paper's Outpost `vantage` column ([uptime-monitoring.md](IDEAS/uptime-monitoring.md) § Design, *Vantage*), where the probe runs on a machine the operator put on that network. Cost: an install watching LAN hosts loses them until vantage ships.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A, plus one install-wide `allowPrivate` in Basecamp's config, written by the operator and never by a row, passed through as conduit's `destinations` already is. Cost: once it is on, loopback and the metadata service are open to every admin in every workspace), **C** (A, plus a per-monitor `allowPrivate` column that only an operator level can write, so one named LAN monitor is opted in and every other monitor stays graded. Cost: a column and a field-level gate, and an opted-in name that re-resolves somewhere worse is not caught).
+
+The paper's recommendation, taken as written: it adds no option and follows both the paper (private targets belong to an Outpost) and the guard's own default. An admin is a workspace role and not an operator, and B and C each give that role the reach the row is about.
+
+### <a id="fjs-d944"></a>2026-10-15 · `FJS-D944` — What does the report-only host Outpost sign its posture report with — Derived from `ENCRYPTION_KEY` as an HMAC over a fixed label: `fli deploy` writes only the derived value into the host Outpost's config, and the API derives the same value at boot. There is no new variable to generate, lose or rotate.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (A host key of its own, `HOST_REPORT_SECRET`, generated once beside `ENCRYPTION_KEY` in the stack's `.env` by `deploy/build.mjs` and `fli deploy`, and written into the host Outpost's config), **C** (The fleet's own enrollment: a hub method mints a `Secret` and the host Outpost exchanges a one-time token for it, with the row named on the hub's config. This is the same door every machine uses. It needs a system admin's session at install time, though, and a fresh box has no admin yet).
+
+The paper's recommendation, taken as written: the key is derived, not restated, so it has one origin and nothing new to back up. `ENCRYPTION_KEY` already cannot rotate without orphaning every `@encrypted` column, and the HMAC is one-way, so the Outpost's config never holds anything that decrypts a `Secret`.
+
+### <a id="fjs-d886"></a>2026-10-15 · `FJS-D886` — Where does the onboarding for an Oracle-emitted tenant container created by `system` live — `emit()` returns a third artifact beside `text` and `document`: the `onRegistered` source for each container created by `system` that has a membership, which creates the container plus a membership carrying the role that administers it (`FJS-D623`'s answer). `fli new`/the wizard writes it into `api/` and passes it to `createLitestoneAuth`. It is derived from the answer, so the creator is stated once. Oracle's output stops being `.lite` alone.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (The scaffold owns it: `fli new` (and the studio wizard) installs a signup-creates-org `onRegistered` whenever the schema it receives has a `system` container with `members`, and Oracle adds a `findings` line naming the step. Oracle stays schema-only. The app layer reads the container's shape back from the schema, which is a second reader of the same fact), **C** (No onboarding is generated. `emit` refuses or warns on a `system` container with no other creator and points to a written recipe. That keeps both packages small, but every generated multi-person app is still unenterable until a hand edit).
+
+The paper's recommendation, taken as written: the answer is the one origin for who creates the container, so the hook derived from it cannot drift from the gate it has to satisfy. `FJS-D520` already fixed the hook's shape, which leaves emit a template and no design work.
+
+### <a id="fjs-d623"></a>2026-10-15 · `FJS-D623` — How does an Oracle answer name which membership role administers a container — A key on the container's access, `roles: { update: ['recruiter'] }` (spelled by `FJS-D1006`, which made it the one key for every role-limited write), naming values of the membership's role enum; `checkAnswer` refuses a value the enum lacks and a container with `members` and no `roles.update` emits membership writes as system-only (gate 8), so forgetting it fails closed.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a reserved value: the role enum must carry `owner` (and may carry `admin`), which administer, as `references/Organization.lite` and quo already spell it; `checkAnswer` refuses a role enum without `owner`. No new key, but the product's enum loses a word).
+
+The paper's recommendation, taken as written: the catalog says the role enum is the product's, so which word administers is the product's answer and the answer is where Oracle reads access from; the fail-closed default keeps a missing key from reopening this row.
+
 ### <a id="fjs-d981"></a>2026-10-13 · `FJS-D981` — Q5 — How a machine proves it is the same member — An Ed25519 key pair: `signRequest({ privateKey })` and `verifyRequest({ publicKey })` sign the one canonical string, and the login mints an ordinary session.
 
 Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (no signature: the first run is answered a long-lived token, and the token is the identity).
@@ -3789,6 +3819,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d989"></a>2026-10-15 · `FJS-D989` — How does `@@exclude` grade a member's range read through a to-one relation, and regrade the children's keys when the parent's range moves — Admit a to-one `@from(rel, column)` field (`FJS-D911`, built by `FJS-1305`, still open) as a range end: `startsAt DateTime @from(shift, startLocal)`, `range: [startsAt, endsAt]`. `gradeKey` reads the member's range through the relation's join, and the ledger gains a reverse edge: a write naming a column some member's range `@from`s notes every key the parent's children hold. `@from` stays the one owner of crossing a relation; waits on `FJS-1305`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a one-hop dotted path inside `range:`: `range: [shift.startLocal, shift.endLocal]`, the path resolved as a policy's `relation.column` path is, with the same reverse edge. The spelling the author reaches for first, but it is the second way to cross a relation — the shape `FJS-D911` refused for `@derived` (its option C)), **C** (keep the copy and close the hole at the parent: a parse refusal naming the path rather than a token error, plus a documented hazard that a copied range goes stale on the parent's write. Smallest; the roster keeps a hand-kept copy that is silently wrong after a Shift moves).
+
+The paper's recommendation, taken as written: `FJS-D911` already ruled `@from` the owner of bringing a parent's column onto a row, so the range is derived rather than copied and the only new mechanism is the reverse edge, which every option except C needs anyway.
 
 ### <a id="fjs-d970"></a>2026-10-13 · `FJS-D970` — Does search span models — Yes, over ONE shared index: `db.$search(q, { models, limit, offset, prefix })` reads `_search`, graded per model inside the query, ranked on one bm25 scale.
 
@@ -7280,6 +7316,18 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d872"></a>2026-10-15 · `FJS-D872` — Where does a notification's delivery key come from, so a retried `notify()` writes no second in-app row — The definition declares it, beside `via`: `key(payload, recipient) => \`order:${order.id}\``, the shape caravan's `dispatch({ id })` already has. Optional; a definition without one keeps today's at-least-once rows.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a call option: `app.notify(recipient, n, { key })`. The caller (the job) knows what makes the send unique; a third argument on a two-argument public verb), **C** (derived, no key: the in-app driver skips when a row with the same `(userId, type, contextType, contextId)` exists. Matches the red test as written, and silently swallows every legitimate repeat (a weekly reminder about one invoice)), **D** (derived from the ambient call: inside a Caravan job, key = job id + recipient + type via `currentCall()`. No API surface, but protection exists only inside a job and the same send behaves differently outside one).
+
+The paper's recommendation, taken as written: the notification is a file that already names itself and declares its transports, so the definition is where "what makes two sends the same" belongs; it reuses caravan's idempotency shape rather than coining one, stays optional so nothing silently drops, and the red test's assertion moves to a definition that declares `key`.
+
+### <a id="fjs-d812"></a>2026-10-15 · `FJS-D812` — Where does a commitment hook run relative to a `@seals` move — before it, beside it as data, or refused at boot — Reorder the one hook: it runs BEFORE the move in the same transaction, handed the row at its from-state. The move's from-state WHERE is still the lock, so a racing fire rolls its hook back with its refused move. Amends `FJS-D368`'s order; `renewPeriod` (example) reads nothing the move wrote and is unaffected.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (two keyed tiers, `before` and `after`, so a hook that needs the moved row keeps it. A second spelling of one hook, for a case no current hook has), **C** (the move takes the hook's data: the hook answers `data` folded into the transition's own UPDATE, so the number and the refresh land in the sealing write. Needs `transition()` to accept data, which is litestone surface), **D** (refuse at boot a hook keyed to a `@seals` commitment, and the app spells a never-committed `closing` state as lago does. A refusal for a shape the framework could make work).
+
+The paper's recommendation, taken as written: one hook, one order, and a sealing move works by construction: the owed writes land while the row is still writable, and the re-read finds the draft it is about to seal.
 
 ### <a id="fjs-d986"></a>2026-10-14 · `FJS-D986` — Sign-in inside the iframe — The host's standing only: the view acts as whatever the MCP session resolved, as 3.4 already writes, and a refused `tools/call` lands as the refusal under the form through `toFieldErrors`. No elevation path; asked again when the MCP Apps spec stabilizes an elevation message.
 
@@ -11171,6 +11219,24 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d552"></a>2026-10-15 · `FJS-D552` — How does `virtual:sierra` hand `junction`, `analytics` and `theme` to the browser without importing `sierra.config.js` whole, when a custom analytics provider holds functions — Emit the three keys by value (`JSON.stringify`), and refuse a function anywhere in them at config load, naming the key path. A custom analytics provider becomes a module path, `analytics: { provider: '/src/analytics.js' }`, root-relative like `routeTable.output`. `virtual:sierra` imports that module alone. `virtual:sierra-config` (it re-exports the whole config and nothing imports it) is deleted.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a separate client-side config file (`config/sierra.client.js`) holding the browser keys, which `virtual:sierra` imports instead. It is a second origin for one config and a new file noun), **C** (emit by value when the three keys are pure data, and fall back to the whole import when a function is present. That leaves two mechanisms, and the fallback silently brings the defect back for any app with a custom provider).
+
+The paper's recommendation, taken as written: the config stays the one origin, and a function the browser cannot receive is refused by name instead of dropped. Only one README shape changes, and nothing in the tree uses it.
+
+### <a id="fjs-d904"></a>2026-10-15 · `FJS-D904` — Who owns where a kit overlay mounts, and which overlay answers Escape — One helper in `utils.js`, `overlayHost()` = the topmost `dialog:modal`, else `body`, which every portal calls; plus a rule that an overlay answering Escape calls `preventDefault()`, graded by a drive.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (app-level surfaces (toast stack, global alert, palette) go into the top layer with `popover="manual"`, and in-dialog surfaces (Popover, DropdownMenu, the dnd ghost) use A's helper).
+
+The paper's recommendation, taken as written: one owner for one question; B is two answers, and the top layer's stacking order against a later `showModal()` is a second thing to learn. A toast inside a dialog's host is removed with the dialog, which is what closing it means. The owner already exists: ConfirmPanel's `host()` (`ConfirmPanel.mesa` L42) is promoted to `utils.js`, not written a second time. Artefact: a drive spec that opens every portaling overlay inside a Modal and asserts the hit-test reaches it, and presses Escape once per overlay asserting the dialog stays open.
+
+### <a id="fjs-d903"></a>2026-10-15 · `FJS-D903` — What owns "a field changed" in a `<Form>` — `$context.form.changed(name)`: every control calls it on commit, `writeField` calls it, and it is the one place that sets `dirty`, retires `_server` and arms autosave; `handleChange` becomes a caller of it.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (every control dispatches a bubbling `change` event from an element carrying `name` on commit (a hidden input where the value is not text), and `handleChange` stays the owner).
+
+The paper's recommendation, taken as written: B makes six controls fake a DOM event to reach a function in the same component tree, and a click-committed value has no element to be honest about; A is Invariant 4's shape (add to the owner) and a control outside a form calls nothing. Either way a control that forgets is silent, so the ruling carries its artefact: a kit drive spec that commits a value in every form control inside a hand-written `<Form>` and asserts `dirty` and a retired server error, walking the component list the way `test/attributes.mjs` does.
+
 ### <a id="fjs-d987"></a>2026-10-13 · `FJS-D987` — The terminal shell's keys are modal — Focus sets the mode: a text field is INSERT and takes every key but Esc; anywhere else, or a field after Esc, is NORMAL, where h j k l are the arrows, a j or k the page leaves alone moves focus, `i` types into the field again, and a letter types nothing. The mode line sits in a footer under the page.
 
 Picked by the owner over **vim proper** (start NORMAL everywhere, `i` or Enter to type), **list screen only**, and **later**. Auto-insert costs no key before typing and keeps every drive that types into a field working unchanged; what it gives up is j and k leaving a field without an Esc or a Tab first.
@@ -13481,6 +13547,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d1009"></a>2026-10-15 · `FJS-D1009` — When CI's structure phase grades a rule an app's `check-baseline.json` never adopted, is the debt adopted with a reasoned count or lowered to zero before CI goes green — Adopt the brand-new rules with `fli check --adopt` and a `//` reason each (css-raw-literal 33, css-class-collision 5, example app-layout 7), and fix the two +1 regressions, since a count that moved is a new site rather than old debt. CI goes green today; each adopted key is a ceiling that falls as rows move them.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Adopt nothing: fix all 45 sites (or `allow` the collisions that are deliberate, as example already does for its four) before the phase goes green. Leaves CI red for every session until done), **C** (Adopt everything as it stands, including the two +1s, with reasons).
+
+The paper's recommendation, taken as written: it matches how basecamp's `app-layout: 11` was adopted when FJS-1888 first graded that rule, and keeps a regression a regression; the +1s get their own rows.
 
 ### <a id="fjs-d1020"></a>2026-10-15 · `FJS-D1020` — An agent's task is a fix-loop command, never a session of its own — A mod's `<nick> task: …` is turned by the agent (Haiku, no tools) into one checked plan — `--ids`, `--pkg`/`--sev`, or a row filed with `fli file` then run by id — and started through the taskmaster's `startLoop`; the raw `claude -p --permission-mode auto` session is gone.
 

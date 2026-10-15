@@ -1,0 +1,120 @@
+<script>
+  // Island.mesa — the island, Haven's far, quiet place: sea to every wall, a
+  // sandy island with palms, a lighthouse whose lamp is the brightest light in
+  // Haven, an X in the sand, and a crab on the south beach. It is reached only
+  // by the ferry from the docks, which is moored at the end of the jetty here
+  // the same way, bow west; stepping aboard is the door back. The picture this
+  // draws is `island.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+  import { ferry, FERRY, GANGWAY, hull } from '@/pieces/ferry.js'
+
+  // The island is an ellipse, and its land within `SHORE` of the sea is beach,
+  // which keeps the band as wide at the tips as along the sides. Every cell
+  // inside the frame is sea, beach, bare ground or the jetty, the ferry and
+  // its plank, and only one of them claims it; the sea and the beach are each
+  // one block with the rest cut out. `BOAT`, `JETTY` and `PLANK` are where the tree
+  // below places them, and every other piece stands on bare ground.
+  const ISLE  = { x: 50, y: 16, rx: 38, ry: 7 }
+  const SHORE = { x: 4, y: 1 }
+  const JETTY = { x: 20, y: 3, w: 6, h: 10 }
+  const BOAT  = { x: 28, y: 1 }
+  const PLANK = { x: JETTY.x + JETTY.w, y: BOAT.y + GANGWAY.dy, w: BOAT.x + GANGWAY.dx - JETTY.x - JETTY.w }
+  const INSIDE = { x: 2, y: 1, w: 94, h: 24 }
+
+  const reach = (x, y) => ((x - ISLE.x) / ISLE.rx) ** 2 + ((y - ISLE.y) / ISLE.ry) ** 2
+  const built = (x, y) => (x >= JETTY.x && x < JETTY.x + JETTY.w && y >= JETTY.y && y < JETTY.y + JETTY.h)
+    || (y === PLANK.y && x >= PLANK.x && x < PLANK.x + PLANK.w)
+    || (x >= BOAT.x && x < BOAT.x + FERRY.w && y >= BOAT.y && y < BOAT.y + FERRY.h && hull(x - BOAT.x, y - BOAT.y))
+  const wet = (x, y) => reach(x, y) >= 1 && !built(x, y)
+  const shore = (x, y) => [...Array(2 * SHORE.y + 1)].some((_, j) => [...Array(2 * SHORE.x + 1)].some((_, i) => wet(x + i - SHORE.x, y + j - SHORE.y)))
+  const ground = (x, y) => built(x, y) ? 'built' : wet(x, y) ? 'sea' : shore(x, y) ? 'beach' : 'bare'
+
+  const block = (name, kind, ch, key, options) => {
+    const rows = [...Array(INSIDE.h)].map((_, dy) => [...Array(INSIDE.w)].map((_, dx) => ground(INSIDE.x + dx, INSIDE.y + dy) === kind ? ch : ' ').join(''))
+    return piece(name, rows.join('\n'), rows.map((r) => r.replaceAll(ch, key)).join('\n'), options)
+  }
+  const sea   = block('sea', 'sea', '~', 'b')
+  const beach = block('beach', 'beach', '.', 's', { floor: true })
+
+  const jetty = piece('jetty', [...Array(JETTY.h)].map(() => '='.repeat(JETTY.w)).join('\n'),
+    [...Array(JETTY.h)].map(() => 'u'.repeat(JETTY.w)).join('\n'), { floor: true })
+  const plank = piece('plank', '='.repeat(PLANK.w), 'u'.repeat(PLANK.w), { floor: true })
+
+  // The fronds are in the air and walked under; the trunk is a wall.
+  const palm = piece('palm', String.raw`
+.-\|/-.
+  /|\
+   )
+   (
+  _)_
+`, String.raw`
+TTTTTTT
+  TTT
+   u
+   u
+  uuu
+`, { overhead: 2 })
+
+  const lighthouse = piece('lighthouse', String.raw`
+ .-.
+ (o)
+ |=|
+ | |
+ |=|
+/___\
+`, String.raw`
+ lll
+ lYl
+ rcr
+ c c
+ rcr
+lllll
+`)
+
+  const mark = piece('mark', 'X', 'x', { floor: true })
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    u: { fg: '#92400e' },
+    s: { fg: '#fde68a' },
+    l: { fg: '#9ca3af' },
+    r: { fg: '#dc2626' },
+    c: { fg: '#f3f4f6' },
+    x: { fg: '#ef4444' },
+    Y: { fg: ['#fef08a', '#fde047', '#fef9c3', '#fde047'], ms: 900, flicker: true, light: 6 },
+    b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
+    T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], ms: 900, wave: true },
+  }
+</script>
+
+<Scene slug="island" palette={PALETTE} spawn={{ x: 23, y: 8 }}>
+  <Piece of={frame} />
+  <Piece of={sea}   x={2}  y={1} />
+  <Piece of={beach} x={2}  y={1} />
+  <Piece of={jetty} x={20} y={3} />
+  <Piece of={ferry} x={28} y={1} />
+  <Piece of={plank} x={26} y={5} />
+  <Door  x={29} y={5} to="/docks/" hidden />
+  <Piece of={palm} x={30} y={12} />
+  <Piece of={palm} x={44} y={11} />
+  <Piece of={palm} x={58} y={12} />
+  <Piece of={lighthouse} x={72} y={13} />
+  <Piece of={mark} x={50} y={19} />
+  <Pacer name="crab" y={22} from={34} to={62} ms={300} rest={30} fg="#f97316"
+    right={['>oo<', '}oo{']}
+    left={['>oo<', '}oo{']}
+    sit={['}..{', '}oo{', '}..{', '}oo{']} />
+  <Pacer name="seal" y={19} from={58} to={82} ms={480} rest={60} fg="#9ca3af"
+    right={['__(°>', '_~(°>']}
+    left={['<°)__', '<°)~_']}
+    sit={['__(°>', '__(°>', '__(°o', '__(°>', '__(°>', '__(°o']} />
+  <Pacer name="turtle" y={21} from={48} to={74} ms={1100} rest={30} fg="#65a30d"
+    right={['(###)>']}
+    left={['<(###)']}
+    sit={['(###)>', '(###)>', '(###)-', '(###)-', '(###)>']} />
+</Scene>

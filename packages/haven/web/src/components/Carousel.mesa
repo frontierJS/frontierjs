@@ -1,0 +1,21 @@
+<script>
+  // Carousel.mesa — targets riding a loop on the scene it is inside: up the
+  // column at `x`, under the housing above `top`, down the column `apart` to
+  // the right and back under the one below `bottom` (`api/src/carousel.ts`).
+  // No one is told where a rider is; the shared clock puts it on the same cell
+  // on every terminal and in the server's answer to a bolt. The housings are
+  // the scene's own pieces; this claims the lane between them.
+  export let name
+  export let of      // the rider, a piece() block
+  export let x
+  export let apart
+  export let top
+  export let bottom
+  export let ms      // a row
+  export let n       // how many ride
+  export let rail    // the paint letter of the chain down each column
+
+  const scene = $context.scene
+  var mark = scene.carousel({ name, of, x, apart, top, bottom, ms, n, rail })
+  $.onDestroy(() => mark.remove())
+</script>

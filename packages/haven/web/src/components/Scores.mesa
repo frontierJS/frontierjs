@@ -1,0 +1,122 @@
+<script>
+  // Scores.mesa — the archery range's scoreboard. A bolt that strikes a target
+  // is scored by the server (`pointsFor` in `api/src/play.ts`) and laid in the
+  // room's memory as a `scored` trace, so the board is the room's last ten
+  // minutes of arrows (`TRACES.scored`) and a restart wipes it. A walk-in reads
+  // what still lasts from `rooms.traces`; after that each `bolt` event's
+  // scores are counted as its arrow lands, with the points shown beside the
+  // target for a moment. A row per member, the most points first.
+  //
+  // A route places it (`routes/range.mesa`), never the scene file, which is
+  // pinned and the editor's. The board's frame is the `scoreboard` piece.
+  import { at, tint } from '#cell'
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { members } from '@/resources/Member.mesa'
+  import { rooms } from '@/resources/Room.mesa'
+  import { FLY_MS } from '../../../api/src/bolt.ts'
+
+  var scene = $context.scene
+  var room  = $context.room
+  const SHOW_MS = 1_500
+  const INKS = ['#facc15', '#e5e7eb', '#d97706', '#9ca3af']
+
+  const board = scene.marks.find((m) => m.kind === 'piece' && m.piece.name === 'scoreboard') ?? null
+
+  let scores = []   // the `scored` traces still lasting, `{ x, y, id, by, points, at, until }`
+  let shown  = []   // points over a target as its arrow lands, `{ key, x, y, text, until }`
+  let nicks  = {}
+  let now    = Date.now()
+  let view   = scene.view
+  $.onDestroy(scene.subscribe(() => { view = scene.view }))
+
+  const asked = new Set()
+  function askNicks(ids) {
+    for (const id of ids) {
+      if (asked.has(id)) continue
+      asked.add(id)
+      members.service.get(id)
+        .then((row) => { nicks = { ...nicks, [id]: row.nick } })
+        .catch(() => {})
+    }
+  }
+
+  function count(laid) {
+    if (!laid.length) return
+    scores = [...scores, ...laid]
+    askNicks(laid.map((s) => s.by))
+  }
+
+  if (room) {
+    rooms.service.invoke('traces', room.id)
+      .then((all = []) => count(all.filter((t) => t.kind === 'scored')))
+      .catch(() => {})
+  }
+
+  const timers = new Set()
+  $.onDestroy(() => { for (const t of timers) clearTimeout(t) })
+
+  function onBolt(name, blast) {
+    if (name !== 'bolt' || !Array.isArray(blast?.flights)) return
+    const laid = (blast.laid ?? []).filter((l) => l.kind === 'scored')
+    if (!laid.length) return
+    const longest = Math.max(0, ...blast.flights.map((f) => f.path.length))
+    const t = setTimeout(() => {
+      timers.delete(t)
+      count(laid)
+      const until = Date.now() + SHOW_MS
+      shown = [...shown, ...laid.map((l) => ({ key: `${l.at}:${l.x},${l.y}`, x: l.x - 3, y: l.y, text: `+${l.points}`, until }))]
+    }, longest * FLY_MS)
+    timers.add(t)
+  }
+
+  if (room) {
+    var client = getClient()
+    client?.on('event', onBolt)
+    $.onDestroy(() => client?.off('event', onBolt))
+  }
+
+  $.onDestroy(scene.task('scores', () => {
+    now = Date.now()
+    scores = scores.filter((s) => s.until > now)
+    shown  = shown.filter((s) => s.until > now)
+  }, { every: 500 }))
+
+  /** A row per member: their hits and their points, the most points first. */
+  function rows(list, names, inner) {
+    const by = new Map()
+    for (const s of list) {
+      const r = by.get(s.by) ?? { by: s.by, hits: 0, bulls: 0, total: 0 }
+      r.hits++
+      r.total += s.points
+      if (s.points === 10) r.bulls++
+      by.set(s.by, r)
+    }
+    const NICK_W = inner.w - 18
+    const head = `${'archer'.padEnd(NICK_W)}  hits  bulls  pts`
+    if (!by.size) return [{ text: head }, { text: 'no arrow has landed yet', color: INKS[3] }]
+    return [{ text: head }, ...[...by.values()]
+      .sort((a, b) => b.total - a.total || b.bulls - a.bulls)
+      .slice(0, inner.h - 1)
+      .map((r, i) => ({
+        color: INKS[Math.min(i, INKS.length - 1)],
+        text: `${(names[r.by] ?? '…').slice(0, NICK_W).padEnd(NICK_W)}  ${String(r.hits).padStart(4)}  ${String(r.bulls).padStart(5)}  ${String(r.total).padStart(3)}`,
+      }))]
+  }
+
+  const inner = board ? { x: board.x + board.piece.inner.dx, y: board.y + board.piece.inner.dy, ...board.piece.inner } : null
+  $: lines = inner ? rows(scores, nicks, inner) : []
+</script>
+
+{#if inner}
+  {#each lines as l, i (i)}
+    <pre class="line" {@attach at(inner.x - view.x, inner.y + i - view.y)} {@attach tint(l.color)}>{l.text}</pre>
+  {/each}
+{/if}
+
+{#each shown as s (s.key)}
+  <pre class="line" {@attach at(s.x - view.x, s.y - view.y, 12)} {@attach tint('#facc15')}>{s.text}</pre>
+{/each}
+
+<style>
+  .line { margin: 0; font: inherit; line-height: inherit; white-space: pre; overflow: hidden }
+</style>

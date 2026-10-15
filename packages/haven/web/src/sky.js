@@ -263,7 +263,8 @@ export function hold(field, value) {
 /** The value held in place of the clock's for `field`, or null. A screen's hold outranks the environment's pin: a person who typed the word means it. */
 export const heldOf = (field) => held[field] ?? pinned(field)
 
-// A paint asks the almanac once per cell at one `ms`, so the last answer is kept.
+// `look()` asks the almanac once per cell at one `ms`, so the last answer is kept.
+/** @type {{ key: string | null, almanac: any }} */
 let last = { key: null, almanac: null }
 
 /** The world `ms` into the clock: `{ darkness, season, weather, wind, moon, temp, ground }`, each the clock's unless this screen holds it. */

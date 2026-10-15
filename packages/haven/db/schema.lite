@@ -95,6 +95,9 @@ model Room {
 
   messages Message[]
 
+  /// The checkers a pair is playing in their booth, if they are.
+  game     Game?
+
   /// A room is a channel bound to this row (`api/src/rooms.ts`), so the read
   /// policy is the join: a banned member is refused the room and evicted from
   /// one they stand in on the next write. A booth is joined by its pair alone
@@ -140,6 +143,40 @@ model Message {
   @@allow('create', auth().bannedAt == null && (room.pairLoId == null || room.pairLoId == auth().id || room.pairHiId == auth().id))
 
   @@trail(audit)
+}
+
+/// The checkers a pair plays across their table (`api/src/checkers.ts`,
+/// `IDEAS/haven.md` 9.1b): one row per booth, begun again in place when a game
+/// is over. Written by `games` as the system and read by the pair alone, as
+/// the booth's lines are -- so a move is never a thing a client says about the
+/// board, only a path the service checks against the rules before it writes.
+model Game {
+  id       Int     @id
+  roomId   Int     @unique
+  room     Room    @relation(fields: [roomId], references: [id])
+
+  /// Red moves first and is the one who began the game; black is the other
+  /// member of the pair. Plain columns, as Room's pair is.
+  redId    Int
+  blackId  Int
+
+  /// Sixty-four characters, rank 8 first: `r` `R` red's man and king, `b` `B`
+  /// black's, `.` empty.
+  board    String  @length(64, 64)
+
+  /// Whose move it is, `r` or `b`.
+  turn     String  @regex("^[rb]$", "a turn is r or b")
+
+  /// Set when the side to move has no move left, or resigned.
+  winnerId Int?
+
+  /// The last move said back, `c3-e5`.
+  last     String?
+
+  createdAt DateTime @default(now())
+
+  @@gate("3.8.8.8")
+  @@allow('read', auth().bannedAt == null && (room.pairLoId == auth().id || room.pairHiId == auth().id))
 }
 
 /// A member's aye or nay on one idea of `IDEAS/overview.md`, as it stands in

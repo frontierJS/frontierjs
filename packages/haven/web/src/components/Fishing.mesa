@@ -1,0 +1,48 @@
+<script>
+  // Fishing.mesa — `/fish` (`IDEAS/haven.md` § the fishing pier): asks the
+  // server to cast (`api/src/fishing.ts`), which rolls what bites off its own
+  // almanac and puts the catch in this member's pack. The answer names the
+  // water cell the float sits on and how long, so this screen draws a float
+  // bobbing there and says the catch when it comes up. Drawn on this screen
+  // only and never sent; a cast away from the water is refused by the server.
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { inView } from '@/crowd.js'
+  import { at, tint } from '#cell'
+
+  export let room
+  export let stage
+  export let view
+  // Says a line in the note under the art once the float comes up.
+  export let tell
+
+  var verbs = $context.commands
+  var timer = null
+  $.onDestroy(() => clearTimeout(timer))
+
+  const BOB_MS = 400
+  const FLOAT  = ['o', '°']
+  const INK    = '#f87171'
+
+  let float = null
+  let beat  = 0
+  $.onDestroy(stage.task('fishing', () => { if (float) beat = (beat + 1) % 2 }, { every: BOB_MS }))
+
+  async function fish() {
+    try {
+      const cast = await getClient().service('fishing').invoke('cast', null, { roomId: room.id })
+      clearTimeout(timer)
+      float = cast.at
+      timer = setTimeout(() => { float = null; tell(cast.line) }, cast.biteMs)
+      return 'you cast your line...'
+    } catch (e) { return e.message }
+  }
+
+  $.onDestroy(verbs.add({ word: 'fish', help: '/fish — cast a line, at the water\'s edge', run: fish }))
+
+  /** The float at its cell of the view, or nothing out of view or in the dark. */
+  const drawn = (f, v) => (f && inView(f, v) && stage.light(f.x, f.y) !== 'dark' ? [{ x: f.x - v.x, y: f.y - v.y }] : [])
+</script>
+
+{#each drawn(float, view) as c (`${c.x},${c.y}`)}
+  <p {@attach at(c.x, c.y, 9)} {@attach tint(INK)}>{FLOAT[beat]}</p>
+{/each}

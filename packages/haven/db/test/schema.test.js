@@ -171,6 +171,14 @@ describe('a booth', () => {
     expect(await sys.message.count({ where: { roomId: booth.id } })).toBe(2)
   })
 
+  test('holds a game its pair reads and nobody writes below the system', async () => {
+    const game = await sys.game.create({ data: { roomId: booth.id, redId: sam.id, blackId: ana.id, board: '.'.repeat(64), turn: 'r' } })
+    expect((await as(ana).game.findMany()).map(g => g.id)).toEqual([game.id])
+    expect(await as(mod).game.findMany()).toEqual([])
+    await expect(as(sam).game.update({ where: { id: game.id }, data: { turn: 'b' } })).rejects.toThrow()
+    await expect(as(sam).game.create({ data: { roomId: booth.id, redId: sam.id, blackId: ana.id, board: '.'.repeat(64), turn: 'r' } })).rejects.toThrow()
+  })
+
   test('leaves the square a square: no pair, everybody reads it', async () => {
     expect((await as(mod).room.findMany({ where: { slug: 'square' } })).length).toBe(1)
     await as(mod).message.create({ data: { roomId: square.id, body: 'hi all' } })

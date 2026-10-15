@@ -1,0 +1,7 @@
+<script>
+  // The island -- across the water, by the ferry from the docks.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Island from '@/scenes/Island.mesa'
+</script>
+
+<WalkIn slug="island"><Island /></WalkIn>

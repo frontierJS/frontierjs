@@ -1,0 +1,56 @@
+<script>
+  // Range.mesa — the archery range, south of the woods across a border in its
+  // south wall (`IDEAS/haven.md` Phase 11). A firing line runs down the field,
+  // and at its far end four targets ride a carousel, up one column and down
+  // the other, with bales behind them; the scoreboard hangs by the gate. A
+  // bolt (9.5) meets a target where it is when the bolt gets there, so a
+  // shot is led. One that strikes is scored by the server and the board is
+  // written by `Scores.mesa`, which the route places; a bolt that goes
+  // between the riders scorches the bales. Quivers lie behind the line.
+  // The picture this draws is `range.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Carousel from '@/components/Carousel.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+  import { housing, quiver, scoreboard, target } from '@/pieces/archery.js'
+
+  // Chalked on the grass and walked on.
+  const line = piece('firing line', Array(22).fill(':').join('\n'), Array(22).fill('c').join('\n'), { floor: true })
+
+  // A wind flag at the head of the line, flapping.
+  const flag = piece('flag', '|>\n|\n|', 'lF\nl\nl')
+
+  // The carousel's columns are 9 apart from x 72, between housings 18 wide from x 71.
+  const lid  = housing(18, 4, 9, true)
+  const base = housing(18, 4, 9, false)
+
+  const bales = piece('bales', Array(22).fill('%%').join('\n'), Array(22).fill('hH').join('\n'))
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    e: { fg: '#a16207' },
+    l: { fg: '#9ca3af' },
+    c: { fg: '#e7e5e4' },
+    h: { fg: '#ca8a04' },
+    H: { fg: '#a16207' },
+    F: { fg: ['#ef4444', '#dc2626', '#ef4444'], chars: '>)>', ms: 400, wave: true },
+  }
+</script>
+
+<Scene slug="range" palette={PALETTE} spawn={{ x: 12, y: 2 }}>
+  <Piece of={frame} />
+  <Door  x={10} y={0} w={6} to="/woods/" />
+  <Piece of={scoreboard} x={3} y={4} />
+  <Piece of={line}   x={44} y={2} />
+  <Piece of={flag}   x={46} y={2} />
+  <Piece of={lid}    x={71} y={2} />
+  <Carousel name="carousel" of={target} x={72} apart={9} top={4} bottom={21} ms={220} n={4} rail="l" />
+  <Piece of={base}   x={71} y={22} />
+  <Piece of={bales}  x={90} y={2} />
+  <Piece of={quiver} x={8}  y={18} />
+  <Piece of={quiver} x={24} y={21} />
+  <slot />
+</Scene>

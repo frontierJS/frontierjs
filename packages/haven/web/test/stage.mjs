@@ -39,15 +39,22 @@ export const SCENES = [
   { name: 'Road',   slug: 'road',   path: '/road/' },
   { name: 'Woods',  slug: 'woods',  path: '/woods/' },
   { name: 'Docks',  slug: 'docks',  path: '/docks/' },
+  { name: 'Island', slug: 'island', path: '/island/' },
   { name: 'Workshop', slug: 'workshop', path: '/workshop/' },
   { name: 'TownHall', slug: 'townhall', path: '/townhall/' },
   { name: 'Cellar', slug: 'cellar', path: '/cellar/' },
   { name: 'Glade',  slug: 'glade',  path: '/glade/' },
+  { name: 'Canal',  slug: 'canal',  path: '/canal/' },
+  { name: 'Mine',   slug: 'mine',   path: '/mine/' },
+  { name: 'Range',  slug: 'range',  path: '/range/' },
   { name: 'Lane',   slug: 'lane',   path: '/lane/' },
+  { name: 'Ravine', slug: 'ravine', path: '/ravine/' },
   { name: 'Jordan', slug: 'jordan', path: '/jordan/' },
   { name: 'Vlad',   slug: 'vlad',   path: '/vlad/' },
   { name: 'Colin',  slug: 'colin',  path: '/colin/' },
   { name: 'Sheriff', slug: 'sheriff', path: '/sheriff/' },
+  { name: 'Market', slug: 'market', path: '/market/' },
+  { name: 'Lodge',  slug: 'lodge',  path: '/lodge/' },
 ]
 
 let loader = null

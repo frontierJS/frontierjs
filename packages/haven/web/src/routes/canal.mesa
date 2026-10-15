@@ -1,0 +1,8 @@
+<script>
+  // The underground canal -- down the square's well, and up again under the
+  // cellar, the glade, the docks and the mine.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Canal from '@/scenes/Canal.mesa'
+</script>
+
+<WalkIn slug="canal"><Canal /></WalkIn>

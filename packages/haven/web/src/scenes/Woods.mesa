@@ -4,15 +4,19 @@
   // and the signpost back. The east edge is a border into the square
   // (`IDEAS/haven.md` 6.2), and the square's west edge is the run back. The
   // west wall is the fence, and its plank at the path's end is loose: a hidden
-  // door to the glade (6.6). The picture this draws is `woods.frame.txt`,
+  // door to the glade (6.6). A gap in the south wall is the border into the
+  // archery range. The log cabin north of the path is the lodge's door
+  // (`Lodge.mesa`). The picture this draws is `woods.frame.txt`,
   // which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Row   from '@/components/Row.mesa'
   import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
+  import { quiver } from '@/pieces/archery.js'
 
   // The path is floor, walked on.
   const path = piece('path', [
@@ -51,8 +55,25 @@ ppp
  l
 `)
 
-  // Five arrows, lying where the woods are open. Walked onto, so a floor piece.
-  const quiver = piece('quiver', '=>', 'ee', { floor: true, pickup: { item: 'arrow', n: 5 } })
+  const cabin = piece('cabin', String.raw`
+    ~
+   _||________
+  /===========\
+ /=============\
+/===============\
+ |[] =LODGE= []|
+ |=====.-.=====|
+ |=====|n|=====|
+`, String.raw`
+    m
+   RqqRRRRRRRR
+  RRRRRRRRRRRRR
+ RRRRRRRRRRRRRRR
+RRRRRRRRRRRRRRRRR
+ WyysssssssssyyW
+ WWWWWWuuuWWWWWW
+ WWWWWWuduWWWWWW
+`)
 
   const signpost = piece('signpost', String.raw`
 [square]>
@@ -74,6 +95,12 @@ eeeeeeeee
     p: { fg: ['#f472b6', '#fb7185', '#f472b6', '#e879f9'], ms: 1500, flicker: true },
     t: { fg: '#166534' },
     T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
+    R: { fg: '#7c2d12' },
+    W: { fg: '#a16207' },
+    q: { fg: '#78716c' },
+    s: { fg: '#fbbf24' },
+    y: { fg: ['#fde047', '#fbbf24', '#fde047', '#f59e0b'], ms: 800, flicker: true, light: 2 },
+    m: { fg: ['#9ca3af', '#d1d5db', '#6b7280'], chars: '~(~)', ms: 700, wave: true },
   }
 </script>
 
@@ -81,11 +108,13 @@ eeeeeeeee
   <Piece of={frame} />
   <Door  x={96} y={1} h={24} to="/" />
   <Door  x={1}  y={12} to="/glade/" hidden />
+  <Door  x={10} y={25} w={6} to="/range/" />
   <Piece of={path} x={3} y={12} />
   <Piece of={tree} x={4}  y={1} />
   <Piece of={tree} x={20} y={3} />
   <Piece of={tree} x={38} y={1} />
-  <Piece of={tree} x={56} y={2} />
+  <Piece of={cabin} x={53} y={2} />
+  <Door  x={61} y={9} to="/lodge/" />
   <Piece of={tree} x={72} y={1} />
   <Piece of={tree} x={8}  y={16} />
   <Piece of={tree} x={28} y={18} />
@@ -103,4 +132,8 @@ eeeeeeeee
   <Piece of={quiver} x={58} y={11} />
   <Piece of={quiver} x={72} y={15} />
   <Piece of={quiver} x={44} y={19} />
+  <Pacer name="owl" night y={9} from={4} to={22} ms={700} rest={90} flee={40} fg="#a8a29e"
+    right={['(o,o)']}
+    left={['(o,o)']}
+    sit={['(o,o)', '(o,o)', '(o,o)', '(-,o)', '(o,o)', '(o,o)', '(-,-)', '(o,o)']} />
 </Scene>

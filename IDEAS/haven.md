@@ -1020,6 +1020,19 @@ knocks the other back on both screens and removes neither.
   the hardest thing in the framework to get right.
   - Needs 12.4: `/roll` and a table game are verbs, the game a mode while
     seated.
+  - [x] 9.1a Dice. `/roll 2d6` is said by the dice, a keyless member, so a
+    roll is whatever they say; a mod's `pike, roll 2d6` makes an agent throw.
+  - [x] 9.1b Checkers. Sit across a table and the booth is the board: `/checkers`
+    begins a game, `/move c3 d4` (a capture chain `c3 e5 g7`) moves, `/resign`
+    gives it up. The game is a `Game` row per booth, written only by
+    `games.service.ts` as the system after `checkers.ts` has checked the path
+    -- a client never says what the board is -- and read by the pair alone. The
+    board draws in the booth's middle column from the viewer's side, the
+    conversation under it; each move is told to the pair as a `checkers` event
+    and each screen reads the game again. American rules, a capture compulsory
+    and a chain continued. Left open: the agents do not play (they stand in the
+    tavern, not in a booth); a booth's game has no clock, so one walked away
+    from stays on until `/resign`.
 - [ ] 9.2 The framework quarter. A scene where each building is a package —
   the Litestone quarry, the Junction crossroads, the Mesa workshop, the
   Caravan stables. Inside, a wall reads its `PROJECT_STATE.md`; a red CI run
@@ -1614,8 +1627,8 @@ else's package.)
 
 Not steps. Each becomes one at the end of the plan when it is wanted. The
 first group is the runner's pattern: from this machine, drawn on this screen
-only. The second is shared, so it is rows or presence. The third is scenes,
-each tagged with the mechanism it would add, cheapest first.
+only. The second is shared, so it is rows or presence. The third is scenes and
+the fourth animals, each tagged with the mechanism it would add, cheapest first.
 
 **This machine's**
 
@@ -1660,7 +1673,13 @@ What's built already carries these:
   closed issue or deleted package, its epitaph from `ISSUES_ARCHIVE.md`.
 - **The market.** Each stall is a booth (8.5), so two members at one stall share
   a conversation. A stall a member rents is plots (9.3) at a smaller scale, and
-  could come before 3.2's mod standing does.
+  could come before 3.2's mod standing does. Built (2026-10-15), north of the
+  road through the gap in its north fence rather than off the square, since a
+  border's run sits at the same column in both scenes (`Market.mesa`): seven
+  stalls, each a keeper's stool behind the counter and a customer's in front
+  as a seat pair, so `Sitting.mesa` walks the two into a booth unchanged, and
+  the counter's lantern a `burn` lit while either stool is taken. Renting a
+  stall is not built: it waits on 9.3.
 - **Rooftops.** A ladder in a house, there at night only. A narrow run where a
   step off the edge is a door back to the square at the cell you fell from.
 - **The old town.** A museum off the town hall where each gallery is a scene as
@@ -1683,7 +1702,14 @@ One mechanism each:
   light, still a pure function of the clock and so still sent nowhere.
 - **The mine,** under 9.2's quarry. Pitch dark, and a figure carries a lantern —
   a light that moves with its member, so the others are seen by theirs. This is
-  what gives `FOG` a reason to come back on.
+  what gives `FOG` a reason to come back on. Built (2026-10-15), under the
+  road rather than the quarry, since 9.2 is not built: a pithead on the road
+  (`Mine.mesa`), a shaft, a railed gallery, an ore room, a crawl and a flooded
+  chamber, and the way on down to the canal. `<Scene lantern={r}>` names the
+  fog and a radius: SIGHT shrinks to `r`, and every figure's cell is a
+  lantern another screen sees by -- sight, not a lamp, so it stops at rock.
+  The map still keeps the whole picture at mount (6.4), so `/map` shows a
+  dark scene's every tunnel after one visit.
 - **The hedge maze.** Generated from the date, so every terminal walks the same
   maze and it changes at midnight with nothing stored, as the sky does (7.2).
   The first member to reach the middle is announced by 8.3's crier.
@@ -1706,26 +1732,41 @@ One mechanism each:
 - **The underground canal,** down the square's well (6.1). Tunnels join the
   cellar, the docks and the glade, so a boat is fast travel. It is pitch dark
   and uses the mine's lantern: whichever of the two is built first pays for the
-  other.
+  other. Built (2026-10-15) with the mine (`Canal.mesa`): the well's ladder,
+  the docks' culvert, the cellar's steps and the glade's are doors, and the
+  mine's way down a fifth; the canal's ways up into the cellar and the glade
+  are hidden, as each is from above. The boat is moored, not sailed: the fast
+  travel is five places one screen apart.
 - **The engine room,** under the town hall. Haven's own API as a place: a rack
   per service blinking at its request rate (`app.registerMetricsSource`) and
   Caravan jobs as carts on rails. The mechanism is a metrics feed reaching a
   scene.
 - **The archery range.** Targets for 9.5's arrow, so it lands somewhere before
-  it lands on a member. Its scoreboard is rows.
+  it lands on a member. Its scoreboard is rows. Built: `/range/`, south of the
+  woods across a border in their south wall; three targets (`pieces/archery.js`,
+  `TARGETS` in `world.js`) scored by the server on the row a bolt struck, or
+  the column flying north or south -- 10 the bull, 5 the ring, 1 the rim
+  (`pointsFor` in `api/src/play.ts`) -- as a `scored` trace in the room's
+  memory, so the board (`Scores.mesa`) is the room's last ten minutes and a
+  restart wipes it: the owner's pick over a model. A miss scorches the bales.
+  No drive kept; a throwaway pty probe proved the bull, the `+10`, the board's
+  row and a joiner handed it. Left open: the woods' quivers are the range's
+  only supply but its own two, and the flag ignores 7.8's wind.
 
 These need server state:
 
 - **The post office.** A mailbox per member. A whisper sent while its member is
   offline waits there until they sign in — 7.1's `toId` row with a read flag.
-- **The ferry.** The ship at the docks sails on a timetable, and its door is
-  there only while it is docked — 6.6's night door on a schedule. It runs to
-  an island, which is Haven's far, quiet place.
-- **The fishing pier,** off the docks. `/fish` is a roll the server makes, as
-  9.1's dice are. The catch is read off weather, moon, season and hour (7.3 to
-  7.10), so a rare fish shows up on a full-moon night in a snowstorm, and it
-  goes into 9.9's inventory. This is the first time the almanac is gameplay
-  rather than scenery.
+- **The ferry's timetable.** The ferry and the island it runs to are built
+  (`Docks.mesa`, `Island.mesa`, `pieces/ferry.js`), always docked at both
+  ends. Left: it sails on a timetable, and its door is there only while it is
+  docked — 6.6's night door on a schedule.
+- **The fishing pier's audience.** `/fish` is built (`api/src/fishing.ts`,
+  `fishing.cast`, `Fishing.mesa`): at the water's edge a server roll weighed
+  by the server's almanac (a moonfish only on a full-moon night, most often in
+  snow), the catch an item in 9.9's inventory, the float drawn on the
+  caster's screen. Left: the room sees it — a float on every screen, and a
+  rare catch cried in the square — and a drive of its own.
 - **The greenhouse.** A pot per member: a seed grows over real days and wilts
   if the member stays away, and the season decides what will grow. A pot is a
   row, 9.3's plots at the size of a flowerpot.
@@ -1735,6 +1776,57 @@ These need server state:
 - **The troll bridge.** A 14.8 line-bank NPC guards a bridge with a riddle. The
   answer is graded on the server, so no client holds it, and the door opens for
   that member only.
+
+**Animals**
+
+There are two kinds today. A pacer (4.5) is a scene's animal on the wall
+clock, sent nowhere: the tavern cat and the glade deer. A pet (8.2) is one
+glyph that follows its member. Of the scenes below only the woods has no
+pacer yet.
+
+Pacers the existing fields carry (`right`, `left`, `sit`, `flee`) — placed,
+each a `<Pacer>` in its scene file, a crab and gull at the docks, pigeons in the
+square, a rat in the cellar, a chicken in the lane, a hound in the sheriff's
+house:
+
+- **The docks crab,** `(\/)°°(\/)`. It walks sideways, so its left frames are
+  its right ones.
+- **The docks gull,** `~v~` / `-v-`, patrolling the pier and fleeing a figure.
+  It belongs to the fishing pier.
+- **Square pigeons,** `<'` / `<,`. They scatter when a figure steps near, which
+  is `flee` as it already works, and they come back.
+- **The cellar rat,** `~~(_'>`, one floor under the tavern cat.
+- **A lane chicken,** `>(')`, its `sit` frames pecking (`>(.)`).
+- **The sheriff's old hound.** Nearly all `sit`, with a `zZ` frame, and it walks
+  rarely.
+
+Pacers that keep hours take `night: true`, the key 6.6's `<Door night>` already
+spells and answered by the same `isNight()` (`web/src/sky.js`). A second
+spelling of the same gate is what this rules out: a day-only animal is
+`night: false` (absent means always), and the field joins the pacer's whitelist
+in `web/src/world.js` as `flee` did:
+
+- **The woods owl,** `(o,o)` blinking `(-,o)`, there only in the dark. It is the
+  first animal that tells the time, so it is the one to build `night` with.
+- **A glade rabbit** `(\_/)` by day, and **fireflies**, a `*` / `.` blink, at
+  night. Fireflies in summer only would need a season gate, which the haunted
+  house's calendar door needs too, so the two share one shape when either is
+  built.
+- **The docks otter** takes the pier at night when the gull leaves it.
+- **The island's seal and turtle,** slow animals at the ferry's far, quiet end.
+
+More pets, each a glyph that is not a Latin letter, since a figure is its
+initial: a duckling `ɞ`, a hedgehog `ж`, a crow `ɤ`, a frog `ȣ`. Each glyph
+must render in VS Code's terminal font, and `ɞ` and `ȣ` may come out as tofu.
+
+Gameplay, which needs server state:
+
+- **The gull takes the bait.** A missed `/fish` has a small chance the gull
+  gets it, rolled by the server as the catch is.
+- **Rare animals on rare skies,** by the fishing pier's rule for a rare fish: a
+  heron in fog, a white stag in the glade on a full-moon night in snow.
+- **Feeding the cat.** Offering a fish from 9.9's inventory to the tavern cat is
+  the first animal a member acts on rather than watches.
 
 ## Open questions
 

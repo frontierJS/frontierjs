@@ -57,7 +57,7 @@
   const ITEM_NAMES = Object.keys(ITEMS)
   const rows = (width, x, y) => hud({
     w: width, nick: nicks[here.get().self?.userId] ?? '…', glyph, room: room.name, way: WAY[facing] ?? '—',
-    items: ITEM_NAMES, held, mini: snap.rows, at: { x: Math.floor(x / SCALE.x), y: Math.floor(y / SCALE.y) },
+    items: ITEM_NAMES.filter((i) => i in held), held, mini: snap.rows, at: { x: Math.floor(x / SCALE.x), y: Math.floor(y / SCALE.y) },
   })
 
   // The stage's size is set by `#paint` after this mounts, so it is read again
@@ -67,7 +67,7 @@
 
   async function list() {
     await load()
-    const rows = Object.entries(held).filter(([, n]) => n > 0).map(([item, n]) => `${n} ${item}${n === 1 ? '' : 's'}`)
+    const rows = Object.entries(held).filter(([, n]) => n > 0).map(([item, n]) => `${n} ${n === 1 ? item : ITEMS[item]?.many ?? item}`)
     return rows.length ? `you carry ${rows.join(', ')}` : 'you carry nothing'
   }
 

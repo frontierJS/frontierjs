@@ -1,0 +1,136 @@
+<script>
+  // Market.mesa — the market, north of the road through the gap in its north
+  // fence; the south edge is the border back down. Each stall is a booth
+  // (8.5): a stool behind the counter and one in front are a seat pair, so two
+  // members at one stall are walked into a room of their own, as at a tavern
+  // table. The
+  // keeper's stool is reached from behind, under the awning. The counter's
+  // lantern burns while either stool is taken, so an open stall is seen from
+  // across the scene. The picture this draws is `market.frame.txt`, which
+  // `scenes.test.js` pins. A hen pecks along the south edge.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+  import { lamp }  from '@/pieces/lamp.js'
+
+  // `wares` and `inks` are the nine cells of the counter between its posts,
+  // the lantern at their middle.
+  const stall = (name, awning, wares, inks) => piece(name, String.raw`
+ ___________
+/_/_/_/_/_/_\
+ |    o    |
+ |${wares}|
+      o
+`, String.raw`
+ ${awning.repeat(11)}
+${awning}${('W' + awning).repeat(6)}
+ l    s    l
+ l${inks}l
+      s
+`, { overhead: 2, spots: {
+    keeper:   { kind: 'seat', dx: 6, dy: 2, stand: { dx: 5, dy: 2 }, mate: 'customer' },
+    customer: { kind: 'seat', dx: 6, dy: 4, stand: { dx: 5, dy: 4 }, mate: 'keeper' },
+    lantern:  { kind: 'burn', dx: 6, dy: 3 },
+  } })
+
+  const fruit   = stall('fruit-stall',   'r', '@o@oio@o@', 'rOrOyOrOr')
+  const fish    = stall('fish-stall',    'b', '><> i <><', 'BBB y BBB')
+  const cloth   = stall('cloth-stall',   'v', '#=#=i=#=#', 'vmvmymvmv')
+  const pots    = stall('pot-stall',     'o', 'uUuUiUuUu', 'uUuUyUuUu')
+  const flowers = stall('flower-stall',  'g', '*%*%i%*%*', 'pPpPyPpPp')
+  const bread   = stall('bread-stall',   'k', '()()i()()', 'kkkkykkkk')
+  const books   = stall('book-stall',    'c', '[][]i[][]', 'cCcCyCcCc')
+
+  const crate = piece('crate', String.raw`
+ _____
+|_|_|_|
+|_|_|_|
+`, String.raw`
+ wwwww
+wwwwwww
+wwwwwww
+`)
+
+  const barrel = piece('barrel', String.raw`
+ .--.
+(====)
+ '--'
+`, String.raw`
+ wwww
+wuuuuw
+ wwww
+`)
+
+  const cart = piece('cart', String.raw`
+ ______
+|@o@o@o|
+ O    O
+`, String.raw`
+ wwwwww
+wrOrOrOw
+ l    l
+`)
+
+  const signpost = piece('signpost', String.raw`
+v[road]
+   |
+  _|_
+`, String.raw`
+eeeeeee
+   l
+  lll
+`, { floor: true })
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    l: { fg: '#9ca3af' },
+    s: { fg: '#92400e' },
+    e: { fg: '#a16207' },
+    w: { fg: '#b45309' },
+    u: { fg: '#92400e' },
+    U: { fg: '#c2410c' },
+    W: { fg: '#e5e7eb' },
+    r: { fg: '#dc2626' },
+    O: { fg: '#f97316' },
+    b: { fg: '#2563eb' },
+    B: { fg: '#94a3b8' },
+    v: { fg: '#7c3aed' },
+    m: { fg: '#db2777' },
+    o: { fg: '#ea580c' },
+    g: { fg: '#16a34a' },
+    p: { fg: '#f472b6' },
+    P: { fg: '#facc15' },
+    k: { fg: '#d6b98c' },
+    c: { fg: '#0d9488' },
+    C: { fg: '#a16207' },
+    y: { fg: ['#fde047', '#fbbf24', '#fef08a'], chars: 'i!i', ms: 300, flicker: true },
+  }
+</script>
+
+<Scene slug="market" palette={PALETTE} spawn={{ x: 46, y: 23 }}>
+  <Piece of={frame} />
+  <Door  x={44} y={25} w={6} to="/road/" />
+  <Piece of={signpost} x={56} y={21} />
+  <Piece of={lamp} x={42} y={4} />
+  <Piece of={lamp} x={55} y={4} />
+  <Piece of={fruit}   x={6}  y={3} />
+  <Piece of={fish}    x={22} y={3} />
+  <Piece of={cloth}   x={63} y={3} />
+  <Piece of={pots}    x={79} y={3} />
+  <Piece of={flowers} x={10} y={13} />
+  <Piece of={bread}   x={28} y={13} />
+  <Piece of={books}   x={50} y={13} />
+  <Piece of={barrel} x={3}  y={14} />
+  <Piece of={barrel} x={70} y={14} />
+  <Piece of={crate}  x={84} y={14} />
+  <Piece of={crate}  x={84} y={10} />
+  <Piece of={cart}   x={20} y={20} />
+  <Pacer name="hen" y={24} from={3} to={90} ms={380} rest={24} flee={50} fg="#f5f5f4"
+    right={["('>", "('>"]}
+    left={["<')", "<')"]}
+    sit={["('v", "('>", "('v", "('v"]} />
+</Scene>

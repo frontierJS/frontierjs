@@ -10,7 +10,16 @@ export const HEIGHT = 5
 export const ROWS   = HEIGHT - 2
 
 /** What an item is drawn as in its slot, three cells wide. */
-const ICONS = { arrow: '-->' }
+const ICONS = {
+  arrow:    '-->',
+  minnow:   '><>',
+  perch:    '>#>',
+  trout:    '>=>',
+  catfish:  '>~>',
+  eel:      '~~>',
+  pike:     '>>>',
+  moonfish: '>*>',
+}
 
 const LEFT   = 20
 const RIGHT  = 18

@@ -12,8 +12,7 @@ import { verifyRequest } from '@frontierjs/toolbelt/signature'
 import type { TransportContext } from '@frontierjs/junction'
 
 import type { HavenAuth } from './auth.ts'
-import { CRIER } from './crier.ts'
-import { DICE } from './dice.ts'
+import { isVoice } from './keyless.ts'
 
 export const LOGIN_PATH = '/haven/login'
 
@@ -69,7 +68,7 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     if (!member) {
       if (typeof body.nick !== 'string' || !body.nick) return ctx.json({ message: 'A first login names the nick this key will walk in as.' }, 400)
       const nick  = body.nick.trim().toLowerCase()
-      const taken = nick === CRIER || nick === DICE || await sys.member.findFirst({ where: { nick }, select: { id: true } })
+      const taken = isVoice(nick) || await sys.member.findFirst({ where: { nick }, select: { id: true } })
       if (taken) return ctx.json({ message: `The nick '${body.nick}' is taken. Choose another.` }, 409)
       member = await sys.member.create({ data: { nick: body.nick, publicKey }, select: { id: true, nick: true, role: true } })
       await opts.welcome?.(member.nick)

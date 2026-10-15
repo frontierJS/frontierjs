@@ -1,7 +1,8 @@
 <script>
   // Docks.mesa — the docks south of the square: a stone quay with crates,
-  // barrels, bollards and lamps, a pier out over the water, and a boat
-  // moored beside it. A plank of the pier crumbles once a figure has stepped
+  // barrels, bollards and lamps, a pier out over the water, and the ferry
+  // moored beside it, a gangplank from the pier to its deck. Stepping aboard
+  // is the door to the island. A plank of the pier crumbles once a figure has stepped
   // on it and off again (`crumbles`, `stage.js`). The north edge is a border into the square
   // (`IDEAS/haven.md` 6.2), and the square's south edge is the run back.
   // The picture this draws is `docks.frame.txt`, which `scenes.test.js`
@@ -9,22 +10,24 @@
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
   import { piece }  from '@/pieces/index.js'
   import { frame }  from '@/pieces/frame.js'
   import { lamp }   from '@/pieces/lamp.js'
   import { barrel } from '@/pieces/barrel.js'
+  import { ferry, FERRY, GANGWAY, hull } from '@/pieces/ferry.js'
 
-  // The water is one block with the pier and the boat cut out of it, since
-  // a cell has one owner; the boat brings its own water round it.
-  const PIER = { x: 46, w: 8, rows: 13 }
-  const BOAT = { x: 56, y: 3, w: 18, h: 6 }
-  const waterRow = (dy) => [...Array(92)].map((_, dx) => {
-    const x = 3 + dx
-    if (dy < PIER.rows && x >= PIER.x && x < PIER.x + PIER.w) return ' '
-    if (dy >= BOAT.y && dy < BOAT.y + BOAT.h && x >= BOAT.x && x < BOAT.x + BOAT.w) return ' '
-    return '~'
-  }).join('')
-  const rows = [...Array(16)].map((_, dy) => waterRow(dy))
+  // The water is one block with the pier, the ferry and its plank cut out of
+  // it, since a cell has one owner; `BOAT` and `PLANK` are where the tree
+  // below places them.
+  const PIER  = { x: 46, w: 8, rows: 13 }
+  const BOAT  = { x: 56, y: 12 }
+  const PLANK = { x: PIER.x + PIER.w, y: BOAT.y + GANGWAY.dy, w: BOAT.x + GANGWAY.dx - PIER.x - PIER.w }
+  const aboard = (x, y) => x >= BOAT.x && x < BOAT.x + FERRY.w && y >= BOAT.y && y < BOAT.y + FERRY.h && hull(x - BOAT.x, y - BOAT.y)
+  const dry = (x, y) => (y < 9 + PIER.rows && x >= PIER.x && x < PIER.x + PIER.w)
+    || (y === PLANK.y && x >= PLANK.x && x < PLANK.x + PLANK.w)
+    || aboard(x, y)
+  const rows = [...Array(16)].map((_, dy) => [...Array(92)].map((_, dx) => dry(3 + dx, 9 + dy) ? ' ' : '~').join(''))
   const water = piece('water', rows.join('\n'), rows.map((r) => r.replace(/~/g, 'b')).join('\n'))
 
   const quay = (width) => piece('quay', '_'.repeat(width), 'q'.repeat(width))
@@ -35,21 +38,9 @@
     [...Array(PIER.rows)].map(() => 'u'.repeat(PIER.w)).join('\n'),
     { floor: true, crumbles: { ch: '~', key: 'b' } })
 
-  const boat = piece('boat', String.raw`
-~~~~~~~~|~~~~~~~~~
-~~~~~~~~|~~~~~~~~~
-~~~\____|____/~~~~
-~~~~\________/~~~~
-~~~~~'------'~~~~~
-~~~~~~~~~~~~~~~~~~
-`, String.raw`
-bbbbbbbbubbbbbbbbb
-bbbbbbbbubbbbbbbbb
-bbbuuuuuuuuuubbbbb
-bbbbuuuuuuuuubbbbb
-bbbbbuuuuuuuubbbbb
-bbbbbbbbbbbbbbbbbb
-`)
+  const plank = piece('plank', '='.repeat(PLANK.w), 'u'.repeat(PLANK.w), { floor: true })
+
+  const ferrySign = piece('ferry-sign', '[ferry]', 'eeeeeee', { floor: true })
 
   const crate = piece('crate', String.raw`
  _____
@@ -93,7 +84,10 @@ eeeeeeeee
   <Piece of={quayE} x={54} y={8} />
   <Piece of={water} x={3}  y={9} />
   <Piece of={pier}  x={46} y={9} />
-  <Piece of={boat}  x={56} y={12} />
+  <Piece of={ferry} x={56} y={12} />
+  <Piece of={plank} x={54} y={16} />
+  <Door  x={57} y={16} to="/island/" hidden />
+  <Door  x={1}  y={5} to="/canal/" />
   <Piece of={crate} x={10} y={3} />
   <Piece of={crate} x={18} y={3} />
   <Piece of={barrel} x={30} y={4} />
@@ -103,4 +97,17 @@ eeeeeeeee
   <Piece of={bollard} x={20} y={7} />
   <Piece of={bollard} x={70} y={7} />
   <Piece of={signpost} x={66} y={1} />
+  <Piece of={ferrySign} x={46} y={7} />
+  <Pacer name="crab" y={7} from={22} to={44} ms={300} rest={30} flee={50} fg="#dc2626"
+    right={['(\\/)°°(\\/)', '(/\\)°°(/\\)']}
+    left={['(\\/)°°(\\/)', '(/\\)°°(/\\)']}
+    sit={['(\\/)°°(\\/)', '(\\/)..(\\/)', '(\\/)°°(\\/)', '(\\/)°°(\\/)']} />
+  <Pacer name="gull" night={false} y={2} from={26} to={62} ms={200} rest={20} flee={30} fg="#e5e7eb"
+    right={['~v~', '-v-']}
+    left={['~v~', '-v-']}
+    sit={['_v_', '_v_', '~v~', '_v_']} />
+  <Pacer name="otter" night y={7} from={50} to={68} ms={260} rest={40} flee={40} fg="#92400e"
+    right={['~~(°>', '~-(°>']}
+    left={['<°)~~', '<°)-~']}
+    sit={['~~(°>', '~~(°>', '~~(°^', '~~(°>']} />
 </Scene>

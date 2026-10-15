@@ -44,15 +44,16 @@ export function createRoomsService (app: HavenApp) {
 
     /**
      * Every trace still lasting in room `id` -- footprints, a piece a bolt
-     * broke, a scorch -- `{ kind, x, y, at, until }` on the server's clock,
-     * oldest first, with `id` on a broken piece and `ch` on chalk. Not who
-     * laid it. Read through the caller's client, so a booth's are its pair's alone.
+     * broke, a scorch, a target scored -- `{ kind, x, y, at, until }` on the
+     * server's clock, oldest first, with `id` on a broken piece and a target,
+     * and `ch` on chalk. Who laid it only for a score, which is the
+     * scoreboard's row. Read through the caller's client, so a booth's are its pair's alone.
      */
     async traces () {
       const room = await ($.db as any).room.findFirst({ where: { id: Number($.id) }, select: { id: true } })
       if (!room) throw new NotFound('No such room')
       return app.memory.live(roomChannelName(room.id))
-        .map(({ kind, x, y, id, ch, at, until }) => ({ kind, x, y, ...(id && { id }), ...(ch && { ch }), at, until }))
+        .map(({ kind, x, y, id, ch, by, points, at, until }) => ({ kind, x, y, ...(id && { id }), ...(ch && { ch }), ...(kind === 'scored' && { by, points }), at, until }))
     },
 
     /**

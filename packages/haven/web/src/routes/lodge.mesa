@@ -1,0 +1,7 @@
+<script>
+  // The lodge — through the log cabin in the woods.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Lodge from '@/scenes/Lodge.mesa'
+</script>
+
+<WalkIn slug="lodge"><Lodge /></WalkIn>

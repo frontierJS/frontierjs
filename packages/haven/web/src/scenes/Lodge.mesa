@@ -1,0 +1,282 @@
+<script>
+  // Lodge.mesa — the lodge, through the log cabin in the woods: a fieldstone
+  // hearth with a moose over the mantle, a bearskin before it where the old
+  // hound sleeps, a couch and two armchairs facing the fire, the bar under a
+  // neon sign, a jukebox, a pool table, darts, and snow on the windows. Drawn
+  // like the sheriff's house, in one-cell ASCII, with two exceptions in
+  // `halves()` (`IDEAS/haven.md` 14.5): the fire, the room's light, and the
+  // pool table's felt. The scene names `lamplight`, so the fire tints what is
+  // near it and `#paint` blooms it. The picture this draws is
+  // `lodge.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { halves } from '@/pieces/halves.js'
+  import { frame } from '@/pieces/frame.js'
+  import { barrel } from '@/pieces/barrel.js'
+
+  // Paint for art that is one color, or two by glyph: every glyph in `by`
+  // takes its letter, the rest `rest`.
+  const inked = (art, rest, by = {}) => art.replace(/\S/g, (c) => by[c] ?? rest)
+
+  // A seat on row `dy` of a piece at each of `xs`, standing up to the row
+  // `up` away — the cushions face the fire, so a figure stands up toward it.
+  const seats = (xs, dy, up) => Object.fromEntries(xs.map((dx, i) => [`seat-${i}`, { kind: 'seat', dx, dy, stand: { dx, dy: dy + up }, solo: true }]))
+
+  // ─── the hearth ─────────────────────────────────────────────────────────────
+
+  // Fieldstone: two grays, laid by a stride so no two rows repeat.
+  const STONES = 'O@o:O.@:o@O:.o@:'
+  const stone = (n, row) => Array.from({ length: n }, (_, i) => STONES[(i * 5 + row * 3) % STONES.length]).join('')
+
+  const MOOSE = [
+    String.raw`  \|/          \|/  `,
+    String.raw` \_|_/  ____  \_|_/ `,
+    String.raw`    \ \/    \/ /    `,
+    String.raw`     \( o  o )/     `,
+    String.raw`       \ .. /       `,
+    String.raw`        '--'        `,
+  ]
+
+  // 32 wide: the chimney breast with the moose on it, the mantle, the
+  // firebox's opening (22 by 4, empty, since a space claims nothing — the
+  // fire sits in it) and the hearthstone.
+  const HEARTH = [
+    ...MOOSE.map((m, y) => `|${stone(5, y)}${m}${stone(5, y + 7)}|`),
+    `[${'='.repeat(30)}]`,
+    ...[0, 1, 2, 3].map((y) => `|${stone(3, y + 2)}|${' '.repeat(22)}|${stone(3, y + 9)}|`),
+    `[${'_'.repeat(30)}]`,
+  ]
+  const hearth = piece('hearth', HEARTH.join('\n'), HEARTH.map((row, y) => [...row].map((c, x) => {
+    if (c === ' ') return ' '
+    if (y === 6) return x === 0 || x === 31 ? 'w' : 'W'
+    if (y < 6 && x >= 6 && x < 26) return y < 3 ? 'A' : c === 'o' ? 'E' : 'H'
+    return c === 'O' || c === '@' || c === '|' || c === '[' || c === ']' || c === '_' ? 'S' : 'Z'
+  }).join('')).join('\n'))
+
+  const fire = halves('fire', `
+kkkkkkkkkkkkkkkkkkkkkk
+kkkkkkkFkkkkkkkkFkkkkk
+kkkkkFkFFkkkkFkFFkkkkk
+kkkFkFFfFkkFkFFfFkFkkk
+kkFFfFffFFFFFfffFFfFkk
+kFFfffYffFfffYYfffFFFk
+kFfffYYYffffYYYYffffFk
+kbbBbbBBbbbBBbbbBbbbBk
+`, {
+    k: '#1c1917', b: '#7c2d12',
+    B: { fg: ['#dc2626', '#9a3412', '#ef4444', '#b91c1c'], ms: 400, flicker: true },
+    F: { fg: ['#ef4444', '#f97316', '#dc2626', '#f97316'], ms: 130, flicker: true, light: 9 },
+    f: { fg: ['#f97316', '#facc15', '#fb923c', '#facc15'], ms: 110, flicker: true },
+    Y: { fg: ['#fef08a', '#fde047', '#fef9c3'], ms: 90, flicker: true },
+  })
+
+  const WOOD = String.raw`
+   (@)
+ (@)(@)
+(@)(@)(@)
+`
+  const firewood = piece('firewood', WOOD, inked(WOOD, 'u', { '@': 'W' }))
+
+  // ─── the windows ────────────────────────────────────────────────────────────
+
+  // Every pane cell is snow: a glyph cycling through specks and flakes, a
+  // phase per cell, over the night's blue. Never a blank: a cycling cell
+  // that blanks is one `scenes.test.js` refuses.
+  const window = piece('window', String.raw`
+.------.------.
+|::::::|::::::|
+|::::::|::::::|
+|------+------|
+|::::::|::::::|
+|::::::|::::::|
+'------'------'
+`, String.raw`
+wwwwwwwwwwwwwww
+wxxxxxxwxxxxxxw
+wxxxxxxwxxxxxxw
+wwwwwwwwwwwwwww
+wxxxxxxwxxxxxxw
+wxxxxxxwxxxxxxw
+wwwwwwwwwwwwwww
+`)
+
+  // ─── by the fire ────────────────────────────────────────────────────────────
+
+  // The bearskin is floor, walked on: its head to the west, a paw at each
+  // corner.
+  const BEARSKIN = String.raw`
+   _   .-~~~~~~~~~~~~-.   _
+   ( \/::::::::::::::::\/ )
+ ^..^::::::::::::::::::::::)
+   (_/\::::::::::::::::/\_)
+       '-~~~~~~~~~~~~-'
+`
+  const bearskin = piece('bearskin', BEARSKIN, inked(BEARSKIN, 'b', { ':': 'B', '^': 'K', '.': 'K' }), { floor: true })
+
+  // Four cushions facing the fire, and an armchair either side of the skin.
+  const couch = piece('couch', String.raw`
+.-[____][____][____][____]-.
+'--------------------------'
+`, String.raw`
+LLlllllllllllllllllllllllLLL
+LLLLLLLLLLLLLLLLLLLLLLLLLLLL
+`, { spots: seats([4, 10, 16, 22], 0, -1) })
+
+  const armchair = piece('armchair', String.raw`
+.[__].
+'----'
+`, String.raw`
+LllllL
+LLLLLL
+`, { spots: seats([2], 0, -1) })
+
+  // ─── the bar ────────────────────────────────────────────────────────────────
+
+  const NEON = String.raw`
+.~~~~~~~~~~~.
+( COLD BEER )
+'~~~~~~~~~~~'
+`
+  const neon = piece('neon', NEON, inked(NEON, 'c', { C: 'N', O: 'N', L: 'N', D: 'N', B: 'N', E: 'N', R: 'N' }))
+
+  const BAR = String.raw`
+  |=|  |=|  |=|   [] [] []
+.-------------------------.
+|=========================|
+'-------------------------'
+   o      o      o      o
+`
+  const bar = piece('bar', BAR, BAR.split('\n').map((row, y) => [...row].map((c) => {
+    if (c === ' ') return ' '
+    if (y === 1) return c === '[' || c === ']' ? 'g' : 'q'
+    if (y === 5) return 'u'
+    return c === '=' ? 'W' : 'w'
+  }).join('')).join('\n'), { spots: seats([3, 10, 17, 24], 4, 1) })
+
+  const JUKEBOX = String.raw`
+ .-------.
+/ ((o o)) \
+|=========|
+|:|:|:|:|:|
+|_________|
+`
+  const jukebox = piece('jukebox', JUKEBOX, inked(JUKEBOX, 'w', { '(': 'J', ')': 'J', o: 'Q', ':': 'J', '=': 'q' }))
+
+  // ─── the games ──────────────────────────────────────────────────────────────
+
+  // The rails are wood, the pockets black, and the balls racked at the foot
+  // with the cue ball waiting at the head.
+  const pool = halves('pool', `
+wwwwwwwwwwwwwwwwwwwwww
+wkggggggggkkggggggggkw
+wggggggggggggggggggggw
+wgggggggggggggrggggggw
+wggggWgggggggyoggggggw
+wggggggggggggbkpgggggw
+wggggggggggggrnggggggw
+wgggggggggggggyggggggw
+wkggggggggkkggggggggkw
+wwwwwwwwwwwwwwwwwwwwww
+`, {
+    w: '#78350f', k: '#0c0a09', g: '#166534', W: '#f5f5f4',
+    r: '#dc2626', y: '#facc15', o: '#f97316', b: '#2563eb', p: '#7e22ce', n: '#7f1d1d',
+  })
+
+  const DARTS = String.raw`
+ .-.
+(-@-)
+ '-'
+`
+  const darts = piece('darts', DARTS, inked(DARTS, 'K', { '@': 'k', '-': 'p', '(': 'K', ')': 'K' }))
+
+  const cues = piece('cues', String.raw`
+.--.
+||||
+||||
+||||
+'--'
+`, String.raw`
+wwww
+WWWW
+WWWW
+WWWW
+wwww
+`)
+
+  const FISH = String.raw`
+[ ><((((o> ]
+`
+  const fish = piece('fish', FISH, inked(FISH, 'G', { '[': 'w', ']': 'w', o: 'K' }))
+
+  const GUITAR = String.raw`
+ =
+|=|
+|=|
+|=|
+/'O'\
+\___/
+`
+  const guitar = piece('guitar', GUITAR, inked(GUITAR, 'T', { '=': 'q', O: 'K' }))
+
+  const PALETTE = {
+    f: { fg: '#78350f' },
+    d: { fg: '#92400e' },
+    w: { fg: '#92400e' },
+    W: { fg: '#b45309' },
+    u: { fg: '#854d0e' },
+    q: { fg: '#9ca3af' },
+    g: { fg: '#fde68a' },
+    S: { fg: '#78716c' },
+    Z: { fg: '#57534e' },
+    A: { fg: '#e7d7b4' },
+    H: { fg: '#7c4a1e' },
+    E: { fg: '#0c0a09' },
+    K: { fg: '#1c1917' },
+    b: { fg: '#57534e' },
+    B: { fg: '#44403c' },
+    L: { fg: '#7c2d12' },
+    l: { fg: '#9a3412' },
+    G: { fg: '#65a30d' },
+    T: { fg: '#c2410c' },
+    k: { fg: '#dc2626' },
+    p: { fg: '#e7e5e4' },
+    x: { fg: ['#e0f2fe', '#bae6fd', '#e0f2fe', '#f8fafc'], bg: '#0f1e3a', chars: '·.··*·.·', ms: 600, wave: true },
+    c: { fg: ['#22d3ee', '#67e8f9', '#22d3ee'], ms: 500, flicker: true, light: 1 },
+    N: { fg: ['#f43f5e', '#fb7185', '#f43f5e', '#f43f5e', '#f43f5e', '#4c0519'], ms: 180, flicker: true, light: 2 },
+    J: { fg: ['#f472b6', '#facc15', '#4ade80', '#38bdf8', '#c084fc'], ms: 350, wave: true, light: 1 },
+    Q: { fg: '#fbbf24' },
+  }
+</script>
+
+<Scene slug="lodge" layers={[...INDOORS, 'lamplight']} palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+  <Piece of={frame} />
+  <Door  x={48} y={25} to="/woods/" />
+  <Piece of={window}   x={4}  y={2} />
+  <Piece of={neon}     x={5}  y={9} />
+  <Piece of={bar}      x={3}  y={12} />
+  <Piece of={jukebox}  x={4}  y={19} />
+  <Piece of={firewood} x={23} y={9} />
+  <Piece of={hearth}   x={33} y={1} />
+  <Piece of={fire}     x={38} y={8} />
+  <Piece of={guitar}   x={68} y={3} />
+  <Piece of={cues}     x={74} y={3} />
+  <Piece of={window}   x={79} y={2} />
+  <Piece of={fish}     x={77} y={10} />
+  <Piece of={darts}    x={90} y={11} />
+  <Piece of={armchair} x={30} y={15} />
+  <Piece of={bearskin} x={36} y={14} />
+  <Piece of={armchair} x={64} y={15} />
+  <Piece of={couch}    x={34} y={19} />
+  <Piece of={pool}     x={71} y={15} />
+  <Piece of={barrel}   x={81} y={21} />
+  <Piece of={barrel}   x={88} y={21} />
+  <Pacer name="hound" y={16} from={42} to={62} ms={420} rest={30} fg="#a16207"
+    right={['~^__^o', '-^__^o']}
+    left={['o^__^~', 'o^__^-']}
+    sit={['(__)o', '(__)oz', '(__)ozZ', '(__)ozZ']} />
+  <slot />
+</Scene>

@@ -1,10 +1,12 @@
 <script>
   // Road.mesa — the road east of the square: a dirt road across the middle,
   // fenced on both sides with a gap in each, a milestone, a cart pulled up
-  // on the verge, trees, and the signpost back. The west edge is a border
+  // on the verge, trees, the pithead of the mine (`Mine.mesa`), and the
+  // signpost back. The west edge is a border
   // into the square (`IDEAS/haven.md` 6.2), and the square's east edge is
-  // the run back; the east edge is a border on into the lane. The picture this draws is `road.frame.txt`, which
-  // `scenes.test.js` pins.
+  // the run back; the east edge is a border on into the lane, and the top
+  // edge, above the gap in the north fence, up into the market. The picture
+  // this draws is `road.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
@@ -79,8 +81,23 @@ d  yy    u u    yy  d
 ddddddddddudddddddddd
 `)
 
+  // The pithead: a timber frame over the shaft, its mouth black, the door
+  // in the mouth's middle.
+  const pithead = piece('pithead', String.raw`
+  _________
+ /=========\
+ ||:::::::||
+ ||:::::::||
+`, String.raw`
+  uuuuuuuuu
+ uOOOOOOOOOu
+ uukkkkkkkuu
+ uukkkkkkkuu
+`)
+
   const PALETTE = {
     f: { fg: '#6b7280' },
+    k: { fg: '#1c1917' },
     d: { fg: '#92400e' },
     o: { fg: ['#a16207', '#854d0e', '#a16207'], ms: 2000, wave: true },
     q: { fg: '#9ca3af' },
@@ -101,6 +118,7 @@ ddddddddddudddddddddd
   <Piece of={frame} />
   <Door  x={1} y={1} h={24} to="/" />
   <Door  x={96} y={1} h={24} to="/lane/" />
+  <Door  x={44} y={0} w={6} to="/market/" />
   <Piece of={road} x={3} y={11} />
   <Piece of={fenceW} x={3}  y={9} />
   <Piece of={fenceE} x={52} y={9} />
@@ -115,4 +133,6 @@ ddddddddddudddddddddd
   <Piece of={signpost} x={5} y={18} />
   <Piece of={office} x={17} y={18} />
   <Door  x={27} y={23} to="/sheriff/" />
+  <Piece of={pithead} x={57} y={19} />
+  <Door  x={63} y={22} to="/mine/" />
 </Scene>

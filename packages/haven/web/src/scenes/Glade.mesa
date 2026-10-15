@@ -92,6 +92,7 @@ ppp
   <Door  x={96} y={12} to="/woods/" />
   <Piece of={oak}  x={36} y={1} />
   <Door  x={49} y={9} to="/cellar/" night />
+  <Door  x={30} y={25} to="/canal/" />
   <Piece of={pond} x={6} y={15} />
   <Piece of={tree} x={4}  y={1} />
   <Piece of={tree} x={78} y={1} />
@@ -109,4 +110,14 @@ ppp
     right={['~(==)Y', '~(=-)Y']}
     left={['Y(==)~', 'Y(-=)~']}
     sit={['~(==)v', '~(==)v', '~(==)Y', '~(==)v']} />
+  <Pacer name="rabbit" night={false} y={24} from={4} to={60} ms={160} rest={40} flee={25} fg="#d6d3d1"
+    right={['(\\_/)']}
+    left={['(\\_/)']}
+    sit={['(\\_/)', '(\\_/)', '(\\./)', '(\\_/)']} />
+  <Pacer name="firefly" night y={14} from={6} to={30} ms={500} rest={6} fg="#facc15"
+    right={['*', '.']} left={['.', '*']} sit={['*', '.', '*', '*']} />
+  <Pacer name="firefly2" night y={20} from={8} to={34} ms={430} rest={8} fg="#fde047"
+    right={['.', '*']} left={['*', '.']} sit={['.', '*', '.', '*']} />
+  <Pacer name="firefly3" night y={10} from={40} to={70} ms={560} rest={5} fg="#facc15"
+    right={['*', '*', '.']} left={['.', '*', '*']} sit={['*', '.', '.', '*']} />
 </Scene>

@@ -7,7 +7,8 @@
 //
 // A row is one character a cell: `.` walkable, `+` a door, `#` anything else
 // — a wall, a piece, a cell off the stage. A `#` that belongs to a placed
-// piece is named by `pieces`, so a bolt can say what it hit. A floor piece that
+// piece is named by `pieces`, so a bolt can say what it hit. A carousel's
+// riders are `carousels`, which the server scores a bolt on. A floor piece that
 // is a pickup (`pieces/index.js`) is named by `pickups`, its cells all `.`.
 
 /** Pieces a bolt shatters; every other solid piece is a wall, which takes a scorch. */
@@ -38,8 +39,9 @@ export function worldOf(stage) {
     if (cells.length) pickups.push({ id: pieceId(m), item: m.piece.pickup.item, n: m.piece.pickup.n, cells })
   }
   const pacers = stage.marks.filter((m) => m.kind === 'pacer')
-    .map(({ spec: { name, y, from, to, ms, rest, right, left, sit, flee } }) => ({ name, y, from, to, ms, rest, right, left, sit, ...(flee && { flee }) }))
-  return { slug: stage.slug, width: stage.width, height: stage.height, spawn: stage.spawn, rows, doors, pieces, pickups, pacers }
+    .map(({ spec: { name, y, from, to, ms, rest, right, left, sit, flee, night } }) => ({ name, y, from, to, ms, rest, right, left, sit, ...(flee && { flee }), ...(night != null && { night }) }))
+  const carousels = stage.carousels.map(({ name, x, apart, top, bottom, ms, n, cells }) => ({ name, x, apart, top, bottom, ms, n, cells }))
+  return { slug: stage.slug, width: stage.width, height: stage.height, spawn: stage.spawn, rows, doors, pieces, pickups, pacers, carousels }
 }
 
 /** The file's text: a row, a piece, a door on a line each, so a diff of a moved piece is one line. */

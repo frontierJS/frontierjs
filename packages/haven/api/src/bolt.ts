@@ -22,12 +22,15 @@ export const KNOCK = 2
 /** How long a struck member flickers. */
 export const STUN_MS = 1_000
 
+/** How long a bolt takes to cross a cell on a screen, so a screen can act when it lands. */
+export const FLY_MS = 20
+
 /** The wait after a bolt, and after a volley. */
 export const BOLT_MS = 3_000
 export const VOLLEY_MS = 9_000
 
-/** What stops a bolt that is not a member: `id` names the piece or pacer, for the screens that draw it. */
-export type Obstacle = { kind: 'wall' | 'piece' | 'pacer', id?: string }
+/** What stops a bolt that is not a member: `id` names the piece, pacer or rider, for the screens that draw it. A `piece` shatters; a `target` is scored. */
+export type Obstacle = { kind: 'wall' | 'piece' | 'target' | 'pacer', id?: string }
 
 /** `span` is the cells the figure stands on from `x` rightward (`spanOf`), 1 when absent. */
 export type Figure = Position & { id: number, span?: number }
@@ -40,8 +43,12 @@ export type Hit =
 export type Flight = { facing: Facing, path: Position[], hit: Hit | null }
 
 export interface World {
-  /** What stands on a cell — off the scene included, as a wall — or null for open floor. */
-  at (x: number, y: number): Obstacle | null
+  /**
+   * What stands on a cell — off the scene included, as a wall — or null for
+   * open floor; `i` cells into a bolt's flight, so a thing on the move is met
+   * where it is when the bolt gets there, as every screen draws it.
+   */
+  at (x: number, y: number, i?: number): Obstacle | null
   /** The figures in the room, the shooter's own among them. */
   members: Figure[]
 }
@@ -83,7 +90,7 @@ export function fly (world: World, shooter: Figure, facing: Facing): Flight {
       path.push({ x, y })
       return { facing, path, hit: { kind: 'member', id: struck.id, at: { x, y }, to: knockBack(world, struck, facing) } }
     }
-    const thing = world.at(x, y)
+    const thing = world.at(x, y, i)
     if (thing) return { facing, path, hit: { ...thing, at: { x, y } } }
     path.push({ x, y })
   }

@@ -30,7 +30,7 @@
   //
   // A line beginning `/` is a command and never a Message. What it can name
   // is `$context.commands` (`commands.js`), the one registry: the actors in
-  // this scene add their verbs to it — `Whisper` the `/w`, `Dice` the `/roll`, `Mod` the `/ban`,
+  // this scene add their verbs to it — `Whisper` the `/w`, `Dice` the `/roll`, `Fishing` the `/fish`, `Mod` the `/ban`,
   // `WorldMap` the `/map`, `Season` the `/season`, `Weather` the `/weather`, `Hush` the `/hush`, `Emotes` the `/wave`,
   // `/sit` and `/dance`, `Pets` the `/pet`, `History` the PageUp and
   // PageDown, and whatever a route places (`Taskmaster`, `Ledger`) — and
@@ -98,7 +98,7 @@
   import { WIDE_LAYER, cellOf, covered, figures, inView, standsOn } from '@/crowd.js'
   import { spanOf } from '../../../api/src/shape.ts'
   import { facingOf, FIRST_FACING } from '../../../api/src/facing.ts'
-  import { STUN_MS }     from '../../../api/src/bolt.ts'
+  import { FLY_MS, STUN_MS } from '../../../api/src/bolt.ts'
   import { stepped, TRACES } from '../../../api/src/memory.ts'
   import WorldMap        from '@/components/WorldMap.mesa'
   import History         from '@/components/History.mesa'
@@ -108,6 +108,7 @@
   import Sitting         from '@/components/Sitting.mesa'
   import Whisper         from '@/components/Whisper.mesa'
   import Dice            from '@/components/Dice.mesa'
+  import Fishing         from '@/components/Fishing.mesa'
   import Mod             from '@/components/Mod.mesa'
   import Season          from '@/components/Season.mesa'
   import Weather         from '@/components/Weather.mesa'
@@ -123,11 +124,14 @@
   export let spawn
   // The layers `look()` folds (`stage.js`): a roof names INDOORS.
   export let layers = OUTDOORS
+  // A dark scene's lantern radius (`stage.js`): each figure sees that far and
+  // is seen by its own. It needs the fog layer named.
+  export let lantern = 0
   // A browser's cell size against VIEW's (14.7): 0.5 draws twice the cells
   // each way on the same screen. `#paint` in the terminal ignores it.
   export let scale = 1
 
-  var stage = createStage({ slug, palette, spawn, layers })
+  var stage = createStage({ slug, palette, spawn, layers, lantern })
   $context.scene = stage
   // A verb's answer is the note under the art.
   var commands = createCommands()
@@ -304,7 +308,6 @@
   // An arrow: one head glyph a cell per FLY_MS, leaving the cell behind it, and
   // gone HOLD_MS after it lands. Each bolt has its own timers: a second one
   // arriving mid-flight must not take the first one's landing with it.
-  const FLY_MS   = 20
   const HOLD_MS  = 150
   const HEADS    = { n: '^', e: '>', s: 'v', w: '<' }
   const FLICK_MS = 100
@@ -464,6 +467,7 @@
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
     <Dice {room} />
+    <Fishing {room} {stage} {view} tell={(text) => { note = text }} />
     <Mod />
     <Season {stage} />
     <Weather {stage} />

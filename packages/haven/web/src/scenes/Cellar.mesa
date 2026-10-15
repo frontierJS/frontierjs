@@ -10,6 +10,7 @@
   import { INDOORS } from '@/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
   import { piece }  from '@/pieces/index.js'
   import { frame }  from '@/pieces/frame.js'
   import { lamp }   from '@/pieces/lamp.js'
@@ -67,6 +68,7 @@ uuuuuuuu
   <Piece of={frame} />
   <Door  x={48} y={0} to="/tavern/" />
   <Door  x={1}  y={12} to="/glade/" night />
+  <Door  x={48} y={25} to="/canal/" />
   <Piece of={rack}   x={4}  y={3} />
   <Piece of={rack}   x={62} y={3} />
   <Piece of={lamp}   x={30} y={9} />
@@ -82,4 +84,8 @@ uuuuuuuu
   <Piece of={barrel} x={69} y={20} />
   <Piece of={barrel} x={76} y={20} />
   <Piece of={barrel} x={83} y={20} />
+  <Pacer name="rat" y={24} from={50} to={94} ms={180} rest={30} flee={40} fg="#78716c"
+    right={["~~(_'>", "~~(_;>"]}
+    left={["<'_)~~", "<;_)~~"]}
+    sit={["~~(_'>", "~~(_.>", "~~(_'>", "~~(_'>"]} />
 </Scene>

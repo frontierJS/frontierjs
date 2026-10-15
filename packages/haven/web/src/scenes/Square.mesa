@@ -14,6 +14,7 @@
   import Piece from '@/components/Piece.mesa'
   import Row   from '@/components/Row.mesa'
   import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
   import { piece, lines } from '@/pieces/index.js'
   import { framed } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
@@ -276,6 +277,7 @@ eeeeeee
   <Piece of={lamp} x={138} y={14} />
   <Piece of={lamp} x={176} y={14} />
   <Piece of={well} x={146} y={13} />
+  <Door  x={149} y={16} to="/canal/" />
   <Piece of={stall} x={158} y={14} />
   <Piece of={bench} x={144} y={20} />
   <Piece of={bench} x={164} y={20} />
@@ -287,5 +289,9 @@ eeeeeee
   <Row of={hedge} y={23} x={193} n={12} />
   <Row of={hedge} y={23} x={209} n={10} />
   <Row of={flower} y={24} x={138} n={26} step={3} />
+  <Pacer name="pigeons" y={11} from={72} to={130} ms={240} rest={40} flee={30} fg="#94a3b8"
+    right={["'> ,>", ",> '>"]}
+    left={["<' <,", "<, <'"]}
+    sit={["<' ,>", "<, ,>", "<' '>", "<' ,>"]} />
   <slot />
 </Scene>

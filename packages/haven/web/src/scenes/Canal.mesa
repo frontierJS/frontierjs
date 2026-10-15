@@ -1,0 +1,99 @@
+<script>
+  // Canal.mesa — the underground canal, down the square's well: a brick
+  // vault with the water running east through it to the sea, a towpath
+  // either side, one bridge across, and a boat tied up under the well. It
+  // joins five places a long walk apart above ground, so going under is the
+  // quick way (`IDEAS/haven.md`, the underground canal). The well's ladder,
+  // the docks' culvert and the mine's way down are plain doors; the stairs
+  // up into the cellar and the glade are hidden in the vault's wall, as each
+  // of those is hidden from above. It is pitch dark and a figure carries a
+  // lantern, the mine's (`lantern`, `stage.js`). The picture this draws is
+  // `canal.frame.txt`, the canal with every cell lit, which `scenes.test.js`
+  // pins. A rat runs the south towpath.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { frame } from '@/pieces/frame.js'
+
+  // The water fills the vault wall to wall, so the bridge is the one way
+  // across; the bridge and the boat are cut out of it, since a cell has one
+  // owner, and the boat brings its own water round it.
+  const BOAT   = { x: 12, y: 1, w: 14, h: 2 }
+  const BRIDGE = { x: 46, w: 6 }
+  const waterRow = (dy) => [...Array(94)].map((_, dx) => {
+    const x = 2 + dx
+    if (x >= BRIDGE.x && x < BRIDGE.x + BRIDGE.w) return ' '
+    if (dy >= BOAT.y && dy < BOAT.y + BOAT.h && x >= BOAT.x && x < BOAT.x + BOAT.w) return ' '
+    return '~'
+  }).join('')
+  const rows = [...Array(4)].map((_, dy) => waterRow(dy))
+  const water = piece('water', rows.join('\n'), rows.map((r) => r.replace(/~/g, 'b')).join('\n'))
+
+  const edge = (ch) => piece('edge', ch.repeat(44), 'q'.repeat(44))
+  const edgeN = edge('_')
+  const edgeS = edge('-')
+
+  const bridge = piece('bridge', [...Array(6)].map(() => '='.repeat(BRIDGE.w)).join('\n'),
+    [...Array(6)].map(() => 'u'.repeat(BRIDGE.w)).join('\n'), { floor: true })
+
+  const boat = piece('boat', String.raw`
+~~\____|____/~
+~~~\________/~
+`, String.raw`
+bbuuuuuuuuuuub
+bbbuuuuuuuuuub
+`)
+
+  // A pier of the vault: brick from the floor to the roof, so a lantern's
+  // light stops at it and the towpath is walked to be seen.
+  const pier = piece('pier', '[#]\n[#]', 'ppp\nppp')
+
+  const ladder = piece('ladder', 'H\nH', 'l\nl', { floor: true })
+
+  const sign = (text) => piece('sign', text, 'e'.repeat(text.length), { floor: true })
+
+  const PALETTE = {
+    f: { fg: '#7c2d12' },
+    d: { fg: '#92400e' },
+    p: { fg: '#9a3412' },
+    q: { fg: '#78716c' },
+    u: { fg: '#78350f' },
+    l: { fg: '#9ca3af' },
+    e: { fg: '#a16207' },
+    b: { fg: ['#0e7490', '#155e75', '#0891b2'], chars: '~-~', ms: 500, wave: true },
+  }
+</script>
+
+<Scene slug="canal" layers={[...INDOORS, 'fog']} lantern={4} palette={PALETTE} spawn={{ x: 20, y: 3 }}>
+  <Piece of={frame} />
+  <Door  x={20} y={0} to="/" />
+  <Door  x={76} y={0} to="/cellar/" hidden />
+  <Door  x={1}  y={6} to="/glade/" hidden />
+  <Door  x={96} y={20} to="/docks/" />
+  <Door  x={30} y={25} to="/mine/" />
+  <Piece of={ladder} x={20} y={1} />
+  <Piece of={sign('^ well')} x={22} y={2} />
+  <Piece of={edgeN} x={2}  y={10} />
+  <Piece of={edgeN} x={52} y={10} />
+  <Piece of={water} x={2}  y={11} />
+  <Piece of={edgeS} x={2}  y={15} />
+  <Piece of={edgeS} x={52} y={15} />
+  <Piece of={bridge} x={46} y={10} />
+  <Piece of={boat} x={12} y={12} />
+  <Piece of={pier} x={10} y={3} />
+  <Piece of={pier} x={34} y={3} />
+  <Piece of={pier} x={60} y={3} />
+  <Piece of={pier} x={84} y={3} />
+  <Piece of={pier} x={22} y={19} />
+  <Piece of={pier} x={46} y={19} />
+  <Piece of={pier} x={70} y={19} />
+  <Piece of={sign('docks >')} x={86} y={21} />
+  <Piece of={sign('v mine')} x={32} y={23} />
+  <Pacer name="rat" y={22} from={40} to={80} ms={180} rest={30} flee={40} fg="#a8a29e"
+    right={['~:>', '~;>']}
+    left={['<:~', '<;~']}
+    sit={['~:>', '~.>', '~:>', '~:>']} />
+</Scene>

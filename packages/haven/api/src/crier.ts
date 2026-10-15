@@ -16,33 +16,23 @@
 
 import type { App } from '@frontierjs/junction'
 
-/** The crier's nick. A first login asking for it is refused as taken. */
-export const CRIER = 'crier'
+import { ensureVoice, VOICES } from './keyless.ts'
+
+/** The crier's nick. */
+export const CRIER = VOICES.crier
 
 /** How long a cry stays over the square, in ms. */
 export const CRY_MS = 8000
-
-/** The crier's `publicKey`: not a key, so no signature verifies under it. */
-const KEYLESS = 'none:crier'
 
 type Db = { asSystem: () => any }
 
 export const welcomeLine = (nick: string): string => `Hear ye! ${nick} walks into Haven for the first time.`
 export const releaseLine = (version: string): string => `Hear ye! Haven ${version} has landed.`
 
-/** The crier's member id, made on first asking. */
-export async function ensureCrier (db: Db): Promise<number> {
-  const sys = db.asSystem()
-  const found = await sys.member.findFirst({ where: { publicKey: KEYLESS }, select: { id: true } })
-  if (found) return found.id
-  const row = await sys.member.create({ data: { nick: CRIER, publicKey: KEYLESS }, select: { id: true } })
-  return row.id
-}
-
 /** `room` is the slug the crier stands in. */
 export function createCrier (app: App, db: Db, room: string) {
   let id: Promise<number> | null = null
-  const crierId = () => (id ??= ensureCrier(db).catch((e) => { id = null; throw e }))
+  const crierId = () => (id ??= ensureVoice(db, CRIER).catch((e) => { id = null; throw e }))
 
   const roomId = async (): Promise<number | null> =>
     (await db.asSystem().room.findFirst({ where: { slug: room }, select: { id: true } }))?.id ?? null

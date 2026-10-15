@@ -91,6 +91,14 @@ describe('a key walks in', () => {
     expect(await members()).toEqual(['sam'])
   })
 
+  test('the keyless voices cannot be walked in as, before their rows exist or after', async () => {
+    for (const voice of ['crier', 'DICE']) {
+      const { status, json } = await postLogin(env.port, await signedLogin(await generateSigningKeys(), { nick: voice }))
+      expect(status).toBe(409)
+      expect(json.message).toContain('taken')
+    }
+  })
+
   test('a first login with no nick is told to name one', async () => {
     const keys = await generateSigningKeys()
     const { status } = await postLogin(env.port, await signedLogin(keys, {}))

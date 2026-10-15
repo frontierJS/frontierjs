@@ -1,6 +1,6 @@
 // src/paint.browser.js — draw a stage in its palette, in a browser, and keep
 // it moving. `#paint` resolves here under the `browser` condition and to
-// `paint.js` in the terminal; both draw `stage.grid()` and `stage.pacerNow()`, so
+// `paint.js` in the terminal; both draw `stage.grid()`, `stage.pacerNow()` and `stage.riders()`, so
 // the two targets cannot disagree about which glyph and color a cell has at
 // a tick.
 //
@@ -112,6 +112,10 @@ export const paint = (stage, scale = 1) => (box) => {
         const cell = grid[y - v.y]?.[x + i - v.x]
         if (cell && ch !== ' ' && stage.light(x + i, y) === 'lit') grid[y - v.y][x + i - v.x] = { ch, fg: stage.tint(p.fg, x + i, y, ms), bg: cell.bg }
       })
+    }
+    for (const { x, y, ch, fg } of stage.riders(ms)) {
+      const cell = grid[y - v.y]?.[x - v.x]
+      if (cell && stage.light(x, y) === 'lit') grid[y - v.y][x - v.x] = { ch, fg: stage.tint(fg, x, y, ms), bg: cell.bg }
     }
     pre.replaceChildren(fragment(grid))
     top.replaceChildren(fragment(overhead))

@@ -10,12 +10,24 @@
 // nothing. Picking something up (`give`) may lift a count to `cap`, above the
 // start, and a count above the start does not decay.
 
+// A fish (`fishing.ts`) starts at none and never comes back on its own: it is
+// caught or it is not carried. `many` is what `/inv` calls more than one, since
+// most fish are their own plural.
+const fish = (many: string) => ({ start: 0, cap: 20, regenMs: 0, many })
+
 export const ITEMS = {
-  arrow: { start: 10, cap: 20, regenMs: 20_000 },
-} as const satisfies Record<string, { start: number, cap: number, regenMs: number }>
+  arrow:    { start: 10, cap: 20, regenMs: 20_000, many: 'arrows' },
+  minnow:   fish('minnows'),
+  perch:    fish('perch'),
+  trout:    fish('trout'),
+  catfish:  fish('catfish'),
+  eel:      fish('eels'),
+  pike:     fish('pike'),
+  moonfish: fish('moonfish'),
+} as const satisfies Record<string, { start: number, cap: number, regenMs: number, many: string }>
 
 export type ItemName = keyof typeof ITEMS
-export type Held = Record<ItemName, number>
+export type Held = Partial<Record<ItemName, number>>
 
 /** What a shot spends: a bolt one arrow, `dd` one each way. */
 export const ARROWS = { bolt: 1, volley: 4 } as const
@@ -43,8 +55,10 @@ export function createInventories ({ now = Date.now }: { now?: () => number } = 
 
   return {
     count: (member: number, item: ItemName): number => read(member, item).n,
-    /** Everything held, a count each — what `/inv` lists. */
-    held: (member: number): Held => Object.fromEntries((Object.keys(ITEMS) as ItemName[]).map(i => [i, read(member, i).n])) as Held,
+    /** Everything held, a count each — what `/inv` lists. An item that starts at none is left out until there is one. */
+    held: (member: number): Held => Object.fromEntries((Object.keys(ITEMS) as ItemName[])
+      .map(i => [i, read(member, i).n] as const)
+      .filter(([i, n]) => n > 0 || ITEMS[i].start > 0)) as Held,
     /** Spend `n` of an item: false, changing nothing, when fewer are held. */
     take (member: number, item: ItemName, n = 1): boolean {
       const slot = read(member, item)

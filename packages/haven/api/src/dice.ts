@@ -9,18 +9,15 @@
 // `messages.create` inside `app.runAs`, so the line is broadcast and
 // rate-limited like any member's. Whatever the dice say is therefore a roll.
 //
-// The client imports `DICE` and `parseRoll` (`Dice.mesa`), so this file imports
-// types only.
-
-import { randomInt } from 'node:crypto'
+// The client imports `MAX_DICE`, `MAX_SIDES` and `parseRoll` (`Dice.mesa`), so
+// this file imports types only and reaches for no `node:` module.
 
 import type { App } from '@frontierjs/junction'
 
-/** The dice's nick. A first login asking for it is refused as taken. */
-export const DICE = 'dice'
+import { ensureVoice, VOICES } from './keyless.ts'
 
-/** The dice's `publicKey`: not a key, so no signature verifies under it. */
-const KEYLESS = 'none:dice'
+/** The dice's nick. */
+export const DICE = VOICES.dice
 
 /** The most dice in one roll, and the most faces on one. */
 export const MAX_DICE  = 10
@@ -40,27 +37,26 @@ export function parseRoll (spec: string): Roll | null {
   return { count, sides }
 }
 
-/** The throw: each die from the OS's random source, not `Math.random`, since a roll is a promise nobody can predict. */
+/** A whole number in `[0, n)` from the OS's random source, redrawn past the last whole multiple of `n` so no face is likelier. */
+function below (n: number): number {
+  const limit = 2 ** 32 - (2 ** 32 % n)
+  const draw  = new Uint32Array(1)
+  do crypto.getRandomValues(draw); while (draw[0]! >= limit)
+  return draw[0]! % n
+}
+
+/** The throw: each die from `below`, not `Math.random`, since a roll is a promise nobody can predict. */
 export const throwDice = ({ count, sides }: Roll): number[] =>
-  Array.from({ length: count }, () => randomInt(1, sides + 1))
+  Array.from({ length: count }, () => 1 + below(sides))
 
 export function rollLine (nick: string, { count, sides }: Roll, dice: number[]): string {
   const total = dice.reduce((a, b) => a + b, 0)
   return `${nick} rolls ${count}d${sides}: ${count === 1 ? total : `${dice.join(' + ')} = ${total}`}`
 }
 
-/** The dice's member id, made on first asking. */
-export async function ensureDice (db: Db): Promise<number> {
-  const sys = db.asSystem()
-  const found = await sys.member.findFirst({ where: { publicKey: KEYLESS }, select: { id: true } })
-  if (found) return found.id
-  const row = await sys.member.create({ data: { nick: DICE, publicKey: KEYLESS }, select: { id: true } })
-  return row.id
-}
-
 export function createDice (app: App, db: Db) {
   let id: Promise<number> | null = null
-  const diceId = () => (id ??= ensureDice(db).catch((e) => { id = null; throw e }))
+  const diceId = () => (id ??= ensureVoice(db, DICE).catch((e) => { id = null; throw e }))
 
   return {
     /** Throws `roll` for `nick` and says it in `roomId`. Answers what was said. */

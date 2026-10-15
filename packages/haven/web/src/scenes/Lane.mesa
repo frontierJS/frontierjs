@@ -4,13 +4,15 @@
   // over the windows, a door into its home and a mailbox at the gate; the
   // lane itself across the middle, and a pond, lamps and trees on the south
   // side. The west edge is a border into the road, and the road's east edge
-  // the run back. The picture this draws is `lane.frame.txt`, which
+  // the run back; the east edge at the south side's rows is a border on to the
+  // ravine's rim (`Ravine.mesa`). The picture this draws is `lane.frame.txt`, which
   // `scenes.test.js` pins. The mailboxes' flags are a home's board
   // (`components/HomeBoard.mesa`), placed by the route.
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Row   from '@/components/Row.mesa'
+  import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
@@ -68,6 +70,7 @@
 <Scene slug="lane" palette={PALETTE} spawn={{ x: 4, y: 14 }}>
   <Piece of={frame} />
   <Door  x={1} y={1} h={24} to="/road/" />
+  <Door  x={96} y={20} h={5} to="/ravine/" />
   <Piece of={jordan} x={5} y={1} />
   <Door  x={17} y={10} to="/jordan/" />
   <Piece of={vlad} x={35} y={1} />
@@ -91,5 +94,9 @@
   <Piece of={bench} x={52} y={19} />
   <Piece of={lamp} x={70} y={19} />
   <Piece of={tree} x={80} y={18} />
+  <Pacer name="chicken" y={24} from={14} to={80} ms={340} rest={24} flee={50} fg="#fafaf9"
+    right={["(')>", "(')>"]}
+    left={["<(')", "<(')"]}
+    sit={["(.)>", "(')>", "(.)>", "(')>"]} />
   <slot />
 </Scene>

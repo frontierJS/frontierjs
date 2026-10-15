@@ -1,6 +1,6 @@
 // src/stage.js — a scene's cells, claimed by the pieces placed on it
 // (`FJS-D997`). `Scene.mesa` makes one and provides it as `$context.scene`;
-// `<Piece>`, `<Row>`, `<Door>` and `<Pacer>` write to it; `#paint` draws it;
+// `<Piece>`, `<Row>`, `<Door>`, `<Pacer>` and `<Carousel>` write to it; `#paint` draws it;
 // the drives and `scenes.test.js` read it by slug from `stages`; the scene
 // editor moves its `marks`.
 //
@@ -42,6 +42,11 @@
 // — and one never lit is blank. With no seer every cell is lit: the
 // picture, the editor, a test. `litAt()` is the pure answer, so a drive
 // and both targets agree on which cells a screen shows.
+//
+// A scene with a `lantern` is pitch dark: a figure sees only the lantern's
+// radius round itself, and every figure standing in it carries one, so the
+// others are seen by theirs. A lantern is sight, not a lamp -- it stops at a
+// wall -- or a lantern beyond a rock would light the gallery behind it.
 //
 // One clock (`IDEAS/haven.md` 12.7). Whatever moves on a scene is a task on
 // its stage -- `task(key, fn, { phase, every, after })` -- and a FRAME runs the
@@ -97,6 +102,7 @@
 // which cell has a drop or a footprint.
 
 import { pacerAt, pacerNow, pick } from '../../api/src/pacer.ts'
+import { ridersAt } from '../../api/src/carousel.ts'
 import { almanacAt, SEASONS, skyDarkness, isNight, shade, MOON_FG, SKY_MS, hash, fallAt, untilWeatherChange, FALL, STRIKE_MS, BURN_MS, CHAR_MS, FIRE_MS, strikeAt, flashAt, cloudAt, groundOn } from './sky.js'
 import { fadeOf } from '../../api/src/memory.ts'
 import { pieceId } from './world.js'
@@ -212,22 +218,32 @@ function clear(stage, a, b) {
 }
 
 /**
+ * Whether a figure at `from` sees `cell` within `r` with a clear line. An
+ * opaque cell is also seen when a floor cell beside it is: a line skimming
+ * along a hedge meets the hedge's own nearer cells first, and a wall seen
+ * that way would show two cells of it.
+ */
+function sees(stage, from, cell, r) {
+  if (!within(from, cell, r)) return false
+  if (clear(stage, from, cell)) return true
+  return !stage.walkable(cell.x, cell.y) && STEPS.some(([dx, dy]) => {
+    const n = { x: cell.x + dx, y: cell.y + dy }
+    return stage.walkable(n.x, n.y) && within(from, n, r) && clear(stage, from, n)
+  })
+}
+
+/**
  * Whether the cell `x, y` of `stage` is lit for a figure standing at `from`:
- * within SIGHT of it with a clear line, or within the radius of a light.
- * Everything is lit for no figure. An opaque cell is also seen when a floor
- * cell beside it is: a line skimming along a hedge meets the hedge's own
- * nearer cells first, and a wall seen that way would show two cells of it.
+ * within SIGHT of it with a clear line (the lantern's radius in a dark
+ * scene), within sight of another figure's lantern, or within the radius of
+ * a light. Everything is lit for no figure.
  */
 export function litAt(stage, x, y, from) {
   if (!from) return true
   const cell = { x, y }
-  if (within(from, cell, SIGHT)) {
-    if (clear(stage, from, cell)) return true
-    if (!stage.walkable(x, y) && STEPS.some(([dx, dy]) => {
-      const n = { x: x + dx, y: y + dy }
-      return stage.walkable(n.x, n.y) && within(from, n, SIGHT) && clear(stage, from, n)
-    })) return true
-  }
+  const r = stage.lantern || SIGHT
+  if (sees(stage, from, cell, r)) return true
+  if (stage.lanterns.some((l) => sees(stage, l, cell, r))) return true
   return stage.lights.some((l) => within(l, cell, l.r))
 }
 
@@ -304,12 +320,14 @@ export function arrival(stage, { from, x, y, stand } = {}) {
 /**
  * @param {{ slug: string, palette?: object, spawn: { x: number, y: number }, season?: string }} o
  */
-export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manual = false, season = almanacAt(Date.now()).season }) {
+export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lantern = 0, manual = false, season = almanacAt(Date.now()).season }) {
   for (const l of layers) if (!LAYERS.includes(l)) throw new Error(`[${slug}] no layer is called ${l}; the layers are ${LAYERS.join(', ')}`)
   const has  = (name) => layers.includes(name)
   const fog  = has('fog')
+  if (lantern && !fog) throw new Error(`[${slug}] a lantern lights only under the fog; name the fog layer`)
   const claims    = new Map()   // key(x, y) → { ch, key, name, floor, overhead, door, hidden }
   const pacers    = []
+  const carousels = []
   const marks     = []          // every placed thing, in the order it was placed
   const listeners = new Set()
   let width = 0, height = 0
@@ -341,12 +359,13 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   const readopt = () => {
     defaults.clear()
     defaultFrom.clear()
-    for (const m of marks) if (m.kind === 'piece') adopt(m.drawn)
+    for (const m of marks) if (m.kind === 'piece') adopt(m.drawn); else if (m.kind === 'carousel') adopt(m.of)
   }
   let lights  = []             // every cell whose palette entry has a light, with its radius
   let visible = new Set()      // key(x, y) lit for the seer now
   let seen    = new Set()      // key(x, y) lit for the seer at any time
   let occupied = new Set()     // key(x, y) a figure stands on, for what burns only while a seat is taken
+  let carried  = []            // every figure's cell, each a lantern, in a scene that has them
   let burnSeats = null         // key(x, y) of every seat a `burns` cell waits on, made at the first occupy and dropped by relight
   let glow    = null           // key(x, y) → [{ l, f }], each light whose radius holds the cell and how near it is (0..1); made at the first night look, dropped by relight
   let steps   = new Map()      // key(x, y) → { at, until }, the newest footprint on the cell
@@ -761,6 +780,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     get defaults() { return Object.fromEntries(defaults) },
     spawn,
     pacers,
+    carousels,
     marks,
     get width()  { return width },
     get height() { return height },
@@ -809,6 +829,12 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     /** Every light on the stage, `{ x, y, r }`. */
     get lights() { return lights },
 
+    /** A dark scene's lantern radius, 0 in a scene that is not dark. */
+    lantern,
+
+    /** The cells a figure carries a lantern on, `{ x, y }`; none in a scene with no lantern. */
+    get lanterns() { return carried },
+
     /** How this cell stands to the seer: `'lit'`, `'dim'` (lit once, not now) or `'dark'`; lit everywhere with no seer. */
     light(x, y) {
       if (!seer || !fog) return 'lit'
@@ -841,6 +867,11 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       }
       if (!moved) for (const k of burnSeats) if (next.has(k) !== occupied.has(k)) { moved = true; break }
       occupied = next
+      if (lantern) {
+        carried = [...next].map((k) => ({ x: xOf(k), y: yOf(k) }))
+        fogUp()
+        return tell()
+      }
       if (moved) invalidate()
     },
 
@@ -952,6 +983,56 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       marks.push(mark)
       changed()
       return mark
+    },
+
+    /**
+     * Targets riding a loop on the clock (`api/src/carousel.ts`): `of` is the
+     * rider's piece, and the lane between the housings is claimed as a wall a
+     * figure cannot step into, blank but for a chain down each column's middle
+     * in the paint letter `rail`. The riders are drawn over it like a pacer.
+     */
+    carousel({ name, of, x, apart, top, bottom, ms, n, rail }) {
+      adopt(of)
+      const spec = { name, x, apart, top, bottom, ms, n, cells: of.cells.map((c) => [c.dx, c.dy]) }
+      const w = Math.max(...of.cells.map((c) => c.dx)) + 1, mid = Math.floor(w / 2)
+      const lane = []
+      for (let y = top; y <= bottom; y++) {
+        for (let dx = 0; dx < apart + w; dx++) {
+          const chain = dx === mid || dx === apart + mid
+          lane.push([x + dx, y, { ch: chain ? '¦' : ' ', key: chain ? rail : ' ', name }])
+        }
+      }
+      try { putAll(lane) }
+      catch (e) { readopt(); throw e }
+      carousels.push(spec)
+      const mark = {
+        kind: 'carousel', spec, of,
+        get x() { return spec.x }, get y() { return spec.top },
+        remove() {
+          for (const [lx, ly] of lane) claims.delete(key(lx, ly))
+          const i = carousels.indexOf(spec); if (i !== -1) carousels.splice(i, 1)
+          drop(mark); readopt(); changed()
+        },
+      }
+      marks.push(mark)
+      changed()
+      return mark
+    },
+
+    /** Every rider's cell showing between its carousel's housings `ms` into the clock, `{ x, y, ch, fg }`. */
+    riders(ms) {
+      const out = []
+      for (const m of marks) {
+        if (m.kind !== 'carousel') continue
+        const { spec, of } = m
+        for (const r of ridersAt(spec, ms)) {
+          for (const c of of.cells) {
+            const y = r.y + c.dy
+            if (y >= spec.top && y <= spec.bottom) out.push({ x: r.x + c.dx, y, ch: c.ch, fg: pick(entryOf(c.key)?.fg, 0) })
+          }
+        }
+      }
+      return out
     },
 
     /** Called after any claim, the view, the light or a footprint changes. */
@@ -1194,9 +1275,9 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       return !!(c && entryOf(c.key)?.chars)
     },
 
-    /** The shortest step any cell, pacer or layer moves on `ms` into the clock, or 0 when none does. */
+    /** The shortest step any cell, pacer, carousel or layer moves on `ms` into the clock, or 0 when none does. */
     tickOf(ms = Date.now()) {
-      const steps = [...Object.values(palette), ...defaults.values(), ...pacers].map((s) => s.ms).filter(Boolean)
+      const steps = [...Object.values(palette), ...defaults.values(), ...pacers, ...carousels].map((s) => s.ms).filter(Boolean)
       for (const name of LAYERS) if (has(name) && ticks[name]) steps.push(...ticks[name](ms))
       // A scene with no sky has none to redraw on, and a night door in it
       // would open and shut unseen until something else moved.

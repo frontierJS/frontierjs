@@ -231,5 +231,6 @@
  {"id":"delegate@75,66","name":"delegate","cells":[[76,66],[75,67],[76,67],[77,67],[78,67]]}
 ],
 "pickups": [],
-"pacers": []
+"pacers": [],
+"carousels": []
 }

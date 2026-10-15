@@ -1,0 +1,7 @@
+<script>
+  // The mine -- down the pithead on the road, pitch dark past the shaft.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Mine from '@/scenes/Mine.mesa'
+</script>
+
+<WalkIn slug="mine"><Mine /></WalkIn>
