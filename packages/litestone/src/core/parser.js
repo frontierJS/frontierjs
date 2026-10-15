@@ -5396,8 +5396,19 @@ function validate(schema) {
     ]
     for (const { a, at } of checks) {
       const named = new Set()
-      mapIdentifiers(a.expr, id => { named.add(id); return null })
+      const marked = mapIdentifiers(a.expr, id => { named.add(id); return `\0${id}\0` })
+      // `person.scheduleId` is a relation path, which a one-row CHECK can never
+      // read; naming only `person` sent the author hunting for a missing column.
+      const paths = new Set()
+      for (const m of marked.matchAll(/\0(\w+)\0\.\0(\w+)\0/g)) {
+        const f = model.fields.find(x => x.name === m[1])
+        if (!f || isStoredField(f)) continue
+        paths.add(m[1])
+        errors.push(`${at}(${JSON.stringify(a.expr)}) names '${m[1]}.${m[2]}', a path through the relation '${m[1]}' — ` +
+                    `a CHECK reads only this row. Carry the shared column on this model and join on it with a composite @relation`)
+      }
       for (const id of named) {
+        if (paths.has(id)) continue
         const f = model.fields.find(x => x.name === id)
         if (f && !isStoredField(f))
           errors.push(`${at}(${JSON.stringify(a.expr)}) names '${id}', which is not a stored column — ` +
@@ -6719,6 +6730,44 @@ function validate(schema) {
           `A foreign key names a table and a table lives in one file, so this emits a key SQLite resolves ` +
           `nowhere and every create throws 'no such table'. Put both models in one database, or drop the ` +
           `@relation and carry the id as a plain column`)
+      }
+    }
+  }
+
+  // SQLite wants the referenced columns to be exactly a PRIMARY KEY or a UNIQUE
+  // index. A composite relation whose `references` are not one parses and builds,
+  // then every write to EITHER table throws a bare 'foreign key mismatch' — the
+  // parent's too, which names no relation — measured (`FJS-2784`). `id` alone
+  // being unique makes the pair unique in fact and does not help: the index has
+  // to be over exactly those columns.
+  {
+    const modelByName = new Map(schema.models.map(m => [m.name, m]))
+    for (const model of schema.models) {
+      if (model.attributes.some(a => a.kind === 'external')) continue
+      for (const field of model.fields) {
+        const rel = field.attributes.find(a => a.kind === 'relation')
+        if (!rel?.fields?.length || !rel.references?.length) continue
+        const target = modelByName.get(typeof field.type === 'string' ? field.type : field.type?.name)
+        if (!target || target.attributes.some(a => a.kind === 'external')) continue
+        const refs = rel.references
+        const same = (cols) => cols.length === refs.length && refs.every(r => cols.includes(r))
+        const colName = c => c?.name ?? c
+        const key =
+          same(target.fields.filter(f => f.attributes.some(a => a.kind === 'id')).map(f => f.name)) ||
+          (refs.length === 1 && target.fields.some(f => f.name === refs[0] && f.attributes.some(a => a.kind === 'unique'))) ||
+          target.attributes.some(a => a.kind === 'uniqueIndex' && Array.isArray(a.fields) && same(a.fields.map(colName)))
+        if (key) continue
+        // An unknown column is reported where relations are resolved; naming a
+        // missing key beside it would say the same fault twice.
+        if (!refs.every(r => target.fields.some(f => f.name === r))) continue
+        errors.push(
+          `Model '${model.name}', field '${field.name}': references [${refs.join(', ')}] are not a key of '${target.name}' — ` +
+          `SQLite refuses every write to both tables with 'foreign key mismatch' unless the referenced columns are ` +
+          `a primary key or carry a unique index over exactly them. ` +
+          (refs.length === 1
+            ? `Add @unique to ${target.name}.${refs[0]}`
+            : `Add @@unique([${refs.join(', ')}]) to ${target.name}`) +
+          `, or reference its @id`)
       }
     }
   }

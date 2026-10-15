@@ -252,3 +252,52 @@ model Node {
       .rejects.toThrow(/'Node\.parent' relates over \(scheduleId, parentId\), and a tree walk follows a single column/)
   })
 })
+
+// FJS-2784: SQLite wants the referenced columns to be a key, and `id` alone
+// being unique does not count. Unrefused, every write to BOTH tables threw a
+// bare 'foreign key mismatch', the parent's included.
+describe('a relation whose references are not a key of the target', () => {
+  const schema = (shiftAttrs: string, ref = '[scheduleId, id]') => `
+model Schedule {
+  id     String @id
+  shifts Shift[]
+}
+model Shift {
+  id          String @id
+  scheduleId  String
+  schedule    Schedule @relation(fields: [scheduleId], references: [id])
+  code        String
+  assignments Assignment[]
+  ${shiftAttrs}
+}
+model Assignment {
+  id          String @id
+  scheduleId  String
+  shiftId     String
+  shift       Shift @relation(fields: [scheduleId, shiftId], references: ${ref})
+}`
+
+  it('is refused at load, naming the cure', async () => {
+    await expect(createClient({ schema: schema(''), db: ':memory:' }))
+      .rejects.toThrow(/references \[scheduleId, id\] are not a key of 'Shift'.*Add @@unique\(\[scheduleId, id\]\) to Shift/)
+  })
+
+  it('is refused for a single column that is not unique', async () => {
+    const one = schema('').replace('[scheduleId, shiftId], references: [scheduleId, id]', '[shiftId], references: [code]')
+    await expect(createClient({ schema: one, db: ':memory:' }))
+      .rejects.toThrow(/references \[code\] are not a key of 'Shift'.*Add @unique to Shift\.code/)
+  })
+
+  it('builds once a @@unique over exactly those columns exists', async () => {
+    const db: any = await createClient({ schema: schema('@@unique([scheduleId, id])'), db: ':memory:' })
+    await db.schedule.create({ data: { id: 's1' } })
+    await db.shift.create({ data: { id: 'am', scheduleId: 's1', code: 'a' } })
+    await db.assignment.create({ data: { id: 'a1', scheduleId: 's1', shiftId: 'am' } })
+  })
+
+  it('builds over a single @unique column', async () => {
+    const one = schema('').replace('[scheduleId, shiftId], references: [scheduleId, id]', '[shiftId], references: [code]')
+      .replace('code        String', 'code        String @unique')
+    await createClient({ schema: one, db: ':memory:' })
+  })
+})

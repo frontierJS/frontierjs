@@ -75,6 +75,19 @@ describe('a @@check naming a field with no column', () => {
     expect(r.valid).toBe(false)
     expect(r.errors.join('\n')).toMatch(/Model 'Shift': @@check\("adults >= 1"\) names 'adults', which is not a stored column/)
   })
+  test('refuses one naming a relation path, by the path and with the cure', () => {
+    const r = parse(`
+model Event { id Int @id }
+model Shift { id Int @id
+  eventId Int
+  event Event @relation(fields: [eventId], references: [id])
+  @@check("event.id = eventId && 'event.x' != ''") }`)
+    expect(r.valid).toBe(false)
+    const msg = r.errors.join('\n')
+    expect(msg).toMatch(/names 'event\.id', a path through the relation 'event'.*composite @relation/)
+    expect(msg).not.toMatch(/names 'event\.x'/)
+    expect(msg).not.toMatch(/names 'event', which is not a stored column/)
+  })
   test('refuses a field @check naming one', () => {
     const r = parse(schema(`n Int @check("n <= adults")`))
     expect(r.errors.join('\n')).toMatch(/Model 'Shift', field 'n': @check\("n <= adults"\) names 'adults'/)

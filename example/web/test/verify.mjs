@@ -899,6 +899,22 @@ try {
     const r = await (await fetch(`${API}/api/plans?code=PRO`)).json()
     return r.data[0].id
   })()
+  // The page lists the newest 50 windows, and every run of this drive opens
+  // another. The seed leaves the subscriber on the OLDEST window, which drops
+  // off that list after fifty runs, and `newWindowEmpty` then finds no holder
+  // anywhere on screen (`FJS-2131`). Standing the subscriber on the window about
+  // to close puts the holder on the newest closed one, always listed.
+  {
+    const sub  = (await (await ledger('/subscriptions?reference=SUB-3001')).json()).data[0]
+    const open = (await (await ledger(`/plan-versions?planId=${proId}&effectiveTo=null`)).json()).data[0]
+    const res  = await fetch(`${API}/api/subscriptions/${sub.id}`, {
+      method:  'PATCH',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${_staff}` },
+      body:    JSON.stringify({ planVersionId: open.id }),
+    })
+    if (!res.ok) throw new Error(`could not stand SUB-3001 on the open window: ${res.status}`)
+  }
+
   await goto(`/plans/${proId}/`)
 
   // Exactly one window is open — `@@unique([planId], where: effectiveTo == null)`
@@ -992,15 +1008,20 @@ try {
     // is a DOWNGRADE on a two-seat subscription and writes a credit note
     // instead of an invoice.
     await waitFor(() => document.querySelector('#cp-seats')?.value);
-    const before = document.querySelectorAll('tbody tr[data-invoice]').length;
+    // The page lists the newest 50 invoices, and a subscription run against
+    // this drive for long enough has more: the row COUNT stops at 50 while a
+    // new bill still pushes the oldest off, so the wait is for an id that was
+    // not there (FJS-2909).
+    const ids    = () => [...document.querySelectorAll('tbody tr[data-invoice]')].map(tr => tr.dataset.invoice);
+    const before = new Set(ids());
     // The box is seeded from the row, so *one more seat* is read off the
     // control rather than off a tile whose markup this drive would then own.
     const seats  = document.querySelector('#cp-seats');
     seats.value  = String(Number(seats.value) + 1);
     seats.dispatchEvent(new Event('input', { bubbles: true }));
     document.querySelector('#cp-submit').click();
-    await waitFor(() => document.querySelectorAll('tbody tr[data-invoice]').length > before);
-    return document.querySelectorAll('tbody tr[data-invoice]').length - before;
+    await waitFor(() => ids().some(id => !before.has(id)));
+    return ids().filter(id => !before.has(id)).length;
   `))
 
   // ── The document ────────────────────────────────────────────────────────
@@ -1071,7 +1092,11 @@ try {
       : bills.map(b => plusDays(b.dueOn, b[col])).sort()[0]]))
 
   const subNow = await (await ledger(`/subscriptions/${subId}`)).json()
-  const issued = ((await (await ledger(`/invoices?subscriptionId=${subId}&status=issued&$limit=50`)).json()).data ?? [])
+  // The page reads the newest 50 invoices of any status; asking for the issued
+  // ones in the table's default order picks a different 50 once a subscription
+  // has more than that (FJS-2909).
+  const issued = ((await (await ledger(`/invoices?subscriptionId=${subId}&$orderBy=-issuedAt&$limit=50`)).json()).data ?? [])
+    .filter(b => b.status === 'issued')
   t('subDetail.owedDates', await (async () => {
     const want  = owedFor(subNow.status, issued)
     const shown = await evaluate(`
