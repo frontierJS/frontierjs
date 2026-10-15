@@ -142,7 +142,7 @@ export const RULES = [
   { id: 'battery-raw-secret',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a battery takes its credential by reference, not as a constructor argument' },
   { id: 'queue-operator-verb',  scope: 'app',  severity: 'error', invariant: null,
-    title: 'pausing, resuming or draining a queue — or every queue — is an operator\'s act, not a service\'s' },
+    title: 'pausing, resuming, draining or purging a queue — or every queue — is an operator\'s act, not a service\'s' },
   { id: 'gate-unreachable',     scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'a declared @@gate level something can actually reach' },
   { id: 'static-publish-db',    scope: 'app',  severity: 'error', invariant: null,
@@ -2428,7 +2428,7 @@ const CHECKS = {
   },
 
   // `FJS-D198`: a Queue's verbs split in two. `handle`, `dispatch` and
-  // `schedule` are the app's; `pause`, `resume` and `drain` are an operator's,
+  // `schedule` are the app's; `pause`, `resume`, `drain` and `purge` are an operator's,
   // run from a console during an incident. Over HTTP caravan refuses them below
   // ADMINISTRATOR, and that gate is the one thing a call from a service or a job
   // does not pass through — the handle is a plain function, so a service method
@@ -2468,8 +2468,8 @@ const CHECKS = {
     const findings = []
     const say = (path, code, index, verb, target = 'queue(…)') => findings.push({
       file: path, line: lineOf(code, index),
-      message: `${target}.${verb}() in a ${/\.job\./.test(path) ? 'job' : 'service'} file. Pausing, resuming and ` +
-               `draining a queue are operator verbs (FJS-D198): over HTTP caravan requires ADMINISTRATOR ` +
+      message: `${target}.${verb}() in a ${/\.job\./.test(path) ? 'job' : 'service'} file. Pausing, resuming, ` +
+               `draining and purging a queue are operator verbs (FJS-D198): over HTTP caravan requires ADMINISTRATOR ` +
                `for them, and a call from here skips that gate — whoever can reach this code can stop ` +
                `work every tenant is waiting on. Run it from a console or the admin route instead.`,
     })
@@ -2477,14 +2477,14 @@ const CHECKS = {
     for (const path of files) {
       const code = readCode(path)
       // Every queue at once: app.jobs.pause() — the one a deploy runs (FJS-D262)
-      for (const m of code.matchAll(/\.jobs\s*\.(pause|resume|drain)\s*\(/g))
+      for (const m of code.matchAll(/\.jobs\s*\.(pause|resume|drain|purge)\s*\(/g))
         say(path, code, m.index, m[1], 'jobs')
       // Chained: app.jobs.queue('mail').pause()
-      for (const m of code.matchAll(/\.queue\s*\([^)]*\)\s*\.(pause|resume|drain)\s*\(/g))
+      for (const m of code.matchAll(/\.queue\s*\([^)]*\)\s*\.(pause|resume|drain|purge)\s*\(/g))
         say(path, code, m.index, m[1])
       // Bound: const q = app.jobs.queue('mail') … q.pause()
       for (const b of code.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\.queue\s*\(/g))
-        for (const m of code.matchAll(new RegExp(`\\b${b[1].replace(/\$/g, '\\$')}\\.(pause|resume|drain)\\s*\\(`, 'g')))
+        for (const m of code.matchAll(new RegExp(`\\b${b[1].replace(/\$/g, '\\$')}\\.(pause|resume|drain|purge)\\s*\\(`, 'g')))
           say(path, code, m.index, m[1])
     }
     return { findings }

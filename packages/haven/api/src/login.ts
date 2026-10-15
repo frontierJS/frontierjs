@@ -12,6 +12,8 @@ import { verifyRequest } from '@frontierjs/toolbelt/signature'
 import type { TransportContext } from '@frontierjs/junction'
 
 import type { HavenAuth } from './auth.ts'
+import { CRIER } from './crier.ts'
+import { DICE } from './dice.ts'
 
 export const LOGIN_PATH = '/haven/login'
 
@@ -25,6 +27,9 @@ export interface LoginOptions {
   now?:  () => number
   /** The nicks that are mods. Applied at every login, both ways. */
   mods?: string[]
+  /** Observer: told a member's nick once, at the login that made them, and
+   *  awaited, so the line is in the room before the member's client loads it. */
+  welcome?: (nick: string) => Promise<void> | void
 }
 
 export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
@@ -63,9 +68,11 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     let member = await sys.member.findFirst({ where: { publicKey }, select: { id: true, nick: true, role: true } })
     if (!member) {
       if (typeof body.nick !== 'string' || !body.nick) return ctx.json({ message: 'A first login names the nick this key will walk in as.' }, 400)
-      const taken = await sys.member.findFirst({ where: { nick: body.nick.trim().toLowerCase() }, select: { id: true } })
+      const nick  = body.nick.trim().toLowerCase()
+      const taken = nick === CRIER || nick === DICE || await sys.member.findFirst({ where: { nick }, select: { id: true } })
       if (taken) return ctx.json({ message: `The nick '${body.nick}' is taken. Choose another.` }, 409)
       member = await sys.member.create({ data: { nick: body.nick, publicKey }, select: { id: true, nick: true, role: true } })
+      await opts.welcome?.(member.nick)
     }
 
     // The standing is the list's, applied on every login so a nick struck from

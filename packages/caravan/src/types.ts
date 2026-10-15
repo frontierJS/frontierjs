@@ -40,6 +40,8 @@ export interface JobRecord {
    * first was midway through.
    */
   owner_id:     string | null
+  /** How far along the current attempt is, 0 to 1. NULL until the handler says. */
+  progress:     number | null
 }
 
 // ─── Parsed job ──────────────────────────────────────────────────────────────
@@ -99,6 +101,25 @@ export interface JobContext<T = unknown> extends Job<T> {
    * where the app declares no tenancy, and where the work is the app's own.
    */
   tenantId: string | null
+
+  /**
+   * Aborted when this attempt is over before the handler returned: its
+   * declared `timeout` passed, `cancel()` took the job, or the worker stopped
+   * past its drain deadline. Pass it to `fetch` or check it between steps —
+   * nothing else stops a handler, and one that ignores it keeps running and
+   * writing. `signal.reason` says which. A cancel is only seen here when the
+   * job runs in the process that called `cancel()`.
+   */
+  signal: AbortSignal
+
+  /**
+   * Say how far along this attempt is, as a fraction from 0 to 1. Readable as
+   * `progress` on the row (`app.jobs.find(id)`, the admin list). Throws on
+   * anything else, so a handler's `40` for forty percent fails where it is
+   * written rather than reading as 4000%. Does nothing once the attempt is no
+   * longer the row's owner — cancelled, timed out, or reclaimed.
+   */
+  progress(fraction: number): void
 }
 
 // ─── Handler + registration options ──────────────────────────────────────────
@@ -300,6 +321,12 @@ export interface DispatchOptions {
   id?:       string
 }
 
+/**
+ * What `dispatchMany` shares across the batch. `id` and `unique` name ONE job,
+ * so a batch stating either would collapse into the first row.
+ */
+export type BulkDispatchOptions = Omit<DispatchOptions, 'id' | 'unique'>
+
 // ─── Queue config ─────────────────────────────────────────────────────────────
 
 export interface QueueConfig {
@@ -479,7 +506,7 @@ export interface QueuePause {
 export interface QueueEvent {
   id:     number
   queue:  string
-  verb:   'pause' | 'resume' | 'drain'
+  verb:   'pause' | 'resume' | 'drain' | 'purge'
   actor:  string | null
   at:     number
   detail: Record<string, unknown> | null
@@ -539,6 +566,15 @@ export interface QueueHandle {
    * a fact they need in front of them, not an exception between them and it.
    */
   drain(opts?: OperatorOptions & { timeout?: number }): Promise<{ drained: boolean; running: number; pause: QueuePause }>
+
+  /**
+   * Delete this queue's PENDING jobs, delayed ones included. A running job is
+   * left to finish (`drain()` is what waits on it) and a finished one is the
+   * cleanup sweep's. The rows are gone, not cancelled, so a `unique` key or a
+   * stated `id` they held is free to dispatch again. Nothing destroyed records
+   * nothing.
+   */
+  purge(opts?: OperatorOptions): { purged: number }
 
   /** The pause in force — this queue's own, else the one over every queue — its counts, and the most recent operator verbs. */
   state(opts?: { events?: number }): { name: string; paused: QueuePause | null; stats: QueueStats; events: QueueEvent[] }
@@ -662,6 +698,14 @@ export interface CaravanInstance {
    */
   dispatch<T = unknown>(name: string, data: T, opts?: DispatchOptions): Promise<string>
 
+  /**
+   * Dispatch one job per payload in a single transaction, returning the ids in
+   * order. All or nothing: a payload that cannot be encoded queues none of
+   * them. Under `synchronous: 'FULL'` this is one fsync where N dispatches are N.
+   */
+  dispatchMany<T>(job: JobDefinition<T>, data: T[], opts?: BulkDispatchOptions): Promise<string[]>
+  dispatchMany<T = unknown>(name: string, data: T[], opts?: BulkDispatchOptions): Promise<string[]>
+
   /** Register a job definition — its own queue, retries and cron. */
   handle<T>(job: JobDefinition<T>): void
 
@@ -695,6 +739,7 @@ export interface CaravanInstance {
   pause(opts?: OperatorOptions): { changed: boolean; pause: QueuePause }
   resume(opts?: OperatorOptions): { changed: boolean; pause: QueuePause | null }
   drain(opts?: OperatorOptions & { timeout?: number }): Promise<{ drained: boolean; running: number; pause: QueuePause }>
+  purge(opts?: OperatorOptions): { purged: number }
 
   /** Start the workers, cron and sweeps. As a plugin, junction's `start-work` phase calls it; a one-shot boot does not. */
   start(): Promise<void>

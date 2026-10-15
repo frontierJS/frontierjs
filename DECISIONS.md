@@ -13482,6 +13482,16 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d1020"></a>2026-10-15 · `FJS-D1020` — An agent's task is a fix-loop command, never a session of its own — A mod's `<nick> task: …` is turned by the agent (Haiku, no tools) into one checked plan — `--ids`, `--pkg`/`--sev`, or a row filed with `fli file` then run by id — and started through the taskmaster's `startLoop`; the raw `claude -p --permission-mode auto` session is gone.
+
+Amends `FJS-D1019`, ruled the same day, at the owner's choice of **replace** over **keep both** (ids to the loop, free text still a raw session) and **ids only** (no model routing). A mod's words now reach a model with no tools, as `FJS-D1017` had it; what drives the machine is the loop, which already runs under `auto` with its own ladder, budget, pre-brief and close-out, so a task is held to a row in the register like every other fix. The model answers a plan and never a flag: an id must be a ready row of `fli next`, a package a bench, a severity `S1`–`S4`, and anything else is refused in a line with nothing started. A free-text task that matches no row is filed first, so the work traces back. *Unenforced:* the agent reads the loop's log for the row it is on and its outcome, and a change to that line's shape is reported by nothing. *Lives in:* `planOf`/`checkPlan` in `packages/haven/agents/agents.js`, `startLoop`/`fileRow`/`loopReport` in `packages/haven/web/src/taskmaster.js`; `agents/test/agents.test.js` asserts the loop's argv against a stub loop.
+
+### <a id="fjs-d1019"></a>2026-10-15 · `FJS-D1019` — A mod's task runs a whole Claude Code session under `auto` — An agent handed `<nick> task: …` by a mod runs `claude -p --permission-mode auto` in the owner's checkout, with tools, the project's hooks and a $5 budget; `acceptEdits` and `bypassPermissions` were the other two.
+
+**Status:** amended-by [`FJS-D1020`](#fjs-d1020) — the session itself: a task is now a fix-loop command, so no mod's line reaches a model with tools.
+
+Amends `FJS-D1017`, which gave a mod's line to a model with no tools. The gate is the same one: the runner's `HAVEN_MODS`, never the server's, so a task is a nick the owner named driving the owner's machine, and a stranger's `task:` starts nothing. **`acceptEdits`** would deny every Bash call the project settings do not allowlist, since a print session cannot ask, and most tasks would stop short; **`bypassPermissions`** would make a mod's line a shell. `auto` lets Claude Code's classifier judge each tool call. Overrides § V's *failure mode proportional to the cost of being wrong* at the owner's choice: a wrong task can edit or run anything `auto` admits in the shared tree. *Lives in:* `WORK_PERMISSION` and `WORK_BUDGET_USD`, `packages/haven/agents/agents.js`; `agents/test/agents.test.js` asserts the mode and that a non-mod's task starts nothing.
+
 ### <a id="fjs-d1017"></a>2026-10-14 · `FJS-D1017` — Q15 — Who may talk to a figure Claude speaks for — A mod only: a model-backed figure answers a line from a `HAVEN_MODS` nick and nothing else.
 
 Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **A** was picked over **B** (anyone, with a budget per member per day — `FJS-D994`'s B) and **C** (no live model: NPCs speak from a line bank, agents only on a private `--api` server).

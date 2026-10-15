@@ -29,7 +29,7 @@ import { autoloadJobs }                             from './autoload.ts'
 import { CronScheduler }                            from './cron.ts'
 import type {
   CaravanOptions, CaravanInstance, CaravanApp, CaravanTelemetry,
-  CaravanStats, DispatchOptions, HandlerOptions,
+  CaravanStats, DispatchOptions, BulkDispatchOptions, HandlerOptions,
   JobDefinition, JobHandler, JobRecord, JobRef, JobStatus,
   QueueConfig, RegisteredHandler,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
@@ -38,7 +38,7 @@ import type {
 export type {
   CaravanOptions, CaravanInstance, CaravanStats,
   Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar,
-  HandlerOptions, DispatchOptions,
+  HandlerOptions, DispatchOptions, BulkDispatchOptions,
   JobRecord, JobStatus, QueueConfig, QueueStats,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
   CronEntry,
@@ -285,6 +285,16 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         }
         recordEvent(scope, 'drain', operatorOf(o), { drained: count === 0, running: count, timeout })
         return { drained: count === 0, running: count, pause }
+      },
+
+      purge(o: OperatorOptions = {}) {
+        const { stmts } = rt()
+        const actor  = operatorOf(o)
+        const reason = o.reason ?? null
+        const purged = stmts.purgeQueue.run({ queue: scope }).changes
+        // A purge that destroyed nothing is not an act worth an audit row.
+        if (purged > 0) recordEvent(scope, 'purge', actor, { purged, ...(reason ? { reason } : {}) })
+        return { purged }
       },
     }
     return verbs
@@ -564,6 +574,13 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         return Response.json(named(c).resume())
       })
 
+      appRouter.post(`${basePath}/queues/{name}/purge`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        await operator(c)
+        const reason = bodyOf(c).reason
+        return Response.json(named(c).purge(typeof reason === 'string' ? { reason } : {}))
+      })
+
       // Bounded, because a request that blocks longer than the proxy in front
       // of it is cut off and the operator loses the answer while the drain goes
       // on without them. A longer wait is `state()` polled, which is what a
@@ -724,6 +741,122 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     ensureQueue(queue)
   }
 
+  // The whole of one dispatch, synchronously: nothing in it awaits, which is
+  // what lets dispatchMany run N of them inside one transaction.
+  const insertJob = (
+    job:          JobRef,
+    data:         unknown,
+    dispatchOpts: DispatchOptions = {}
+  ): string => {
+    // A definition carries the one statement of its own name; a string is the
+    // caller restating it. Both end up as the same row.
+    const name  = typeof job === 'string' ? job : job.name
+    const id    = dispatchOpts.id ?? crypto.randomUUID()
+    const delay = dispatchOpts.delay    ?? 0
+    const prio  = dispatchOpts.priority ?? 0
+    const now   = Date.now()
+
+    const { stmts } = rt()
+
+    // If a handler is registered with a specific queue for this name,
+    // respect that over the dispatch-time queue
+    const registered  = handlers.get(name)
+    const targetQueue = dispatchOpts.queue ?? registered?.queue ?? 'default'
+
+    ensureQueue(targetQueue)
+
+    // Deduplication — if a pending job with this unique key exists, return its id
+    if (dispatchOpts.unique) {
+      const existing = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
+      if (existing) return existing.id
+    }
+
+    // A STATED id is a claim of idempotency for all time — the id is the
+    // primary key, so the work is already queued or already done. Checked
+    // first because that is the cheap answer; the insert below is what
+    // settles a race, since two processes can both read nothing here.
+    if (dispatchOpts.id && stmts.getById.get({ id })) return id
+
+    // WHO asked. Absent means "whoever is in scope", which is the ordinary
+    // case and needs saying nowhere; an explicit `actor: null` means this is
+    // the app's own work even though a request started it. Tested with `in`
+    // rather than `??` for that reason — the same absent-is-not-null rule the
+    // rest of the framework makes about a principal.
+    const actorId = 'actor' in dispatchOpts
+      ? dispatchOpts.actor ?? null
+      : host?.principal?.()?.userId ?? null
+
+    // WHERE, on the same absent-is-not-null rule. A job queued inside a
+    // request is for the tenant that asked for it and nothing has to be
+    // said; `tenant: null` is work that belongs to no tenant, stated.
+    const tenantId = 'tenant' in dispatchOpts
+      ? dispatchOpts.tenant ?? null
+      : host?.tenant?.() ?? null
+
+    // WHICH REQUEST, on the same absent-is-not-null rule as the two above. A
+    // job queued inside a call belongs to it and nothing has to be said.
+    const correlationId = 'correlationId' in dispatchOpts
+      ? dispatchOpts.correlationId ?? null
+      : host?.correlationId?.() ?? null
+
+    const row = {
+      id,
+      queue:        targetQueue,
+      name,
+      // An absent payload is an empty one. `JSON.stringify(undefined)` is
+      // undefined, which bound as NULL and surfaced as
+      // `NOT NULL constraint failed: jobs.data` — a SQLite message naming
+      // neither the job nor the caller. `null` is left alone: it is a value
+      // somebody passed, and it round-trips.
+      data:         encodePayload(name, data === undefined ? {} : data),
+      status:       'pending',
+      priority:     prio,
+      max_attempts: registered?.maxAttempts ?? 3,
+      retry_delay:  registered?.retryDelay
+        ? JSON.stringify(registered.retryDelay)
+        : null,
+      unique_key:   dispatchOpts.unique ?? null,
+      run_at:       now + delay,
+      created_at:   now,
+      actor_id:     actorId,
+      tenant_id:    tenantId,
+      correlation_id: correlationId,
+    }
+
+    // The primary key is the only thing that can decide a race between two
+    // processes retrying the same stated id, so the collision is caught here
+    // rather than prevented above. Without a stated id there is nothing to
+    // collide with and the throw is a real failure.
+    try {
+      stmts.insert.run(row)
+    } catch (err) {
+      if (dispatchOpts.id && isPrimaryKeyCollision(err)) return id
+      // The index decided the race this dispatch lost. Ask it who won: the
+      // caller asked for "do not queue this twice", and the answer to that is
+      // the id of the job already doing the work, never a 500.
+      if (dispatchOpts.unique && isUniqueKeyCollision(err)) {
+        const winner = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
+        if (winner) return winner.id
+        // Gone terminal between the collision and the read, which frees the
+        // key — the partial index covers live jobs only. One more attempt;
+        // a second collision is a live job again and answers above.
+        try {
+          stmts.insert.run(row)
+          return id
+        } catch (again) {
+          if (isUniqueKeyCollision(again)) {
+            const other = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
+            if (other) return other.id
+          }
+          throw again
+        }
+      }
+      throw err
+    }
+
+    return id
+  }
+
   const caravan: CaravanInstance = {
 
     name: 'caravan',
@@ -736,113 +869,19 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       data: unknown,
       dispatchOpts: DispatchOptions = {}
     ): Promise<string> {
-      // A definition carries the one statement of its own name; a string is the
-      // caller restating it. Both end up as the same row.
-      const name  = typeof job === 'string' ? job : job.name
-      const id    = dispatchOpts.id ?? crypto.randomUUID()
-      const delay = dispatchOpts.delay    ?? 0
-      const prio  = dispatchOpts.priority ?? 0
-      const now   = Date.now()
+      return insertJob(job, data, dispatchOpts)
+    },
 
-      const { stmts } = rt()
-
-      // If a handler is registered with a specific queue for this name,
-      // respect that over the dispatch-time queue
-      const registered  = handlers.get(name)
-      const targetQueue = dispatchOpts.queue ?? registered?.queue ?? 'default'
-
-      ensureQueue(targetQueue)
-
-      // Deduplication — if a pending job with this unique key exists, return its id
-      if (dispatchOpts.unique) {
-        const existing = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
-        if (existing) return existing.id
-      }
-
-      // A STATED id is a claim of idempotency for all time — the id is the
-      // primary key, so the work is already queued or already done. Checked
-      // first because that is the cheap answer; the insert below is what
-      // settles a race, since two processes can both read nothing here.
-      if (dispatchOpts.id && stmts.getById.get({ id })) return id
-
-      // WHO asked. Absent means "whoever is in scope", which is the ordinary
-      // case and needs saying nowhere; an explicit `actor: null` means this is
-      // the app's own work even though a request started it. Tested with `in`
-      // rather than `??` for that reason — the same absent-is-not-null rule the
-      // rest of the framework makes about a principal.
-      const actorId = 'actor' in dispatchOpts
-        ? dispatchOpts.actor ?? null
-        : host?.principal?.()?.userId ?? null
-
-      // WHERE, on the same absent-is-not-null rule. A job queued inside a
-      // request is for the tenant that asked for it and nothing has to be
-      // said; `tenant: null` is work that belongs to no tenant, stated.
-      const tenantId = 'tenant' in dispatchOpts
-        ? dispatchOpts.tenant ?? null
-        : host?.tenant?.() ?? null
-
-      // WHICH REQUEST, on the same absent-is-not-null rule as the two above. A
-      // job queued inside a call belongs to it and nothing has to be said.
-      const correlationId = 'correlationId' in dispatchOpts
-        ? dispatchOpts.correlationId ?? null
-        : host?.correlationId?.() ?? null
-
-      const row = {
-        id,
-        queue:        targetQueue,
-        name,
-        // An absent payload is an empty one. `JSON.stringify(undefined)` is
-        // undefined, which bound as NULL and surfaced as
-        // `NOT NULL constraint failed: jobs.data` — a SQLite message naming
-        // neither the job nor the caller. `null` is left alone: it is a value
-        // somebody passed, and it round-trips.
-        data:         encodePayload(name, data === undefined ? {} : data),
-        status:       'pending',
-        priority:     prio,
-        max_attempts: registered?.maxAttempts ?? 3,
-        retry_delay:  registered?.retryDelay
-          ? JSON.stringify(registered.retryDelay)
-          : null,
-        unique_key:   dispatchOpts.unique ?? null,
-        run_at:       now + delay,
-        created_at:   now,
-        actor_id:     actorId,
-        tenant_id:    tenantId,
-        correlation_id: correlationId,
-      }
-
-      // The primary key is the only thing that can decide a race between two
-      // processes retrying the same stated id, so the collision is caught here
-      // rather than prevented above. Without a stated id there is nothing to
-      // collide with and the throw is a real failure.
-      try {
-        stmts.insert.run(row)
-      } catch (err) {
-        if (dispatchOpts.id && isPrimaryKeyCollision(err)) return id
-        // The index decided the race this dispatch lost. Ask it who won: the
-        // caller asked for "do not queue this twice", and the answer to that is
-        // the id of the job already doing the work, never a 500.
-        if (dispatchOpts.unique && isUniqueKeyCollision(err)) {
-          const winner = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
-          if (winner) return winner.id
-          // Gone terminal between the collision and the read, which frees the
-          // key — the partial index covers live jobs only. One more attempt;
-          // a second collision is a live job again and answers above.
-          try {
-            stmts.insert.run(row)
-            return id
-          } catch (again) {
-            if (isUniqueKeyCollision(again)) {
-              const other = stmts.findByUniqueKey.get({ unique_key: dispatchOpts.unique })
-              if (other) return other.id
-            }
-            throw again
-          }
-        }
-        throw err
-      }
-
-      return id
+    // One transaction for the lot: under synchronous = FULL every autocommitted
+    // insert is its own fsync (1000 jobs took 3.5s against 0.2s under NORMAL),
+    // and all-or-nothing is what a caller queueing a batch wants on a throw.
+    async dispatchMany(
+      job:  JobRef,
+      data: unknown[],
+      dispatchOpts: BulkDispatchOptions = {}
+    ): Promise<string[]> {
+      const { db } = rt()
+      return db.transaction(() => data.map(d => insertJob(job, d, dispatchOpts)))()
     },
 
     // ── handle ───────────────────────────────────────────────────────────────
@@ -859,6 +898,10 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
     async cancel(id: string): Promise<boolean> {
       const result = rt().stmts.cancel.run({ id, now: Date.now() })
+      // Only a worker in THIS process can be told here. On another instance
+      // the row is cancelled and its worker aborts the handler at its next
+      // poll, when its row is no longer running under it (`FJS-2885`).
+      if (result.changes > 0) pool.abort(id, new Error(`[Caravan] job ${id} was cancelled`))
       return result.changes > 0
     },
 

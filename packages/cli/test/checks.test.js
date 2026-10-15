@@ -2824,6 +2824,16 @@ describe('queue-operator-verb', () => {
     expect(findings[0].message).toMatch(/^jobs\.pause\(\)/)
   })
 
+  test('purging a queue from a service is an error', () => {
+    const root = tree('qov-purge', {
+      'api/src/services/ops.service.ts':
+        "export default () => createService({ wipe: (ctx) => ctx.app.jobs.queue('mail').purge() })\n",
+    })
+    const { findings } = only(root, 'queue-operator-verb')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/^queue\(…\)\.purge\(\)/)
+  })
+
   // The pair: the app verbs on the same handle are the app's to call.
   test('reading a queue from a service is silent', () => {
     const root = tree('qov-read', {

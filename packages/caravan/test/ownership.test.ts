@@ -260,3 +260,35 @@ describe('a completion belongs to the instance that claimed it', () => {
   })
 
 })
+
+// ─── Cancelling a running job on another instance ─────────────────────────────
+
+// `FJS-2885` — cancel() only reached the pool of the process that called it, so
+// the instance actually running the handler was never told.
+describe('cancel() of a job running on another instance', () => {
+
+  it('aborts the handler ctx.signal on the instance running it', async () => {
+    const path = tmpPath()
+    const a = makeQueue(path, { drainTimeout: 100 })
+    const b = makeQueue(path, { drainTimeout: 100 })
+    let seen: AbortSignal | undefined
+    a.handle('held', ctx => new Promise<void>(() => { seen = ctx.signal }))
+
+    try {
+      await a.start()
+      const id = await a.dispatch('held', {})
+      await waitFor(() => seen !== undefined)
+      expect(seen!.aborted).toBe(false)
+
+      expect(await b.cancel(id)).toBe(true)
+      await waitFor(() => seen!.aborted)
+
+      expect(String(seen!.reason)).toContain('cancelled')
+      expect(a.find(id)!.status).toBe('cancelled')
+    } finally {
+      await a.stop().catch(() => {})
+      await b.stop().catch(() => {})
+    }
+  })
+
+})

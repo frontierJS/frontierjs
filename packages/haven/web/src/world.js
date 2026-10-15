@@ -38,7 +38,7 @@ export function worldOf(stage) {
     if (cells.length) pickups.push({ id: pieceId(m), item: m.piece.pickup.item, n: m.piece.pickup.n, cells })
   }
   const pacers = stage.marks.filter((m) => m.kind === 'pacer')
-    .map(({ spec: { name, y, from, to, ms, rest, right, left, sit } }) => ({ name, y, from, to, ms, rest, right, left, sit }))
+    .map(({ spec: { name, y, from, to, ms, rest, right, left, sit, flee } }) => ({ name, y, from, to, ms, rest, right, left, sit, ...(flee && { flee }) }))
   return { slug: stage.slug, width: stage.width, height: stage.height, spawn: stage.spawn, rows, doors, pieces, pickups, pacers }
 }
 

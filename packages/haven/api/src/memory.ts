@@ -14,17 +14,18 @@ import type { Position } from './rooms.ts'
 
 /** How long each kind lasts, how many a room keeps, and how many one member may hold. */
 export const TRACES = {
-  step:   { ms: .05 * 60_000,  room: 500 },
+  step:   { ms: 1 * 60_000,  room: 500 },
   struck: { ms: 5 * 60_000,  room: 50 },
   scorch: { ms: 2 * 60_000,  room: 100 },
+  spooked: { ms: 5 * 60_000, room: 20 },
   taken:  { ms: 2 * 60_000,  room: 50 },
   chalk:  { ms: 10 * 60_000, room: 400, each: 20 },
 } as const satisfies Record<string, { ms: number, room: number, each?: number }>
 
 export type TraceKind = keyof typeof TRACES
 
-/** A trace as it is laid: where, what, and who laid it — `by` is a Member id; `id` names the piece a `struck` or `taken` one took. */
-export type Laid = Position & { kind: TraceKind, by?: number, ch?: string, id?: string }
+/** A trace as it is laid: where, what, and who laid it — `by` is a Member id; `id` names the piece a `struck` or `taken` one took, or the pacer a `spooked` one scared, which runs `dir` away from the bolt. */
+export type Laid = Position & { kind: TraceKind, by?: number, ch?: string, id?: string, dir?: 1 | -1 }
 
 export type Trace = Laid & { at: number, until: number }
 

@@ -192,6 +192,18 @@ describe('a pause from the bin', () => {
     expect(res.out).toMatchObject({ drained: false, running: 1 })
     release()
   })
+
+  it('purges the pending work of a queue and answers the count', async () => {
+    const path = tmpPath()
+    const worker = instanceAt(path)
+    worker.queue('reports').pause()
+    const id = await worker.dispatch('x', {}, { queue: 'reports' })
+
+    const res = await bin('queue', 'purge', 'reports', '--actor', 'ops', '--db', path)
+    expect(res.code).toBe(0)
+    expect(res.out).toMatchObject({ verb: 'purge', queue: 'reports', purged: 1 })
+    expect(worker.find(id)).toBeNull()
+  })
 })
 
 // ─── what it refuses ──────────────────────────────────────────────────────────

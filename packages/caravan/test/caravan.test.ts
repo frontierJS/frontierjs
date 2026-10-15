@@ -182,6 +182,42 @@ describe('dispatch', () => {
     expect(stats.total.running).toBe(0)
   })
 
+  // FJS-1525 — N dispatches are N transactions, and under synchronous = FULL
+  // each is its own fsync.
+  it('dispatchMany queues one job per payload, ids in order', async () => {
+    const ids = await q.dispatchMany('bulk', [{ n: 1 }, { n: 2 }, { n: 3 }], { priority: 5 })
+    expect(ids).toHaveLength(3)
+    expect(new Set(ids).size).toBe(3)
+    expect(ids.map(id => JSON.parse(q.find(id)!.data).n)).toEqual([1, 2, 3])
+    expect(q.find(ids[0])!.priority).toBe(5)
+    expect(q.stats().total.pending).toBe(3)
+  })
+
+  it('dispatchMany queues none when one payload cannot be stored', async () => {
+    await expect(q.dispatchMany('bulk', [{ n: 1 }, { n: 1n }])).rejects.toThrow()
+    expect(q.stats().total.pending).toBe(0)
+  })
+
+  it('dispatchMany costs one transaction where dispatch costs N under FULL', async () => {
+    const path = `${tmpdir()}/caravan-bulk-${crypto.randomUUID()}.db`
+    const full = createCaravan({ db: path, synchronous: 'FULL' })
+    const items = Array.from({ length: 300 }, (_, i) => ({ i }))
+
+    let t = performance.now()
+    await full.dispatchMany('bulk', items)
+    const bulk = performance.now() - t
+
+    t = performance.now()
+    for (const item of items) await full.dispatch('bulk', item)
+    const each = performance.now() - t
+
+    expect(full.stats().total.pending).toBe(600)
+    expect(bulk * 5).toBeLessThan(each)
+
+    await full.stop()
+    for (const suffix of ['', '-wal', '-shm']) rmSync(path + suffix, { force: true })
+  })
+
 })
 
 // ─── handle + execution ───────────────────────────────────────────────────────

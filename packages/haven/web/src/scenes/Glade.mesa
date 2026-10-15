@@ -5,10 +5,12 @@
   // the way back is the door in its east wall. The oak's foot opens at full
   // night onto the cellar under the tavern, a `night` door at each end, so by
   // day it is trunk. The picture this draws is `glade.frame.txt`, the glade by
-  // day, which `scenes.test.js` pins.
+  // day, which `scenes.test.js` pins. A deer grazes the south edge; shot at,
+  // it bolts out of the scene (`pacerNow` in `api/src/pacer.ts`).
   import Scene from '@/components/Scene.mesa'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
+  import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
@@ -103,4 +105,8 @@ ppp
   <Piece of={shroom} x={40} y={14} />
   <Piece of={shroom} x={46} y={16} />
   <Piece of={shroom} x={40} y={19} />
+  <Pacer name="deer" y={22} from={3} to={78} ms={420} rest={20} flee={60} fg="#b45309"
+    right={['~(==)Y', '~(=-)Y']}
+    left={['Y(==)~', 'Y(-=)~']}
+    sit={['~(==)v', '~(==)v', '~(==)Y', '~(==)v']} />
 </Scene>

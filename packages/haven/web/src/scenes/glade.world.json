@@ -53,5 +53,7 @@
  {"id":"shroom@40,19","name":"shroom","fragile":true,"cells":[[41,19],[40,20],[41,20],[42,20],[41,21]]}
 ],
 "pickups": [],
-"pacers": []
+"pacers": [
+ {"name":"deer","y":22,"from":3,"to":78,"ms":420,"rest":20,"right":["~(==)Y","~(=-)Y"],"left":["Y(==)~","Y(-=)~"],"sit":["~(==)v","~(==)v","~(==)Y","~(==)v"],"flee":60}
+]
 }

@@ -1,0 +1,65 @@
+<script>
+  // Crier.mesa — the crier's newest line (`api/src/crier.ts`, `IDEAS/haven.md`
+  // 8.3) across the top of the view for `CRY_MS` after it was said. The crier
+  // stands nowhere, so `Bubbles` has no figure to hang it over, and a line in
+  // the history is not a cry: a newcomer's own welcome is said at the login,
+  // before their socket joins the room, so it reaches them only through the
+  // lines the scene loaded and is told apart from an old one by its age.
+  //
+  // Placed by the square's route, inside the scene's slot, since the crier
+  // speaks in the square alone.
+  import { useStore } from '@frontierjs/sierra/resource'
+  import { members }  from '@/resources/Member.mesa'
+  import { messages } from '@/resources/Message.mesa'
+  import { cells, clip } from '@/cells.js'
+  import { at } from '#cell'
+  import { CRIER, CRY_MS } from '../../../api/src/crier.ts'
+
+  const scene = $context.scene
+  let view = scene.view
+  $.onDestroy(scene.subscribe(() => { view = scene.view }))
+
+  const { get: lines, unsubscribe } = useStore(messages.store)
+  $.onDestroy(unsubscribe)
+
+  let names = {}
+  const asked = new Set()
+  function askNames(ids) {
+    for (const id of ids) {
+      if (asked.has(id)) continue
+      asked.add(id)
+      members.service.get(id).then((row) => { names = { ...names, [id]: row.nick } }).catch(() => {})
+    }
+  }
+
+  // Bumped when the cry on screen runs out, so it is read again. `timer` is a
+  // `var`: as a `let` it is a signal the block below reads and writes, and the
+  // block reruns itself without end.
+  let tick = 0
+  var timer = null
+  $.onDestroy(() => clearTimeout(timer))
+
+  /** The newest line the crier said within CRY_MS, newest first in the store. */
+  function cryOf(said, who) {
+    const now = Date.now()
+    const fresh = (said ?? []).filter((l) => now - Date.parse(l.createdAt) < CRY_MS)
+    askNames(fresh.map((l) => l.memberId))
+    const line = fresh.find((l) => who[l.memberId] === CRIER) ?? null
+    clearTimeout(timer)
+    if (line) timer = setTimeout(() => { tick++ }, Date.parse(line.createdAt) + CRY_MS - now)
+    return line
+  }
+
+  $: cry = (tick, cryOf(lines(), names))
+
+  /** Row 1, inside the frame's top wall, centered in the view. */
+  function shown(line, v) {
+    if (!line) return []
+    const text = clip(`${CRIER}: ${line.body}`, v.w - 2)
+    return [{ key: line.id, text, x: Math.max(0, Math.floor((v.w - cells(text)) / 2)), y: 1 }]
+  }
+</script>
+
+{#each shown(cry, view) as c (c.key)}
+  <p class="surface" {@attach at(c.x, c.y, 12)}>{c.text}</p>
+{/each}

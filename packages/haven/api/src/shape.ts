@@ -4,6 +4,8 @@
 // screen — chalk (9.8) asks it too. One printable ASCII character, so nothing
 // is spelled with it and nothing is wider than a cell: a wide glyph pushes
 // every cell after it on the row, and a control byte rewrites the terminal.
+// A figure alone may also be one emoji (14.4), drawn on an overlay rather
+// than in a row of art, and standing on two cells (`spanOf`).
 
 /** How long a shapeshift lasts. */
 export const SHAPE_MS = 60_000
@@ -33,3 +35,22 @@ export function glyphOf (v: unknown): string | null {
   const c = v.charCodeAt(0)
   return c > 0x20 && c < 0x7f ? v : null
 }
+
+// One code point an emoji by default, which every one of them is two cells on
+// both targets. A sequence is refused: a skin tone or a ZWJ joins differently
+// per terminal, and the engine hands it over a code point at a time. A
+// regional indicator and a skin tone alone are emoji components, not
+// pictographs, so they are out too.
+const EMOJI = /^(?=\p{Emoji_Presentation})\p{Extended_Pictographic}$/u
+
+/** `v` when a figure may be drawn as it — `glyphOf`'s character, or one emoji — else null. */
+export function shapeOf (v: unknown): string | null {
+  return glyphOf(v) ?? (typeof v === 'string' && EMOJI.test(v) ? v : null)
+}
+
+/**
+ * The cells a figure drawn as `shape` stands on, from its own cell rightward:
+ * 2 for an emoji, else 1. A step still moves one column; the second cell is
+ * what the figure covers, so it must be floor, and a bolt crossing it hits.
+ */
+export const spanOf = (shape: string | null | undefined): 1 | 2 => (shape && EMOJI.test(shape) ? 2 : 1)

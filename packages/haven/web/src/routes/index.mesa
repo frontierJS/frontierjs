@@ -1,9 +1,11 @@
 <script>
   // The square — where a member walks in. The notice board's pins are read
-  // and pinned by `Notices`, placed here since the scene file holds only tags.
+  // and pinned by `Notices`, and the crier's line drawn by `Crier`, placed
+  // here since the scene file holds only tags.
   import WalkIn  from '@/components/WalkIn.mesa'
   import Notices from '@/components/Notices.mesa'
+  import Crier   from '@/components/Crier.mesa'
   import Square  from '@/scenes/Square.mesa'
 </script>
 
-<WalkIn slug="square"><Square><Notices /></Square></WalkIn>
+<WalkIn slug="square"><Square><Notices /><Crier /></Square></WalkIn>

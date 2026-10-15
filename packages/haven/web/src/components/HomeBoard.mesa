@@ -41,17 +41,19 @@
   let view   = scene.view
   $.onDestroy(scene.subscribe(() => { me = scene.seer; view = scene.view }))
 
-  const ctl = new AbortController()
-  $.onDestroy(() => ctl.abort())
+  // The run outlives this scene (it is held for the next one), so an answer
+  // arriving after the walk out is dropped here.
+  let gone = false
+  $.onDestroy(() => { gone = true })
 
   // A command that fails cannot say whose home it was for, so it says so on the
   // screen of whatever home this is — on this screen alone, about this machine.
   // The next pull asks again.
   let failed = ''
   function pull() {
-    homeBoard({ signal: ctl.signal })
-      .then((b) => { board = b; failed = ''; now = Date.now() })
-      .catch((e) => { if (ctl.signal.aborted) return; board = null; failed = e.message })
+    homeBoard()
+      .then((b) => { if (gone) return; board = b; failed = ''; now = Date.now() })
+      .catch((e) => { if (gone) return; board = null; failed = e.message })
   }
   pull()
   $.onDestroy(scene.task('home-pull', pull, { every: PULL_MS }))

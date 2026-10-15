@@ -124,12 +124,14 @@ export function readBoard(out) {
 /**
  * This machine's board, or null when it opted into none. Held `HOME_MS`, so the
  * lane's mailboxes and the home behind them ask the command once between them;
- * a failure is not held, so the next scene asks again.
+ * a failure is not held, so the next scene asks again. The run takes no
+ * caller's signal: the promise is shared, and a scene left mid-run would hand
+ * its abort to the scene that asked next.
  */
-export function homeBoard({ signal, cmd = homeCommand(), now = Date.now() } = {}) {
+export function homeBoard({ cmd = homeCommand(), now = Date.now() } = {}) {
   if (!cmd) return Promise.resolve(null)
   if (held && held.cmd === cmd && now - held.at < HOME_MS) return held.board
-  const board = run(cmd, signal).then((out) => readBoard(String(out).trim()))
+  const board = run(cmd).then((out) => readBoard(String(out).trim()))
   held = { cmd, at: now, board }
   board.catch(() => { if (held?.board === board) held = null })
   return board

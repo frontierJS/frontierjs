@@ -34,8 +34,9 @@ afterEach(async () => { await env?.close?.() })
 const say = (roomId: number, body: string) =>
   sys.message.create({ data: { roomId, memberId: sam.id, body } })
 
+// Sam's own lines: the crier's welcome to him is in the square too.
 const bodies = async (roomId: number) =>
-  (await sys.message.findMany({ where: { roomId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })).map((m: any) => m.body)
+  (await sys.message.findMany({ where: { roomId, memberId: sam.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] })).map((m: any) => m.body)
 
 test('a room keeps its newest lines and the sweep drops the rest, exactly', async () => {
   for (let i = 1; i <= 7; i++) await say(tavern.id, `tavern ${i}`)

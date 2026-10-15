@@ -224,3 +224,73 @@ describe('and through the autoloader', () => {
     ])
   })
 })
+
+// `FJS-1523` — a timed-out or cancelled attempt used to keep running with
+// nothing to tell it to stop. `ctx.signal` is that word: aborted when the
+// attempt is over, whichever way it ended.
+describe('ctx.signal tells a running handler its attempt is over', () => {
+  it('aborts when the declared timeout fails the attempt', async () => {
+    const q = makeQueue()
+    let seen: AbortSignal | undefined
+    q.handle('listens', ctx => new Promise<void>((_, rej) => {
+      seen = ctx.signal
+      ctx.signal.addEventListener('abort', () => rej(ctx.signal.reason))
+    }), { timeout: 40, maxAttempts: 1 })
+
+    await q.start()
+    const id = await q.dispatch('listens', {})
+    await Bun.sleep(SETTLE)
+
+    expect(seen).toBeDefined()
+    expect(seen!.aborted).toBe(true)
+    expect(String(seen!.reason)).toContain('timeout')
+    expect(q.find(id)!.status).toBe('dead')
+  })
+
+  it('is not aborted while the attempt is inside its bound', async () => {
+    const q = makeQueue()
+    let seen: AbortSignal | undefined
+    q.handle('quiet', async ctx => { seen = ctx.signal; await Bun.sleep(10) }, { timeout: 500 })
+
+    await q.start()
+    await q.dispatch('quiet', {})
+    await Bun.sleep(SETTLE)
+
+    expect(seen!.aborted).toBe(false)
+  })
+
+  it('aborts when cancel() takes a RUNNING job', async () => {
+    const q = makeQueue()
+    let seen: AbortSignal | undefined
+    let started = false
+    q.handle('cancellable', ctx => new Promise<void>(() => { seen = ctx.signal; started = true }))
+
+    await q.start()
+    const id = await q.dispatch('cancellable', {})
+    await waitUntil(() => started)
+
+    expect(seen!.aborted).toBe(false)
+    expect(await q.cancel(id)).toBe(true)
+    expect(seen!.aborted).toBe(true)
+    expect(q.find(id)!.status).toBe('cancelled')
+  })
+
+  it('aborts a handler abandoned past the drain deadline', async () => {
+    const q = makeQueue()
+    let seen: AbortSignal | undefined
+    q.handle('held', ctx => new Promise<void>(() => { seen = ctx.signal }))
+
+    await q.start()
+    await q.dispatch('held', {})
+    await Bun.sleep(SETTLE)
+    expect(seen!.aborted).toBe(false)
+
+    await q.stop()
+    expect(seen!.aborted).toBe(true)
+  })
+})
+
+async function waitUntil(pred: () => boolean, ms = 2_000): Promise<void> {
+  const deadline = Date.now() + ms
+  while (!pred() && Date.now() < deadline) await Bun.sleep(10)
+}

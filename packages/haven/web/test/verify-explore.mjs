@@ -284,6 +284,7 @@ check(at(0, sy, 1, square, samEye.view) === null && at(far.x, sy + 2, 1, square,
   "the square's west edge is off Sam's screen and the hedge runs on beside him", screen(out))
 check(blank(at(far.x, 0, 1, square, samEye.view)) && at(sx + dx, sy + 2, 1, square, samEye.view) === ',',
   'the wall across is still blank, and the hedge he bumped is drawn from memory, out of sight', screen(out))
+shell.stdin.write('i')
 shell.stdin.write('over here\r')
 check(await until(() => at(far.x, far.y - 1, 11, square, samEye.view) === '(over here)'), 'Sam says a line there', screen(out))
 

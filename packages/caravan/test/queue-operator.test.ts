@@ -537,3 +537,81 @@ model Thing {
     expect((await request(app).post('/jobs/queues/mail/pause').auth('test-token-intern')).status).toBe(200)
   })
 })
+
+// ─── purge ────────────────────────────────────────────────────────────────────
+
+describe('purge', () => {
+  // The pair is the other queue: a purge that emptied every queue satisfies
+  // "mail is empty" alone.
+  it('destroys the pending work of that queue only, and records how many', async () => {
+    const c = queueAt(tmpPath())
+    c.queue('mail').pause()
+    c.queue('reports').pause()
+    const a = await c.dispatch('x', {}, { queue: 'mail' })
+    const b = await c.dispatch('x', {}, { queue: 'mail', delay: 60_000 })
+    const keep = await c.dispatch('x', {}, { queue: 'reports' })
+
+    const out = c.queue('mail').purge({ actor: 'ops', reason: 'bad batch' })
+
+    expect(out).toEqual({ purged: 2 })
+    expect(c.find(a)).toBeNull()
+    expect(c.find(b)).toBeNull()
+    expect(statusOf(c, keep)).toBe('pending')
+    const ev = c.queue('mail').state().events[0]
+    expect([ev.verb, ev.actor]).toEqual(['purge', 'ops'])
+    expect(ev.detail).toEqual({ purged: 2, reason: 'bad batch' })
+  })
+
+  it('leaves a running job alone, which is what drain waits on', async () => {
+    const c = queueAt(tmpPath())
+    let release!: () => void
+    const gate = new Promise<void>(r => { release = r })
+    c.handle('slow', async () => { await gate }, { queue: 'mail' })
+    await c.start()
+    const id = await c.dispatch('slow', {})
+    await waitFor(() => statusOf(c, id) === 'running')
+
+    expect(c.queue('mail').purge()).toEqual({ purged: 0 })
+    expect(statusOf(c, id)).toBe('running')
+    release()
+  })
+
+  it('records nothing where nothing was destroyed', () => {
+    const c = queueAt(tmpPath())
+    expect(c.queue('mail').purge({ actor: 'ops' })).toEqual({ purged: 0 })
+    expect(c.queue('mail').state().events).toEqual([])
+  })
+
+  it('frees a unique key it destroyed, and a stated id', async () => {
+    const c = queueAt(tmpPath())
+    c.queue('mail').pause()
+    const first = await c.dispatch('x', {}, { queue: 'mail', unique: 'u1', id: 'job-1' })
+    c.queue('mail').purge()
+    expect(await c.dispatch('x', {}, { queue: 'mail', unique: 'u1', id: 'job-1' })).toBe(first)
+    expect(statusOf(c, first)).toBe('pending')
+  })
+
+  it('over every queue is the app-level verb, recorded under *', async () => {
+    const c = queueAt(tmpPath())
+    c.pause()
+    await c.dispatch('x', {}, { queue: 'mail' })
+    await c.dispatch('x', {}, { queue: 'reports' })
+    expect(c.purge({ actor: 'ops' })).toEqual({ purged: 2 })
+    expect(c.queue('mail').state().stats.pending).toBe(0)
+    expect(c.queue('reports').state().stats.pending).toBe(0)
+  })
+
+  it('is refused below ADMINISTRATOR over HTTP, and answers the count to an administrator', async () => {
+    const app = await createTestApp({ users: [{ id: 'ops', isAdmin: true }, { id: 'staff', role: 'user' }] })
+    app.configure(createCaravan({ db: ':memory:', pollInterval: 10, admin: true, queues: { mail: {} } }))
+    const jobs = (app as { jobs?: unknown }).jobs as CaravanInstance
+    jobs.queue('mail').pause()
+    await jobs.dispatch('x', {}, { queue: 'mail' })
+
+    expect((await request(app).post('/jobs/queues/mail/purge').auth('test-token-staff')).status).toBe(403)
+    expect(jobs.queue('mail').state().stats.pending).toBe(1)
+    const res = await request(app).post('/jobs/queues/mail/purge').auth('test-token-ops').send({ reason: 'bad batch' })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ purged: 1 })
+  })
+})

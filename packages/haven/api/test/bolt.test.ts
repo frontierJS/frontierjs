@@ -10,7 +10,7 @@ import { test, expect, describe } from 'bun:test'
 import { ARROWS, ITEMS, createInventories } from '../src/inventory.ts'
 import { BOLT_MS, KNOCK, RANGE, VOLLEY_MS, createCooldowns, crosses, fly, knockBack, volley, type Figure, type World } from '../src/bolt.ts'
 import { FIRST_FACING, ahead, behind, facingOf, isFacing, opposite } from '../src/facing.ts'
-import { SHAPE_MS, glyphOf } from '../src/shape.ts'
+import { SHAPE_MS, glyphOf, shapeOf, spanOf } from '../src/shape.ts'
 
 const MEMBERS = 'abcdefghijklmnopqrstuvwxyz'
 const SHOOTER = 0
@@ -61,12 +61,28 @@ describe('a glyph a stranger may draw', () => {
     expect([' ', '\x1b', '\x7f', 'TT', '', 'é', '木', '🙂', null, 7].map(glyphOf)).toEqual(Array(10).fill(null))
   })
 
+  test('a shapeshift may also be one emoji, two cells wide, never a sequence', () => {
+    expect(['T', '\u{1f642}', '\u2614', '\u{1f004}'].map(shapeOf)).toEqual(['T', '\u{1f642}', '\u2614', '\u{1f004}'])
+    expect(['\u{1f44d}\u{1f3fd}', '\u{1f469}\u200d\u{1f4bb}', '\u{1f1ef}\u{1f1f5}', '\u{1f1ef}', '\u{1f3fd}', '\u2764', '\u2764\ufe0f', '\u6728'].map(shapeOf)).toEqual(Array(8).fill(null))
+    expect([null, 'T', '\u{1f642}'].map(spanOf)).toEqual([1, 1, 2])
+  })
+
   test('a shapeshift lasts a minute', () => {
     expect(SHAPE_MS).toBe(60_000)
   })
 })
 
 describe('a bolt', () => {
+  test('hits an emoji figure on either of its two cells, and knocks it back whole', () => {
+    const wide = (x: number) => ({ id: 1, x, y: 0, span: 2 })
+    const at = (x: number) => (x < 0 || x > 9 ? { kind: 'wall' as const } : null)
+    const from = (shooter: Figure, them: Figure, facing: 'e' | 'w') => fly({ at, members: [shooter, them] }, shooter, facing).hit
+    expect(from({ id: 0, x: 9, y: 0 }, wide(3), 'w')).toEqual({ kind: 'member', id: 1, at: { x: 4, y: 0 }, to: { x: 1, y: 0 } })
+    expect(from({ id: 0, x: 0, y: 0 }, wide(6), 'e')).toEqual({ kind: 'member', id: 1, at: { x: 6, y: 0 }, to: { x: 8, y: 0 } })
+    expect(from({ id: 0, x: 0, y: 0 }, wide(7), 'e')).toEqual({ kind: 'member', id: 1, at: { x: 7, y: 0 }, to: { x: 8, y: 0 } })
+    expect(fly({ at, members: [wide(2)] }, wide(2), 'e').path[0]).toEqual({ x: 4, y: 0 })
+  })
+
   test('flies across open floor until the edge of the scene, which is a wall', () => {
     const { world: w, me } = world(['@............'])
     const f = fly(w, me, 'e')

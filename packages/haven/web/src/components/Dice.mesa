@@ -1,0 +1,26 @@
+<script>
+  // Dice.mesa — `/roll 2d6` (`IDEAS/haven.md` 9.1): asks the server to throw,
+  // which says the roll in the room as the dice (`api/src/dice.ts`), so the
+  // line is in the history on every screen that hears it and nobody typed it.
+  // The answer is the note under this figure as well. A roll is a verb and
+  // never a Message of this member's own. Draws nothing.
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { MAX_DICE, MAX_SIDES, parseRoll } from '../../../api/src/dice.ts'
+
+  export let room
+
+  var verbs = $context.commands
+
+  const HELP = `/roll <dice> — 2d6, d20 (up to ${MAX_DICE} dice, 2 to ${MAX_SIDES} faces)`
+
+  async function roll({ args }) {
+    const spec = args.trim() || 'd6'
+    if (!parseRoll(spec)) return HELP
+    try {
+      const said = await getClient().service('dice').invoke('roll', null, { roomId: room.id, dice: spec })
+      return said.body
+    } catch (e) { return e.message }
+  }
+
+  $.onDestroy(verbs.add({ word: 'roll', help: HELP, run: roll }))
+</script>

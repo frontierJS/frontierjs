@@ -6,9 +6,13 @@ import { createApp, channels } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { createClient } from '@frontierjs/litestone'
 
-import { createHavenAuth }          from './auth.ts'
+import { createHavenAuth, sweepSessions } from './auth.ts'
 import { clientRoute, CLIENT_PATH } from './client.ts'
 import { createCooldowns }         from './bolt.ts'
+import { createCrier }             from './crier.ts'
+import { createDice }              from './dice.ts'
+import type { Dice }               from './dice.ts'
+import type { Crier }              from './crier.ts'
 import { createInventories }       from './inventory.ts'
 import type { Inventories }        from './inventory.ts'
 import { loginRoute, LOGIN_PATH }  from './login.ts'
@@ -17,7 +21,7 @@ import type { RoomMemory }         from './memory.ts'
 import type { LoginOptions }       from './login.ts'
 import { standing }                from './principal.ts'
 import { sweepRooms, KEEP }        from './retention.ts'
-import { roomChannels }            from './rooms.ts'
+import { FIRST_ROOM, roomChannels } from './rooms.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
 
@@ -31,10 +35,12 @@ export interface HavenAppOptions {
   now?:        LoginOptions['now']
   /** The nicks that walk in as mods. Default `HAVEN_MODS`, comma-separated. */
   mods?:       string[]
+  /** Sockets one IP may hold. Default `HAVEN_WS_PER_IP`, else 4. */
+  wsPerIp?:    number
 }
 
-/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`) and `inventory` what a member carries (`inventory.ts`), all claimed here. */
-export type HavenApp = App & { memory: RoomMemory, cooldowns: ReturnType<typeof createCooldowns>, inventory: Inventories }
+/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`) and `inventory` what a member carries (`inventory.ts`) and `crier` the square's announcer (`crier.ts`), all claimed here. */
+export type HavenApp = App & { memory: RoomMemory, cooldowns: ReturnType<typeof createCooldowns>, inventory: Inventories, crier: Crier, dice: Dice }
 
 export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   const db = opts.db ?? await createClient({ path: SCHEMA, resolveFrom: 'schema' }) as { asSystem: () => any }
@@ -51,9 +57,11 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
     config: {
       ...(opts.port !== undefined ? { port: opts.port } : {}),
       http: {
-        // One `fli haven` per machine; a few is a second terminal. Moves are
-        // bounded again, per room, by the presence rate in rooms.ts.
-        ws: { maxConnectionsPerIp: 4, maxFramesPerSecond: 20 },
+        // One `fli haven` per machine; a few is a second terminal. The agents
+        // (`agents/agents.js`) are a socket each from the owner's machine, so
+        // the server that hosts them raises it. Moves are bounded again, per
+        // room, by the presence rate in rooms.ts.
+        ws: { maxConnectionsPerIp: opts.wsPerIp ?? (Number(process.env.HAVEN_WS_PER_IP) || 4), maxFramesPerSecond: 20 },
       },
     },
   } as Parameters<typeof createApp>[0])
@@ -63,11 +71,14 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   app.claim('cooldowns', createCooldowns())
   const inventory = createInventories()
   app.claim('inventory', inventory)
+  const crier = createCrier(app, db, FIRST_ROOM)
+  app.claim('crier', crier)
+  app.claim('dice', createDice(app, db))
   const { setup, options } = roomChannels(db, memory, inventory)
   app.configure(channels(setup as never, options))
   // Inside configure() so it registers during start(), after the router is patched.
   const mods  = opts.mods ?? (process.env.HAVEN_MODS ?? '').split(',').map(n => n.trim()).filter(Boolean)
-  const login = loginRoute(db, auth, { now: opts.now, mods })
+  const login = loginRoute(db, auth, { now: opts.now, mods, welcome: crier.welcome })
   app.configure(a => {
     a.get(CLIENT_PATH, clientRoute())
     a.post(LOGIN_PATH, login)
@@ -78,6 +89,8 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   app.scheduler.every('1 hour', async () => {
     for (const { roomId, removed } of await sweepRooms(db))
       console.log(`[haven] retention: room ${roomId} dropped ${removed} lines past its newest ${KEEP}`)
+    const expired = await sweepSessions(db)
+    if (expired) console.log(`[haven] retention: ${expired} expired sessions dropped`)
   })
   return app
 }

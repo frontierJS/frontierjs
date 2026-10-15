@@ -1,0 +1,183 @@
+<script>
+  // Sheriff.mesa — the sheriff's house, through the office on the road. Drawn
+  // like the tavern, in one-cell ASCII, with one exception: the hearth's fire
+  // is a `halves()` piece (`IDEAS/haven.md` 14.5) inside an ASCII mantle, and
+  // it is the room's light. The scene names `lamplight`, so the fire tints
+  // what is near it and `#paint` blooms it. The picture this draws is
+  // `sheriff.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { piece } from '@/pieces/index.js'
+  import { halves } from '@/pieces/halves.js'
+  import { frame } from '@/pieces/frame.js'
+  import { desk, bed } from '@/pieces/home.js'
+
+  // Paint for art that is one color, or two by glyph: every glyph in `by`
+  // takes its letter, the rest `rest`.
+  const inked = (art, rest, by = {}) => art.replace(/\S/g, (c) => by[c] ?? rest)
+
+  const STAR = String.raw`
+     .
+    /*\
+ .-'***'-.
+ \*******/
+  \*****/
+  /**^**\
+ '--' '--'
+`
+  const star = piece('star', STAR, inked(STAR, 's'))
+
+  // A poster is 14 wide: WANTED, four rows of face, the reward. The border is
+  // `u`, the word `k`, the reward `s`, and a face row takes the letter its
+  // `inks` gives it.
+  const poster = (face, inks, sum) => {
+    const left = Math.floor((12 - sum.length) / 2)
+    const rows = [
+      '.------------.',
+      '|   WANTED   |',
+      ...face.map((r) => `|${r}|`),
+      `|${' '.repeat(left)}${sum}${' '.repeat(12 - left - sum.length)}|`,
+      "'------------'",
+    ]
+    const ink = (row, letter) => [...row].map((c, x) => c === ' ' ? ' ' : x === 0 || x === 13 ? 'u' : letter).join('')
+    const paint = rows.map((row, y) =>
+      y === 0 || y === rows.length - 1 ? 'u'.repeat(14)
+        : y === 1 ? ink(row, 'k')
+        : y === rows.length - 2 ? ink(row, 's')
+        : ink(row, inks[y - 2]))
+    return piece('poster', rows.join('\n'), paint.join('\n'))
+  }
+
+  const blackHat  = poster(['  _/====\\_  ', '   (o  o)   ', '   (-~~-)   ', "    '--'    "], ['d', 'q', 'q', 'q'], '$500')
+  const grayBeard = poster(['  _.-==-._  ', '   (o  o)   ', '  ((~~~~))  ', '   )~~~~(   '], ['u', 'q', 'q', 'q'], '$1000')
+  const redBeard  = poster(['   .-==-.   ', '   (o  o)   ', '   |-==-|   ', '  ((////))  '], ['q', 'q', 'k', 'W'], '$250')
+
+  // The mantle is ASCII and its opening is empty, since a space claims
+  // nothing; the fire sits in it. 12 cells by 4, two pixels to a cell.
+  const hearth = piece('hearth', String.raw`
+ ________________
+|################|
+|#.------------.#|
+|#|            |#|
+|#|            |#|
+|#|            |#|
+|#|            |#|
+|#|____________|#|
+[================]
+`, String.raw`
+ SSSSSSSSSSSSSSSS
+SZZZZZZZZZZZZZZZZS
+SZSSSSSSSSSSSSSSZS
+SZS            SZS
+SZS            SZS
+SZS            SZS
+SZS            SZS
+SZSSSSSSSSSSSSSSZS
+SSSSSSSSSSSSSSSSSS
+`)
+
+  const fire = halves('fire', `
+kkkkkkkkkkkk
+kkkkkFkkkkkk
+kkkkFFkkFkkk
+kkFkFfFkFFkk
+kkFFffFFfFkk
+kFFfffffffFk
+kFfffYYfffFk
+kbbbbbbbbbbk
+`, {
+    k: '#1c1917', b: '#7c2d12',
+    F: { fg: ['#ef4444', '#f97316', '#dc2626', '#f97316'], ms: 130, flicker: true, light: 7 },
+    f: { fg: ['#f97316', '#facc15', '#fb923c', '#facc15'], ms: 110, flicker: true },
+    Y: { fg: ['#fef08a', '#fde047', '#fef9c3'], ms: 90, flicker: true },
+  })
+
+  const COWHIDE = String.raw`
+ .;;;;;;;;;;;;;;;;;;.
+;::##::::::::::##::::;
+;:###::::##::::::::::;
+;::::::::###::::#::::;
+ ';;;;;;;;;;;;;;;;;;'
+`
+  const cowhide = piece('cowhide', COWHIDE, inked(COWHIDE, 'p', { '#': 'K' }), { floor: true })
+
+  const CACTUS = String.raw`
+  ,_,
+_ | | _
+| | | |
+|_| | |
+  | |_|
+  | |
+ [___]
+`
+  const cactus = piece('cactus', CACTUS, inked(CACTUS, 'G', { '[': 'T', ']': 'T', '_': 'T' }))
+
+  const rack = piece('rack', String.raw`
+.------------.
+| |  |  |  | |
+| |  |  |  | |
+| o  o  o  o |
+'------------'
+`, String.raw`
+wwwwwwwwwwwwww
+w q  q  q  q w
+w q  q  q  q w
+w u  u  u  u w
+wwwwwwwwwwwwww
+`)
+
+  // The cell's bars along its west and south sides, the frame its other two,
+  // and a gap in the south bars to walk in by.
+  const bars = piece('bars', [
+    ...Array(10).fill('|'),
+    '+|||||||   |||||||||||',
+  ].join('\n'), [
+    ...Array(10).fill('l'),
+    'llllllll   lllllllllll',
+  ].join('\n'))
+
+  const cot    = piece('cot', '[========]', 'uQQQQQQQQu')
+  const bucket = piece('bucket', '\\_/', 'qqq')
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    d: { fg: '#92400e' },
+    w: { fg: '#b45309' },
+    W: { fg: '#d97706' },
+    u: { fg: '#854d0e' },
+    q: { fg: '#9ca3af' },
+    Q: { fg: '#475569' },
+    l: { fg: '#94a3b8' },
+    k: { fg: '#b91c1c' },
+    s: { fg: '#fbbf24' },
+    S: { fg: '#78716c' },
+    Z: { fg: '#57534e' },
+    p: { fg: '#e7e5e4' },
+    K: { fg: '#44403c' },
+    G: { fg: '#4ade80' },
+    T: { fg: '#c2410c' },
+    m: { fg: '#92400e' },
+  }
+</script>
+
+<Scene slug="sheriff" layers={[...INDOORS, 'lamplight']} palette={PALETTE} spawn={{ x: 48, y: 24 }}>
+  <Piece of={frame} />
+  <Door  x={48} y={25} to="/road/" />
+  <Piece of={blackHat}  x={3}  y={1} />
+  <Piece of={grayBeard} x={18} y={1} />
+  <Piece of={redBeard}  x={33} y={1} />
+  <Piece of={star}    x={50} y={1} />
+  <Piece of={desk}    x={43} y={9} />
+  <Piece of={bars}    x={74} y={1} />
+  <Piece of={cot}     x={84} y={3} />
+  <Piece of={bucket}  x={91} y={9} />
+  <Piece of={rack}    x={22} y={12} />
+  <Piece of={hearth}  x={3}  y={14} />
+  <Piece of={fire}    x={6}  y={17} />
+  <Piece of={cowhide} x={36} y={15} />
+  <Piece of={bed}     x={66} y={20} />
+  <Piece of={cactus}  x={88} y={17} />
+  <slot />
+</Scene>

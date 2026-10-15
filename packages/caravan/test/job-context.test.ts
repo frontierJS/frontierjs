@@ -415,3 +415,46 @@ describe('the tenant a job runs in', () => {
     await app.stop()
   })
 })
+
+// ============================================================
+// FJS-1526 — a handler reports how far along it is.
+// ============================================================
+
+describe('ctx.progress', () => {
+  it('lands on the running row where find() reads it, and a fresh attempt starts from nothing', async () => {
+    const q = createCaravan(opts())
+    const midway: Array<number | null> = []
+    let first = true
+    q.handle('crunch', async (ctx) => {
+      if (first) {
+        first = false
+        ctx.progress(0.4)
+        midway.push(q.find(ctx.id)!.progress)
+        throw new Error('try again')
+      }
+      midway.push(q.find(ctx.id)!.progress)
+    }, { retryDelay: [10] })
+    await q.start()
+    const id = await q.dispatch('crunch', {})
+
+    expect(await until(() => q.find(id)?.status === 'done', 3_000)).toBe(true)
+    // 0.4 while the first attempt ran; the second attempt began from nothing.
+    expect(midway).toEqual([0.4, null])
+    await q.stop()
+  })
+
+  it('refuses a value that is not a fraction, naming it', async () => {
+    const q = createCaravan(opts())
+    let refusal = ''
+    q.handle('bad', async (ctx) => {
+      try { ctx.progress(40) } catch (e) { refusal = (e as Error).message }
+    })
+    await q.start()
+    await q.dispatch('bad', {})
+
+    expect(await until(() => refusal !== '')).toBe(true)
+    expect(refusal).toContain('not a fraction from 0 to 1')
+    expect(refusal).toContain('40')
+    await q.stop()
+  })
+})

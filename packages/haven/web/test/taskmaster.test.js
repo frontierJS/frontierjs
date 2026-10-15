@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { checkout, proposals, running, startLoop } from '../src/taskmaster.js'
+import { checkout, loopArgv, loopReport, proposals, running, startLoop } from '../src/taskmaster.js'
 
 const until = async (fn, ms = 5000) => {
   const end = Date.now() + ms
@@ -44,20 +44,52 @@ test('a yes starts the loop on the package, detached; a second yes is refused wh
   `)
   const opts = { root, file: join(dir, 'lock.json'), log: join(dir, 'loop.log') }
   expect(running(opts)).toBeNull()
-  const lock = startLoop('litestone', opts)
+  const lock = startLoop({ pkg: 'litestone' }, opts)
   expect(lock.pkg).toBe('litestone')
   expect(running(opts)?.pid).toBe(lock.pid)
   expect(await until(() => Bun.file(seen).exists())).toBe(true)
   expect(JSON.parse(readFileSync(seen, 'utf8'))).toEqual([root, '--pkg', 'litestone'])
-  expect(() => startLoop('auth', opts)).toThrow('fix-loop is already on litestone')
+  expect(() => startLoop({ pkg: 'auth' }, opts)).toThrow('fix-loop is already on litestone')
   writeFileSync(stop, '')
   expect(await until(() => running(opts) === null)).toBe(true)
-  expect(startLoop('auth', opts).pkg).toBe('auth')
+  expect(startLoop({ ids: ['FJS-7'] }, opts).on).toBe('FJS-7')
+  expect(await until(() => JSON.parse(readFileSync(seen, 'utf8')).includes('--ids'))).toBe(true)
+  expect(JSON.parse(readFileSync(seen, 'utf8'))).toEqual([root, '--ids', 'FJS-7'])
+  writeFileSync(stop, '')
+  expect(await until(() => running(opts) === null)).toBe(true)
   rmSync(dir, { recursive: true })
 })
 
-test('a name that is not a package is never put on a command line, a flag included', () => {
-  for (const bad of ['x; rm -rf /', '--rows', '-p', '', 'a b']) {
-    expect(() => startLoop(bad, { root: '/nowhere' })).toThrow('not a package name')
+test('a plan that is not one is never put on a command line, a flag included', () => {
+  for (const bad of ['x; rm -rf /', '--rows', '-p', '', 'a b', ['mesa']]) {
+    expect(() => startLoop({ pkg: bad }, { root: '/nowhere' })).toThrow('not a package name')
   }
+  expect(() => loopArgv({ ids: ['FJS-1', '--budget'] })).toThrow('not issue ids')
+  expect(() => loopArgv({ ids: ['FJS-1', 'FJS-2', 'FJS-3', 'FJS-4'] })).toThrow('not issue ids')
+  expect(() => loopArgv({ pkg: 'mesa', sev: 'S5' })).toThrow('not a severity')
+  expect(() => loopArgv({ pkg: 'mesa', rows: 40 })).toThrow('not a row count')
+  expect(() => loopArgv({ sev: 'S3' })).toThrow('a loop needs a package or an issue')
+  expect(loopArgv({ pkg: 'sierra', sev: 'S3,S4', rows: 2 })).toEqual(['--pkg', 'sierra', '--sev', 'S3,S4', '--rows', '2'])
+})
+
+test("a loop's output reads back as the rows it took, each one's last outcome, and its summary", () => {
+  const out = [
+    '[fix-loop] 1/2 FJS-7 (S3, haven · mesa) — a haven thing',
+    '[fix-loop]   sonnet/high: failed · $0.30 · 2 min · 9 turns (fix 9)',
+    '[fix-loop]   opus/high: closed · $0.90 · 4 min · 20 turns (fix 20)',
+    '',
+    '[fix-loop] 2/2 FJS-8 (S4, sierra) — a sierra thing',
+    '[fix-loop]   sonnet/high: blocked · $0.10 · 1 min · 3 turns (orient 3)',
+    '',
+    '[fix-loop] 1 closed · 1 waiting on a ruling · $1.30 spent · log /home/x/.fli/fix-loop.jsonl',
+  ].join('\n')
+  expect(loopReport(out)).toEqual({
+    rows: [
+      { id: 'FJS-7', severity: 'S3', pkg: ['haven', 'mesa'], title: 'a haven thing', outcome: 'closed' },
+      { id: 'FJS-8', severity: 'S4', pkg: ['sierra'], title: 'a sierra thing', outcome: 'blocked' },
+    ],
+    summary: '1 closed · 1 waiting on a ruling · $1.30 spent',
+    nothing: false,
+  })
+  expect(loopReport('[fix-loop] nothing ready\n\n[fix-loop] 0 closed · 0 waiting on a ruling · $0.00 spent · log x').nothing).toBe(true)
 })

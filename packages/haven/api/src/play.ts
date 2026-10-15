@@ -22,8 +22,8 @@ export interface Blast {
   laid: Trace[]
   /** Chalk the bolt crossed and wiped. */
   wiped: Trace[]
-  /** The cat, or whatever paces, was hit. */
-  yowl: boolean
+  /** The name of the pacer hit, the cat or whatever else paces, or null. */
+  yowl: string | null
 }
 
 /**
@@ -36,10 +36,11 @@ export function shoot (
   { memory: RoomMemory, room: string | number, world: SceneWorld, ms: number, members: Figure[], shooter: Figure, facing: Facing, all: boolean },
 ): Blast {
   const gone = new Set(memory.live(room, 'struck').map(t => t.id))
+  const scared = new Map(memory.live(room, 'spooked').flatMap(t => t.id ? [[t.id, { at: t.at, dir: t.dir }] as const] : []))
   const where: World = {
     members,
     at (x, y) {
-      const o = obstacleAt(world, x, y, ms)
+      const o = obstacleAt(world, x, y, ms, scared)
       return o && o.id && gone.has(o.id) ? null : o
     },
   }
@@ -47,10 +48,19 @@ export function shoot (
 
   const struck = new Map<number, { x: number, y: number }>()
   const laid: Trace[] = []
-  let yowl = false
+  let yowl: string | null = null
   const stop = (h: Hit) => {
     if (h.kind === 'member') { if (!struck.has(h.id)) struck.set(h.id, h.to) }
-    else if (h.kind === 'pacer') yowl = true
+    else if (h.kind === 'pacer') {
+      yowl = h.id ?? null
+      if (h.id && !scared.has(h.id) && world.pacers.some(p => p.name === h.id && p.flee)) {
+        // Away from the shooter along the pacer's row; shot from straight above or below, it keeps its way.
+        const dir = h.at.x === shooter.x ? undefined : h.at.x > shooter.x ? 1 : -1
+        const t = memory.add(room, { kind: 'spooked', x: h.at.x, y: h.at.y, id: h.id, by: shooter.id, ...(dir && { dir }) })
+        scared.set(h.id, { at: t.at, dir })
+        laid.push(t)
+      }
+    }
     else if (h.kind === 'piece') {
       if (h.id && !gone.has(h.id)) { gone.add(h.id); laid.push(memory.add(room, { kind: 'struck', x: h.at.x, y: h.at.y, id: h.id, by: shooter.id })) }
     } else laid.push(memory.add(room, { kind: 'scorch', x: h.at.x, y: h.at.y, by: shooter.id }))

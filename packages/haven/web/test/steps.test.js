@@ -6,7 +6,7 @@
 import { test, expect } from 'bun:test'
 import { createStage, STEP_FG, INDOORS, OUTDOORS } from '../src/stage.js'
 import { piece } from '../src/pieces/index.js'
-import { DAY_MS, FALL, fallAt, shade } from '../src/sky.js'
+import { DAY_MS, FALL, fallAt, windAt, shade, moonAt } from '../src/sky.js'
 import { TRACES } from '../../api/src/memory.ts'
 
 const LIFE = TRACES.step.ms
@@ -56,14 +56,14 @@ test('a drop falls in front of a footprint, and the night shades it', () => {
   try {
     const stage = probe()
     let ms = NOON
-    while (!fallAt('rain', 3, 0, ms)) ms += FALL.rain.ms
+    while (!fallAt('rain', 3, 0, ms, windAt(ms))) ms += FALL.rain.ms
     stage.tread([trace(3, 0, ms)])
-    expect(stage.look(3, 0, ms).ch).toBe(FALL.rain.ch)
+    expect(stage.look(3, 0, ms).ch).toBe(fallAt('rain', 3, 0, ms, windAt(ms)).ch)
   } finally { import.meta.env.HAVEN_WEATHER = prev }
   const stage = probe()
   const midnight = 3 * DAY_MS + 0.75 * DAY_MS
   stage.tread([trace(3, 0, midnight)])
-  expect(stage.look(3, 0, midnight).fg).toBe(shade(STEP_FG[2], 1))
+  expect(stage.look(3, 0, midnight).fg).toBe(shade(STEP_FG[2], 1, moonAt(midnight).light))
 })
 
 test('the clock wakes a screen at each third of a footprint and lets it go at its end', () => {

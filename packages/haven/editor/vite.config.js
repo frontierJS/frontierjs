@@ -100,7 +100,10 @@ export default defineConfig({
   root:    HERE,
   plugins: [mesa({ locRoot: SRC }), askPlugin({ root: SRC }), scenesApi()],
   resolve: { alias: { '@': SRC } },
-  define:  { 'import.meta.env.HAVEN_WEATHER': JSON.stringify(process.env.HAVEN_WEATHER ?? null) },
+  define:  {
+    'import.meta.env.HAVEN_WEATHER': JSON.stringify(process.env.HAVEN_WEATHER ?? null),
+    'import.meta.env.HAVEN_SEASON':  JSON.stringify(process.env.HAVEN_SEASON ?? null),
+  },
   // The stage, the cell module and the components are the browser Haven's own
   // (`web/src/`), and the pieces and scenes beside them; all live above this
   // root, or in the copy a drive points at.

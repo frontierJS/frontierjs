@@ -29,7 +29,8 @@ export const VOLLEY_MS = 9_000
 /** What stops a bolt that is not a member: `id` names the piece or pacer, for the screens that draw it. */
 export type Obstacle = { kind: 'wall' | 'piece' | 'pacer', id?: string }
 
-export type Figure = Position & { id: number }
+/** `span` is the cells the figure stands on from `x` rightward (`spanOf`), 1 when absent. */
+export type Figure = Position & { id: number, span?: number }
 
 export type Hit =
   | { kind: 'member', id: number, at: Position, to: Position }
@@ -45,8 +46,10 @@ export interface World {
   members: Figure[]
 }
 
+const covers = (m: Figure, x: number, y: number) => m.y === y && x >= m.x && x < m.x + (m.span ?? 1)
+
 const memberAt = (world: World, x: number, y: number, except: number) =>
-  world.members.find(m => m.id !== except && m.x === x && m.y === y)
+  world.members.find(m => m.id !== except && covers(m, x, y))
 
 /**
  * Where a struck member ends up: up to KNOCK cells the way the bolt flew,
@@ -56,9 +59,12 @@ const memberAt = (world: World, x: number, y: number, except: number) =>
 export function knockBack (world: World, struck: Figure, facing: Facing): Position {
   const { dx, dy } = STEP[facing]
   let to: Position = { x: struck.x, y: struck.y }
+  const span = struck.span ?? 1
   for (let i = 1; i <= KNOCK; i++) {
     const x = struck.x + dx * i, y = struck.y + dy * i
-    if (world.at(x, y) || memberAt(world, x, y, struck.id)) break
+    let blocked = false
+    for (let j = 0; j < span; j++) if (world.at(x + j, y) || memberAt(world, x + j, y, struck.id)) blocked = true
+    if (blocked) break
     to = { x, y }
   }
   return to
@@ -68,8 +74,10 @@ export function knockBack (world: World, struck: Figure, facing: Facing): Positi
 export function fly (world: World, shooter: Figure, facing: Facing): Flight {
   const { dx, dy } = STEP[facing]
   const path: Position[] = []
+  // A wide figure fires east from its second cell, not through it.
+  const ox = dx > 0 ? shooter.x + (shooter.span ?? 1) - 1 : shooter.x
   for (let i = 1; i <= RANGE; i++) {
-    const x = shooter.x + dx * i, y = shooter.y + dy * i
+    const x = ox + dx * i, y = shooter.y + dy * i
     const struck = memberAt(world, x, y, shooter.id)
     if (struck) {
       path.push({ x, y })

@@ -8,8 +8,9 @@
  * `$context.room`, so it is a picture and nothing signs in.
  *
  * Traps:
- * - `HAVEN_WEATHER` is `clear` here unless set (`src/sky.js`), and a Vite
- *   server a drive starts bakes it in when it starts.
+ * - `HAVEN_WEATHER` is `clear` and `HAVEN_SEASON` `summer` here unless set
+ *   (`src/sky.js`), and a Vite server a drive starts bakes both in when it
+ *   starts.
  * - `stages` must be the SAME module the component imports, or the slug is
  *   never found: both reach `src/stage.js` by its absolute path.
  * - The headless renderer is 100×30, the size `--frame` renders at, so what
@@ -27,6 +28,9 @@ export const WEB = join(import.meta.dir, '..')
 // would pass or fail by the clock. Every process that imports this, and every
 // child it spawns, is under a clear sky unless it sets another.
 process.env.HAVEN_WEATHER ??= 'clear'
+// The season turns a tree's art, and the frames are pinned in summer: with the
+// real calendar a frame would flip with the month.
+process.env.HAVEN_SEASON ??= 'summer'
 
 /** Every scene: the file's name, its slug, and the route it is drawn at — what a door's `to` names. */
 export const SCENES = [
@@ -43,6 +47,7 @@ export const SCENES = [
   { name: 'Jordan', slug: 'jordan', path: '/jordan/' },
   { name: 'Vlad',   slug: 'vlad',   path: '/vlad/' },
   { name: 'Colin',  slug: 'colin',  path: '/colin/' },
+  { name: 'Sheriff', slug: 'sheriff', path: '/sheriff/' },
 ]
 
 let loader = null

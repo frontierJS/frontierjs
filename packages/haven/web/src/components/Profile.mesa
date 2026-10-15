@@ -1,9 +1,11 @@
 <script>
   // Profile.mesa — the foot of the screen as this member's own card
-  // (`IDEAS/haven.md` 9.9): who they are, which way they face, and what they
-  // carry. It takes the rows a screen has left under the art, so a terminal
-  // exactly as tall as the scene (`--frame`, a drive's pty) draws none, and
-  // `/inv` says the same in the note for a screen too short for it.
+  // (`IDEAS/haven.md` 9.9) as three boxes (`hud.js`): who they are and which
+  // way they face, a hotbar of what they carry, and the room as a minimap.
+  // It takes the rows a screen has left under the art, so a terminal exactly
+  // as tall as the scene (`--frame`, a drive's pty) draws none, and `/inv`
+  // says the same in the note for a screen too short for it. A browser has no
+  // such rows (`FOOT` in `#paint`), so there it is `/inv` alone.
   //
   // What is carried is the server's (`members.inventory`) and refills on its
   // clock, which no event announces, so the card asks again every REFRESH_MS
@@ -11,6 +13,9 @@
   import { getClient } from '@frontierjs/sierra/resource'
   import { members }   from '@/resources/Member.mesa'
   import { ITEMS }     from '../../../api/src/inventory.ts'
+  import { coarse, SCALE } from '@/map.js'
+  import { hud, HEIGHT } from '@/hud.js'
+  import { FOOT }      from '#paint'
 
   export let here
   export let nicks
@@ -18,9 +23,11 @@
   export let room
   export let facing
   export let glyph
+  export let route
+  export let x
+  export let y
 
   const REFRESH_MS = 3000
-  const ROWS = 3
   const WAY = { n: 'north', e: 'east', s: 'south', w: 'west' }
 
   var verbs  = $context.commands
@@ -41,8 +48,17 @@
   client?.on('event', onOwn)
   $.onDestroy(() => { clearInterval(timer); client?.off('event', onOwn) })
 
-  /** `>>>>>>>>··  8/10`: a mark per item held, a dot per place it could be, up to the cap. */
-  const bar = (item, n) => `${'>'.repeat(n)}${'·'.repeat(Math.max(0, ITEMS[item].start - n))}  ${n}/${ITEMS[item].cap}`
+  // The pieces have claimed their cells by the time the scene is mounted, as
+  // `Scene.mesa` keeps the same snap then; drawing it again on every step
+  // would be a `picture()` of the whole stage per key.
+  let snap = { rows: [] }
+  $.onMount(() => { snap = coarse(stage, route) })
+
+  const ITEM_NAMES = Object.keys(ITEMS)
+  const rows = (width, x, y) => hud({
+    w: width, nick: nicks[here.get().self?.userId] ?? '…', glyph, room: room.name, way: WAY[facing] ?? '—',
+    items: ITEM_NAMES, held, mini: snap.rows, at: { x: Math.floor(x / SCALE.x), y: Math.floor(y / SCALE.y) },
+  })
 
   // The stage's size is set by `#paint` after this mounts, so it is read again
   // on every change of the stage, as `Scene.mesa` reads its view.
@@ -58,11 +74,8 @@
   $.onDestroy(verbs.add({ word: 'inv', aliases: ['inventory'], help: '/inv — what you carry', run: list }))
 </script>
 
-{#if spare >= ROWS + 1}
-  <p> </p>
-  <pre>{glyph} {nicks[here.get().self?.userId] ?? '…'} · {room.name} · facing {WAY[facing] ?? '—'}</pre>
-  {#each Object.keys(ITEMS) as item (item)}
-    <pre>{item.padEnd(8)}{bar(item, held[item] ?? 0)}</pre>
+{#if FOOT && spare >= HEIGHT}
+  {#each rows(stage.size.w, x, y) as row, i (i)}
+    <pre>{row}</pre>
   {/each}
-  <pre>/inv lists what you carry</pre>
 {/if}

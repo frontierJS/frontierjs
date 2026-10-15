@@ -17,5 +17,5 @@ lYl
  l
 lll
 `,
-  { overhead: 3, palette: { Y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 4 } } }
+  { overhead: 3, palette: { Y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24', '#f59e0b', '#facc15'], ms: 700, flicker: true, light: 4 } } }
 )

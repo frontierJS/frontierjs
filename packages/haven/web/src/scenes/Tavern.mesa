@@ -35,7 +35,7 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
 
   const hearth = piece('hearth', String.raw`
   _______________________
- |#######################|
+ |###########⚜###########|
  |##.-----------------.##|
  |##|   ^   ^ ^   ^   |##|
  |##|  ^^^ ^^^^^ ^^^  |##|
@@ -44,7 +44,7 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
 [=========================]
 `, String.raw`
   sssssssssssssssssssssss
- sSSSSSSSSSSSSSSSSSSSSSSSs
+ sSSSSSSSSSSSWSSSSSSSSSSSs
  sSSsssssssssssssssssssSSs
  sSSs   h   h h   h   sSSs
  sSSs  hhh hhhhh hhh  sSSs
@@ -56,8 +56,8 @@ sssssssssssssssssssssssssss
   // The rug is floor, walked on, and painted all the same.
   const rug = piece('rug', String.raw`
 ;;;;;;;;;;;;;;;;;;;;;;;
-;:::::::::::::::::::::;
-;:::::::::::::::::::::;
+;::❦::::::::::::::::::;
+;::::::::::::::::::❦::;
 ;;;;;;;;;;;;;;;;;;;;;;;
 `, String.raw`
 mmmmmmmmmmmmmmmmmmmmmmm

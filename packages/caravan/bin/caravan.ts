@@ -5,6 +5,7 @@
 //   caravan queue pause   [<name>] --actor <id> [--holder <id>] [--reason <text>]
 //   caravan queue resume  [<name>] --actor <id> [--holder <id>]
 //   caravan queue drain   [<name>] --actor <id> [--holder <id>] [--reason <text>] [--timeout <ms>]
+//   caravan queue purge   [<name>] --actor <id> [--reason <text>]
 //   caravan queue state   [<name>]
 //   every verb takes [--db <path>] and [--pid <n>]
 //
@@ -42,11 +43,11 @@ import { createCaravan }                                  from '../src/index.ts'
 import { DEFAULT_DB_PATH, DEFAULT_LEASE_MS, EVERY_QUEUE } from '../src/db.ts'
 import type { PauseRow }                                  from '../src/db.ts'
 
-const VERBS  = ['pause', 'resume', 'drain', 'state'] as const
-const WRITES = new Set(['pause', 'resume', 'drain'])
+const VERBS  = ['pause', 'resume', 'drain', 'purge', 'state'] as const
+const WRITES = new Set(['pause', 'resume', 'drain', 'purge'])
 const FLAGS  = new Set(['db', 'pid', 'actor', 'holder', 'reason', 'timeout'])
 
-const USAGE = 'usage: caravan queue <pause|resume|drain|state> [<name>] [--db <path> | --pid <n>] [--actor <id>] [--holder <id>] [--reason <text>] [--timeout <ms>]'
+const USAGE = 'usage: caravan queue <pause|resume|drain|purge|state> [<name>] [--db <path> | --pid <n>] [--actor <id>] [--holder <id>] [--reason <text>] [--timeout <ms>]'
 const TABLES = ['jobs', 'job_owners', 'queue_pauses']
 
 function answer(body: Record<string, unknown>, code = 0): never {
@@ -178,6 +179,7 @@ try {
   if (verb === 'pause')       result = target.pause(opts)
   else if (verb === 'resume') result = target.resume(opts)
   else if (verb === 'drain')  result = await target.drain({ ...opts, ...(timeout !== undefined ? { timeout } : {}) })
+  else if (verb === 'purge')  result = target.purge(opts)
   else if (name !== undefined) result = caravan.queue(name).state({ events: 20 })
   else {
     const ro = new Database(db, { readonly: true })

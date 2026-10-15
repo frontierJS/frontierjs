@@ -39,7 +39,7 @@ last step (10.1).
   past the first screen's edge.
 - A scene bigger than a screen (6.1): the stage's `view` is the 97×26 slice a
   screen draws, following that screen's figure with eight columns and four
-  rows of slack; the square is 160 cells wide, with a well, a stall and a
+  rows of slack; the square is 224 cells wide, with a well, a stall and a
   signpost east of the first screen. A speaker outside the view is their line
   as a marker on the edge facing them.
 - Borders (6.2): the square's east edge opens onto the road, its west into

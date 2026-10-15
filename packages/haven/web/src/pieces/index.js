@@ -42,7 +42,6 @@ export function piece(name, art, paint, { floor = false, overhead = 0, spots = {
   checkPickup(name, pickup, floor)
   checkPalette(name, palette)
   const named = Object.entries(spots).map(([spot, s]) => ({ name: spot, ...s }))
-  const lines = (s) => s.replace(/^\n/, '').replace(/\n$/, '').split('\n')
   const a = lines(art), p = lines(paint)
   const cells = []
   a.forEach((row, dy) => [...row].forEach((ch, dx) => {
@@ -52,6 +51,18 @@ export function piece(name, art, paint, { floor = false, overhead = 0, spots = {
   checkSeasons(shape)
   return shape
 }
+
+/**
+ * A drawing's rows, its leading and trailing newline dropped. Art that is cut
+ * up before it reaches `piece()` splits it here, or a symbol in it breaks.
+ * @param {string} s
+ */
+export const lines = (s) => unescaped(s).replace(/^\n/, '').replace(/\n$/, '').split('\n')
+
+// Bun 1.4.2 hands a String.raw template's non-ASCII character over as its
+// `\uXXXX` escape, six cells where the art drew one, and the row runs on into
+// the next piece. Node keeps the character; this puts it back under Bun.
+const unescaped = (s) => s.replace(/\\u\{([0-9a-f]+)\}|\\u([0-9a-f]{4})/gi, (_, cp, u) => String.fromCodePoint(parseInt(cp ?? u, 16)))
 
 // A season that claimed another wall would let a figure through a trunk in
 // one season and not the next, and the server's `world.json` knows one.

@@ -65,7 +65,7 @@
 
   /** What he says now. */
   function words(o, i, l, f) {
-    if (l) return `fix-loop is on ${l.pkg} — the sessions stand at its bench`
+    if (l) return `fix-loop is on ${l.on} — the sessions stand at its bench`
     if (f) return `fli next tripped: ${f}`
     if (!o) return '…'
     if (!o.length) return 'nothing ready for the loop — the register is clear, or waiting on you'
@@ -78,9 +78,9 @@
     if (loop) return words(offers, pick, loop, failed)
     if (!offers || pick >= offers.length) return words(offers, pick, loop, failed)
     try {
-      loop = startLoop(offers[pick].pkg, { root })
+      loop = startLoop({ pkg: offers[pick].pkg }, { root })
     } catch (e) { return e.message }
-    return `fix-loop started on ${loop.pkg}`
+    return `fix-loop started on ${loop.on}`
   }
 
   function no() {

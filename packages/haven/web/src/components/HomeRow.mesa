@@ -35,7 +35,8 @@
   // Where this figure stands, `{ x, y }`, asked afresh at each step.
   export let where
   export let moveTo
-  // Draws this figure as a character, or as itself again for null.
+  // Draws this figure as a character, or as itself again for null; false
+  // when an emoji's second cell would not be floor.
   export let shapeTo
   export let tell
 
@@ -71,7 +72,7 @@
     const m = here.get().others.find((o) => o.userId === id)
     const path = m && pathBeside(stage, where(), cellOf(m, spawn))
     if (!path?.length) verbs.close(WALK)
-    else moveTo(path[0].x, path[0].y)
+    else if (!stage.pacerOn(path[0].x, path[0].y, Date.now())) moveTo(path[0].x, path[0].y)
   }
 
   function find(letter) {
@@ -92,8 +93,8 @@
   }
 
   function shapeshift(ch) {
+    if (!shapeTo(ch)) { tell(`no room for ${ch} here: it stands on two cells`); return }
     clearTimeout(shapeTimer)
-    shapeTo(ch)
     shapeTimer = ch ? setTimeout(() => shapeTo(null), SHAPE_MS) : null
     tell(ch ? `you are ${ch} for a minute` : 'you are yourself again')
   }

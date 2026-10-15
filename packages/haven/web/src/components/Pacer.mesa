@@ -12,8 +12,9 @@
   export let right  // frames walking right
   export let left   // frames walking left
   export let sit    // frames sitting
+  export let flee   // ms a cell once a bolt scares it out of the scene; absent, it holds its ground
 
   const scene = $context.scene
-  var mark = scene.pace({ name, y, from, to, ms, rest, fg, right, left, sit })
+  var mark = scene.pace({ name, y, from, to, ms, rest, fg, right, left, sit, flee })
   $.onDestroy(() => mark.remove())
 </script>

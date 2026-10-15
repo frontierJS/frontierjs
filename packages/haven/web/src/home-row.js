@@ -5,7 +5,7 @@
 //   d          a bolt the way the figure faces, once PENDING_MS passes
 //   d h|j|k|l  a bolt that way;  dd  a volley, all four ways
 //   f <letter> walk to the nearest member whose nick starts with it
-//   s <char>   draw the figure as that character;  s Space  as itself again
+//   s <char>   draw the figure as that character, or an emoji;  s Space  as itself again
 //   a <char>   chalk the cell behind the figure
 //
 // Esc drops a waiting operator; any key an operator cannot take drops it too,
@@ -16,7 +16,7 @@
 // scene sees them (`sierra/src/terminal/shell.js`), so after `f`, `s` or `a`
 // an arrow is read back as its letter — an `f` then Left finds a nick in h.
 
-import { glyphOf } from '../../api/src/shape.ts'
+import { glyphOf, shapeOf } from '../../api/src/shape.ts'
 
 /** How long a lone `d` waits for a second key before it fires the way faced. */
 export const PENDING_MS = 400
@@ -46,7 +46,7 @@ export function createHomeRow() {
     }
     if (op === 'f') return /^[a-z0-9]$/i.test(l) ? { act: 'find', letter: l.toLowerCase() } : true
     if (op === 's' && k === ' ') return { act: 'shape', ch: null }
-    const ch = glyphOf(l)
+    const ch = op === 's' ? shapeOf(l) : glyphOf(l)
     if (!ch) return true
     return op === 's' ? { act: 'shape', ch } : { act: 'chalk', ch }
   }

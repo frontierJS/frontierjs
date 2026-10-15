@@ -36,6 +36,17 @@ const notHere = (what: string) => async (): Promise<never> => {
   throw new BadRequest(`The haven has no ${what}. A machine signs in with its key: POST /haven/login.`)
 }
 
+/**
+ * Delete every session past its `expiresAt`, answering how many. Every login
+ * mints one — each `fli haven`, each agent reconnect — so without this the
+ * table only grows. A revoked one goes when it expires: Session carries no
+ * trail, so a kept row names nothing to anyone.
+ */
+export async function sweepSessions (db: Db, now: Date = db.$now?.() ?? new Date()): Promise<number> {
+  const { count } = await db.asSystem().session.deleteMany({ where: { expiresAt: { lt: now.toISOString() } } })
+  return count
+}
+
 export function createHavenAuth (db: Db, opts: HavenAuthOptions): HavenAuth {
   // Refused here rather than on the first login: an unkeyed digest can be
   // attacked offline the moment the column leaks.

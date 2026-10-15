@@ -14,7 +14,7 @@
   import Piece from '@/components/Piece.mesa'
   import Row   from '@/components/Row.mesa'
   import Door  from '@/components/Door.mesa'
-  import { piece }  from '@/pieces/index.js'
+  import { piece, lines } from '@/pieces/index.js'
   import { framed } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
   import { lamp }  from '@/pieces/lamp.js'
@@ -29,8 +29,8 @@
   _||_________________________
  //\/\/\/\/\/\/\/\/\/\/\/\/\/\\
 /______________________________\
- |   [ THE GOLDEN TANKARD ]   |
- |  []    []        []    []  |
+ | ★ [ THE GOLDEN TANKARD ] ★ |
+ |  []    []   ♪ ♫  []    []  |
  |                            |
  |  []    []   .-.  []    []  |
  |_____________|n|____________|
@@ -40,8 +40,8 @@
   rccrrrrrrrrrrrrrrrrrrrrrrrrr
  rRRRRRRRRRRRRRRRRRRRRRRRRRRRRr
 rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
- w   S sss ssssss sssssss S   w
- w  yy    yy        yy    yy  w
+ w s S sss ssssss sssssss S s w
+ w  yy    yy   m m  yy    yy  w
  w                            w
  w  yy    yy   ddd  yy    yy  w
  wwwwwwwwwwwwwwdddwwwwwwwwwwwww
@@ -163,16 +163,18 @@ sbbbbbbbbbbbbbbbbbs
   // the top two rows and floor like the water: a figure stands on the spray,
   // drawn over it rather than hidden under it.
   const carve = (name, keys, options) => {
-    const [art, paint] = FOUNTAIN.map((s) => s.replace(/^\n/, '').replace(/\n$/, '').split('\n'))
+    const [art, paint] = FOUNTAIN.map(lines)
     const keep = (row, dy) => [...row].map((ch, dx) => keys.includes(paint[dy]?.[dx]) ? ch : ' ').join('')
     return piece(name, art.map(keep).join('\n'), paint.map((r, dy) => [...r].map((k, dx) => keys.includes(k) ? k : ' ').join('')).join('\n'), options)
   }
   const fountain = carve('fountain', 's')
   const basin = carve('fountain water', 'bj', { floor: true })
 
-  // The square's own frame: a screen and two thirds wide, where the shared
-  // `frame` is one screen.
-  const frame = framed(159, 26)
+  // The square's own frame: two and a third screens wide, where the shared
+  // `frame` is one screen. The houses stand a long stride apart and the plaza
+  // between them is bare floor, so it is a place to cross rather than a row to
+  // squeeze along.
+  const frame = framed(223, 26)
 
   const well = piece('well', String.raw`
    __
@@ -231,54 +233,59 @@ eeeeeee
     b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
     g: { fg: ['#22c55e', '#16a34a', '#15803d'], ms: 1100, wave: true },
     p: { fg: ['#f472b6', '#facc15', '#c084fc', '#fb7185'], ms: 1500, flicker: true, dye: true },
+    m: { fg: ['#c4b5fd', '#a78bfa', '#e9d5ff'], chars: '♪♫', ms: 800, flicker: true },
   }
 </script>
 
-<Scene slug="square" palette={PALETTE} spawn={{ x: 31, y: 21 }}>
+<Scene slug="square" palette={PALETTE} spawn={{ x: 64, y: 22 }}>
   <Piece of={frame} />
-  <Door  x={159} y={1} h={24} to="/road/" />
+  <Door  x={223} y={1} h={24} to="/road/" />
   <Door  x={1}   y={1} h={24} to="/woods/" />
   <Door  x={47}  y={25} w={6} to="/docks/" />
-  <Piece of={tavern} x={4}  y={1} />
-  <Door  x={20} y={10} to="/tavern/" />
-  <Piece of={workshop} x={40} y={2} />
-  <Door  x={50} y={10} to="/workshop/" />
-  <Piece of={houseB} x={61} y={1} />
-  <Piece of={houseC} x={81} y={2} />
-  <Piece of={fountain} x={42} y={12} />
-  <Piece of={basin} x={42} y={12} />
-  <Piece of={tree} x={3}  y={13} />
-  <Piece of={tree} x={83} y={13} />
-  <Piece of={lamp} x={19} y={14} />
-  <Piece of={lamp} x={75} y={14} />
-  <Piece of={bench} x={44} y={20} />
-  <Piece of={bench} x={56} y={20} />
-  <Piece of={noticeBoard} x={64} y={13} />
-  <Row of={hedge} y={23} x={5}  n={10} />
+  <Piece of={tavern} x={6}  y={1} />
+  <Door  x={22} y={10} to="/tavern/" />
+  <Piece of={workshop} x={48} y={2} />
+  <Door  x={58} y={10} to="/workshop/" />
+  <Piece of={houseB} x={78} y={1} />
+  <Piece of={houseC} x={106} y={2} />
+  <Piece of={fountain} x={55} y={12} />
+  <Piece of={basin} x={55} y={12} />
+  <Piece of={tree} x={4}  y={13} />
+  <Piece of={tree} x={109} y={13} />
+  <Piece of={lamp} x={21} y={14} />
+  <Piece of={lamp} x={88} y={14} />
+  <Piece of={bench} x={57} y={20} />
+  <Piece of={bench} x={69} y={20} />
+  <Piece of={noticeBoard} x={96} y={13} />
+  <Row of={hedge} y={23} x={5} n={10} />
   <Row of={hedge} y={23} x={21} n={12} />
   <Row of={hedge} y={23} x={37} n={10} />
   <Row of={hedge} y={23} x={53} n={10} />
   <Row of={hedge} y={23} x={67} n={12} />
   <Row of={hedge} y={23} x={83} n={10} />
+  <Row of={hedge} y={23} x={99} n={12} />
+  <Row of={hedge} y={23} x={115} n={10} />
   <Row of={flower} y={24} x={6}  n={14} step={3} />
-  <Row of={flower} y={24} x={54} n={13} step={3} />
-  <Piece of={townhall} x={100} y={2} />
-  <Door  x={110} y={10} to="/townhall/" />
-  <Piece of={houseB} x={122} y={1} />
-  <Piece of={houseC} x={143} y={2} />
-  <Piece of={tree} x={99}  y={13} />
-  <Piece of={tree} x={144} y={12} />
-  <Piece of={lamp} x={114} y={14} />
-  <Piece of={lamp} x={140} y={14} />
-  <Piece of={well} x={120} y={13} />
-  <Piece of={stall} x={128} y={14} />
-  <Piece of={bench} x={118} y={20} />
-  <Piece of={bench} x={132} y={20} />
-  <Piece of={signpost} x={151} y={20} />
-  <Row of={hedge} y={23} x={99}  n={10} />
-  <Row of={hedge} y={23} x={113} n={12} />
-  <Row of={hedge} y={23} x={129} n={10} />
-  <Row of={hedge} y={23} x={143} n={12} />
-  <Row of={flower} y={24} x={99} n={19} step={3} />
+  <Row of={flower} y={24} x={54} n={26} step={3} />
+  <Piece of={townhall} x={130} y={2} />
+  <Door  x={140} y={10} to="/townhall/" />
+  <Piece of={houseB} x={160} y={1} />
+  <Piece of={houseC} x={188} y={2} />
+  <Piece of={tree} x={124} y={13} />
+  <Piece of={tree} x={186} y={12} />
+  <Piece of={lamp} x={138} y={14} />
+  <Piece of={lamp} x={176} y={14} />
+  <Piece of={well} x={146} y={13} />
+  <Piece of={stall} x={158} y={14} />
+  <Piece of={bench} x={144} y={20} />
+  <Piece of={bench} x={164} y={20} />
+  <Piece of={signpost} x={213} y={20} />
+  <Row of={hedge} y={23} x={129} n={12} />
+  <Row of={hedge} y={23} x={145} n={10} />
+  <Row of={hedge} y={23} x={161} n={12} />
+  <Row of={hedge} y={23} x={177} n={10} />
+  <Row of={hedge} y={23} x={193} n={12} />
+  <Row of={hedge} y={23} x={209} n={10} />
+  <Row of={flower} y={24} x={138} n={26} step={3} />
   <slot />
 </Scene>

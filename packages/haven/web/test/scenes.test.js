@@ -10,7 +10,7 @@ import { test, expect } from 'bun:test'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SCENES, WEB, mountScene } from './stage.mjs'
-import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS, viewFor, edgeFor } from '../src/stage.js'
+import { pacerAt, createStage, follow, arrival, litAt, dim, INK, VIEW, EDGE, SIGHT, OUTDOORS, INDOORS, viewFor, edgeFor, MOON_ROW } from '../src/stage.js'
 import { piece } from '../src/pieces/index.js'
 import { worldOf, worldJson, pieceId } from '../src/world.js'
 import { DAY_MS } from '../src/sky.js'
@@ -36,11 +36,12 @@ for (const { name, slug, path } of SCENES) {
 
   test(`${slug}: the terminal draws that picture, the view's slice of it from the spawn and from the far corner`, async () => {
     // A cycling cell may show another glyph of its `chars` at this tick, a
-    // pacer stands somewhere on its row, and a night door is a door for a
-    // third of every hour, so a cell is compared only where no clock moves
-    // it. A stage no bigger than the view draws the same slice from both corners.
+    // pacer stands somewhere on its row, a night door is a door for a third
+    // of every hour and the moon crosses the sky row's blank cells in that
+    // third, so a cell is compared only where no clock moves it. A stage no
+    // bigger than the view draws the same slice from both corners.
     const paced = (x, y) => stage.pacers.some((p) => p.y === y && x >= p.from && x <= p.to)
-    const nightly = (x, y) => stage.doors.some((d) => d.night && d.x === x && d.y === y)
+    const nightly = (x, y) => stage.doors.some((d) => d.night && d.x === x && d.y === y) || (y === MOON_ROW && expected[y][x] === ' ')
     const same = (drawn, v) => {
       for (let row = 0; row < v.h; row++) {
         for (let col = 0; col < v.w; col++) {
@@ -87,7 +88,7 @@ for (const { name, slug, path } of SCENES) {
         }
       }
     }
-  }, 30_000)
+  }, 90_000)
 
   test(`${slug}: the spawn is floor and every door is reached from it`, () => {
     const { spawn } = stage

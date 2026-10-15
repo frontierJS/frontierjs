@@ -15,7 +15,16 @@
 // strike or not, and where it lands and what it sets alight is the stage's
 // to say from the same window number.
 // `HAVEN_WEATHER` pins one kind in place of the clock's, for a test, a drive
-// and a person who wants to see it.
+// and a person who wants to see it; `HAVEN_SEASON` the season, which turns a
+// tree's art and so would flip a pinned frame with the month.
+//
+// The moon (7.9) keeps the real date's phase, as the season keeps its month:
+// a full moon lightens the night's shade and a new one darkens it, and it
+// crosses the top of an outdoor scene through full night.
+//
+// The temperature (7.10) decides what falls, and the ground keeps what fell:
+// puddles drying after rain and a snow cover that thaws by degrees, replayed
+// from the spells before `ms`, so the aftermath is the clock's too.
 //
 // The almanac (7.6) is the one record of all of it: `almanacAt(ms)`, which a
 // layer asks rather than the clock's functions one by one, so a screen that
@@ -44,20 +53,60 @@ export function darkness(ms) {
 /** Whether it is full night: what a door that is there only at night asks. */
 export const isNight = (ms) => almanacAt(ms).darkness === 1
 
-/** What each channel keeps at full night: moonlight is blue. */
-const NIGHT = [0.3, 0.38, 0.62]
+// What each channel keeps at full night under a new moon and under a full
+// one: moonlight is blue. A half moon is between them.
+const NEW_NIGHT  = [0.2, 0.26, 0.48]
+const FULL_NIGHT = [0.4, 0.5, 0.76]
 
 const shades = new Map()
-/** `hex` at darkness `level` (0 is itself, 1 is full night); undefined stays undefined. */
-export const shade = (hex, level) => {
+/** `hex` at darkness `level` (0 is itself, 1 is full night) under a moon giving `light` (0 new, 1 full); undefined stays undefined. */
+export const shade = (hex, level, light) => {
   if (!hex || !level) return hex
-  const k = hex + level
+  const k = hex + level + '/' + light
   let s = shades.get(k)
   if (!s) {
-    s = '#' + [1, 3, 5].map((i, c) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - level * (1 - NIGHT[c]))).toString(16).padStart(2, '0')).join('')
+    s = '#' + [1, 3, 5].map((i, c) => {
+      const keep = NEW_NIGHT[c] + light * (FULL_NIGHT[c] - NEW_NIGHT[c])
+      return Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - level * (1 - keep))).toString(16).padStart(2, '0')
+    }).join('')
     shades.set(k, s)
   }
   return s
+}
+
+// ─── the moon ─────────────────────────────────────────────────────────────
+
+/** One lunar cycle, new moon to new moon, in real time: the moon keeps the real calendar's days, not the hour-long day's. */
+export const SYNODIC_MS = 29.530588853 * 86_400_000
+
+// A new moon to count from: 2000-01-06 18:14 UTC. The mean cycle drifts from
+// the true one by under a day, which a glyph and a shade cannot show.
+const NEW_MOON = Date.UTC(2000, 0, 6, 18, 14)
+
+// The glyph by eighth of the cycle, lit on the right while it waxes as the
+// northern sky has it; a new moon is none.
+const GLYPHS = [null, ')', 'D', 'O', 'O', 'O', 'C', '(']
+
+/** The moon's ink. It is a light, so the night never shades it. */
+export const MOON_FG = '#f4f1de'
+
+/**
+ * The moon `ms` into the clock: `phase` (0 new, 0.5 full) on the real date,
+ * `light` the lit part in quarters, so a shaded color is cached per step,
+ * `ch` its glyph or null at new moon, and `arc` how far across the sky it is
+ * (0 risen in the east, 1 setting in the west) or null when the hour is not
+ * full night. The arc moves a step every SKY_MS, as the sky does.
+ */
+export const moonAt = (ms) => {
+  const phase = ((((ms - NEW_MOON) / SYNODIC_MS) % 1) + 1) % 1
+  const into  = ((ms % DAY_MS) + DAY_MS) % DAY_MS
+  const steps = Math.round(DAY_MS * 0.3 / SKY_MS) - 1
+  return {
+    phase,
+    light: Math.round(((1 - Math.cos(2 * Math.PI * phase)) / 2) * 4) / 4,
+    ch:    GLYPHS[Math.round(phase * 8) % 8],
+    arc:   darkness(ms) === 1 ? Math.min(1, Math.floor((into - DAY_MS * 0.6) / SKY_MS) / steps) : null,
+  }
 }
 
 /** A cheap integer hash of three numbers — the clock's own dice, shared by whatever must agree across screens. */
@@ -70,10 +119,105 @@ export const hash = (a, b, c) => {
 /** How long one spell of weather lasts: ten minutes. */
 export const WEATHER_MS = DAY_MS / 6
 
-const SPELLS = ['clear', 'clear', 'clear', 'clear', 'clear', 'clear', 'rain', 'rain', 'snow', 'storm']
+// Ten spells a season, drawn from by the clock: storms mostly summer, rain
+// mostly spring and fall, and no snow anywhere -- a rain spell cold enough
+// falls as snow (7.10), which is how winter gets it.
+const SPELLS = {
+  spring: ['clear', 'clear', 'clear', 'clear', 'clear', 'rain', 'rain', 'rain', 'rain', 'storm'],
+  summer: ['clear', 'clear', 'clear', 'clear', 'clear', 'clear', 'clear', 'rain', 'storm', 'storm'],
+  fall:   ['clear', 'clear', 'clear', 'clear', 'clear', 'rain', 'rain', 'rain', 'rain', 'storm'],
+  winter: ['clear', 'clear', 'clear', 'clear', 'clear', 'clear', 'rain', 'rain', 'rain', 'rain'],
+}
 
-/** The weather the clock schedules at `ms`: `'clear'`, `'rain'`, `'snow'` or `'storm'`. */
-export const scheduleAt = (ms) => SPELLS[hash(Math.floor(ms / WEATHER_MS), 7, 11) % SPELLS.length]
+/**
+ * The spell the clock schedules at `ms`: `'clear'`, `'rain'` or `'storm'`,
+ * weighted by the CLOCK's season. A screen holding winter sees no snow the
+ * clock did not send: a hold replaces one field and nothing else. What falls
+ * is `tempAt`'s to say.
+ */
+export const scheduleAt = (ms) => {
+  const spells = SPELLS[seasonAt(ms)]
+  return spells[hash(Math.floor(ms / WEATHER_MS), 7, 11) % spells.length]
+}
+
+// ─── temperature ──────────────────────────────────────────────────────────
+
+// Degrees at dusk under a clear sky, by the clock's season; the day is four
+// warmer and the night four colder.
+const WARMTH = { spring: 8, summer: 21, fall: 9, winter: -1 }
+// What a spell's clouds take off it.
+const CHILL = { clear: 0, rain: -2, storm: -4 }
+
+/**
+ * Degrees Celsius `ms` into the clock, a whole number: the clock's season,
+ * the hour and the spell, swung three either way per spell so that one
+ * winter afternoon rains and the next snows. Never stored and not holdable:
+ * it is what decides what falls, and the ground's thaw.
+ */
+export const tempAt = (ms) => {
+  const n = Math.floor(ms / WEATHER_MS)
+  return Math.round(WARMTH[seasonAt(ms)] + 4 - 8 * darkness(ms) + CHILL[scheduleAt(ms)] + hash(n, 19, 7) % 7 - 3)
+}
+
+/** What the clock lets fall at `ms`: its spell, but a rain spell at or below freezing is snow. */
+const fallen = (ms) => {
+  const spell = scheduleAt(ms)
+  return spell === 'rain' && tempAt(ms) <= 0 ? 'snow' : spell
+}
+
+// ─── the ground ───────────────────────────────────────────────────────────
+
+/** How long the ground remembers: what fell before this is gone from it. */
+export const GROUND_MS = DAY_MS
+
+// Per SKY_MS step: rain wets the ground in two, snow covers it in three, the
+// wet dries in four, and a cover thaws by THAW for each degree above freezing.
+const WETS = 1 / 2
+const COVERS = 1 / 3
+const DRIES = 1 / 4
+const THAW = 1 / 10
+
+const grounds = new Map()
+/**
+ * What the weather left on the ground `ms` into the clock, `{ wet, snow }`,
+ * each 0 (bare) to 1: the spells of the last GROUND_MS replayed a SKY_MS step
+ * at a time from bare, so it is the clock's and every screen agrees. Rain or
+ * a storm wets it and a dry step dries it; snow covers it and nothing thaws
+ * while it falls. A screen holding the weather has always had it, so holding
+ * `clear` leaves the ground bare.
+ */
+export const groundAt = (ms) => {
+  const step = Math.floor(ms / SKY_MS)
+  const held = heldOf('weather')
+  const k = step + '/' + held
+  let g = grounds.get(k)
+  if (g) return g
+  let wet = 0, snow = 0
+  for (let s = step - GROUND_MS / SKY_MS + 1; s <= step; s++) {
+    const t = s * SKY_MS
+    const kind = held ?? fallen(t)
+    wet = Math.max(0, Math.min(1, kind === 'rain' || kind === 'storm' ? wet + WETS : wet - DRIES))
+    snow = Math.max(0, Math.min(1, kind === 'snow' ? snow + COVERS : snow - Math.max(0, tempAt(t)) * THAW))
+  }
+  if (grounds.size > 64) grounds.clear()
+  grounds.set(k, g = { wet, snow })
+  return g
+}
+
+/** How the ground is drawn: a puddle on up to one blank cell in twelve, a cover on up to one in two, fewer as each fades. */
+export const GROUND = {
+  wet:  { ch: '~', fg: '#3e6489', share: 1 / 12 },
+  snow: { ch: '·', fg: '#dfe7f2', share: 1 / 2 },
+}
+
+/** What the ground shows on the cell `x, y` under `ground`, `{ ch, fg }`, or null: snow over a puddle. */
+export function groundOn(x, y, ground) {
+  for (const kind of ['snow', 'wet']) {
+    const g = GROUND[kind]
+    if (ground[kind] && hash(x, y, kind === 'snow' ? 43 : 41) % 1200 < ground[kind] * g.share * 1200) return { ch: g.ch, fg: g.fg }
+  }
+  return null
+}
 
 /** The kinds of weather, in the order `/weather` names them. */
 export const KINDS = ['clear', 'rain', 'snow', 'storm']
@@ -81,19 +225,28 @@ export const KINDS = ['clear', 'rain', 'snow', 'storm']
 /** The seasons, in the order `/season` names them; a piece's `seasons` may name only these. */
 export const SEASONS = ['spring', 'summer', 'fall', 'winter']
 
-/** The season the clock gives at `ms`. Summer until the calendar (7.7) reads the date. */
-export const seasonAt = (ms) => 'summer'
+/**
+ * The season at `ms` by the real calendar (7.7): the UTC month, taken
+ * meteorologically (Dec–Feb winter) in the northern hemisphere. The day stays
+ * an hour; the year is the real one.
+ */
+export const seasonAt = (ms) => SEASONS[(Math.floor(((new Date(ms).getUTCMonth() + 1) % 12) / 3) + 3) % 4]
 
 // ─── the almanac ──────────────────────────────────────────────────────────
 
-/** The kind `HAVEN_WEATHER` pins, or null. Vite bakes the name in at its start (`define`), Bun reads it from the environment. */
-const pinned = () => {
-  const w = import.meta.env.HAVEN_WEATHER
-  return KINDS.includes(w) ? w : null
-}
-
 // The fields a screen may hold, and the values each may be held at.
 const HOLDABLE = { weather: KINDS, season: SEASONS }
+
+// What the environment pins each field at. Spelled out rather than built from
+// the field's name, because Vite bakes in only a name it sees whole
+// (`define`); Bun reads it from the environment.
+const PINS = { weather: () => import.meta.env.HAVEN_WEATHER, season: () => import.meta.env.HAVEN_SEASON }
+
+/** The value `HAVEN_WEATHER` or `HAVEN_SEASON` pins `field` at, or null; anything that is not one of its values is the clock's. */
+const pinned = (field) => {
+  const v = PINS[field]()
+  return HOLDABLE[field].includes(v) ? v : null
+}
 
 // What this screen holds in place of the clock's, by field. Kept across doors,
 // since a scene is a fresh mount and the module is not.
@@ -107,33 +260,77 @@ export function hold(field, value) {
   held[field] = value
 }
 
-/** The value held in place of the clock's for `field`, or null. A screen's hold outranks `HAVEN_WEATHER`: a person who typed the word means it. */
-export const heldOf = (field) => held[field] ?? (field === 'weather' ? pinned() : null)
+/** The value held in place of the clock's for `field`, or null. A screen's hold outranks the environment's pin: a person who typed the word means it. */
+export const heldOf = (field) => held[field] ?? pinned(field)
 
-/** The world `ms` into the clock: `{ darkness, season, weather }`, each the clock's unless this screen holds it. */
-export const almanacAt = (ms) => ({
-  darkness: darkness(ms),
-  season:   heldOf('season') ?? seasonAt(ms),
-  weather:  heldOf('weather') ?? scheduleAt(ms),
-})
+// A paint asks the almanac once per cell at one `ms`, so the last answer is kept.
+let last = { key: null, almanac: null }
+
+/** The world `ms` into the clock: `{ darkness, season, weather, wind, moon, temp, ground }`, each the clock's unless this screen holds it. */
+export const almanacAt = (ms) => {
+  const season = heldOf('season'), weather = heldOf('weather')
+  const key = ms + '/' + season + '/' + weather
+  if (last.key === key) return last.almanac
+  const almanac = {
+    darkness: darkness(ms),
+    moon:     moonAt(ms),
+    season:   season ?? seasonAt(ms),
+    weather:  weather ?? fallen(ms),
+    wind:     windAt(ms),
+    temp:     tempAt(ms),
+    ground:   groundAt(ms),
+  }
+  last = { key, almanac }
+  return almanac
+}
+
+// ─── wind ─────────────────────────────────────────────────────────────────
+
+/** Steps of a fall per column of drift, by the wind's strength: 0 is calm and drifts nothing. */
+export const GUST = [0, 5, 2, 1]
+
+/** No wind: what a fall or a cloud is drawn in when nobody says. */
+export const CALM = { dx: 1, strength: 0 }
+
+/**
+ * The wind `ms` into the clock, `{ dx, strength }`: `dx` the way it blows
+ * (1 east, -1 west) and `strength` an index into GUST. One per spell, drawn by
+ * the CLOCK's weather, so a screen holding a storm keeps the clock's wind: a
+ * hold replaces one field and nothing else. A storm blows 2 or 3, anything
+ * else 0 to 2.
+ */
+export const windAt = (ms) => {
+  const n = Math.floor(ms / WEATHER_MS)
+  const storm = scheduleAt(ms) === 'storm'
+  return { dx: hash(n, 13, 5) % 2 ? 1 : -1, strength: storm ? 2 + hash(n, 13, 6) % 2 : hash(n, 13, 6) % 3 }
+}
 
 /** Milliseconds until the weather can change; Infinity when it is held. */
 export const untilWeatherChange = (ms) => (heldOf('weather') ? Infinity : WEATHER_MS - (((ms % WEATHER_MS) + WEATHER_MS) % WEATHER_MS))
 
-/** How each kind falls: a step in ms, cells between drops in a column, the glyph and its color, and how often it drifts a column (0 never). */
+/** How each kind falls: a step in ms, cells between drops in a column, the glyph and its color, and whether the glyph leans in a wind of GUST 2 or less. */
 export const FALL = {
-  rain:  { ms: 200, period: 30, ch: "'",  fg: '#6f9bd1', drift: 0 },
-  snow:  { ms: 450, period: 44, ch: '*',  fg: '#eef3ff', drift: 5 },
-  storm: { ms: 150, period: 24, ch: '\\', fg: '#5b7fa8', drift: 2 },
+  rain:  { ms: 200, period: 30, ch: "'", fg: '#6f9bd1', leans: true },
+  snow:  { ms: 450, period: 44, ch: '*', fg: '#eef3ff', leans: false },
+  storm: { ms: 150, period: 24, ch: "'", fg: '#5b7fa8', leans: true },
 }
 
-/** The drop on the cell `x, y` `ms` into the clock for this weather, `{ ch, fg }`, or null. A column has one drop a period, each falling a row a step. */
-export function fallAt(kind, x, y, ms) {
+/** Every glyph a drop is drawn with, its own and leaning either way. */
+export const DROPS = new Set([...Object.values(FALL).map((f) => f.ch), '/', '\\'])
+
+/**
+ * The drop on the cell `x, y` `ms` into the clock for this weather and `wind`,
+ * `{ ch, fg }`, or null. A column has one drop a period, each falling a row a
+ * step and drifting a column downwind every GUST steps.
+ */
+export function fallAt(kind, x, y, ms, wind = CALM) {
   const f = FALL[kind]
   if (!f) return null
   const step = Math.floor(ms / f.ms)
-  const col  = f.drift ? x - Math.floor(step / f.drift) : x
-  return hash(col, 0, 3) % f.period === (((y - step) % f.period) + f.period) % f.period ? { ch: f.ch, fg: f.fg } : null
+  const per  = GUST[wind.strength]
+  const col  = per ? x - wind.dx * Math.floor(step / per) : x
+  if (hash(col, 0, 3) % f.period !== (((y - step) % f.period) + f.period) % f.period) return null
+  return { ch: f.leans && per && per <= 2 ? (wind.dx > 0 ? '\\' : '/') : f.ch, fg: f.fg }
 }
 
 // ─── storm ────────────────────────────────────────────────────────────────
@@ -178,13 +375,15 @@ const CLOUDS = [
   { ch: '\u2591', fg: '#9ca3af', keep: 1 },
 ]
 const CLOUD_FLASH = '#e5e7eb'
-const CLOUD_MS = 1500
+// A cloud drifts a column every GUST of these, so it keeps pace with the rain under it.
+export const CLOUD_MS = 750
 
-/** The cloud on the cell `x, y` `ms` into the clock, `{ ch, fg }`, or null: a few rows along the top of a scene, ragged, drifting a column every CLOUD_MS. */
-export function cloudAt(x, y, ms) {
+/** The cloud on the cell `x, y` `ms` into the clock, `{ ch, fg }`, or null: a few rows along the top of a scene, ragged, drifting downwind. */
+export function cloudAt(x, y, ms, wind = CALM) {
   const row = CLOUDS[y - 1]
   if (!row) return null
-  const sx = x - Math.floor(ms / CLOUD_MS)
+  const per = GUST[wind.strength]
+  const sx  = per ? x - wind.dx * Math.floor(ms / (per * CLOUD_MS)) : x
   if (hash(Math.floor(sx / 5), y, 21) % 4 >= row.keep || hash(sx, y, 22) % 6 === 0) return null
   return { ch: row.ch, fg: flashAt(ms) ? CLOUD_FLASH : row.fg }
 }

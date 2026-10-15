@@ -57,6 +57,9 @@ export class QueueWorker {
   _app:         CaravanApp | null = null // set by plugin register(), like _telemetry
   private _timer:       ReturnType<typeof setInterval> | null = null
   private _running:     Set<string> = new Set()   // in-flight job IDs
+  // One controller per in-flight attempt, behind `ctx.signal`. Per attempt and
+  // not per job: a retry is a new attempt and must not open already aborted.
+  private _aborts:      Map<string, AbortController> = new Map()
   private _stopping:    boolean = false
   // The database this worker holds has been closed. Set before `db.close()`
   // rather than after: a handler abandoned past the drain deadline is still
@@ -122,6 +125,21 @@ export class QueueWorker {
     while (this._running.size > 0 && Date.now() < deadline) {
       await Bun.sleep(100)
     }
+    // Past the deadline the handler is abandoned and the database is about to
+    // close under it; the signal is the only way it learns that.
+    for (const id of [...this._aborts.keys()])
+      this.abort(id, new Error('[Caravan] the worker stopped before this attempt finished'))
+  }
+
+  /**
+   * Tell a running attempt on THIS worker that it is over. Returns whether one
+   * was running here; the row's status is not touched, the caller owns that.
+   */
+  abort(id: string, reason: unknown): boolean {
+    const controller = this._aborts.get(id)
+    if (!controller) return false
+    if (!controller.signal.aborted) controller.abort(reason)
+    return true
   }
 
   /** The database is about to close; stop writing to it. */
@@ -137,6 +155,7 @@ export class QueueWorker {
 
   private _poll(): void {
     if (this._stopping || this._closed) return
+    this._abortLost()
     const available = this._concurrency - this._running.size
     if (available <= 0) return
 
@@ -145,6 +164,22 @@ export class QueueWorker {
       if (!job) break
       this._execute(job)   // intentionally not awaited — fire and track
     }
+  }
+
+  // An attempt whose row is no longer 'running' under this owner was cancelled
+  // from another instance (or reclaimed from a stalled one); cancel() can only
+  // abort in its own process, so the row is the one place this worker can hear
+  // it. Bounded by the poll interval.
+  private _abortLost(): void {
+    if (this._aborts.size === 0) return
+    let held: Set<string>
+    try {
+      held = new Set(this._stmts.runningOwnedBy.all({ owner: this._owner }).map(r => r.id))
+    } catch {
+      return   // locked or closing; the next poll asks again
+    }
+    for (const id of [...this._aborts.keys()])
+      if (!held.has(id)) this.abort(id, new Error(`[Caravan] job ${id} was cancelled or reclaimed by another instance`))
   }
 
   private _claim() {
@@ -207,6 +242,9 @@ export class QueueWorker {
       return
     }
 
+    const controller = new AbortController()
+    this._aborts.set(record.id, controller)
+
     const startMs = Date.now()
     this._telemetry?.emit('caravan.job.start', {
       id:    record.id,
@@ -247,11 +285,20 @@ export class QueueWorker {
         actorId:  record.actor_id ?? null,
         tenantId: record.tenant_id ?? null,
         correlationId: record.correlation_id ?? null,
+        signal:   controller.signal,
         auth:     { user: user as JobContext['auth']['user'] },
         // undefined rather than null when there is no app: a handler tests
         // `ctx.app?` and an optional property that is present-but-null reads
         // as a bug in the app wiring rather than as standalone Caravan.
         app:      (this._app ?? undefined) as JobContext['app'],
+        progress: (fraction: number) => {
+          if (typeof fraction !== 'number' || !(fraction >= 0 && fraction <= 1))
+            throw new Error(
+              `[Caravan] job '${record.name}' (${record.id}) reported progress ${JSON.stringify(fraction)}, ` +
+              `which is not a fraction from 0 to 1.`
+            )
+          this._write(() => this._stmts.setProgress.run({ id: record.id, progress: fraction, owner: this._owner }))
+        },
       }
       await handler.handler(ctx)
     }
@@ -272,7 +319,7 @@ export class QueueWorker {
             ), { retryable: false })
           })
         : () => run(null)
-      await this._bounded(invoke(), handler.timeout, record)
+      await this._bounded(invoke(), handler.timeout, record, controller)
       const doneMs = Date.now()
       // 0 changes means cancel() took the row out of 'running' mid-attempt and
       // the guard held. The outcome is 'cancelled', so announce nothing.
@@ -340,6 +387,7 @@ export class QueueWorker {
       }
     } finally {
       this._running.delete(record.id)
+      this._aborts.delete(record.id)
       // Claim the next job now rather than at the next tick. Throughput was
       // exactly `concurrency / pollInterval` — 2 jobs a second at the defaults,
       // 99% of it sleeping with capacity free and work queued. The interval is
@@ -374,8 +422,10 @@ export class QueueWorker {
   //
   // WHAT IT CANNOT DO IS STOP THE HANDLER. Nothing in JavaScript cancels a
   // promise, so the abandoned invocation keeps running and may still be writing
-  // while the retry runs. Two consequences, both handled here rather than left
-  // to chance:
+  // while the retry runs. It can only ASK: `ctx.signal` aborts at the timeout,
+  // and a handler that passes it to its fetch or checks it between steps stops;
+  // one that ignores it is the case below. Two consequences, both handled here
+  // rather than left to chance:
   //
   //   - Its later rejection has no reader once the race is lost, and an
   //     unhandled rejection takes the process down. It is caught below.
@@ -388,7 +438,8 @@ export class QueueWorker {
   private _bounded(
     work:    Promise<void>,
     timeout: number | undefined,
-    record:  { id: string; queue: string; name: string }
+    record:  { id: string; queue: string; name: string },
+    controller: AbortController
   ): Promise<void> {
     if (!timeout || timeout <= 0) return work
 
@@ -409,10 +460,16 @@ export class QueueWorker {
         this._telemetry?.emit('caravan.job.timeout', {
           id: record.id, queue: record.queue, name: record.name, timeout,
         })
-        reject(new Error(
+        const error = new Error(
           `Job '${record.name}' exceeded its ${timeout}ms timeout. The attempt is ` +
-          `failed and may retry; the handler was NOT cancelled and may still be running.`
-        ))
+          `failed and may retry; a handler that does not watch ctx.signal was NOT ` +
+          `stopped and may still be running.`
+        )
+        // Before the reject: the abort listeners run synchronously, and a
+        // handler that throws on abort loses the race to this error rather
+        // than replacing its message.
+        controller.abort(error)
+        reject(error)
       }, timeout)
       if (timer.unref) timer.unref()
     })
@@ -469,6 +526,13 @@ export class WorkerPool {
 
   async stop(): Promise<void> {
     await Promise.all([...this._workers.values()].map(w => w.stop()))
+  }
+
+  /** Abort a running attempt, on whichever worker of THIS process holds it. */
+  abort(id: string, reason: unknown): boolean {
+    let hit = false
+    for (const w of this._workers.values()) if (w.abort(id, reason)) hit = true
+    return hit
   }
 
   /** Tell every worker the database is about to close. */

@@ -12,7 +12,8 @@
 
   function turn({ args }) {
     const w = args.trim().toLowerCase()
-    if (!w) return `it is ${almanacAt(Date.now()).weather}${heldOf('weather') ? ' (held)' : ''} — ${HELP}`
+    const now = almanacAt(Date.now())
+    if (!w) return `it is ${now.weather}${heldOf('weather') ? ' (held)' : ''}, ${now.temp}°C — ${HELP}`
     if (w !== 'auto' && !KINDS.includes(w)) return HELP
     hold('weather', w === 'auto' ? null : w)
     stage.touch()

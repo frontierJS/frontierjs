@@ -13,6 +13,7 @@ import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 
 import { buildHavenApp } from '../src/app.ts'
 import { createHavenAuth } from '../src/auth.ts'
+import { CRIER } from '../src/crier.ts'
 import { signIn, signedLogin, postLogin } from './sign-in.ts'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
@@ -39,7 +40,7 @@ beforeEach(async () => { mods = []; await start() })
 
 afterEach(async () => { await env?.close?.() })
 
-const members  = async () => (await sys.member.findMany({ select: { nick: true } })).map((m: any) => m.nick)
+const members  = async () => (await sys.member.findMany({ where: { nick: { not: CRIER } }, select: { nick: true } })).map((m: any) => m.nick)
 const sessions = async () => (await sys.session.findMany({ select: { id: true } })).length
 
 async function whoami (token: string): Promise<{ status: number, rows: any }> {

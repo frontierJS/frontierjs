@@ -25,7 +25,7 @@ import type { RoomMemory } from './memory.ts'
 import { isFacing } from './facing.ts'
 import type { Facing } from './facing.ts'
 import { standingOf } from './principal.ts'
-import { emoteOf, glyphOf, inkOf } from './shape.ts'
+import { emoteOf, inkOf, shapeOf, spanOf } from './shape.ts'
 import type { Emote } from './shape.ts'
 import { pickupAt, standable, worldFor } from './world.ts'
 
@@ -54,6 +54,7 @@ export const ROOMS = [
   { slug: 'jordan', name: "Jordan's home" },
   { slug: 'vlad',   name: "Vlad's home" },
   { slug: 'colin',  name: "Colin's home" },
+  { slug: 'sheriff', name: "The sheriff's house" },
   { slug: 'board',  name: 'The notice board' },
 ] as const
 
@@ -75,18 +76,21 @@ const MAX_CELL = 255
 
 /**
  * A figure as the room sees it: where it stands, `typing` while its line has
- * words in it — the booth's flame leans toward it — the way it `facing` (9.4),
+ * words in it — the booth's flame leans toward it — or `thinking` while a model
+ * answers for it (an agent's, 14.9), the way it `facing` (9.4),
  * the `shape` it is drawn as while it is shapeshifted (9.7), and the `ink` a
  * flower dyed it, the `hushed` line id its owner cleared from over their
- * head -- every screen stops drawing their bubble up to that line -- and the
- * `emote` it is doing (8.1).
+ * head -- every screen stops drawing their bubble up to that line -- the
+ * `emote` it is doing (8.1), and `pet` while its pet is out (8.2) -- only
+ * that: each screen walks the pet from the cells it sees the figure on.
  */
-export type RoomMeta = Position & { typing?: true, facing?: Facing, shape?: string, ink?: string, hushed?: number, emote?: Emote }
+export type RoomMeta = Position & { typing?: true, thinking?: true, facing?: Facing, shape?: string, ink?: string, hushed?: number, emote?: Emote, pet?: true }
 
 /**
  * The only presence meta a room accepts. Anything else in the frame is dropped
  * rather than fanned out, so a client cannot hang a payload on its figure for
- * every other member to receive; `typing` is carried only as `true`.
+ * every other member to receive; `typing`, `thinking` and `pet` are carried
+ * only as `true`, and a figure thinking is not also typing.
  */
 export function roomMeta (meta: Record<string, unknown>): RoomMeta {
   const { x, y } = meta
@@ -95,11 +99,12 @@ export function roomMeta (meta: Record<string, unknown>): RoomMeta {
   // A key that is not well formed is dropped and the move still lands: a
   // client that fumbles its facing should not stop walking.
   const facing = isFacing(meta.facing) ? meta.facing : null
-  const shape  = glyphOf(meta.shape)
+  const shape  = shapeOf(meta.shape)
   const ink    = inkOf(meta.ink)
   const hushed = Number.isInteger(meta.hushed) && (meta.hushed as number) > 0 && (meta.hushed as number) < 1e9 ? (meta.hushed as number) : null
   const emote  = emoteOf(meta.emote)
-  return { x, y, ...(meta.typing === true && { typing: true as const }), ...(facing && { facing }), ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }) }
+  const busy   = meta.thinking === true ? { thinking: true as const } : meta.typing === true ? { typing: true as const } : {}
+  return { x, y, ...busy, ...(facing && { facing }), ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }), ...(meta.pet === true && { pet: true as const }) }
 }
 
 type RoomApp = App & {
@@ -140,10 +145,14 @@ export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory, i
         // The scene is the server's too (12.2): a figure is on floor or on a
         // piece the room remembers broken. A room with no scene, a booth, has
         // no walls to keep. How far a move may jump is left to the rate, since
-        // a door's arrival and a bolt's knock-back are both jumps.
+        // a door's arrival and a bolt's knock-back are both jumps. An emoji
+        // figure stands on two cells (14.4), and the second is floor too.
         const world = worldFor(slugOf(conn))
-        if (world && !standable(world, meta.x, meta.y, new Set(memory.live(channel, 'struck').map(t => t.id)))) {
-          throw new Error(`Cell ${meta.x},${meta.y} of ${world.slug} is not floor`)
+        if (world) {
+          const gone = new Set(memory.live(channel, 'struck').flatMap(t => t.id ?? []))
+          for (let i = 0; i < spanOf(meta.shape); i++) {
+            if (!standable(world, meta.x + i, meta.y, gone)) throw new Error(`Cell ${meta.x + i},${meta.y} of ${world.slug} is not floor`)
+          }
         }
         const by = Number(conn.user?.userId) || undefined
         if (stepped(was, meta)) memory.add(channel, { kind: 'step', x: meta.x, y: meta.y, by })
@@ -161,7 +170,7 @@ export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory, i
       },
       // Arrow keys held down. Past it a move is dropped, and the next one lands.
       presenceUpdatesPerSecond: 10,
-      presenceMetaBytes:        120,
+      presenceMetaBytes:        128,
       // The connection's principal was built at the upgrade, so a ban written
       // since would not reach it; every frame reads the column again.
       claims: async (_name, conn) => conn.user ? await standingOf(db, conn.user.userId) : null,

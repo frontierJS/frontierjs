@@ -126,7 +126,7 @@ describe('two members in the square', () => {
 
     send(s, { type: 'subscribe', channel: roomChannelName(square.id), meta: { x: 4, y: 7, hat: 'red' } })
     send(s, { type: 'subscribe', channel: roomChannelName(square.id), meta: { x: -1, y: 2 } })
-    send(s, { type: 'subscribe', channel: roomChannelName(square.id), meta: { x: 1, y: 1, pad: 'x'.repeat(100) } })
+    send(s, { type: 'subscribe', channel: roomChannelName(square.id), meta: { x: 1, y: 1, pad: 'x'.repeat(140) } })
     await sleep(150)
 
     expect(events(s, 'error').map(f => f.data.code)).toEqual(['presence_meta_refused', 'presence_meta_too_large'])

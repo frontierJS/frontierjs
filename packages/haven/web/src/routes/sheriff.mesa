@@ -1,0 +1,7 @@
+<script>
+  // The sheriff's house — through the office on the road.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Sheriff from '@/scenes/Sheriff.mesa'
+</script>
+
+<WalkIn slug="sheriff"><Sheriff /></WalkIn>

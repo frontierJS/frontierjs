@@ -14,6 +14,7 @@ import { FIRST_FACING, isFacing } from '../facing.ts'
 import { ARROWS } from '../inventory.ts'
 import { shoot } from '../play.ts'
 import { roomChannelName } from '../rooms.ts'
+import { spanOf } from '../shape.ts'
 import { worldFor } from '../world.ts'
 
 type Roster = { localPresence: (channel: string) => Array<{ userId: string | number, meta: Record<string, unknown> }> }
@@ -68,7 +69,7 @@ export function createRoomsService (app: HavenApp) {
       const row = await ($.db as any).room.findFirst({ where: { id: roomId }, select: { id: true, slug: true } })
       if (!row) throw new BadRequest('No such room')
       const name   = roomChannelName(row.id)
-      const roster = a.channels.localPresence(name).map(m => ({ id: Number(m.userId), meta: m.meta as { x?: number, y?: number, facing?: unknown } }))
+      const roster = a.channels.localPresence(name).map(m => ({ id: Number(m.userId), meta: m.meta as { x?: number, y?: number, facing?: unknown, shape?: string } }))
       const mine   = roster.find(m => m.id === me)
       if (!mine) throw new BadRequest('Stand in the room first')
       const world = worldFor(row.slug)
@@ -81,7 +82,7 @@ export function createRoomsService (app: HavenApp) {
       if (wait > 0) throw new TooManyRequests(`The bolt is not ready for ${Math.ceil(wait / 100) / 10}s`)
       a.inventory.take(me, 'arrow', cost)
 
-      const figures = roster.filter(m => m.meta.x !== undefined && m.meta.y !== undefined).map(m => ({ id: m.id, x: m.meta.x!, y: m.meta.y! }))
+      const figures = roster.filter(m => m.meta.x !== undefined && m.meta.y !== undefined).map(m => ({ id: m.id, x: m.meta.x!, y: m.meta.y!, span: spanOf(m.meta.shape) }))
       const shooter = figures.find(f => f.id === me)!
       const facing  = isFacing(asked) ? asked : isFacing(mine.meta.facing) ? mine.meta.facing : FIRST_FACING
       const blast   = shoot({ memory: a.memory, room: name, world, ms: Date.now(), members: figures, shooter, facing, all: volley === true })

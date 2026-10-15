@@ -152,7 +152,7 @@ const alone = layoutOf([coarse(square, '/')])
 const sq = alone.tiles[0]
 let marks = marked(first.term.screen())
 check(labels(first.term.screen()).join() === 'square', 'a machine that has walked into the square has the square on its map, and nothing else', first.term.screen())
-check(marks.length === 1 && marks[0].x === sq.x + Math.floor(square.spawn.x / SCALE.x) && marks[0].y === sq.y + 1 + Math.floor(square.spawn.y / SCALE.y),
+check(marks.length === 1 && marks[0].x === sq.x + 1 + Math.floor(square.spawn.x / SCALE.x) && marks[0].y === sq.y + 1 + Math.floor(square.spawn.y / SCALE.y),
   `Sam is the @ on the block of the spawn: ${JSON.stringify(marks)}`, first.term.screen())
 
 first.term.shell.stdin.write('\x1b')
@@ -186,7 +186,7 @@ const both = layoutOf([coarse(square, '/'), coarse(tavern, '/tavern/')])
 const tv = both.tiles.find((t) => t.slug === 'tavern')
 marks = marked(first.term.screen())
 check(labels(first.term.screen()).sort().join() === 'square,tavern', 'the map has both, the square walked out of and the tavern walked into', first.term.screen())
-check(marks.length === 1 && marks[0].x === tv.x + Math.floor(inside.x / SCALE.x) && marks[0].y === tv.y + 1 + Math.floor(inside.y / SCALE.y),
+check(marks.length === 1 && marks[0].x === tv.x + 1 + Math.floor(inside.x / SCALE.x) && marks[0].y === tv.y + 1 + Math.floor(inside.y / SCALE.y),
   `and Sam is the @ in the tavern's block, beside its door: ${JSON.stringify(marks)}`, first.term.screen())
 check(readdirSync(SEEN).sort().join() === 'square.json,tavern.json', `~/.fli/haven/seen holds a file per scene walked into: ${readdirSync(SEEN)}`)
 check(await quit(first.term) === 0, 'Ctrl+C exits 0')
@@ -198,7 +198,7 @@ check(again.ok && await open(again.term), 'a terminal opened later on the same m
 check(labels(again.term.screen()).sort().join() === 'square,tavern',
   'it draws the tavern too, from the file: this machine has been in it, this terminal has not', again.term.screen())
 marks = marked(again.term.screen())
-check(marks.length === 1 && marks[0].x === sq.x + Math.floor(square.spawn.x / SCALE.x) && marks[0].y === sq.y + 1 + Math.floor(square.spawn.y / SCALE.y),
+check(marks.length === 1 && marks[0].x === sq.x + 1 + Math.floor(square.spawn.x / SCALE.x) && marks[0].y === sq.y + 1 + Math.floor(square.spawn.y / SCALE.y),
   'and the @ is on the square, where it stands now', again.term.screen())
 check(await quit(again.term) === 0, 'Ctrl+C exits 0')
 

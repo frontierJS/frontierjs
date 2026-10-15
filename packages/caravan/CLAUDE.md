@@ -98,7 +98,9 @@ bin/
   because a database already in WAL needs no lock to say so. NORMAL is 43×
   dispatch throughput and loses committed rows only on power loss; a lost claim
   is a running row whose owner stops heartbeating, which the lease sweep already
-  recovers. `synchronous: 'FULL'` pays the fsync back.
+  recovers. `synchronous: 'FULL'` pays the fsync back — 1000 `dispatch` calls took
+  3.5s against 0.2s, and `dispatchMany(job, payloads, opts)` is the one-transaction
+  answer (all or nothing; `id` and `unique` name one job so a batch cannot state them).
 - **`stop()` marks the workers closed BEFORE it closes the database, and the
   hourly sweep is cleared with the heartbeat.** Past `drainTimeout` a handler is
   still running, and its `markDone` used to reject with `Database has closed` as
@@ -141,7 +143,10 @@ bin/
   a job start after `pause()` returned. **Dispatch still queues** into a paused
   queue — a pause stops execution, not intake — so a long pause accumulates one
   pending row per cron fire. `drain()` counts running rows across instances and
-  leaves the queue paused.
+  leaves the queue paused. **`purge()` DELETES pending rows and nothing else** —
+  delayed ones included, a running job left for `drain()` — so a `unique` key or
+  stated `id` the rows held is dispatchable again; a purge of nothing records
+  nothing.
 - **The queue `'*'` is every queue, and it is a row, not a list.**
   `app.jobs.pause()` writes it; each claim reads `IN ($queue, '*')`. It exists
   because a process outside the app cannot enumerate the queues — part of the set
@@ -156,8 +161,8 @@ bin/
   process, including another app's API, which is why `test/bin.test.ts` narrows
   with `--pid` — an unscoped search in a test is the ambiguity refusal, not a
   result. It never calls `start()`, which would heartbeat and count itself.
-- **`pause`, `resume` and `drain` are operator verbs (`FJS-D198`).** Over HTTP
-  (`POST {base}/queues/{name}/pause|resume|drain`) they need ADMINISTRATOR on top
+- **`pause`, `resume`, `drain` and `purge` are operator verbs (`FJS-D198`).** Over HTTP
+  (`POST {base}/queues/{name}/pause|resume|drain|purge`) they need ADMINISTRATOR on top
   of `authorize`, graded by the app's own mapping (`host.withDb` → `db.$levelOf`,
   `FJS-D308`) and by toolbelt's `gradeStanding` only where the client cannot
   grade; a caller with no session is 401 even with the admin surface open. The handle itself is a plain function
@@ -189,6 +194,18 @@ bin/
   `app.service(…)`, so apps grew a module holding a mutable app reference; and a
   job had no principal, and no principal is STRANGER(0), so every job carried a
   hand-written `{ auth: { user: SYSTEM } }`.
+- **`ctx.signal` is the only way a running handler is told to stop** (`FJS-1523`).
+  It aborts on the declared `timeout`, on `cancel()` of a RUNNING job, and past
+  the drain deadline. A handler that ignores it keeps running, as before. A cancel
+  aborts at once in the process that called it; on another instance the row is
+  cancelled and that worker aborts the handler at its next poll, when
+  `runningOwnedBy` no longer lists the attempt (`FJS-2885`), so lag is up to
+  `pollInterval`. A row reclaimed from a stalled instance aborts the same way.
+- **`ctx.progress(fraction)` is a fraction from 0 to 1 and anything else
+  throws.** A handler's `40` for forty percent would read as 4000%. It writes
+  `jobs.progress` under the same status + owner guard as `markDone`, so a
+  cancelled or reclaimed attempt cannot report onto the row that replaced it,
+  and every claim resets it to NULL so a retry opens from nothing.
 - **A job runs as whoever dispatched it, re-resolved.** `dispatch()` records
   `app.principal()?.userId` in the `actor_id` column; the worker calls
   `app.runAs(actorId, …)`, which rebuilds the principal through

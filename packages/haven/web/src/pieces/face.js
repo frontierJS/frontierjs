@@ -3,6 +3,7 @@
 // facing the middle, so the picture reads as two people across one table. One
 // drawing; the right side is its mirror, so the two cannot drift apart.
 import { piece } from './index.js'
+import { flipH } from './flip.js'
 
 // A head facing right, the back of it cut by the screen's edge. The blank rows
 // on top sit the shoulders on the booth's floor. No backtick in it -- it would
@@ -32,12 +33,8 @@ const HALF = String.raw`
 .'            '.
 `
 
-const MIRROR = { '/': '\\', '\\': '/', '(': ')', ')': '(', '[': ']', ']': '[', '<': '>', '>': '<' }
-
 const rows = HALF.replace(/^\n/, '').replace(/\n$/, '').split('\n')
 const width = Math.max(...rows.map((r) => r.length))
-
-const flip = (row, swap = MIRROR) => [...row.padEnd(width)].reverse().map((ch) => swap[ch] ?? ch).join('')
 
 /** How far into a head the candle reaches from the side facing it, in cells: `rim` the nearest, `mid` the next. */
 export const LIT = { rim: 2, mid: 6 }
@@ -62,7 +59,7 @@ export const leftFace = (key, lit) => piece('face', rows.join('\n'), paintOf(row
 
 /** A head facing left, painted `key`: the other member's, on the right of the booth. */
 export const rightFace = (key, lit) =>
-  piece('face', rows.map((r) => flip(r)).join('\n'), paintOf(rows, key, lit).map((r) => flip(r, {})).join('\n'))
+  piece('face', flipH(rows).join('\n'), flipH(paintOf(rows, key, lit), {}).join('\n'))
 
 /** The drawing's size in cells. */
 export const FACE = { w: width, h: rows.length }

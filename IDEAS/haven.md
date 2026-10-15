@@ -793,7 +793,7 @@ footprints, and a line said at one end of the square does not reach the other.
     carries the ink alone -- 7.7's override clause is done here. `sky.test.js`
     holds one field held and the rest the clock's. `verify:glade` and
     `verify:scenes` pass; `verify:browser` fails only its fog check, as before.
-- [ ] 7.7 The calendar. The season is the real one at the server, by UTC date
+- [x] 7.7 The calendar. The season is the real one at the server, by UTC date
   and meteorological months (Dec–Feb winter), northern hemisphere -- the
   owner's choice, over a game year of a few real days. The day stays an hour.
   The season changes pieces' art, so a scene's pinned frame would flip with
@@ -803,15 +803,63 @@ footprints, and a line said at one end of the square does not reach the other.
   (7.6 made `/season` a hold and the stage take the almanac's season, so
   this step is `seasonAt` reading the date). A piece with no `seasons` is
   unchanged.
-- [ ] 7.8 Wind. A direction and a strength per weather spell, from the clock's
+  - Built: `seasonAt(ms)` reads the UTC month; `SPELLS` is ten spells per
+    season (winter 6 clear, 1 rain, 3 snow, no storm; summer 7/1/0/2; spring
+    and fall 5/4/0/1), drawn by the CLOCK's season, so a screen holding winter
+    sees no snow the clock did not send. `HAVEN_SEASON` is the second pin
+    beside `HAVEN_WEATHER` -- a hold cannot reach a drive's pty or Vite
+    children, an environment can -- read through one `pinned(field)`, with
+    both Vite configs baking it in. `stage.mjs` sets it to `summer`, the
+    season every frame was drawn in, so no frame moved. `sky.test.js` holds
+    the month boundaries in UTC, the weights over 600 spells a season, and a
+    bad pin falling back to the clock; an unpinned process draws fall today.
+    Suite 512/512, `verify:glade` and `verify:scenes` pass; `verify:browser`
+    fails only its fog check. Not done: a scene open across midnight UTC on
+    the first of a season's month keeps the season it was made in until the
+    next door, since nothing turns a live stage on the date.
+- [x] 7.8 Wind. A direction and a strength per weather spell, from the clock's
   `hash`, stronger in a storm. The rain's slant, snow's drift and the clouds'
   drift each read it instead of their own numbers, so they agree. Later
   readers: smoke from a chimney, fire spreading to the next tree downwind.
-- [ ] 7.9 The moon. The real lunar phase on the date (a 29.53-day cycle), to
+  - Built: `windAt(ms)` is `{ dx, strength }` -- `dx` 1 east or -1 west,
+    `strength` an index into `GUST` (`[0, 5, 2, 1]`, steps of a fall per
+    column of drift; 0 is calm) -- and the almanac's `wind`. A storm blows 2
+    or 3, any other spell 0 to 2. It is drawn by the CLOCK's spell, so a
+    screen holding a storm keeps the clock's wind (7.6's rule: a hold
+    replaces one field); a held storm over a calm clock falls straight.
+    `FALL` lost its `drift`: `fallAt` and `cloudAt` take the wind, a cloud
+    drifting a column every `GUST × CLOUD_MS`, so it keeps pace with the
+    rain under it. Rain and storm lean (`\` east, `/` west) at GUST 2 or
+    less, else draw `'`; snow stays `*`. `DROPS` is every drop glyph, which a
+    test reads a wet cell by. Horizontal only: smoke rises and needs no `dy`.
+    Suite 515/515; `verify:glade` and `verify:scenes` pass; `verify:browser`
+    fails only its fog check; `verify:explore` fails only FJS-2877's fog
+    checks, once its `over here` line got the `i` NORMAL mode needs.
+- [x] 7.9 The moon. The real lunar phase on the date (a 29.53-day cycle), to
   match 7.7's real calendar. A full moon lightens `shade()`'s night and a new
   moon darkens it; `SIGHT` reads it when the fog returns. Drawn as a glyph in
   the sky row at night where a scene has open sky.
-- [ ] 7.10 Temperature and aftermath. `tempAt(ms)`, derived from season, hour
+  - Built: `moonAt(ms)` is `{ phase, light, ch, arc }` and the almanac's
+    `moon` -- the mean synodic phase counted from the new moon of 2000-01-06,
+    `light` the lit part in quarters (a shaded color is cached per step, as
+    darkness is in thirds), `ch` by eighth (`)` `D` `O` `O` `O` `C` `(`, lit on
+    the right while waxing; none at new moon) and `arc` 0 to 1 through full
+    night, a step every `SKY_MS`, null otherwise. It is the clock's side and
+    not holdable: no screen asked to hold it, and a test hands `ms`. `shade(hex,
+    level, light)` takes the moon: the night's kept channels run from
+    `NEW_NIGHT` to `FULL_NIGHT`, a half moon being the old `NIGHT`, so the
+    1970 test clocks (a half moon) drew the colors they did. The `sky` layer
+    draws the glyph in `MOON_FG` on `MOON_ROW` (row 1, inside the top wall),
+    crossing east to west inside the side walls, on a blank lit cell only, so a
+    chimney, a cloud or a drop hides it; the stage's sky tick now lands on the
+    clock's `SKY_MS` steps rather than `SKY_MS` after the last paint, so the
+    moon and the dusk move on time. `sky.test.js` holds the real dates (full
+    2026-10-26, new 2026-10-10), the arc, the shade either side of half, and
+    the square's moon one cell on its sky row by night and none by day, at new
+    moon or in the tavern. Not done: `SIGHT` does not read the moon, since the
+    fog is off; the moon is a glyph a drive reading row 1 at a real night
+    meets, unpinned, as rain was before `HAVEN_WEATHER`.
+- [x] 7.10 Temperature and aftermath. `tempAt(ms)`, derived from season, hour
   and weather and never stored, decides what falls: a cold rain spell is snow
   (the frozen pond, past the plan, reads it too). Aftermath is what a spell
   leaves on blank outdoor cells after it ends, read from the spells before
@@ -819,6 +867,32 @@ footprints, and a line said at one end of the square does not reach the other.
   cover that builds during a snow spell and melts by temperature. A struck
   tree's burn and char are aftermath by this rule already; which tree is the
   stage's, since the almanac knows no geometry.
+  - Built: `tempAt(ms)` is whole degrees Celsius -- the clock's season
+    (`WARMTH`: spring 8, summer 21, fall 9, winter -1 at dusk), four up by
+    day and four down by night through `darkness`, the spell's clouds
+    (`CHILL`: rain -2, storm -4) and a swing of three either way per spell;
+    the almanac's `temp`, not holdable. `SPELLS` schedule no snow any more
+    (winter is 6 clear, 4 rain): a rain spell at or below 0 falls as snow,
+    so a winter day is about a quarter snow, a cold spring night may snow,
+    and a summer never does. `groundAt(ms)` is `{ wet, snow }`, 0 to 1, the
+    almanac's `ground`: the last `GROUND_MS` (an hour-long day) replayed a
+    `SKY_MS` step at a time from bare -- rain or a storm wets in two steps
+    and a dry step dries a quarter, so puddles last eight minutes; snow
+    covers a third a step and nothing thaws while it falls, else a tenth per
+    degree above 0. The ground follows a HELD weather, as though it always
+    had it: a held `clear` is bare ground, which is what keeps every pinned
+    frame and drive as it was. The stage's new `ground` layer, after `steps`
+    in `LAYERS` and in `OUTDOORS`, draws `groundOn()`: a `~` puddle on up to
+    one blank lit cell in twelve, a `·` cover on up to one in two, fewer as
+    each fades, a drop and a footprint in front. `/weather` says the
+    degrees. `almanacAt` keeps its last answer, since a paint asks it once a
+    cell at one `ms` and the extra fields put the scenes' every-tick test
+    over its 30 s. Suite 525/525; `verify:glade` and `verify:scenes` pass;
+    `verify:steps` fails only its Rex check, filed as FJS-2883 (a
+    `--frame` walking in gets no footprints from the server). Not done: snow
+    melting leaves no puddle, a puddle does not freeze, and the dusk's
+    darkness steps sit half a `SKY_MS` off the sky tick, so a rain turning to
+    snow at dusk is drawn up to a minute late.
 
 ### Phase 8 — Inhabitants
 
@@ -847,15 +921,51 @@ and the crier announces a new member's first walk-in.
     screen, `/sit` onto the bench in lower case, a step standing up, a dance.
     Not done: a knock-back from a bolt moves the figure without ending its
     emote, and the bench's seat cells are now walkable in `world.json`.
-- [ ] 8.2 A pet follows its member, one cell behind on the path walked. It is
+- [x] 8.2 A pet follows its member, one cell behind on the path walked. It is
   drawn from the figure's own recent cells on every screen, so nothing is
   sent for it.
   - Needs 12.7: the pet's place is state carried from tick to tick, not a
     function of the clock.
-- [ ] 8.3 Haven's crier: a system member who announces a member's first
+  - Built (owner: opt-in, the kind by id in the owner's ink): `/pet` calls it
+    and sends it home, and `pet: true` is the one presence key it adds
+    (`roomMeta`; `presenceMetaBytes` 128, since the fullest meta with an emoji
+    shape is 123). `web/src/pet.js`: `PETS` (dog `ö`, cat `ɷ`, snail `&`,
+    mouse `ε` -- no letter, since a figure is one), `petOf(id)`, and
+    `trail(was, at, facing, free)` -- a step puts the pet on the cell left,
+    anything else (a first sight, a door, a knock-back) behind the facing or
+    on the first free neighbor. `components/Pets.mesa` walks every trail on
+    `stage.task('pets', …, { every: 100 })` and draws under the figures, never
+    on one, in view and in the light; `worn.pet` keeps it out across doors.
+    Proved by a throwaway two-pty probe: beside Sam on both screens after
+    `/pet`, on the cell he left after four steps east on both, a late
+    `--frame` drawing it at the same cell, gone on both when sent home.
+  - Not done: two screens disagree until the figure's first step they both
+    see; the server knows nothing of a pet, so a bolt flies through it.
+- [x] 8.3 Haven's crier: a system member who announces a member's first
   walk-in and a release. Its lines are Messages said through `asSystem()`.
   The repo's state reaches Haven only at deploy (`FJS-D996`), so a push to
   `main` is announced when the deploy that carries it lands, not live.
+  - Landed, amended: the crier is a Member row with no key (`api/src/crier.ts`,
+    made on first asking; a first login asking for the nick is refused as
+    taken) that speaks through `messages.create` inside `app.runAs(itsId)`, not
+    as the system: the service call is the one place a write is broadcast, so
+    an `asSystem()` row would be history on nobody's screen. Speaking as a
+    member puts it under the five-in-ten-seconds line limit, which is the guard
+    against a key minted in a loop crying a welcome each time; a welcome past
+    it is dropped. The login awaits the welcome, so a newcomer's client loads
+    their own. The release is `api/index.ts` after `start()`: `Haven <version>
+    has landed.` in the square unless the square already holds that line.
+    `components/Crier.mesa`, placed by the square's route, draws the crier's
+    newest line across row 1 for `CRY_MS` (8 s) after it was said. Proved by a
+    throwaway probe (live welcome to a second socket, a second login silent,
+    the nick refused, a release cried once, a burst cut at the limit) and a
+    pty one (Sam reads his own welcome and it goes; Rex's `--frame /` carries
+    his; Sam's screen hears Rex's live); no drive kept.
+  - Not done: a release says only the version — no headline of what changed,
+    which 10.1's deploy would have to bake in. A version whose cry has rolled
+    past the square's 500 lines is cried again at the next restart. Nothing
+    kept fails if a welcome stops reaching the room or a release is cried
+    twice -- the probes were thrown away; a test is owed when this settles.
 - [x] 8.4 The barkeep, behind the bar: "ask the barkeep about row policies"
   makes Haven the framework's help desk. No model (`FJS-D994`): it answers
   from a search over `docs/`, `VOCABULARY.md` and the package READMEs,
@@ -1290,9 +1400,24 @@ while a non-mod's is not.
   sequence (ZWJ) draws differently per terminal, VS Code's included.
   - Held: OpenTUI draws 🙂 中文 👍🏽 👩‍💻 🇯🇵 at `Bun.stringWidth` cells and the bubble never tears the art; the browser's emoji font runs ~0.04ch short of 2ch, printed by `verify:emoji`, not asserted. ZWJ per real terminal is not chased.
   - Broke and fixed: Haven laid bubbles, the booth and history rows out by `length` (`web/src/cells.js` now); the engine reads a key per code point, so a typed skin tone or ZWJ left the cursor past the text and a combining mark landed after the next key (`joined` in mesa's `runtime-terminal.js`, `wide.spec.mjs`).
-- [ ] 14.4 An emoji figure. A figure drawn as an emoji is two cells wide: the
+- [x] 14.4 An emoji figure. A figure drawn as an emoji is two cells wide: the
   stage claims both cells for it, and a step still moves one column. This is
   9.7's shapeshift taking a wide character.
+  - Built: `s` takes one single-code-point emoji (`shapeOf`, `api/src/shape.ts`;
+    all 1,188 are two cells by `Bun.stringWidth` and `estimate`), and presence
+    carries it. A sequence (skin tone, ZWJ, flag) is refused, as 14.3 found it
+    draws per terminal and arrives a code point at a time; chalk stays ASCII.
+    Both cells must be floor: the shapeshift is refused by name beside a wall,
+    an arrow into one turns the figure without stepping, and a find or a seat
+    that lands it there ends the shape. A bolt crossing either cell hits it, a
+    knock-back stops the second cell at a wall, and a wide shooter fires east
+    from its second cell. The server's floor check reads both cells too.
+  - Found: OpenTUI blanks a wide glyph under the transparent overhead buffer,
+    so an emoji figure is drawn above it (`WIDE_LAYER`) and hidden under a
+    canopy by not being drawn (`covered`, `crowd.js`). Proved in two pty
+    terminals by a throwaway drive; no drive kept (experimenting), so that
+    trap is unguarded. `shapeOf`, `spanOf` and the wide hit are in
+    `bolt.test.ts`.
 - [ ] 14.5 Half-cell art in the terminal. A terminal app cannot set its font
   size, so detail comes from the glyph instead: a piece authored at twice the
   rows is lowered to `▀`/`▄` with the top half its `fg` and the bottom its
@@ -1307,9 +1432,15 @@ while a non-mod's is not.
   Found: the shell's page already overflows by one row at 100×30, and a
   resize left the input under the bottom edge — Mesa's terminal document now
   reveals the focused node after a resize as it does on focus.
-- [ ] 14.7 A scene's scale in a browser. `<Scene scale={0.5}>` halves browser
+- [x] 14.7 A scene's scale in a browser. `<Scene scale={0.5}>` halves browser
   Haven's cell size, so the scene draws twice the cells on the same screen.
-  The terminal ignores it and gets 14.6 instead.
+  The terminal ignores it and gets 14.6 instead. `paint.browser.js` fits the
+  stage to VIEW over the scale and multiplies the font by it; no scene sets
+  it yet. Found: a stage `size` past the scene's height read as rows left
+  under the art, so `Profile.mesa` drew the foot at the page's font, wider
+  than the window — the foot is the terminal's now (`FOOT` in `#paint`).
+  Proved by a throwaway CDP probe (the square at 0.5: 160×26 at 11px, the
+  figure on its cell, no overflow); no drive kept (experimenting).
 - [ ] 14.8 An NPC's line bank. A figure whose lines are written by Claude
   offline (`bun run lines`, a file per NPC beside its scene) and picked at
   random by the clock and a seed. Random replies with no model at run time, so
@@ -1328,10 +1459,46 @@ while a non-mod's is not.
     `HAVEN_MODS` (or `--mods`) itself. A line from either agent is never
     answered, one reply per agent per 8 s; `agents/test/agents.test.js` proves
     it on a real app with a stub `HAVEN_AGENTS_CLAUDE`. No pty drive yet.
-- [ ] 14.10 An agent at work. A mod hands an agent a task in the square; it
+- [x] 14.10 An agent at work. A mod hands an agent a task in the square; it
   runs as a Claude Code session, so Phase 11's feed draws it at its package's
   bench, and its last words (11.7) come back as its line.
-  - Needs 14.9.
+  - Built: `ace task: <words>` from a mod (or a whisper holding `task:`;
+    `taskOf`) is work, anything else talk. The agent says it is off, walks into
+    the workshop (a reconnect, `walkTo`), and `claude -p` runs in the checkout
+    with `--session-id` its own, the soul appended, `--permission-mode auto`
+    (`FJS-D1019`), `WORK_BUDGET_USD` 5, the project's
+    hooks on and `FLI_DONE_STOP=off`. It stands beside the bench its session's
+    worker file names (`benchSpot`, polled), walks back to its spot and says
+    `workLine` — `lastWords` of the JSON result, or why it stopped. One task an
+    agent at a time; a second is refused in a line.
+  - Found: a session that reads before it edits writes no worker file, so the
+    agent waits by the workshop door until the first edit. One real run ($0.13)
+    proved `auto` in print mode and the hook seating it with its last words;
+    `agents.test.js` proves the walk and the line with the stub. No pty drive.
+  - Replaced by 14.11: a task no longer runs a session of its own.
+- [x] 14.11 An agent hands the task to the fix loop. Ace stays Haiku with no
+  tools, and his whole job on a task is turning a mod's words into the right
+  `scripts/fix-loop.mjs` command (`FJS-D1020`, amending `FJS-D1019`).
+  - A named `FJS-###` is `--ids` with no model asked. Anything else goes to
+    Haiku with the loop's ready rows (`fli next --json`, `byHand` out) and the
+    package list, and it answers one plan: `{ ids }`, `{ pkg, sev? }`, or
+    `{ file: { sev, area, title } }` when no row is it — filed with `fli file`
+    and then run by its new id, so every task is a row in the register.
+  - The plan is checked in code: an id must be a ready row, a package a bench,
+    a severity `S1`–`S4`, `rows` 1–3. The model never writes a flag.
+  - Ace says the plan back (`Taking FJS-2790 — …`), walks into the workshop,
+    and the loop starts through the taskmaster's one `startLoop`, so one loop
+    runs at a time across the agents and the desk. He stands at the bench of
+    the row the loop's log says it is on, and back in the square says each
+    row's outcome and the loop's own summary line.
+  - The raw `claude -p` session, `workArgv` and `WORK_BUDGET_USD` go; the
+    loop's own ladder and `--budget` are the bill.
+  - Built: `idsIn`, `PLANNER`, `checkPlan`, `planLine`, `reportLine` and
+    `followLoop` in `agents/agents.js`; `readyRows`, `loopArgv`, `fileRow` and
+    `loopReport` in `web/src/taskmaster.js`, whose `startLoop` takes a plan
+    and the desk calls with `{ pkg }`. A plan from free words names one row
+    (`--rows 1`). `agents.test.js` proves it over a fake checkout's `fli` and
+    loop; `verify:taskmaster` the desk. No real loop run yet, and no pty drive.
 
 ### Phase 15 — The town hall
 
@@ -1374,6 +1541,60 @@ and the board of the most wanted carries it.
   stands in the hall without a restart. The server reads the file once, so
   this needs the server's read to follow it.
 
+### Phase 16 — What the workspace grades
+
+Goal: Haven carries every artefact and passes every check the workspace grades
+an app by, as Basecamp does. Probed 2026-10-14 against Basecamp, `fli check`,
+`DRIVES.md` and `THREATS.md`.
+Done when: `fli check` in `packages/haven` warns on nothing a baseline does not
+name, `bun run typecheck` there is clean, and `bun run ci -- --only haven`
+passes with Haven's snapshots in its count.
+
+- [ ] 16.1 The schema's snapshots beside `db/schema.lite`: `access`, `ddl`,
+  `release` (`litestone <kind> --schema schema.lite`) and `jsonschema`
+  (`litestone jsonschema --snapshot --schema schema.lite`). Each writes when
+  run without `--check`; `jsonschema` without `--snapshot` writes a
+  `schema.json` instead, which is not the snapshot. The access snapshot first:
+  a ban is a row policy, and this is what shows one moving in a diff.
+- [ ] 16.2 The API's snapshots at the package root: `surface` and `principal`
+  (`junction <kind> --app api/src/app.ts --services api/src/services`), and
+  `jobs` and `notifications` where Haven declares any. Blocked today: the
+  generator builds the app with no environment, and `createHavenAuth` throws
+  without `HAVEN_SESSION_KEY` (`api/src/auth.ts:42`). Building the app needs to
+  succeed without the key; it is refused when the app starts.
+- [ ] 16.3 Haven's rows in `THREATS.md`, each with the test that proves it: a
+  stranger minting a fresh key after a ban, a banned member (an empty room, not
+  a 403), a mod reaching past `FJS-D998`'s predicates, a replayed signed login
+  (`FJS-D981`).
+  - Before 10.1: the hosted server is the first with strangers on it.
+- [ ] 16.4 `app-layout`, the modules: the 30 loose modules in `web/src/` into
+  `web/src/lib/<area>/`, the eight `#`-import twins with them (the `imports`
+  map moves in the same commit), and the 13 `scenes/*.mesa` into
+  `components/<area>/` or baselined with the reason `scenes/` is its own kind.
+  Which of the two is a `decision-rules` call.
+- [ ] 16.5 `app-layout`, the 10 relative imports from `web/` into `api/`
+  (Invariant 3, `FJS-D627`): what both sides need moves to whichever side runs
+  it, and the other reaches it through a service.
+- [ ] 16.6 The other six warnings: `detail-read-dead` at `Booth.mesa:118` and
+  `Scene.mesa:213` (`nicks` read once, so watched with `members.record(id)`);
+  `service-as-system` at `barkeep.service.ts:42`; `css-class-collision` on
+  `.pane` in `Barkeep.mesa`, `History.mesa` and `Notices.mesa`. What stays is
+  baselined with its reason in a new `check-baseline.json`.
+- [ ] 16.7 Typecheck to zero: `api/src/rooms.ts:145` passes a
+  `Set<string | undefined>` where a `ReadonlySet<string>` is taken. Haven has
+  no baseline, so this one error fails CI.
+- [ ] 16.8 `DRIVES.md` rows for the seven drives it does not name, so
+  `fli proves` can: `verify:taskmaster`, `ledger`, `townhall`, `nameplate`,
+  `home-row`, `bolt`, `bar`.
+- [ ] 16.9 `web/config/routes.js` out of git: Sierra writes it, so it is
+  ignored in Haven's `.gitignore` with a `generatedIgnored` entry in
+  `scripts/ci-allowances.json`, as Basecamp's is.
+- [ ] 16.10 The small ones: Haven's row in the root `CLAUDE.md` Packages table
+  (its State still reads *Schema only*); `haven` in `scripts/fix-loop.mjs`'s
+  realm map beside `example` and `basecamp`; and a read of `scripts/ci.mjs`'s
+  coverage phase to confirm it runs Haven's suite, which the probe did not
+  reach.
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.
@@ -1385,6 +1606,9 @@ else's package.)
   Cloudflare; the subdomain has no record yet), with Haven's API serving
   `web/dist` (5.2). `web/config/sierra.config.js` moves to it when a server
   answers there, not before. The machine is not named.
+  - Needs `db/migrations/` and a deploy block (`frontier.config.js`), as
+    Basecamp has; until both exist `fli check` skips `migration-history` and
+    `log-db-unbound` rather than grading them. Needs 16.3.
 
 ## Ideas past the plan
 
@@ -1439,6 +1663,18 @@ What's built already carries these:
   could come before 3.2's mod standing does.
 - **Rooftops.** A ladder in a house, there at night only. A narrow run where a
   step off the edge is a door back to the square at the cell you fell from.
+- **The old town.** A museum off the town hall where each gallery is a scene as
+  it was N commits ago, read from the `git log` of its committed
+  `scenes/<name>.frame.txt`, with the commit's date on a plaque. Nothing new is
+  stored. The square's frame has five commits today, so the gallery fills as
+  Haven grows.
+- **The echo canyon,** past the road. A line comes back twice, delayed and
+  fainter, as a bubble the client redraws. Hearing is shaped by the walls,
+  which is the library's per-scene `EARSHOT` taken one step further.
+- **The dream.** Sleep in a tavern bed and wake in the square drawn in an
+  inverted palette, derived from the day colors as `shade()` derives night, so
+  no scene is edited for it. Hidden doors (6.5) are drawn visible there, so the
+  dream is how a secret is found.
 
 One mechanism each:
 
@@ -1456,6 +1692,27 @@ One mechanism each:
   as of the speaker. For demos and office hours.
 - **The frozen pond.** The glade's pond when 7.3's weather is snow: a step onto
   the ice slides until a wall stops it, which is room for small puzzles.
+- **The haunted house.** It opens only on certain dates: 6.6's `<Door night>`
+  keyed to the calendar (7.7) instead of the hour. It has jack-o'-lanterns for
+  flickering lights, and the fog is on inside. The same door gives a winter
+  fair in December and a garden in spring.
+- **The dollhouse.** A model of the town on a town hall table: the `/map` snaps
+  (6.4), with every member in every room drawn live as a dot. The mechanism is
+  presence read across rooms, since today a client hears only its own room's
+  channel.
+- **The balloon ride,** from a fairground. The scene's art is the world map,
+  and the basket drifts with 7.8's wind, so where it lands depends on the
+  weather. The mechanism is a view moved by the clock instead of by a figure.
+- **The underground canal,** down the square's well (6.1). Tunnels join the
+  cellar, the docks and the glade, so a boat is fast travel. It is pitch dark
+  and uses the mine's lantern: whichever of the two is built first pays for the
+  other.
+- **The engine room,** under the town hall. Haven's own API as a place: a rack
+  per service blinking at its request rate (`app.registerMetricsSource`) and
+  Caravan jobs as carts on rails. The mechanism is a metrics feed reaching a
+  scene.
+- **The archery range.** Targets for 9.5's arrow, so it lands somewhere before
+  it lands on a member. Its scoreboard is rows.
 
 These need server state:
 
@@ -1464,6 +1721,20 @@ These need server state:
 - **The ferry.** The ship at the docks sails on a timetable, and its door is
   there only while it is docked — 6.6's night door on a schedule. It runs to
   an island, which is Haven's far, quiet place.
+- **The fishing pier,** off the docks. `/fish` is a roll the server makes, as
+  9.1's dice are. The catch is read off weather, moon, season and hour (7.3 to
+  7.10), so a rare fish shows up on a full-moon night in a snowstorm, and it
+  goes into 9.9's inventory. This is the first time the almanac is gameplay
+  rather than scenery.
+- **The greenhouse.** A pot per member: a seed grows over real days and wilts
+  if the member stays away, and the season decides what will grow. A pot is a
+  row, 9.3's plots at the size of a flowerpot.
+- **The arcade,** in the tavern's back room. Snake on the floor played on 9.4's
+  home row, the high-score table as rows, and 8.3's crier announcing a new
+  record.
+- **The troll bridge.** A 14.8 line-bank NPC guards a bridge with a riddle. The
+  answer is graded on the server, so no client holds it, and the door opens for
+  that member only.
 
 ## Open questions
 

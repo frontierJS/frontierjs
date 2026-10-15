@@ -49,7 +49,11 @@ const SCHEMA = `
     -- cleared when the row leaves 'running'. Recovery cannot tell a crashed
     -- process's job from a live one's without it, and one jobs.db is trivially
     -- opened twice — two replicas, a web process beside a worker one.
-    owner_id      TEXT
+    owner_id      TEXT,
+    -- How far along the CURRENT attempt is, 0 to 1, as the handler last said.
+    -- NULL until it says, and cleared by every claim so a retry does not open
+    -- showing the failed attempt's number.
+    progress      REAL
   );
 
   -- One row per Caravan instance that has started, with the last time it said
@@ -289,6 +293,7 @@ export function openDb(
     addColumn(db, 'correlation_id')
     addColumn(db, 'tenant_id')
     addColumn(db, 'owner_id')
+    addColumn(db, 'progress', 'REAL')
     db.exec(SCHEMA)
   })
 
@@ -311,13 +316,13 @@ export function openDb(
  * carrying NULL is reclaimed by the first instance that sweeps — the same
  * answer this package gave before owners existed.
  */
-function addColumn(db: Database, name: string): void {
+function addColumn(db: Database, name: string, type: 'TEXT' | 'REAL' = 'TEXT'): void {
   const cols = db.query<{ name: string }, []>(`PRAGMA table_info(jobs)`).all()
   // No table at all — this is a fresh database and SCHEMA creates it with the
   // column already in it.
   if (cols.length === 0) return
   if (cols.some(c => c.name === name)) return
-  db.exec(`ALTER TABLE jobs ADD COLUMN ${name} TEXT`)
+  db.exec(`ALTER TABLE jobs ADD COLUMN ${name} ${type}`)
 }
 
 /**
@@ -523,6 +528,7 @@ export function buildStatements(db: Database) {
       status     = 'running',
       started_at = $now,
       owner_id   = $owner,
+      progress   = NULL,
       attempts   = attempts + 1
     WHERE id = (
       SELECT id FROM jobs
@@ -551,6 +557,7 @@ export function buildStatements(db: Database) {
           status     = 'running',
           started_at = $now,
           owner_id   = $owner,
+          progress   = NULL,
           attempts   = attempts + 1
         WHERE id = (
           SELECT id FROM jobs
@@ -586,6 +593,15 @@ export function buildStatements(db: Database) {
       finished_at = $now,
       owner_id    = NULL,
       error       = NULL
+    WHERE id = $id AND status = 'running' AND owner_id = $owner
+  `))
+
+  // ── Report progress ─────────────────────────────────────────────────────────
+  // Same owner guard as the completion: a cancelled or reclaimed attempt that
+  // goes on reporting must not write onto the row that replaced it.
+
+  const setProgress = wrap<void, { id: string; progress: number; owner: string }>(db.prepare(`
+    UPDATE jobs SET progress = $progress
     WHERE id = $id AND status = 'running' AND owner_id = $owner
   `))
 
@@ -676,6 +692,20 @@ export function buildStatements(db: Database) {
   // is midway through a job in it.
   const runningInQueue = wrap<{ count: number }, { queue: string }>(db.prepare(`
     SELECT COUNT(*) AS count FROM jobs WHERE status = 'running' AND ($queue = '*' OR queue = $queue)
+  `))
+
+  // The rows an instance still holds. A worker compares this against its
+  // in-flight attempts: one missing was cancelled or reclaimed by someone else,
+  // and nothing else tells its handler (served by jobs_owner).
+  const runningOwnedBy = wrap<{ id: string }, { owner: string }>(db.prepare(`
+    SELECT id FROM jobs WHERE status = 'running' AND owner_id = $owner
+  `))
+
+  // Pending only: a running row has an owner whose completion write is guarded
+  // on the row existing, and waiting for it is drain's job. Delayed rows are
+  // pending, so a purge takes the retry ladder's waiting attempts too.
+  const purgeQueue = wrap<void, { queue: string }>(db.prepare(`
+    DELETE FROM jobs WHERE status = 'pending' AND ($queue = '*' OR queue = $queue)
   `))
 
   // Instances that have heartbeated since the cutoff. Zero on a file that exists
@@ -860,6 +890,7 @@ export function buildStatements(db: Database) {
     claimNext,
     claimNextNamed,
     markDone,
+    setProgress,
     markFailed,
     cancel,
     releaseClaim,
@@ -870,6 +901,8 @@ export function buildStatements(db: Database) {
     pauseInForce,
     allPauses,
     runningInQueue,
+    runningOwnedBy,
+    purgeQueue,
     liveOwners,
     recordQueueEvent,
     queueEvents,

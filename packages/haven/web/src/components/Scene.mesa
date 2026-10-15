@@ -30,9 +30,9 @@
   //
   // A line beginning `/` is a command and never a Message. What it can name
   // is `$context.commands` (`commands.js`), the one registry: the actors in
-  // this scene add their verbs to it — `Whisper` the `/w`, `Mod` the `/ban`,
+  // this scene add their verbs to it — `Whisper` the `/w`, `Dice` the `/roll`, `Mod` the `/ban`,
   // `WorldMap` the `/map`, `Season` the `/season`, `Weather` the `/weather`, `Hush` the `/hush`, `Emotes` the `/wave`,
-  // `/sit` and `/dance`, `History` the PageUp and
+  // `/sit` and `/dance`, `Pets` the `/pet`, `History` the PageUp and
   // PageDown, and whatever a route places (`Taskmaster`, `Ledger`) — and
   // this file reads it for the
   // line, Tab, the hints and the keys. The bubbles, the nameplates and the
@@ -53,7 +53,9 @@
   //
   // In NORMAL a `/` enters INSERT with the slash typed (Shell.mesa), and Tab
   // completes the command word of a line that is only `/` and a partial word;
-  // the matches are listed under the input as they narrow.
+  // the matches are listed under the input as they narrow, and Enter on a
+  // partial word with one match runs that match. A word that is itself a
+  // command is never stretched: `/ledge` beside `/ledger` is said as typed.
   //
   // The map (`IDEAS/haven.md` 6.4) is a command, not a key: a letter would be
   // typed into the line, as in the workshop. Walking into a room keeps its
@@ -77,6 +79,11 @@
   // `worn` across doors, since each scene is a fresh mount and its presence
   // is seeded with it; nothing keeps it past the process.
   //
+  // A figure shapeshifted into an emoji (14.4) stands on two cells, its own
+  // and the one to its right, and both must be floor or the emoji is drawn
+  // over a wall. An arrow refuses the step; a walk this figure did not steer
+  // (a find, a seat) that puts the second cell off the floor ends the shape.
+  //
   // The map, the room's history, a waiting operator and a find-walk are modes
   // (`commands.open`): an open one is handed a key before any verb or step.
   import { presence }    from '@frontierjs/sierra/presence'
@@ -88,7 +95,8 @@
   import { createStage, arrival, OUTDOORS, worn } from '@/stage.js'
   import { remember }    from '@/map.js'
   import { createCommands, createHistory, complete, matches, partial } from '@/commands.js'
-  import { cellOf, figures, inView } from '@/crowd.js'
+  import { WIDE_LAYER, cellOf, covered, figures, inView, standsOn } from '@/crowd.js'
+  import { spanOf } from '../../../api/src/shape.ts'
   import { facingOf, FIRST_FACING } from '../../../api/src/facing.ts'
   import { STUN_MS }     from '../../../api/src/bolt.ts'
   import { stepped, TRACES } from '../../../api/src/memory.ts'
@@ -99,12 +107,14 @@
   import Nameplates      from '@/components/Nameplates.mesa'
   import Sitting         from '@/components/Sitting.mesa'
   import Whisper         from '@/components/Whisper.mesa'
+  import Dice            from '@/components/Dice.mesa'
   import Mod             from '@/components/Mod.mesa'
   import Season          from '@/components/Season.mesa'
   import Weather         from '@/components/Weather.mesa'
   import Hush            from '@/components/Hush.mesa'
   import Profile         from '@/components/Profile.mesa'
   import Emotes          from '@/components/Emotes.mesa'
+  import Pets            from '@/components/Pets.mesa'
   import { at, tint }    from '#cell'
   import { paint }       from '#paint'
 
@@ -113,6 +123,9 @@
   export let spawn
   // The layers `look()` folds (`stage.js`): a roof names INDOORS.
   export let layers = OUTDOORS
+  // A browser's cell size against VIEW's (14.7): 0.5 draws twice the cells
+  // each way on the same screen. `#paint` in the terminal ignores it.
+  export let scale = 1
 
   var stage = createStage({ slug, palette, spawn, layers })
   $context.scene = stage
@@ -144,6 +157,7 @@
   let ink    = worn.ink
   let hushed = null
   let emote  = null
+  let pet    = worn.pet
   let nicks = {}
   $: hints = matches(draft, commands.words({ x, y }))
 
@@ -153,7 +167,7 @@
   // Seeded from the spawn and never from `x` and `y`, and a `var`: a
   // top-level const that reads a prop or a `let` is derived — made when it is
   // first read, inside whatever effect reads it, and again on every step.
-  var here = room ? presence(`room:${room.id}`, { meta: { ...spawn, ...(worn.ink && { ink: worn.ink }) } }) : null
+  var here = room ? presence(`room:${room.id}`, { meta: { ...spawn, ...(worn.ink && { ink: worn.ink }), ...(worn.pet && { pet: true }) } }) : null
   $.onMount(() => {
     if (!here) return
     remember(stage, page.pathname)
@@ -166,6 +180,7 @@
   })
   $.onDestroy(() => {
     clearInterval(flickTimer)
+    clearTimeout(idle)
     for (const t of timers) clearTimeout(t)
   })
 
@@ -185,6 +200,7 @@
         stage.tread(kind('step'))
         stage.shatter([...kind('struck'), ...kind('taken')])
         stage.scorch(kind('scorch'))
+        stage.spook(kind('spooked'))
       })
       .catch(() => {})
   }
@@ -225,7 +241,7 @@
   const cell = (m) => cellOf(m, spawn)
 
   // A table's candle burns only while a stool of it is taken.
-  $: { if (here) stage.occupy([{ x, y }, ...here.get().others.map(cell)]) }
+  $: { if (here) stage.occupy([...standsOn({ x, y }, shape), ...here.get().others.flatMap((m) => standsOn(cell(m), m.meta?.shape))]) }
   $: { if (here) trackSteps(here.get().others) }
 
   // The shell focuses a route's first control when it mounts it, and this
@@ -234,13 +250,37 @@
   var input = null
   const focus = (el) => { input = el; el.focus() }
 
+  // Other screens hang `(…)` over this figure while its line has words and is
+  // not a command (`crowd.js`), lapsing after IDLE_MS without a key so a line
+  // left half typed is not typing for good. Plain `var`s: the timer writes
+  // `typing`, and a watch that read it would run `typed(draft)` again.
+  const IDLE_MS = 4000
+  var typing = false
+  var idle   = null
+  function setTyping(on) {
+    if (on === typing) return
+    typing = on
+    here.updateMeta(meta())
+  }
+  function typed(text) {
+    clearTimeout(idle)
+    const on = !!text.trim() && !text.trim().startsWith('/')
+    if (on) idle = setTimeout(() => setTyping(false), IDLE_MS)
+    setTyping(on)
+  }
+  $: { if (here) typed(draft) }
+
   // ─── the figure ────────────────────────────────────────────────────────────
   function meta() {
-    return { x, y, facing, ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }) }
+    return { x, y, facing, ...(typing && { typing: true }), ...(shape && { shape }), ...(ink && { ink }), ...(hushed && { hushed }), ...(emote && { emote }), ...(pet && { pet: true }) }
   }
+
+  /** Whether a figure drawn as `as` may stand on `nx, ny`, every cell it covers floor. */
+  const stands = (nx, ny, as = shape) => standsOn({ x: nx, y: ny }, as).every((c) => stage.walkable(c.x, c.y))
 
   function moveTo(nx, ny) {
     facing = facingOf({ x, y }, { x: nx, y: ny }) ?? facing
+    if (spanOf(shape) > 1 && !stands(nx, ny)) { shape = null; note = 'you are yourself again' }
     const walked = stepped({ x, y }, { x: nx, y: ny })
     x = nx
     y = ny
@@ -254,8 +294,10 @@
   // `HomeRow` walks this figure, and draws it as a character, through these.
   function where() { return { x, y } }
   function shapeTo(ch) {
+    if (!stands(x, y, ch)) return false
     shape = ch
     here.updateMeta(meta())
+    return true
   }
 
   // ─── the bolt ──────────────────────────────────────────────────────────────
@@ -306,7 +348,8 @@
     const laid = blast.laid ?? []
     stage.shatter(laid.filter((l) => l.kind === 'struck' && l.id))
     stage.scorch(laid.filter((l) => l.kind === 'scorch'))
-    if (blast.yowl) note = 'the cat yowls'
+    stage.spook(laid.filter((l) => l.kind === 'spooked'))
+    if (blast.yowl) note = blast.yowl === 'cat' ? 'the cat yowls' : `the ${blast.yowl} bolts`
   }
 
   function onBolt(name, blast) {
@@ -370,7 +413,7 @@
     const turned = facingOf({ x, y }, { x: nx, y: ny })
     const door = stage.doorAt(nx, ny, Date.now())
     if (door) { goto(door.to, { from: page.pathname, x: nx, y: ny }); return }
-    if (!stage.walkable(nx, ny)) {
+    if (!stands(nx, ny) || stage.pacerOn(nx, ny, Date.now())) {
       if (turned !== facing) { facing = turned; here.updateMeta(meta()) }
       return
     }
@@ -386,8 +429,10 @@
   }
 
   async function say() {
-    const body = draft.trim()
+    let body = draft.trim()
     if (!body) return
+    const lone = partial(body) && !commands.find(body.slice(1), { x, y }) ? matches(body, commands.words({ x, y })) : []
+    if (lone.length === 1) body = `/${lone[0]}`
     if (body.startsWith('/')) { said.push(body); input?.blur(); input?.focus() }
     draft = ''
     note  = ''
@@ -399,14 +444,16 @@
 </script>
 
 <mesa:window on:keydown={keydown} />
-<div {@attach paint(stage)}>
+<div {@attach paint(stage, scale)}>
   <slot />
   {#if here}
-    {#each figures(here.get(), view, stage, spawn) as f (f.m.connectionId)}
-      <p {@attach at(f.x, f.y)} {@attach tint(f.m.meta?.ink)}>{face(f.m.userId, f.m.meta?.shape ?? glyph(f.m, nicks), stun, flick)}</p>
+    {#each figures(here.get(), view, stage, spawn).filter((f) => !covered(stage, cell(f.m), f.m.meta?.shape)) as f (f.m.connectionId)}
+      <p {@attach at(f.x, f.y, spanOf(f.m.meta?.shape) > 1 ? WIDE_LAYER : 10)} {@attach tint(f.m.meta?.ink)}>{face(f.m.userId, f.m.meta?.shape ?? glyph(f.m, nicks), stun, flick)}</p>
     {/each}
     <Nameplates {here} {nicks} {x} {y} {view} {stage} {spawn} />
-    <p {@attach at(x - view.x, y - view.y, 11)} {@attach tint(ink)}>{face(here.get().self?.userId, shape ?? '@', stun, flick)}</p>
+    {#if !covered(stage, { x, y }, shape)}
+      <p {@attach at(x - view.x, y - view.y, spanOf(shape) > 1 ? WIDE_LAYER : 11)} {@attach tint(ink)}>{face(here.get().self?.userId, shape ?? '@', stun, flick)}</p>
+    {/if}
     {#each flying(beam, view) as b (b.key)}
       <p {@attach at(b.x, b.y, 10)} {@attach tint(BEAM_INK)}>{b.ch}</p>
     {/each}
@@ -416,19 +463,21 @@
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
+    <Dice {room} />
     <Mod />
     <Season {stage} />
     <Weather {stage} />
     <Hush {here} hush={(id) => { hushed = id; here.updateMeta(meta()) }} />
     <Emotes {stage} {here} {x} {y} {view} {spawn} {emote} {moveTo} emoteTo={(e) => { emote = e; here.updateMeta(meta()) }} />
+    <Pets {stage} {here} {x} {y} {view} {spawn} {facing} {ink} {pet} petTo={(p) => { pet = worn.pet = p; here.updateMeta(meta()) }} />
   {/if}
 </div>
 {#if here}
   <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
-  {#if hints.length && partial(draft) !== null}<p>{hints.map((c) => `/${c}`).join('  ')} · Tab completes</p>{/if}
+  {#if hints.length && partial(draft) !== null}<p>{hints.map((c) => `/${c}`).join('  ')} · {hints.length === 1 ? 'Tab completes, Enter runs' : 'Tab completes'}</p>{/if}
   <form on:submit|preventDefault={say}>
     <input {@attach focus} bind:value={draft} placeholder="arrows walk, type and Enter says, PageUp reads back" />
   </form>
-  <Profile {here} {nicks} {stage} {room} {facing} glyph={shape ?? '@'} />
+  <Profile {here} {nicks} {stage} {room} {facing} {x} {y} route={page.pathname} glyph={shape ?? '@'} />
 {/if}

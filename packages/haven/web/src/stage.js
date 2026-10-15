@@ -26,9 +26,9 @@
 // the screen's size at most — the terminal's, which `#paint` tells `fit()`
 // (14.6), else VIEW — following the figure a scene tells it to with EDGE
 // cells of slack in proportion, so it pans only when the figure nears an
-// edge. It lives on the stage, so a pan or a resize is a `changed()` like a
-// moved piece and `#paint` has one subscription; a stage no bigger than the
-// screen never pans. The editor asks for the whole stage instead.
+// edge. It lives on the stage, so a pan or a resize tells the listeners and
+// redraws like a moved piece and `#paint` has one subscription; a stage no
+// bigger than the screen never pans. The editor asks for the whole stage instead.
 //
 // Light and fog (`IDEAS/haven.md` 6.3). Once a scene says which figure
 // SEES (`see(x, y)`), a cell is lit when it is within SIGHT of that figure
@@ -75,19 +75,29 @@
 //            a tree it strikes burns, then stands charred, then grows back.
 //   steps    a footprint (7.4) on a blank cell somebody stood on in the last
 //            few minutes, fading in thirds; a drop falls in front of it.
+//   ground   what the weather left (7.10, `groundAt`): puddles and a snow
+//            cover on blank lit cells, fewer as each dries or thaws; a drop
+//            and a footprint are in front of it.
 //   scorch   a bolt's `,` (9.5) on the wall it struck, fading in thirds; it
 //            replaces the wall's glyph, since a wall is not blank.
 //   sky      the night (7.2): every color but a light source's is shaded
-//            toward moonlight, and a cell inside a light's radius keeps half
-//            the day. The fog's SIGHT does not shrink at night.
+//            toward moonlight, more under a full moon and less under a new
+//            one (7.9), and a cell inside a light's radius keeps half the
+//            day. Through full night the moon's glyph crosses MOON_ROW east
+//            to west on a blank cell, so a roof, a cloud or a drop hides it.
+//            The fog's SIGHT does not shrink at night.
+//   lamplight a light's pool, whatever the sky: the cells within a light's
+//            radius take its warm tint, strongest at the source and pulsing
+//            with it -- the hearth warming a room that has no night. `#paint`
+//            blooms a stage that names it.
 //   fog      a cell lit once and not now is dim, one never lit is blank (6.3).
 //
 // Every layer is drawn by `look()`, so the figures, which are boxes a layer
 // up, walk in front of all of them, and the two targets cannot disagree about
 // which cell has a drop or a footprint.
 
-import { pacerAt, pick } from '../../api/src/pacer.ts'
-import { almanacAt, SEASONS, skyDarkness, isNight, shade, SKY_MS, hash, fallAt, untilWeatherChange, FALL, STRIKE_MS, BURN_MS, CHAR_MS, FIRE_MS, strikeAt, flashAt, cloudAt } from './sky.js'
+import { pacerAt, pacerNow, pick } from '../../api/src/pacer.ts'
+import { almanacAt, SEASONS, skyDarkness, isNight, shade, MOON_FG, SKY_MS, hash, fallAt, untilWeatherChange, FALL, STRIKE_MS, BURN_MS, CHAR_MS, FIRE_MS, strikeAt, flashAt, cloudAt, groundOn } from './sky.js'
 import { fadeOf } from '../../api/src/memory.ts'
 import { pieceId } from './world.js'
 import { spotsOf } from './pieces/index.js'
@@ -97,8 +107,35 @@ export { pacerAt }
 /** Every stage made in this process, by slug — for a test or a drive to read. */
 export const stages = new Map()
 
-/** What this screen's figure wears from scene to scene: the `ink` a `dye` cell gave it. */
-export const worn = { ink: null }
+/** What this screen's figure wears from scene to scene: the `ink` a `dye` cell gave it, and whether its pet is out. */
+export const worn = { ink: null, pet: false }
+
+// A lamp's glow: the cells within a light's radius take a warm tint, strongest
+// at the bulb and fading to the edge, scaled by how bright the bulb is this
+// step (its palette color's luminance) and by how dark the sky is. A cell has
+// no background of its own, and a terminal cannot blend with the one it has, so
+// a tint is over NIGHT_BG: Haven's night, which is what the screen shows.
+const WARM = [251, 191, 36]
+const NIGHT_BG = '#122738'
+const GLOW_BG = 0.3      // the most of WARM a background takes
+const GLOW_FG = 0.55     // the most of WARM a glyph's color takes
+const LAMP_BG = 0.16     // the same two, for a light's pool by day (`lamplight`)
+const LAMP_FG = 0.35
+const PULSE_LOW = 0.55   // a bulb at its dimmest still glows this much
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+const lum = (hex) => { const [r, g, b] = rgb(hex); return 0.3 * r + 0.59 * g + 0.11 * b }
+const warmed = new Map()
+/** `hex` (NIGHT_BG when none) moved `t` of the way to the lamp's amber. */
+const warm = (hex, t) => {
+  const k = hex + '/' + t
+  let w = warmed.get(k)
+  if (!w) {
+    const from = rgb(hex ?? NIGHT_BG)
+    w = '#' + from.map((v, i) => Math.round(v + (WARM[i] - v) * t).toString(16).padStart(2, '0')).join('')
+    warmed.set(k, w)
+  }
+  return w
+}
 
 const stepOf = (style, x, y, ms) => {
   const tick = Math.floor(ms / style.ms)
@@ -119,21 +156,27 @@ export const dim = (hex) => {
 
 const STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 
+// The widest a stage may be: a cell's key is `y * STRIDE + x`.
+const STRIDE = 4096
+
 /** The phases of a frame, in order. */
 export const PHASES = ['simulate', 'light', 'paint']
 
 /** Every layer `look()` folds, in the order it folds them. */
-export const LAYERS = ['candle', 'weather', 'steps', 'scorch', 'sky', 'fog']
+export const LAYERS = ['candle', 'weather', 'steps', 'ground', 'scorch', 'sky', 'lamplight', 'fog']
 
 /**
  * What a scene out of doors names when it names nothing. Not the fog: with
  * it off every cell is lit for every figure, and `seer` is still kept, since
  * a worker is read off where the figure stands. Name `fog` to bring it back.
  */
-export const OUTDOORS = ['candle', 'weather', 'steps', 'scorch', 'sky']
+export const OUTDOORS = ['candle', 'weather', 'steps', 'ground', 'scorch', 'sky']
 
-/** Under a roof: no sky and no weather. */
+/** Under a roof: no sky, no weather and nothing it left. */
 export const INDOORS = ['candle', 'steps', 'scorch']
+
+/** The sky's row: the first inside a scene's top wall, where the moon crosses. */
+export const MOON_ROW = 1
 
 /** A footprint's ink as it fades, faintest first: a third of its life each. */
 export const STEP_FG = ['#4a4236', '#6b604e', '#968669']
@@ -265,7 +308,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   for (const l of layers) if (!LAYERS.includes(l)) throw new Error(`[${slug}] no layer is called ${l}; the layers are ${LAYERS.join(', ')}`)
   const has  = (name) => layers.includes(name)
   const fog  = has('fog')
-  const claims    = new Map()   // 'x,y' → { ch, key, name, floor, overhead, door, hidden }
+  const claims    = new Map()   // key(x, y) → { ch, key, name, floor, overhead, door, hidden }
   const pacers    = []
   const marks     = []          // every placed thing, in the order it was placed
   const listeners = new Set()
@@ -274,6 +317,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   let fig   = null             // the figure followed, re-followed when the extent or the screen changes
   let size  = VIEW             // the most cells the screen shows, until `fit` says its own
   let whole = false
+  let view  = { x: 0, y: 0, w: 0, h: 0 }   // `stage.view`, replaced only when it moves
   let seer  = null             // the figure that sees; null lights every cell
   // A piece's own palette entries, for the letters the scene's palette leaves out
   // (`pieces/index.js`); the scene's entry for a letter wins.
@@ -300,66 +344,109 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     for (const m of marks) if (m.kind === 'piece') adopt(m.drawn)
   }
   let lights  = []             // every cell whose palette entry has a light, with its radius
-  let visible = new Set()      // 'x,y' lit for the seer now
-  let seen    = new Set()      // 'x,y' lit for the seer at any time
-  let occupied = new Set()     // 'x,y' a figure stands on, for what burns only while a seat is taken
-  let glow    = null           // 'x,y' within some light's radius; made at the first night look, dropped by relight
-  let steps   = new Map()      // 'x,y' → { at, until }, the newest footprint on the cell
-  let scorches = new Map()     // 'x,y' → { at, until }, the newest scorch on the cell
-  let crumbling = new Map()    // 'x,y' → { at }, a `crumbles` cell a figure has stood on: `at` is when it was left, null while it is stood on
-  let shattered = new Map()    // 'x,y' → until, a solid cell of a piece a bolt broke, on the clock `look()` is asked at
+  let visible = new Set()      // key(x, y) lit for the seer now
+  let seen    = new Set()      // key(x, y) lit for the seer at any time
+  let occupied = new Set()     // key(x, y) a figure stands on, for what burns only while a seat is taken
+  let burnSeats = null         // key(x, y) of every seat a `burns` cell waits on, made at the first occupy and dropped by relight
+  let glow    = null           // key(x, y) → [{ l, f }], each light whose radius holds the cell and how near it is (0..1); made at the first night look, dropped by relight
+  let steps   = new Map()      // key(x, y) → { at, until }, the newest footprint on the cell
+  let scorches = new Map()     // key(x, y) → { at, until }, the newest scorch on the cell
+  let crumbling = new Map()    // key(x, y) → { at }, a `crumbles` cell a figure has stood on: `at` is when it was left, null while it is stood on
+  let spooked   = new Map()    // a pacer's name → { at, until, dir }, the bolt that scared it out of the scene and when it walks in again
+  let shattered = new Map()    // key(x, y) → until, a solid cell of a piece a bolt broke, on the clock `look()` is asked at
   const tasks = []             // { key, fn, phase, every, due }, in the order each phase runs them
   let framing = false          // inside a frame: a change marks it dirty and the frame paints it
   let dirty   = true
   let lookDue = -Infinity      // when the look next changes on its own
-  const bolts = new Map()      // window n → { cells: 'x,y' → glyph, hit: the tree mark struck or null }, geometry only; the weather it struck in is asked at use
-  let treeCells = null         // 'x,y' → the tree mark owning that cell, made at the first storm look and dropped by relight
+  const bolts = new Map()      // window n → { cells: key(x, y) → glyph, hit: the tree mark struck or null }, geometry only; the weather it struck in is asked at use
+  let treeCells = null         // key(x, y) → the tree mark owning that cell, made at the first storm look and dropped by relight
   let last    = 0              // the ms of the last frame, which is now for a stage stepped by hand
   let timer   = null
 
-  const key = (x, y) => `${x},${y}`
+  // A cell's key is a number, read back by `xOf`/`yOf`: a paint asks a dozen
+  // maps per cell, and a string built per ask was a fifth of a paint.
+  const key = (x, y) => y * STRIDE + x
+  const xOf = (k) => k % STRIDE
+  const yOf = (k) => Math.floor(k / STRIDE)
   const extent = () => {
     width = 0
     height = 0
     for (const k of claims.keys()) {
-      const [x, y] = k.split(',').map(Number)
+      const x = xOf(k), y = yOf(k)
       if (x + 1 > width) width = x + 1
       if (y + 1 > height) height = y + 1
     }
   }
-  const relight = () => {
+  // What the claims light: the sources, and everything made from the claims
+  // at first use. A step moves no claim, so it runs none of this.
+  const lightUp = () => {
     lights = []
     glow = null
+    burnSeats = null
     bolts.clear()
     treeCells = null
     for (const [k, c] of claims) {
       const r = entryOf(c.key)?.light
       if (!r) continue
-      const [x, y] = k.split(',').map(Number)
-      lights.push({ x, y, r })
+      lights.push({ x: xOf(k), y: yOf(k), r })
     }
+  }
+  // What the seer sees: a sweep of the whole stage, so only under the fog.
+  const fogUp = () => {
     if (!seer || !fog) return
     visible = new Set()
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
       if (litAt(stage, x, y, seer)) { const k = key(x, y); visible.add(k); seen.add(k) }
     }
   }
-  // How dark a cell is `ms` into the clock: 0 by day or with no sky, 0 on a
-  // light source, half the sky inside a light's radius.
-  const nightAt = (x, y, ms) => {
-    const d = has('sky') ? skyDarkness(ms) : 0
-    if (!d) return 0
-    if (entryOf(claims.get(key(x, y))?.key)?.light) return 0
-    if (!glow) {
-      glow = new Set()
-      for (const l of lights) {
-        const rx = 2 * l.r
-        for (let dy = -l.r; dy <= l.r; dy++) for (let dx = -rx; dx <= rx; dx++) {
-          if (within({ x: 0, y: 0 }, { x: dx, y: dy }, l.r)) glow.add(key(l.x + dx, l.y + dy))
-        }
+  const relight = () => { lightUp(); fogUp() }
+  // Every light's pool: key(x, y) → each light holding the cell and how near it is.
+  const glowMap = () => {
+    if (glow) return glow
+    glow = new Map()
+    for (const l of lights) {
+      const rx = 2 * l.r
+      for (let dy = -l.r; dy <= l.r; dy++) for (let dx = -rx; dx <= rx; dx++) {
+        // Left of 0 a key would name a cell at the end of the row above.
+        if (l.x + dx < 0 || l.y + dy < 0 || !within({ x: 0, y: 0 }, { x: dx, y: dy }, l.r)) continue
+        const k = key(l.x + dx, l.y + dy)
+        const near = (1 - Math.sqrt((dx / 2) ** 2 + dy ** 2) / l.r) ** 1.5
+        if (glow.has(k)) glow.get(k).push({ l, f: near })
+        else glow.set(k, [{ l, f: near }])
       }
     }
-    return glow.has(key(x, y)) ? d / 2 : d
+    return glow
+  }
+  // How dark a cell is under a sky `d` dark: 0 by day or with no sky, 0 on a
+  // light source, half the sky inside a light's radius.
+  const nightAt = (x, y, d) => {
+    if (!d) return 0
+    return glowMap().has(key(x, y)) ? d / 2 : d
+  }
+  // How bright a bulb is at `ms`, PULSE_LOW..1: where its palette color is
+  // between its dimmest and its brightest, so a flickering bulb and its glow
+  // are the one thing.
+  // A pool's cells ask the same bulb the same ms by the hundred, so a bulb is worked out once per ms.
+  let pulses = { ms: NaN, of: new Map() }
+  const pulseOf = (l, ms) => {
+    if (pulses.ms !== ms) pulses = { ms, of: new Map() }
+    let p = pulses.of.get(l)
+    if (p === undefined) pulses.of.set(l, p = pulseNow(l, ms))
+    return p
+  }
+  const pulseNow = (l, ms) => {
+    const style = entryOf(claims.get(key(l.x, l.y))?.key)
+    if (!Array.isArray(style?.fg) || !style.ms) return 1
+    const range = style.fg.map(lum)
+    const lo = Math.min(...range), hi = Math.max(...range)
+    if (hi === lo) return 1
+    return PULSE_LOW + (1 - PULSE_LOW) * (lum(pick(style.fg, stepOf(style, l.x, l.y, ms))) - lo) / (hi - lo)
+  }
+  // The strongest glow on a cell, in eighths so a tint is one of a few colors.
+  const glowAt = (x, y, ms) => {
+    let s = 0
+    for (const { l, f } of glowMap().get(key(x, y)) ?? []) s = Math.max(s, f * pulseOf(l, ms))
+    return Math.round(s * 8) / 8
   }
   // A painter that fails must not fail the claim it was told about: the
   // stage is right and the picture is late, which the next tick repairs.
@@ -370,10 +457,10 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     tell()
   }
   // A painter that fails must not fail the claim it was told about either.
-  const tell = () => {
+  const notify = () => {
     for (const fn of listeners) { try { fn() } catch (e) { console.error(e) } }
-    invalidate()
   }
+  const tell = () => { notify(); invalidate() }
 
   const now = () => (manual ? last : Date.now())
   const invalidate = () => {
@@ -424,6 +511,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   const drop = (mark) => { const i = marks.indexOf(mark); if (i !== -1) marks.splice(i, 1) }
 
   const claim = (x, y, cell) => {
+    if (x < 0 || y < 0 || x >= STRIDE) throw new Error(`[${slug}] cell ${x},${y} of ${cell.name} is off the stage, which starts at 0,0 and is under ${STRIDE} wide`)
     const held = claims.get(key(x, y))
     if (held && !cell.door) {
       throw new Error(`[${slug}] cell ${x},${y} is claimed by both ${held.name} and ${cell.name}`)
@@ -445,10 +533,11 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   }
 
   // The claim on a cell as the clock has it: a night door by day is the cell it replaced.
-  const cellAt = (x, y, ms) => {
-    if ((shattered.get(key(x, y)) ?? 0) > ms) return undefined
-    const c = claims.get(key(x, y))
-    if (c?.crumbles) return crumbled(c, crumbling.get(key(x, y)), ms)
+  const cellAt = (x, y, ms) => cellOf(key(x, y), ms)
+  const cellOf = (k, ms) => {
+    if ((shattered.get(k) ?? 0) > ms) return undefined
+    const c = claims.get(k)
+    if (c?.crumbles) return crumbled(c, crumbling.get(k), ms)
     return c?.night && !isNight(ms) ? c.day : c
   }
   // A `crumbles` cell as the clock has it: whole, shaking, sinking, or the cell it fell into.
@@ -521,17 +610,38 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   }
   const blazing = (ms) => marks.some((m) => isTree(m) && sinceStruck(m, ms) < BURN_MS)
   // A struck tree's cell: flames across its canopy, then ash-dark until it grows back.
-  const burnt = (out, { x, y, ms }) => {
+  const burnt = (out, { x, y, ms, sky }) => {
     const m = treeOwner(x, y)
     if (!m || out.ch === ' ') return out
-    const age = sinceStruck(m, ms)
+    let age = sky.struck.get(m)
+    if (age === undefined) sky.struck.set(m, age = sinceStruck(m, ms))
     if (age >= BURN_MS + CHAR_MS) return out
     if (age >= BURN_MS) return { ...out, fg: '#3f3f46' }
     if (!out.overhead) return { ...out, fg: '#44403c' }
     const f = hash(Math.floor(ms / FIRE_MS), x, y) % 4
     return f === 3 ? { ...out, fg: '#7c2d12' } : { ...out, ch: f === 2 ? '"' : '^', fg: ['#ef4444', '#f97316', '#fde047'][f] }
   }
-  // A layer: what it does to a cell's look, given `{ x, y, ms, c, light }`.
+  // The column the moon stands over on MOON_ROW, rising inside the east wall and setting inside the west.
+  const moonX = (arc) => width - 2 - Math.round(arc * (width - 3))
+  // What every cell of one paint asks the clock, asked once: the almanac and
+  // what follows from it, and each struck tree's age as its cells ask it.
+  // Made per `look()` or per `grid()`, never kept by ms: a `hold()` between
+  // two paints at one ms would draw the weather it replaced.
+  const outdoors = has('weather') || has('ground') || has('sky')
+  const skyAt = (ms) => {
+    if (!outdoors) return { struck: new Map() }
+    const almanac = almanacAt(ms)
+    const flash = almanac.weather === 'storm' && flashAt(ms)
+    const { moon } = almanac
+    return {
+      almanac,
+      dark:  has('sky') ? skyDarkness(ms) : 0,
+      bolt:  flash ? boltOf(Math.floor(ms / STRIKE_MS)).cells : null,
+      moonX: moon.ch && moon.arc !== null ? moonX(moon.arc) : -1,
+      struck: new Map(),
+    }
+  }
+  // A layer: what it does to a cell's look, given `{ x, y, k, ms, c, light, sky }`.
   const blank = (out) => out.ch === ' ' && !out.bg && !out.overhead
   const fold = {
     candle(out, { c }) {
@@ -539,40 +649,63 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       return { ch: '.', fg: '#ffffff', bg: undefined }
     },
     weather(out, at) {
-      const { x, y, ms } = at
+      const { x, y, ms, sky } = at
       if (at.c?.name === 'tree') out = burnt(out, at)
-      const kind = almanacAt(ms).weather
-      if (kind === 'storm' && flashAt(ms)) {
-        const bolt = boltOf(Math.floor(ms / STRIKE_MS)).cells.get(key(x, y))
+      if (sky.bolt) {
+        const bolt = sky.bolt.get(at.k)
         if (bolt) return { ch: bolt, fg: '#fef9c3', bg: undefined }
       }
       if (at.light !== 'lit' || !blank(out)) return out
-      const cloud = kind === 'storm' ? cloudAt(x, y, ms) : null
+      const { weather: kind, wind } = sky.almanac
+      const cloud = kind === 'storm' ? cloudAt(x, y, ms, wind) : null
       if (cloud) return { ch: cloud.ch, fg: cloud.fg, bg: undefined }
-      const drop = fallAt(kind, x, y, ms)
+      const drop = fallAt(kind, x, y, ms, wind)
       return drop ? { ch: drop.ch, fg: drop.fg, bg: undefined } : out
     },
-    steps(out, { x, y, ms, light }) {
+    steps(out, { k, ms, light }) {
       if (light !== 'lit' || !blank(out)) return out
-      const t = steps.get(key(x, y))
+      const t = steps.get(k)
       const left = t ? fadeOf(t, ms) : 0
       return left > 0 ? { ch: '.', fg: STEP_FG[Math.ceil(left * STEP_FG.length) - 1], bg: undefined } : out
     },
-    scorch(out, { x, y, ms }) {
+    ground(out, { x, y, light, sky }) {
+      if (light !== 'lit' || !blank(out)) return out
+      const g = groundOn(x, y, sky.almanac.ground)
+      return g ? { ch: g.ch, fg: g.fg, bg: undefined } : out
+    },
+    scorch(out, { k, ms }) {
       if (blank(out)) return out
-      const t = scorches.get(key(x, y))
+      const t = scorches.get(k)
       const left = t ? fadeOf(t, ms) : 0
       return left > 0 ? { ...out, ch: ',', fg: SCORCH_FG[Math.ceil(left * SCORCH_FG.length) - 1] } : out
     },
-    sky(out, { x, y, ms }) {
-      const night = nightAt(x, y, ms)
-      return night && out.ch !== ' ' ? { ...out, fg: shade(out.fg ?? INK, night), bg: shade(out.bg, night) } : out
+    sky(out, { x, y, k, ms, light, sky }) {
+      const d = sky.dark
+      const night = nightAt(x, y, d)
+      if (!night) {
+        // The bulb is not shaded, but it sits in the middle of its own glow.
+        const s = d && entryOf(claims.get(k)?.key)?.light ? glowAt(x, y, ms) * d : 0
+        return s ? { ...out, bg: warm(out.bg, GLOW_BG * s) } : out
+      }
+      const { moon } = sky.almanac
+      if (y === MOON_ROW && x === sky.moonX && light === 'lit' && blank(out)) return { ch: moon.ch, fg: MOON_FG, bg: undefined }
+      const dark = out.ch !== ' ' ? { ...out, fg: shade(out.fg ?? INK, night, moon.light), bg: shade(out.bg, night, moon.light) } : out
+      const s = glowAt(x, y, ms) * night
+      if (!s) return dark
+      return { ...dark, fg: dark.ch === ' ' ? dark.fg : warm(dark.fg ?? INK, GLOW_FG * s), bg: warm(dark.bg, GLOW_BG * s) }
+    },
+    lamplight(out, { x, y, ms }) {
+      const s = glowAt(x, y, ms)
+      if (!s) return out
+      return { ...out, fg: out.ch === ' ' ? out.fg : warm(out.fg ?? INK, LAMP_FG * s), bg: warm(out.bg, LAMP_BG * s) }
     },
     fog(out, { light }) {
       if (light === 'dark') return { ch: ' ', fg: undefined, bg: undefined }
       return light === 'dim' && out.ch !== ' ' ? { ...out, fg: dim(out.fg ?? INK), bg: dim(out.bg) } : out
     },
   }
+  // The folds this scene names, in `LAYERS` order: a cell asks only these.
+  const folds = LAYERS.filter(has).map((name) => fold[name])
   // The next time a trace in `traces` drops a third or goes; the gone are let go.
   const fadeTick = (traces, thirds, ms) => {
     let next = Infinity
@@ -586,7 +719,10 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
   }
   // A layer's steps on the clock, in ms from `ms`: where `tickOf` wakes a screen.
   const ticks = {
-    sky: () => [SKY_MS],
+    // On the clock's own SKY_MS steps, where the moon moves and the night turns, not SKY_MS after whenever this paint was.
+    sky: (ms) => [Math.max(50, SKY_MS - (((ms % SKY_MS) + SKY_MS) % SKY_MS))],
+    // The ground changes only on those steps, so it waits for them as the sky does.
+    ground: (ms) => [Math.max(50, SKY_MS - (((ms % SKY_MS) + SKY_MS) % SKY_MS))],
     weather(ms) {
       const kind = almanacAt(ms).weather
       // The edge of a spell is a step too: a screen with nothing else moving
@@ -598,10 +734,27 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     scorch: (ms) => fadeTick(scorches, SCORCH_FG.length, ms),
   }
 
+  // One cell's look, `at` its `{ x, y, k, ms, sky }` and the rest filled in
+  // here: its own glyph, cycled on the clock where it is lit, through the folds.
+  const lookAt = (at) => {
+    const { x, y, k, ms } = at
+    const light = at.light = stage.light(x, y)
+    const c = at.c = cellOf(k, ms)
+    const ch = c?.ch ?? ' '
+    const style = c && c.key !== ' ' ? entryOf(c.key) : null
+    const step = style?.ms && light === 'lit' ? stepOf(style, x, y, ms) : 0
+    let out = style
+      ? { ch: style.chars ? pick([...style.chars], step) : ch, fg: pick(style.fg, step), bg: pick(style.bg, step), ...(c.overhead && { overhead: true }) }
+      : { ch, fg: undefined, bg: undefined, ...(c?.overhead && { overhead: true }) }
+    for (const f of folds) out = f(out, at)
+    return out
+  }
+
   const doorOf = (x, y, c) => ({ x, y, to: c.door, ...(c.hidden && { hidden: true }), ...(c.night && { night: true }) })
 
   const stage = {
     slug,
+    layers,
     palette,
     entryOf,
     /** The entries pieces bring for letters the scene's palette leaves out. */
@@ -613,9 +766,12 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     get height() { return height },
 
     /** The slice a screen draws: `{ x, y, w, h }` in the stage's cells. */
+    // One object until the slice moves: a screen re-renders what a new object reaches, and every other member's step tells.
     get view() {
-      if (whole) return { x: 0, y: 0, w: width, h: height }
-      return { x: eye.x, y: eye.y, w: Math.min(size.w, width), h: Math.min(size.h, height) }
+      const x = whole ? 0 : eye.x, y = whole ? 0 : eye.y
+      const w = whole ? width : Math.min(size.w, width), h = whole ? height : Math.min(size.h, height)
+      if (view.x !== x || view.y !== y || view.w !== w || view.h !== h) view = { x, y, w, h }
+      return view
     },
 
     /** The most cells the screen shows (`viewFor`); the figure is followed again, so a resize keeps it on screen. */
@@ -623,7 +779,8 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     fit({ w, h }) {
       if (w === size.w && h === size.h) return
       size = { w, h }
-      changed()
+      if (fig) eye = follow({ ...eye }, fig, { width, height }, size)
+      tell()
     },
 
     /** Keep this figure on screen; a pan redraws. The figure is kept, so a piece mounting later pans too. */
@@ -632,16 +789,17 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       const next = follow(stage.view, fig, { width, height }, size)
       if (next.x === eye.x && next.y === eye.y) return
       eye = { x: next.x, y: next.y }
-      changed()
+      tell()
     },
 
     /** The whole stage as the view, for the editor's preview. */
     showAll() { whole = true; changed() },
 
-    /** This figure sees from here: what it lights now is lit, what it lit once is dim, the rest dark. A step redraws. */
+    /** This figure sees from here: what it lights now is lit, what it lit once is dim, the rest dark. A step redraws under the fog; without it no cell's look moves. */
     see(x, y) {
       seer = { x, y }
-      relight()
+      if (!fog) return notify()
+      fogUp()
       tell()
     },
 
@@ -658,24 +816,32 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       return visible.has(k) ? 'lit' : seen.has(k) ? 'dim' : 'dark'
     },
 
-    /** Every figure's cell, `{ x, y }`: a piece's `burns` cell is lit while one of its seats is among them. A change redraws. */
+    /** Every figure's cell, `{ x, y }`: a piece's `burns` cell is lit while one of its seats is among them. A candle lit or put out, or a plank set shaking or held, redraws; nothing else a figure stands on is drawn by the stage. */
     occupy(cells) {
       const next = new Set(cells.map((c) => key(c.x, c.y)))
       if (next.size === occupied.size && [...next].every((k) => occupied.has(k))) return
       const ms = now()
+      let moved = false
       // A cell stepped back onto while it still shakes holds; one already sinking is gone.
       for (const k of next) {
         if (!claims.get(k)?.crumbles) continue
         const t = crumbling.get(k)
         if (!t) crumbling.set(k, { at: null })
-        else if (t.at != null && ms - t.at < CRUMBLE.wobble) t.at = null
+        else if (t.at != null && ms - t.at < CRUMBLE.wobble) { t.at = null; moved = true }
       }
       for (const k of occupied) {
         const t = crumbling.get(k)
-        if (t && t.at == null && !next.has(k)) t.at = ms
+        if (t && t.at == null && !next.has(k)) { t.at = ms; moved = true }
       }
+      if (!burnSeats) {
+        burnSeats = new Set()
+        for (const c of claims.values()) {
+          if (c.burns) for (const s of spotsOf(c.burns.piece, 'seat')) burnSeats.add(key(c.burns.x + s.dx, c.burns.y + s.dy))
+        }
+      }
+      if (!moved) for (const k of burnSeats) if (next.has(k) !== occupied.has(k)) { moved = true; break }
       occupied = next
-      tell()
+      if (moved) invalidate()
     },
 
     /** A piece's cells, claimed at `x, y`; the mark moves or removes them. */
@@ -733,7 +899,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
      * stepped against as that, so a door the clock shuts lets nobody through.
      */
     door(x, y, to, { w = 1, h = 1, hidden = false, night = false } = {}) {
-      const under = new Map()   // 'x,y' → the cell the door replaced
+      const under = new Map()   // key(x, y) → the cell the door replaced
       const each = (px, py, fn) => { for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) fn(px + dx, py + dy) }
       const put = (px, py) => each(px, py, (cx, cy) => {
         const was = claims.get(key(cx, cy)) ?? null
@@ -882,7 +1048,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
     /** Every door, a night door whatever the clock, for a test that walks to each and for `arrival()`. */
     get doors() {
       const out = []
-      for (const [k, c] of claims) if (c.door) { const [x, y] = k.split(',').map(Number); out.push(doorOf(x, y, c)) }
+      for (const [k, c] of claims) if (c.door) out.push(doorOf(xOf(k), yOf(k), c))
       return out
     },
 
@@ -902,17 +1068,27 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
      * lit, folded through the layers this scene names.
      */
     look(x, y, ms = 0) {
-      const light = stage.light(x, y)
-      const c = cellAt(x, y, ms)
-      const ch = c?.ch ?? ' '
-      const style = c && c.key !== ' ' ? entryOf(c.key) : null
-      const step = style?.ms && light === 'lit' ? stepOf(style, x, y, ms) : 0
-      let out = style
-        ? { ch: style.chars ? pick([...style.chars], step) : ch, fg: pick(style.fg, step), bg: pick(style.bg, step), ...(c.overhead && { overhead: true }) }
-        : { ch, fg: undefined, bg: undefined, ...(c?.overhead && { overhead: true }) }
-      const at = { x, y, ms, c, light }
-      for (const name of LAYERS) if (has(name)) out = fold[name](out, at)
-      return out
+      return lookAt({ x, y, k: key(x, y), ms, c: null, light: null, sky: skyAt(ms) })
+    },
+
+    /**
+     * Every cell of `view` (`{ x, y, w, h }`) `ms` into the clock, as rows of
+     * what `look()` answers: what a paint draws. The clock is asked once for
+     * the whole of it, where `look()` asks it per cell.
+     */
+    grid(view, ms = 0) {
+      const at = { x: 0, y: 0, k: 0, ms, c: null, light: null, sky: skyAt(ms) }
+      const rows = new Array(view.h)
+      for (let r = 0; r < view.h; r++) {
+        const row = rows[r] = new Array(view.w)
+        at.y = view.y + r
+        for (let col = 0; col < view.w; col++) {
+          at.x = view.x + col
+          at.k = key(at.x, at.y)
+          row[col] = lookAt(at)
+        }
+      }
+      return rows
     },
 
     /**
@@ -975,11 +1151,41 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       if (broke) changed()
     },
 
+    /**
+     * Scare the pacers `traces` name (`{ id, at, until, dir }`, the id a pacer's
+     * name): each runs out of the scene from where it was at `at`, `dir` away from the bolt, and walks
+     * in again at `until`. One this scene does not have, or that does not
+     * flee, is ignored, since a trace outlives a deploy.
+     */
+    spook(traces) {
+      let scared = false
+      for (const t of traces) {
+        if (!pacers.some((p) => p.name === t.id && p.flee) || !(t.until > now())) continue
+        spooked.set(t.id, { at: t.at, until: t.until, dir: t.dir })
+        scared = true
+      }
+      if (scared) changed()
+    },
+
+    /** Where a pacer is `ms` into the clock, or null once a bolt has run it out of the scene. */
+    pacerNow(p, ms) {
+      const s = spooked.get(p.name)
+      return pacerNow(p, ms, s && s.until > ms ? { at: s.at, dir: s.dir, width } : undefined)
+    },
+
+    /** Whether a pacer stands on the cell `x, y` `ms` into the clock: a figure may not step onto it. */
+    pacerOn(x, y, ms) {
+      return pacers.some((p) => {
+        const at = this.pacerNow(p, ms)
+        return at && at.y === y && x >= at.x && x < at.x + at.text.length
+      })
+    },
+
     /** `hex`, a pacer's color, as the sky leaves it at the cell `x, y` `ms` into the clock. */
     tint(hex, x, y, ms) {
       if (!has('sky')) return hex
-      const night = nightAt(x, y, ms)
-      return night ? shade(hex ?? INK, night) : hex
+      const night = nightAt(x, y, skyDarkness(ms))
+      return night ? shade(hex ?? INK, night, almanacAt(ms).moon.light) : hex
     },
 
     /** Whether this cell's glyph is changed by the clock. */
@@ -997,6 +1203,12 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       if (!has('sky') && [...claims.values()].some((c) => c.night)) steps.push(SKY_MS)
       // A cell that is shaking or sinking is drawn again every beat.
       for (const t of crumbling.values()) if (t.at != null && ms - t.at < CRUMBLE.wobble + CRUMBLE.fall) steps.push(CRUMBLE.beat)
+      // A scared pacer is on the move every `flee` ms until it is out of sight or walks in again.
+      for (const [name, s] of spooked) {
+        if (s.until <= ms) { spooked.delete(name); continue }
+        const p = pacers.find((o) => o.name === name)
+        if (p && pacerNow(p, ms, { at: s.at, dir: s.dir, width })) steps.push(p.flee)
+      }
       // A broken piece grows back on its own: the look is asked again at that ms.
       let grew = false
       for (const [k, until] of shattered) {
@@ -1013,6 +1225,20 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, manu
       for (let y = 0; y < height; y++) {
         let row = ''
         for (let x = 0; x < width; x++) row += cellAt(x, y, 0)?.ch ?? ' '
+        rows.push(row)
+      }
+      return rows
+    },
+
+    /** The ink of each cell of `picture()` by day, a hex or '' — the map's colors, folded through no layer. */
+    inks() {
+      const rows = []
+      for (let y = 0; y < height; y++) {
+        const row = []
+        for (let x = 0; x < width; x++) {
+          const c = cellAt(x, y, 0)
+          row.push((c && c.key !== ' ' ? pick(entryOf(c.key)?.fg, 0) : '') || '')
+        }
         rows.push(row)
       }
       return rows

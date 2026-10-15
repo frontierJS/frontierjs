@@ -2,11 +2,13 @@
   // WorldMap.mesa — the map pane (`IDEAS/haven.md` 6.4), drawn over the art
   // the way the history pane is: every scene this machine has walked into
   // (`#seen`, through `map.js`), the one the figure is in drawn from its live
-  // stage, and `@` on the figure's block, moving as it walks. `/map` opens it
+  // stage, and `@` on the figure's block, moving as it walks. The cells are
+  // painted in the scene's own inks through `#paint` (`map.js` `painted`). `/map` opens it
   // as the mode over the art and Esc closes it; the store is read when it
   // opens and not on every scene mounted.
   import { at } from '#cell'
-  import { coarse, drawn, layoutOf, recall } from '@/map.js'
+  import { paintGrid } from '#paint'
+  import { coarse, layoutOf, painted, recall } from '@/map.js'
 
   export let stage
   export let route
@@ -30,19 +32,16 @@
   $.onDestroy(verbs.add({ word: 'map', help: '/map', run: show }))
   $.onDestroy(() => close?.())
 
-  /** The map's rows: what was kept, less this scene's old snap, plus this scene as it stands. */
-  function rows(kept, x, y) {
+  /** The map's cells: what was kept, less this scene's old snap, plus this scene as it stands. */
+  function grid(kept, x, y) {
     const snaps = [...kept.filter((s) => s.route !== route), coarse(stage, route)]
-    return drawn(layoutOf(snaps), { route, x, y }, { w: box.w, h: box.h - 1 })
+    return painted(layoutOf(snaps), { route, x, y }, { w: box.w, h: box.h - 1 })
   }
 </script>
 
 {#if open}
-  <div class="surface map" {@attach at(box.x, box.y, 13, [box.w, box.h])}>
-    {#each rows(kept, x, y) as row, i (i)}
-      <p>{row || ' '}</p>
-    {/each}
-    <p>— the map · @ you · n a door · Esc closes —</p>
+  <div class="surface map" {@attach at(box.x, box.y, 13, [box.w, box.h])} {@attach paintGrid(grid(kept, x, y))}>
+    <p {@attach at(0, box.h - 1, 14)}>— the map · @ you · ▯ a door · Esc closes —</p>
   </div>
 {/if}
 

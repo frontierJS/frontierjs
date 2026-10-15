@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 
 import type { Obstacle } from './bolt.ts'
-import { pacerAt } from './pacer.ts'
+import { pacerNow } from './pacer.ts'
 import type { PacerSpec } from './pacer.ts'
 
 export interface SceneWorld {
@@ -75,12 +75,15 @@ export function standable (world: SceneWorld, x: number, y: number, gone: Readon
 
 /**
  * What stands on a cell `ms` into the clock, or null for open floor. Off the
- * stage and a door are walls; a pacer is where the shared clock puts it.
+ * stage and a door are walls; a pacer is where the shared clock puts it, or
+ * nowhere once a bolt has scared it out of the scene (`spooked`, its name to
+ * the `at` and `dir` of the trace that did).
  */
-export function obstacleAt (world: SceneWorld, x: number, y: number, ms: number): Obstacle | null {
+export function obstacleAt (world: SceneWorld, x: number, y: number, ms: number, spooked: ReadonlyMap<string, { at: number, dir?: 1 | -1 }> = new Map()): Obstacle | null {
   for (const p of world.pacers) {
-    const at = pacerAt(p, ms)
-    if (at.y === y && x >= at.x && x < at.x + at.text.length) return { kind: 'pacer', id: p.name }
+    const s = spooked.get(p.name)
+    const at = pacerNow(p, ms, s && { ...s, width: world.width })
+    if (at && at.y === y && x >= at.x && x < at.x + at.text.length) return { kind: 'pacer', id: p.name }
   }
   const ch = world.rows[y]?.[x]
   if (ch === '.') return null

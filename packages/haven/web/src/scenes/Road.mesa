@@ -62,6 +62,23 @@ eeeeeeeee
    lll
 `, { floor: true })
 
+  // The sheriff's office, its door into his house (`Sheriff.mesa`).
+  const office = piece('office', String.raw`
+ ___________________
+|   S H E R I F F   |
+|===================|
+|  []    .-.    []  |
+|  []    | |    []  |
+|________|n|________|
+`, String.raw`
+ ddddddddddddddddddd
+d   s s s s s s s   d
+dDDDDDDDDDDDDDDDDDDDd
+d  yy    uuu    yy  d
+d  yy    u u    yy  d
+ddddddddddudddddddddd
+`)
+
   const PALETTE = {
     f: { fg: '#6b7280' },
     d: { fg: '#92400e' },
@@ -73,6 +90,9 @@ eeeeeeeee
     h: { fg: ['#fde047', '#facc15'], ms: 900, flicker: true, light: 3 },
     l: { fg: '#9ca3af' },
     t: { fg: '#166534' },
+    D: { fg: '#b45309' },
+    s: { fg: '#fbbf24' },
+    y: { fg: ['#fde047', '#facc15', '#fde047', '#fbbf24'], ms: 700, flicker: true, light: 1 },
     T: { fg: ['#22c55e', '#16a34a', '#15803d', '#16a34a'], chars: '&&%&', ms: 900, wave: true },
   }
 </script>
@@ -93,4 +113,6 @@ eeeeeeeee
   <Piece of={milestone} x={60} y={5} />
   <Piece of={cart} x={24} y={4} />
   <Piece of={signpost} x={5} y={18} />
+  <Piece of={office} x={17} y={18} />
+  <Door  x={27} y={23} to="/sheriff/" />
 </Scene>

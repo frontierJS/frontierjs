@@ -146,7 +146,7 @@ describe('a line said aloud', () => {
     await sleep(100)
 
     expect(heard(b)).toEqual([])
-    const history = await call(b, 'messages', 'find', { query: { roomId: square.id } })
+    const history = await call(b, 'messages', 'find', { params: { query: { roomId: square.id, memberId: sam.id } } })
     expect(history.result.data.map((m: any) => m.body)).toEqual(['hello'])
   })
 })
@@ -194,7 +194,7 @@ describe('a whisper', () => {
     await sleep(100)
 
     const bodies = async (who: Sock) =>
-      (await call(who, 'messages', 'find', { query: { roomId: square.id } })).result.data.map((r: any) => r.body).sort()
+      (await call(who, 'messages', 'find', { params: { query: { roomId: square.id, memberId: sam.id } } })).result.data.map((r: any) => r.body).sort()
     expect(await bodies(s)).toEqual(['hello', 'psst'])
     expect(await bodies(a)).toEqual(['hello', 'psst'])
     expect(await bodies(b)).toEqual(['hello'])

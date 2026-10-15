@@ -1,0 +1,85 @@
+<script>
+  // Pets.mesa — `/pet` (`IDEAS/haven.md` 8.2): a member's pet follows one cell
+  // behind on the path walked. `pet: true` in presence says it is out (8.2's
+  // one key, `api/src/rooms.ts`); where it stands is never sent. This screen
+  // walks every pet on the stage's clock from the cells it sees each figure on
+  // (`trail` in `pet.js`), so a pet's place is state carried from tick to tick
+  // and a screen that joined late puts it beside the figure until its next step.
+  //
+  // Which pet is `petOf` the member's id, drawn in the member's ink. It is
+  // drawn under the figures and never on one, and only where a figure there
+  // would be: in view and in the light.
+  import { cellOf, inView, standsOn } from '@/crowd.js'
+  import { petOf, trail } from '@/pet.js'
+  import { at, tint } from '#cell'
+
+  export let stage
+  export let here
+  export let x
+  export let y
+  export let view
+  export let spawn
+  export let facing
+  export let ink
+  // Whether this figure's pet is out, which the scene holds in its presence meta.
+  export let pet
+  // Sets it, and keeps it across doors.
+  export let petTo
+
+  var verbs = $context.commands
+  // A trail per figure seen with a pet out, by connection; this figure's is `me`.
+  var trails = new Map()
+  let tick = 0
+
+  const WALK_MS = 100
+
+  /** Every figure with a pet out: the owner's id, cell, facing and ink. */
+  function owners() {
+    const h = here.get()
+    const out = []
+    if (pet) out.push({ key: 'me', id: h.self?.userId, at: { x, y }, facing, ink, shape: null })
+    for (const m of h.others) {
+      if (m.meta?.pet) out.push({ key: m.connectionId, id: m.userId, at: cellOf(m, spawn), facing: m.meta.facing, ink: m.meta.ink, shape: m.meta.shape })
+    }
+    return out
+  }
+
+  $.onDestroy(stage.task('pets', () => {
+    const seen = new Set()
+    let moved = false
+    for (const o of owners()) {
+      seen.add(o.key)
+      const was = trails.get(o.key)
+      const now = trail(was, o.at, o.facing, (cx, cy) => stage.walkable(cx, cy))
+      if (now !== was) { trails.set(o.key, now); moved = true }
+    }
+    for (const k of trails.keys()) if (!seen.has(k)) { trails.delete(k); moved = true }
+    if (moved) tick++
+  }, { every: WALK_MS }))
+
+  /** The pets on screen this tick, each at its cell of the view. */
+  function drawn(h, v, _tick) {
+    const stood = new Set()
+    const stand = (c, shape) => { for (const s of standsOn(c, shape)) stood.add(`${s.x},${s.y}`) }
+    stand({ x, y }, null)
+    for (const m of h.others) stand(cellOf(m, spawn), m.meta?.shape)
+    return owners().flatMap((o) => {
+      const p = trails.get(o.key)?.pet
+      if (!p || stood.has(`${p.x},${p.y}`) || !inView(p, v) || stage.light(p.x, p.y) !== 'lit') return []
+      return [{ key: o.key, x: p.x - v.x, y: p.y - v.y, ch: petOf(o.id).ch, ink: o.ink }]
+    })
+  }
+
+  function call() {
+    const { kind } = petOf(here.get().self?.userId)
+    const out = !pet
+    petTo(out)
+    return out ? `your ${kind} comes running` : `your ${kind} trots off home`
+  }
+
+  $.onDestroy(verbs.add({ word: 'pet', help: '/pet — call your pet, or send it home', run: call }))
+</script>
+
+{#each drawn(here.get(), view, tick) as p (p.key)}
+  <p {@attach at(p.x, p.y, 8)} {@attach tint(p.ink)}>{p.ch}</p>
+{/each}
