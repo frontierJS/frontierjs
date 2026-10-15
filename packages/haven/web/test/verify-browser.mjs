@@ -133,7 +133,7 @@ const tabCells = (x, y, width = 1) => browser.evaluate(`
     const py = r.top + (${y} + 0.5) * lh
     const el = document.elementFromPoint(px, py)
     if (el && pre.contains(el)) { out += lines[${y}]?.[${x} + i] ?? ' '; continue }
-    const fig = el?.closest('p')
+    const fig = el?.closest('p, pre')
     if (fig && box.contains(fig)) {
       const fr = fig.getBoundingClientRect()
       out += fig.textContent[Math.floor((px - fr.left) / cw)] ?? ' '
@@ -220,7 +220,7 @@ check(await until(() => term.at(beaX, sy) === 'B' && term.at(sx, sy) !== 'B'),
 
 await browser.type('hi sam')
 await browser.press('Enter')
-check(await until(() => term.at(beaX, sy - 1, 8) === '(hi sam)'),
+check(await until(() => term.at(beaX, sy - 2, 8) === '(hi sam)'),
   "Bea's line shows as a bubble over her figure in Sam's terminal", term.screen())
 
 term.shell.stdin.write('i')
@@ -228,13 +228,13 @@ await new Promise((r) => setTimeout(r, 200))
 term.shell.stdin.write('hi bea')
 await until(() => term.screen().includes('hi bea'))
 term.shell.stdin.write('\r')
-check(await until(async () => await tabCells(samX, sy - 1, 8) === '(hi bea)'),
-  "Sam's line shows as a bubble over his figure in Bea's tab", await tabCells(samX, sy - 1, 8))
+check(await until(async () => await tabCells(samX, sy - 2, 8) === '(hi bea)'),
+  "Sam's line shows as a bubble over his figure in Bea's tab", await tabCells(samX, sy - 2, 8))
 
 await browser.press('PageUp')
 check(await until(async () => { const t = await tabText(); return t.includes('bea: hi sam') && t.includes('sam: hi bea') && t.includes('PageDown newer') }),
   "PageUp opens the square's history in Bea's tab, both lines signed, oldest first", await tabText())
-check(await until(() => term.at(samX, sy - 1, 8) === '(hi bea)' && !term.screen().includes('PageDown newer')),
+check(await until(() => term.at(samX, sy - 2, 8) === '(hi bea)' && !term.screen().includes('PageDown newer')),
   "and Sam's terminal shows nothing of it", term.screen())
 await browser.press('PageDown')
 check(await until(async () => !(await tabText()).includes('PageDown newer') && await tabCells(beaX, sy) === '@'),

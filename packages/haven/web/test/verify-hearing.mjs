@@ -126,7 +126,7 @@ const left = await new Promise((resolve) => {
   p.stderr.on('data', (d) => { framed += d })
   p.on('exit', () => resolve(framed))
 })
-check(left.includes('here') && !left.includes('(again)'),
+check(left.includes('here') && !left.includes('again)'),
   "a line in the history is no bubble over a speaker who has since walked out of earshot", left)
 
 for (const t of [sam, ana]) { t.send('\x03'); await until(() => t.p.exitCode !== null, 3000); t.p.kill() }

@@ -27,6 +27,14 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d1044"></a>2026-10-15 · `FJS-D1044` — A Model is a data structure and the semantics that govern it; a Trait is a shared fragment of the structure, and the test Factory's `traits` is renamed `states`.
+
+Asked in chat, two picks through the question tool. **Model**: *"a data structure and the semantics that govern it — what it relates to, who may reach it, how it may change"* was picked over *meaning and place* and the owner's first draft, because *govern* keeps enforcement in the definition. *Semantics* is used in the sentence and is not a term. **Trait**: the factory rename was picked over keeping both senses qualified and over filing the collision for later.
+
+Two models can share a structure and still be different things — Form and Survey, Quote and Invoice, Booking and Shift — because what tells them apart is what is declared around the columns: the gate, the policy, the transitions, the relations. The structure half is what litestone's `trait` already shares, so it gets the row, and a trait declares no `@@gate` (`FJS-D819`) for the same reason: who may reach a row is the host model's semantics.
+
+The Factory's `traits = { admin: {…} }` was FactoryBot's sense of the word in the same package — a named `state()`, which is what each entry lowers to. It is now `states`, in `seeder.js`, its types, `docs/testing.md`, the README, the tests and `fli make:factory --states` (`-s`). Where it lives: `VOCABULARY.md` § Terms, `ARCHITECT.md` § 1, `README.md`.
+
 ### <a id="fjs-d976"></a>2026-10-14 · `FJS-D976` — Q1 — The noun — `haven`, which is what the screen draws and gives the rooms their words: square, tavern, door.
 
 Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **B** was picked over **A** (`matrix`, the name it was asked for).

@@ -29,8 +29,12 @@ export const at = (col, row, layer = 10, size = null) => (el) => {
   }
 }
 
-// A text in a color, in a browser: the element's own `color`.
-export const tint = (color) => (el) => { el.style.color = color ?? '' }
+// A text in a color, in a browser: the element's own `color`, and `ground` its
+// `background`, over the surface's own.
+export const tint = (color, ground) => (el) => {
+  el.style.color = color ?? ''
+  el.style.background = ground ?? ''
+}
 
 // A text that is a link, in a browser: the words become an anchor to `url`.
 // (`cell.js` has the terminal's.) Reachable only where a command ran on the

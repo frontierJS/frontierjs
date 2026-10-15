@@ -1,0 +1,9 @@
+<script>
+  // Upstairs at the tavern — up the stairs in the corner, where the band
+  // plays, and is heard on this machine's speaker (`/music` to turn it off).
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Band from '@/components/Band.mesa'
+  import Upstairs from '@/scenes/Upstairs.mesa'
+</script>
+
+<WalkIn slug="upstairs"><Upstairs><Band /></Upstairs></WalkIn>

@@ -1181,6 +1181,28 @@ its shape.
   with words in it; the worker is `✓` and reading it gives those words. Both
   fields are the hook's documented input, not the transcript (11.2).
   `verify:workshop`.
+- [ ] 11.8 Git at the benches. Each bench reads its package's last commit
+  (`git log -1 -- packages/<pkg>`: subject, author, how long ago) and its
+  uncommitted files (`git status --porcelain -- packages/<pkg>`), so a bench
+  dirty with no worker at it is work a session left behind. It needs no
+  opt-in, because it reads only the repo Haven runs from, which is no
+  stranger's command. A `#git` twin, the way `#workers` is: the terminal runs
+  `git`, a browser has none. Read on walking in and held a minute.
+- [ ] 11.9 GitHub at the benches. Open PRs and the last CI run per package,
+  from `gh pr list --json` and `gh run list --json`. These go through the
+  member's own `gh auth`, so this is a command opt-in: a stranger's `gh` must
+  not run. The errand, bar and home board are already three opt-ins, each
+  with its own env var and file, and this phase's general map of places to
+  commands was waiting for a third. So GitHub is the map's first entry, not a
+  fourth env var.
+  - Needs a ruling on the map: one file naming each place's command, which
+    `errandCommand`, `barCommand` and the home board move into.
+  - Already possible with no code: `HAVEN_BAR` set to `git log -10
+    --format='%s%x09%cI' | jq -R -s 'split("\n")|map(select(length>0)|split("\t")|{text:.[0],when:.[1]})'`
+    prints the bar's `[{ text, when }]`.
+  - The browser half meets 13.5's wall: a page runs no command. Getting there
+    needs a GitHub webhook into the server through conduit, which puts a
+    member's data on a server, so a ruling comes first.
 
 ### Phase 12 — The world as data
 

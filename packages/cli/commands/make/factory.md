@@ -4,7 +4,7 @@ description: Scaffold a test factory for a model — db/factories/<Model>Factory
 alias: mkfactory
 examples:
   - fli mkfactory Lead
-  - fli mkfactory Invoice --traits paid,overdue
+  - fli mkfactory Invoice --states paid,overdue
   - fli mkfactory Product --open
 args:
   -
@@ -13,10 +13,10 @@ args:
     description: Model name (PascalCase and singular, as schema.lite declares it)
     required: true
 flags:
-  traits:
-    char: t
+  states:
+    char: s
     type: string
-    description: Comma-separated trait names to stub out (e.g. admin,archived)
+    description: Comma-separated state names to stub out (e.g. admin,archived)
     defaultValue: ''
   force:
     char: f
@@ -44,10 +44,10 @@ const accessorOf = (model) => model.charAt(0).toLowerCase() + model.slice(1)
 // row from the schema — a hand-written factory exists to say the things the
 // schema cannot: which values a test wants to READ, and which states matter.
 
-const makeFactoryFile = (model, traits) => {
+const makeFactoryFile = (model, states) => {
   const accessor = accessorOf(model)
-  const traitBlock = traits.length
-    ? `\n  traits: {\n${traits.map(t => `    ${t}: { /* ${t} state — the fields that make it ${t} */ },`).join('\n')}\n  },\n`
+  const stateBlock = states.length
+    ? `\n  states: {\n${states.map(t => `    ${t}: { /* ${t} state — the fields that make it ${t} */ },`).join('\n')}\n  },\n`
     : ''
 
   return `// db/factories/${model}Factory.js — test data for \`${model}\`.
@@ -81,7 +81,7 @@ export const ${model}Factory = defineFactory({
   definition: (seq, rng) => ({
     // name: \`${model} \${seq}\`,
   }),
-${traitBlock}
+${stateBlock}
   // afterCreate: async (row, db) => {
   //   // rows that must exist alongside this one, but are not a relation
   // },
@@ -96,11 +96,11 @@ You usually do not need this. `makeTestClient({ autoFactories: true })` derives 
 working factory for every model straight from `schema.lite`, including values that
 satisfy `@email`, `@length`, `@regex` and numeric bounds. Reach for a hand-written
 factory when a test needs to *assert* on specific values, or when a model has
-states worth naming as traits.
+states worth naming.
 
 ```js
 const model    = arg.model.charAt(0).toUpperCase() + arg.model.slice(1)
-const traits   = String(flag.traits || '')
+const states   = String(flag.states || '')
   .split(',')
   .map(t => t.trim())
   .filter(Boolean)
@@ -135,10 +135,10 @@ if (existsSync(file) && !flag.force) {
 }
 
 mkdirSync(dir, { recursive: true })
-writeFileSync(file, makeFactoryFile(model, traits))
+writeFileSync(file, makeFactoryFile(model, states))
 
 log.success(`Created db/factories/${model}Factory.js`)
-if (traits.length) log.info(`Traits stubbed: ${traits.join(', ')}`)
+if (states.length) log.info(`States stubbed: ${states.join(', ')}`)
 log.info(`Use it: makeTestClient(schema, { factories: { ${accessorOf(model)}: ${model}Factory } })`)
 
 if (flag.open) {

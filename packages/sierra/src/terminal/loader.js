@@ -27,6 +27,10 @@
  * - Bun's plugin registry is process-wide and has no removal, so a second
  *   install for another root would answer the first root's `@/`. One root per
  *   process; the shell is one process per app.
+ * - Bun's transpiler cache keys a loaded module on its CONTENTS and keeps its
+ *   imports resolved, and a `.mesa` compiles to the same text in every
+ *   checkout. So the output carries its own path, or two checkouts on one
+ *   machine load each other's files and a route mounts blank (`FJS-2907`).
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve, relative } from 'node:path'
@@ -128,7 +132,8 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
       build.onLoad({ filter: /\.mesa$/ }, async ({ path }) => {
         const entry = await compileFile(path)
         if (entry.error) throw new Error(entry.error)
-        return { contents: entry.code, loader: 'js' }
+        // The path makes this checkout's compile its own cache key (header).
+        return { contents: `${entry.code}\n// ${path}\n`, loader: 'js' }
       })
     },
   })

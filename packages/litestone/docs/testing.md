@@ -623,7 +623,7 @@ import { Factory } from '@frontierjs/litestone/testing'
 class UserFactory extends Factory {
   model = 'User'
 
-  traits = {
+  states = {
     admin:  { role: 'admin' },
     viewer: { role: 'viewer' },
   }
@@ -677,7 +677,7 @@ users.build(5)
 
 `createOne` / `createMany` / `buildOne` / `buildMany` are the unambiguous forms and
 are what the examples here use. Every chain method (`state`, `seed`, `withRelation`,
-`withParents`, `has`, `attach`, `for`, `usingDb`, traits) returns a **clone** —
+`withParents`, `has`, `attach`, `for`, `usingDb`, a named state) returns a **clone** —
 `f.seed(42)` does not mutate `f`.
 
 ### A state further along a state machine
@@ -1020,7 +1020,7 @@ import { readFileSync } from 'node:fs'
 export const UserFactory = defineFactory({
   model:      'User',
   definition: (seq, rng) => ({ email: `u${seq}@x.com`, role: 'member' }),
-  traits:     { admin: { role: 'admin' }, viewer: { role: 'viewer' } },
+  states:     { admin: { role: 'admin' }, viewer: { role: 'viewer' } },
   afterCreate: async (row, db) => { /* … */ },
 })
 
@@ -1029,7 +1029,7 @@ const schemaText = readFileSync('./schema.lite', 'utf8')
 await makeTestClient(schemaText, { factories: { user: UserFactory } })
 ```
 
-Everything a subclass can do, with nothing declared twice. `traits` on a subclass
+Everything a subclass can do, with nothing declared twice. `states` on a subclass
 is an instance field, which initializes only after `super()` returns — the sole
 reason `Factory`'s constructor returns a Proxy. Here it is known up front, so that
 path never runs.
@@ -1044,7 +1044,7 @@ import { Seeder, runSeeder, defineFactory } from '@frontierjs/litestone'
 const UserFactory = defineFactory({
   model:      'User',
   definition: (seq) => ({ email: `u${seq}@x.com` }),
-  traits:     { admin: { role: 'admin' } },
+  states:     { admin: { role: 'admin' } },
 })
 
 class DatabaseSeeder extends Seeder {
@@ -1354,7 +1354,7 @@ await factories.account.createMany(3)
 ```
 
 Auto-factories use `generateFactory` under the hood — sensible defaults, no manual
-definition required, and no traits: `state()` is how a generated factory is moved.
+definition required, and no named states: `state()` is how a generated factory is moved.
 
 ## Schema mutation testing
 

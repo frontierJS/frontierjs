@@ -1,11 +1,11 @@
 <script>
   // Tavern.mesa — the tavern: the bar and its shelves across the whole back
   // wall, the hearth with a rug before it where the cat paces, tables,
-  // barrels, the stairs, and the door back out to the square in the bottom
-  // wall. The rug has a hidden door in
-  // it, the way down to the cellar (`IDEAS/haven.md` 6.5): stepping on that
-  // cell is the only sign of it. The picture this draws is
-  // `tavern.frame.txt`, which `scenes.test.js` pins.
+  // barrels, the stairs up to the band's loft (`scenes/Upstairs.mesa`, a door
+  // on the top step), and the door back out to the square in the bottom wall.
+  // The rug has a hidden door in it, the way down to the cellar
+  // (`IDEAS/haven.md` 6.5): stepping on that cell is the only sign of it. The
+  // picture this draws is `tavern.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import { INDOORS } from '@/stage.js'
   import Piece from '@/components/Piece.mesa'
@@ -16,8 +16,9 @@
   import { table }  from '@/pieces/table.js'
   import { barrel } from '@/pieces/barrel.js'
   import { bar }    from '@/pieces/bar.js'
+  import { stairs } from '@/pieces/stairs.js'
 
-  // The shelves, the hearth, its rug and the stairs are the tavern's own; the
+  // The shelves, the hearth and its rug are the tavern's own; the
   // bar is a piece of its own (`pieces/bar.js`), since `components/Bar.mesa`
   // finds it by import; the tables and barrels are pieces any scene may use.
   // The shelves are the wall behind the bar, as wide as the bar: three rows of
@@ -82,18 +83,6 @@ mMMMMMMMMMMMMMMMMMMMMMm
 mmmmmmmmmmmmmmmmmmmmmmm
 `, { floor: true })
 
-  const stairs = piece('stairs', String.raw`
-            ____
-        ____|
-    ____|
-____|
-`, String.raw`
-            uuuu
-        uuuuu
-    uuuuu
-uuuuu
-`)
-
   const PALETTE = {
     f: { fg: '#6b7280' },
     d: { fg: '#92400e' },
@@ -127,6 +116,7 @@ uuuuu
   <Piece of={table}   x={9}  y={18} />
   <Piece of={table}   x={29} y={18} />
   <Piece of={stairs}  x={2}  y={21} />
+  <Door  x={17} y={21} to="/upstairs/" />
   <Piece of={barrel}  x={90} y={14} />
   <Piece of={barrel}  x={90} y={17} />
   <Piece of={barrel}  x={90} y={20} />

@@ -36,6 +36,7 @@ process.env.HAVEN_SEASON ??= 'summer'
 export const SCENES = [
   { name: 'Square', slug: 'square', path: '/' },
   { name: 'Tavern', slug: 'tavern', path: '/tavern/' },
+  { name: 'Upstairs', slug: 'upstairs', path: '/upstairs/' },
   { name: 'Road',   slug: 'road',   path: '/road/' },
   { name: 'Woods',  slug: 'woods',  path: '/woods/' },
   { name: 'Docks',  slug: 'docks',  path: '/docks/' },

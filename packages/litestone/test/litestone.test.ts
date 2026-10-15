@@ -1283,7 +1283,7 @@ const FACTORY_SCHEMA = `
 
 class AccountFactory extends Factory {
   model = 'Account'
-  traits = {
+  states = {
     pro:        { plan: 'pro' },
     enterprise: { plan: 'enterprise' },
   }
@@ -1294,7 +1294,7 @@ class AccountFactory extends Factory {
 
 class UserFactory extends Factory {
   model = 'User'
-  traits = {
+  states = {
     admin:   { role: 'admin' },
     member:  { role: 'member' },
     viewer:  { role: 'viewer' },
@@ -1306,7 +1306,7 @@ class UserFactory extends Factory {
 
 class PostFactory extends Factory {
   model = 'Post'
-  traits = {
+  states = {
     published: { status: 'published' },
     draft:     { status: 'draft' },
   }
@@ -12733,30 +12733,30 @@ describe('Factory — buildOne / buildMany', () => {
 })
 
 
-describe('Factory — traits', () => {
-  test('trait method generated from traits map', () => {
+describe('Factory — named states', () => {
+  test('state method generated from states map', () => {
     const f = new UserFactory(null as any)
     expect(typeof f.admin).toBe('function')
     expect(typeof f.member).toBe('function')
   })
 
-  test('trait applies override', () => {
+  test('named state applies override', () => {
     const f = new UserFactory(null as any)
     expect(f.admin().buildOne().role).toBe('admin')
     expect(f.viewer().buildOne().role).toBe('viewer')
   })
 
-  test('traits chain (last wins)', () => {
+  test('named states chain (last wins)', () => {
     const f = new UserFactory(null as any)
     expect(f.admin().viewer().buildOne().role).toBe('viewer')
   })
 
-  test('AccountFactory.pro() trait', () => {
+  test('AccountFactory.pro() named state', () => {
     const f = new AccountFactory(null as any)
     expect(f.pro().buildOne().plan).toBe('pro')
   })
 
-  test('trait accepts extra overrides', () => {
+  test('named state accepts extra overrides', () => {
     const f = new UserFactory(null as any)
     const row = f.admin({ email: 'custom@test.com' }).buildOne()
     expect(row.role).toBe('admin')
@@ -12863,7 +12863,7 @@ describe('Factory — createOne / createMany', () => {
     expect(users.build(2).length).toBe(2)
   })
 
-  test('trait + createOne', async () => {
+  test('named state + createOne', async () => {
     const row = await (users as any).admin().createOne()
     expect(row.role).toBe('admin')
     const dbRow = await db.user.findUnique({ where: { id: 1 } })
@@ -13274,12 +13274,12 @@ describe('snapshot / restore', () => {
 describe('defineFactory', () => {
   const DF_SCHEMA = `model User { id Int @id @default(autoincrement()); email String @unique; role String }`
 
-  test('model + definition + traits + afterCreate, no subclass', async () => {
+  test('model + definition + states + afterCreate, no subclass', async () => {
     const seen: any[] = []
     const UserFactory = defineFactory({
       model:       'User',
       definition:  (seq: number) => ({ email: `u${seq}@x.com`, role: 'member' }),
-      traits:      { admin: { role: 'admin' }, viewer: { role: 'viewer' } },
+      states:      { admin: { role: 'admin' }, viewer: { role: 'viewer' } },
       afterCreate: (row: any) => { seen.push(row.email) },
     })
 

@@ -14,11 +14,11 @@ Do not paraphrase the vocabulary. Do not invent parallel terms.
 
 FrontierJS has one mental model: **three realms, three nouns.**
 
-| Realm | Primary Noun | Concern                                    |
-| ----- | ------------ | ------------------------------------------ |
-| Data  | **Model**    | What exists and what rules govern it       |
-| API   | **Service**  | What operations are exposed and how        |
-| UI    | **Resource** | How the UI binds to and consumes a service |
+| Realm | Primary Noun | Concern                                           |
+| ----- | ------------ | ------------------------------------------------- |
+| Data  | **Model**    | A data structure and the semantics that govern it |
+| API   | **Service**  | What operations are exposed and how               |
+| UI    | **Resource** | How the UI binds to and consumes a service        |
 
 Two further realms describe what an application *becomes*:
 

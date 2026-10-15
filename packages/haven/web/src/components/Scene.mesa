@@ -460,7 +460,7 @@
     {#each flying(beam, view) as b (b.key)}
       <p {@attach at(b.x, b.y, 10)} {@attach tint(BEAM_INK)}>{b.ch}</p>
     {/each}
-    <Bubbles {here} {x} {y} {view} {spawn} {hushed} />
+    <Bubbles {here} {x} {y} {view} {spawn} {hushed} {nicks} />
     <WorldMap {stage} route={page.pathname} {x} {y} box={PANE} />
     <History {room} {nicks} box={PANE} {askNicks} />
     <Sitting {stage} {here} {x} {y} {spawn} tell={(text) => { note = text }} />

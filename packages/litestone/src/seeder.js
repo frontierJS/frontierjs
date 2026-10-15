@@ -149,7 +149,7 @@ export function insistedKeys(def) {
 export class Factory {
   // Subclasses declare:
   //   model = 'tableName'
-  //   traits = { admin: { role: 'admin' }, ... }
+  //   states = { admin: { role: 'admin' }, ... }
   //   afterCreate = async (row, db) => { ... }
 
   constructor(db) {
@@ -168,25 +168,25 @@ export class Factory {
     this._schema      = null
     this._registry    = null
 
-    // Return a Proxy so that trait methods (defined via class instance fields
+    // Return a Proxy so that named-state methods (defined via class instance fields
     // which run AFTER super() returns) are available immediately on the instance.
-    // The Proxy intercepts unknown property lookups and calls _ensureTraits() first.
+    // The Proxy intercepts unknown property lookups and calls _ensureStates() first.
     // biome-ignore lint/correctness/noConstructorReturn: the constructor deliberately answers a different object
     return new Proxy(this, {
       get(target, prop, receiver) {
         // For known internal props, return directly
         if (prop in target) return Reflect.get(target, prop, receiver)
-        // Unknown prop — might be a trait method not yet generated
-        target._ensureTraits()
+        // Unknown prop — might be a named-state method not yet generated
+        target._ensureStates()
         return Reflect.get(target, prop, receiver)
       }
     })
   }
 
-  _ensureTraits() {
-    if (this._traitsSetup || !this.traits) { this._traitsSetup = true; return }
-    this._traitsSetup = true
-    for (const [name, override] of Object.entries(this.traits)) {
+  _ensureStates() {
+    if (this._statesSetup || !this.states) { this._statesSetup = true; return }
+    this._statesSetup = true
+    for (const [name, override] of Object.entries(this.states)) {
       if (!this[name]) {
         this[name] = function(extra = {}) {
           const merged = typeof override === 'function'
@@ -199,7 +199,7 @@ export class Factory {
   }
 
   _clone() {
-    this._ensureTraits()
+    this._ensureStates()
     const clone        = new this.constructor(this._db)
     clone._states      = [...this._states]
     clone._rng         = this._rng
@@ -696,19 +696,19 @@ export class Factory {
 //   const UserFactory = defineFactory({
 //     model: 'User',
 //     definition: (seq, rng) => ({ email: `u${seq}@x.com`, role: 'member' }),
-//     traits:     { admin: { role: 'admin' } },
+//     states:     { admin: { role: 'admin' } },
 //     afterCreate: async (row, db) => { … },
 //   })
 //
 //   new UserFactory(db).admin().createMany(3)
 //
-// A subclass declares `traits` as an instance field, which initializes only AFTER
+// A subclass declares `states` as an instance field, which initializes only AFTER
 // super() returns — that is the sole reason Factory's constructor returns a Proxy.
-// Here everything is known up front, so traits are installed in the constructor and
+// Here everything is known up front, so states are installed in the constructor and
 // the Proxy never has to fire.
 
 export function defineFactory(spec = {}) {
-  const { model, definition, traits, afterCreate, ...rest } = spec
+  const { model, definition, states, afterCreate, ...rest } = spec
   if (!model)      throw new Error('defineFactory: `model` is required (PascalCase singular, as the schema declares it)')
   if (!definition) throw new Error(`defineFactory(${model}): \`definition\` is required — (seq, rng) => ({ … })`)
 
@@ -717,10 +717,10 @@ export function defineFactory(spec = {}) {
       super(db)
       this.model      = model
       this.definition = definition
-      if (traits)      this.traits      = traits
+      if (states)      this.states      = states
       if (afterCreate) this.afterCreate = afterCreate
       Object.assign(this, rest)
-      this._ensureTraits()
+      this._ensureStates()
       // biome-ignore lint/correctness/noConstructorReturn: the constructor deliberately answers a different object
       return this
     }

@@ -165,10 +165,11 @@ before you meet it.
 | Cloud | open | Operations | | | |
 | Form | open | UI | Resource | | |
 | Search | open | | | | |
-| Model | blessed | Data | | what exists and what rules govern it — the Data realm's noun | ARCHITECT.md § 1 |
+| Model | blessed | Data | | a data structure and the semantics that govern it — what it relates to, who may reach it, how it may change — the Data realm's noun | ARCHITECT.md § 1 · `FJS-D1044` |
 | Gate | blessed | Data | | the ordinal per-operation level check, `@@gate` | ARCHITECT.md § 2 |
 | Gate ladder | blessed | Data | Gate | the 0–9 scale, STRANGER…LOCKED | `@frontierjs/toolbelt/gate` |
 | Policy | blessed | Data | Gate | `@@allow`/`@@deny` row and field predicates — never the gate | `FJS-D45` |
+| Trait | blessed | Data | Model | a reusable fragment of a Model's structure — fields and model attributes, never a `@@gate` — declared `trait T { }`, spliced into a model by `@@trait(T)` and erased at parse | `FJS-D1044` · litestone `docs/traits.md`. The test Factory's named presets are `states`, not traits |
 | Signal | blessed | UI | | Mesa's reactive cell — never crosses a Boundary | `FJS-D44` |
 | Binding | blessed | UI | | a place in the compiled output that re-runs when a Signal it reads changes; `bind:` is the two-way case | `FJS-D383`. Deployment's sense is *configuration*; litestone's `@values` binding is unruled |
 | Gesture | blessed | UI | | what a person does on the screen — a click, a key, a drop — named for the person and not the DOM | `FJS-D385`. *Event* is Junction's (`FJS-D44`) and *Action* is orion's |

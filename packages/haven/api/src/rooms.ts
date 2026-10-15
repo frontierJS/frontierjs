@@ -43,6 +43,7 @@ export const FIRST_ROOM = 'square'
 export const ROOMS = [
   { slug: 'square', name: 'The square' },
   { slug: 'tavern', name: 'The tavern' },
+  { slug: 'upstairs', name: 'Upstairs at the tavern' },
   { slug: 'road',   name: 'The road' },
   { slug: 'woods',  name: 'The woods' },
   { slug: 'docks',  name: 'The docks' },

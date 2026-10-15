@@ -33,7 +33,7 @@ test('a scene is its picture at SCALE: a glyph per block, a door wherever one is
   expect(snap.w).toBe(stage.width)
   const door = stage.doors.find((d) => d.to === '/')
   expect(snap.rows[Math.floor(door.y / SCALE.y)][Math.floor(door.x / SCALE.x)]).toBe(DOOR.ch)
-  expect(snap.doors).toEqual([{ x: door.x, y: door.y, w: 1, h: 1, to: '/' }])
+  expect(snap.doors).toContainEqual({ x: door.x, y: door.y, w: 1, h: 1, to: '/' })
   expect(snap.rows.join('').trim()).not.toBe('')
   expect(valid(JSON.parse(JSON.stringify(snap)))).toBe(true)
 })
@@ -52,11 +52,11 @@ test('the square is the middle: the woods west of it, the road east, the docks u
   expect(docks.x + 1 + Math.floor(back.x / SCALE.x)).toBe(square.x + 1 + Math.floor(here.x / SCALE.x))
 })
 
-test('a hidden door is not on the map: the tavern keeps its one door, and the rug glyph stays where the hole is', () => {
+test('a hidden door is not on the map: the tavern keeps its square and stairs doors, and the rug glyph stays where the hole is', () => {
   const { stage } = stages.get('tavern')
   const hole = stage.doors.find((d) => d.hidden)
   const snap = snapOf('tavern')
-  expect(snap.doors.map((d) => d.to)).toEqual(['/'])
+  expect(snap.doors.map((d) => d.to).sort()).toEqual(['/', '/upstairs/'])
   expect(snap.rows[Math.floor(hole.y / SCALE.y)][Math.floor(hole.x / SCALE.x)]).not.toBe(DOOR.ch)
 })
 

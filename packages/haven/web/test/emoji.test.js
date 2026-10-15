@@ -47,7 +47,7 @@ describe('a bubble over a figure', () => {
   test('is kept inside the view by its cells, not its UTF-16 length', () => {
     for (const body of ['中文中文中文', '👩‍💻👩‍💻 ok', '🇯🇵🇯🇵🇯🇵']) {
       const [b] = bubbles(here, [{ id: 1, memberId: 2, body }], 30, 6, view, spawn)
-      expect([body, b.x + cells(b.text)]).toEqual([body, view.w])
+      expect([body, b.x + cells(b.rows[0])]).toEqual([body, view.w])
     }
   })
 })

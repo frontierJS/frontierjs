@@ -24,6 +24,8 @@ import type { LoginOptions }       from './login.ts'
 import { standing }                from './principal.ts'
 import { sweepRooms, KEEP }        from './retention.ts'
 import { FIRST_ROOM, roomChannels } from './rooms.ts'
+import { createSetlist }           from './setlist.ts'
+import type { Setlist }            from './setlist.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
 
@@ -41,8 +43,8 @@ export interface HavenAppOptions {
   wsPerIp?:    number
 }
 
-/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`) and `inventory` what a member carries (`inventory.ts`) and `crier` the square's announcer (`crier.ts`), all claimed here. */
-export type HavenApp = App & { memory: RoomMemory, cooldowns: ReturnType<typeof createCooldowns>, inventory: Inventories, crier: Crier, dice: Dice, casts: Casts }
+/** The app a service is handed: `memory` is the room's memory (`FJS-D993`) and `cooldowns` the bolt's wait (`bolt.ts`) and `inventory` what a member carries (`inventory.ts`) and `crier` the square's announcer (`crier.ts`) and `setlist` the loft's song requests (`setlist.ts`), all claimed here. */
+export type HavenApp = App & { memory: RoomMemory, cooldowns: ReturnType<typeof createCooldowns>, inventory: Inventories, crier: Crier, dice: Dice, casts: Casts, setlist: Setlist }
 
 export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   const db = opts.db ?? await createClient({ path: SCHEMA, resolveFrom: 'schema' }) as { asSystem: () => any }
@@ -77,6 +79,7 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   app.claim('crier', crier)
   app.claim('dice', createDice(app, db))
   app.claim('casts', createCasts())
+  app.claim('setlist', createSetlist())
   const { setup, options } = roomChannels(db, memory, inventory)
   app.configure(channels(setup as never, options))
   // Inside configure() so it registers during start(), after the router is patched.

@@ -2114,7 +2114,7 @@ import { makeTestClient, Factory } from '@frontierjs/litestone/testing'
 class UserFactory extends Factory {
   model = 'User'
 
-  traits = {
+  states = {
     admin:  { role: 'admin' },
     viewer: { role: 'viewer' },
   }
@@ -2179,7 +2179,7 @@ import { defineFactory, makeTestClient } from '@frontierjs/litestone/testing'
 export const UserFactory = defineFactory({
   model:      'User',
   definition: (seq, rng) => ({ email: `u${seq}@x.com`, role: 'member', accountId: 1 }),
-  traits:     { admin: { role: 'admin' } },
+  states:     { admin: { role: 'admin' } },
 })
 // returns a CLASS — registers like any other:
 const schemaText = await Bun.file('./schema.lite').text()

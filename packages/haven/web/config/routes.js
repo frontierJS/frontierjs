@@ -193,6 +193,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "upstairs",
+      path: "/upstairs/",
+      file: "src/routes/upstairs.mesa",
+      companion: null,
+      layout: null,
+      meta: JSON.parse("{}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "vlad",
       path: "/vlad/",
       file: "src/routes/vlad.mesa",
@@ -246,6 +256,7 @@ export const components = {
   'sheriff': () => import('../src/routes/sheriff.mesa'),
   'tavern': () => import('../src/routes/tavern.mesa'),
   'townhall': () => import('../src/routes/townhall.mesa'),
+  'upstairs': () => import('../src/routes/upstairs.mesa'),
   'vlad': () => import('../src/routes/vlad.mesa'),
   'woods': () => import('../src/routes/woods.mesa'),
   'workshop': () => import('../src/routes/workshop.mesa'),
@@ -287,6 +298,7 @@ export const all = [
   "/sheriff/",
   "/tavern/",
   "/townhall/",
+  "/upstairs/",
   "/vlad/",
   "/woods/",
   "/workshop/"
@@ -312,6 +324,7 @@ export const published = [
   "/sheriff/",
   "/tavern/",
   "/townhall/",
+  "/upstairs/",
   "/vlad/",
   "/woods/",
   "/workshop/"
@@ -337,6 +350,7 @@ export const indexed = [
   "/sheriff/",
   "/tavern/",
   "/townhall/",
+  "/upstairs/",
   "/vlad/",
   "/woods/",
   "/workshop/"

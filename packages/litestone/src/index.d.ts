@@ -1350,7 +1350,7 @@ export declare class Factory<TRow = FactoryRow> {
 
   /** Subclass fields. */
   model: string
-  traits?: Record<string, FactoryOverrides>
+  states?: Record<string, FactoryOverrides>
   afterCreate?: (row: FactoryRow, db: AnyLitestoneClient) => void | Promise<void>
   definition(seq: number, rng: FactoryRng | null): FactoryRow
 
@@ -1413,7 +1413,7 @@ export interface FactorySpec {
   /** Model name as the schema declares it — PascalCase singular. */
   model:        string
   definition:   (seq: number, rng: FactoryRng | null) => FactoryRow
-  traits?:      Record<string, FactoryOverrides>
+  states?:      Record<string, FactoryOverrides>
   afterCreate?: (row: FactoryRow, db: AnyLitestoneClient) => void | Promise<void>
   [key: string]: unknown
 }

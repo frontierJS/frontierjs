@@ -38,13 +38,23 @@ export function wrap(text, width) {
 
 /**
  * One line as the rows of its bubble: `( words )`, the same width on every row.
+ * `gap` is the space inside each paren — the square's is none, so a line that
+ * fits one row reads `(words)`, the spelling every drive looks for over a
+ * figure. Past `most` rows the last row kept ends in `…`.
  * @param {string} body
  * @param {number} width  the column's width; the bubble is up to this wide
+ * @param {{ gap?: string, most?: number }} [o]
  */
-export function bubble(body, width = COLUMN.w) {
-  const rows = wrap(body, width - 4)
+export function bubble(body, width = COLUMN.w, { gap = ' ', most = Infinity } = {}) {
+  const room = width - 2 - 2 * gap.length
+  let rows = wrap(body, room)
+  if (rows.length > most) {
+    rows = rows.slice(0, most)
+    rows[most - 1] = `${clip(rows[most - 1], room - 1)}…`
+  }
   const inner = Math.max(...rows.map(cells))
-  return rows.map((r, i) => `${i === 0 ? '( ' : '  '}${r}${' '.repeat(inner - cells(r))}${i === rows.length - 1 ? ' )' : '  '}`)
+  const pad   = ' '.repeat(1 + gap.length)
+  return rows.map((r, i) => `${i === 0 ? `(${gap}` : pad}${r}${' '.repeat(inner - cells(r))}${i === rows.length - 1 ? `${gap})` : pad}`)
 }
 
 /**

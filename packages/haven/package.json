@@ -36,6 +36,10 @@
     "#seen": {
       "browser": "./web/src/seen.browser.js",
       "default": "./web/src/seen.js"
+    },
+    "#sound": {
+      "browser": "./web/src/sound.browser.js",
+      "default": "./web/src/sound.js"
     }
   },
   "license": "MIT",

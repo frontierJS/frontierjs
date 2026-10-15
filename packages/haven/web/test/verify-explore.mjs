@@ -123,7 +123,7 @@ shell.stdin.write('\x1b[D')
 await new Promise((r) => setTimeout(r, 300))
 check(at(sx + dx, sy) === '@', 'Left edits a line being typed and walks nobody', screen(out))
 shell.stdin.write('\r')
-check(await until(() => at(sx + dx, sy - 1, 8) === '(hi all)'), 'Enter says it, as a bubble over the figure', screen(out))
+check(await until(() => at(sx + dx, sy - 2, 8) === '(hi all)'), 'Enter says it, as a bubble over the figure', screen(out))
 
 // Esc is NORMAL, where h j k l walk as the arrows do and type nothing. The
 // keys wait apart: Esc then a letter at once reads as Alt+letter.
@@ -163,7 +163,7 @@ const { code: frameCode, framed, err: frameErr } = await frameDone
 check(frameCode === 0, 'fli haven --frame / exits 0', frameErr)
 check(existsSync(join(anaHome, '.fli/haven/key.json')), "the first fli haven wrote Ana's key under ~/.fli/haven/")
 check(cellOf(framed, sx + dx, sy, 1, square) === 'S', "Ana's frame shows Sam's figure on the cell it walked to", framed)
-check(cellOf(framed, sx + dx, sy - 1, 8, square) === '(hi all)', "with Sam's line over it", framed)
+check(cellOf(framed, sx + dx, sy - 2, 8, square) === '(hi all)', "with Sam's line over it", framed)
 check(cellOf(framed, sx, sy, 1, square) === '@', "and Ana's own figure where it walked in", framed)
 check(blank(cellOf(framed, sx, 0, 1, square)) && cellOf(framed, lamp.x, lamp.y, 3, square) === '(o)',
   'and nothing of the wall she has not walked near, the lamp lit', framed)
@@ -211,7 +211,7 @@ await until(() => at(bar.x, bar.y, 1, tavern) === '@', 3000)
 shell.stdin.write('i')
 await until(() => screen(out).includes('-- INSERT --'))
 shell.stdin.write('the hearth is warm\r')
-check(await until(() => at(bar.x, bar.y - 1, 20, tavern) === '(the hearth is warm)'), 'Sam says a line in the tavern', screen(out))
+check(await until(() => at(bar.x, bar.y - 2, 20, tavern) === '(the hearth is warm)'), 'Sam says a line in the tavern', screen(out))
 shell.stdin.write('\x1b[5~')
 check(await until(() => screen(out).includes('sam: the hearth is warm') && screen(out).includes('PageDown newer')),
   "PageUp opens the tavern's history over the art, with Sam's line signed", screen(out))
@@ -286,10 +286,10 @@ check(blank(at(far.x, 0, 1, square, samEye.view)) && at(sx + dx, sy + 2, 1, squa
   'the wall across is still blank, and the hedge he bumped is drawn from memory, out of sight', screen(out))
 shell.stdin.write('i')
 shell.stdin.write('over here\r')
-check(await until(() => at(far.x, far.y - 1, 11, square, samEye.view) === '(over here)'), 'Sam says a line there', screen(out))
+check(await until(() => at(far.x, far.y - 2, 11, square, samEye.view) === '(over here)'), 'Sam says a line there', screen(out))
 
 const edge = await havenFrame('/')
-check(edge.code === 0 && cellOf(edge.framed, VIEW.w - 12, far.y - 1, 12, square) === '(over here)>',
+check(edge.code === 0 && cellOf(edge.framed, VIEW.w - 17, far.y - 1, 17, square) === '(sam: over here)>',
   "Ana's frame from the spawn shows Sam's line as a marker on the edge facing him", edge.framed + edge.err)
 check(cellOf(edge.framed, far.x, far.y, 1, square) === null && edge.framed.includes('· sam'),
   "Sam's figure is past her edge, and Sam is still listed", edge.framed)
@@ -300,11 +300,11 @@ const beaEye  = { view: square.view }
 const beaWho  = { write: (k) => beaTerm.shell.stdin.write(k), at: beaTerm.at }
 check(await until(() => beaTerm.screen().includes('j/k moves, Enter opens')), "Bea's terminal lists the square", beaTerm.screen())
 beaTerm.shell.stdin.write('\r')
-check(await until(() => beaTerm.at(sx, sy) === '@' && beaTerm.screen().includes('2 here') && beaTerm.at(VIEW.w - 12, far.y - 1, 12) === '(over here)>'),
+check(await until(() => beaTerm.at(sx, sy) === '@' && beaTerm.screen().includes('2 here') && beaTerm.at(VIEW.w - 17, far.y - 1, 17) === '(sam: over here)>'),
   "Bea walks in at the spawn and sees Sam's marker on her edge", beaTerm.screen())
 const beaEast = await walk(beaWho, 'right', { x: sx, y: sy }, { x: farEast.x - 1, y: sy }, square, beaEye)
   && await walk(beaWho, 'left', { x: farEast.x - 1, y: sy }, { x: far.x - 1, y: sy }, square, beaEye)
-check(beaEast && beaTerm.at(far.x, far.y, 1, square, beaEye.view) === 'S' && beaTerm.at(far.x, far.y - 1, 11, square, beaEye.view) === '(over here)',
+check(beaEast && beaTerm.at(far.x, far.y, 1, square, beaEye.view) === 'S' && beaTerm.at(far.x, far.y - 2, 11, square, beaEye.view) === '(over here)',
   "Bea's screen, panned the same way, shows Sam's figure and line where the first screen never reached", beaTerm.screen())
 check(await until(() => at(far.x - 1, far.y, 1, square, samEye.view) === 'B'), "and Sam's shows Bea beside him", screen(out))
 beaTerm.shell.stdin.write('\x03')

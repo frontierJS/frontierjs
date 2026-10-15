@@ -20,7 +20,7 @@ Every FrontierJS application is built across three realms, each with one primary
 
 | Realm    | Noun     | Concern                                           |
 | -------- | -------- | ------------------------------------------------- |
-| **Data** | Model    | What exists and what rules govern it              |
+| **Data** | Model    | A data structure and the semantics that govern it |
 | **API**  | Service  | What operations are exposed and how               |
 | **UI**   | Resource | How the interface binds to and consumes a service |
 

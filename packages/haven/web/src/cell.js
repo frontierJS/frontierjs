@@ -34,11 +34,14 @@ export const at = (col, row, layer = 10, size = null) => (el) => {
 // A text drawn in a color: the node's own `fg`. The terminal paints no CSS, so a
 // `style:color` on a `<p>` colors nothing here. Taking the box's first text when
 // the attach sits on a wrapper is `linked`'s reading, for the same reason. No
-// color leaves the terminal's own ink: an `fg` of undefined is not that.
-export const tint = (color) => (el) => {
-  if (!color) return
+// color leaves the terminal's own ink: an `fg` of undefined is not that. A
+// `ground` is the text's `bg`, under every cell of it, its spaces included.
+export const tint = (color, ground) => (el) => {
+  if (!color && !ground) return
   const text = el instanceof TextRenderable ? el : el.getChildren().find((c) => c instanceof TextRenderable)
-  if (text) text.fg = color
+  if (!text) return
+  if (color)  text.fg = color
+  if (ground) text.bg = ground
 }
 
 export const linked = (url, seen = () => {}) => (el) => {

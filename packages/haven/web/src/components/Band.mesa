@@ -1,0 +1,81 @@
+<script>
+  // Band.mesa — the loft's band, heard: `band.js` played through `#sound`
+  // from the moment the member walks in until they leave, and `/music`
+  // turning it off and on for the rest of this run. On by default (the loft
+  // is a room one climbs to for the band), `HAVEN_MUSIC=off` starts it off,
+  // and a machine with no player (`#sound`: aplay, paplay or sox in the
+  // terminal, Web Audio in a browser) says so when asked. `/song` names
+  // what is playing and every choice it was drawn from, which is how a song
+  // that sounds wrong is reported: by its number. `/song <n>` asks for song
+  // n (`api/src/setlist.ts`): the server answers a cue at the next bar line,
+  // and the room's `song` event seats it on every screen in the loft.
+  //
+  // A route places it (`routes/upstairs.mesa`), never the scene file: a
+  // scene's picture is pinned and its test must make no sound.
+  import { getClient } from '@frontierjs/sierra/resource'
+  import { stream } from '#sound'
+  import { createBand, listening, songAt, songOf, startOf, MAX_SONG, RATE } from '@/band.js'
+
+  var verbs = $context.commands
+  var room  = $context.room
+  const band = createBand()
+  let stop = null
+  let gone = false
+
+  const clock = (ms) => {
+    const s = Math.max(0, Math.ceil(ms / 1000))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+
+  function start() {
+    stop = stream((from, n) => band.samples(from, n), { rate: RATE })
+    return stop ? `the band plays ${songOf(songAt(Date.now(), band.cueOf(Date.now()))).name}` : 'nothing here can play sound'
+  }
+  function playing() {
+    const now  = Date.now()
+    const cue  = band.cueOf(now)
+    const song = songOf(songAt(now, cue))
+    return `#${song.k} ${song.about} · next in ${clock(startOf(song.k + 1, cue) - now)}`
+  }
+  async function song({ args }) {
+    const asked = args.trim()
+    if (!asked) return playing()
+    const k = Number(asked)
+    if (!/^\d+$/.test(asked) || k > MAX_SONG) return `/song names what is playing; /song <n> asks for song n, 0 to ${MAX_SONG}`
+    try {
+      const cue = await getClient().service('band').invoke('request', null, { roomId: room.id, song: k })
+      band.seat(cue)
+      return `#${k} ${cue.name} from the next bar`
+    } catch (e) { return e.message }
+  }
+  function toggle() {
+    if (stop) {
+      stop()
+      stop = null
+      listening.heard = false
+      return 'the band plays on, unheard'
+    }
+    listening.heard = true
+    return start()
+  }
+
+  function onSong(name, cue) {
+    if (name === 'song' && Number.isInteger(cue?.first) && Number.isFinite(cue?.at)) band.seat(cue)
+  }
+
+  const client = getClient()
+  client?.on('event', onSong)
+  $.onDestroy(() => client?.off('event', onSong))
+
+  // The cue is asked before the band starts, so a screen walking in after a
+  // request does not open on the clock's song and jump.
+  $.onMount(async () => {
+    if (room) {
+      try { band.seat(await client.service('band').invoke('cue', null, { roomId: room.id })) } catch {}
+    }
+    if (listening.heard && !gone) start()
+  })
+  $.onDestroy(() => { gone = true; stop?.() })
+  $.onDestroy(verbs.add({ word: 'music', help: '/music', run: toggle }))
+  $.onDestroy(verbs.add({ word: 'song', help: '/song [n]', run: song }))
+</script>

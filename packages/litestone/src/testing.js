@@ -1932,7 +1932,7 @@ export async function reset(db) {
 //   const users = factoryFrom(schema, 'users', db)
 //   const admin = await users.state({ role: 'admin' }).createOne()
 //
-// For traits or afterCreate, extend Factory with a subclass instead.
+// For named states or afterCreate, extend Factory with a subclass instead.
 
 export function factoryFrom(schema, modelName, db, registry = null) {
   const defFn = generateFactory(schema, modelName, { now: () => db?.$now?.() ?? new Date() })

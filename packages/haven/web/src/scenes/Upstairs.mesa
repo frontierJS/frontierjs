@@ -1,0 +1,170 @@
+<script>
+  // Upstairs.mesa — the loft over the tavern, up the stairs: a stage across
+  // the back wall with a five-piece band on it, notes drifting over a dance
+  // floor whose tiles change color, and tables along both sides. The band is
+  // scenery, the way the cat is: the guitarist and bassist strum, the drummer
+  // and the keys hit, the singer waves, and nobody is told where anything is.
+  // The picture this draws is `upstairs.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import { INDOORS } from '@/stage.js'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { piece }  from '@/pieces/index.js'
+  import { frame }  from '@/pieces/frame.js'
+  import { table }  from '@/pieces/table.js'
+  import { barrel } from '@/pieces/barrel.js'
+  import { lamp }   from '@/pieces/lamp.js'
+  import { stairs } from '@/pieces/stairs.js'
+
+  // Arms and strumming hands are cells that cycle between two glyphs (`chars`
+  // in the palette), so the band plays with no clock of its own. Two cells of
+  // one pair are given opposite orders, so a drummer's arms are never both up.
+  // Their `ms` are an eighth and a beat at 100 bpm from the epoch `band.js`
+  // counts from, so they move on the beat of a song drawn at that tempo and
+  // drift against the others; a palette's `ms` cannot follow the song.
+  const guitarist = piece('guitarist', String.raw`
+ ☻
+/|\=--
+/ \
+`, String.raw`
+ s
+ppaiii
+p p
+`)
+
+  const singer = piece('singer', String.raw`
+ ☻  o
+/|\ |
+/ \_|_
+`, String.raw`
+ s  i
+cca i
+c ciii
+`)
+
+  const drummer = piece('drummer', String.raw`
+*  \☻/  *
+(~)[O](~)
+  /   \
+`, String.raw`
+k  asd  k
+rrriiirrr
+  r   r
+`)
+
+  const bassist = piece('bassist', String.raw`
+ ☻
+/|\===--
+/ \
+`, String.raw`
+ s
+eeaiiiii
+e e
+`)
+
+  const keys = piece('keys', String.raw`
+  ☻
+ \|/
+[=|=|=|=]
+`, String.raw`
+  s
+ aod
+iiiiiiiii
+`)
+
+  // The members, left to right along the stage, as the tags below place them
+  // (the editor reads a flat list of tags, so no `{#each}`). Each stands on
+  // y = 3, and the boards are drawn around the cells they hold, since two
+  // pieces never claim one cell; a member moved here and not below is refused
+  // at mount.
+  const BAND = [
+    { of: guitarist, x: 22, y: 3 },
+    { of: singer,    x: 32, y: 3 },
+    { of: drummer,   x: 44, y: 3 },
+    { of: bassist,   x: 59, y: 3 },
+    { of: keys,      x: 68, y: 3 },
+  ]
+  const STAGE = { x: 18, y: 2, w: 60, h: 5 }
+  const held = new Set(BAND.flatMap((m) => m.of.cells.map((c) => `${m.x + c.dx},${m.y + c.dy}`)))
+  const boards = (pick) => Array.from({ length: STAGE.h }, (_, r) =>
+    Array.from({ length: STAGE.w }, (_, c) => (held.has(`${STAGE.x + c},${STAGE.y + r}`) ? ' ' : pick(r, c))).join(''))
+  const planks = piece('boards',
+    boards((r) => (r === STAGE.h - 1 ? '=' : '.')).join('\n'),
+    boards((r) => (r === STAGE.h - 1 ? 'K' : 'k')).join('\n'),
+    { floor: true })
+
+  // The curtain behind them, one row under the top wall, with the band's name.
+  const NAME = '[ THE LAST CALL ]'
+  const hung = (fill) => {
+    const lead = Math.floor((STAGE.w - NAME.length) / 2)
+    return `${fill.repeat(lead)}${NAME}${fill.repeat(STAGE.w - NAME.length - lead)}`
+  }
+  const side = Math.floor((STAGE.w - NAME.length) / 2)
+  const curtain = piece('curtain', hung('~'), `${'q'.repeat(side)}${'B'.repeat(NAME.length)}${'q'.repeat(STAGE.w - NAME.length - side)}`)
+
+  const floor = { x: 30, y: 10, w: 36, h: 5 }
+  const tiles = (pick) => Array.from({ length: floor.h }, (_, r) =>
+    Array.from({ length: floor.w }, (_, c) => pick((r + c) % 2)).join('')).join('\n')
+  const dance = piece('dance floor', tiles(() => '+'), tiles((p) => 'gG'[p]), { floor: true })
+
+  // Notes in the air over the room between the stage and the dance floor, each
+  // letter a note cycling through the four at a different place in the turn.
+  const NOTES = 'nNm'
+  const air = (row) => Array.from({ length: STAGE.w }, (_, c) => ((c + row * 3) % 9 === 0 ? '♪' : ' ')).join('')
+  const rows = [0, 1, 2].map(air)
+  const notes = piece('notes', rows.join('\n'),
+    rows.map((r, i) => [...r].map((ch, c) => (ch === ' ' ? ' ' : NOTES[(Math.floor((c + i * 3) / 9) + i) % 3])).join('')).join('\n'),
+    { overhead: 3 })
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    l: { fg: '#9ca3af' },
+    u: { fg: '#854d0e' },
+    t: { fg: '#a16207' },
+    c: { fg: '#22d3ee' },
+    y: { fg: ['#fde047', '#fbbf24', '#fef08a'], chars: 'i!i', ms: 300, flicker: true },
+    k: { fg: '#78350f' },
+    K: { fg: '#b45309' },
+    q: { fg: '#b91c1c' },
+    B: { fg: '#fde047' },
+    s: { fg: '#fcd34d' },
+    i: { fg: '#a16207' },
+    p: { fg: '#f472b6' },
+    e: { fg: '#a3e635' },
+    r: { fg: '#ef4444' },
+    o: { fg: '#fb923c' },
+    a: { fg: '#fcd34d', chars: '\\|', ms: 300 },
+    d: { fg: '#fcd34d', chars: '/_', ms: 300 },
+    n: { fg: ['#f472b6', '#22d3ee', '#a3e635', '#fde047'], chars: '♪♫♩♬', ms: 600 },
+    N: { fg: ['#fde047', '#f472b6', '#22d3ee', '#a3e635'], chars: '♫♩♬♪', ms: 600 },
+    m: { fg: ['#a3e635', '#fde047', '#f472b6', '#22d3ee'], chars: '♩♬♪♫', ms: 600 },
+    g: { fg: ['#f472b6', '#22d3ee', '#a3e635', '#fde047'], chars: '+x', ms: 600 },
+    G: { fg: ['#fde047', '#a3e635', '#22d3ee', '#f472b6'], chars: 'x+', ms: 600 },
+  }
+</script>
+
+<Scene slug="upstairs" layers={INDOORS} palette={PALETTE} spawn={{ x: 30, y: 23 }}>
+  <Piece of={frame} />
+  <Piece of={stairs} x={2} y={21} />
+  <Door  x={17} y={21} to="/tavern/" />
+  <Piece of={curtain} x={18} y={1} />
+  <Piece of={planks}  x={18} y={2} />
+  <Piece of={guitarist} x={22} y={3} />
+  <Piece of={singer}    x={32} y={3} />
+  <Piece of={drummer}   x={44} y={3} />
+  <Piece of={bassist}   x={59} y={3} />
+  <Piece of={keys}      x={68} y={3} />
+  <Piece of={lamp}   x={13} y={3} />
+  <Piece of={lamp}   x={82} y={3} />
+  <Piece of={notes}  x={18} y={7} />
+  <Piece of={dance}  x={30} y={10} />
+  <Piece of={table}  x={6}  y={10} />
+  <Piece of={table}  x={6}  y={14} />
+  <Piece of={table}  x={80} y={10} />
+  <Piece of={table}  x={80} y={14} />
+  <Piece of={table}  x={29} y={18} />
+  <Piece of={table}  x={49} y={18} />
+  <Piece of={table}  x={69} y={18} />
+  <Piece of={barrel} x={90} y={20} />
+  <slot />
+</Scene>

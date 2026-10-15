@@ -3,7 +3,7 @@
 // over a real stage and a presence snapshot of the shape `here.get()` hands.
 import { test, expect } from 'bun:test'
 import { createStage } from '../src/stage.js'
-import { bubbles, cellOf, figures, inView, NEAR, plates } from '../src/crowd.js'
+import { BUBBLE, bubbles, cellOf, figures, inView, NEAR, plates } from '../src/crowd.js'
 
 const spawn = { x: 5, y: 5 }
 const stage = createStage({ slug: 'crowd', palette: {}, spawn, manual: true })
@@ -41,8 +41,8 @@ test('a bubble is the newest line of each speaker, over where they stand', () =>
   const h = here([member(2, 10, 6)])
   const out = bubbles(h, [said(9, 2, 'hi'), said(8, 2, 'older'), said(7, 1, 'mine')], 5, 5, view, spawn)
   expect(out).toEqual([
-    { key: '2:9', x: 10, y: 5, text: '(hi)' },
-    { key: '1:7', x: 5, y: 4, text: '(mine)' },
+    { key: '2:9', x: 10, y: 4, rows: ['(hi)'], ink: BUBBLE.ink, tail: { x: 10, y: 5 } },
+    { key: '1:7', x: 5, y: 3, rows: ['(mine)'], ink: BUBBLE.ink, tail: { x: 5, y: 4 } },
   ])
 })
 
@@ -50,8 +50,8 @@ test('a hushed line, and every one before it, is no bubble, and nothing older ta
   const h = here([{ ...member(2, 10, 6), meta: { x: 10, y: 6, hushed: 9 } }])
   const lines = [said(9, 2, 'hi'), said(8, 2, 'older'), said(7, 1, 'mine'), said(6, 1, 'first')]
   expect(bubbles(h, lines, 5, 5, view, spawn).map((b) => b.key)).toEqual(['1:7'])
-  expect(bubbles(h, lines, 5, 5, view, spawn, 7)).toEqual([])
-  expect(bubbles(h, [said(10, 2, 'again'), ...lines], 5, 5, view, spawn, 7).map((b) => b.key)).toEqual(['2:10'])
+  expect(bubbles(h, lines, 5, 5, view, spawn, { mine: 7 })).toEqual([])
+  expect(bubbles(h, [said(10, 2, 'again'), ...lines], 5, 5, view, spawn, { mine: 7 }).map((b) => b.key)).toEqual(['2:10'])
 })
 
 test('a line from beyond earshot is no bubble, a shout and a whisper are', () => {
@@ -59,12 +59,12 @@ test('a line from beyond earshot is no bubble, a shout and a whisper are', () =>
   const far = (extra) => bubbles(h, [said(1, 2, 'hello', extra)], 5, 5, view, spawn)
   expect(far()).toEqual([])
   expect(far({ body: '!hello' })).toHaveLength(1)
-  expect(far({ toId: 1 })[0].text).toBe('(psst: hello)')
+  expect(far({ toId: 1 })[0].rows).toEqual(['(psst: hello)'])
 })
 
 test('a speaker past the view is a marker on the edge facing them', () => {
   const h = here([member(2, 60, 5)])
   const [b] = bubbles(h, [said(1, 2, '!yo')], 5, 5, view, spawn)
-  expect(b.text).toBe('(!yo)>')
-  expect(b.x + b.text.length).toBe(view.w)
+  expect(b.rows).toEqual(['(!yo)>'])
+  expect(b.x + b.rows[0].length).toBe(view.w)
 })

@@ -1,13 +1,15 @@
 <script>
   // Bubbles.mesa — the newest line of each member standing here, over where
   // they stand (`crowd.js` holds the rule: only a line this figure hears, a
-  // speaker outside the view marked on the edge toward them). Placed by
-  // `Scene.mesa` with the presence it made; the lines are the messages store
-  // the scene loaded.
+  // speaker outside the view marked on the edge toward them, the tail, the
+  // nick and the age). Placed by `Scene.mesa` with the presence it made; the
+  // lines are the messages store the scene loaded. A row is a `<pre>`:
+  // outside one the terminal drops a wrapped row's leading space, and the row
+  // lands a cell left of the one above it with a hole in its ground.
   import { useStore } from '@frontierjs/sierra/resource'
   import { messages } from '@/resources/Message.mesa'
-  import { bubbles } from '@/crowd.js'
-  import { at } from '#cell'
+  import { bubbles, BUBBLE, TAIL } from '@/crowd.js'
+  import { at, tint } from '#cell'
 
   export let here
   export let x
@@ -15,11 +17,38 @@
   export let view
   export let spawn
   export let hushed = null
+  export let nicks = {}
 
   const { get: lines, unsubscribe } = useStore(messages.store)
   $.onDestroy(unsubscribe)
+
+  // Bumped when the freshest line on screen turns old, so it is drawn again.
+  // `timer` is a `var`: as a `let` it is a signal the block below reads and
+  // writes, and the block reruns itself without end.
+  let tick = 0
+  var timer = null
+  $.onDestroy(() => clearTimeout(timer))
+
+  function shown(h, said, names, sx, sy, v, mine) {
+    const now = Date.now()
+    const out = bubbles(h, said, sx, sy, v, spawn, { mine, names, now })
+    const next = Math.min(...out.map((b) => b.until ?? Infinity))
+    clearTimeout(timer)
+    if (next < Infinity) timer = setTimeout(() => { tick++ }, next - now)
+    return out
+  }
+
+  $: list = (tick, shown(here.get(), lines(), nicks, x, y, view, hushed))
 </script>
 
-{#each bubbles(here.get(), lines(), x, y, view, spawn, hushed) as b (b.key)}
-  <p class="surface" {@attach at(b.x, b.y, 12)}>{b.text}</p>
+{#each list as b (`${b.key}:${b.ink}`)}
+  {#each b.rows as row, i (i)}
+    <pre class="surface" {@attach at(b.x, b.y + i, 12)} {@attach tint(b.ink, BUBBLE.ground)}>{row}</pre>
+  {/each}
+  {#if b.tail}
+    <pre class="surface" {@attach at(b.tail.x, b.tail.y, 12)} {@attach tint(b.ink)}>{TAIL}</pre>
+  {/if}
+  {#if b.name}
+    <pre class="surface" {@attach at(b.name.x, b.name.y, 13)} {@attach tint(b.name.ink, BUBBLE.ground)}>{b.name.text}</pre>
+  {/if}
 {/each}

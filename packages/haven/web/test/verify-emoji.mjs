@@ -162,11 +162,11 @@ const ART = `
 const tabAt = (x, y) => browser.evaluate(`${ART}
   const el = document.elementFromPoint(r.left + (${x} + 0.5) * cw, r.top + (${y} + 0.5) * lh)
   if (el && pre.contains(el)) return lines[${y}]?.[${x}] ?? ' '
-  return el?.closest('p')?.textContent ?? null`)
+  return el?.closest('p, pre')?.textContent ?? null`)
 
 /** The tab's box holding exactly `text`, as cells of its art: `{ col, row, w }`, or null. */
 const tabBox = (text) => browser.evaluate(`${ART}
-  const p = [...pre.parentElement.querySelectorAll('p')].find((p) => p.textContent === ${JSON.stringify(text)})
+  const p = [...pre.parentElement.querySelectorAll('p, pre')].find((p) => p.textContent === ${JSON.stringify(text)})
   if (!p) return null
   const b = p.getBoundingClientRect()
   return { col: Math.round((b.left - r.left) / cw * 10) / 10, row: Math.round((b.top - r.top) / lh * 10) / 10, w: Math.round(b.width / cw * 10) / 10 }`)
@@ -214,15 +214,15 @@ check(await until(() => at(bea.x, bea.y) === 'B'), "Sam's screen draws Bea where
 
 // ─── Bea says it, Sam reads it ────────────────────────────────────────
 
-const beforeBea = termRow(bea.y - 1)
+const beforeBea = termRow(bea.y - 2)
 await browser.cmd('Input.insertText', { text: BEAS })
 check(await browser.evaluate('return document.querySelector("input").value') === BEAS, "an emoji picker's text is Bea's line, whole", await browser.evaluate('return document.querySelector("input").value'))
 await browser.press('Enter')
 const bBubble = `(${BEAS})`
-check(await until(() => cellsAt(termRow(bea.y - 1), bBubble)?.col === bea.x - square.view.x),
-  "Bea's line is a bubble over her figure on Sam's screen, starting on her cell", termRow(bea.y - 1))
-const bAt = cellsAt(termRow(bea.y - 1), bBubble)
-const afterBea = termRow(bea.y - 1)
+check(await until(() => cellsAt(termRow(bea.y - 2), bBubble)?.col === bea.x - square.view.x),
+  "Bea's line is a bubble over her figure on Sam's screen, starting on her cell", termRow(bea.y - 2))
+const bAt = cellsAt(termRow(bea.y - 2), bBubble)
+const afterBea = termRow(bea.y - 2)
 const tail = afterBea.slice(afterBea.indexOf(bBubble) + bBubble.length).trimEnd()
 check(bAt.end - bAt.col === cells(bBubble) && tail === beforeBea.slice(bAt.end).trimEnd(),
   `the bubble takes ${cells(bBubble)} cells and the art past it is the art it covered before`, `before: ${beforeBea}\nafter:  ${afterBea}`)
@@ -245,7 +245,7 @@ const sBox = await until(async () => (await tabBox(sBubble))?.col === samAt.x - 
 check(sBox, "Sam's line is a bubble over his figure in Bea's tab, starting on his cell", JSON.stringify(await tabBox(sBubble)))
 const box = await tabBox(sBubble)
 note(`the tab's bubble is ${box?.w} cells wide for ${cells(sBubble)} counted: the emoji font's advance is not 2ch`)
-check(await until(() => cellsAt(termRow(samAt.y - 1), sBubble)?.col === samAt.x - square.view.x), 'and over him on his own screen', termRow(samAt.y - 1))
+check(await until(() => cellsAt(termRow(samAt.y - 2), sBubble)?.col === samAt.x - square.view.x), 'and over him on his own screen', termRow(samAt.y - 2))
 
 // Bea in her field: Backspace over a ZWJ sequence.
 await browser.cmd('Input.insertText', { text: 'x👩‍💻' })
