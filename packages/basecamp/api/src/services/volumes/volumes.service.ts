@@ -39,7 +39,7 @@
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, ws, actor }  from '../../core/resource.ts'
+import { db, ws, actor, callerOrder }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
 import type { ServerEventKind } from '../../../../db/schema.d.ts'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -176,7 +176,7 @@ export function createVolumesService(app: BasecampApp) {
           ...(inUse !== undefined ? { inUse: inUse === true || inUse === 'true' } : {}),
           ...(search ? { name: { contains: search } } : {}),
         },
-        orderBy: { name: 'asc' },
+        orderBy: callerOrder({ name: 'asc' }),
         limit, offset,
       })
 

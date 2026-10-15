@@ -14,7 +14,6 @@
 // step through it.
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 
-import config from '../config/sierra.config.js'
 import { LOGIN_PATH } from '../../api/src/login.ts'
 
 const DB    = 'haven'
@@ -75,7 +74,8 @@ let signedIn = null
 /** The session this page walks in with: signed once per page load. */
 export function sessionToken() {
   signedIn ??= machineKeys()
-    .then(({ keys }) => signIn(config.junction.url, { keys }))
+    // The page's own origin, as the client's; the config's url is the terminal's.
+    .then(({ keys }) => signIn(location.origin, { keys }))
     .then((r) => r.token)
   // A failed login is not kept, so the next room asked for tries again.
   signedIn.catch(() => { signedIn = null })

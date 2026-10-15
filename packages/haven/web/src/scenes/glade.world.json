@@ -57,9 +57,11 @@
 "pacers": [
  {"name":"deer","y":22,"from":3,"to":78,"ms":420,"rest":20,"right":["~(==)Y","~(=-)Y"],"left":["Y(==)~","Y(-=)~"],"sit":["~(==)v","~(==)v","~(==)Y","~(==)v"],"flee":60},
  {"name":"rabbit","y":24,"from":4,"to":60,"ms":160,"rest":40,"right":["(\\_/)"],"left":["(\\_/)"],"sit":["(\\_/)","(\\_/)","(\\./)","(\\_/)"],"flee":25,"night":false},
- {"name":"firefly","y":14,"from":6,"to":30,"ms":500,"rest":6,"right":["*","."],"left":[".","*"],"sit":["*",".","*","*"],"night":true},
- {"name":"firefly2","y":20,"from":8,"to":34,"ms":430,"rest":8,"right":[".","*"],"left":["*","."],"sit":[".","*",".","*"],"night":true},
- {"name":"firefly3","y":10,"from":40,"to":70,"ms":560,"rest":5,"right":["*","*","."],"left":[".","*","*"],"sit":["*",".",".","*"],"night":true}
+ {"name":"firefly","y":14,"from":6,"to":30,"ms":500,"rest":6,"right":["*","."],"left":[".","*"],"sit":["*",".","*","*"],"night":true,"sky":"summer"},
+ {"name":"firefly2","y":20,"from":8,"to":34,"ms":430,"rest":8,"right":[".","*"],"left":["*","."],"sit":[".","*",".","*"],"night":true,"sky":"summer"},
+ {"name":"firefly3","y":10,"from":40,"to":70,"ms":560,"rest":5,"right":["*","*","."],"left":[".","*","*"],"sit":["*",".",".","*"],"night":true,"sky":"summer"},
+ {"name":"heron","y":20,"from":6,"to":28,"ms":900,"rest":60,"right":["_/'"],"left":["'\\_"],"sit":["_/'","_/'","_/.","_/'"],"flee":30,"sky":"twilight-rain"},
+ {"name":"stag","y":24,"from":30,"to":80,"ms":600,"rest":40,"right":["~(==)W","~(=-)W"],"left":["W(==)~","W(-=)~"],"sit":["~(==)W","~(==)W","~(==)w","~(==)W"],"flee":60,"sky":"full-moon-snow"}
 ],
 "carousels": []
 }

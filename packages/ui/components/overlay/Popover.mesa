@@ -34,6 +34,11 @@
   let triggerEl
   let panelEl
 
+  // The control that held focus inside the trigger; a terminal node cannot be
+  // queried for one. A browser that does not focus a button on press (Safari)
+  // never reports one, and finds it by query.
+  var control = null
+
   const t = toTone(tone)
 
   const panelAnim = $.entrance({
@@ -75,7 +80,7 @@
     document.removeEventListener('click', onClickAway, { capture: true })
     // Return focus to the trigger — otherwise a keyboard user is dropped at
     // the top of the document when the panel unmounts.
-    if (restoreFocus) triggerEl?.querySelector('button, a, [tabindex]')?.focus()
+    if (restoreFocus) (control ?? triggerEl?.querySelector?.('button, a, [tabindex]'))?.focus?.()
   }
 
   function onClickAway(e) {
@@ -97,6 +102,7 @@
   style:display="inline-block"
   {class}
   {...$attributes}
+  on:focusin={(e) => control = e.target}
   on:click|stopPropagation={openPopover}
 >
   {@render trigger?.()}

@@ -74,7 +74,7 @@ A model-level one — an invented key — is marked on the `model` line.
 | --- | --- | --- |
 | `prisma` | `schema.prisma` | the common case |
 | `rails` | `db/schema.rb` | single-table inheritance, partial indexes, and the `(type, id)` polymorphic pair — none of which Prisma can express |
-| `sql` | `pg_dump --schema-only`, `db/structure.sql` | CHECK constraints, views and native enums. It is also the only reader that emits `@@arc`: an exclusive arc written as SQL (`(a IS NOT NULL) <> (b IS NOT NULL)`, `num_nonnulls(…) = 1`) is read back as the constraint it is |
+| `sql` | `pg_dump --schema-only`, `db/structure.sql`, a `mysqldump` (told by its backticks and `ENGINE=`) | CHECK constraints, views and native enums. It is also the only reader that emits `@@arc`: an exclusive arc written as SQL (`(a IS NOT NULL) <> (b IS NOT NULL)`, `num_nonnulls(…) = 1`) is read back as the constraint it is |
 | `frappe` | a Frappe/ERPNext app directory | the only source that **declares** whether a polymorphic target set is closed. A `Dynamic Link` names the field holding its target doctype, and that field says which |
 
 None of them repairs, renames or improves its input. A reader that quietly fixes

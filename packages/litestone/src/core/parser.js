@@ -14,7 +14,7 @@ import { expandCapabilityType } from './capabilities.js'
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { pointColumnNames, isStoredField, mapIdentifiers } from './ddl.js'
-import { inferFromFk, inferToOneFrom } from './schema-maps.js'
+import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
 
@@ -7542,7 +7542,9 @@ function validate(schema) {
       // builder runs, so the two cannot disagree: if this passes, buildFromMap
       // produces a subquery; if it fails, buildFromMap would have skipped the
       // field and the column would be absent from every row with no error.
-      const fromFk = targetModel ? inferFromFk(model, targetModel, fromAttr.via) : null
+      const fromFk = targetModel ? inferFromHop(model, targetModel, schema, fromAttr.via) : null
+      if (fromFk?.through && (op === 'first' || op === 'last'))
+        errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ${op}: true) — '${target}' is reached through a many-to-many, and a row pick has no key to repick on there. Read an aggregate (count, sum, exists, max, min, avg), or declare the join model and read it`)
       if (targetModel && !fromFk)
         errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ...) — no relation from '${target}' back to '${model.name}'. Declare '${target}.${lowerFirst(model.name)} ${model.name} @relation(fields: [...], references: [...])'`)
       // More than one relation joins the two models, so the field has to say
@@ -7553,13 +7555,13 @@ function validate(schema) {
         errors.push(
           `Model '${model.name}', field '${field.name}': @from(${target}, ...) is ambiguous — ` +
           `${fromFk.ambiguous.length} relations join '${model.name}' and '${target}' ` +
-          `(${fromFk.ambiguous.map(c => `${target}.${c.field}`).join(', ')}). ` +
+          `(${fromFk.ambiguous.map(c => c.display ?? `${target}.${c.field}`).join(', ')}). ` +
           `Say which with via: — @from(${target}, ..., via: ${fromFk.ambiguous[0].field})`)
       if (fromFk?.unresolvedVia)
         errors.push(
           `Model '${model.name}', field '${field.name}': @from(${target}, ..., via: ${fromFk.unresolvedVia}) — ` +
           `'${fromFk.unresolvedVia}' names no relation between '${model.name}' and '${target}'. ` +
-          `Candidates: ${fromFk.candidates.map(c => `${target}.${c.field}`).join(', ') || '(none)'}`)
+          `Candidates: ${fromFk.candidates.map(c => c.display ?? `${target}.${c.field}`).join(', ') || '(none)'}`)
       // Can't mix with other virtual attributes
       if (field.attributes.some(a => a.kind === 'computed'))
         errors.push(`Model '${model.name}', field '${field.name}': @from conflicts with @computed`)

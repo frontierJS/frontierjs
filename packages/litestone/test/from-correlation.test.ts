@@ -387,3 +387,99 @@ model Kid { id Int @id
     expect(await refusal(schema('label Int @from(parent, label)'))).toMatch(/field type must be 'String'/)
   })
 })
+
+// ─── across an implicit many-to-many (FJS-2577) ──────────────────────────────
+
+describe('@from across an implicit many-to-many (FJS-2577)', () => {
+  const M2M = (extra = '', msgExtra = '') => `
+model Task {
+  id        Int       @id @default(autoincrement())
+  messages  Message[]
+  msgCount  Int       @from(Message, count: true)
+  msgScore  Int       @from(Message, sum: score)
+  hasLoud   Boolean   @from(Message, exists: true, where: "score > 5")
+  ${extra}
+}
+model Message {
+  id        Int    @id @default(autoincrement())
+  score     Int    @default(1)
+  tasks     Task[]
+  ${msgExtra}
+}`
+  const refusal = async (s: string) => {
+    try { (await createClient({ db: ':memory:', schema: s }) as any).$close(); return '' }
+    catch (e: any) { return String(e.message).replace(/\s+/g, ' ') }
+  }
+  async function seeded(schema = M2M()) {
+    const db: any = await createClient({ db: ':memory:', schema })
+    const sys = db.asSystem()
+    for (let i = 0; i < 3; i++) await sys.task.create({ data: {} })
+    for (const score of [1, 2, 9, 4]) await sys.message.create({ data: { score } })
+    await sys.task.update({ where: { id: 1 }, data: { messages: { connect: [{ id: 1 }, { id: 2 }, { id: 3 }] } } })
+    await sys.task.update({ where: { id: 2 }, data: { messages: { connect: [{ id: 3 }] } } })
+    return { db, sys }
+  }
+
+  it('counts, sums and tests existence through the join table', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.task.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.msgCount)).toEqual([3, 1, 0])
+    expect(rows.map((r: any) => r.msgScore)).toEqual([12, 9, 0])
+    expect(rows.map((r: any) => r.hasLoud)).toEqual([true, true, false])
+  })
+
+  it('reads from the other end of the same relation', async () => {
+    const { sys } = await seeded(M2M('', 'taskCount Int @from(Task, count: true)'))
+    const rows = await sys.message.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.taskCount)).toEqual([1, 1, 2, 0])
+  })
+
+  it('names a direction of a self-relation, and a labeled relation, with via', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: `
+model Tag {
+  id        String @id @default(uuid())
+  related   Tag[]  @relation("rel")
+  relatedBy Tag[]  @relation("rel")
+  nOut      Int    @from(Tag, count: true, via: related)
+  nIn       Int    @from(Tag, count: true, via: relatedBy)
+  docs      Doc[]  @relation("dt")
+  nDocs     Int    @from(Doc, count: true)
+}
+model Doc {
+  id   String @id @default(uuid())
+  tags Tag[]  @relation("dt")
+}` })
+    const sys = db.asSystem()
+    const [a, b, c] = [await sys.tag.create({ data: {} }), await sys.tag.create({ data: {} }), await sys.tag.create({ data: {} })]
+    await sys.tag.update({ where: { id: a.id }, data: { related: { connect: [{ id: b.id }, { id: c.id }] } } })
+    await sys.doc.create({ data: { tags: { connect: [{ id: a.id }, { id: b.id }] } } })
+    const by = Object.fromEntries((await sys.tag.findMany()).map((t: any) => [t.id, [t.nOut, t.nIn, t.nDocs]]))
+    expect(by[a.id]).toEqual([2, 0, 1])
+    expect(by[b.id]).toEqual([0, 1, 1])
+    expect(by[c.id]).toEqual([0, 1, 0])
+  })
+
+  it('filters and sorts on the aggregate', async () => {
+    const { sys } = await seeded()
+    const rows = await sys.task.findMany({ where: { msgCount: { gt: 0 } }, orderBy: { msgCount: 'desc' } })
+    expect(rows.map((r: any) => r.id)).toEqual([1, 2])
+  })
+
+  it('counts only the rows the target policy lets the caller read', async () => {
+    const { db } = await seeded(M2M("@@allow('read', true)", "@@allow('read', score > 1)"))
+    const rows = await db.$setAuth({ id: 'x' }).task.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.msgCount)).toEqual([2, 1, 0])
+    const sys = await db.asSystem().task.findMany({ orderBy: { id: 'asc' } })
+    expect(sys.map((r: any) => r.msgCount)).toEqual([3, 1, 0])
+  })
+
+  it('refuses a row-valued form, which has no repick through a join table', async () => {
+    expect(await refusal(M2M('lastMsg Message? @from(Message, last: true)'))).toMatch(/many-to-many/)
+  })
+
+  it('refuses a relation that is both a foreign key and a many-to-many', async () => {
+    const s = M2M('', 'owner Task? @relation("owner", fields: [ownerId], references: [id])\n  ownerId Int?')
+              .replace('messages  Message[]', 'messages  Message[]\n  owned     Message[] @relation("owner")')
+    expect(await refusal(s)).toMatch(/ambiguous/)
+  })
+})

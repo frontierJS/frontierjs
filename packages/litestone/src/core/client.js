@@ -93,7 +93,7 @@ import { refuseUntrustedSchema } from './untrusted.js'
 import {
   checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter, defer,
 } from './hooks.js'
-import { makeLoggerAutoModel, trailModelName, buildLogMap, buildLogEntry, jsonlTrailEntry, fireLog, flushPendingLogs } from './audit-log.js'
+import { makeLoggerAutoModel, trailModelName, buildLogMap, buildLogEntry, trailRowValues, fireLog, flushPendingLogs } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
 // tools import it from here.
 export { buildRelationMap } from './schema-maps.js'
@@ -2300,7 +2300,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const table = getLogTable(dbName)
     if (!table) return
     const built = buildLogEntry(entry, ctx, ctx.onLog)
-    fireLog(table, ctx.trailDbMap[dbName].kind === 'jsonl' ? jsonlTrailEntry(built) : built, ctx._logStats)
+    fireLog(table, trailRowValues(built), ctx._logStats)
   }
 
   // ── Audit redaction ─────────────────────────────────────────────────────
@@ -3665,8 +3665,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // A single File is parsed on read like a Json column, but its stored text is
   // FileStorage's to write: stringifying an object here would store a ref a
   // caller sent, which `refuseUnbindable` below refuses by name (FJS-D666).
+  // A protected column's value is already its stored text: the ciphertext, or
+  // the hash a deterministic lookup compares against.
   const _jsonWriteFields = new Set([...jsonFields].filter(f => {
     const t = shape.model.fields.find(m => m.name === f)?.type
+    if (fieldPolicy[f]?.encrypted || fieldPolicy[f]?.hashed) return false
     return !(t?.name === 'File' && !t.array)
   }))
   const _needsStorage = (v) => v !== null && typeof v === 'object' && !(v instanceof Date)
@@ -12110,7 +12113,7 @@ function makeLockPrimitive(rawWriteDb) {
         `the respondent, or not at all (FJS-D349)`)
     }
 
-    return await table.create({ data: jsonlTrailEntry(built) })
+    return await table.create({ data: trailRowValues(built) })
   }
 
   // $transaction — wraps async callback in BEGIN IMMEDIATE / COMMIT

@@ -22,7 +22,7 @@
 import { createService } from '@frontierjs/junction'
 import { AccessDeniedError, LEVELS } from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db } from '../../core/resource.ts'
+import { db, shapedByCaller } from '../../core/resource.ts'
 import type { BasecampApp } from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
@@ -132,7 +132,7 @@ export function createTrashService(app: BasecampApp) {
       }
 
       shown.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
-      return { total: shown.length, limit: shown.length, offset: 0, data: shown }
+      return { total: shown.length, limit: shown.length, offset: 0, data: shapedByCaller(shown) }
     },
 
     hooks: {

@@ -102,8 +102,12 @@
   // and `25` under a floor of 10 is `2` first — clamping that `2` to 10 makes
   // the next keystroke `105`, which lands on the ceiling (FJS-2596). The bounds
   // and the step apply on blur and on the stepper instead.
+  function read(s) {
+    return parse ? parse(s) : parseFloat(s)
+  }
+
   function fromDisplay(s) {
-    const parsed = parse ? parse(s) : parseFloat(s)
+    const parsed = read(s)
     return isNaN(parsed) ? value : parsed
   }
 
@@ -115,8 +119,10 @@
 
   // Sync when value prop changes from outside. A value the box's own text
   // already reads as is the one being typed, and rewriting the box with it
-  // would eat a trailing `.` or `0` mid-number.
-  $: value, () => { if (fromDisplay(inputValue) !== value) inputValue = toDisplay(value) }
+  // would eat a trailing `.` or `0` mid-number. A box that reads as no number
+  // at all is not that, and `fromDisplay` would answer the new value for it: a
+  // box that started empty never showed the value a page set after mount.
+  $: value, () => { if (read(inputValue) !== value) inputValue = toDisplay(value) }
 
   // Button disabled states — re-derive when value/min/max change
   const canDecrement = resolvedMin === undefined || value > resolvedMin

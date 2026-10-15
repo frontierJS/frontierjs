@@ -26,7 +26,7 @@
   var verbs = $context.commands
   // A stool's reach: three cells, so the reaches of stools six apart meet.
   const REACH = 3
-  const PANE = { x: 3, y: 1, w: 88, h: 5 }
+  const PANE = { x: 3, y: 1, w: 92, h: 8 }
   const TITLE = '— the barkeep — Esc puts it away'
 
   const bar    = scene.placed(barPiece)[0]

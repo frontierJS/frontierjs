@@ -22,12 +22,13 @@
   import { barActivity } from '#errand'
   import { bar as barPiece } from '@/pieces/bar.js'
   import { spotsOf } from '@/pieces/index.js'
+  import { clip } from '@/cells.js'
 
   const scene = $context.scene
   const CACHE_MS = 60_000
   const SCROLL_MS = 3_000
-  const BOARD = { x: 3, y: 1, w: 84, h: 6 }
-  const PROJECT_W = 12
+  const BOARD = { x: 3, y: 1, w: 92, h: 8 }
+  const PROJECT_W = 14
   // A row keeps its color wherever it scrolls to, so the eye can stay on one.
   const INKS = ['#fbbf24', '#34d399', '#60a5fa', '#f472b6', '#a78bfa', '#fb923c']
   const TITLE = '— behind the bar —'
@@ -89,12 +90,12 @@
   function lines(s, r, f, o) {
     const room = BOARD.h - 1
     if (s === 'loading') return [{ text: 'chalking it up…' }]
-    if (s === 'failed')  return [{ text: `the board is blank: ${f}`.slice(0, BOARD.w) }]
+    if (s === 'failed')  return [{ text: clip(`the board is blank: ${f}`, BOARD.w) }]
     if (!r.length)       return [{ text: 'nothing new' }]
     const idx = r.length > room ? Array.from({ length: room }, (_, i) => (o + i) % r.length) : r.map((_, i) => i)
     return idx.map((n) => {
       const [project, rest] = split(r[n].text)
-      return { color: INKS[n % INKS.length], text: `${ago(r[n].when).padStart(3)} ${project.padEnd(PROJECT_W)} ${rest}`.slice(0, BOARD.w) }
+      return { color: INKS[n % INKS.length], text: clip(`${ago(r[n].when).padStart(3)}  ${project.padEnd(PROJECT_W)}  ${rest}`, BOARD.w) }
     })
   }
 </script>

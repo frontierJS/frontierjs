@@ -10,8 +10,9 @@
 // so the ones with real behavior (servers' drain/heartbeat, deployments'
 // job handoff) read as themselves rather than as config for a base class.
 
-import { NotFound, Conflict, normalizeOrderBy, normalizeSelect, $ } from '@frontierjs/junction'
-import type { ServiceContext, SortParam, SelectParam } from '@frontierjs/junction'
+import { NotFound, Conflict, $ } from '@frontierjs/junction'
+import type { ServiceContext } from '@frontierjs/junction'
+import { normalizeOrderBy, normalizeSelect, comparatorFor, type SortParam, type SelectParam } from '@frontierjs/toolbelt/query'
 
 // ─── Reading the call ────────────────────────────────────────────────────
 // `$` is the service call in progress — read-only, fresh per call, and it
@@ -69,15 +70,55 @@ export async function findScoped(
   accessor: string,
   opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, unknown> | Record<string, unknown>[] },
 ) {
-  const { orderBy: sort, select } = ($.directives ?? {}) as { orderBy?: SortParam; select?: SelectParam }
   const { rows, total } = await db()[accessor].findManyAndCount({
     where:   opts.where ?? {},
     limit:   opts.limit,
     offset:  opts.offset,
-    orderBy: sort != null ? normalizeOrderBy(sort) : opts.orderBy ?? { createdAt: 'desc' },
-    ...(select != null ? { select: normalizeSelect(select) } : {}),
+    orderBy: callerOrder(opts.orderBy ?? { createdAt: 'desc' }),
+    ...callerSelect(),
   })
   return { total, limit: opts.limit, offset: opts.offset, data: rows }
+}
+
+/**
+ * The caller's `$orderBy`, else the service's own order. A hand-written find
+ * reads it here so junction's unread-directive check passes for the right
+ * reason. A list that is not a table read (trash, portal) uses `shapedByCaller`.
+ */
+export function callerOrder<T>(fallback: T): T | ReturnType<typeof normalizeOrderBy> {
+  const { orderBy } = ($.directives ?? {}) as { orderBy?: SortParam }
+  return orderBy != null ? normalizeOrderBy(orderBy) : fallback
+}
+
+/**
+ * The caller's `$select` as a spreadable `{ select }`, or nothing. A find that
+ * `include`s a relation does not call it: a query takes `select` or `include`,
+ * not both, so `$select` there stays a 400 rather than dropping the include.
+ */
+export function callerSelect(): { select?: Record<string, boolean> } {
+  const { select } = ($.directives ?? {}) as { select?: SelectParam }
+  return select != null ? { select: normalizeSelect(select) } : {}
+}
+
+/**
+ * The caller's `$orderBy` and `$select` applied to rows already in memory, for
+ * a list that is computed rather than read from a table (trash, portal, the
+ * notification kinds). Without `$orderBy` the rows keep the order they came in;
+ * the sort is stable, so the service's own order breaks ties.
+ */
+export function shapedByCaller<T extends Record<string, unknown>>(rows: T[]): T[] {
+  const { orderBy, select } = ($.directives ?? {}) as { orderBy?: SortParam; select?: SelectParam }
+  const compare = comparatorFor(orderBy)
+  const sorted  = compare ? [...rows].sort(compare) : rows
+  return select != null ? pickedByCaller(sorted) : sorted
+}
+
+/** The caller's `$select` over rows already in memory; no `$select` is the rows untouched. */
+export function pickedByCaller<T extends Record<string, unknown>>(rows: T[]): T[] {
+  const { select } = ($.directives ?? {}) as { select?: SelectParam }
+  if (select == null) return rows
+  const keys = Object.entries(normalizeSelect(select)).filter(([, on]) => on).map(([k]) => k)
+  return rows.map(r => Object.fromEntries(keys.filter(k => k in r).map(k => [k, r[k]]))) as T[]
 }
 
 /**

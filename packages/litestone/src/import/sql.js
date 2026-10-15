@@ -1,5 +1,5 @@
-// sql.js — a PostgreSQL `pg_dump --schema-only` or Rails `structure.sql`, read
-// into .lite.
+// sql.js — a PostgreSQL `pg_dump --schema-only`, a Rails `structure.sql` or a
+// MySQL/MariaDB `mysqldump`, read into .lite.
 //
 // The reader that reaches surfaces the other three cannot put any input in front
 // of: a dump carries CHECK constraints, views and native enums, none of which
@@ -13,6 +13,12 @@
 //     across lines, long after the table
 //   · almost everything is noise — sequences, functions, triggers, COMMENT ON,
 //     SET, ACL — so the reader is a whitelist and records what it skipped
+//
+// A MySQL dump is the opposite on keys: they are written INSIDE CREATE TABLE,
+// next to the columns, with backticks around every name and table options after
+// the closing paren. It is told from a Postgres one by those two marks, and read
+// by the same statements — one reader, so a gap kind means one thing. phpMyAdmin's
+// export is the Postgres shape again: keys and AUTO_INCREMENT arrive in ALTER TABLE.
 
 import { singularize, pascal, camel, modelName } from '@frontierjs/toolbelt/inflect'
 import { mapIdentifiers } from '../core/ddl.js'
@@ -30,11 +36,12 @@ export function convert(src, label = 'schema') {
   const gap = (kind, model, field, detail, emitted) =>
     gaps.push({ source: label, kind, model, field, detail, emitted })
 
-  const statements = split(src)
+  const mysql = isMysql(src)
+  const statements = split(src, mysql)
   const enums  = new Map()
   const tables = new Map()
 
-  for (const st of statements) readStatement(st, enums, tables, gap)
+  for (const st of statements) readStatement(st, enums, tables, gap, mysql)
 
   const out = []
   for (const [name, values] of enums) out.push(`enum ${pascal(name)} {`, ...values.map(v => '  ' + enumValue(v)), '}', '')
@@ -47,13 +54,26 @@ export function convert(src, label = 'schema') {
 
 // A dollar-quoted function body may hold anything, semicolons included, so
 // those are removed before the file is cut into statements at all.
-function split(src) {
+function split(src, mysql) {
+  // Backticks never appear in a Postgres dump's identifiers, and a mysqldump
+  // wraps every statement the server must run in a `/*! … */;` line, which is
+  // not a statement. Only whole lines are dropped: an INSERT's data may hold
+  // `/*` inside a string.
+  if (mysql) src = src.replace(/`/g, '').replace(/^\/\*.*\*\/;?[ \t]*$/gm, '')
   return src
     .replace(/\$\$[\s\S]*?\$\$/g, "'<body>'")
     .split(/;\s*\n/)
     .map(s => s.replace(/^\s*--.*$/gm, '').replace(/\s+/g, ' ').trim())
+    .map(s => mysql ? s.replace(TABLE_OPTIONS, '$1') : s)
     .filter(Boolean)
 }
+
+const isMysql = (src) => /CREATE TABLE (?:IF NOT EXISTS )?`|\)\s*ENGINE\s*=/i.test(src)
+
+// What follows a CREATE TABLE's closing paren. Anchored on the `=` because a
+// column's own `COLLATE x` / `AUTO_INCREMENT` also follows a paren (`varchar(191)
+// COLLATE …`) and cutting there would drop the rest of the table.
+const TABLE_OPTIONS = /^(CREATE TABLE .*?\))\s*(?:ENGINE|AUTO_INCREMENT|(?:DEFAULT )?CHARSET|ROW_FORMAT|KEY_BLOCK_SIZE|STATS_\w+|CHECKSUM)\s*=.*$/i
 
 function enumValue(v) {
   const clean = v.replace(/^'|'$/g, '')
@@ -64,7 +84,7 @@ function enumValue(v) {
 
 // ─── statements ──────────────────────────────────────────────────────────────
 
-function readStatement(st, enums, tables, gap) {
+function readStatement(st, enums, tables, gap, mysql) {
   let m
 
   if ((m = st.match(/^CREATE TYPE ([\w."]+) AS ENUM \((.*)\)$/i))) {
@@ -75,7 +95,7 @@ function readStatement(st, enums, tables, gap) {
   if ((m = st.match(/^CREATE TABLE (?:IF NOT EXISTS )?([\w."]+) \((.*)\)(?: PARTITION BY .*)?$/i))) {
     const table = bare(m[1])
     const schema = m[1].replace(/"/g, '').match(/^([a-z_]\w*)\./i)?.[1]
-    const t = { table, model: modelName(table), cols: [], checks: [], pk: [], fks: [], indexes: [], arcs: [] }
+    const t = { table, model: modelName(table), cols: [], checks: [], pk: [], fks: [], indexes: [], arcs: [], mysql }
     if (tables.has(table)) {
       gap('table-name-collision', t.model, null, `${m[1]} collides with an earlier ${table}`,
           'skipped — .lite has no schema qualifier, so two schemas cannot both contribute this name')
@@ -89,30 +109,19 @@ function readStatement(st, enums, tables, gap) {
     for (const part of splitTop(m[2])) {
       const chk = part.match(/^CONSTRAINT ([\w"]+) CHECK \((.*)\)$/i)
       if (chk) { t.checks.push({ name: bare(chk[1]), expr: chk[2].trim() }); continue }
+      if (mysql && readInlineKey(part, t)) continue
       if (/^(CONSTRAINT|PRIMARY KEY|UNIQUE|FOREIGN KEY|EXCLUDE)\b/i.test(part)) {
         gap('inline-constraint', t.model, null, part.slice(0, 70), 'skipped — read from the ALTER TABLE form where there is one')
         continue
       }
-      t.cols.push(part)
+      t.cols.push(mysql ? inlineEnum(part, t, enums) : part)
     }
     return
   }
 
-  if ((m = st.match(/^ALTER TABLE (?:ONLY )?([\w."]+) ADD CONSTRAINT ([\w"]+) (.*)$/i))) {
+  if ((m = st.match(/^ALTER TABLE (?:ONLY )?([\w."]+) (.*)$/i))) {
     const t = tables.get(bare(m[1])); if (!t) return
-    const body = m[3]
-    let k
-    if ((k = body.match(/^PRIMARY KEY \((.*)\)$/i))) t.pk = k[1].split(',').map(c => bare(c.trim()))
-    else if ((k = body.match(/^FOREIGN KEY \((.*)\) REFERENCES ([\w."]+)\(([^)]*)\)(.*)$/i)))
-      t.fks.push({ cols: k[1].split(',').map(c => bare(c.trim())), parent: bare(k[2]),
-                   ref: k[3].split(',').map(c => bare(c.trim())),
-                   onDelete: /ON DELETE CASCADE/i.test(k[4]) ? 'Cascade' : /ON DELETE SET NULL/i.test(k[4]) ? 'SetNull' : null,
-                   notValid: /NOT VALID/i.test(k[4]) })
-    else if ((k = body.match(/^UNIQUE \((.*)\)$/i))) t.indexes.push({ unique: true, cols: k[1].split(',').map(c => bare(c.trim())), where: null })
-    else if (/^CHECK/i.test(body)) {
-      const e = body.match(/^CHECK \((.*?)\)(?: NOT VALID)?$/i)
-      if (e) t.checks.push({ name: bare(m[2]), expr: e[1].trim() })
-    }
+    for (const clause of splitTop(m[2])) readAlter(clause, t, enums, gap)
     return
   }
 
@@ -128,6 +137,67 @@ function readStatement(st, enums, tables, gap) {
         "skipped — .lite's `view` needs its columns DECLARED plus an @@sql body, and a Postgres body is not SQLite")
     return
   }
+}
+
+// One clause of an ALTER TABLE. phpMyAdmin batches several into one statement
+// (`ADD PRIMARY KEY (...), ADD UNIQUE KEY ...`) and states AUTO_INCREMENT as a
+// later `MODIFY`, so a column is restated here and replaces the CREATE TABLE's.
+// A Postgres dump's other ALTERs (ALTER COLUMN ... SET DEFAULT) are still skipped
+// quietly; a MySQL clause nothing reads is named, since the output is thinner by it.
+function readAlter(clause, t, enums, gap) {
+  let m
+  if ((m = clause.match(/^ADD CONSTRAINT ([\w"]+) (.*)$/i))) { readKey(m[2], bare(m[1]), t); return }
+  if (!t.mysql) return
+  if (/^AUTO_INCREMENT\s*=/i.test(clause)) return
+  if ((m = clause.match(/^ADD (.*)$/i)) && readInlineKey(m[1], t)) return
+  if ((m = clause.match(/^MODIFY (?:COLUMN )?([\w"]+) (.*?)(?: (?:FIRST|AFTER [\w"]+))?$/i))) {
+    const at = t.cols.findIndex(c => bare(c.split(' ')[0]) === bare(m[1]))
+    if (at >= 0) { t.cols[at] = inlineEnum(`${m[1]} ${m[2]}`, t, enums); return }
+  }
+  gap('unparsed-line', t.model, null, `ALTER TABLE ${clause}`.slice(0, 70), 'dropped')
+}
+
+// A key, foreign key or CHECK, whichever statement it arrives in: Postgres puts
+// it in an ALTER TABLE ... ADD CONSTRAINT, MySQL inside CREATE TABLE. One reader,
+// so the two cannot disagree about what an ON DELETE clause means.
+function readKey(body, name, t) {
+  let k
+  if ((k = body.match(/^PRIMARY KEY \((.*)\)$/i))) t.pk = keyCols(k[1])
+  else if ((k = body.match(/^FOREIGN KEY \((.*)\) REFERENCES ([\w."]+) ?\(([^)]*)\)(.*)$/i)))
+    t.fks.push({ cols: keyCols(k[1]), parent: bare(k[2]),
+                 ref: keyCols(k[3]),
+                 onDelete: /ON DELETE CASCADE/i.test(k[4]) ? 'Cascade' : /ON DELETE SET NULL/i.test(k[4]) ? 'SetNull' : null,
+                 notValid: /NOT VALID/i.test(k[4]) })
+  else if ((k = body.match(/^UNIQUE(?: (?:KEY|INDEX))?(?: [\w"]+)? \((.*)\)(?: USING \w+)?$/i)))
+    t.indexes.push({ unique: true, cols: keyCols(k[1]), where: null })
+  else if (/^CHECK/i.test(body)) {
+    const e = body.match(/^CHECK \((.*?)\)(?: NOT VALID)?$/i)
+    if (e) t.checks.push({ name, expr: e[1].trim() })
+  }
+}
+
+// A MySQL index may prefix-length a column (`name(191)`), which is a storage
+// detail and not a different column.
+const keyCols = (s) => splitTop(s).map(c => bare(c.trim().replace(/\(\d+\)/, '')))
+
+// Returns true when the part was a key of one of the shapes MySQL writes inline.
+function readInlineKey(part, t) {
+  const k = part.replace(/^CONSTRAINT [\w"]+ (?=PRIMARY|UNIQUE|FOREIGN)/i, '')
+  if (/^(PRIMARY KEY|UNIQUE|FOREIGN KEY)\b/i.test(k)) { readKey(k, null, t); return true }
+  const ix = k.match(/^(?:KEY|INDEX) (?:[\w"]+ )?\((.*)\)(?: USING \w+)?$/i)
+  if (!ix) return false
+  t.indexes.push({ unique: false, cols: keyCols(ix[1]), where: null, raw: ix[1] })
+  return true
+}
+
+// `kind enum('a','b')` is a native enum written at the column. Registered under
+// the table and column it sits on, so two tables' `status` stay two enums.
+function inlineEnum(part, t, enums) {
+  const m = part.match(/^([\w"]+) enum ?\((.*?)\)(?= |$)(.*)$/i)
+  if (!m) return part
+  const name = `${t.table}_${bare(m[1])}`
+  enums.set(name, splitTop(m[2]))
+  return `${m[1]} ${name}${m[3]}`
 }
 
 // Split a parenthesized list on commas that are not nested.
@@ -147,15 +217,19 @@ function splitTop(s) {
 
 // ─── emitting ────────────────────────────────────────────────────────────────
 
+// MySQL's spellings sit beside Postgres's: no word means two things. `tinyint(1)`
+// is first because it is MySQL's own BOOLEAN, where any other `tinyint` is a
+// number.
 const TYPES = [
   [/^uuid$/,                                   'String'],
-  [/^(character varying|varchar|text|citext|character|char|inet|cidr|macaddr|xml|name)\b/, 'String'],
-  [/^(smallint|integer|int|int2|int4|int8|bigint|serial|bigserial|smallserial|oid)\b/,     'Int'],
-  [/^(double precision|real|float\d*|money)\b/, 'Float'],
+  [/^(character varying|varchar|text|tinytext|mediumtext|longtext|citext|character|char|inet|cidr|macaddr|xml|name)\b/, 'String'],
+  [/^(tinyint\(1\)|bit\(1\))/i,               'Boolean'],
+  [/^(smallint|integer|int|int2|int4|int8|bigint|serial|bigserial|smallserial|oid|tinyint|mediumint|year)\b/, 'Int'],
+  [/^(double precision|double|real|float\d*|money)\b/, 'Float'],
   [/^bool(ean)?$/,                             'Boolean'],
-  [/^(timestamp|timestamptz|date|time)\b/,     'DateTime'],
+  [/^(timestamp|timestamptz|datetime|date|time)\b/, 'DateTime'],
   [/^(jsonb|json)$/,                           'Json'],
-  [/^bytea$/,                                  'Bytes'],
+  [/^(bytea|tinyblob|blob|mediumblob|longblob|binary|varbinary)\b/, 'Bytes'],
   [/^interval\b/,                              'String'],
 ]
 
@@ -268,16 +342,30 @@ function readColumn(raw, t, enums, gap) {
   const name = bare(m[1])
   let rest = m[2]
 
+  const extra = []
+  if (t.mysql) {
+    // Said before NOT NULL and DEFAULT are read: a COMMENT string may hold either
+    // word, and a charset clause sits between the type and both.
+    rest = rest.replace(/\bCOMMENT '(?:[^'\\]|\\.|'')*'/i, '')
+               .replace(/\bON UPDATE \w+(?:\(\d*\))?/i, '')
+               .replace(/\b(?:unsigned|zerofill)\b/gi, '')
+               .replace(/\bCHARACTER SET \w+/i, '').replace(/\bCOLLATE \w+/i, '')
+    if (/\bAUTO_INCREMENT\b/i.test(rest)) { rest = rest.replace(/\bAUTO_INCREMENT\b/i, ''); extra.push('@default(autoincrement())') }
+    const chk = rest.match(/\s+CHECK \(.*\)$/i)
+    if (chk) { rest = rest.slice(0, chk.index); gap('inline-constraint', t.model, name, chk[0].trim().slice(0, 70), 'skipped — a column CHECK is not read') }
+    rest = rest.replace(/\s+/g, ' ').trim()
+  }
+
   const notNull = /\bNOT NULL\b/i.test(rest)
   rest = rest.replace(/\bNOT NULL\b/i, '').trim()
 
   let def = null
   const d = rest.match(/\bDEFAULT (.+?)(?:\s+(?:NOT NULL|CHECK|REFERENCES)\b|$)/i)
   if (d) { def = d[1].trim(); rest = rest.replace(d[0], '').trim() }
+  if (t.mysql) rest = rest.replace(/\s+NULL$/i, '')
 
   const isArray = /\[\]$/.test(rest)
   const typeText = rest.replace(/\[\]$/, '').trim()
-  const extra = []
 
   let type = null
   const enumName = bare(typeText)
@@ -309,7 +397,8 @@ function readColumn(raw, t, enums, gap) {
 
   if (def !== null) {
     const v = pgDefault(def, type, isArray)
-    if (v === null) gap('dbgenerated-default', t.model, name, def.slice(0, 50), 'dropped — no .lite spelling')
+    if (v === NO_DEFAULT) { /* MySQL's DEFAULT NULL says only that the column is nullable */ }
+    else if (v === null) gap('dbgenerated-default', t.model, name, def.slice(0, 50), 'dropped — no .lite spelling')
     else if (v === '__ARRAY__') gap('array-default', t.model, name, `default ${def}`,
       'dropped — .lite refuses every array default, the empty one included (FJS-564)')
     else extra.push(`@default(${v})`)
@@ -320,8 +409,19 @@ function readColumn(raw, t, enums, gap) {
   return { name, type, optional: !notNull, isArray, extra, srcType: typeText }
 }
 
+const NO_DEFAULT = Symbol('no default')
+
 function pgDefault(def, type, isArray) {
   const d = def.replace(/::[\w "\[\]]+$/, '').trim()          // drop the cast
+  if (/^NULL$/i.test(d)) return NO_DEFAULT
+  // MySQL writes every default as a string, numbers and booleans included
+  // (`DEFAULT '0'`), and a bit as `b'0'`.
+  const lit = d.match(/^b?'(-?\d+(?:\.\d+)?)'$/i)?.[1]
+  if (lit !== undefined) {
+    if (type === 'Boolean') return Number(lit) ? 'true' : 'false'
+    if (type === 'Int' || type === 'Float') return lit
+  }
+  if (type === 'Boolean' && /^[01]$/.test(d)) return d === '1' ? 'true' : 'false'
   if (isArray || /^ARRAY\[|^'\{.*\}'$/.test(d)) return '__ARRAY__'
   if (/^nextval\(/i.test(d)) return 'autoincrement()'
   if (/^gen_random_uuid\(\)|^uuid_generate_v\d\(\)/i.test(d)) return 'uuid()'

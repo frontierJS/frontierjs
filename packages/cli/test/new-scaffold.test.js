@@ -96,3 +96,57 @@ test('the scaffolded queue sits beside DATABASE_URL, not beside the code', () =>
   expect(probe('./db/app.db')).toBe(join(app, 'db/jobs.db'))
   expect(probe(':memory:')).toBe(join(app, 'db/jobs.db'))
 }, 60_000)
+
+// FJS-1792 — --full installed caravan and notifications and wired neither past
+// createCaravan(), so a schema declaring @@commitment was refused at start and
+// the first app.notify() was hand-written plumbing.
+test('--full wires the commitments plugin, the system principal and the notifications plugin', () => {
+  const app = scaffold('wired', '--full')
+  const appTs = readFileSync(join(app, 'api/src/app.ts'), 'utf8')
+  expect(appTs).toContain("import { commitments } from '@frontierjs/junction/commitments'")
+  expect(appTs).toMatch(/^\s*system: SYSTEM,$/m)
+  expect(appTs).toMatch(/^app\.configure\(notificationsPlugin\(\{ db \}\)\)$/m)
+  // After caravan, which commitments() requires.
+  expect(appTs.indexOf('app.configure(createCaravan())')).toBeLessThan(appTs.indexOf('app.configure(commitments())'))
+  expect(readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')).toMatch(/export const SYSTEM\s*=/)
+  expect(existsSync(join(app, 'api/src/notifications'))).toBe(true)
+}, 60_000)
+
+test('an app with neither package wires neither plugin', () => {
+  const app = scaffold('unwired', '--minimal')
+  const appTs = readFileSync(join(app, 'api/src/app.ts'), 'utf8')
+  expect(appTs).not.toContain('commitments')
+  expect(appTs).not.toContain('notificationsPlugin')
+  expect(appTs).not.toContain('SYSTEM')
+  expect(readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')).not.toContain('SYSTEM')
+  expect(existsSync(join(app, 'api/src/notifications'))).toBe(false)
+}, 60_000)
+
+// FJS-1618 — an app whose only surface is web/ was a full-stack scaffold taken
+// apart by hand: nine files rewritten and four deleted. The template writes it
+// the way it is.
+test('--template web-only writes web/ and nothing that needs an API or a database', () => {
+  const app = scaffold('web-only', '--template', 'web-only')
+  for (const gone of ['api', 'db', 'cli', 'deploy', '.env', '.env.example', 'frontier.config.js'])
+    expect(existsSync(join(app, gone))).toBe(false)
+  expect(existsSync(join(app, 'web/src/routes/index.mesa'))).toBe(true)
+
+  const manifest = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
+  const deps = { ...manifest.dependencies, ...manifest.devDependencies }
+  expect(deps['@frontierjs/litestone']).toBeUndefined()
+  expect(deps['@frontierjs/junction']).toBeUndefined()
+  for (const s of ['dev:api', 'start', 'db:migrate', 'db:backup', 'db:types'])
+    expect(manifest.scripts[s]).toBeUndefined()
+  expect(manifest.scripts.dev).toBe(manifest.scripts['dev:web'])
+
+  expect(readFileSync(join(app, 'tsconfig.json'), 'utf8')).not.toContain('api/')
+  expect(readFileSync(join(app, 'web/config/sierra.config.js'), 'utf8')).not.toContain('junction')
+  const vite = readFileSync(join(app, 'web/config/vite.config.js'), 'utf8')
+  expect(vite).not.toContain('/api')
+  expect(vite).toContain('strictPort: true')
+  expect(readFileSync(join(app, 'web/src/routes/_module.mesa'), 'utf8')).not.toContain('sierra/resource')
+  expect(readFileSync(join(app, 'web/src/routes/index.mesa'), 'utf8')).not.toContain('/api/health')
+  expect(readFileSync(join(app, 'web/src/main.js'), 'utf8')).not.toContain('db/schema.lite')
+  expect(readFileSync(join(app, 'AGENTS.md'), 'utf8')).not.toContain('schema.lite\`: **Data')
+  expect(readFileSync(join(app, 'README.md'), 'utf8')).not.toMatch(/api\/|schema\.lite/)
+}, 60_000)

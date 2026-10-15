@@ -32,7 +32,7 @@
 
 import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin, getPagination } from '../../core/hooks.ts'
-import { db, slugify }                       from '../../core/resource.ts'
+import { db, slugify, callerOrder }          from '../../core/resource.ts'
 import type { BasecampApp }                  from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
@@ -76,7 +76,7 @@ export function createBlueprintsService(_app: BasecampApp) {
       const { rows, total } = await db().blueprint.findManyAndCount({
         where, limit, offset,
         include: WITH_PARAMS,
-        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        orderBy: callerOrder([{ category: 'asc' }, { name: 'asc' }]),
       })
       return { total, limit, offset, data: rows }
     },

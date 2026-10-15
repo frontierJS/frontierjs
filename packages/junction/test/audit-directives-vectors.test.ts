@@ -20,7 +20,7 @@ import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
 import { bridge }        from '../src/transport/bridge.ts'
 import { parseQuery }    from '../src/core/litestone.ts'
-import { normalizeOrderBy } from '../src/core/query-values.ts'
+import { normalizeOrderBy } from '@frontierjs/toolbelt/query'
 import { orderByPair }   from '@frontierjs/toolbelt/directives'
 import { request }       from '../src/testing/index.ts'
 
@@ -127,8 +127,7 @@ describe('a directive VALUE the grammar does not admit is refused by name, as an
     expect(ids(off.body)).toEqual([1, 2])
   })
 
-  // FJS-2464: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a direction that is not asc/desc/1/-1 is refused, not read as descending', async () => {
+  test('a direction that is not asc/desc/1/-1 is refused, not read as descending', async () => {
     const res = await request(await appWith()).get('/posts?$orderBy[title]=sideways')
     expect(res.status).toBe(400)
     expect(text(res.body)).toContain('sideways')

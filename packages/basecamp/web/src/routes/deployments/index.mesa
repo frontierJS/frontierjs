@@ -94,7 +94,7 @@ title: Deployments
     </div>
   </article>
 {:else}
-  <Table id="deployment-rows" {columns} rows={list.rows} striped>
+  <Table id="deployment-rows" {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort} striped>
     {#snippet row(deployment)}
       <tr>
         {#each cols as c}

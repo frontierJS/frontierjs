@@ -285,6 +285,26 @@ export const almanacAt = (ms) => {
   return almanac
 }
 
+// The skies a pacer keeps to (`sky` on a `<Pacer>`), each read off the
+// world's almanac -- the clock under the environment's pins, never a screen's
+// hold. The server, which holds nothing, asks the same when a bolt crosses the
+// cell, so a screen holding snow would otherwise draw a white stag the bolt
+// flies through.
+const world = (ms) => ({ season: pinned('season') ?? seasonAt(ms), weather: pinned('weather') ?? fallen(ms) })
+
+export const SKIES = {
+  summer:           (ms) => world(ms).season === 'summer',
+  'twilight-rain':  (ms) => { const d = darkness(ms); return d > 0 && d < 1 && world(ms).weather === 'rain' },
+  'full-moon-snow': (ms) => darkness(ms) === 1 && moonAt(ms).light === 1 && world(ms).weather === 'snow',
+}
+
+/** Whether the sky called `name` is out `ms` into the clock. A name `SKIES` lacks is refused, since it would hide its animal for good. */
+export function skyIs(name, ms) {
+  const rule = SKIES[name]
+  if (!rule) throw new Error(`no sky is called ${name}; a pacer keeps to ${Object.keys(SKIES).join(', ')}`)
+  return rule(ms)
+}
+
 // ─── wind ─────────────────────────────────────────────────────────────────
 
 /** Steps of a fall per column of drift, by the wind's strength: 0 is calm and drifts nothing. */

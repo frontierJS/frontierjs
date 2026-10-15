@@ -4,7 +4,7 @@
 // The terminal paints no CSS and mesa's terminal tags lower to text and boxes
 // only, so color per cell goes through the engine's own frame buffer: this
 // attach puts one inside the box it is attached to, sized to the stage, and
-// draws every cell of `stage.view` from `stage.grid()` — the slice the screen
+// draws every cell of `stage.view` from `stage.drawing()` — the slice the screen
 // shows, which pans as the figure walks (6.1) — so a figure's cell on screen
 // is its stage cell less the view's corner. The view is as big as the
 // terminal less the lines under the art (`viewFor`, 14.6), so zooming the
@@ -81,28 +81,14 @@ export const paint = (stage) => (box) => {
     const buf = art.frameBuffer
     buf.clear(CLEAR)
     top.frameBuffer.clear(CLEAR)
-    const grid = stage.grid(v, ms)
-    for (let row = 0; row < v.h; row++) {
-      for (let col = 0; col < v.w; col++) {
-        const { ch, fg, bg, overhead } = grid[row][col]
-        if (ch === ' ' && !bg) continue
-        ;(overhead ? top.frameBuffer : buf).setCell(col, row, ch, rgba(fg) ?? INK, rgba(bg) ?? CLEAR)
+    const { art: low, top: high } = stage.drawing(v, ms)
+    for (const [grid, into] of [[low, buf], [high, top.frameBuffer]]) {
+      for (let row = 0; row < v.h; row++) {
+        for (let col = 0; col < v.w; col++) {
+          const { ch, fg, bg } = grid[row][col]
+          if (ch !== ' ' || bg) into.setCell(col, row, ch, rgba(fg) ?? INK, rgba(bg) ?? CLEAR)
+        }
       }
-    }
-    for (const p of stage.pacers) {
-      const at = stage.pacerNow(p, ms)
-      if (!at) continue
-      const { x, y, text } = at
-      const row = y - v.y
-      if (row < 0 || row >= v.h) continue
-      ;[...text].forEach((ch, i) => {
-        const col = x + i - v.x
-        if (ch !== ' ' && col >= 0 && col < v.w && stage.light(x + i, y) === 'lit') buf.setCell(col, row, ch, rgba(stage.tint(p.fg, x + i, y, ms)) ?? INK, CLEAR)
-      })
-    }
-    for (const { x, y, ch, fg } of stage.riders(ms)) {
-      const col = x - v.x, row = y - v.y
-      if (col >= 0 && col < v.w && row >= 0 && row < v.h && stage.light(x, y) === 'lit') buf.setCell(col, row, ch, rgba(stage.tint(fg, x, y, ms)) ?? INK, CLEAR)
     }
     if (bloom) {
       const g = glow.frameBuffer

@@ -199,6 +199,19 @@ describe('the walk itself', () => {
     await c.$close()
   })
 
+  it('a Json column holding text that is not JSON is a finding (FJS-2038)', async () => {
+    const c = await createClient({ schema: `model Day { id Int @id  details Json? }`, db: tmp() })
+    c.$rawDbs.main.exec(`INSERT INTO "day" ("id","details") VALUES (1,'not json {'),(2,'{"a":1}'),(3,'"plain"'),(4,NULL)`)
+
+    const report = await validateRows(c)
+    await c.$close()
+
+    expect(report.ok).toBe(false)
+    expect(report.checked).toEqual([{ model: 'Day', rows: 4, failing: 1 }])
+    expect(report.findings.map((f: any) => f.id)).toEqual([1])
+    expect(report.findings[0].errors[0].path).toEqual(['details'])
+  })
+
   it('a model on a jsonl driver is skipped by name — there is no schema to hold it to', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'lite-validate-jsonl-'))
     dirs.push(dir)

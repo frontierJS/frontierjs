@@ -42,7 +42,7 @@ and not here. Read the section for a path before changing code under it.
   a caller — which is most of what a hand-written sign-in page was doing when it
   re-mapped the status itself.
 - **A push is also PLACED, and a page past the first refuses one.** `orderBy`
-  decides where the row goes (`core/query-values.ts`, which is `parseSort` — one reading
+  decides where the row goes (toolbelt's `comparatorFor`, built on `normalizeOrderBy` — one reading
   of `-createdAt`), and on the first page the row pushed past `limit` belongs to
   page 2. Past page 1 nothing here can know whether a new row belongs on an
   earlier one, so it is refused and counted on `stale`, which a view renders as

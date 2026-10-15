@@ -11219,6 +11219,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d1042"></a>2026-10-15 · `FJS-D1042` — How does a `sierra.config.js` say *the page's own origin* for `junction.url`, now that `FJS-D552` evaluates it in Node — The page decides: `virtual:sierra` emits `url: import.meta.env.VITE_API_URL || location.origin`, and `junction.url` in the config is the answer where there is no page (the terminal shell, a prerender) and what turns the client on. The four configs shrink to a plain URL. The price: a config `url` naming a remote API is ignored by the page unless the build sets `VITE_API_URL`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a path-only `url` (`'/'`) means the page's origin, resolved by the client against `location`. One key, one meaning; the terminal then needs an absolute URL from `--api` and refuses a relative one by name, so `bun run tui`, `fli dev:tui` and `verify-tui` all change).
+
+The paper's recommendation, taken as written: every config in the tree already meant *the page's origin in a browser, this port elsewhere*, and `VITE_API_URL` is already the one override every surface's build reads; A moves that sentence into the one place that runs in the page. B moves the terminal's default out of the config for no browser gain.
+
 ### <a id="fjs-d552"></a>2026-10-15 · `FJS-D552` — How does `virtual:sierra` hand `junction`, `analytics` and `theme` to the browser without importing `sierra.config.js` whole, when a custom analytics provider holds functions — Emit the three keys by value (`JSON.stringify`), and refuse a function anywhere in them at config load, naming the key path. A custom analytics provider becomes a module path, `analytics: { provider: '/src/analytics.js' }`, root-relative like `routeTable.output`. `virtual:sierra` imports that module alone. `virtual:sierra-config` (it re-exports the whole config and nothing imports it) is deleted.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a separate client-side config file (`config/sierra.client.js`) holding the browser keys, which `virtual:sierra` imports instead. It is a second origin for one config and a new file noun), **C** (emit by value when the three keys are pure data, and fall back to the whole import when a function is present. That leaves two mechanisms, and the fallback silently brings the defect back for any app with a custom provider).

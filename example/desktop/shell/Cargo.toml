@@ -1,7 +1,8 @@
 [package]
-name    = "example-desktop"
-version = "0.0.0"
-edition = "2021"
+name     = "example-desktop"
+version  = "0.0.0"
+edition  = "2021"
+resolver = "3"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

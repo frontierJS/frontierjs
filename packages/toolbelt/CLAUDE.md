@@ -100,7 +100,11 @@ src/query/           what a query STRING means — types, structure, and the way
                      are directives, this one says what the values are. Three
                      readers — junction's transport, junction's client writing
                      one, sierra's router. Ships a `.d.ts`, because junction's
-                     browser client reaches it
+                     browser client reaches it. Also what a `$orderBy` /
+                     `$select` VALUE means (`normalizeOrderBy`, `normalizeSelect`,
+                     `comparatorFor`): the server compiles it, the live list
+                     places a pushed row by it, and `<Table>` sorts its own
+                     rows by it (`FJS-D672`)
 src/frontmatter/     what a `---` block MEANS — a declared YAML subset
                      (`FJS-D549`): block maps and lists, `|`/`>`, flow, quotes,
                      YAML 1.2 core scalars (a date stays a string). Anchors,

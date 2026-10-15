@@ -36,6 +36,7 @@ import { isStale }                      from '@frontierjs/junction'
 import { LEVELS }                     from '@frontierjs/litestone'
 import type { BasecampApp }             from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
+import { callerOrder, pickedByCaller } from '../../core/resource.ts'
 
 const HOUR = 3_600_000
 /** What `metricsPlugin` keeps at raw resolution. Anything older has an hour row
@@ -73,11 +74,14 @@ export function createMetricsService(app: BasecampApp) {
      */
     async find() {
       const now  = Date.now()
-      const rows = await sys().metricSeries.findMany({ orderBy: { name: 'asc' } })
-      return rows.map((s: any) => ({
+      const rows = await sys().metricSeries.findMany({ orderBy: callerOrder({ name: 'asc' }) })
+      // `stale` is computed, so `$select` is applied after it rather than in
+      // the query -- a projection dropping `lastSeenAt` would grade every
+      // series stale, and `$select=stale` could not be answered at all.
+      return pickedByCaller(rows.map((s: any) => ({
         ...s,
         stale: isStale(s.lastSeenAt, now),
-      }))
+      })))
     },
 
   /**

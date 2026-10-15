@@ -29,7 +29,7 @@
 
 import { createService, NotFound, BadRequest, $, seriesKey } from '@frontierjs/junction'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, ws, actor }  from '../../core/resource.ts'
+import { db, ws, actor, callerOrder }  from '../../core/resource.ts'
 import {
   RECLAIM_TARGETS, RECLAIM_TARGET_NAMES, RECLAIM_TARGET_BY_NAME, estimateTarget,
 } from './targets.ts'
@@ -277,7 +277,7 @@ export function createCleanupService(app: BasecampApp) {
 
       const { rows, total } = await db().cleanupRun.findManyAndCount({
         where:   { serverId: { in: serverId ? [serverId] : [...fleet.keys()] } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: callerOrder({ createdAt: 'desc' }),
         limit, offset,
       })
 

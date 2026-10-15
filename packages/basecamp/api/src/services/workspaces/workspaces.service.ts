@@ -14,7 +14,7 @@ import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized,
   from '@frontierjs/junction'
 import { requireWorkspaceRole, refuseGrantAboveOwn, roleOf, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
-import { db, actor, slugify, narrowPatch, changesNothing } from '../../core/resource.ts'
+import { db, actor, slugify, narrowPatch, changesNothing, callerOrder } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 // The roles are graded in core/gate.ts and the enum lives in schema.lite; the
@@ -135,7 +135,7 @@ export function createWorkspacesService(app: BasecampApp) {
 
       const { rows, total } = await db().workspace.findManyAndCount({
         where:   { id: { in: ids } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: callerOrder({ createdAt: 'desc' }),
         limit, offset,
       })
       // The caller's role in each, off the rows already read. A person's list of

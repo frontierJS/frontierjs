@@ -151,6 +151,9 @@ const stepOf = (style, x, y, ms) => {
 /** The color of a glyph its palette does not color — the terminal's own ink. */
 export const INK = '#c8c8c8'
 
+/** A cell with nothing drawn on it: a `drawing()` layer's hole, shared, so never written to. */
+const BLANK = Object.freeze({ ch: ' ', fg: undefined, bg: undefined })
+
 const dims = new Map()
 /** `hex` at two fifths of its light: what a remembered cell is drawn in. */
 export const dim = (hex) => {
@@ -361,7 +364,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
     defaultFrom.clear()
     for (const m of marks) if (m.kind === 'piece') adopt(m.drawn); else if (m.kind === 'carousel') adopt(m.piece)
   }
-  let lights  = []             // every cell whose palette entry has a light, with its radius
+  let lights  = null           // every cell whose palette entry has a light, with its radius; made at first use, dropped by relight
   let visible = new Set()      // key(x, y) lit for the seer now
   let seen    = new Set()      // key(x, y) lit for the seer at any time
   let occupied = new Set()     // key(x, y) a figure stands on, for what burns only while a seat is taken
@@ -387,28 +390,51 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
   const key = (x, y) => y * STRIDE + x
   const xOf = (k) => k % STRIDE
   const yOf = (k) => Math.floor(k / STRIDE)
-  const extent = () => {
-    width = 0
-    height = 0
-    for (const k of claims.keys()) {
+  // The extent follows the claims by a count per column and row, so placing
+  // or taking away a piece costs its own cells and never a sweep of the stage.
+  const perCol = [], perRow = []
+  let nights = 0               // claims that are a night door, which an indoor stage redraws for on the sky's step
+  const settle = (k, cell) => {
+    const was = claims.get(k)
+    if (was?.night) nights--
+    if (cell.night) nights++
+    if (!was) {
       const x = xOf(k), y = yOf(k)
+      perCol[x] = (perCol[x] ?? 0) + 1
+      perRow[y] = (perRow[y] ?? 0) + 1
       if (x + 1 > width) width = x + 1
       if (y + 1 > height) height = y + 1
     }
+    claims.set(k, cell)
   }
-  // What the claims light: the sources, and everything made from the claims
-  // at first use. A step moves no claim, so it runs none of this.
+  const unclaim = (k) => {
+    const was = claims.get(k)
+    if (!was) return
+    claims.delete(k)
+    if (was.night) nights--
+    perCol[xOf(k)]--
+    perRow[yOf(k)]--
+    while (width && !perCol[width - 1]) width--
+    while (height && !perRow[height - 1]) height--
+  }
+  // What the claims light: the sources, and everything made from the claims,
+  // each at first use. A step moves no claim, so it runs none of this.
   const lightUp = () => {
-    lights = []
+    lights = null
     glow = null
     burnSeats = null
     bolts.clear()
     treeCells = null
+  }
+  const lightsOf = () => {
+    if (lights) return lights
+    lights = []
     for (const [k, c] of claims) {
       const r = entryOf(c.key)?.light
       if (!r) continue
       lights.push({ x: xOf(k), y: yOf(k), r })
     }
+    return lights
   }
   // What the seer sees: a sweep of the whole stage, so only under the fog.
   const fogUp = () => {
@@ -423,7 +449,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
   const glowMap = () => {
     if (glow) return glow
     glow = new Map()
-    for (const l of lights) {
+    for (const l of lightsOf()) {
       const rx = 2 * l.r
       for (let dy = -l.r; dy <= l.r; dy++) for (let dx = -rx; dx <= rx; dx++) {
         // Left of 0 a key would name a cell at the end of the row above.
@@ -470,10 +496,19 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
   // A painter that fails must not fail the claim it was told about: the
   // stage is right and the picture is late, which the next tick repairs.
   const changed = () => {
-    extent()
     if (fig) eye = follow({ ...eye }, fig, { width, height }, size)
     relight()
     tell()
+  }
+  // A piece taken away redraws a microtask later, once for every piece taken
+  // that turn: a scene torn down takes all of them, and by then its paint is
+  // gone. Its cells, its palette entries and its lights go at once.
+  let settling = false
+  const removed = () => {
+    lightUp()
+    if (settling) return
+    settling = true
+    queueMicrotask(() => { settling = false; changed() })
   }
   // A painter that fails must not fail the claim it was told about either.
   const notify = () => {
@@ -494,9 +529,12 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
     last = ms
     try {
       if (ms >= lookDue) dirty = true
+      // With nobody to paint, the picture stays dirty for the first painter,
+      // and a scene mounting asks no tick per piece it places.
+      const painted = tasks.some((t) => t.phase === 'paint')
       for (const phase of PHASES) {
         if (phase === 'simulate' && !simulate) continue
-        if (phase === 'paint' && !dirty) continue
+        if (phase === 'paint' && (!dirty || !painted)) continue
         if (phase === 'paint') {
           // The look's next change is counted from this paint, not from
           // whichever frame ran last, or a poll every second would keep
@@ -535,7 +573,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
     if (held && !cell.door) {
       throw new Error(`[${slug}] cell ${x},${y} is claimed by both ${held.name} and ${cell.name}`)
     }
-    claims.set(key(x, y), cell)
+    settle(key(x, y), cell)
   }
 
   // A piece's cells are claimed all or none: a claim refused midway is
@@ -546,7 +584,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
     try {
       for (const [x, y, cell] of cells) { claim(x, y, cell); done.push([x, y]) }
     } catch (e) {
-      for (const [x, y] of done) claims.delete(key(x, y))
+      for (const [x, y] of done) unclaim(key(x, y))
       throw e
     }
   }
@@ -827,7 +865,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
     get seer() { return seer },
 
     /** Every light on the stage, `{ x, y, r }`. */
-    get lights() { return lights },
+    get lights() { return lightsOf() },
 
     /** A dark scene's lantern radius, 0 in a scene that is not dark. */
     lantern,
@@ -881,7 +919,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
       adopt(inSeason(season))
       const cellsAt = (px, py, drawn = mark.drawn) => drawn.cells.map((c) => [px + c.dx, py + c.dy, { ch: c.ch, key: c.key, name: piece.name, floor: piece.floor || c.seat, overhead: c.overhead, burns: c.burns && mark, crumbles: piece.crumbles }])
       const lift = () => {
-        for (const c of mark.drawn.cells) { claims.delete(key(mark.x + c.dx, mark.y + c.dy)); crumbling.delete(key(mark.x + c.dx, mark.y + c.dy)) }
+        for (const c of mark.drawn.cells) { unclaim(key(mark.x + c.dx, mark.y + c.dy)); crumbling.delete(key(mark.x + c.dx, mark.y + c.dy)) }
       }
       const mark = {
         kind: 'piece', piece, x, y,
@@ -902,7 +940,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
           mark.y = ny
           changed()
         },
-        remove() { lift(); drop(mark); readopt(); changed() },
+        remove() { lift(); drop(mark); readopt(); removed() },
         /** Draw the piece as it is in season `s`; a cell the new look claims that another piece holds refuses it, and the old look stays. */
         season(s) {
           const next = inSeason(s)
@@ -940,7 +978,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
       })
       const lift = () => each(mark.x, mark.y, (cx, cy) => {
         const was = under.get(key(cx, cy))
-        if (was) claims.set(key(cx, cy), was); else claims.delete(key(cx, cy))
+        if (was) settle(key(cx, cy), was); else unclaim(key(cx, cy))
       })
       const mark = {
         kind: 'door', x, y, to, w, h, hidden, night,
@@ -958,7 +996,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
           each(mark.x, mark.y, (cx, cy) => { claims.get(key(cx, cy)).door = nto })
           changed()
         },
-        remove() { lift(); drop(mark); changed() },
+        remove() { lift(); drop(mark); removed() },
       }
       put(x, y)
       marks.push(mark)
@@ -978,7 +1016,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
           spec.y    = ny
           changed()
         },
-        remove() { const i = pacers.indexOf(spec); if (i !== -1) pacers.splice(i, 1); drop(mark); changed() },
+        remove() { const i = pacers.indexOf(spec); if (i !== -1) pacers.splice(i, 1); drop(mark); removed() },
       }
       marks.push(mark)
       changed()
@@ -1005,7 +1043,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
         }
         return out
       }
-      const lift = () => { for (const [lx, ly] of laneAt(spec.x, spec.top, spec.bottom)) claims.delete(key(lx, ly)) }
+      const lift = () => { for (const [lx, ly] of laneAt(spec.x, spec.top, spec.bottom)) unclaim(key(lx, ly)) }
       try { putAll(laneAt(x, top, bottom)) }
       catch (e) { readopt(); throw e }
       carousels.push(spec)
@@ -1029,7 +1067,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
         remove() {
           lift()
           const i = carousels.indexOf(spec); if (i !== -1) carousels.splice(i, 1)
-          drop(mark); readopt(); changed()
+          drop(mark); readopt(); removed()
         },
       }
       marks.push(mark)
@@ -1191,6 +1229,35 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
     },
 
     /**
+     * What a paint draws of `view` `ms` into the clock, in two layers of
+     * `grid()`'s shape: `art` under the figures, with each lit pacer and
+     * rider over it, and `top`, the `overhead` cells, above them — so a cat
+     * walks behind a canopy as a figure does. A pacer's spaces and a pacer on
+     * a cell the seer cannot see are not drawn: the art shows through, its
+     * `bg` kept under the pacer.
+     */
+    drawing(view, ms = 0) {
+      const art = stage.grid(view, ms), top = new Array(view.h)
+      for (let r = 0; r < view.h; r++) {
+        const row = art[r], high = top[r] = new Array(view.w)
+        for (let col = 0; col < view.w; col++) {
+          if (row[col].overhead) { high[col] = row[col]; row[col] = BLANK }
+          else high[col] = BLANK
+        }
+      }
+      const over = (x, y, ch, fg) => {
+        const cell = art[y - view.y]?.[x - view.x]
+        if (cell && ch !== ' ' && stage.light(x, y) === 'lit') art[y - view.y][x - view.x] = { ch, fg: stage.tint(fg, x, y, ms), bg: cell.bg }
+      }
+      for (const p of pacers) {
+        const at = stage.pacerNow(p, ms)
+        if (at) [...at.text].forEach((ch, i) => over(at.x + i, at.y, ch, p.fg))
+      }
+      for (const { x, y, ch, fg } of stage.riders(ms)) over(x, y, ch, fg)
+      return { art, top }
+    },
+
+    /**
      * The color a figure stepping onto this cell `ms` into the clock takes,
      * when its palette entry says `dye`, else null: the step `look()` draws,
      * before the sky, so a flower picked at night is its daytime color.
@@ -1299,7 +1366,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
       for (const name of LAYERS) if (has(name) && ticks[name]) steps.push(...ticks[name](ms))
       // A scene with no sky has none to redraw on, and a night door in it
       // would open and shut unseen until something else moved.
-      if (!has('sky') && [...claims.values()].some((c) => c.night)) steps.push(SKY_MS)
+      if (!has('sky') && nights) steps.push(SKY_MS)
       // A cell that is shaking or sinking is drawn again every beat.
       for (const t of crumbling.values()) if (t.at != null && ms - t.at < CRUMBLE.wobble + CRUMBLE.fall) steps.push(CRUMBLE.beat)
       // A scared pacer is on the move every `flee` ms until it is out of sight or walks in again.

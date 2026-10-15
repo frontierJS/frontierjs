@@ -28,7 +28,7 @@
 
 import { createService } from '@frontierjs/junction'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db } from '../../core/resource.ts'
+import { db, callerOrder, callerSelect } from '../../core/resource.ts'
 import type { BasecampApp } from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
@@ -47,7 +47,8 @@ export function createFleetService(_app: BasecampApp) {
     // silently wrong from the 201st machine.
     async find() {
       const data = await db().fleetByProvider.findMany({
-        orderBy: [{ providerKind: 'asc' }, { region: 'asc' }],
+        orderBy: callerOrder([{ providerKind: 'asc' }, { region: 'asc' }]),
+        ...callerSelect(),
       })
       return { data, total: data.length }
     },

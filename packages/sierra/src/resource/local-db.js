@@ -35,7 +35,7 @@
  * (`FJS-D298`), stated once, upstream of this file.
  */
 
-import { normalizeOrderBy, normalizeSelect } from '@frontierjs/junction/client'
+import { normalizeOrderBy, normalizeSelect } from '@frontierjs/toolbelt/query'
 
 let _config = null
 let _client = null

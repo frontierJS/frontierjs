@@ -43,14 +43,6 @@ export { createService, createBaseService, ServiceRegistry, callService,
          isMethodAllowed, allowedMethodNames, scopeRefusal, requiredScope } from './src/core/service.ts'
 export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodSelection, MethodEntry, MethodDeclaration, ServiceScope, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
-// ─── Sorting ──────────────────────────────────────────────────────────────
-// The one reading of `orderBy` (Bridge index). `autoSort` VALIDATES a request's
-// `$orderBy` and leaves it raw on `ctx.directives`, so a service that wants to
-// honor it has to parse the same three spellings — and doing that by hand in
-// a service is how the grammar ends up with a second definition.
-export { normalizeOrderBy, normalizeSelect, comparatorFor, compareValues } from './src/core/query-values.ts'
-export type { SortParam, SelectParam, OrderBy } from './src/core/query-values.ts'
-
 // ─── Hooks ────────────────────────────────────────────────────────────────
 export {
   resolvePipelines, mergeHookMaps, runPipeline,

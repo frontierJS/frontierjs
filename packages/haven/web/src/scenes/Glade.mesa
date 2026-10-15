@@ -114,10 +114,18 @@ ppp
     right={['(\\_/)']}
     left={['(\\_/)']}
     sit={['(\\_/)', '(\\_/)', '(\\./)', '(\\_/)']} />
-  <Pacer name="firefly" night y={14} from={6} to={30} ms={500} rest={6} fg="#facc15"
+  <Pacer name="firefly" night sky="summer" y={14} from={6} to={30} ms={500} rest={6} fg="#facc15"
     right={['*', '.']} left={['.', '*']} sit={['*', '.', '*', '*']} />
-  <Pacer name="firefly2" night y={20} from={8} to={34} ms={430} rest={8} fg="#fde047"
+  <Pacer name="firefly2" night sky="summer" y={20} from={8} to={34} ms={430} rest={8} fg="#fde047"
     right={['.', '*']} left={['*', '.']} sit={['.', '*', '.', '*']} />
-  <Pacer name="firefly3" night y={10} from={40} to={70} ms={560} rest={5} fg="#facc15"
+  <Pacer name="firefly3" night sky="summer" y={10} from={40} to={70} ms={560} rest={5} fg="#facc15"
     right={['*', '*', '.']} left={['.', '*', '*']} sit={['*', '.', '.', '*']} />
+  <Pacer name="heron" sky="twilight-rain" y={20} from={6} to={28} ms={900} rest={60} flee={30} fg="#94a3b8"
+    right={["_/'"]}
+    left={["'\\_"]}
+    sit={["_/'", "_/'", '_/.', "_/'"]} />
+  <Pacer name="stag" sky="full-moon-snow" y={24} from={30} to={80} ms={600} rest={40} flee={60} fg="#f8fafc"
+    right={['~(==)W', '~(=-)W']}
+    left={['W(==)~', 'W(-=)~']}
+    sit={['~(==)W', '~(==)W', '~(==)w', '~(==)W']} />
 </Scene>

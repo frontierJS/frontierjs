@@ -76,71 +76,78 @@
   }
 </script>
 
-{#if href && !disabled}
-  <a
-    href={href}
-    role="menuitem"
-    tabindex="-1"
-    class={cx('item', t)}
-    {class}
-    {...$attributes}
-    bind:this={el}
-    on:focus={() => rowFocus?.(row, true)}
-    on:blur={() => rowFocus?.(row, false)}
-    on:click={handleClick}
-  >
-    {#if icon}
-      {@render icon?.()}
-    {/if}
-    <span bind:this={labelEl} data-part="label" style:flex="1">
-      <slot />
-    </span>
-    {#if suffix}
-      <span data-part="suffix" style:color="var(--ink-mute)" style:font-size="var(--text-xs)">{suffix}</span>
-    {/if}
-    {#if kbd}
-      <kbd class="kbd">{kbd}</kbd>
-    {/if}
-    {#if trailing}
-      {@render trailing?.()}
-    {/if}
-  </a>
-{:else}
-  <button
-    type="button"
-    role={checked === undefined ? 'menuitem' : (radio ? 'menuitemradio' : 'menuitemcheckbox')}
-    aria-checked={checked === undefined ? null : (checked ? 'true' : 'false')}
-    data-checked={checked === undefined ? null : (checked ? 'true' : 'false')}
-    tabindex="-1"
-    disabled={disabled}
-    class={cx('item', t)}
-    {class}
-    {...$attributes}
-    bind:this={el}
-    on:focus={() => rowFocus?.(row, true)}
-    on:blur={() => rowFocus?.(row, false)}
-    on:click={handleClick}
-  >
-    {#if checked !== undefined}
-      <span aria-hidden="true" style:inline-size="1em" style:text-align="center">{checked ? (radio ? '•' : '✓') : ''}</span>
-    {/if}
-    {#if icon}
-      {@render icon?.()}
-    {/if}
-    <span bind:this={labelEl} data-part="label" style:flex="1" style:text-align="start">
-      <slot />
-    </span>
-    {#if suffix}
-      <span data-part="suffix" style:color="var(--ink-mute)" style:font-size="var(--text-xs)">{suffix}</span>
-    {/if}
-    {#if kbd}
-      <kbd class="kbd">{kbd}</kbd>
-    {/if}
-    {#if trailing}
-      {@render trailing?.()}
-    {/if}
-  </button>
-{/if}
+<!--
+  The wrapper is the row's line on a terminal, which reads no CSS: a button
+  is inline there, so bare rows would share one line. A browser lays it out as
+  nothing (`display: contents`), so the menu's flex column still sees the row.
+-->
+<div role="none" style:display="contents">
+  {#if href && !disabled}
+    <a
+      href={href}
+      role="menuitem"
+      tabindex="-1"
+      class={cx('item', t)}
+      {class}
+      {...$attributes}
+      bind:this={el}
+      on:focus={() => rowFocus?.(row, true)}
+      on:blur={() => rowFocus?.(row, false)}
+      on:click={handleClick}
+    >
+      {#if icon}
+        {@render icon?.()}
+      {/if}
+      <span bind:this={labelEl} data-part="label" style:flex="1">
+        <slot />
+      </span>
+      {#if suffix}
+        <span data-part="suffix" style:color="var(--ink-mute)" style:font-size="var(--text-xs)">{suffix}</span>
+      {/if}
+      {#if kbd}
+        <kbd class="kbd">{kbd}</kbd>
+      {/if}
+      {#if trailing}
+        {@render trailing?.()}
+      {/if}
+    </a>
+  {:else}
+    <button
+      type="button"
+      role={checked === undefined ? 'menuitem' : (radio ? 'menuitemradio' : 'menuitemcheckbox')}
+      aria-checked={checked === undefined ? null : (checked ? 'true' : 'false')}
+      data-checked={checked === undefined ? null : (checked ? 'true' : 'false')}
+      tabindex="-1"
+      disabled={disabled}
+      class={cx('item', t)}
+      {class}
+      {...$attributes}
+      bind:this={el}
+      on:focus={() => rowFocus?.(row, true)}
+      on:blur={() => rowFocus?.(row, false)}
+      on:click={handleClick}
+    >
+      {#if checked !== undefined}
+        <span aria-hidden="true" style:inline-size="1em" style:text-align="center">{checked ? (radio ? '•' : '✓') : ''}</span>
+      {/if}
+      {#if icon}
+        {@render icon?.()}
+      {/if}
+      <span bind:this={labelEl} data-part="label" style:flex="1" style:text-align="start">
+        <slot />
+      </span>
+      {#if suffix}
+        <span data-part="suffix" style:color="var(--ink-mute)" style:font-size="var(--text-xs)">{suffix}</span>
+      {/if}
+      {#if kbd}
+        <kbd class="kbd">{kbd}</kbd>
+      {/if}
+      {#if trailing}
+        {@render trailing?.()}
+      {/if}
+    </button>
+  {/if}
+</div>
 
 <!--
   No <style>. `@frontierjs/css` owns every rule this component needs:

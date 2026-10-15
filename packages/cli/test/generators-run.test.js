@@ -152,7 +152,7 @@ describe('a generated link names the URL its directory is served at', () => {
 describe('make:scaffold links the list from the layout fli new writes', () => {
   const NEW_MD = Bun.file(join(CLI, 'commands/project/new.md')).text()
   const layoutOf = async (useAuth) => {
-    const src = (await NEW_MD).match(/\nfunction makeRouteModule\(appName, useAuth\) \{[\s\S]*?\n\}\n/)[0]
+    const src = (await NEW_MD).match(/\nfunction makeRouteModule\(appName, useAuth(?:, useApi = true)?\) \{[\s\S]*?\n\}\n/)[0]
     return new Function('sc', `${src}\nreturn makeRouteModule`)('</' + 'script>')('demo', useAuth)
   }
   const SCHEMA = { 'db/schema.lite': 'model SearchIndex { id Int @id  name String }\n' }

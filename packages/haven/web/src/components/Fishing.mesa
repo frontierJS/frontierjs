@@ -5,12 +5,17 @@
   // water cell the float sits on and how long, so this screen draws a float
   // bobbing there and says the catch when it comes up. Drawn on this screen
   // only and never sent; a cast away from the water is refused by the server.
+  // `/feed` hands a fish to the animal beside this figure. What an animal does
+  // -- the gull off with a missed cast's bait, a fed cat -- is the room's
+  // `animal` event: every screen runs the gull off, and every screen but the
+  // caller's, which has its own line in the answer, says it in the note.
   import { getClient } from '@frontierjs/sierra/resource'
   import { inView } from '@/crowd.js'
   import { at, tint } from '#cell'
 
   export let room
   export let stage
+  export let here
   export let view
   // Says a line in the note under the art once the float comes up.
   export let tell
@@ -38,6 +43,26 @@
   }
 
   $.onDestroy(verbs.add({ word: 'fish', help: '/fish — cast a line, at the water\'s edge', run: fish }))
+
+  async function feed({ args }) {
+    const fish = args.trim() || undefined
+    try {
+      const fed = await getClient().service('fishing').invoke('feed', null, { roomId: room.id, ...(fish && { fish }) })
+      return fed.line
+    } catch (e) { return e.message }
+  }
+
+  $.onDestroy(verbs.add({ word: 'feed', help: '/feed [fish] — hand a fish to the animal beside you', run: feed }))
+
+  function onAnimal(name, did) {
+    if (name !== 'animal' || !did?.id) return
+    if (did.laid) stage.spook([did.laid])
+    if (did.line && String(did.by) !== String(here.get().self?.userId)) tell(did.line)
+  }
+
+  const client = getClient()
+  client?.on('event', onAnimal)
+  $.onDestroy(() => client?.off('event', onAnimal))
 
   /** The float at its cell of the view, or nothing out of view or in the dark. */
   const drawn = (f, v) => (f && inView(f, v) && stage.light(f.x, f.y) !== 'dark' ? [{ x: f.x - v.x, y: f.y - v.y }] : [])

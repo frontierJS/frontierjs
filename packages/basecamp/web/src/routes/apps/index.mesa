@@ -58,7 +58,7 @@ title: Apps
     </div>
   </article>
 {:else}
-  <Table id="app-rows" {columns} rows={list.rows} striped>
+  <Table id="app-rows" {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort} striped>
     {#snippet row(app)}
       <tr>
         {#each cols as c}

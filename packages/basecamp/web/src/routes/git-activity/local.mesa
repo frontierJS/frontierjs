@@ -8,7 +8,7 @@ title: Local repositories
   // LOCAL_MACHINE=1 (api core/local-git.ts); anywhere else the call is a 404
   // and the screen says so rather than drawing an empty list that reads like a
   // folder with no repositories in it.
-  import { comparatorFor } from '@frontierjs/junction/client'
+  import { comparatorFor } from '@frontierjs/toolbelt/query'
   import { ago }  from '../../datetime.js'
   import { git }  from '../../resources/Git.mesa'
   import { workbench } from '../../resources/Workbench.mesa'

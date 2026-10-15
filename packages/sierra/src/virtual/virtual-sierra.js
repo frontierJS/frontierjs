@@ -304,7 +304,13 @@ function generateVirtualSierra(config, tableOutput, root, sierraContext) {
     // for callers that specifically need the WebSocket transport; awaiting it
     // here blocked the entire entry module — and therefore first paint — on a
     // server round-trip for every returning visitor.
-    lines.push(`initJunction(${JSON.stringify(config.junction)})`)
+    //
+    // `url` is decided HERE, in the page: the config is evaluated in Node, where
+    // a `location` guard always takes its fallback, so the page called that
+    // port cross-origin and every call failed CORS (`FJS-D1042`). The config's
+    // `url` is the answer where there is no page — the terminal, a prerender.
+    const { url, ...junction } = config.junction
+    lines.push(`initJunction({ ...${JSON.stringify(junction)}, url: import.meta.env.VITE_API_URL || location.origin })`)
     lines.push(``)
   }
 

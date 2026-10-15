@@ -26,6 +26,7 @@ import { edgeProviders }           from '../../providers/edge/index.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../api-keys/scopes.ts'
+import { shapedByCaller } from '../../core/resource.ts'
 
 export type ServiceStatus = 'healthy' | 'degraded' | 'unreachable' | 'unconfigured'
 
@@ -170,7 +171,7 @@ export function createPortalService(app: BasecampApp) {
         const adapter = app.providers[svc.id]
         return buildEntry(svc, adapter, isStub(adapter) ? 'unconfigured' : 'healthy', app.config)
       }))
-      return { total: entries.length, limit: entries.length, offset: 0, data: entries }
+      return { total: entries.length, limit: entries.length, offset: 0, data: shapedByCaller(entries) }
     },
 
     async get() {

@@ -81,6 +81,44 @@ export function inferFromFk(model, targetModel, via = null) {
 }
 
 /**
+ * `inferFromFk` widened to the other way two models join: an implicit
+ * many-to-many, whose key lives in a join table neither model declares.
+ *
+ * The ONE owner of which relation an aggregate `@from` reads through —
+ * `validate()` and `buildFromMap()` both ask it. Answers `inferFromFk`'s shape,
+ * and for a many-to-many adds `through`: `{ joinTable, targetCol, targetKey }`,
+ * with `fkCols` naming the join table's column for THIS model rather than a
+ * column on the target. A foreign key and a many-to-many between the same two
+ * models are ambiguous for the reason two foreign keys are: either answer is a
+ * plausible number for the other question.
+ */
+export function inferFromHop(model, targetModel, schema, via = null) {
+  const fk  = inferFromFk(model, targetModel, via)
+  const rel = buildRelationMap(schema)[model.name] ?? {}
+  const m2m = model.fields
+    .filter(f => f.type.kind === 'implicitM2M' && f.type.name === targetModel.name && rel[f.name]?.kind === 'manyToMany')
+    .map(f => ({ field: f.name, name: f.attributes.find(a => a.kind === 'relation')?.name ?? null,
+                 display: `${model.name}.${f.name}`, edge: rel[f.name] }))
+  if (!m2m.length) return fk
+
+  const through = (c) => ({
+    fkCols: [c.edge.selfKey], refCols: [c.edge.selfPk],
+    through: { joinTable: c.edge.joinTable, targetCol: c.edge.targetKey, targetKey: c.edge.targetPk },
+  })
+  if (via) {
+    const hit = m2m.find(c => c.field === via || (c.name && c.name === via))
+    if (hit) return through(hit)
+    return fk?.unresolvedVia
+      ? { unresolvedVia: via, candidates: [...fk.candidates, ...m2m.map(c => ({ field: c.field, display: c.display }))] }
+      : fk
+  }
+  // A single foreign key is named by its column, which `via` accepts.
+  const fkOnes = fk?.ambiguous ?? (fk ? [{ field: fk.fkCols[0] }] : [])
+  const all    = [...fkOnes, ...m2m]
+  return all.length > 1 ? { ambiguous: all } : through(m2m[0])
+}
+
+/**
  * How a to-one `@from(rel, column)` reaches the row it reads: the relation
  * field on `model`, the model it points at, the FK fields on `model` and the
  * fields they reference on that model, index-aligned.
@@ -659,11 +697,11 @@ export function buildFromMap(schema, pluralize = false) {
       const targetTable = modelToTableName(targetModel, pluralize)
 
       // FK column on the target table + the column it references on THIS model.
-      const fk = inferFromFk(model, targetModel, via)
+      const fk = inferFromHop(model, targetModel, schema, via)
       // Unreachable for a validated schema — validate() refuses an @from with
       // no relation behind it, an ambiguous one, and a via naming nothing.
       if (!fk || fk.ambiguous || fk.unresolvedVia) continue
-      const { fkCols, refCols } = fk
+      const { fkCols, refCols, through } = fk
       const _idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 
       // The target model's own defaults apply, the same ones a direct read or an
@@ -692,7 +730,13 @@ export function buildFromMap(schema, pluralize = false) {
       // Every key column, AND-joined. A composite correlated on its first
       // column alone is a count of every row sharing that column — 8, 8, 7
       // where the truth was 3, 5, 7, measured, and nothing to say so.
-      const whereParts = fkCols.map((c, i) => `_from."${c}" = %SELF%."${refCols[i]}"`)
+      // Through a join table the target holds no key to the parent: its own key
+      // is looked up in the pairs the parent owns. A pair is unique, so the IN
+      // counts each target row once.
+      const whereParts = through
+        ? [`_from.${quoteIdent(through.targetKey)} IN (SELECT ${quoteIdent(through.targetCol)} ` +
+           `FROM ${quoteIdent(through.joinTable)} WHERE ${quoteIdent(fkCols[0])} = %SELF%.${quoteIdent(refCols[0])})`]
+        : fkCols.map((c, i) => `_from."${c}" = %SELF%."${refCols[i]}"`)
       if (targetSoftDelete && !withDeleted)   whereParts.push(`_from."deletedAt" IS NULL`)
       if (targetHtField    && !withTemplates) whereParts.push(`_from."${targetHtField}" = 0`)
       // A @from's `where:` is a raw SQL string in the schema, so the clock trap
@@ -758,7 +802,7 @@ export function buildFromMap(schema, pluralize = false) {
       // `where` or an `orderBy` — which run this string — is refused while the
       // target has a policy for the caller (guardArgs).
       if (op !== 'first' && op !== 'last')
-        aggRef = { model: targetModel.name, fkCols, refCols, op, opValue, extra }
+        aggRef = { model: targetModel.name, fkCols, refCols, op, opValue, extra, through }
 
       map[model.name][field.name] = {
         // The model whose rows the value is read off. Its read gate is the one

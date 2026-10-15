@@ -145,6 +145,10 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#sort').textContent`, '-name',
     'clicking it again reverses')
   await t.eventually(`${headers}[0].getAttribute('aria-sort')`, 'descending', 'and says so')
+  // FJS-1975: with no onsort the Table owns the sort, so the rows MOVE; an arrow
+  // over rows in their old order is a button that sorts nothing.
+  const names = `[...document.querySelectorAll('#tbl tbody tr')].map(r => r.cells[0].textContent.trim()).join(',')`
+  t.is(await t.evaluate(`return ${names};`), 'Grace,Alan,Ada', 'a Table with no onsort orders its own rows, descending')
 
   // Moving to another column starts that one ascending rather than inheriting
   // the direction the previous column happened to be left in.
@@ -154,6 +158,7 @@ export async function run(t) {
   t.is(await t.evaluate(`
     return ${headers}.map(th => th.getAttribute('aria-sort') ?? 'absent').join(',');
   `), 'none,absent,ascending', 'and the column that was sorted goes back to none')
+  t.is(await t.evaluate(`return ${names};`), 'Ada,Alan,Grace', 'and the rows follow the new column')
 
   /* ── loading ──────────────────────────────────────────────────────────── */
 

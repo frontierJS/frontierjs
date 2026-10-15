@@ -2125,7 +2125,8 @@ export function serializeRow(data, jsonFields) {
   if (!data || !jsonFields.size) return data
   const out = { ...data }
   for (const field of jsonFields) {
-    if (field in out && out[field] !== null && typeof out[field] !== 'string') {
+    // A string is a JSON string too: stored bare, '42' reads back as a number.
+    if (field in out && out[field] !== null) {
       out[field] = JSON.stringify(out[field])
     }
   }

@@ -64,6 +64,21 @@ export async function run(t) {
   t.ok(await t.evaluate(`return document.activeElement === document.querySelector('#pop-trigger');`),
     'closing returns focus to the trigger')
 
+  // A terminal node has no querySelector, so the close must come back to the
+  // control it saw take focus rather than ask the wrapper for one.
+  await t.evaluate(`
+    const wrap = document.querySelector('#pop-trigger').parentElement;
+    Object.defineProperty(wrap, 'querySelector', { value: undefined });
+    document.activeElement.blur();
+    return true;
+  `)
+  await t.clickAt('#stage #pop-trigger')
+  await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('body > .popover')); return true;`)
+  t.ok(await t.evaluate(`return document.activeElement === document.querySelector('#pop-trigger');`),
+    'closing a trigger that cannot be queried returns focus to the control it held')
+
   // `top-start` was declared and never read — the side came from overflow
   // alone — so it opened below. The fixture's 6rem of padding is room enough
   // for this panel, which is the premise asserted first.

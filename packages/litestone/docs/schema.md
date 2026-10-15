@@ -200,6 +200,13 @@ rows are out. That matches `include: { _count: true }` over the same relation.
 The two flags opt back in independently, and an explicit `where:` composes on
 top of whichever filters remain.
 
+The target may join through an implicit many-to-many: `Task { messages Message[] }`
+with `@from(Message, count: true)` counts the messages on the task, through the
+join table. Only the aggregate forms read across one — `first`/`last` is refused,
+since a row pick has no key to repick on. A foreign key and a many-to-many
+between the same two models, or two many-to-many fields, are ambiguous; say which
+with `via:` (the list field's name or its `@relation` label).
+
 A `@from` field is a correlated subquery in the SELECT list, so it can be
 filtered (`where: { orderCount: { gt: 5 } }`) and sorted
 (`orderBy: { orderCount: 'desc' }`). A `@computed` field is a JS function over an

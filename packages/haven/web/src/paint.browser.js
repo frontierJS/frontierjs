@@ -1,7 +1,7 @@
 // src/paint.browser.js — draw a stage in its palette, in a browser, and keep
 // it moving. `#paint` resolves here under the `browser` condition and to
-// `paint.js` in the terminal; both draw `stage.grid()`, `stage.pacerNow()` and `stage.riders()`, so
-// the two targets cannot disagree about which glyph and color a cell has at
+// `paint.js` in the terminal; both draw `stage.drawing()`, so the
+// two targets cannot disagree about which glyph and color a cell has at
 // a tick.
 //
 // The art is a `<pre>` of spans, one span per run of cells sharing a color,
@@ -41,8 +41,6 @@ function runs(cells) {
   }
   return out
 }
-
-const BLANK = { ch: ' ', fg: undefined, bg: undefined }
 
 /** A grid of cells as a fragment: a handful of spans a row, a newline between rows. */
 function fragment(grid) {
@@ -92,33 +90,9 @@ export const paint = (stage, scale = 1) => (box) => {
       b.width  = `${v.w}ch`
       b.height = `${v.h}lh`
     }
-    const grid = stage.grid(v, ms), overhead = []
-    for (const cells of grid) {
-      const high = []
-      for (let col = 0; col < cells.length; col++) {
-        const look = cells[col]
-        high.push(look.overhead ? look : BLANK)
-        if (look.overhead) cells[col] = BLANK
-      }
-      overhead.push(high)
-    }
-    // A pacer's spaces are not drawn, as in the terminal, and neither is a
-    // pacer on a cell the figure cannot see: the art shows through.
-    for (const p of stage.pacers) {
-      const at = stage.pacerNow(p, ms)
-      if (!at) continue
-      const { x, y, text } = at
-      ;[...text].forEach((ch, i) => {
-        const cell = grid[y - v.y]?.[x + i - v.x]
-        if (cell && ch !== ' ' && stage.light(x + i, y) === 'lit') grid[y - v.y][x + i - v.x] = { ch, fg: stage.tint(p.fg, x + i, y, ms), bg: cell.bg }
-      })
-    }
-    for (const { x, y, ch, fg } of stage.riders(ms)) {
-      const cell = grid[y - v.y]?.[x - v.x]
-      if (cell && stage.light(x, y) === 'lit') grid[y - v.y][x - v.x] = { ch, fg: stage.tint(fg, x, y, ms), bg: cell.bg }
-    }
-    pre.replaceChildren(fragment(grid))
-    top.replaceChildren(fragment(overhead))
+    const { art, top: high } = stage.drawing(v, ms)
+    pre.replaceChildren(fragment(art))
+    top.replaceChildren(fragment(high))
   }
   // A paint task on the stage's clock (`stage.js`): run on any change and on
   // the look's next tick, at the frame's own ms. Keyed by the box, since the

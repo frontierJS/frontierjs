@@ -1,7 +1,8 @@
 <script>
-  // Tavern.mesa — the tavern: the bar and its shelves, the hearth with a rug
-  // before it where the cat paces, tables, barrels, the stairs, and the door
-  // back out to the square in the bottom wall. The rug has a hidden door in
+  // Tavern.mesa — the tavern: the bar and its shelves across the whole back
+  // wall, the hearth with a rug before it where the cat paces, tables,
+  // barrels, the stairs, and the door back out to the square in the bottom
+  // wall. The rug has a hidden door in
   // it, the way down to the cellar (`IDEAS/haven.md` 6.5): stepping on that
   // cell is the only sign of it. The picture this draws is
   // `tavern.frame.txt`, which `scenes.test.js` pins.
@@ -19,25 +20,41 @@
   // The shelves, the hearth, its rug and the stairs are the tavern's own; the
   // bar is a piece of its own (`pieces/bar.js`), since `components/Bar.mesa`
   // finds it by import; the tables and barrels are pieces any scene may use.
-  const shelves = piece('shelves', String.raw`
-.--------------------------------------.
-| U  0  U  0  U  0  U  0  U  0  U  0  U|
-|--------------------------------------|
-| i  !  i  !  i  !  i  !  i  !  i  !  i|
-'--------------------------------------'
-`, String.raw`
-wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-w c  e  p  c  e  p  c  e  p  c  e  p  cw
-wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-w e  p  c  e  p  c  e  p  c  e  p  c  ew
-wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-`)
+  // The shelves are the wall behind the bar, as wide as the bar: three rows of
+  // bottles, a bottle every third cell, so the board chalked over them
+  // (`components/Bar.mesa`) has the room to be read.
+  const SHELF_W = 92
+  const INNER = SHELF_W - 2
+  const BOTTLES = Array.from({ length: 30 }, (_, i) => 1 + i * 3)
+  const shelfRow = (pick) => {
+    const r = Array(INNER).fill(' ')
+    BOTTLES.forEach((x, i) => { r[x] = pick(i) })
+    return `|${r.join('')}|`
+  }
+  const edge = (l, r) => `${l}${'-'.repeat(INNER)}${r}`
+  const ink = (shift) => (i) => 'cep'[(i + shift) % 3]
+  const shelves = piece('shelves', [
+    edge('.', '.'),
+    shelfRow((i) => (i % 2 ? '0' : 'U')),
+    edge('|', '|'),
+    shelfRow((i) => (i % 2 ? '!' : 'i')),
+    edge('|', '|'),
+    shelfRow((i) => (i % 2 ? '0' : 'U')),
+    edge("'", "'"),
+  ].join('\n'), [
+    'w'.repeat(SHELF_W),
+    shelfRow(ink(0)).replace(/\|/g, 'w'),
+    'w'.repeat(SHELF_W),
+    shelfRow(ink(1)).replace(/\|/g, 'w'),
+    'w'.repeat(SHELF_W),
+    shelfRow(ink(2)).replace(/\|/g, 'w'),
+    'w'.repeat(SHELF_W),
+  ].join('\n'))
 
   const hearth = piece('hearth', String.raw`
   _______________________
  |###########⚜###########|
  |##.-----------------.##|
- |##|   ^   ^ ^   ^   |##|
  |##|  ^^^ ^^^^^ ^^^  |##|
  |##| ^^^^^^^^^^^^^^^ |##|
  |##|_=_=_=_=_=_=_=_=_|##|
@@ -46,7 +63,6 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
   sssssssssssssssssssssss
  sSSSSSSSSSSSWSSSSSSSSSSSs
  sSSsssssssssssssssssssSSs
- sSSs   h   h h   h   sSSs
  sSSs  hhh hhhhh hhh  sSSs
  sSSs hhhhhhhhhhhhhhh sSSs
  sSSsuuuuuuuuuuuuuuuuusSSs
@@ -100,21 +116,21 @@ uuuuu
 <Scene slug="tavern" layers={INDOORS} palette={PALETTE} spawn={{ x: 48, y: 24 }}>
   <Piece of={frame} />
   <Door  x={48} y={25} to="/" />
-  <Piece of={shelves} x={5}  y={1} />
-  <Piece of={bar}     x={5}  y={7} />
-  <Piece of={hearth}  x={63} y={1} />
-  <Piece of={rug}     x={65} y={10} />
-  <Door  x={75} y={11} to="/cellar/" hidden />
-  <Piece of={table}   x={9}  y={13} />
-  <Piece of={table}   x={29} y={13} />
+  <Piece of={shelves} x={3}  y={1} />
+  <Piece of={bar}     x={3}  y={9} />
+  <Piece of={hearth}  x={63} y={18} />
+  <Piece of={rug}     x={65} y={14} />
+  <Door  x={75} y={15} to="/cellar/" hidden />
+  <Piece of={table}   x={9}  y={14} />
+  <Piece of={table}   x={29} y={14} />
   <Piece of={table}   x={49} y={16} />
-  <Piece of={table}   x={9}  y={19} />
-  <Piece of={table}   x={29} y={19} />
-  <Piece of={stairs}  x={77} y={21} />
-  <Piece of={barrel}  x={83} y={15} />
-  <Piece of={barrel}  x={89} y={15} />
-  <Piece of={barrel}  x={86} y={18} />
-  <Pacer name="cat" y={12} from={66} to={86} ms={260} rest={14} fg="#f59e0b"
+  <Piece of={table}   x={9}  y={18} />
+  <Piece of={table}   x={29} y={18} />
+  <Piece of={stairs}  x={2}  y={21} />
+  <Piece of={barrel}  x={90} y={14} />
+  <Piece of={barrel}  x={90} y={17} />
+  <Piece of={barrel}  x={90} y={20} />
+  <Pacer name="cat" y={16} from={66} to={86} ms={260} rest={14} fg="#f59e0b"
     right={['-=^.^=', '~=^.^=']}
     left={['=^.^=-', '=^.^=~']}
     sit={['=^.^=', '=^.^=', '=^.^=', '=^-^=']} />

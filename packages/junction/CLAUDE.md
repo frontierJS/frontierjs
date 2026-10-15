@@ -239,7 +239,6 @@ src/
     public-url.ts — assertPublicUrl: whether a URL a stranger chose may be fetched; @frontierjs/junction/public-url (FJS-1579)
     idempotency.ts — claimIdempotency
     metrics.ts — reading a counter, beside db/metrics.lite
-    query-values.ts — what a directive's value means: parseSort, parseSelect, comparatorFor
     diagnostics.ts — whether to print developer diagnostics
     field-errors.ts — a thrown value carrying one message per field
     config-scope.ts — configuration read at call scope, per tenant

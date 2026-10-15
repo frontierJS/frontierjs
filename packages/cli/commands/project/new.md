@@ -8,6 +8,7 @@ examples:
   - fli new my-app --no-auth
   - fli new my-app --auth --yes
   - fli new my-app --template api-only
+  - fli new my-app --template web-only
   - fli new my-app --widgets
   - fli new my-app --site
   - fli new my-app --template widgets-only
@@ -32,7 +33,7 @@ flags:
     defaultValue: false
   template:
     type: string
-    choices: [full-stack, api-only, widgets-only, site-only, extension-only]
+    choices: [full-stack, api-only, web-only, widgets-only, site-only, extension-only]
     description: Which shape of project to scaffold
     defaultValue: full-stack
   with:
@@ -65,7 +66,7 @@ flags:
     defaultValue: true
   web:
     type: boolean
-    description: Scaffold web/ folder with Sierra+Mesa shell (default true; use --no-web for api-only)
+    description: Scaffold web/ folder with Sierra+Mesa shell (default true; use --no-web for api-only; web-only has no api/ or db/)
     defaultValue: true
   widgets:
     type: boolean
@@ -164,7 +165,7 @@ const VITE_VERSION = '^8.0.0'
 
 function makePackageJson(spec) {
   const {
-    name, scope, useAuth, useWeb, useApi = true, useWidgets = false, useSite = false,
+    name, scope, useAuth, useWeb, useApi = true, useDb = true, useWidgets = false, useSite = false,
     useExtension = false, withPkgs, source,
   } = spec
   const pkgName = scope ? `${scope}/${name}` : name
@@ -177,9 +178,8 @@ function makePackageJson(spec) {
   // npm source → the version FJS_PACKAGES pins, which is `latest` while pre-alpha.
   const specFor = (key) => source === 'local' ? `link:${key}` : (FJS_PACKAGES[key] || 'latest')
 
-  const deps = {
-    '@frontierjs/litestone': specFor('@frontierjs/litestone'),
-  }
+  const deps = {}
+  if (useDb)   deps['@frontierjs/litestone'] = specFor('@frontierjs/litestone')
   if (useApi)  deps['@frontierjs/junction'] = specFor('@frontierjs/junction')
   if (useAuth) deps['@frontierjs/auth'] = specFor('@frontierjs/auth')
   if (useUI) {
@@ -282,24 +282,29 @@ function makePackageJson(spec) {
   // convenience — without it the container exits non-zero on every start.
   // `--schema` also fixes the migrations directory: litestone resolves it as a
   // sibling of the schema, so this finds db/migrations without a second flag.
-  scripts['db:migrate'] = 'litestone migrate apply --schema db/schema.lite'
-  // No destination: litestone writes a new db/backups/<stamp>/ each run, where a
-  // fixed one made every backup overwrite the last (FJS-1786).
-  scripts['db:backup']  = 'litestone backup --schema db/schema.lite'
-
-  // The schema's own TypeScript. Two files because they are two AUDIENCES and
-  // the difference is what a caller may read: the API holds a system client and
-  // sees `@guarded`/`@secret` columns, the browser never does, and one file for
-  // both would tell browser code a column exists that every response strips.
   //
-  // `--augment junction` is the half that crosses the wire — it writes the
-  // module augmentation that types `client.service('leads')` as the row this
-  // schema declares, which is otherwise the one place the seed stops
-  // propagating (FJS-018). Only on the web file: the augmentation names
-  // @frontierjs/junction/client, which is the browser's module.
-  const dbTypes = ['litestone types --schema db/schema.lite --audience system --out db/schema.d.ts']
-  if (useWeb) dbTypes.push('litestone types --schema db/schema.lite --audience client --augment junction --out web/src/db.d.ts')
-  scripts['db:types'] = dbTypes.join(' && ')
+  // A web-only app has no db/ and installs no litestone, so none of these
+  // scripts has a binary to run.
+  if (useDb) {
+    scripts['db:migrate'] = 'litestone migrate apply --schema db/schema.lite'
+    // No destination: litestone writes a new db/backups/<stamp>/ each run, where a
+    // fixed one made every backup overwrite the last (FJS-1786).
+    scripts['db:backup']  = 'litestone backup --schema db/schema.lite'
+
+    // The schema's own TypeScript. Two files because they are two AUDIENCES and
+    // the difference is what a caller may read: the API holds a system client and
+    // sees `@guarded`/`@secret` columns, the browser never does, and one file for
+    // both would tell browser code a column exists that every response strips.
+    //
+    // `--augment junction` is the half that crosses the wire — it writes the
+    // module augmentation that types `client.service('leads')` as the row this
+    // schema declares, which is otherwise the one place the seed stops
+    // propagating (FJS-018). Only on the web file: the augmentation names
+    // @frontierjs/junction/client, which is the browser's module.
+    const dbTypes = ['litestone types --schema db/schema.lite --audience system --out db/schema.d.ts']
+    if (useWeb) dbTypes.push('litestone types --schema db/schema.lite --audience client --augment junction --out web/src/db.d.ts')
+    scripts['db:types'] = dbTypes.join(' && ')
+  }
 
   // lint · typecheck · test · check — see core/app-config.js for what each is
   // for and why `fli check` leads. Tests only with auth, the one case that
@@ -383,11 +388,11 @@ function makeFliJson(name) {
 }
 
 function makeReadme(spec) {
-  const { name, useAuth, useWeb, useApi = true, useWidgets = false, useSite = false, useExtension = false, withPkgs } = spec
+  const { name, useAuth, useWeb, useApi = true, useDb = true, useFli = true, useWidgets = false, useSite = false, useExtension = false, withPkgs } = spec
   const surface = [useApi && 'api/', useWeb && 'web/', useWidgets && 'widgets/', useSite && 'site/', useExtension && 'extension/'].filter(Boolean)
   const features = [
     `- ${useAuth ? 'Auth via `@frontierjs/auth` — sign in, register, `/account/` (name, password, sessions) and `/reset/`. Reset and verification links print to the API terminal until a mailer is wired' : 'No auth (add later with `fli auth:install`)'}`,
-    `- Litestone client with gate plugin for level-based authorization`,
+    ...(useDb ? ['- Litestone client with gate plugin for level-based authorization'] : []),
     `- ${useWeb ? 'Sierra + Mesa frontend with Vite' : 'No SPA'}`,
   ]
   if (useWidgets) features.push(
@@ -400,7 +405,7 @@ function makeReadme(spec) {
 
   return `# ${name}
 
-A FrontierJS application — ${surface.join(' + ')} over one \`db/schema.lite\`.
+A FrontierJS application — ${surface.join(' + ')}${useDb ? ' over one \`db/schema.lite\`' : ''}.
 
 ## What's included
 
@@ -424,11 +429,11 @@ ${[
 ].filter(Boolean).join(', ')} — ${surface.length > 1 ? 'concurrently' : 'in watch mode'}. The
 ports are derived, not chosen: \`env*1000 + category*100 + project*10 + service\`.
 
-Schema DDL runs automatically on first start — no migration step.
+${useDb ? `Schema DDL runs automatically on first start — no migration step.
 
 \`.env\` is already written and \`ENCRYPTION_KEY\` already has a value${useAuth ? '' : " — if it is\nblank, `fli keygen aes --format hex --name ENCRYPTION_KEY --env` fills it"}. Copying
 \`.env.example\` over it blanks the key, and Litestone refuses to open with one.
-
+` : 'This app has no API and no database -- web/ is the whole project.\n'}
 ${useAuth ? `
 ### The first account
 
@@ -479,7 +484,7 @@ README.
 ## Common commands
 
 \`\`\`bash
-# Add a new model with full vertical slice (schema → service → resource → routes)
+${useDb ? `# Add a new model with full vertical slice (schema → service → resource → routes)
 fli scaffold ModelName --fields "name:string email:email"
 
 # Generate a CRUD admin UI from schema.lite
@@ -493,16 +498,19 @@ fli deploy:doctor
 
 # Deploy via SSH + Docker (after fli deploy:setup)
 fli deploy
-\`\`\`
+` : `# Add a component
+fli make:component Card
+
+# The static build
+bun run build
+`}\`\`\`
 
 ## Layout
 
 \`\`\`
 ${name}/
 ├── package.json
-├── frontier.config.js          # FLI deploy config
-├── .env.example
-├── tsconfig.json               # one line of extends — @frontierjs/config
+${useApi ? '├── frontier.config.js          # FLI deploy config\n├── .env.example\n' : ''}├── tsconfig.json               # one line of extends — @frontierjs/config
 ├── biome.json                  # ditto; linter only, no formatter
 ├── .editorconfig
 ├── README.md
@@ -510,11 +518,7 @@ ${name}/
 ├── AGENTS.project.md           # this app's own agent instructions; imported by AGENTS.md
 ├── CLAUDE.md                   # Claude Code's entry; imports AGENTS.md
 ├── .github/workflows/ci.yml    # runs \`bun run check\`
-├── db/
-│   └── schema.lite             # Single source of truth — data + auth
-├── cli/
-│   └── src/routes/             # Project-specific FLI commands
-${useApi
+${useDb ? '├── db/\n│   └── schema.lite             # Single source of truth — data + auth\n' : ''}${useFli ? '├── cli/\n│   └── src/routes/             # Project-specific FLI commands\n' : ''}${useApi
   ? `├── deploy/
 │   └── Dockerfile              # Built on the server
 ├── api/
@@ -537,14 +541,13 @@ ${useApi
     ├── index.html
     ├── config/
     │   ├── vite.config.js      # Thin wrapper — createSierraViteConfig
-    │   └── sierra.config.js    # Routes dir, target, junction url
+    │   └── sierra.config.js    # Routes dir, target${useApi ? ', junction url' : ''}
     └── src/
         ├── main.js             # Entry: boots the router + client, mounts App
         ├── datetime.js         # The app's clock and zone — at(), ago()
         ├── App.mesa            # Root: <RouterView />
         ├── routes/             # Sierra file-based routes (.mesa)
-        └── resources/          # One Resource per model — Note.mesa (.mesa)
-`
+${useDb ? '        └── resources/          # One Resource per model — Note.mesa (.mesa)\n' : ''}`
   : ''}${useWidgets
   ? `└── widgets/                    # A surface of its own — its own config,
     ├── config/                 #   host pages and static release
@@ -570,13 +573,13 @@ ${useApi
 `
   : ''}\`\`\`
 
-## Where to grow
+${useDb ? `## Where to grow
 
 - **Add a model:** \`fli scaffold Lead --fields "name:string email:email status:string"\`
 - **Background jobs:** add \`@frontierjs/caravan\` and configure under the \`caravan\` block in \`junction.config.js\`
 - **Outbound integrations:** add \`@frontierjs/conduit\` and place targets in \`api/src/conduit/\`
 - **Real-time:** already wired — \`api/src/core/channels.ts\` decides who listens, and joins every channel a service declares
-`
+` : ''}`
 }
 
 // ─── API templates ────────────────────────────────────────────────────────────
@@ -598,9 +601,14 @@ await app.start()
 // SPA handler — 200 with an HTML body, which the client reports as the API
 // answering nonsense. An api-only app has no proxy and no such need, so it takes
 // Junction's own default: no prefix, routes at /.
-function makeApiAppTs(useAuth, useWeb, useQueue = false) {
+function makeApiAppTs(useAuth, useWeb, useQueue = false, useNotify = false) {
   const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
-  const queueImport = useQueue ? `\nimport { createCaravan } from '@frontierjs/caravan'` : ''
+  const queueImport = (useQueue ? `\nimport { createCaravan } from '@frontierjs/caravan'\nimport { commitments } from '@frontierjs/junction/commitments'` : '')
+    + (useNotify ? `\nimport { notificationsPlugin } from '@frontierjs/notifications'` : '')
+  const systemImport = useQueue ? `\nimport { SYSTEM }           from './core/gate.ts'` : ''
+  // Deferred work nobody asked for -- a commitment's clock firing -- has no
+  // caller, and no caller grades STRANGER on a gated model.
+  const systemLine = useQueue ? `\n  system: SYSTEM,` : ''
   // The queue's own settings are DECLARED in junction.config.js (its database,
   // its job directory), so the call takes none.
   const queue = useQueue ? `// ─── Deferred work ────────────────────────────────────────────────────────
@@ -611,6 +619,22 @@ function makeApiAppTs(useAuth, useWeb, useQueue = false) {
 // sweeps it once when the client opens, so a server that stays up prunes
 // nothing after that unless a job does.
 app.configure(createCaravan())
+
+// A \`@@commitment\` in db/schema.lite is swept and fired by this plugin, which
+// boot refuses to start without once the schema declares one. With none
+// declared it holds a sweep that finds nothing. It requires caravan, so it
+// stays below it.
+app.configure(commitments())
+
+` : ''
+  const notify = useNotify ? `// ─── Notifications ────────────────────────────────────────────────────────
+// app.notify(recipient, notification) -- an in-app record and a live event on
+// the recipient's channel. A notification is a FILE and the file names it:
+// api/src/notifications/OrderPaid.notification.ts is type "OrderPaid". Email is
+// off: it needs app.configure(mailerPlugin(...)) from
+// '@frontierjs/junction/mail' above this line, then
+// \`transports: { email: { mailer: 'default' } }\` here.
+app.configure(notificationsPlugin({ db }))
 
 ` : ''
   if (useAuth) {
@@ -626,7 +650,7 @@ import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { auth, authPlugin, authCleanup } from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
 import { db }               from './core/db.ts'
-import { env }              from './core/env.ts'
+import { env }              from './core/env.ts'${systemImport}
 
 // ─── The app ──────────────────────────────────────────────────────────────
 // The db client is passed rather than wired, and it is not a convenience:
@@ -637,7 +661,7 @@ import { env }              from './core/env.ts'
 // gets the first of those and none of the rest, silently.
 const app = createApp({
   auth,
-  db,
+  db,${systemLine}
   config: {
     port: env.PORT,${prefixLine}
   },
@@ -673,7 +697,7 @@ app.configure({
   async shutdown() { authCleanup.stop() },
 })
 
-${queue}// Services in api/src/services/*.service.ts are autoloaded at boot
+${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
 
 export default app
@@ -686,7 +710,7 @@ export default app
 import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { joinChannels }                                  from './core/channels.ts'
 import { db }                                            from './core/db.ts'
-import { env }                                           from './core/env.ts'
+import { env }                                           from './core/env.ts'${systemImport}
 
 // ─── The app ──────────────────────────────────────────────────────────────
 // The db client is passed rather than wired: handing it here installs the
@@ -694,7 +718,7 @@ import { env }                                           from './core/env.ts'
 // the audit metrics and the query telemetry, none of which has another install
 // site. Scoping by hand gets the scoping alone, and says nothing.
 const app = createApp({
-  db,
+  db,${systemLine}
   config: {
     port: env.PORT,${prefixLine}
   },
@@ -708,7 +732,7 @@ app.configure(channels((a) => {
   a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 
-${queue}// Services in api/src/services/*.service.ts are autoloaded at boot
+${queue}${notify}// Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
 
 export default app
@@ -756,7 +780,7 @@ export const env = defineEnv({
 `
 }
 
-function makeApiCoreGateTs() {
+function makeApiCoreGateTs(useQueue = false) {
   return `// api/src/core/gate.ts
 // Who a caller IS, as a level on Litestone's ladder — what every @@gate in
 // db/schema.lite is compared against:
@@ -791,7 +815,22 @@ export function getLevel(user: unknown) {
 }
 
 export const gate = new GatePlugin({ getLevel })
-`
+${useQueue ? `
+// The principal the app is when it acts on its own behalf -- passed once, as
+// createApp({ system: SYSTEM }), and used only by work nobody asked for: a
+// @@commitment's clock firing. A fire has no caller, and no caller grades
+// STRANGER, so a gated model's move is refused unless this principal clears
+// the gate AND the model's row policies admit it. Not a row in the users
+// table and cannot log in.
+export const SYSTEM = {
+  userId:        'system',
+  userType:      'service',
+  role:          'system',
+  isSystemAdmin: true,
+  email:         'system@localhost',
+  authMethod:    'created' as const,
+}
+` : ''}`
 }
 
 // Written only with auth: every assertion is about the User model auth:install
@@ -1289,7 +1328,31 @@ function makeIconSvg(appName) {
 `
 }
 
-function makeViteConfig() {
+function makeViteConfig(useApi = true) {
+  if (!useApi) return `// web/config/vite.config.js
+// Sierra produces the route table from sierra.config.js. This app has no API,
+// so there is no dev proxy to add.
+
+import { defineConfig } from 'vite'
+import { createSierraViteConfig } from '@frontierjs/sierra/build'
+import sierraConfig from './sierra.config.js'
+
+const base = createSierraViteConfig(sierraConfig)
+
+export default defineConfig({
+  ...base,
+  server: {
+    // Spread, never replace: Sierra's own server block carries the HMR overlay
+    // and the port. Its port default is 3000, which is nobody's slot in the
+    // FJS scheme, so the web port is stated here rather than inherited.
+    // 8000 = dev / frontend / project 0. See ports.js.
+    ...base.server,
+    port:       parseInt(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? '8000', 10),
+    strictPort: true,
+  },
+})
+`
+
   return `// web/config/vite.config.js
 // Sierra produces the route table and the schema seed from sierra.config.js;
 // the dev proxy is this file's job, because only the app knows where its own
@@ -1335,9 +1398,9 @@ export default defineConfig({
 `
 }
 
-function makeSierraConfig(appName) {
+function makeSierraConfig(appName, useApi = true) {
   return `// web/config/sierra.config.js
-// Sierra runtime config — routes dir, build target, junction connection.
+// Sierra runtime config — routes dir, build target${useApi ? ', junction connection' : ''}.
 // Paths are relative to the Vite root (web/), since dev:web cd's into web/
 // before invoking vite -c config/vite.config.js.
 
@@ -1357,18 +1420,16 @@ export default {
     default: 'system',
     key:     '${appName}_theme',
   },
-
+${useApi ? `
   junction: {
-    // Where the API is. Unset, it is the page's own origin, which is right while
-    // Vite or nginx proxies /api to it. An API on its own origin
-    // (api.example.com beside app.example.com) or a build a native shell bundles
-    // has no proxy in front of it, so the build names it:
+    // Where the API is when there is no page — a terminal, a prerender. A page
+    // calls its own origin, which is right while Vite or nginx proxies /api to
+    // it. An API on its own origin (api.example.com beside app.example.com) or
+    // a build a native shell bundles has no proxy in front of it, so the build
+    // names it, and Sierra inlines it into the page:
     //   VITE_API_URL=https://api.example.com bun run build
-    // Vite inlines the value at build time and loads this file in NODE too,
-    // where there is neither \`import.meta.env\` nor \`location\` — an unguarded
-    // reference to either takes the dev server down before it serves a byte.
     // The client upgrades to ws itself, so this stays http.
-    url:      import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8000'),
+    url:      'http://localhost:8000',
     tokenKey: '${appName}_token',
     // Must match the API's config.apiPrefix (api/config/default.ts). Junction
     // defaults to no prefix — services at /{service} — so this line and that
@@ -1376,7 +1437,7 @@ export default {
     // registered.
     apiPrefix: '/api',
   },
-}
+` : ''}}
 `
 }
 
@@ -1389,18 +1450,21 @@ ${sc}
 `
 }
 
-function makeMainJs() {
+function makeMainJs(useApi = true) {
   return `// web/src/main.js — the entry point index.html loads.
 //
 // A .mesa module EXPORTS a component; importing one mounts nothing. Without
 // this file the page loads, throws no error, logs nothing, and renders an
 // empty <div id="app"> — the hardest possible failure to read.
 
-// Boots the router, the Junction client and — because db/schema.lite exists —
+${useApi ? `// Boots the router, the Junction client and — because db/schema.lite exists —
 // registerSchemas(), all generated from sierra.config.js. Import it first: a
 // route module that evaluates before the schemas are registered gets a bare
 // make() with no field rules.
-import 'virtual:sierra'
+` : `// Boots the router, generated from sierra.config.js. There is no API and no
+// schema, so no client is wired. Import it first: a route module that evaluates
+// before the router exists has nothing to register with.
+`}import 'virtual:sierra'
 
 // The design system. One import, no build step, no config.
 import '@frontierjs/css'
@@ -1450,7 +1514,7 @@ export function ago(instant, none = 'never') {
 `
 }
 
-function makeRouteModule(appName, useAuth) {
+function makeRouteModule(appName, useAuth, useApi = true) {
   if (useAuth) {
     return `---
 siteName: ${appName}
@@ -1534,14 +1598,15 @@ siteName: ${appName}
 ---
 <script>
   import { isActive, page } from '@frontierjs/sierra/router'
-  import { status } from '@frontierjs/sierra/resource'
-  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
+${useApi ? "  import { status } from '@frontierjs/sierra/resource'\n" : ''}  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
 
-  // Naming a property in a $: line is what SUBSCRIBES this component to it.
+${useApi ? `  // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
   // updates — the socket connects and the page still says otherwise.
   $: (page.siteName, page.route, status.connected, theme.value)
-${sc}
+` : `  // Naming a property in a $: line is what SUBSCRIBES this component to it.
+  $: (page.siteName, page.route, theme.value)
+`}${sc}
 
 <!--
   Every class here is @frontierjs/css, imported once in main.js, so there is no
@@ -1557,10 +1622,10 @@ ${sc}
     </nav>
 
     <div class="group">
-      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+${useApi ? `      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
         {status.connected ? 'live' : 'offline'}
       </span>
-      <button class="btn ghost square" on:click={toggleTheme}
+` : ''}      <button class="btn ghost square" on:click={toggleTheme}
               aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
         {theme.value === 'theme-dark' ? '☀' : '☾'}
       </button>
@@ -1601,12 +1666,12 @@ ${sc}
 `
 }
 
-function makeRouteIndex(appName) {
+function makeRouteIndex(appName, useApi = true) {
   return `---
 title: Home
 ---
 <script>
-  import { status } from '@frontierjs/sierra/resource'
+${useApi ? `  import { status } from '@frontierjs/sierra/resource'
 
   // The $: line is the subscription — without it this renders once at the
   // initial false and never changes.
@@ -1626,7 +1691,7 @@ title: Home
     if (!r.ok) throw new Error('API answered ' + r.status)
     return r.json()
   })
-
+` : ''}
   // ─── the tour ──────────────────────────────────────────────────────
   // Everything from here down is a worked example of the language this file
   // is written in, placed so it can be read beside what it renders. Delete it
@@ -1640,10 +1705,12 @@ title: Home
   $: greeting = name ? 'Hello, ' + name : 'Hello'
 
   const realms = [
-    { noun: 'Model',    realm: 'Data', where: 'db/schema.lite' },
+${useApi ? `    { noun: 'Model',    realm: 'Data', where: 'db/schema.lite' },
     { noun: 'Service',  realm: 'API',  where: 'api/src/services/' },
     { noun: 'Resource', realm: 'UI',   where: 'web/src/resources/' },
-  ]
+` : `    { noun: 'Route',     realm: 'UI', where: 'web/src/routes/' },
+    { noun: 'Component', realm: 'UI', where: 'web/src/components/' },
+`}  ]
 ${sc}
 
 <!--
@@ -1659,7 +1726,7 @@ ${sc}
     running rather than quoted — every point does the thing it describes.
   </p>
 
-  <div class="cluster">
+${useApi ? `  <div class="cluster">
     {#await health}
       <span class="badge muted">API · checking</span>
     {:then}
@@ -1679,7 +1746,7 @@ ${sc}
       </div>
     </div>
   {/await}
-</header>
+` : ''}</header>
 
 <section class="tour stack gap-md">
   <h2>Mesa in a minute</h2>
@@ -1707,7 +1774,7 @@ ${sc}
       <h3>3 · Blocks are markup</h3>
       <p><code>&#123;#each&#125;</code> and <code>&#123;#if&#125;</code> are
          compiled to DOM operations rather than re-run as functions. Both are
-         below, over the three nouns this framework has.</p>
+         below, over ${useApi ? 'the three nouns this framework has' : 'the folders this app has'}.</p>
       <dl class="facts divided">
         {#each realms as r}
           <dt>{r.noun}</dt>
@@ -1739,7 +1806,7 @@ ${sc}
 <section class="next stack gap-md">
   <h2>Where to go next</h2>
   <ol class="steps vertical">
-    <li class="step">
+${useApi ? `    <li class="step">
       <span class="step-marker"></span>
       <span class="step-label"><code>db/schema.lite</code></span>
       <span class="step-hint">The seed. Models, gates and policies; the API and
@@ -1762,6 +1829,22 @@ ${sc}
       <span class="step-hint">Mesa's reference is <code>packages/mesa/docs/</code>,
         the schema language is <code>packages/litestone/docs/</code>.</span>
     </li>
+` : `    <li class="step">
+      <span class="step-marker"></span>
+      <span class="step-label"><code>web/src/routes/index.mesa</code></span>
+      <span class="step-hint">This page. Replace it; a file under <code>routes/</code> is a URL.</span>
+    </li>
+    <li class="step">
+      <span class="step-marker"></span>
+      <span class="step-label"><code>fli make:component Card</code></span>
+      <span class="step-hint">A component in <code>web/src/components/</code>.</span>
+    </li>
+    <li class="step">
+      <span class="step-marker"></span>
+      <span class="step-label"><a class="link" href="https://github.com/frontierjs/frontierjs">github.com/frontierjs/frontierjs</a></span>
+      <span class="step-hint">Mesa's reference is <code>packages/mesa/docs/</code>.</span>
+    </li>
+`}
   </ol>
 </section>
 
@@ -2245,6 +2328,7 @@ Creates a brand-new FrontierJS project from scratch — Junction API, optional a
 The default install set is just `@frontierjs/junction`. Auth is asked about during execution unless `--auth` or `--no-auth` is passed. Use `--minimal` (junction only) or `--full` (all tier-1 packages) to skip prompts entirely. `--yes` accepts every prompt.
 
 Templates: `full-stack` (default — api + web), `api-only` (no web/ folder),
+`web-only` (no api/, no db/ — a single-page app that talks to nobody's API),
 `widgets-only`, `site-only` and `extension-only` (no api/, no web/ — the product
 is that one surface, and what it talks to is somebody else's API). Add
 `--widgets`, `--site` or `--extension` to any of them for that surface
@@ -2306,13 +2390,18 @@ const template  = flag.template
 // A SURFACE-ONLY template is a project whose whole product is that one surface:
 // no API of its own and no SPA, because what it talks to is somebody else's.
 const surfaceOnly  = template === 'widgets-only' || template === 'extension-only' || template === 'site-only'
-const useApi       = !surfaceOnly
-const useWeb       = !surfaceOnly && (template === 'full-stack' || template === undefined) && flag.web !== false
+// `web-only` is the same shape with web/ as the surface: a project whose only
+// product is the SPA, talking to nobody's API. It also has no db/, since the
+// schema is what an API and its clients derive from.
+const webOnly      = template === 'web-only'
+const useApi       = !surfaceOnly && !webOnly
+const useDb        = !webOnly
+const useWeb       = webOnly || (!surfaceOnly && (template === 'full-stack' || template === undefined) && flag.web !== false)
 const useWidgets   = template === 'widgets-only'   || flag.widgets === true
 const useSite      = template === 'site-only'      || flag.site === true
 const useExtension = template === 'extension-only' || flag.extension === true
 const useDeploy = flag.deploy !== false
-const useFli    = flag.fli !== false
+const useFli    = flag.fli !== false && !webOnly
 const useGit    = flag.git !== false
 const useInstall = flag.install !== false
 const useWorkspace = flag.workspace === true
@@ -2346,7 +2435,7 @@ if (flag.full) {
 // Three states: --auth (true), --no-auth (false), neither (prompt)
 
 let useAuth
-// Auth is a property of an API, and this template has none — the widgets talk
+// Auth is a property of an API, and these templates have none — the widgets talk
 // to somebody else's. Asked first, so the prompt is not offered for a thing the
 // scaffold would then have nowhere to install.
 if (!useApi)             useAuth = false
@@ -2369,6 +2458,8 @@ let useExample
 if (flag.example === true)  useExample = true
 else if (flag.example === false) useExample = false
 else useExample = useAuth
+// An example is a User CRUD slice, which is a model, a service and a gate.
+if (!useApi) useExample = false
 
 // ─── 6. Workspace mode — adjust target dir ────────────────────────────────────
 
@@ -2432,7 +2523,7 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
 
 // What this project will be given, decided once. `makePackageJson` is the one
 // answer to that question and the manifest is written from it later.
-const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useWidgets, useSite, useExtension, withPkgs, source: fjsSource }
+const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useDb, useFli, useWidgets, useSite, useExtension, withPkgs, source: fjsSource }
 
 // The @frontierjs packages this project will actually depend on — READ OFF the
 // manifest rather than listed again beside it. A `link:` spec for a package
@@ -2481,7 +2572,7 @@ echo(`  Template:  ${template}`)
 echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : 'npm (published)'}`)
 echo(`  Auth:      ${useAuth ? 'yes' : 'no'}`)
 echo(`  Web:       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
-echo(`  Deploy:    ${useDeploy ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'no'}`)
+echo(`  Deploy:    ${useDeploy && useApi ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'no'}`)
 echo(`  FLI:       ${useFli ? 'yes (cli/src/routes/)' : 'no'}`)
 echo(`  Example:   ${useExample ? 'yes (User CRUD vertical slice)' : 'no'}`)
 echo(`  Git:       ${useGit ? 'yes' : 'no'}`)
@@ -2503,10 +2594,13 @@ mkdirSync(finalTarget, { recursive: true })
 
 // A queue is what gives the audit trail's declared retention a clock after boot.
 const useQueue = useApi && withPkgs.includes('caravan')
+const useNotify = useApi && withPkgs.includes('notifications')
 
-const dirs = ['db']
+const dirs = []
+if (useDb) dirs.push('db')
 if (useApi) dirs.push('api', 'api/config', 'api/src', 'api/src/core', 'api/src/services')
 if (useQueue) dirs.push('api/src/jobs')
+if (useNotify) dirs.push('api/src/notifications')
 if (useApi && useAuth) dirs.push('api/test')
 // cli/src/routes is fli:init's to write, and fli:init refuses a directory that
 // already exists. Creating it here left the FLI surface an empty folder and a
@@ -2514,7 +2608,8 @@ if (useApi && useAuth) dirs.push('api/test')
 if (useDeploy && useApi) dirs.push('deploy')
 if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
-  dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/resources', 'web/src/components', 'web/public')
+  dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/components', 'web/public')
+  if (useDb) dirs.push('web/src/resources')
   if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/account')
 }
 
@@ -2527,7 +2622,6 @@ for (const d of dirs) {
 const filesToWrite = [
   ['package.json',                _manifest],
   ['.gitignore',                  makeGitignore()],
-  ['.env.example',                makeEnvExample(useAuth)],
   ['.fli.json',                   makeFliJson(appName)],
   ['tsconfig.json',               appTsconfig({ useWeb, useSite, useWidgets, useExtension, useApi })],
   ['biome.json',                  appBiomeJson()],
@@ -2538,15 +2632,20 @@ const filesToWrite = [
   ['AGENTS.md',                   appAgentsMd({ name: appName, packages: neededPkgs })],
   ['AGENTS.project.md',           appAgentsProjectMd({ name: appName })],
   ['CLAUDE.md',                   appClaudeMd({ name: appName })],
-  ['db/schema.lite',              makeSchemaLiteEmpty()],
 ]
+
+// What a database needs is the schema and the env that opens it.
+if (useDb) filesToWrite.push(
+  ['.env.example',                makeEnvExample(useAuth)],
+  ['db/schema.lite',              makeSchemaLiteEmpty()],
+)
 
 if (useApi) {
   filesToWrite.push(
     ['api/index.ts',                makeApiIndexTs()],
-    ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb, useQueue)],
+    ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb, useQueue, useNotify)],
     ['api/src/core/env.ts',         makeApiEnvTs()],
-    ['api/src/core/gate.ts',        makeApiCoreGateTs()],
+    ['api/src/core/gate.ts',        makeApiCoreGateTs(useQueue)],
     ['api/src/core/db.ts',          makeApiCoreDbTs(useQueue)],
     ['api/src/core/channels.ts',    makeApiCoreChannelsTs(useAuth)],
     ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb, useQueue)],
@@ -2569,13 +2668,13 @@ if (useWeb) {
     ['web/index.html',                      makeIndexHtml(appName)],
     ['web/public/manifest.webmanifest',     makeWebManifest(appName)],
     ['web/public/icon.svg',                 makeIconSvg(appName)],
-    ['web/config/vite.config.js',           makeViteConfig()],
-    ['web/config/sierra.config.js',         makeSierraConfig(appName)],
+    ['web/config/vite.config.js',           makeViteConfig(useApi)],
+    ['web/config/sierra.config.js',         makeSierraConfig(appName, useApi)],
     ['web/src/App.mesa',                    makeAppMesa()],
-    ['web/src/main.js',                     makeMainJs()],
+    ['web/src/main.js',                     makeMainJs(useApi)],
     ['web/src/datetime.js',                 makeDatetimeJs()],
-    ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth)],
-    ['web/src/routes/index.mesa',           makeRouteIndex(appName)],
+    ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth, useApi)],
+    ['web/src/routes/index.mesa',           makeRouteIndex(appName, useApi)],
     ['web/src/routes/[...404].mesa',        makeRouteNotFound()],
   )
   if (useAuth) {
@@ -2596,7 +2695,7 @@ if (flag.ci !== false) {
 }
 
 // .env (copy of .env.example, gitignored)
-filesToWrite.push(['.env', makeEnvExample(useAuth)])
+if (useDb) filesToWrite.push(['.env', makeEnvExample(useAuth)])
 
 const written = []
 for (const [relPath, content] of filesToWrite) {
@@ -2786,7 +2885,7 @@ if (useDeploy && useApi) {
 // so a model added after this point is missing from the image again. That is a
 // framework question rather than a scaffold one — see ISSUES.md.
 
-if (useInstall) {
+if (useInstall && useDb) {
   try {
     log.info('→ initial migration')
     $.exec({
@@ -2879,8 +2978,10 @@ log.detail('  Claude Code reads it through CLAUDE.md, and your own instructions 
 log.detail('  the app go in AGENTS.project.md, which it imports.')
 echo('')
 echo('  bun run check           the gate CI runs')
-echo('  fli scaffold <Model>    model + service + resource + routes')
-echo('  fli admin:generate      CRUD admin UI from schema.lite')
-echo('  fli deploy:doctor       deploy readiness')
+if (useDb) {
+  echo('  fli scaffold <Model>    model + service + resource + routes')
+  echo('  fli admin:generate      CRUD admin UI from schema.lite')
+}
+if (useApi) echo('  fli deploy:doctor       deploy readiness')
 echo('')
 ```

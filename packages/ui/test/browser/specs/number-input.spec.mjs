@@ -31,6 +31,10 @@ export async function run(t) {
   t.is(await t.evaluate(`return ${text('bounded')};`), '25', 'typing 25 under min 10 shows 25')
   await t.eventually(held('bounded'), '25', 'and the bound value is 25, not 99')
 
+  /* ── a value handed over after mount shows in a box that started empty ── */
+
+  await t.eventually(text('late'), '7', 'a value set after mount reaches a box that began with none')
+
   /* ── a decimal finer than the step is not rounded while typing ────────── */
 
   await typeInto(t, 'stepped', '2.5')

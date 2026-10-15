@@ -1512,6 +1512,18 @@ while a non-mod's is not.
     and the desk calls with `{ pkg }`. A plan from free words names one row
     (`--rows 1`). `agents.test.js` proves it over a fake checkout's `fli` and
     loop; `verify:taskmaster` the desk. No real loop run yet, and no pty drive.
+- [x] 14.12 Ace takes the desk's loop. A `/yes` at the taskmaster's desk
+  starts the loop as before, and the agent marked `desk` (Ace) follows it as
+  his own: he says where he is going in the square, walks into the workshop,
+  stands at the bench of the row the loop is on with `(…)` over him (`thinking`
+  in presence) and still, and walks back to say the outcome to the Taskmaster.
+  The desk stays the one starter, so one loop at a time holds; the runner reads
+  the lock every `deskMs` and follows a pid once (`tended`), so a loop he left
+  past `workMs` is not taken up again. With no `bun run agents` running, the
+  desk works as before and nobody walks.
+  - Built: `adopt`, `tend` and `comeBack` in `agents/agents.js`, `work` sharing
+    the last two. Proved by a throwaway probe over `agents.test.js`'s fake
+    checkout (experimenting, no test kept). No pty drive.
 
 ### Phase 15 — The town hall
 
@@ -1816,10 +1828,8 @@ the turtle:
 
 - **The woods owl,** `(o,o)` blinking `(-,o)`, there only in the dark. It is the
   first animal that tells the time, so it is the one to build `night` with.
-- **A glade rabbit** `(\_/)` by day, and **fireflies**, a `*` / `.` blink, at
-  night. Fireflies in summer only would need a season gate, which the haunted
-  house's calendar door needs too, so the two share one shape when either is
-  built.
+- **A glade rabbit** `(\_/)` by day, and **fireflies**, a `*` / `.` blink, on
+  summer nights (`sky="summer"`, below).
 - **The docks otter** takes the pier at night when the gull leaves it.
 - **The island's seal and turtle,** slow animals at the ferry's far, quiet end.
 
@@ -1827,14 +1837,30 @@ More pets, each a glyph that is not a Latin letter, since a figure is its
 initial: a duckling `ɞ`, a hedgehog `ж`, a crow `ɤ`, a frog `ȣ`. Each glyph
 must render in VS Code's terminal font, and `ɞ` and `ȣ` may come out as tofu.
 
-Gameplay, which needs server state:
+Gameplay, which needs server state. Built: what an animal does is the room's,
+an `animal` event (`{ id, by, line, laid? }`) that `Fishing.mesa` hears -- a
+`laid` trace runs the pacer off on every screen, and the line is the note on
+every screen but the caller's, which has its own in the answer.
 
-- **The gull takes the bait.** A missed `/fish` has a small chance the gull
-  gets it, rolled by the server as the catch is.
+- **The gull takes the bait.** A missed `/fish` while the gull is in the scene
+  is the gull's one time in `THIEF.odds` (3), rolled by the server as the catch
+  is (`fishing.ts`). It lays a `spooked` trace, so it flies off away from the
+  caster and is gone for the trace's five minutes.
 - **Rare animals on rare skies,** by the fishing pier's rule for a rare fish: a
-  heron in fog, a white stag in the glade on a full-moon night in snow.
-- **Feeding the cat.** Offering a fish from 9.9's inventory to the tavern cat is
-  the first animal a member acts on rather than watches.
+  pacer's `sky` names a rule in `SKIES` (`web/src/sky.js`), asked in
+  `pacerNow` beside `night`. A rule reads the WORLD's almanac -- the clock under
+  `HAVEN_WEATHER`/`HAVEN_SEASON` -- never a screen's `/weather` hold, which the
+  server cannot see, so a held snow draws no stag a bolt flies through. An
+  unknown name throws. There is no fog, so the heron is `twilight-rain` (dusk
+  or dawn in rain) at the glade pond; the white stag is `full-moon-snow` on the
+  glade's south row. Over a year of clock that is the heron about 2% of the
+  time and the stag about 1%.
+- **Feeding the animals.** `/feed [fish]` (`fishing.feed`) hands one fish from
+  9.9's pack -- the first held in `CATCH`'s order unless named -- to an eater
+  within `FEED_REACH` (2) of its sprite: the tavern cat, the docks otter, the
+  gull (`EATERS`, each with what it does). Nothing to feed, no fish and a name
+  that is no fish are refused by name. Left open: the cat doing anything once
+  fed but purr in the note, and a drive of either.
 
 ## Open questions
 

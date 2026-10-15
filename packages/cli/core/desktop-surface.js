@@ -115,11 +115,11 @@ export function desktopSierraConfig({ slug = 'app', hasApi = true, devPort = 880
   const junction = hasApi
     ? `
   junction: {
-    // deploy/build.mjs sets VITE_API_URL from desktop.config.js, so a built
-    // shell always names the API: its own origin is tauri://localhost. Unset is
-    // \`bun run dev:desktop\` in a browser, where Vite proxies /api. Guarded
-    // twice because Vite also loads this file in Node.
-    url:       import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:${devPort}'),
+    // deploy/build.mjs sets VITE_API_URL from desktop.config.js, which Sierra
+    // inlines into the page, so a built shell always names the API: its own
+    // origin is tauri://localhost. Unset is \`bun run dev:desktop\` in a
+    // browser, where the page calls its own origin and Vite proxies /api.
+    url:       'http://localhost:${devPort}',
     tokenKey:  '${slug}_token',
     // Must match the API's config.apiPrefix.
     apiPrefix: '/api',
@@ -283,7 +283,7 @@ run('bun', ['--bun', 'vite', 'build', '-c', viteConfig, '--outDir', dist, '--emp
 
 if (config.api && !bundleNames(dist, config.api)) refuse(
   \`the build finished and no file under \${dist} contains \${config.api}. The screens' \` +
-  'sierra.config.js has to read VITE_API_URL for junction.url.')
+  'sierra.config.js sets no junction.url, so Sierra inlined no VITE_API_URL.')
 
 run('cargo', ['build', ...(release ? ['--release'] : []), '--manifest-path', join(SHELL, 'Cargo.toml')], {
   cwd: DESKTOP,
@@ -325,10 +325,14 @@ function refuse(message) {
 // ─── the shell ────────────────────────────────────────────────────────────────
 
 export function desktopCargoToml({ crate = 'app-desktop' } = {}) {
+  // resolver 3 picks the newest release the installed rustc can compile. Without
+  // it a first build, which has no Cargo.lock, takes the newest Tauri outright
+  // and a toolchain one minor behind refuses before compiling anything.
   return `[package]
-name    = "${crate}"
-version = "0.0.0"
-edition = "2021"
+name     = "${crate}"
+version  = "0.0.0"
+edition  = "2021"
+resolver = "3"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -72,6 +72,26 @@ export function catchOf (sky: Sky, roll: number): Landed {
 /** The weights' sum under `sky`: what a roll is drawn below. */
 export const weightOf = (sky: Sky): number => CATCH.reduce((n, c) => n + c.weight(sky), 0)
 
+/** Every fish, in the order `/feed` offers them when none is named: what `CATCH` lands that a pack holds. */
+export const FISH = CATCH.map(c => c.what).filter((w): w is ItemName => w !== 'nothing' && w !== 'boot')
+
+/** The pacer that takes a missed cast's bait while it is in the scene, one miss in `odds`. */
+export const THIEF = { name: 'gull', odds: 3, line: 'a gull swoops down and makes off with your bait' }
+
+/** The pacers that take a fish from a member's hand, and what each does with it. */
+export const EATERS: Record<string, string> = {
+  cat:   'it purrs and winds round your legs',
+  otter: 'it rolls onto its back to eat it',
+  gull:  'it gulps it down whole',
+}
+
+/** How near a figure stands to an eater's sprite to feed it: cells off either end, rows above or below. */
+export const FEED_REACH = 2
+
+/** Whether a figure at `x, y` can reach a sprite drawn at `at`. */
+export const canFeed = (at: { x: number, y: number, text: string }, x: number, y: number): boolean =>
+  Math.abs(y - at.y) <= FEED_REACH && x >= at.x - FEED_REACH && x < at.x + at.text.length + FEED_REACH
+
 /** The throw, from the OS's random source as the dice's is. */
 export const castLine = (sky: Sky): Landed => catchOf(sky, randomInt(0, weightOf(sky)))
 

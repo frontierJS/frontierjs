@@ -9,6 +9,11 @@
   let bounded = 50
   let stepped = 0
 
+  // Starts with no number and is handed one after mount, the way a page seeds
+  // a box from a row it is still fetching.
+  let late = null
+  setTimeout(() => { late = 7 }, 50)
+
   // Calls on `stepped`, read by the spec: oninput per value, onchange once at
   // the end of an edit (FJS-2471).
   window.tally = { input: 0, change: 0 }
@@ -21,3 +26,5 @@
 
 <NumberInput id="stepped" bind:value={stepped} oninput={onin} onchange={onch} />
 <output id="stepped-value">{stepped}</output>
+
+<NumberInput id="late" bind:value={late} />

@@ -451,8 +451,12 @@ try {
   // the browser", not as "the table grew a column". A drive should fail for the
   // reason it is testing.
   const readMoves = `(() => {
-      const col = [...document.querySelectorAll('thead th')]
-        .findIndex(th => th.textContent.trim() === 'Moves') + 1;
+      // Counted in the header's own row: the placed-between DatePicker draws a
+      // calendar header ahead of the table's, and an index taken across the
+      // document points at a weekday.
+      const head = [...document.querySelectorAll('thead th')]
+        .find(th => th.textContent.trim() === 'Moves');
+      const col = [...head.parentElement.children].indexOf(head) + 1;
       // Sorted by reference. The table declares no order, and verify:jobs
       // re-creates a seeded order it cancels -- which gives that row a new id
       // and moves it to the end. These assertions are about which moves each
@@ -540,8 +544,11 @@ try {
               : el.type);
     });
   `))
-  t('form.statusOptions', await evaluate(`
-    return [...document.querySelectorAll('[name="status"] option')].map(o => o.value).filter(Boolean);
+  // `status` is an `@@transitions` column: a create is born at its @default and
+  // a move changes it, so the generated form offers no control for it
+  // (`FJS-D470`) and `summary()` shows it read-only instead.
+  t('form.noStatusControl', await evaluate(`
+    return document.querySelectorAll('[name="status"]').length === 0;
   `))
   // A picker is a SEARCHABLE select (`FJS-459`), so its rows are listbox
   // options that exist while it is open — not `<option>` elements sitting in
@@ -685,8 +692,12 @@ try {
   // would leave the database changed and the second run of this file would find
   // no `pay` button at all — a verification that only works once is not one.
   t('moves.afterPay', await evaluate(`
-    const col = [...document.querySelectorAll('thead th')]
-      .findIndex(th => th.textContent.trim() === 'Moves') + 1;
+    // The column is counted in the header's OWN row: the placed-between
+    // DatePicker draws a calendar header ahead of the table's, and an index
+    // taken across the document points at a weekday.
+    const head = [...document.querySelectorAll('thead th')]
+      .find(th => th.textContent.trim() === 'Moves');
+    const col = [...head.parentElement.children].indexOf(head) + 1;
     const row = () => byText('tbody tr', 'ORD-CDP-1');
     const moves = () => [...row().querySelectorAll('td:nth-child(' + col + ') button')];
     const before = moves().map(b => b.textContent.trim());
@@ -1406,8 +1417,9 @@ const expected = {
   'orders.deleteEnabledAdmin': true,
   'signedIn.badge':            'alex@shop.test · level 5',
 
-  // Five controls, none of them named in the component: four from the model's
-  // own fields, plus the relation picker. `id` and `createdAt` are not offered.
+  // Four controls, none of them named in the component: three from the model's
+  // own fields, plus the relation picker. `id` and `createdAt` are not offered,
+  // nor is `status`, which a move writes.
   //
   // The LABELS are schema-derived as of 2026-08-06, which is why they are no
   // longer the raw column names. The page used to pass `label={name}` to every
@@ -1423,9 +1435,9 @@ const expected = {
     // a native select cannot reach past the page it was handed (`FJS-459`).
     // Total is `@money`, so a text box in major units: a number input answers
     // an empty value for a decimal comma rather than refusing it (`FJS-D555`).
-    'Reference:text', 'Status:select', 'Total:text', 'Note:text', 'Customer:combobox',
+    'Reference:text', 'Total:text', 'Note:text', 'Customer:combobox',
   ],
-  'form.statusOptions':     ['pending', 'paid', 'shipped', 'refunded', 'cancelled'],
+  'form.noStatusControl':   true,
   'form.customerOptions':   ['Acme Corp', 'Globex'],
   'form.referenceMaxLength': 20,      // @length(3, 20)
   // `@money(USD)` gets the kit's money box: text, so `1,200` is read rather

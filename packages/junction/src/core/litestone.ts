@@ -41,7 +41,7 @@ import { singularize } from '@frontierjs/toolbelt/inflect'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { gradeStanding, levelPasses } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
-import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from './query-values.ts'
+import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from '@frontierjs/toolbelt/query'
 
 // Module augmentation: typing ctx.locals.db without forcing a hard
 // Litestone dependency on junction core. Apps using the litestone
@@ -427,7 +427,7 @@ function translateOps(ops: Record<string, unknown>): Record<string, unknown> {
   return result
 }
 
-// The spellings are `core/query-values.ts`'s, because two other ends ask the
+// The spellings are `@frontierjs/toolbelt/query`'s, because two other ends ask the
 // same question of the same value — the browser client places a pushed row in a
 // list it cannot re-query, and Sierra's offline read asks SQLite directly — and
 // two readings of `-createdAt` is two orders for one list.

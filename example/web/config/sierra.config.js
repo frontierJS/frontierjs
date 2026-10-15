@@ -46,10 +46,9 @@ export default {
   devtools: {},
 
   junction: {
-    // Same origin as the page while Vite proxies /api and /ws. An API on its own
-    // origin, or a build a native shell bundles, is named at build time with
-    // VITE_API_URL. Guarded twice because Vite also loads this file in Node.
-    url:       import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8010'),
+    // Where there is no page. A page calls its own origin while Vite proxies
+    // /api and /ws, unless the build sets VITE_API_URL.
+    url:       'http://localhost:8010',
     apiPrefix: '/api',
     tokenKey:  'shop_token',
     // Every call logged to the browser console — `{ request }` on the way out,

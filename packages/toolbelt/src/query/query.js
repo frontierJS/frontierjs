@@ -437,3 +437,179 @@ export function encodeQueryString(query) {
     .replace(/%5D/g, ']')
   return `?${qs}`
 }
+
+/* ── Ordering ──────────────────────────────────────────────────────────────
+ *
+ * What a `$orderBy` / `$select` directive's VALUE means. `/directives` says
+ * which `$` names exist and reads them off a wire; it leaves the SHAPE of
+ * these two open because only a query builder can say which spelling it takes.
+ * This is that answer, here because it is asked from opposite ends of the wire:
+ *
+ *   normalizeOrderBy  the three spellings a caller may write → one list. The
+ *                     server compiles the result into SQL.
+ *   normalizeSelect   a comma-joined string or a list of names → the map a
+ *                     query builder takes.
+ *   comparatorFor     that same list → a comparator over records, for a side
+ *                     that has to place a row in a list it cannot re-query: the
+ *                     browser client's live list and `<Table>`'s own sort.
+ *
+ * A caller that spells one of these itself is a second answer to a settled
+ * question, and it fails where nothing is watching: Sierra's offline read
+ * handed SQLite the wire's own `-id` and every read of a sorted list threw
+ * (`FJS-1179`).
+ *
+ * **The comparator is an approximation of SQLite's ORDER BY, and where it
+ * cannot be exact it is stated rather than assumed.** It agrees on the things
+ * that decide a list's order in practice: NULLs first ascending (SQLite's
+ * default, which negating gives NULLs last descending), numbers before text,
+ * booleans as the 0/1 they are stored as, and ISO-8601 DateTime text comparing
+ * as text. It does NOT reproduce a non-BINARY collation, and JavaScript orders
+ * strings by UTF-16 code unit where SQLite orders by byte; the two agree on
+ * ASCII and can differ past it. A list whose order matters that much re-reads.
+ */
+
+/**
+ * The three spellings → `[{ field: 'asc' | 'desc' }]`.
+ *
+ *   'name'                    ascending
+ *   '-createdAt'              descending
+ *   'status,-createdAt'       several, in order
+ *   { createdAt: 'desc' }     object form; 1 / -1 also accepted
+ *   [{ a: 'asc' }, { b: … }]  already normalized
+ *
+ * **A STRUCTURED value is not one of the three and travels untouched.** The
+ * Data boundary takes orderings whose value is an object rather than a
+ * direction -- a relation hop (`{ author: { name: 'asc' } }`), a nulls
+ * placement (`{ deletedAt: { dir: 'asc', nulls: 'last' } }`) and a distance
+ * (`{ site: { near: { lat, lng } } }`) -- and reading one as *not ascending*
+ * flattened a hop onto the relation, inverted a nulls placement and refused a
+ * distance order as a sort of the JSON document.
+ *
+ * @param {string | Record<string, unknown> | Record<string, unknown>[]} sort
+ * @returns {Record<string, unknown>[]}
+ */
+export function normalizeOrderBy(sort) {
+  if (typeof sort === 'string') {
+    return sort.split(',').map((field) => {
+      const f = field.trim()
+      if (f.startsWith('-')) return { [f.slice(1)]: 'desc' }
+      return { [f]: 'asc' }
+    })
+  }
+  if (Array.isArray(sort)) return sort
+  return Object.entries(sort).map(([field, dir]) => ({
+    [field]: isDirection(dir) ? directionOf(field, dir) : dir,
+  }))
+}
+
+/** A direction is a word or a sign. Anything structured is an ARGUMENT. */
+function isDirection(v) {
+  return v === null || (typeof v !== 'object' && typeof v !== 'function')
+}
+
+/**
+ * A scalar direction is asc, desc, 1 or -1 (words in either case) and nothing
+ * else. A two-way ternary read `sideways`, `null` and `''` as descending, so a
+ * typo sorted the opposite way and answered 200.
+ */
+function directionOf(field, dir) {
+  const word = typeof dir === 'string' ? dir.toLowerCase() : dir
+  if (word === 1 || word === 'asc') return 'asc'
+  if (word === -1 || word === 'desc') return 'desc'
+  throw Object.assign(
+    new RangeError(`$orderBy direction for '${field}' must be asc, desc, 1 or -1, got: ${dir}`),
+    { status: 400 },
+  )
+}
+
+/**
+ * `'id,name'` or `['id', 'name']` → `{ id: true, name: true }`.
+ *
+ * The map is what every query builder here takes, and the string is what a URL
+ * carries, so the two spellings meet exactly once.
+ *
+ * @param {string | string[]} select
+ * @returns {Record<string, boolean>}
+ */
+export function normalizeSelect(select) {
+  const fields = Array.isArray(select) ? select : String(select).split(',')
+  const out = {}
+  for (const f of fields) {
+    const name = f.trim()
+    if (name) out[name] = true
+  }
+  return out
+}
+
+// SQLite's storage-class order: NULL < INTEGER/REAL < TEXT < BLOB. A Boolean is
+// stored as 0/1 and therefore sorts as a number; a DateTime is ISO-8601 TEXT.
+function rank(v) {
+  if (v === null || v === undefined) return 0
+  if (typeof v === 'number' || typeof v === 'boolean') return 1
+  if (typeof v === 'string') return 2
+  return 3
+}
+
+/**
+ * One value against another, as the column holding them would be ordered.
+ *
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {number}
+ */
+export function compareValues(a, b) {
+  const ra = rank(a), rb = rank(b)
+  if (ra !== rb) return ra - rb
+  if (ra === 0) return 0
+
+  if (ra === 1) {
+    const na = typeof a === 'boolean' ? (a ? 1 : 0) : a
+    const nb = typeof b === 'boolean' ? (b ? 1 : 0) : b
+    return na < nb ? -1 : na > nb ? 1 : 0
+  }
+
+  if (ra === 2) return a < b ? -1 : a > b ? 1 : 0
+
+  // A Json, an array or a File column cannot be ordered by at all -- the server
+  // refuses it by name (`opaque`), so a load naming one never returned rows for
+  // this to place. Answering "equal" keeps the comparator total without
+  // inventing an order for values that have none.
+  return 0
+}
+
+/**
+ * A comparator over records for an `orderBy`, or `null` when there is nothing
+ * to order by -- which the caller must treat as *leave the list alone*, not as
+ * *sort by nothing*.
+ *
+ * @param {string | Record<string, unknown> | Record<string, unknown>[] | null | undefined} sort
+ * @returns {((a: Record<string, unknown>, b: Record<string, unknown>) => number) | null}
+ */
+export function comparatorFor(sort) {
+  if (sort == null) return null
+  // A structured value is an ordering this side cannot reproduce: a relation
+  // hop reads a column that is not on the record, a nulls placement is about
+  // rows this comparator never sees, and a distance needs a center and the geo
+  // kit. Skipped rather than read as a direction -- placing a row by the TEXT
+  // of a JSON document is a wrong position asserted confidently, where dropping
+  // the key leaves the rest of the ordering doing its job.
+  const keys = normalizeOrderBy(sort)
+    .map((entry) => {
+      const field = Object.keys(entry)[0]
+      if (!field) return null
+      const dir = entry[field]
+      if (dir !== null && typeof dir === 'object') return null
+      return { field, desc: dir === 'desc' }
+    })
+    .filter((k) => k !== null)
+
+  if (!keys.length) return null
+
+  return (a, b) => {
+    for (const { field, desc } of keys) {
+      const c = compareValues(a?.[field], b?.[field])
+      if (c !== 0) return desc ? -c : c
+    }
+    return 0
+  }
+}

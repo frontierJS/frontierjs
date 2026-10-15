@@ -133,6 +133,26 @@ it is given (`FJS-D26`).
 
 ---
 
+## Dedupe means APPLIED, not SEEN
+
+A receiver that records a delivery and then applies it loses the event when the
+apply throws: the vendor's retry finds the record and is answered as a duplicate
+(`FJS-1805`, measured in four hand-built receivers). The record's `dedupe` is
+therefore a state, not a set:
+
+- **The record is written first and unapplied.** A throw leaves it and answers 5xx,
+  so the vendor retries.
+- **A retry that finds it unapplied applies it again.** Only an APPLIED record makes
+  a retry a duplicate. Deleting the record on throw is not enough: when the record
+  and the subject live in different databases no transaction spans them, and a
+  process that dies between the two leaves a record nothing deletes.
+- **Applying twice must be safe, and the receiver cannot make it so.** The subject's
+  own unique key, checked inside the apply's transaction, does. One fact can also
+  arrive as two DELIVERIES with different ids (two subscriptions on one workspace),
+  which no dedupe key on the delivery can see; exactly-once is the subject's key.
+
+---
+
 ## What must not merge, and what receiving must never do
 
 **Resilience does not cross.** Retry, breaker, deadline and the concurrency cap are
@@ -314,7 +334,9 @@ gives an app that never installs conduit a receiving half.
 asserts four separate refusals against the hand-rolled version — a forged
 signature, a swapped body, a clock outside the window, a replayed nonce — plus a
 redelivered event. That drive is the acceptance test for B, and it exists before
-the feature.
+the feature — **for the refusals only**. The route applies nothing past verify, so
+it cannot see § *Dedupe means APPLIED*. B also needs a test whose apply throws once:
+the retry must apply it, and a second retry must be answered as a duplicate.
 
 ---
 

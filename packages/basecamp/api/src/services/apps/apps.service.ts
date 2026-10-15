@@ -21,8 +21,8 @@
 // `environment_name` / `environment_tier` columns.
 
 import { randomBytes } from 'node:crypto'
-import { createService, NotFound, BadRequest, parseWhere, normalizeOrderBy, $ } from '@frontierjs/junction'
-import type { SortParam } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
+import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS } from '@frontierjs/litestone'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,

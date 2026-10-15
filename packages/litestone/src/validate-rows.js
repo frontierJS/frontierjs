@@ -20,7 +20,8 @@
 // and access.js beside it.
 
 import { validate } from './core/validate.js'
-import { modelToAccessor } from './core/ddl.js'
+import { modelToAccessor, fieldToColumnName } from './core/ddl.js'
+import { rawClause } from './core/query.js'
 
 // A driver with no migrations has no declared shape to hold a row to, so a
 // finding against one would be about the schema rather than about the data.
@@ -37,6 +38,12 @@ const SKIP_DRIVERS = {
 // actionable. No threshold: a model of one bad row is a model of one bad row,
 // and inventing a floor here would be a judgment this file cannot make.
 const ALL = (rows, failing) => rows > 0 && rows === failing
+
+// The Json columns whose stored text is JSON as written. A protected column
+// holds ciphertext or a hash, and a File column holds the storage's own reference.
+const PROTECTED = new Set(['encrypted', 'secret', 'hashed'])
+const jsonColumnsOf = model => model.fields.filter(f =>
+  f.type.name === 'Json' && !f.attributes.some(a => PROTECTED.has(a.kind)))
 
 /**
  * Walk the stored rows and report the ones the schema would now refuse.
@@ -124,20 +131,42 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
       ? (key.length === 1 ? row[key[0]] : Object.fromEntries(key.map(k => [k, row[k]])))
       : row[key]
 
+    // A Json column holding text that is not JSON reads back as that text, which
+    // is a valid string, so the row passes `validate` below. Only the stored
+    // text can say (`FJS-2038`).
+    const keyOf = row => JSON.stringify(idOf(row))
+    const notJson = new Map()
+    try {
+      for (const field of jsonColumnsOf(model)) {
+        const bad = await sys[accessor].findMany({
+          withDeleted: true, withTemplates: true,
+          where:  { $raw: rawClause(`"${fieldToColumnName(field)}" IS NOT NULL AND NOT json_valid("${fieldToColumnName(field)}")`) },
+          select: Object.fromEntries([key].flat().map(k => [k, true])),
+        })
+        for (const row of bad) {
+          const k = keyOf(row)
+          notJson.set(k, [...(notJson.get(k) ?? []), { path: [field.name], message: `${field.name} is a Json column holding text that is not JSON` }])
+        }
+      }
+    } catch (e) {
+      unreadable.push({ model: model.name, error: e.message })
+      continue
+    }
+
     const failures = []
     for (const row of rows) {
+      /** @type {{path: string[], message: string}[]} */
+      let errors = []
       try {
         validate(row, model, null, typeMap, enumMap)
       } catch (e) {
         // A ValidationError carries the per-field list; anything else is this
         // walk failing rather than the row, and is reported as one finding
         // saying so rather than swallowed.
-        failures.push({
-          model:  model.name,
-          id:     idOf(row),
-          errors: e.errors ?? [{ path: ['_row'], message: e.message }],
-        })
+        errors = e.errors ?? [{ path: ['_row'], message: e.message }]
       }
+      errors = [...errors, ...(notJson.get(keyOf(row)) ?? [])]
+      if (errors.length) failures.push({ model: model.name, id: idOf(row), errors })
     }
 
     checked.push({ model: model.name, rows: rows.length, failing: failures.length })

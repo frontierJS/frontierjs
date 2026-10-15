@@ -22,7 +22,7 @@
 import { describe, it, expect } from 'bun:test'
 import { createJunctionClient, Store, type QueryDirectives } from '../src/client/index.ts'
 import { RESERVED_PARAMS, DIRECTIVE_PARAMS } from '@frontierjs/toolbelt/directives'
-import { normalizeOrderBy, comparatorFor, compareValues } from '../src/core/query-values.ts'
+import { normalizeOrderBy, comparatorFor, compareValues } from '@frontierjs/toolbelt/query'
 
 // ─── the shared reading of orderBy ────────────────────────────────────────────
 

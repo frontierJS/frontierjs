@@ -47,7 +47,7 @@ run('bun', ['--bun', 'vite', 'build', '-c', viteConfig, '--outDir', dist, '--emp
 
 if (config.api && !bundleNames(dist, config.api)) refuse(
   `the build finished and no file under ${dist} contains ${config.api}. The screens' ` +
-  'sierra.config.js has to read VITE_API_URL for junction.url.')
+  'sierra.config.js sets no junction.url, so Sierra inlined no VITE_API_URL.')
 
 run('cargo', ['build', ...(release ? ['--release'] : []), '--manifest-path', join(SHELL, 'Cargo.toml')], {
   cwd: DESKTOP,

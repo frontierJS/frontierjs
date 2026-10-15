@@ -274,13 +274,13 @@ export function buildLogEntry({ operation, model, field, transition, records, be
 }
 
 /**
- * The entry for a jsonl trail: its Json columns as values. A SQL trail is handed
- * the text, because its table stores a string as given and decodes it on read; a
- * jsonl line stores whatever it is handed, so text there reads back as a quoted
- * string where a user model's Json column answers the object.
+ * The entry as a trail table is written: its Json columns as values. `onLog`
+ * sees the text, but the table encodes a Json column itself, so handing it text
+ * stores a quoted string that reads back as text rather than the object
+ * (`FJS-2038`).
  * @param {Record<string, any>} entry
  */
-export function jsonlTrailEntry(entry) {
+export function trailRowValues(entry) {
   const out = { ...entry }
   for (const column of ['records', 'before', 'after', 'meta'])
     if (typeof out[column] === 'string') out[column] = JSON.parse(out[column])

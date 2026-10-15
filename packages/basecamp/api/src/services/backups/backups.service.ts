@@ -25,7 +25,7 @@
 
 import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin, getPagination }                from '../../core/hooks.ts'
-import { db, actor }                                        from '../../core/resource.ts'
+import { db, actor, callerOrder, callerSelect }               from '../../core/resource.ts'
 import backupRun                                            from '../../jobs/backup-run.job.ts'
 import type { BasecampApp }                                 from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -47,7 +47,8 @@ export function createBackupsService(app: BasecampApp) {
       const { rows, total } = await db().backup.findManyAndCount({
         where:   status ? { status } : {},
         limit, offset,
-        orderBy: { createdAt: 'desc' },
+        orderBy: callerOrder({ createdAt: 'desc' }),
+        ...callerSelect(),
       })
       return { total, limit, offset, data: rows }
     },

@@ -119,8 +119,8 @@ export default {
   trailingSlash: 'always',
 
   junction: {
-    // Vite also loads this file in Node, which has neither import.meta.env nor location
-    url:       import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8000'),
+    // Where there is no page; a page calls its own origin (see Resource below)
+    url:       'http://localhost:8000',
     apiPrefix: '/api',       // must match the API's config.apiPrefix
     tokenKey:  'myapp_token',
   },
@@ -475,20 +475,20 @@ is synchronous — boot is never blocked on a WebSocket handshake. `whenReady` i
 the rare caller that specifically needs the socket; service calls made before it resolves
 simply take the HTTP path.
 
-**`junction.url` is the API's origin, and a build that is not proxied has to name it.**
-`fli new` writes it as the page's own origin unless the build sets `VITE_API_URL`:
-
-```js
-url: import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8000'),
-```
+**A page calls its own origin, and a build that is not proxied names the API with
+`VITE_API_URL`.** `virtual:sierra` hands the client `import.meta.env.VITE_API_URL ||
+location.origin`, decided in the page. `junction.url` in the config is the answer where there
+is no page — the terminal shell, a prerender — and is what turns the client on. The config is
+evaluated in Node and reaches the browser as JSON (`FJS-D552`), so a `typeof location` guard
+there always takes its fallback; that is why the config cannot say *the page's origin*
+itself (`FJS-D1042`).
 
 The page's origin is right while Vite in dev, or nginx in `fli deploy`, proxies `/api` and
 `/ws` to the API. An API on an origin of its own — `api.example.com` beside
 `app.example.com` — and a build a native shell bundles, where the page is
 `tauri://localhost`, have no proxy, so every call would go to a host with no API on it:
-`VITE_API_URL=https://api.example.com bun run build`. Vite inlines the value; both guards
-are there because Vite also loads this file in Node, which has neither `import.meta.env` nor
-`location`. The API must then allow that page's origin in its CORS configuration. A family
+`VITE_API_URL=https://api.example.com bun run build`. Vite inlines the value. The API must
+then allow that page's origin in its CORS configuration. A family
 of origins is a predicate rather than a list — `middleware: { cors: { origins: o =>
 o.endsWith('.preview.example.com') } }` in `junction.config.js` admits every frozen Basecamp
 preview of the app, with nothing to add or remove as previews come and go.

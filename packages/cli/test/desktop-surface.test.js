@@ -307,3 +307,14 @@ describe('what desktop:install writes', () => {
     expect(launcher(join(ROOT, 'nowhere'))).toBeNull()
   })
 })
+
+// FJS-2068 — `tauri = "2"` with no lock resolves to whatever Tauri is newest, and
+// a toolchain older than that release refuses before compiling anything.
+describe('the shell builds on the toolchain the machine has', () => {
+  test('Cargo.toml resolves dependencies against the installed rustc', () => {
+    const root = appRoot('msrv')
+    scaffoldDesktopSurface({ root, appName: 'msrv', wraps: 'web' })
+    const toml = readFileSync(join(root, 'desktop/shell/Cargo.toml'), 'utf8')
+    expect(toml).toMatch(/^resolver\s*=\s*"3"$/m)
+  })
+})

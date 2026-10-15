@@ -768,6 +768,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `intent-recognizer-examples.md` — synthetic support requests for the intent recognizer
 - `prompt-to-app.md` — Prompt-to-app: what the Base44 space is, and what it would take here
 - `rebuilt-in-the-stressors.md` — what the stressors rebuilt that the framework should own
+- `rig-catalog.md` — the rig catalog: which features the apps keep rebuilding, counted, and the order they depend in
 - `review-coherence.md` — The coherence review: eight findings across twelve packages
 - `review-decisions.md` — the decisions, read as one body
 - `review-prior-art.md` — Prior art: which projects to read, and what each one is evidence of

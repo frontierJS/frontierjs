@@ -44,7 +44,7 @@ test('nothing printed is an empty board; output that is no list, or a row with n
 test('each stool of the bar is walked onto, has a floor cell to stand up to, and pairs with nobody', async () => {
   const stage = await stageOf('Tavern')
   const bar = stage.placed(barPiece)[0]
-  expect(spotsOf(barPiece, 'seat')).toHaveLength(7)
+  expect(spotsOf(barPiece, 'seat')).toHaveLength(15)
   for (const s of spotsOf(barPiece, 'seat')) {
     expect(stage.walkable(bar.x + s.dx, bar.y + s.dy)).toBe(true)
     expect(stage.walkable(bar.x + s.stand.dx, bar.y + s.stand.dy)).toBe(true)

@@ -32,14 +32,7 @@ import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { directiveParams as toDirectiveParams } from '@frontierjs/toolbelt/directives'
 import { isListResult, isServiceResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
 import type { QueryDirectives } from '../core/directives.ts'
-import { comparatorFor } from '../core/query-values.ts'
-
-// Re-exported rather than reached for through the package root, which is the
-// SERVER entry: a browser importing it pulls Bun's transport in. Sierra's
-// offline read is the third caller of these (`FJS-1179`) and the only one on
-// the far side of a package boundary.
-export { normalizeOrderBy, normalizeSelect, comparatorFor, compareValues } from '../core/query-values.ts'
-export type { SortParam, SelectParam, OrderBy } from '../core/query-values.ts'
+import { comparatorFor } from '@frontierjs/toolbelt/query'
 export type { ListResult, ServiceResult }
 export { ResultShapeError }
 
@@ -1777,7 +1770,7 @@ export class JunctionClient extends EventEmitter {
     // in it, which is the same silent-wrong-data class one step along.
     //
     // Sorting is answerable here: `orderBy` is the caller's own, and
-    // `core/query-values.ts` reads it the way the server does. **Paging is not.**
+    // `@frontierjs/toolbelt/query` reads it the way the server does. **Paging is not.**
     // Nothing in a browser can know whether a new row belongs on page 3 without
     // asking, so a list past the first page does not guess: the row is refused
     // and `stale` counts it, for a view to render as *3 new — refresh*. A list

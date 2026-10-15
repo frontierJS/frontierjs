@@ -574,6 +574,103 @@ describe('apps.find — the caller\'s $orderBy (FJS-2832)', () => {
   })
 })
 
+// A hand-written find that never read `$orderBy` answered it in its own order
+// with a 400 naming the directive (FJS-2469). Each below sorts by the caller's
+// key; `$select` is applied where the rows come back as the table read them.
+describe('hand-written finds apply the caller\'s directives (FJS-2469)', () => {
+  // backups are the hub's: a sysadmin with no workspace. fleet is a view with no id column.
+  const asOwner = (name: string) => env.as(name === 'backups' ? sysadmin : owner).service(name)
+
+  test.each(['backups', 'blueprints', 'cleanup', 'deployments', 'fleet', 'volumes', 'workspaces'])(
+    '%s.find answers $orderBy rather than refusing it',
+    async (name) => {
+      await expect(asOwner(name).find({}, { directives: { orderBy: name === 'fleet' ? 'region' : 'id' } })).resolves.toBeDefined()
+    })
+
+  test('workspaces sort by the directive', async () => {
+    const asc  = (await asOwner('workspaces').find({}, { directives: { orderBy: 'name' } })).data.map((w: any) => w.name)
+    const desc = (await asOwner('workspaces').find({}, { directives: { orderBy: '-name' } })).data.map((w: any) => w.name)
+    expect(asc).toEqual([...asc].sort())
+    expect(desc).toEqual([...asc].reverse())
+  })
+
+  test('fleet answers $select with only the named columns', async () => {
+    const fleet = (await asOwner('fleet').find({}, { directives: { select: 'providerKind' } })).data
+    expect(fleet.length).toBeGreaterThan(0)
+    for (const r of fleet) expect(Object.keys(r)).toEqual(['providerKind'])
+  })
+})
+
+// A cursor window and three computed catalogs answered a sort with a 400
+// (FJS-2904). The computed ones sort and project in memory; the audit window
+// sorts in the query and still refuses `$select`, whose projection could drop
+// the keys its cursor is minted from.
+describe('windowed and computed finds apply the caller\'s directives (FJS-2904)', () => {
+  const find = (as: any, name: string, directives: Record<string, unknown>) =>
+    env.as(as).service(name).find({}, { directives })
+
+  test('notification-preferences sorts and projects the computed kinds', async () => {
+    const asc  = (await find(owner, 'notification-preferences', { orderBy: 'kind' })).data.map((r: any) => r.kind)
+    const desc = (await find(owner, 'notification-preferences', { orderBy: '-kind' })).data.map((r: any) => r.kind)
+    expect(asc.length).toBeGreaterThan(1)
+    expect(asc).toEqual([...asc].sort())
+    expect(desc).toEqual([...asc].reverse())
+
+    const picked = (await find(owner, 'notification-preferences', { select: 'kind,email' })).data
+    for (const r of picked) expect(Object.keys(r).sort()).toEqual(['email', 'kind'])
+  })
+
+  test('portal sorts and projects its appliance catalog', async () => {
+    const all  = (await find(owner, 'portal', {})).data
+    const desc = (await find(owner, 'portal', { orderBy: '-id' })).data.map((r: any) => r.id)
+    expect(desc).toEqual(all.map((r: any) => r.id).sort().reverse())
+
+    const picked = (await find(owner, 'portal', { select: 'id' })).data
+    expect(picked.length).toBe(all.length)
+    for (const r of picked) expect(Object.keys(r)).toEqual(['id'])
+  })
+
+  test('trash sorts and projects what is deleted', async () => {
+    const mk = (n: string) => env.as(owner).service('projects').create({ name: n, slug: `trash-${n}-${Math.random().toString(36).slice(2, 8)}` })
+    for (const n of ['zeta', 'alpha']) await env.as(owner).service('projects').remove((await mk(n)).id)
+
+    const names = (await find(owner, 'trash', { orderBy: 'name' })).data.map((r: any) => r.name)
+    expect(names).toEqual([...names].sort())
+    const desc = (await find(owner, 'trash', { orderBy: '-name' })).data.map((r: any) => r.name)
+    expect(desc).toEqual([...names].reverse())
+
+    const picked = (await find(owner, 'trash', { select: 'name' })).data
+    expect(picked.length).toBeGreaterThan(1)
+    for (const r of picked) expect(Object.keys(r)).toEqual(['name'])
+  })
+
+  test('audit sorts its window by the caller\'s key and refuses $select by name', async () => {
+    const asc = (await find(owner, 'audit', { orderBy: 'createdAt' })).data.map((r: any) => r.createdAt)
+    expect(asc.length).toBeGreaterThan(1)
+    expect(asc).toEqual([...asc].sort())
+    await expect(find(owner, 'audit', { select: 'id' })).rejects.toThrow(/\$select/)
+  })
+
+  test('metrics-store sorts and projects the series, `stale` included', async () => {
+    const tag = Math.random().toString(36).slice(2, 8)
+    for (const n of ['a', 'b']) {
+      const name = `sortcheck.${tag}.${n}`
+      await (env.system as any).metricSeries.create({
+        data: { name, labelsKey: name, type: 'gauge', lastSeenAt: new Date().toISOString() },
+      })
+    }
+    const rows  = async (directives: Record<string, unknown>) => {
+      const r = await find(sysadmin, 'metrics-store', directives)
+      return Array.isArray(r) ? r : r.data
+    }
+    const names = (await rows({ orderBy: '-name' })).map((r: any) => r.name)
+    expect(names.length).toBeGreaterThan(1)
+    expect(names).toEqual([...names].sort().reverse())
+
+    for (const r of await rows({ select: 'name,stale' })) expect(Object.keys(r).sort()).toEqual(['name', 'stale'])
+  })
+})
+
 // ─── The application trail ───────────────────────────────────────────────────
 // `AuditEvent.diff` is `Json?` and nothing wrote it, so the trail could say a
 // server was drained and not what state it was in (FJS-154). The row-level

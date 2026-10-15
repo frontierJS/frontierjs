@@ -61,6 +61,7 @@
   // is `aria-sort`, which is already ours.
 
   import { orderByPair, orderByValue } from '@frontierjs/toolbelt/directives'
+  import { comparatorFor } from '@frontierjs/toolbelt/query'
   import { cx } from '../../utils.js'
 
   export let columns    = []       // { name, label, sortable?, align?, width? }[]
@@ -114,6 +115,17 @@
   function sortedBy(col) {
     const { key, dir } = orderByPair(orderBy)
     return key === col.name ? dir : null
+  }
+
+  // With no `onsort` this component owns the sort, so `rows` reach the row
+  // snippet ordered by `orderBy` (`FJS-D672`). Over ONE PAGE of a server list
+  // that sorts the page and not the list; such a caller states `onsort`. The
+  // comparator is toolbelt's, the one the live list uses to place a pushed row.
+  $: shown = onsort ? rows : sortedRows(rows, orderBy)
+
+  function sortedRows(list, ordering) {
+    const cmp = comparatorFor(ordering || null)
+    return cmp ? [...list].sort(cmp) : list
   }
 
   function handleSort(col) {
@@ -214,7 +226,7 @@
 
         {:else}
           <!-- Data rows — the snippet supplies its own <tr>. -->
-          {#each rows as r, i (keyOf(r, i))}
+          {#each shown as r, i (keyOf(r, i))}
             {@render row?.(r, i)}
           {/each}
         {/if}
@@ -222,7 +234,7 @@
 
       {#if footer && !loading}
         <tfoot>
-          {@render footer?.(rows)}
+          {@render footer?.(shown)}
         </tfoot>
       {/if}
     </table>

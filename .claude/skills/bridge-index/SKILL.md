@@ -113,7 +113,7 @@ Detail: `references/api-ui.md`
 - `client.nodes` / `resource.record(id)` — one node per row keyed by model; a list is a view — `junction/src/client/nodes.ts`
 - `matchesQuery(fields, record, query)` — is a pushed record still in this list — `toolbelt/src/match/match.js`
 - `$after` / `endCursor` / `resource.more()` — a live list grows a keyset window — `toolbelt/src/directives/directives.js`
-- `comparatorFor(orderBy)` — the one reading of `orderBy` and `select` — `junction/src/core/query-values.ts`
+- `comparatorFor(orderBy)` — the one reading of `orderBy` and `select` — `toolbelt/src/query/query.js`
 
 **UI**
 Detail: `references/ui.md`

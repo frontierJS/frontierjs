@@ -31,7 +31,7 @@
 
 import { createService, findWindow, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, ws } from '../../core/resource.ts'
+import { db, ws, callerOrder } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import { keyScope } from '../api-keys/scopes.ts'
 
@@ -76,8 +76,10 @@ export function createAuditService(app: BasecampApp) {
         // shares a timestamp — so the cursor cannot be built from it alone.
         // Litestone appends the model's own id to the sort keys and refuses
         // where there is nothing to append; the tiebreaker is the schema's, and
-        // is not restated here.
-        orderBy: { createdAt: 'desc' },
+        // is not restated here. `$select` is not read: a cursor is minted from
+        // the last row's sort keys, which a projection may have dropped, so it
+        // stays a 400.
+        orderBy: callerOrder({ createdAt: 'desc' }),
         limit, offset,
       }, after, 'The audit trail')
     },

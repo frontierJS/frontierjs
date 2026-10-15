@@ -196,7 +196,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
  */
 function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
   if (!ctx.hasPolicies) return
-  const { model: target, fkCols, refCols, op, opValue, extra, valueSql, reads, isBool } = aggRef
+  const { model: target, fkCols, refCols, op, opValue, extra, valueSql, reads, isBool, through } = aggRef
   const policy = buildPolicyFilter(target, 'read', ctx)
   if (!policy || !fkCols?.length) return
   // A to-one column that is the parent's own aggregate counts rows of `reads`,
@@ -221,14 +221,21 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
               : `${op.toUpperCase()}(${col})`
     /** @type {unknown[]} */
     const keyBinds = []
+    // Through a join table the parent's key is a column of that table, joined
+    // to the target on its own key.
+    const K       = through ? 'J' : T
+    const keyCols = fkCols.map(c => `${K}.${quoteIdent(c)}`)
     const parts = [
-      keyIn(fkCols.map(c => `${T}."${c}"`), refs, keyBinds),
+      keyIn(keyCols, refs, keyBinds),
       ...(extra ?? []).map(part => part.replaceAll('%T%', T)),
       `(${policy.sql})`,
     ]
-    const keys = fkCols.map((c, i) => `${T}."${c}" AS "__fk${i}"`).join(', ')
-    const sql  = `SELECT ${keys}, ${agg} AS "__agg" FROM ${T} WHERE ${parts.join(' AND ')} ` +
-                 `GROUP BY ${fkCols.map(c => `${T}."${c}"`).join(', ')}`
+    const keys = keyCols.map((c, i) => `${c} AS "__fk${i}"`).join(', ')
+    const from = through
+      ? `${T} JOIN ${quoteIdent(through.joinTable)} AS J ON J.${quoteIdent(through.targetCol)} = ${T}.${quoteIdent(through.targetKey)}`
+      : T
+    const sql  = `SELECT ${keys}, ${agg} AS "__agg" FROM ${from} WHERE ${parts.join(' AND ')} ` +
+                 `GROUP BY ${keyCols.join(', ')}`
     const tBig   = ctx.shapes[target].bigFields
     const fromDb = tBig.size ? wideDb(readDb, tBig) : plainDb(readDb)
     for (const g of fromDb.query(sql).all(...keyBinds, ...policy.params))

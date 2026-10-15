@@ -100,8 +100,10 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   it is `@frontierjs/toolbelt/directives`' `orderByPair`, which is where it has
   to live because this package and sierra are SIBLINGS that may not import each
   other and both depend on toolbelt. `onsort` reports an `orderBy` too, so a
-  page names no sort shape of its own; `bind:orderBy` is still the uncontrolled
-  mode.
+  page names no sort shape of its own. **With no `onsort` the Table sorts its own
+  rows** (`FJS-D672`, `comparatorFor` from `@frontierjs/toolbelt/query`); a Table
+  over ONE PAGE of a server list states `onsort={list.sort}` or it sorts the
+  page and not the list.
 - **A `Table` column that holds row actions declares `hideLabel: true`.** Not an
   empty `label` — a `<th>` with no text announces nothing for a column that has
   a control in every row, and the app's own a11y pass only checks `scope`, so
@@ -548,6 +550,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   closed the menu. If a part of a compound component silently does nothing,
   check whether it is behind a conditional before blaming the part.
 - **An overlay finds its rows and its trigger's control by reference, never by query** (`FJS-2391`). A terminal node has no `querySelector`, `activeElement` or `document`, so a menu that walks the DOM moves nothing there and a close that queries for the trigger drops focus. `DropdownItem` registers `{ el, disabled, label }` getters through `$context.addRow` and reports focus through `$context.rowFocus`; the menu's cursor is that report. The trigger's control is the last `focusin` target inside the wrapper, with a guarded query only for a browser that does not focus a button on press. The wrapper listens to `click`, so on a terminal it is a Tab stop before the button inside it.
+- **A menu row sits in a `<div role="none" style:display="contents">`, and the wrapper is for the terminal.** A terminal reads no CSS and lays a `<button>` out inline, so bare `DropdownItem`s paint `[ Edit ][ Delete ]` on one line (`FJS-2901`); a `div` is its own line there and `display: contents` makes it no box in a browser, so `.items`' flex column still sees the row.
 - **A `const` consumer of `$context.x` is the VALUE, and it is live** — it
   tracks the provider (Rule 25a), so it reads current inside a handler that
   runs much later, and it is neither a getter to call nor a snapshot taken at

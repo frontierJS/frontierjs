@@ -360,3 +360,126 @@ describe('summarize', () => {
     expect(summarize([{ kind: 'view' }, { kind: 'sti-candidate' }] as any).worst).toBe('lost')
   })
 })
+
+describe('a MySQL / MariaDB dump — the commonest legacy shape (`FJS-2054`)', () => {
+  const DUMP = `
+-- MariaDB dump 10.19  Distrib 10.5.18-MariaDB
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+DROP TABLE IF EXISTS \`companies\`;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE \`companies\` (
+  \`id\` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  \`name\` varchar(191) COLLATE utf8mb4_unicode_ci NOT NULL,
+  \`active\` tinyint(1) NOT NULL DEFAULT '1',
+  \`seats\` int(11) NOT NULL DEFAULT '0',
+  \`kind\` enum('retail','wholesale') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'retail',
+  \`rate\` decimal(8,2) DEFAULT NULL,
+  \`notes\` text COLLATE utf8mb4_unicode_ci,
+  \`created_at\` timestamp NULL DEFAULT NULL,
+  \`updated_at\` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`companies_name_unique\` (\`name\`)
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE \`punches\` (
+  \`id\` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  \`company_id\` bigint(20) unsigned NOT NULL,
+  \`clock_in\` datetime NOT NULL,
+  \`clock_out\` datetime DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`punches_company_id_foreign\` (\`company_id\`),
+  KEY \`punches_clock_in_index\` (\`clock_in\`),
+  CONSTRAINT \`punches_company_id_foreign\` FOREIGN KEY (\`company_id\`) REFERENCES \`companies\` (\`id\`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='time; clock (in/out)';
+INSERT INTO \`companies\` VALUES (1,'A;\\n',1,0,'retail',NULL,NULL,NULL,'2022-01-01 00:00:00');
+`
+  const read = () => convert({ source: DUMP, format: 'sql', label: 'mysql' })
+
+  test('both tables are read, and the output parses', () => {
+    const { lite, models } = read()
+    expect(models).toEqual(['Company', 'Punch'])
+    expect(parse(lite).valid).toBe(true)
+  })
+
+  test('datetime, timestamp and tinyint(1) land as themselves, and nothing is unknown', () => {
+    const { lite, gaps } = read()
+    expect(lite).toMatch(/clockIn DateTime\b/)
+    expect(lite).toMatch(/createdAt DateTime\?/)
+    expect(lite).toMatch(/active Boolean @default\(true\)/)
+    expect(lite).toMatch(/seats Int @default\(0\)/)
+    expect(lite).toMatch(/updatedAt DateTime @map\("updated_at"\) @default\(now\(\)\)/)
+    expect(gaps.filter(g => g.kind === 'unknown-column-type')).toEqual([])
+    expect(gaps.filter(g => g.kind === 'dbgenerated-default')).toEqual([])
+  })
+
+  test('AUTO_INCREMENT, an inline enum, and the keys written inside CREATE TABLE are carried', () => {
+    const { lite } = read()
+    expect(lite).toMatch(/id Int @id @default\(autoincrement\(\)\)/)
+    expect(lite).toMatch(/enum CompaniesKind \{\s+retail\s+wholesale\s+\}/)
+    expect(lite).toMatch(/kind CompaniesKind @default\("retail"\)/)
+    expect(lite).toMatch(/companyId Int @map\("company_id"\)/)
+    expect(lite).toMatch(/@relation\(fields: \[companyId\], references: \[id\], onDelete: Cascade\)/)
+    expect(lite).toMatch(/@@unique\(\[name\]\)/)
+    expect(lite).toMatch(/@@index\(\[clockIn\]\)/)
+  })
+
+  test('a Postgres dump is read as before', () => {
+    const { models } = convert({ source: 'CREATE TABLE public.t (\n    id integer NOT NULL\n);\n', format: 'sql' })
+    expect(models).toEqual(['T'])
+  })
+})
+
+describe('a phpMyAdmin dump — keys arrive as ALTER TABLE, not inside CREATE TABLE (`FJS-2903`)', () => {
+  const DUMP = `
+-- phpMyAdmin SQL Dump
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+CREATE TABLE \`companies\` (
+  \`id\` bigint(20) UNSIGNED NOT NULL,
+  \`name\` varchar(191) NOT NULL,
+  \`kind\` enum('retail','wholesale') NOT NULL DEFAULT 'retail'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE \`punches\` (
+  \`id\` int(10) UNSIGNED NOT NULL,
+  \`company_id\` bigint(20) UNSIGNED NOT NULL,
+  \`clock_in\` datetime NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE \`companies\`
+  ADD PRIMARY KEY (\`id\`),
+  ADD UNIQUE KEY \`companies_name_unique\` (\`name\`);
+ALTER TABLE \`punches\`
+  ADD PRIMARY KEY (\`id\`),
+  ADD KEY \`punches_company_id_foreign\` (\`company_id\`),
+  ADD KEY \`punches_clock_in_index\` (\`clock_in\`);
+ALTER TABLE \`companies\`
+  MODIFY \`id\` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+ALTER TABLE \`punches\`
+  MODIFY \`id\` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+ALTER TABLE \`punches\`
+  ADD CONSTRAINT \`punches_company_id_foreign\` FOREIGN KEY (\`company_id\`) REFERENCES \`companies\` (\`id\`) ON DELETE CASCADE;
+COMMIT;
+`
+  const read = () => convert({ source: DUMP, format: 'sql', label: 'phpmyadmin' })
+
+  test('the key, the unique, the indexes and AUTO_INCREMENT are carried', () => {
+    const { lite, gaps } = read()
+    expect(parse(lite).valid).toBe(true)
+    expect(lite).toMatch(/id Int @id @default\(autoincrement\(\)\)/)
+    expect(lite).toMatch(/@@unique\(\[name\]\)/)
+    expect(lite).toMatch(/@@index\(\[clockIn\]\)/)
+    expect(lite).toMatch(/@relation\(fields: \[companyId\], references: \[id\], onDelete: Cascade\)/)
+    expect(gaps.filter(g => g.kind === 'no-primary-key')).toEqual([])
+  })
+
+  test('a MODIFY that restates an enum column keeps it an enum', () => {
+    const src = DUMP + 'ALTER TABLE `companies`\n  MODIFY `kind` enum(\'retail\',\'wholesale\',\'online\') NOT NULL DEFAULT \'retail\';\n'
+    const { lite } = convert({ source: src, format: 'sql', label: 'phpmyadmin' })
+    expect(lite).toMatch(/enum CompaniesKind \{\s+retail\s+wholesale\s+online\s+\}/)
+  })
+
+  test('a clause the reader cannot place is named, not dropped silently', () => {
+    const src = DUMP + 'ALTER TABLE `companies`\n  ADD FULLTEXT KEY `ft` (`name`);\n'
+    const { gaps } = convert({ source: src, format: 'sql', label: 'phpmyadmin' })
+    expect(gaps.some(g => g.kind === 'unparsed-line' && g.model === 'Company')).toBe(true)
+  })
+})

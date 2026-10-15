@@ -29,19 +29,20 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 15 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 16 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 11 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 10 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 8 |
+| `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
-| `announce()` | `packages/junction/src/transport/channels.ts` | 7 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
+| `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 3 |
 
 ## Data → API
 
@@ -97,7 +98,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 1 |
+| `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 3 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
 | `ctx.$raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
 ## API internals
@@ -136,11 +137,11 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `client.setCallHeader(name, value)` | `packages/junction/src/client/index.ts` | yes | — |
 | `x-fjs-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
-| `announce()` | `packages/junction/src/transport/channels.ts` | yes | 7 |
+| `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 15 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 16 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
@@ -148,7 +149,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `client.nodes` / `resource.record(id)` | `packages/junction/src/client/nodes.ts` | mentions `nodes` — weak | — |
 | `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | 1 |
 | `$after` / `endCursor` / `resource.more()` | `packages/toolbelt/src/directives/directives.js` | mentioned | — |
-| `comparatorFor(orderBy)` | `packages/junction/src/core/query-values.ts` | yes | 1 |
+| `comparatorFor(orderBy)` | `packages/toolbelt/src/query/query.js` | yes | 2 |
 ## UI
 
 | Seam | Owner | Declared in | Other sites |

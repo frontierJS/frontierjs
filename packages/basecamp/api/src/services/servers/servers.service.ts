@@ -40,8 +40,8 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, normalizeOrderBy, seriesKey, isStale, $ } from '@frontierjs/junction'
-import type { SortParam } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, seriesKey, isStale, $ } from '@frontierjs/junction'
+import { normalizeOrderBy, type SortParam } from '@frontierjs/toolbelt/query'
 import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'

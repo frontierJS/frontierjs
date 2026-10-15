@@ -467,7 +467,7 @@
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} />
     <Whisper {room} {here} />
     <Dice {room} />
-    <Fishing {room} {stage} {view} tell={(text) => { note = text }} />
+    <Fishing {room} {stage} {here} {view} tell={(text) => { note = text }} />
     <Mod />
     <Season {stage} />
     <Weather {stage} />

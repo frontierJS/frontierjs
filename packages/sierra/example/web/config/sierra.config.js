@@ -10,8 +10,9 @@ export default {
   // resource is seeded before the first route module evaluates.
 
   junction: {
-    // Same origin as the page: Vite proxies /api and /ws to the API process.
-    url:       typeof location !== 'undefined' ? location.origin : 'http://localhost:8030',
+    // Where there is no page. A page calls its own origin, and Vite proxies
+    // /api and /ws to the API process.
+    url:       'http://localhost:8030',
     apiPrefix: '/api',
     tokenKey:  'sierra_example_token',
   },

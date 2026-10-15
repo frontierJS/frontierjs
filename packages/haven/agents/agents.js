@@ -54,10 +54,11 @@ import { walkable, worldFor } from '../api/src/world.ts'
 /**
  * Who lives where: a nick each (the schema's lowercase), a soul and a spot.
  * A `room` is where an agent lives; one without stands in the room the runner
- * is given, the square, near its spawn.
+ * is given, the square, near its spawn. The one marked `desk` follows a loop
+ * the workshop's taskmaster started, as it follows one a mod's task started.
  */
 export const AGENTS = [
-  { name: 'Ace',     nick: 'ace',     soul: 'ace.md',     home: { x: 26, y: 21 } },
+  { name: 'Ace',     nick: 'ace',     soul: 'ace.md',     home: { x: 26, y: 21 }, desk: true },
   { name: 'Charles', nick: 'charles', soul: 'charles.md', home: { x: 36, y: 21 } },
   { name: 'Wick',    nick: 'wick',    soul: 'wick.md',    home: { x: 24, y: 16 }, room: 'tavern' },
   { name: 'Marrow',  nick: 'marrow',  soul: 'marrow.md',  home: { x: 20, y: 6 },  room: 'tavern' },
@@ -90,6 +91,8 @@ export const TIMING = {
   workMs:   60 * 60_000,
   /** How often a working agent reads the loop's log for the bench. */
   watchMs:  1_000,
+  /** How often the `desk` agent looks for a loop the taskmaster started. */
+  deskMs:   2_000,
 }
 
 /** How far from its spot an agent strays, in cells. */
@@ -99,6 +102,9 @@ export const WANDER = 2
 export const REPLY_BUDGET_USD = 0.25
 
 export const WORKSHOP = 'workshop'
+
+/** Who a loop from the desk is reported to: nobody said it, so the agent answers the man who started it. */
+export const DESK = 'Taskmaster'
 
 // ─── who answers ──────────────────────────────────────────────────────────────
 
@@ -414,6 +420,9 @@ export async function startAgents (opts) {
   const children = new Set()
   const nicks    = new Map()
   const pending  = new Map()
+  // A loop an agent has followed once, by pid: one it walked away from past
+  // `workMs` is still running, and would be taken up again on the next look.
+  const tended   = new Set()
   let stopped    = false
 
   const agents = (opts.agents ?? AGENTS).map(spec => ({
@@ -458,7 +467,8 @@ export async function startAgents (opts) {
     if (stopped || opts.wander === false) return
     const jitter = timing.wanderMs / 3
     later(agent, timing.wanderMs - jitter + Math.random() * 2 * jitter, () => {
-      if (!agent.busy && agent.at) {
+      // At a bench it stands still under its `(…)`, which a step would drop.
+      if (!agent.busy && !agent.working && agent.at) {
         // Knocked out of its patch by a bolt, it walks back rather than standing
         // where no step is inside the patch.
         const off   = (c) => Math.max(Math.abs(c.x - agent.home.x), Math.abs(c.y - agent.home.y))
@@ -514,7 +524,7 @@ export async function startAgents (opts) {
         if (at) {
           agent.working.bench = row.pkg[0]
           agent.home = standOn(agent.world, at)
-          move(agent, agent.home)
+          move(agent, agent.home, { thinking: true })
           log(`${agent.name} is at the ${row.pkg[0]} bench on ${row.id}`)
         }
         if (running({ file: loopAt.file })?.pid !== lock.pid) return resolve(true)
@@ -566,19 +576,53 @@ export async function startAgents (opts) {
         plan = { ids: [id] }
       }
       const lock = startLoop(plan, { root: workRoot, ...loopAt })
+      tended.add(lock.pid)
       log(`${agent.name} started the loop on ${planName(plan)} for ${speaker} (pid ${lock.pid}): ${task}`)
       await speak(agent, oneLine(`Taking ${planLine(plan, rows)} — off to the workshop, ${speaker}.`, agent.name), line, speaker)
-      await walkTo(agent, WORKSHOP)
-      const ended = await followLoop(agent, lock)
-      said = ended
-        ? reportLine(loopReport(loopOutput({ log: loopAt.log, from: lock.from })), speaker)
-        : `Left the loop running on ${lock.on}, ${speaker} — it's past my time.`
+      said = await tend(agent, lock, speaker)
     } catch (e) {
       log(`${agent.name}: ${e.message}`)
       said = `Couldn't take that one, ${speaker}: ${e.message}.`
     } finally {
       agent.working = null
     }
+    await comeBack(agent, back, said, line, speaker)
+  }
+
+  /** Into the workshop and bench to bench behind the loop; answers the line to say for it. */
+  async function tend (agent, lock, speaker) {
+    await walkTo(agent, WORKSHOP)
+    const ended = await followLoop(agent, lock)
+    return ended
+      ? reportLine(loopReport(loopOutput({ log: loopAt.log, from: lock.from })), speaker)
+      : `Left the loop running on ${lock.on}, ${speaker} — it's past my time.`
+  }
+
+  /**
+   * A loop the desk started (`Taskmaster.mesa`'s `/yes`): the `desk` agent says
+   * where it is going, follows it as its own, and says the outcome back in its
+   * room. The desk stays the one that starts it, so one loop still runs at a time.
+   */
+  async function adopt (agent, lock) {
+    tended.add(lock.pid)
+    agent.working = { task: lock.on, speaker: DESK, bench: null }
+    const back = agent.room
+    let said = null
+    log(`${agent.name} follows the desk's loop on ${lock.on} (pid ${lock.pid})`)
+    try {
+      await speak(agent, oneLine(`The taskmaster has the loop on ${lock.on} — off to the workshop.`, agent.name), {}, DESK)
+      said = await tend(agent, lock, DESK)
+    } catch (e) {
+      log(`${agent.name}: ${e.message}`)
+      said = `Lost the loop on ${lock.on}: ${e.message}.`
+    } finally {
+      agent.working = null
+    }
+    await comeBack(agent, back, said, {}, DESK)
+  }
+
+  /** Back to its spot in `back` from the workshop, and `said` said there. */
+  async function comeBack (agent, back, said, line, speaker) {
     if (stopped || !said) return
     if (agent.room !== back) {
       try {
@@ -744,12 +788,19 @@ export async function startAgents (opts) {
   }
 
   await Promise.all(agents.map(enter))
+  const deskHand = workRoot ? agents.find(a => a.desk) : null
+  const deskWatch = deskHand && setInterval(() => {
+    if (stopped || agents.some(a => a.working)) return
+    const lock = running({ file: loopAt.file })
+    if (lock && !tended.has(lock.pid)) adopt(deskHand, lock)
+  }, timing.deskMs)
   if (!mods.size) log(`No mods named (HAVEN_MODS or --mods): Ace and Charles will stand there and answer nobody.`)
 
   return {
     agents,
     stop () {
       stopped = true
+      if (deskWatch) clearInterval(deskWatch)
       for (const a of agents) {
         for (const t of a.timers) clearTimeout(t)
         a.timers.clear()

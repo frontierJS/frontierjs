@@ -15,12 +15,11 @@ export default {
   // The schema is ../db/schema.lite by convention, the file api/ reads, so
   // every resource is seeded with the server's field rules.
   junction: {
-    // A page talks to its own origin, which the dev server proxies to the API
-    // (config/vite.config.js). The terminal has no page: it knocks on
-    // Haven's slot in the global tooling block (`docs/PORTS.md`), a tool run
-    // beside whatever app is open, so the number never moves. This file is
-    // also evaluated under Bun, where there is no `location`.
-    url:      typeof location !== 'undefined' ? location.origin : 'http://localhost:5505',
+    // The terminal's: it has no page, so it knocks on Haven's slot in the
+    // global tooling block (`docs/PORTS.md`), a tool run beside whatever app is
+    // open, so the number never moves. A page talks to its own origin, which
+    // the dev server proxies to the API (config/vite.config.js).
+    url:      'http://localhost:5505',
     tokenKey: 'haven_token',
   },
 }

@@ -14,7 +14,7 @@
 
 import {
   LIMITS, QueryLimitError, isNumericLiteral, parseValue, parseParams,
-  parseQueryString, encodePairs, encodeQueryString,
+  parseQueryString, encodePairs, encodeQueryString, normalizeOrderBy,
 } from '../../src/query/query.js'
 
 /* ── The number rule ───────────────────────────────────────────────── */
@@ -309,4 +309,13 @@ test('query: the parser refuses an array past the item limit', function () {
   refused(() => parseQueryString(objs))
   // an index past the limit would size a sparse array by what the caller typed
   refused(() => parseQueryString('?a[' + LIMITS.items + '][b]=1'))
+})
+
+test('query: normalizeOrderBy reads asc/desc/1/-1 and refuses any other scalar direction', function () {
+  assert.deepEqual(normalizeOrderBy({ a: 1, b: -1, c: 'ASC', d: 'Desc' }),
+    [{ a: 'asc' }, { b: 'desc' }, { c: 'asc' }, { d: 'desc' }])
+  ;['sideways', null, '', 0, true].forEach(dir => {
+    assert.throws(() => normalizeOrderBy({ name: dir }), /'name' must be asc/)
+  })
+  assert.deepEqual(normalizeOrderBy({ author: { name: 'asc' } }), [{ author: { name: 'asc' } }])
 })

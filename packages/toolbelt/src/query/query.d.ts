@@ -37,3 +37,27 @@ export function encodePairs(query: Query | null | undefined): Array<[string, str
 
 /** The structured query → a search string, `?` included, or `''`. */
 export function encodeQueryString(query: Query | null | undefined): string
+
+/** The three spellings of `$orderBy`, or an already-normalized list. */
+export type SortParam =
+  | string
+  | Record<string, unknown>
+  | Record<string, unknown>[]
+
+export type OrderBy = Record<string, unknown>[]
+
+export type SelectParam = string | string[]
+
+/** The three spellings → `[{ field: 'asc' | 'desc' }]`. A structured value travels untouched. */
+export function normalizeOrderBy(sort: SortParam): OrderBy
+
+/** `'id,name'` or `['id', 'name']` → `{ id: true, name: true }`. */
+export function normalizeSelect(select: SelectParam): Record<string, boolean>
+
+/** One value against another, in SQLite's storage-class order. */
+export function compareValues(a: unknown, b: unknown): number
+
+/** A comparator for an `orderBy`, or `null` for *leave the list alone*. */
+export function comparatorFor(
+  sort: SortParam | undefined | null,
+): ((a: Record<string, unknown>, b: Record<string, unknown>) => number) | null

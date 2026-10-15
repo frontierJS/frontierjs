@@ -18,7 +18,7 @@
 // cannot tell them apart cannot explain itself.
 
 import { createService, BadRequest, Unauthorized, $ } from '@frontierjs/junction'
-import { db }                                         from '../../core/resource.ts'
+import { db, shapedByCaller }                         from '../../core/resource.ts'
 import type { BasecampApp }                           from '../../basecamp.types.ts'
 import { NOTIFICATION_KINDS, NOTIFICATION_KIND_NAMES, notificationKind } from './kinds.ts'
 import { keyScope } from '../api-keys/scopes.ts'
@@ -57,7 +57,7 @@ export function createNotificationPreferencesService(_app: BasecampApp) {
 
       return {
         total: NOTIFICATION_KINDS.length,
-        data:  NOTIFICATION_KINDS.map(def => {
+        data:  shapedByCaller(NOTIFICATION_KINDS.map(def => {
           const row = stored.get(def.kind)
           return {
             kind:        def.kind,
@@ -70,7 +70,7 @@ export function createNotificationPreferencesService(_app: BasecampApp) {
             source:      row ? 'chosen' : 'default',
             updatedAt:   row?.updatedAt ?? null,
           }
-        }),
+        })),
       }
     },
 

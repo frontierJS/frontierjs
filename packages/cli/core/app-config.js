@@ -305,10 +305,10 @@ const AGENT_RULES = [
 // Generators before hand-writing, because each one writes the file every rule
 // above expects. `needs` as above.
 const AGENT_GENERATORS = [
-  { needs: '@frontierjs/sierra',    what: 'a model with its service, resource and pages', run: 'fli scaffold Lead --fields "name:string email:email"' },
+  { needs: '@frontierjs/litestone', what: 'a model with its service, resource and pages', run: 'fli scaffold Lead --fields "name:string email:email"' },
   { needs: '@frontierjs/litestone', what: 'a model alone',                                run: 'fli make:model Lead' },
-  { needs: '@frontierjs/sierra',    what: 'a Resource',                                   run: 'fli make:resource Lead' },
-  { needs: '@frontierjs/sierra',    what: 'a page, wired to a Resource',                  run: 'fli make:route leads --resource Lead' },
+  { needs: '@frontierjs/litestone', what: 'a Resource',                                   run: 'fli make:resource Lead' },
+  { needs: '@frontierjs/litestone', what: 'a page, wired to a Resource',                  run: 'fli make:route leads --resource Lead' },
   { needs: '@frontierjs/sierra',    what: 'a component',                                  run: 'fli make:component LeadCard' },
 ]
 
@@ -337,11 +337,14 @@ own — read it before changing anything; where it and this file disagree, it wi
 
 ## The model
 
-Everything derives from \`db/schema.lite\`: **Data (Model) → API (Service) → UI
+${has.has('@frontierjs/litestone') ? `Everything derives from \`db/schema.lite\`: **Data (Model) → API (Service) → UI
 (Resource)**. A rule declared in the schema reaches the API, the validators, the
 forms and the migrations at once; the same rule written in code reaches one
 caller. Change the schema first, then let a generator write what follows from it.
-${has.has('@frontierjs/junction') ? `
+` : `This app is a single-page UI: routes, layouts and components in \`web/src/\`, and no API
+or database. Nothing here reads a schema, so a model, a service and a Resource are
+not part of it.
+`}${has.has('@frontierjs/junction') ? `
 ## Orient with one command
 
 Before opening the schema or a service, run this. It boots the app once and prints
@@ -374,8 +377,7 @@ Search these for the one word you need; never read one whole:
 ${lookupLines.join('\n')}
 ` : ''}
 A framework package added later ships its own at \`node_modules/<package>/AGENTS.md\`
-when it has one. Never guess a schema word — \`fli db:explain @guarded\` answers
-one live off the parser.
+when it has one.${has.has('@frontierjs/litestone') ? ' Never guess a schema word — `fli db:explain @guarded` answers\none live off the parser.' : ''}
 ${genLines.length ? `
 ## Generate before hand-writing
 

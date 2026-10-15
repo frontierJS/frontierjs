@@ -65,14 +65,14 @@ catch (e) {
 log.info(origin ? `Building web on server, calling the API at ${origin}...` : 'Building web on server...')
 machine.run(`VITE_FJS_BUILD=${commit}${origin ? ` VITE_API_URL=${origin}` : ''} bun run build`, { cwd: `${serverPath}/web` })
 
-// A sierra.config.js that does not read VITE_API_URL builds clean and ships a
-// bundle calling its own origin, where nothing proxies /api/ any more. Asked
-// of the output, because the config is the app's and may spell it any way.
+// A build that never inlined VITE_API_URL ships a bundle calling its own
+// origin, where nothing proxies /api/ any more. Asked of the output, because
+// the web build is the app's and may not be Sierra's.
 if (origin) {
   const carried = machine.capture(`grep -rl --include='*.js' -F '${origin}' ${serverPath}/web/dist 2>/dev/null | head -1 || true`)
   if (!String(carried ?? '').trim()) {
-    log.error(`The web build does not contain ${origin}. Its sierra.config.js has to read VITE_API_URL for junction.url:`)
-    log.error(`  url: import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : '')`)
+    log.error(`The web build does not contain ${origin}. Sierra inlines VITE_API_URL into the page when its config sets junction.url;`)
+    log.error(`a build that is not Sierra's has to read import.meta.env.VITE_API_URL itself.`)
     $.config.abort = true
     return
   }

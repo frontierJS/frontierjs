@@ -14,8 +14,9 @@
   export let sit    // frames sitting
   export let flee   // ms a cell once a bolt scares it out of the scene; absent, it holds its ground
   export let night  // true there only at night, false only by day (`isNight`, 6.6); absent, always
+  export let sky    // a sky it keeps to, named in `SKIES` (`sky.js`); absent, any
 
   const scene = $context.scene
-  var mark = scene.pace({ name, y, from, to, ms, rest, fg, right, left, sit, flee, night })
+  var mark = scene.pace({ name, y, from, to, ms, rest, fg, right, left, sit, flee, night, sky })
   $.onDestroy(() => mark.remove())
 </script>

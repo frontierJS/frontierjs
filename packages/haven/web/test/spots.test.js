@@ -72,7 +72,7 @@ test('a seat\'s mate is the seat it names', () => {
   expect(s.seatAt(20, 6)).toEqual({ mate: { x: 10, y: 6 }, stand: { x: 21, y: 6 } })
 })
 
-test('the bar\'s stools are seven solo seats and pair with nobody', () => {
+test('the bar\'s stools are fifteen solo seats and pair with nobody', () => {
   const s = stage()
   const mark = s.stamp(bar, 5, 7)
   expect(spotsOf(bar, 'seat').map((x) => mark.spot(x.name).x - 5)).toEqual(STOOLS)

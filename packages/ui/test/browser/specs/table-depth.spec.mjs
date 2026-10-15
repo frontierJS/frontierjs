@@ -210,16 +210,18 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#sort').textContent`, 'amount',
     'clicking it continues the cycle rather than restarting it')
 
-  /* ── sorting is STATE, not an ordering ────────────────────────────────── */
+  /* ── who sorts (FJS-D672) ─────────────────────────────────────────────── */
 
-  // The component never reorders anything: it announces which column and which
-  // direction, and the caller re-queries. Anything else would be a table that
-  // sorts the page it is showing and disagrees with the server about what page
-  // two contains. Worth pinning because "it has a sort control" reads as "it
-  // sorts".
+  // With no `onsort` the Table owns the sort and the rows reach the snippet
+  // ordered; with one it only states the move. Pinned both ways because "it has
+  // a sort control" reads as "it sorts" and the two modes look the same until
+  // the rows are read.
   t.is(await t.evaluate(`
     return [...document.querySelectorAll('#plain tbody tr')].map(r => r.querySelector('td').textContent).join(',');
-  `), 'ORD-1,ORD-2,ORD-3,ORD-4', 'the rows are in the order they were given, after two sorts')
+  `), 'ORD-1,ORD-3,ORD-4,ORD-2', 'a Table with no onsort orders its own rows by the bound amount')
+  t.is(await t.evaluate(`
+    return [...document.querySelectorAll('#reported tbody tr')].map(r => r.querySelector('td').textContent).join(',');
+  `), 'ORD-1,ORD-2,ORD-3,ORD-4', 'a Table with onsort leaves the rows as given, whatever the arrow says')
 
   /* ── a sortable header is a real control ──────────────────────────────── */
 

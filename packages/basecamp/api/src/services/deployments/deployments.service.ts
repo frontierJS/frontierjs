@@ -13,7 +13,7 @@
 
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, getScoped, changesNothing, ws, actor } from '../../core/resource.ts'
+import { db, getScoped, changesNothing, ws, actor, callerOrder } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
@@ -136,7 +136,7 @@ export function createDeploymentsService(app: BasecampApp) {
       const { rows, total } = await db().deployment.findManyAndCount({
         where:   { ...parseWhere($.query), workspaceId: ws() },
         include: WITH_APP,
-        orderBy: { queuedAt: 'desc' },
+        orderBy: callerOrder({ queuedAt: 'desc' }),
         limit, offset,
       })
       return { total, limit, offset, data: rows }

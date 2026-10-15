@@ -42,7 +42,7 @@
   "author": "FrontierJS",
   "scripts": {
     "dev": "bun run api & bun run web & wait",
-    "api": "HAVEN_SESSION_KEY=${HAVEN_SESSION_KEY:-haven-dev-only} bun --watch api/index.ts",
+    "api": "HAVEN_SESSION_KEY=${HAVEN_SESSION_KEY:-haven-dev-only} HAVEN_WS_PER_IP=${HAVEN_WS_PER_IP:-16} bun --watch api/index.ts",
     "web": "cd web && vite -c config/vite.config.js",
     "scenes": "vite -c editor/vite.config.js",
     "start": "bun api/index.ts",
