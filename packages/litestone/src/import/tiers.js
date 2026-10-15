@@ -102,6 +102,7 @@ const LOST = [
 const NOTED = [
   'polymorphic-candidate',        // @@arc or the (type, id) pair — no schema can say which
   'sti-candidate',
+  'json-in-string-candidate',     // String @default("{}") / ("[]") — a Json column the source had no word for
   'declared-polymorphic-open',
   'declared-polymorphic-closed',
   'composite-unique-over-nullable',  // handled: nullsDistinct: true (FJS-D130)

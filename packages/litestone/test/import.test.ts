@@ -483,3 +483,27 @@ COMMIT;
     expect(gaps.some(g => g.kind === 'unparsed-line' && g.model === 'Company')).toBe(true)
   })
 })
+
+describe('JSON kept in a String column — SQLite Prisma has no Json type (`FJS-1886`)', () => {
+  const json = (src: string) =>
+    convert({ source: src, format: 'prisma', label: 'fx' }).gaps
+      .filter(g => g.kind === 'json-in-string-candidate').map(g => `${g.model}.${g.field}`)
+
+  test('a String defaulting to an empty object or array is a candidate, graded noted', () => {
+    expect(json(`model Doc {
+  id    Int    @id
+  meta  String @default("{}")
+  tags  String @default("[]")
+  title String @default("")
+}`)).toEqual(['Doc.meta', 'Doc.tags'])
+    expect(tierOf('json-in-string-candidate')).toBe('noted')
+  })
+
+  test('a Json field and an ordinary String are not', () => {
+    expect(json(`model Doc {
+  id   Int    @id
+  note String @default("none")
+  raw  Json   @default("{}")
+}`)).toEqual([])
+  })
+})

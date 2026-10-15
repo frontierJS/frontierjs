@@ -405,9 +405,8 @@ function queryabilityFor(model) {
  * modes come out identical, so `diffSchemaModes` emits no patch and a view
  * costs the bundle one definition rather than two.
  *
- * View field AST carries no `attributes` array — the parser has nowhere to put
- * one, a view column taking no field attributes — so it is backfilled, the same
- * shape `createClient` backfills for its view-as-model stubs.
+ * A schema built by hand may omit `attributes` on a view column, so it is
+ * backfilled, the same shape `createClient` backfills for its view-as-model stubs.
  */
 function viewToJsonSchema(view, schema, enumDefs, typeDefs, opts) {
   const decl = {
@@ -648,6 +647,18 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       if (claims) fieldSchema['x-litestone-write-claims'] = claims
     }
 
+    // Whether the CALLER owes this column on a create. Decided before the read
+    // block below, which `continue`s: a read policy says the value may be absent
+    // on a READ, and the create form is built from this same schema, so a
+    // NOT NULL column dropped from `required` there is labelled optional and
+    // refused only by the server (`FJS-1674`).
+    const tenancyStamped = field.attributes.some(
+      a => a.kind === 'default' && a.generated === 'tenancy')
+    const isSystemWritten = field.attributes.some(a => a.kind === 'system') || tenancyStamped
+    const authStamped = field.attributes.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy')
+    const owedByCaller = mode !== 'update' && !isSystemWritten && !authStamped &&
+      !field.type.optional && !isServerFilled(field) && (!isId || !isServerAssignedId(field, model))
+
     // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))
     if (readAllows.length && audience === 'client') {
@@ -671,6 +682,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
           ...(wrote ? { 'x-litestone-write-policy': true } : {}),
           ...(claims ? { 'x-litestone-write-claims': claims } : {}),
         }
+        if (owedByCaller) required.push(field.name)
         continue
       }
     }
@@ -691,10 +703,6 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     //
     // `@@tenant(none)` carries no generated default, so a model where the
     // column IS a caller-supplied value is untouched.
-    const tenancyStamped = field.attributes.some(
-      a => a.kind === 'default' && a.generated === 'tenancy')
-
-    const isSystemWritten = field.attributes.some(a => a.kind === 'system') || tenancyStamped
     if (isSystemWritten) {
       fieldSchema.readOnly = true
       fieldSchema['x-litestone-kind'] = tenancyStamped ? 'tenancy' : 'system'
@@ -706,7 +714,6 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // audience, and out of `required` for both: an `asSystem()` write has no
     // principal to stamp from and states the author itself, and the client's
     // own pre-flight still names the column when it does not.
-    const authStamped = field.attributes.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy')
     if (authStamped && audience === 'client') fieldSchema.readOnly = true
 
     // A column `@default(auth().x)` fills when the caller leaves it out. Still
@@ -817,22 +824,18 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // Required: non-optional, not filled by the Data boundary, not in update
     // mode. `isServerFilled` is shared with client.js's required pre-flight,
     // which answers the same question for the same create.
-    if (mode !== 'update') {
-      // A @system column is never required OF THE CALLER. It is still NOT NULL
-      // in SQLite, so a service that forgets to fill it fails at the write —
-      // loud, at the layer that owns the value. Listing it here instead made
-      // the browser refuse before the request, naming fields the caller was
-      // never meant to send: basecamp's ApiKey has three of them, and every
-      // create was refused with "the button does nothing" (FJS-095).
-      if (isSystemWritten || authStamped) {
-        // nothing — the application or the principal fills it
-      } else if (!field.type.optional && !isServerFilled(field) && (!isId || !isServerAssignedId(field, model))) {
-        // A required @transient field lands here like any other, and this is
-        // the only layer that can hold the rule: there is no column, so no
-        // NOT NULL catches a caller who omitted it.
-        required.push(field.name)
-      }
-    }
+    //
+    // A @system column is never required OF THE CALLER. It is still NOT NULL
+    // in SQLite, so a service that forgets to fill it fails at the write —
+    // loud, at the layer that owns the value. Listing it here instead made
+    // the browser refuse before the request, naming fields the caller was
+    // never meant to send: basecamp's ApiKey has three of them, and every
+    // create was refused with "the button does nothing" (FJS-095).
+    //
+    // A required @transient field lands here like any other, and this is
+    // the only layer that can hold the rule: there is no column, so no
+    // NOT NULL catches a caller who omitted it.
+    if (owedByCaller) required.push(field.name)
   }
 
   // Applied over the assembled properties rather than inside the loop: @from,

@@ -552,3 +552,51 @@ describe('a view named in PascalCase', () => {
     expect(() => db.orderByCustomer.create({ data: { customer: 'b', n: 2 } })).toThrow(/is a view/)
   })
 })
+
+// ─── a view column says what its number is (FJS-1643) ────────────────────────
+//
+// A view summing a @money column returns minor units; without the attribute the
+// result is a bare Int and every report restates the currency by hand. Only the
+// attributes that say what a NUMBER is are legal on a view column — an @id or a
+// @default on a projection describes nothing.
+
+describe('a view column takes the attributes that say what its number is', () => {
+  const ORDER = `
+model Order { id Int @id  amount Int @money(field: currency)  currency String  customerId Int  @@gate("4") }
+`
+  const REV = `@@sql("SELECT customerId, currency, SUM(amount) AS revenue FROM [order] GROUP BY customerId, currency")`
+  const view = (col: string) =>
+    `${ORDER}view customerRevenue { customerId Int  currency String  ${col}  ${REV}  @@gate("4") }`
+
+  test('@money(field:) parses on a view column and keeps its attribute', () => {
+    const r = parse(view('revenue Int @money(field: currency)'))
+    expect(r.errors).toEqual([])
+    const col = r.schema.views[0].fields.find((f: any) => f.name === 'revenue')
+    expect(col.attributes).toEqual([{ kind: 'money', currency: null, field: 'currency' }])
+  })
+
+  test('the JSON Schema carries x-money for the view column', () => {
+    const d = generateJsonSchema(parse(view('revenue Int @money(field: currency)')).schema).$defs
+    expect(d.customerRevenue.properties.revenue['x-money']).toEqual({ field: 'currency' })
+  })
+
+  test('@money(field:) naming a column the view does not declare is refused', () => {
+    const e = errs(view('revenue Int @money(field: nope)'))
+    expect(e.join('\n')).toContain("no field 'nope'")
+  })
+
+  test('@money on a non-Int view column is refused', () => {
+    expect(errs(view('revenue Float @money(USD)')).join('\n')).toContain('requires an Int field')
+  })
+
+  test('@scale and @unit parse on a view column', () => {
+    expect(errs(view('revenue Int @scale(3)'))).toEqual([])
+    expect(errs(view('revenue Int @unit(kg)'))).toEqual([])
+  })
+
+  test('an attribute that describes storage is still refused, by name', () => {
+    const e = errs(view('revenue Int @unique'))
+    expect(e.join('\n')).toContain('@unique')
+    expect(e.join('\n')).toContain('view column')
+  })
+})

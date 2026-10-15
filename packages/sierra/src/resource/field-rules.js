@@ -386,6 +386,8 @@ export function buildRelations(schema, resolveName = modelNameFor) {
 
 /** The one syntax that is prose a person writes, so it gets a text box rather than a code editor. */
 const _PROSE = 'md'
+/** Prose that is not Markdown: a text box, shown as written (`FJS-D673`). */
+const _PLAIN = 'txt'
 const _SCALAR_ITEMS = ['string', 'integer', 'number']
 
 // ── Registered controls ───────────────────────────────────────────────────────
@@ -707,7 +709,7 @@ function _builtinControl(rule) {
       return { control: 'input', task: 'quantify', step: 'any' }
 
     case 'string': {
-      if (rule['x-syntax'] === _PROSE) return { control: 'textarea', task: 'text' }
+      if (rule['x-syntax'] === _PROSE || rule['x-syntax'] === _PLAIN) return { control: 'textarea', task: 'text' }
       if (rule['x-syntax']) return { control: 'code', task: 'text', language: rule['x-syntax'] }
       // `@big`. Asked before every other string row because it is the one whose
       // JSON type does not describe the value: the column is an integer and the
@@ -1032,6 +1034,7 @@ function _builtinDisplay(rule) {
   if (rule['x-time']) return { display: 'time', time: rule['x-time'] }
 
   if (rule['x-syntax'] === _PROSE) return { display: 'markdown' }
+  if (rule['x-syntax'] === _PLAIN) return { display: 'text' }
   if (rule['x-syntax']) return { display: 'code', language: rule['x-syntax'] }
 
   switch (rule.type) {

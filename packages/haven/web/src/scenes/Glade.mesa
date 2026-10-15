@@ -14,6 +14,7 @@
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
+  import { shroom } from '@/pieces/shroom.js'
 
   // The canopy is in the air and walked under; the trunk is a wall. The
   // night door is on the trunk's foot, its fourteenth column, with floor
@@ -62,16 +63,6 @@ sbbbbbbbbbbbbbbbbbbbbs
  s
 s s
 sss
-`)
-
-  const shroom = piece('shroom', String.raw`
- _
-(_)
- |
-`, String.raw`
- p
-ppp
- l
 `)
 
   const PALETTE = {

@@ -11,6 +11,7 @@ import { mkdtempSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createClient } from '../src/index.js'
+import { GatePlugin } from '../src/plugins/gate.js'
 
 const SCHEMA = `
   database main  { path env("MAIN_DB", "./main.db") }
@@ -81,6 +82,48 @@ describe('a protected column written by a scoped caller logs as [redacted]', () 
       const entries = await logged('delete')
 
       expect(parse(entries.find(e => e.field == null).before)).toEqual(ROW)
+      db.$close()
+    })
+  }
+})
+
+// FJS-1266: an ordinary caller's write of an @encrypted column — the owner of
+// the row, no system scope — is filed the same as the system write.
+const ENC_SCHEMA = `
+  database main  { path env("MAIN_DB", "./main.db") }
+  database audit { path "./audit/" driver trail }
+  model Device {
+    id        Int     @id
+    userId    Int
+    p256dh    String  @encrypted
+    userAgent String?
+    @@db(main)
+    @@gate("4.4.4.4")
+    @@allow('read', userId == auth().id)
+    @@trail(audit)
+  }
+`
+
+describe('an @encrypted column written by an ordinary caller logs as [redacted]', () => {
+  for (const [who, client] of [
+    ['as system',   (db: any) => db.asSystem()],
+    ['as the user', (db: any) => db.$setAuth({ id: 1, level: 4 })],
+  ] as const) {
+    test(`create ${who}`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'ls-trail-enc-'))
+      mkdirSync(join(dir, 'audit'), { recursive: true })
+      const seen: any[] = []
+      const db: any = await createClient({
+        schema:        ENC_SCHEMA,
+        databases:     { main: { path: join(dir, 'main.db') }, audit: { path: join(dir, 'audit') } },
+        encryptionKey: 'a'.repeat(64),
+        plugins:       [new GatePlugin({ getLevel: (u: any) => u?.level ?? 0 })],
+        onLog:         (entry: any) => { seen.push({ ...entry }) },
+      })
+      await client(db).device.create({ data: { id: 1, userId: 1, p256dh: 'k' } })
+      await new Promise(r => setTimeout(r, 20))
+      const model = seen.find(e => e.operation === 'create' && e.field == null)
+      expect(parse(model.after)).toEqual({ id: 1, userId: 1, p256dh: '[redacted]', userAgent: null })
       db.$close()
     })
   }

@@ -10,11 +10,19 @@
   // n (`api/src/setlist.ts`): the server answers a cue at the next bar line,
   // and the room's `song` event seats it on every screen in the loft.
   //
+  // It draws the scope too (`scope.js`): a trace per member in the box the
+  // scene hangs over the stage, each lane in that member's ink, moving with
+  // the beat whether or not this machine hears it. The loft is taller than a
+  // 30-row terminal shows, so while the box is panned off the top it is
+  // drawn whole along the view's top edge, on a ground of its own.
+  //
   // A route places it (`routes/upstairs.mesa`), never the scene file: a
   // scene's picture is pinned and its test must make no sound.
   import { getClient } from '@frontierjs/sierra/resource'
   import { stream } from '#sound'
-  import { createBand, listening, songAt, songOf, startOf, MAX_SONG, RATE } from '@/band.js'
+  import { at, tint } from '#cell'
+  import { createBand, listening, songAt, songOf, startOf, MAX_SONG, PARTS, RATE } from '@/band.js'
+  import { traces, COL_MS } from '@/scope.js'
 
   var verbs = $context.commands
   var room  = $context.room
@@ -78,4 +86,32 @@
   $.onDestroy(() => { gone = true; stop?.() })
   $.onDestroy(verbs.add({ word: 'music', help: '/music', run: toggle }))
   $.onDestroy(verbs.add({ word: 'song', help: '/song [n]', run: song }))
+
+  // ─── the scope ─────────────────────────────────────────────────────────────
+
+  const scene  = $context.scene
+  const box    = scene.marks.find((m) => m.kind === 'piece' && m.piece.name === 'scope') ?? null
+  const inks   = box ? box.piece.inks.map((k) => scene.entryOf(k)?.fg) : []
+  const edge   = scene.entryOf('l')?.fg
+  const art    = box ? box.piece.art.split('\n') : []
+  const GROUND = '#14181f'
+  const label  = (i) => PARTS[i].padEnd(box.piece.inner.dx - 3)
+
+  let view  = scene.view
+  let lanes = []
+  $.onDestroy(scene.subscribe(() => { view = scene.view }))
+  if (box) $.onDestroy(scene.task('scope', (ms) => { lanes = traces(band, ms, box.piece.inner.w) }, { every: COL_MS }))
+
+  $: docked = !!box && box.y < view.y
+  $: top    = box ? (docked ? view.y : box.y) - view.y : 0
+  $: left   = box ? box.x - view.x : 0
 </script>
+
+{#if docked}
+  {#each art as row, i (`${i}:${top}:${left}`)}
+    <pre {@attach at(left, top + i, 13)} {@attach tint(edge, GROUND)}>{row}</pre>
+  {/each}
+{/if}
+{#each lanes as t, i (`${i}:${top}:${left}:${docked}`)}
+  <pre {@attach at(left + 2, top + 1 + i, 14)} {@attach tint(inks[i], docked ? GROUND : null)}>{`${label(i)} ${t}`}</pre>
+{/each}

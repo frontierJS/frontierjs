@@ -851,6 +851,58 @@ describe('check-without-an-operation-in-a-write-rule', () => {
   })
 })
 
+describe('write-policy-reads-a-parent-without-post-update', () => {
+  // FJS-1438: an `update` policy compiles to a WHERE over the row as it IS, so a
+  // PATCH moving the foreign key into somebody else's parent is graded against
+  // the parent the row is leaving. Only `post-update` reads the row as it WOULD BE.
+  const ID = 'write-policy-reads-a-parent-without-post-update'
+  const schema = (rules: string, fkAttrs = '') => `
+    model Collection {
+      id      Int @id
+      ownerId Int
+      @@allow('read', true)
+    }
+    model Bookmark {
+      id           Int        @id
+      ownerId      Int
+      collection   Collection? @relation(fields: [collectionId], references: [id])
+      collectionId Int?       ${fkAttrs}
+      ${rules}
+    }`
+
+  test('fires on an update policy reading the parent through a writable key', () => {
+    const f = findings(schema(`@@allow('update', ownerId == auth().id && collection.ownerId == auth().id)`), ID)
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('Bookmark')
+    expect(f[0].field).toBe('collectionId')
+    expect(f[0].message).toContain('post-update')
+  })
+
+  test('fires on a create policy reading the parent beside a plain update policy', () => {
+    expect(findings(schema(`
+      @@allow('create', collection.ownerId == auth().id)
+      @@allow('update', ownerId == auth().id)`), ID).length).toBe(1)
+  })
+
+  test('fires on a check() into the parent in an update policy', () => {
+    expect(findings(schema(`@@allow('update', check(collection, 'update'))`), ID).length).toBe(1)
+  })
+
+  test('is silent once a post-update policy sits beside it, and on "all"', () => {
+    expect(findings(schema(`
+      @@allow('update', collection.ownerId == auth().id)
+      @@allow('post-update', collection.ownerId == auth().id)`), ID)).toEqual([])
+    expect(findings(schema(`@@allow('all', collection.ownerId == auth().id)`), ID)).toEqual([])
+  })
+
+  test('is silent where no caller can move the key, or no policy reads the parent', () => {
+    expect(findings(schema(`@@allow('update', collection.ownerId == auth().id)`, '@immutable'), ID)).toEqual([])
+    expect(findings(schema(`@@allow('update', collection.ownerId == auth().id)`, '@system'), ID)).toEqual([])
+    expect(findings(schema(`@@allow('update', ownerId == auth().id)`), ID)).toEqual([])
+    expect(findings(schema(`@@allow('read', collection.ownerId == auth().id)`), ID)).toEqual([])
+  })
+})
+
 // Spawned, because the exit code IS the assertion: the Charter grader read a
 // default-mode 0 as clean over a required @system column (FJS-1825).
 describe('advise --strict', () => {

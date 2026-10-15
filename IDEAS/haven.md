@@ -6,7 +6,7 @@ dated: 2026-10-14
 
 # Idea — Haven: a place in the terminal anyone with `fli` installed can walk into
 
-**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phase 6 is begun: the view follows a figure across a square wider than a screen (6.1); 6.2–6.5 and Phases 7–9 — a Haven that lives, inhabitants, building and play — are proposed. The deploy is the last step (10.1, by the owner); Phase 11, the workshop placed before it, is built; Phase 12, the world as data, is proposed, and a box that says **Needs 12.x** waits on that step; and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
+**Status: PROPOSED. Phases 0, 1, 2 and 4 are built — the schema, the API, the signed login, the square and the tavern in color and motion, and `fli haven` in front of them, which installs the server's own Haven on a machine with no checkout (3.1); nothing is published yet. Phase 5 is built but for the editor in VS Code (5.4): a scene is a component tree over a stage (5.5, `FJS-D997`), its picture committed beside it and pinned; a browser tab and a terminal stand in one room (5.2, 5.6); and `fli haven:scenes` places pieces on a page and writes the tree back byte for byte (5.7). Phase 6 is begun: the view follows a figure across a square wider than a screen (6.1); 6.2–6.5 and Phases 7–9 — a Haven that lives, inhabitants, building and play — are proposed. The deploy is the last step (10.1, by the owner); Phase 11, the workshop placed before it, is built; Phase 12, the world as data, is proposed, and a box that says **Needs 12.x** waits on that step; Phase 17, a kit of pieces, is begun (17.1–17.2); and every open question is ruled, so each step cites its ruling. Work the plan from the first open box.** Dated 2026-10-13. The
 probe below is now `packages/mesa/test/terminal/specs/haven.spec.mjs`; everything
 past Phase 0 is argument. Do not cite this file as describing behavior — see
 `VERIFYING.md`.
@@ -1642,6 +1642,76 @@ passes with Haven's snapshots in its count.
   coverage phase to confirm it runs Haven's suite, which the probe did not
   reach.
 
+### Phase 17 — A kit of pieces
+
+Goal: what a scene puts in a room or out of doors comes from `pieces/`, so a
+new scene is placed rather than drawn and the editor has a catalog to offer
+(12.1 names a piece by its key in `pieces/`; 12.9).
+Done when: no two scenes draw one thing, each piece has one name, Upstairs and
+the cellar are lit by an indoor light, and `scenes.test.js` passes with every
+`*.frame.txt` unchanged but where a step says otherwise.
+
+A piece below that no scene places yet is drawn when the first scene needs it,
+not ahead of time; the lists are the menu, and 17.4–17.5 close when every
+scene that wants one has it.
+
+- [x] 17.1 The twins into `pieces/`: `signpost(label)` and `sign(text)`
+  (Woods, Square, Road, Market, Docks; Canal, Docks' `ferry-sign`), `crate`
+  (Market, Docks), `ladder(rows)` (Mine, Canal), `plank(w)` (Docks, Island),
+  `shroom` (Woods, Glade), `flower` (Square, Lane). Market's own `barrel` gave
+  way to `pieces/barrel.js`, so its hoops take the staves' color. Every
+  `*.frame.txt` and `*.world.json` is unchanged (a sign is floor, so
+  `world.json` never named it).
+  - What only shares a name, so stays put until 17.3: `cart` (Road's wagon,
+    Mine's tub, Market's fruit cart), `hearth` (Tavern, Sheriff, Lodge, three
+    sizes), `rack` (Cellar's wine, Sheriff's guns), `pier` (Docks' crumbling
+    floor, Canal's post), `bar` (Lodge's beside `pieces/bar.js`, which spans a
+    room), the floor coverings (Tavern's `rug`, Lodge's `bearskin`, Sheriff's
+    `cowhide`), and `hedge` — a wall in Square and walked through in Lane.
+- [x] 17.2 Indoor lights, because Upstairs and the cellar each stand two street
+  lamps in the room. `sconce` (on a wall, a light of 2, steady), `lantern`
+  (hung, all of it overhead, a light of 3, a flicker) and `chandelier` (over
+  the middle of a room, a light of 5 — Upstairs' dance floor). `lamp` stays
+  the street lamp. Whether Upstairs and the cellar name `lamplight`, as Sheriff
+  and Lodge do, is settled by looking at both rooms lit.
+  - Upstairs has a sconce in each back corner and the chandelier over the
+    dance floor's middle, its notes kept a cell clear of it; the cellar hangs
+    two lanterns where its lamps stood, and drops the `Y` it named for them.
+    Both rooms, rendered side by side with and without the layer, name
+    `lamplight`: the pool is what shows the cellar as a dark room with two
+    lights in it. Each light carries its own paint letter (`U`, `J`, `C`),
+    since two pieces naming one letter differently throw at mount.
+  - `lantern` was already the dark scene's prop, which `stage.js` called
+    "sight, not a lamp"; the prop is `sight={r}` now, so the word means one
+    thing (owner's call).
+- [ ] 17.3 One name per thing: each piece in 17.1's list of namesakes is named
+  for what it is (`wagon`, `minecart`, `wine rack`, `gun rack`, …), so a
+  catalog key never means two drawings. `hedge` is a wall; Lane's that is
+  walked through is a different piece or a bug, read from its scene first.
+- [ ] 17.4 Indoors. Furniture: `stool`, `chair`, `armchair` and `couch`
+  (Lodge's), `cot` (Sheriff's), `bed`, `desk`, `counter`. Storage: `shelves`
+  (Tavern's), `bookcase`, `chest` (the cellar's), `crates` (the cellar's
+  stack), `wardrobe`. On a wall: `window` (Lodge's, by season), `poster`
+  (Sheriff's), `painting`, `neon` (Lodge's), `clock`. Sized: `rug(w, h)`,
+  `stage(w, h)` (Upstairs' boards), `hearth(w)`. The rest: `jukebox` (Lodge's),
+  `piano`, `potted plant`, `stove`, `bucket` (Sheriff's), `trapdoor` (a floor
+  piece under a `<Door>`).
+- [ ] 17.5 Out of doors. Lights: `torch`, `brazier`, `campfire` (Ravine's
+  `fire`). Growing: the tree's kinds — `oak` (Glade's), `palm` (Island's),
+  `juniper` (Ravine's), `cactus` (Sheriff's) — `stump` and `log` (Woods'),
+  `bush`, `reeds`. Stone: `rock(size)` for Mine's `rock`, Glade's `stone` and
+  Ravine's `boulder`. Water: `water(w, h)` for Canal's and Docks', `bridge`,
+  `bollard` (Docks'), `rowboat` (Canal's `boat`). Town: `well` (Square's),
+  `fence(w)` (Road's), `gate`, `milestone` (Road's), `stall` (Square's and
+  Market's), `fountain`, `flag` (Range's). Work: `bales` (Range's),
+  `woodpile` (Lodge's `firewood`), `rails(w)` (Mine's), `wheelbarrow`,
+  `scarecrow`. Camp: `tent`, `bedroll`, `telescope` (Ravine's).
+- [ ] 17.6 What grows has seasons: `hedge`, `bush` and `flower` each stand on
+  the same cells in every season, as `tree` does (`checkSeasons`).
+- [ ] 17.7 A twin is refused: `scenes.test.js` fails a scene-local piece whose
+  art is a `pieces/` piece's, naming the import. Until then nothing stops
+  17.1's duplicates from growing back.
+
 ### Phase 10 — Hosted
 
 Goal: Haven answers at a public address, so a stranger needs no `--api`.
@@ -1739,9 +1809,9 @@ One mechanism each:
   what gives `FOG` a reason to come back on. Built (2026-10-15), under the
   road rather than the quarry, since 9.2 is not built: a pithead on the road
   (`Mine.mesa`), a shaft, a railed gallery, an ore room, a crawl and a flooded
-  chamber, and the way on down to the canal. `<Scene lantern={r}>` names the
-  fog and a radius: SIGHT shrinks to `r`, and every figure's cell is a
-  lantern another screen sees by -- sight, not a lamp, so it stops at rock.
+  chamber, and the way on down to the canal. `<Scene sight={r}>` names the
+  fog and a radius: SIGHT shrinks to `r`, and every figure's cell is one
+  another screen sees from -- sight, not a light, so it stops at rock.
   The map still keeps the whole picture at mount (6.4), so `/map` shows a
   dark scene's every tunnel after one visit.
 - **The hedge maze.** Generated from the date, so every terminal walks the same
@@ -1765,7 +1835,7 @@ One mechanism each:
   weather. The mechanism is a view moved by the clock instead of by a figure.
 - **The underground canal,** down the square's well (6.1). Tunnels join the
   cellar, the docks and the glade, so a boat is fast travel. It is pitch dark
-  and uses the mine's lantern: whichever of the two is built first pays for the
+  and uses the mine's `sight`: whichever of the two is built first pays for the
   other. Built (2026-10-15) with the mine (`Canal.mesa`): the well's ladder,
   the docks' culvert, the cellar's steps and the glade's are doors, and the
   mine's way down a fifth; the canal's ways up into the cellar and the glade

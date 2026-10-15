@@ -124,14 +124,14 @@
   export let spawn
   // The layers `look()` folds (`stage.js`): a roof names INDOORS.
   export let layers = OUTDOORS
-  // A dark scene's lantern radius (`stage.js`): each figure sees that far and
-  // is seen by its own. It needs the fog layer named.
-  export let lantern = 0
+  // How far a figure sees in a dark scene (`stage.js`): each figure sees that
+  // far and is seen by its own. It needs the fog layer named.
+  export let sight = 0
   // A browser's cell size against VIEW's (14.7): 0.5 draws twice the cells
   // each way on the same screen. `#paint` in the terminal ignores it.
   export let scale = 1
 
-  var stage = createStage({ slug, palette, spawn, layers, lantern })
+  var stage = createStage({ slug, palette, spawn, layers, sight })
   $context.scene = stage
   // A verb's answer is the note under the art.
   var commands = createCommands()

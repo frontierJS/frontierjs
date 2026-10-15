@@ -4,17 +4,21 @@
   // floor whose tiles change color, and tables along both sides. The band is
   // scenery, the way the cat is: the guitarist and bassist strum, the drummer
   // and the keys hit, the singer waves, and nobody is told where anything is.
+  // The scene names `lamplight`, so the chandelier warms the band and the
+  // dance floor, and the sconces the back corners.
   // The picture this draws is `upstairs.frame.txt`, which `scenes.test.js` pins.
   import Scene from '@/components/Scene.mesa'
   import { INDOORS } from '@/stage.js'
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { piece }  from '@/pieces/index.js'
-  import { frame }  from '@/pieces/frame.js'
+  import { framed } from '@/pieces/frame.js'
   import { table }  from '@/pieces/table.js'
   import { barrel } from '@/pieces/barrel.js'
-  import { lamp }   from '@/pieces/lamp.js'
+  import { sconce } from '@/pieces/sconce.js'
+  import { chandelier } from '@/pieces/chandelier.js'
   import { stairs } from '@/pieces/stairs.js'
+  import { PARTS }  from '@/band.js'
 
   // Arms and strumming hands are cells that cycle between two glyphs (`chars`
   // in the palette), so the band plays with no clock of its own. Two cells of
@@ -74,17 +78,17 @@ iiiiiiiii
 
   // The members, left to right along the stage, as the tags below place them
   // (the editor reads a flat list of tags, so no `{#each}`). Each stands on
-  // y = 3, and the boards are drawn around the cells they hold, since two
+  // y = 10, and the boards are drawn around the cells they hold, since two
   // pieces never claim one cell; a member moved here and not below is refused
   // at mount.
   const BAND = [
-    { of: guitarist, x: 22, y: 3 },
-    { of: singer,    x: 32, y: 3 },
-    { of: drummer,   x: 44, y: 3 },
-    { of: bassist,   x: 59, y: 3 },
-    { of: keys,      x: 68, y: 3 },
+    { of: guitarist, x: 22, y: 10 },
+    { of: singer,    x: 32, y: 10 },
+    { of: drummer,   x: 44, y: 10 },
+    { of: bassist,   x: 59, y: 10 },
+    { of: keys,      x: 68, y: 10 },
   ]
-  const STAGE = { x: 18, y: 2, w: 60, h: 5 }
+  const STAGE = { x: 18, y: 9, w: 60, h: 5 }
   const held = new Set(BAND.flatMap((m) => m.of.cells.map((c) => `${m.x + c.dx},${m.y + c.dy}`)))
   const boards = (pick) => Array.from({ length: STAGE.h }, (_, r) =>
     Array.from({ length: STAGE.w }, (_, c) => (held.has(`${STAGE.x + c},${STAGE.y + r}`) ? ' ' : pick(r, c))).join(''))
@@ -102,7 +106,31 @@ iiiiiiiii
   const side = Math.floor((STAGE.w - NAME.length) / 2)
   const curtain = piece('curtain', hung('~'), `${'q'.repeat(side)}${'B'.repeat(NAME.length)}${'q'.repeat(STAGE.w - NAME.length - side)}`)
 
-  const floor = { x: 30, y: 10, w: 36, h: 5 }
+  // The scope over the stage: a trace per member, each lane labelled in its
+  // member's paint, which is where `Band.mesa` reads the lane's ink. The
+  // traces are drawn in `inner` by the band, so the picture is the box bare.
+  // Hung above the curtain, the loft is taller than a 30-row terminal shows,
+  // and the band pins the box to the view's top while it is panned off.
+  const LANES = { guitar: 'p', singer: 'c', drums: 'r', bass: 'e', keys: 'o' }
+  const lane = (fill, label) => `${fill[0]} ${label.padEnd(6)} ${' '.repeat(STAGE.w - 11)} ${fill[0]}`
+  const scope = {
+    ...piece('scope', [
+      `.${'-'.repeat(STAGE.w - 2)}.`,
+      ...PARTS.map((p) => lane('|', p)),
+      `'${'-'.repeat(STAGE.w - 2)}'`,
+    ].join('\n'), [
+      'l'.repeat(STAGE.w),
+      ...PARTS.map((p) => lane('l', LANES[p].repeat(p.length))),
+      'l'.repeat(STAGE.w),
+    ].join('\n')),
+    inner: { dx: 9, dy: 1, w: STAGE.w - 11, h: PARTS.length },
+    inks:  PARTS.map((p) => LANES[p]),
+  }
+
+  // The loft is the frame of a one-screen room with the scope's seven rows on top.
+  const frame = framed(96, 33)
+
+  const floor = { x: 30, y: 17, w: 36, h: 5 }
   const tiles = (pick) => Array.from({ length: floor.h }, (_, r) =>
     Array.from({ length: floor.w }, (_, c) => pick((r + c) % 2)).join('')).join('\n')
   const dance = piece('dance floor', tiles(() => '+'), tiles((p) => 'gG'[p]), { floor: true })
@@ -110,7 +138,18 @@ iiiiiiiii
   // Notes in the air over the room between the stage and the dance floor, each
   // letter a note cycling through the four at a different place in the turn.
   const NOTES = 'nNm'
-  const air = (row) => Array.from({ length: STAGE.w }, (_, c) => ((c + row * 3) % 9 === 0 ? '♪' : ' ')).join('')
+  // The chandelier hangs in the same rows, and the notes keep a cell clear of
+  // it; one moved here and not below, or there and not here, overlaps and is
+  // refused at mount.
+  const NOTES_AT = { x: STAGE.x, y: 14 }
+  const CHANDELIER = { x: 43, y: 14 }
+  const ring = {
+    x0: CHANDELIER.x - 1, x1: CHANDELIER.x + Math.max(...chandelier.cells.map((c) => c.dx)) + 1,
+    y0: CHANDELIER.y,     y1: CHANDELIER.y + Math.max(...chandelier.cells.map((c) => c.dy)),
+  }
+  const clear = (x, y) => x < ring.x0 || x > ring.x1 || y < ring.y0 || y > ring.y1
+  const air = (row) => Array.from({ length: STAGE.w }, (_, c) =>
+    ((c + row * 3) % 9 === 0 && clear(NOTES_AT.x + c, NOTES_AT.y + row) ? '♪' : ' ')).join('')
   const rows = [0, 1, 2].map(air)
   const notes = piece('notes', rows.join('\n'),
     rows.map((r, i) => [...r].map((ch, c) => (ch === ' ' ? ' ' : NOTES[(Math.floor((c + i * 3) / 9) + i) % 3])).join('')).join('\n'),
@@ -143,28 +182,30 @@ iiiiiiiii
   }
 </script>
 
-<Scene slug="upstairs" layers={INDOORS} palette={PALETTE} spawn={{ x: 30, y: 23 }}>
+<Scene slug="upstairs" layers={[...INDOORS, 'lamplight']} palette={PALETTE} spawn={{ x: 30, y: 30 }}>
   <Piece of={frame} />
-  <Piece of={stairs} x={2} y={21} />
-  <Door  x={17} y={21} to="/tavern/" />
-  <Piece of={curtain} x={18} y={1} />
-  <Piece of={planks}  x={18} y={2} />
-  <Piece of={guitarist} x={22} y={3} />
-  <Piece of={singer}    x={32} y={3} />
-  <Piece of={drummer}   x={44} y={3} />
-  <Piece of={bassist}   x={59} y={3} />
-  <Piece of={keys}      x={68} y={3} />
-  <Piece of={lamp}   x={13} y={3} />
-  <Piece of={lamp}   x={82} y={3} />
-  <Piece of={notes}  x={18} y={7} />
-  <Piece of={dance}  x={30} y={10} />
-  <Piece of={table}  x={6}  y={10} />
-  <Piece of={table}  x={6}  y={14} />
-  <Piece of={table}  x={80} y={10} />
-  <Piece of={table}  x={80} y={14} />
-  <Piece of={table}  x={29} y={18} />
-  <Piece of={table}  x={49} y={18} />
-  <Piece of={table}  x={69} y={18} />
-  <Piece of={barrel} x={90} y={20} />
+  <Piece of={stairs} x={2} y={28} />
+  <Door  x={17} y={28} to="/tavern/" />
+  <Piece of={scope}   x={18} y={1} />
+  <Piece of={curtain} x={18} y={8} />
+  <Piece of={planks}  x={18} y={9} />
+  <Piece of={guitarist} x={22} y={10} />
+  <Piece of={singer}    x={32} y={10} />
+  <Piece of={drummer}   x={44} y={10} />
+  <Piece of={bassist}   x={59} y={10} />
+  <Piece of={keys}      x={68} y={10} />
+  <Piece of={sconce} x={8}  y={1} />
+  <Piece of={sconce} x={86} y={1} />
+  <Piece of={notes}  x={18} y={14} />
+  <Piece of={chandelier} x={43} y={14} />
+  <Piece of={dance}  x={30} y={17} />
+  <Piece of={table}  x={6}  y={17} />
+  <Piece of={table}  x={6}  y={21} />
+  <Piece of={table}  x={80} y={17} />
+  <Piece of={table}  x={80} y={21} />
+  <Piece of={table}  x={29} y={25} />
+  <Piece of={table}  x={49} y={25} />
+  <Piece of={table}  x={69} y={25} />
+  <Piece of={barrel} x={90} y={27} />
   <slot />
 </Scene>

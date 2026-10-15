@@ -17,7 +17,7 @@
 // Never imported by production code.
 
 import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, GROUPS, POSITIONS,
-         POSITION_RULES, positionsOf, typed } from '../core/catalog.js'
+         POSITION_RULES, positionsOf, hasOrdinaryPositions, typed } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
 const esc = s => String(s).replace(/\|/g, '\\|')
@@ -36,11 +36,9 @@ function valuesCell(row) {
  * positions on fifty rows hides the four that differ, which are the only rows
  * this line exists for.
  */
-const ORDINARY = { field: 3, model: 2, move: 1 }
-
 function positionsCell(row) {
   const all = positionsOf(row)
-  if (all.length === ORDINARY[row.level]) return ''
+  if (hasOrdinaryPositions(row)) return ''
   return all.map(p => POSITIONS[p] ?? p).join(' · ')
 }
 

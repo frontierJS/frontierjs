@@ -2892,6 +2892,17 @@ if (useInstall && useDb) {
       command: `${$.bin('litestone', finalTarget)} migrate create initial --schema db/schema.lite`,
       cwd: finalTarget, stdio: 'pipe',
     })
+    // A sub-command above opened a client, and a client builds the tables by
+    // auto-DDL and records no history. Left alone the first `fli db:migrate`
+    // refuses a database its own initial file builds (FJS-1490). `baseline`
+    // records the file as applied and refuses if the database lacks anything
+    // the file builds, so it cannot record a lie.
+    if (existsSync(join(finalTarget, 'db/app.db'))) {
+      $.exec({
+        command: `${$.bin('litestone', finalTarget)} migrate baseline --schema db/schema.lite`,
+        cwd: finalTarget, stdio: 'pipe',
+      })
+    }
   } catch (e) {
     // Not fatal: the app runs from `db push` in development either way, and a
     // scaffold that stops here over a deploy-time concern is the worse trade.

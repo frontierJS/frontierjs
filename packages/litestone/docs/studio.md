@@ -228,6 +228,7 @@ in `src/core/advise.js`; among them:
 | `retention-without-an-index` | a model a `retention` window sweeps by `createdAt < cutoff`, with no index leading with `createdAt`: every sweep scans the table, due or not |
 | `declared-and-unreferenced` | an enum or type nothing uses |
 | `check-without-an-operation-in-a-write-rule` | a bare `check(rel)` takes its rule's operation, so `@@allow('create', check(inbox))` asks who may create an inbox, not who may see one |
+| `write-policy-reads-a-parent-without-post-update` | a create or update policy reads a parent through a key a caller can move, and no `@@allow('post-update', …)` grades the row after the move |
 
 The rules run on the **proposed** schema in the
 preview, with anything already true of the file marked as such — a warning that

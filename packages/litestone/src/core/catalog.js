@@ -34,13 +34,14 @@
 // The one import this table has, and it is the point: an enumerated argument's
 // values are the PARSER's set, never a copy of it (`test/catalog.test.ts` binds
 // every other one by name).
-import { SYNC_POLICIES } from './parser.js'
+import { SYNC_POLICIES, VIEW_COLUMN_ATTRS } from './parser.js'
 
 export const POSITIONS = {
   field:      "on a model's field",
   typeField:  "on a type's field",
   traitField: "on a trait's field",
   enumMember: 'on an enum member',
+  viewColumn: 'on a view column',
   model:      'in a model',
   traitBlock: 'in a trait',
   move:       'on a @@transitions move',
@@ -67,9 +68,10 @@ export const POSITION_RULES = {
   traitField: { excludes: ['id'] },
   traitBlock: { excludes: ['id', 'map', 'db', 'fts'] },
   enumMember: { only: ['label'] },
+  viewColumn: { only: [...VIEW_COLUMN_ATTRS] },
 }
 
-const FIELD_POSITIONS = ['field', 'typeField', 'traitField', 'enumMember']
+const FIELD_POSITIONS = ['field', 'typeField', 'traitField', 'enumMember', 'viewColumn']
 const MODEL_POSITIONS = ['model', 'traitBlock']
 
 // ─── groups ───────────────────────────────────────────────────────────────────
@@ -202,7 +204,7 @@ const TOP = [
     'schema',
     'declare',
     '<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }',
-    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.',
+    'A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.',
     'view accountStats {\n  accountId Int\n  total     Int\n  @@sql("SELECT accountId, COUNT(*) AS total FROM Event GROUP BY accountId")\n  @@gate("5")\n}'
   ),
 
@@ -815,7 +817,7 @@ const FIELD = [
     'field',
     'validate',
     '(lang)',
-    'Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite. No validation: a generated form offers the editor for it and a cell shows it highlighted.',
+    'Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite, txt. No validation: a generated form offers the editor for it and a cell shows it highlighted; md and txt get a textarea, and txt is shown as written.',
     'query String @syntax(sql)'
   ),
   t(
@@ -1205,8 +1207,8 @@ const MODEL = [
     'allow',
     'model',
     'access',
-    "('read'|'create'|'update'|'delete'|'all', <expression>[, message])",
-    'A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand.',
+    "('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])",
+    "A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand. `update` grades the row as it IS, before the write, so a PATCH moving a foreign key into somebody else's parent passes a rule reading that parent; `post-update` grades the row as it WOULD BE and rolls the write back when refused. `all` includes it and `write` (create, update, delete) does not.",
     "@@allow('read', ownerId == auth().id)",
     { extraFields: 'ownerId Int', seeAlso: ['deny', 'gate', 'scope'] }
   ),
@@ -1411,6 +1413,24 @@ export function positionsOf(row) {
     if (rule.only) return rule.only.includes(row.word)
     return !rule.excludes.includes(row.word)
   })
+}
+
+const ORDINARY_POSITIONS = {
+  field:  ['field', 'typeField', 'traitField'],
+  model:  ['model', 'traitBlock'],
+  schema: ['schema'],
+  move:   ['move'],
+}
+
+/**
+ * Whether a row is legal in exactly the positions its level ordinarily is.
+ * Compared as a set: a count cannot tell a word that is legal on a view column
+ * and not on a type's field from one legal on a type's field and not a view's.
+ */
+export function hasOrdinaryPositions(row) {
+  const all = positionsOf(row)
+  const usual = ORDINARY_POSITIONS[row.level]
+  return all.length === usual.length && usual.every(p => all.includes(p))
 }
 
 /** The word as it is typed, prefix included: `model`, `@guarded`, `@@gate`. */

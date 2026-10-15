@@ -135,7 +135,7 @@ model Product {
 
 ### `view` `<name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] }` <a id="view-declaration"></a>
 
-A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.
+A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.
 
 ```lite
 view accountStats {
@@ -984,7 +984,7 @@ model Example {
 
 #### `@syntax` `(lang)` <a id="syntax-field"></a>
 
-Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite. No validation: a generated form offers the editor for it and a cell shows it highlighted.
+Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite, txt. No validation: a generated form offers the editor for it and a cell shows it highlighted; md and txt get a textarea, and txt is shown as written.
 
 ```lite
 model Example {
@@ -1266,7 +1266,7 @@ model Example {
 }
 ```
 
-- **Legal** — on a model's field · on a trait's field
+- **Legal** — on a model's field · on a trait's field · on a view column
 - **Also typed** — `precision`
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@money`](#money-field)
@@ -1282,7 +1282,7 @@ model Example {
 }
 ```
 
-- **Legal** — on a model's field · on a trait's field
+- **Legal** — on a model's field · on a trait's field · on a view column
 - **Also typed** — `price` · `cents`
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@scale`](#scale-field)
@@ -1298,6 +1298,7 @@ model Example {
 }
 ```
 
+- **Legal** — on a model's field · on a type's field · on a trait's field · on a view column
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@scale`](#scale-field) · [`@money`](#money-field)
 
@@ -1729,9 +1730,9 @@ model Example {
 - **Deeper** — [export.md](export.md)
 - **See also** — [`@@gate`](#gate-model) · [`@allow`](#allow-field) · [`view`](#view-declaration)
 
-#### `@@allow` `('read'|'create'|'update'|'delete'|'all', <expression>[, message])` <a id="allow-model"></a>
+#### `@@allow` `('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])` <a id="allow-model"></a>
 
-A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand.
+A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand. `update` grades the row as it IS, before the write, so a PATCH moving a foreign key into somebody else's parent passes a rule reading that parent; `post-update` grades the row as it WOULD BE and rolls the write back when refused. `all` includes it and `write` (create, update, delete) does not.
 
 ```lite
 model Example {
@@ -2054,6 +2055,7 @@ entry above says so only when its answer is not the ordinary one.
 | on a trait's field | `@id` |
 | in a trait | `@id`, `@map`, `@db`, `@fts` |
 | on an enum member | everything except `@label` |
+| on a view column | everything except `@money`, `@scale`, `@unit` |
 
 ## Which word hides a value
 
@@ -2173,6 +2175,10 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `check-without-an-operation-in-a-write-rule` — a bare check() in a write rule asks the parent the same write
 
 *warn*. check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
+
+### `write-policy-reads-a-parent-without-post-update` — a create or update policy reads a parent through a key the caller can move, with no post-update beside it
+
+*warn*. An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign key into somebody else's parent is graded against the parent the row is leaving and admitted. Only @@allow('post-update', …) reads the row as it WOULD BE, and 'all' includes it where 'update' and 'write' do not. A create policy naming the same parent is refused for a new row and bypassed by a move.
 
 ### `anonymous-create-auth-default` — a public create on a model whose required column defaults to auth()
 

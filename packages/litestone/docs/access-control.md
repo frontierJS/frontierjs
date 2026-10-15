@@ -378,6 +378,35 @@ broken as well.
 `@system` is not in that set. It reaches the payload through `system: ['col']`
 on the call, so a create policy naming one is answerable.
 
+### An `update` policy grades the row as it IS
+
+`update` compiles to a WHERE, so it asks about the row before the write. A rule
+that reads a parent therefore reads the parent the row is *leaving*: a PATCH
+moving `collectionId` into somebody else's collection passes
+`collection.ownerId == auth().id`, because the old collection is the caller's.
+`create` refuses the same move for a new row, which is why the hole is easy to
+miss. `post-update` is the operation that grades the row as it WOULD BE, inside
+the transaction, and rolls the write back when it refuses.
+
+```
+model Bookmark {
+  ownerId      Int
+  collectionId Int?
+  collection   Collection? @relation(fields: [collectionId], references: [id])
+
+  @@allow('create',      collection.ownerId == auth().id)
+  @@allow('update',      ownerId == auth().id)
+  @@allow('post-update', collection.ownerId == auth().id)   // without this line the move is admitted
+}
+```
+
+`'all'` includes `post-update`; `'update'` and `'write'` do not. Generated
+tenancy denies already carry it. `litestone advise` warns on a model whose
+`create` or `update` policy reads a parent through a key a caller may write and
+which declares no `post-update` allow
+(`write-policy-reads-a-parent-without-post-update`); an `@immutable` or `@system`
+key cannot be moved and is exempt.
+
 ### Applying policies
 
 ```js

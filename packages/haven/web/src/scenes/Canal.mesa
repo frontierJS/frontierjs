@@ -6,8 +6,8 @@
   // quick way (`IDEAS/haven.md`, the underground canal). The well's ladder,
   // the docks' culvert and the mine's way down are plain doors; the stairs
   // up into the cellar and the glade are hidden in the vault's wall, as each
-  // of those is hidden from above. It is pitch dark and a figure carries a
-  // lantern, the mine's (`lantern`, `stage.js`). The picture this draws is
+  // of those is hidden from above. It is pitch dark, and a figure sees only
+  // as far as the mine's (`sight`, `stage.js`). The picture this draws is
   // `canal.frame.txt`, the canal with every cell lit, which `scenes.test.js`
   // pins. A rat runs the south towpath.
   import Scene from '@/components/Scene.mesa'
@@ -17,6 +17,8 @@
   import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
+  import { ladder } from '@/pieces/ladder.js'
+  import { sign } from '@/pieces/signpost.js'
 
   // The water fills the vault wall to wall, so the bridge is the one way
   // across; the bridge and the boat are cut out of it, since a cell has one
@@ -47,13 +49,10 @@ bbuuuuuuuuuuub
 bbbuuuuuuuuuub
 `)
 
-  // A pier of the vault: brick from the floor to the roof, so a lantern's
-  // light stops at it and the towpath is walked to be seen.
+  // A pier of the vault: brick from the floor to the roof, so a figure's
+  // sight stops at it and the towpath is walked to be seen.
   const pier = piece('pier', '[#]\n[#]', 'ppp\nppp')
 
-  const ladder = piece('ladder', 'H\nH', 'l\nl', { floor: true })
-
-  const sign = (text) => piece('sign', text, 'e'.repeat(text.length), { floor: true })
 
   const PALETTE = {
     f: { fg: '#7c2d12' },
@@ -67,14 +66,14 @@ bbbuuuuuuuuuub
   }
 </script>
 
-<Scene slug="canal" layers={[...INDOORS, 'fog']} lantern={4} palette={PALETTE} spawn={{ x: 20, y: 3 }}>
+<Scene slug="canal" layers={[...INDOORS, 'fog']} sight={4} palette={PALETTE} spawn={{ x: 20, y: 3 }}>
   <Piece of={frame} />
   <Door  x={20} y={0} to="/" />
   <Door  x={76} y={0} to="/cellar/" hidden />
   <Door  x={1}  y={6} to="/glade/" hidden />
   <Door  x={96} y={20} to="/docks/" />
   <Door  x={30} y={25} to="/mine/" />
-  <Piece of={ladder} x={20} y={1} />
+  <Piece of={ladder(2)} x={20} y={1} />
   <Piece of={sign('^ well')} x={22} y={2} />
   <Piece of={edgeN} x={2}  y={10} />
   <Piece of={edgeN} x={52} y={10} />

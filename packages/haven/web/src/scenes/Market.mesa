@@ -15,6 +15,9 @@
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
   import { lamp }  from '@/pieces/lamp.js'
+  import { barrel } from '@/pieces/barrel.js'
+  import { crate } from '@/pieces/crate.js'
+  import { signpost } from '@/pieces/signpost.js'
 
   // `wares` and `inks` are the nine cells of the counter between its posts,
   // the lantern at their middle.
@@ -44,26 +47,6 @@ ${awning}${('W' + awning).repeat(6)}
   const bread   = stall('bread-stall',   'k', '()()i()()', 'kkkkykkkk')
   const books   = stall('book-stall',    'c', '[][]i[][]', 'cCcCyCcCc')
 
-  const crate = piece('crate', String.raw`
- _____
-|_|_|_|
-|_|_|_|
-`, String.raw`
- wwwww
-wwwwwww
-wwwwwww
-`)
-
-  const barrel = piece('barrel', String.raw`
- .--.
-(====)
- '--'
-`, String.raw`
- wwww
-wuuuuw
- wwww
-`)
-
   const cart = piece('cart', String.raw`
  ______
 |@o@o@o|
@@ -73,16 +56,6 @@ wuuuuw
 wrOrOrOw
  l    l
 `)
-
-  const signpost = piece('signpost', String.raw`
-v[road]
-   |
-  _|_
-`, String.raw`
-eeeeeee
-   l
-  lll
-`, { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -114,7 +87,7 @@ eeeeeee
 <Scene slug="market" palette={PALETTE} spawn={{ x: 46, y: 23 }}>
   <Piece of={frame} />
   <Door  x={44} y={25} w={6} to="/road/" />
-  <Piece of={signpost} x={56} y={21} />
+  <Piece of={signpost('v[road]')} x={56} y={21} />
   <Piece of={lamp} x={42} y={4} />
   <Piece of={lamp} x={55} y={4} />
   <Piece of={fruit}   x={6}  y={3} />

@@ -1,10 +1,12 @@
 // src/pieces/workshop.js — where each bench of the workshop stands
 // (`layoutWorkshop`). A package with open issues has a bench with its ledger
 // piled above it; one with none has no table to take room and is listed in a
-// row along the bottom under `(no work)`. The benches are dealt in order
-// into COLUMNS, each to the shortest column so far, so the room is as short
-// as the piles let it be and nothing is allotted by hand: a package that
-// gains issues gets taller piles and the benches below it move down.
+// row along the bottom under `(no work)`. The benches stand in rows of
+// COLUMNS on one line, so every column and every row lines up; they are
+// ranked by their tallest pile and dealt into rows in that order, so the
+// tall piles share a row and a short one never pays for a tall neighbour,
+// and within a row they read alphabetically. Nothing is allotted by hand: a
+// package that gains issues may move up a row.
 import { piece } from './index.js'
 import { BENCH_WIDTH, namedBench } from './bench.js'
 import { ledgerBlock, PILE } from './ledger.js'
@@ -47,19 +49,22 @@ export function layoutWorkshop(ledger) {
   const pitch = BENCH_WIDTH + AISLE
   const width = MARGIN + COLUMNS * pitch
 
-  const tops = Array(COLUMNS).fill(1)
-  const benches = busy.map((name) => {
-    const rows = Math.max(...Object.values(ledger[name]).map((n) => Math.ceil(n / PILE)))
-    const col = tops.indexOf(Math.min(...tops))
-    const x = MARGIN + col * pitch
-    const y = tops[col] + rows
-    tops[col] = y + BELOW
-    return { name, bench: namedBench(name), ledger: ledgerBlock(name, ledger[name], rows), x, y }
-  })
+  const rowsOf = (name) => Math.max(...Object.values(ledger[name]).map((n) => Math.ceil(n / PILE)))
+  const ranked = busy.sort((a, b) => rowsOf(b) - rowsOf(a) || a.localeCompare(b))
+  const benches = []
+  let y = 1
+  for (let i = 0; i < ranked.length; i += COLUMNS) {
+    const row = ranked.slice(i, i + COLUMNS).sort()
+    const rows = Math.max(...row.map(rowsOf))
+    const line = y + rows
+    row.forEach((name, col) => {
+      benches.push({ name, bench: namedBench(name), ledger: ledgerBlock(name, ledger[name], rowsOf(name)), x: MARGIN + col * pitch, y: line })
+    })
+    y = line + BELOW
+  }
 
   // The no-work row: its heading, then a bench just wide enough for each name, wrapping at the wall.
   const idle = []
-  let y = Math.max(...tops, 1)
   const idleNames = names.filter((n) => !busy.includes(n))
   const heading = '(no work)'
   let x = MARGIN

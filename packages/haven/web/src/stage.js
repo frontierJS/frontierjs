@@ -43,10 +43,10 @@
 // picture, the editor, a test. `litAt()` is the pure answer, so a drive
 // and both targets agree on which cells a screen shows.
 //
-// A scene with a `lantern` is pitch dark: a figure sees only the lantern's
-// radius round itself, and every figure standing in it carries one, so the
-// others are seen by theirs. A lantern is sight, not a lamp -- it stops at a
-// wall -- or a lantern beyond a rock would light the gallery behind it.
+// A scene with a `sight` is pitch dark: a figure sees only that radius round
+// itself, and every figure standing in it sees as far, so the others are seen
+// by their own. Sight is not a light -- it stops at a wall -- or a figure
+// beyond a rock would light the gallery behind it.
 //
 // One clock (`IDEAS/haven.md` 12.7). Whatever moves on a scene is a task on
 // its stage -- `task(key, fn, { phase, every, after })` -- and a FRAME runs the
@@ -237,16 +237,16 @@ function sees(stage, from, cell, r) {
 
 /**
  * Whether the cell `x, y` of `stage` is lit for a figure standing at `from`:
- * within SIGHT of it with a clear line (the lantern's radius in a dark
- * scene), within sight of another figure's lantern, or within the radius of
+ * within SIGHT of it with a clear line (the scene's `sight` in a dark
+ * scene), within another figure's sight there, or within the radius of
  * a light. Everything is lit for no figure.
  */
 export function litAt(stage, x, y, from) {
   if (!from) return true
   const cell = { x, y }
-  const r = stage.lantern || SIGHT
+  const r = stage.sight || SIGHT
   if (sees(stage, from, cell, r)) return true
-  if (stage.lanterns.some((l) => sees(stage, l, cell, r))) return true
+  if (stage.sighted.some((l) => sees(stage, l, cell, r))) return true
   return stage.lights.some((l) => within(l, cell, l.r))
 }
 
@@ -323,11 +323,11 @@ export function arrival(stage, { from, x, y, stand } = {}) {
 /**
  * @param {{ slug: string, palette?: object, spawn: { x: number, y: number }, season?: string }} o
  */
-export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lantern = 0, manual = false, season = almanacAt(Date.now()).season }) {
+export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, sight = 0, manual = false, season = almanacAt(Date.now()).season }) {
   for (const l of layers) if (!LAYERS.includes(l)) throw new Error(`[${slug}] no layer is called ${l}; the layers are ${LAYERS.join(', ')}`)
   const has  = (name) => layers.includes(name)
   const fog  = has('fog')
-  if (lantern && !fog) throw new Error(`[${slug}] a lantern lights only under the fog; name the fog layer`)
+  if (sight && !fog) throw new Error(`[${slug}] a dark scene's sight works only under the fog; name the fog layer`)
   const claims    = new Map()   // key(x, y) → { ch, key, name, floor, overhead, door, hidden }
   const pacers    = []
   const carousels = []
@@ -368,7 +368,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
   let visible = new Set()      // key(x, y) lit for the seer now
   let seen    = new Set()      // key(x, y) lit for the seer at any time
   let occupied = new Set()     // key(x, y) a figure stands on, for what burns only while a seat is taken
-  let carried  = []            // every figure's cell, each a lantern, in a scene that has them
+  let carried  = []            // every figure's cell, each seeing `sight` round it, in a dark scene
   let burnSeats = null         // key(x, y) of every seat a `burns` cell waits on, made at the first occupy and dropped by relight
   let glow    = null           // key(x, y) → [{ l, f }], each light whose radius holds the cell and how near it is (0..1); made at the first night look, dropped by relight
   let steps   = new Map()      // key(x, y) → { at, until }, the newest footprint on the cell
@@ -466,7 +466,9 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
   // light source, half the sky inside a light's radius.
   const nightAt = (x, y, d) => {
     if (!d) return 0
-    return glowMap().has(key(x, y)) ? d / 2 : d
+    const k = key(x, y)
+    if (entryOf(claims.get(k)?.key)?.light) return 0
+    return glowMap().has(k) ? d / 2 : d
   }
   // How bright a bulb is at `ms`, PULSE_LOW..1: where its palette color is
   // between its dimmest and its brightest, so a flickering bulb and its glow
@@ -867,11 +869,11 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
     /** Every light on the stage, `{ x, y, r }`. */
     get lights() { return lightsOf() },
 
-    /** A dark scene's lantern radius, 0 in a scene that is not dark. */
-    lantern,
+    /** How far a figure sees in a dark scene, 0 in a scene that is not dark. */
+    sight,
 
-    /** The cells a figure carries a lantern on, `{ x, y }`; none in a scene with no lantern. */
-    get lanterns() { return carried },
+    /** The cells a figure sees from in a dark scene, `{ x, y }`; none in a scene that is not dark. */
+    get sighted() { return carried },
 
     /** How this cell stands to the seer: `'lit'`, `'dim'` (lit once, not now) or `'dark'`; lit everywhere with no seer. */
     light(x, y) {
@@ -905,7 +907,7 @@ export function createStage({ slug, palette = {}, spawn, layers = OUTDOORS, lant
       }
       if (!moved) for (const k of burnSeats) if (next.has(k) !== occupied.has(k)) { moved = true; break }
       occupied = next
-      if (lantern) {
+      if (sight) {
         carried = [...next].map((k) => ({ x: xOf(k), y: yOf(k) }))
         fogUp()
         return tell()

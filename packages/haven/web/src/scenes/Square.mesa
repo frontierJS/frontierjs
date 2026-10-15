@@ -21,6 +21,8 @@
   import { lamp }  from '@/pieces/lamp.js'
   import { bench } from '@/pieces/bench.js'
   import { noticeBoard } from '@/pieces/board.js'
+  import { flower } from '@/pieces/flower.js'
+  import { signpost } from '@/pieces/signpost.js'
 
   // No two houses are one size, so each is its own block; the tavern's sign
   // is part of its house.
@@ -201,18 +203,7 @@ rrrrrrrrrrr
  wwwwwwwwww
 `)
 
-  const signpost = piece('signpost', String.raw`
-[east]>
-   |
-  _|_
-`, String.raw`
-eeeeeee
-   l
-  lll
-`, { floor: true })
-
   const hedge  = piece('hedge', ',', 'g')
-  const flower = piece('flower', '*', 'p', { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -281,7 +272,7 @@ eeeeeee
   <Piece of={stall} x={158} y={14} />
   <Piece of={bench} x={144} y={20} />
   <Piece of={bench} x={164} y={20} />
-  <Piece of={signpost} x={213} y={20} />
+  <Piece of={signpost('[east]>')} x={213} y={20} />
   <Row of={hedge} y={23} x={129} n={12} />
   <Row of={hedge} y={23} x={145} n={10} />
   <Row of={hedge} y={23} x={161} n={12} />

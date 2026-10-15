@@ -183,19 +183,35 @@ export async function writeRows(model, rows, whole = null) {
 
   const table = db.asSystem()[accessor]
   if (rows.length) {
-    try {
-      await table.upsertMany({ data: rows })
-    } catch (err) {
-      // An update gate of 9 refuses the system client too, and upsertMany grades
-      // its conflict half as an update (`FJS-1700`). Such a row never changes on
-      // the server, so replaying it insert-only loses nothing — and without this
-      // an append-only ledger like `@@gate("5.5.9.9")` kept nothing on the device.
-      if (!(err?.code === 'ACCESS_DENIED' && err.operation === 'update' && err.required === 9)) throw err
-      await table.upsertMany({ data: rows, update: [] })
-    }
+    await _upsert(table, rows)
   }
   if (whole) await _dropAbsent(model, table, rows, whole)
   return true
+}
+
+// An update gate of 9 refuses the system client too, and upsertMany grades its
+// conflict half as an update (`FJS-1700`). Such a row never changes on the
+// server, so replaying it insert-only loses nothing — and without this an
+// append-only ledger like `@@gate("5.5.9.9")` kept nothing on the device.
+//
+// A `@@softDelete` column is written by remove() and restore() and by no
+// update-family verb (`FJS-D923`), and a row's keys are the conflict half
+// unless `update:` says otherwise. The insert half still carries `deletedAt`;
+// the conflict half leaves it, which loses nothing: the device never soft-deletes
+// (`_dropAbsent` purges), so a row the server restored is inserted afresh.
+async function _upsert(table, rows, update) {
+  const args = update ? { data: rows, update } : { data: rows }
+  try {
+    await table.upsertMany(args)
+  } catch (err) {
+    if (!update && err?.name === 'SoftDeleteWriteError') {
+      const keys = [...new Set(rows.flatMap(r => Object.keys(r ?? {})))]
+      return _upsert(table, rows, keys.filter(k => k !== 'deletedAt'))
+    }
+    if (!(err?.code === 'ACCESS_DENIED' && err.operation === 'update' && err.required === 9)) throw err
+    if (update && !update.length) throw err
+    await table.upsertMany({ data: rows, update: [] })
+  }
 }
 
 /**

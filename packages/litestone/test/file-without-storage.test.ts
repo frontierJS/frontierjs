@@ -81,3 +81,36 @@ describe('a File column with a plugin that stores File', () => {
     expect(row.photos).toHaveLength(2)
   })
 })
+
+// The write-time refusal above is the first anyone hears of it. A client says so
+// at build, once per set of columns (a tenant registry builds one per tenant).
+describe('createClient says a File column has nothing to store it (FJS-2908)', () => {
+  async function built(schema: string, plugins: unknown[] = [], extra: object = {}) {
+    const said: string[] = []
+    const real = console.warn
+    console.warn = (...a: unknown[]) => { said.push(a.join(' ')) }
+    try { await createClient({ schema, db: ':memory:', plugins, ...extra } as any) } finally { console.warn = real }
+    return said.join('\n')
+  }
+
+  test('names each column and the plugin missing', async () => {
+    const said = await built(`model Cv { id Int @id  scan File?  pages File[] }`)
+    expect(said).toContain('Cv.scan')
+    expect(said).toContain('Cv.pages')
+    expect(said).toContain('FileStorage')
+  })
+
+  test('is said once for the same columns, not once per client', async () => {
+    const schema = `model Badge { id Int @id  art File? }`
+    expect(await built(schema)).toContain('Badge.art')
+    expect(await built(schema)).toBe('')
+  })
+
+  test('is silent when a plugin stores File, which is the control', async () => {
+    expect(await built(`model Memo { id Int @id  att File? }`, [new RecordingStore()])).toBe('')
+  })
+
+  test('is silent for a read-only client, which never uploads', async () => {
+    expect(await built(`model Ledger { id Int @id  att File? }`, [], { readOnly: true })).toBe('')
+  })
+})

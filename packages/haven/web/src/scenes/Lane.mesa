@@ -19,6 +19,7 @@
   import { lamp }  from '@/pieces/lamp.js'
   import { bench } from '@/pieces/bench.js'
   import { cottage, mailbox, pond } from '@/pieces/home.js'
+  import { flower } from '@/pieces/flower.js'
 
   const jordan = cottage('Jordan', 'r')
   const vlad   = cottage('Vlad', 'v')
@@ -38,7 +39,6 @@
   ].join('\n'), { floor: true })
 
   const hedge  = piece('hedge', ',', 'G', { floor: true })
-  const flower = piece('flower', '*', 'p', { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },

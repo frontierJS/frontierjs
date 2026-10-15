@@ -69,13 +69,22 @@ let _device
  * regardless cannot tell a hydrated device from an empty one — which is the
  * exact confusion the feature is about. So the fake keeps what it is given.
  */
-function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, lockedUpdate = false, lockedDelete = false } = {}) {
+function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, lockedUpdate = false, lockedDelete = false, softDelete = false } = {}) {
   const calls = []
   const held = new Map(rows.map(r => [r.id, r]))
   const table = {
     upsertMany: (args) => {
       calls.push(['upsertMany', args])
       if (fail) return Promise.reject(fail)
+      // Litestone's refusal under @@softDelete (`FJS-D923`): the conflict half
+      // names `deletedAt` when `update:` is absent and a row carries it.
+      if (softDelete) {
+        const named = args.update == null
+          ? args.data.some(r => r?.deletedAt !== undefined)
+          : [args.update].flat().includes('deletedAt')
+        if (named) return Promise.reject(Object.assign(new Error('upsertMany() cannot write Sheet.deletedAt'),
+          { name: 'SoftDeleteWriteError' }))
+      }
       // Litestone's refusal for an update gate of 9, which the system client
       // takes too: upsertMany grades its conflict half unless `update: []`.
       if (lockedUpdate && !(Array.isArray(args.update) && !args.update.length))
@@ -244,6 +253,19 @@ describe('keeping what the server answered', () => {
     useDevice(d)
     expect(await writeThrough('Sheet', [{ id: 'A' }])).toBe(true)
     expect(d.calls.map(c => c[1].update)).toEqual([undefined, []])
+  })
+
+  // `deletedAt` belongs to remove() and restore(), so the conflict half may not
+  // name it (`FJS-D923`); the insert half still carries it (`FJS-2763`).
+  test('a @@softDelete model is kept: the conflict half skips deletedAt', async () => {
+    const d = makeDevice({ softDelete: true })
+    useDevice(d)
+    const rows = [{ id: 'A', name: 'a', deletedAt: null }]
+    expect(await writeThrough('Sheet', rows)).toBe(true)
+    expect(d.held()).toEqual(['A'])
+    const last = d.calls.at(-1)[1]
+    expect(last.data).toEqual(rows)
+    expect(last.update).toEqual(['id', 'name'])
   })
 
   test('and any other refusal is still reported, never retried', async () => {

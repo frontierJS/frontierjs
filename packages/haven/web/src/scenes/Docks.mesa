@@ -15,6 +15,9 @@
   import { frame }  from '@/pieces/frame.js'
   import { lamp }   from '@/pieces/lamp.js'
   import { barrel } from '@/pieces/barrel.js'
+  import { crate }  from '@/pieces/crate.js'
+  import { plank }  from '@/pieces/plank.js'
+  import { signpost, sign } from '@/pieces/signpost.js'
   import { ferry, FERRY, GANGWAY, hull } from '@/pieces/ferry.js'
 
   // The water is one block with the pier, the ferry and its plank cut out of
@@ -38,31 +41,7 @@
     [...Array(PIER.rows)].map(() => 'u'.repeat(PIER.w)).join('\n'),
     { floor: true, crumbles: { ch: '~', key: 'b' } })
 
-  const plank = piece('plank', '='.repeat(PLANK.w), 'u'.repeat(PLANK.w), { floor: true })
-
-  const ferrySign = piece('ferry-sign', '[ferry]', 'eeeeeee', { floor: true })
-
-  const crate = piece('crate', String.raw`
- _____
-|_|_|_|
-|_|_|_|
-`, String.raw`
- wwwww
-wwwwwww
-wwwwwww
-`)
-
   const bollard = piece('bollard', 'o', 'q')
-
-  const signpost = piece('signpost', String.raw`
-^[square]
-    |
-   _|_
-`, String.raw`
-eeeeeeeee
-    l
-   lll
-`, { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -85,7 +64,7 @@ eeeeeeeee
   <Piece of={water} x={3}  y={9} />
   <Piece of={pier}  x={46} y={9} />
   <Piece of={ferry} x={56} y={12} />
-  <Piece of={plank} x={54} y={16} />
+  <Piece of={plank(PLANK.w)} x={54} y={16} />
   <Door  x={57} y={16} to="/island/" hidden />
   <Door  x={1}  y={5} to="/canal/" />
   <Piece of={crate} x={10} y={3} />
@@ -96,8 +75,8 @@ eeeeeeeee
   <Piece of={lamp} x={84} y={3} />
   <Piece of={bollard} x={20} y={7} />
   <Piece of={bollard} x={70} y={7} />
-  <Piece of={signpost} x={66} y={1} />
-  <Piece of={ferrySign} x={46} y={7} />
+  <Piece of={signpost('^[square]')} x={66} y={1} />
+  <Piece of={sign('[ferry]')} x={46} y={7} />
   <Pacer name="crab" y={7} from={22} to={44} ms={300} rest={30} flee={50} fg="#dc2626"
     right={['(\\/)°°(\\/)', '(/\\)°°(/\\)']}
     left={['(\\/)°°(\\/)', '(/\\)°°(/\\)']}

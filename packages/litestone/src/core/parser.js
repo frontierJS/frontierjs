@@ -56,6 +56,12 @@ const _KEYWORDS = new Set([
 //           table, a published schedule
 export const SYNC_POLICIES = new Set(['server', 'append', 'refuse', 'field', 'read'])
 
+// A view column is computed by `@@sql`, so an attribute about storage (`@id`,
+// `@unique`, `@default`, `@map`) describes nothing. These say what the NUMBER
+// is, which a projection over a `@money` column loses unless it restates it
+// (`FJS-1643`).
+export const VIEW_COLUMN_ATTRS = new Set(['money', 'scale', 'unit'])
+
 // The policies that name a revision, and so cannot work without a column
 // holding one. Kept as a set rather than two comparisons because the next value
 // added is likelier to be a third member than a fourth policy.
@@ -580,8 +586,20 @@ class Parser {
         const fieldComments = pending.length ? pending : this.docComments()
         const fieldName = this.eat(TK.IDENT).value
         const type      = this.parseFieldType()
+        const fieldAttributes = []
+        while (this.check(TK.AT)) {
+          const at   = this.peek()
+          const attr = this.parseFieldAttribute()
+          if (!VIEW_COLUMN_ATTRS.has(attr.kind))
+            throw new ParseError(
+              `@${attr.kind} on view column '${fieldName}' — a view column takes ` +
+              `${[...VIEW_COLUMN_ATTRS].map(a => '@' + a).join(', ')} and nothing else, ` +
+              `since @@sql computes it and there is no column to constrain or default`,
+              at)
+          fieldAttributes.push(attr)
+        }
         this.maybeEat(TK.COMMA)
-        fields.push({ name: fieldName, type, comments: [...fieldComments, ...this.trailingComments()] })
+        fields.push({ name: fieldName, type, attributes: fieldAttributes, comments: [...fieldComments, ...this.trailingComments()] })
       }
     }
 
@@ -7307,13 +7325,14 @@ function validate(schema) {
   // ── @scale / @money validation ──────────────────────────────────────────────
   // The point of the pair is exactness, so every way of declaring one that
   // cannot be exact is refused here rather than producing a plausible number.
-  for (const model of schema.models) {
+  // A view column states the same facts about the number its @@sql computes.
+  for (const [what, model] of [...schema.models.map(m => ['Model', m]), ...(schema.views ?? []).map(v => ['View', v])]) {
     for (const field of model.fields) {
       const scale = field.attributes.find(a => a.kind === 'scale')
       const money = field.attributes.find(a => a.kind === 'money')
       if (!scale && !money) continue
 
-      const at = `Model '${model.name}', field '${field.name}'`
+      const at = `${what} '${model.name}', field '${field.name}'`
 
       // `Int`, and the type stays true. A scaled value stored in a REAL column
       // is the drift the declaration exists to remove, and an attribute that
@@ -7381,7 +7400,7 @@ function validate(schema) {
   // it for both, so a rule that read only the models would have left exactly
   // the declaration this feature exists to remove — stated, emitted, and
   // resolving to nothing.
-  for (const owner of [...schema.models.map(m => ['Model', m]), ...(schema.types ?? []).map(t => ['Type', t])]) {
+  for (const owner of [...schema.models.map(m => ['Model', m]), ...(schema.views ?? []).map(v => ['View', v]), ...(schema.types ?? []).map(t => ['Type', t])]) {
     const [kind, model] = owner
     for (const field of model.fields) {
       const unit = field.attributes.find(a => a.kind === 'unit')

@@ -1038,6 +1038,55 @@ export const RULES = [
     },
   },
   {
+    id:       'write-policy-reads-a-parent-without-post-update',
+    severity: 'warn',
+    title:    'a create or update policy reads a parent through a key the caller can move, with no post-update beside it',
+    blurb:    "An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign " +
+              "key into somebody else's parent is graded against the parent the row is leaving and admitted. " +
+              "Only @@allow('post-update', …) reads the row as it WOULD BE, and 'all' includes it where " +
+              "'update' and 'write' do not. A create policy naming the same parent is refused for a new row " +
+              'and bypassed by a move.',
+    run(schema) {
+      const out = []
+      const readsOf = (node, acc = new Set()) => {
+        if (!node || typeof node !== 'object') return acc
+        if (Array.isArray(node)) { for (const n of node) readsOf(n, acc); return acc }
+        if (node.type === 'path' && node.rel) acc.add(node.rel)
+        if (node.type === 'check' && node.field) acc.add(node.field)
+        for (const v of Object.values(node)) readsOf(v, acc)
+        return acc
+      }
+      for (const model of schema.models ?? []) {
+        const allows = (model.attributes ?? []).filter(a => a.kind === 'allow' && !a.generated)
+        if (!allows.some(a => a.operations?.includes('update'))) continue
+        if (allows.some(a => a.operations?.includes('post-update'))) continue
+        const seen = new Set()
+        for (const allow of allows) {
+          if (!allow.operations?.some(op => op === 'create' || op === 'update')) continue
+          for (const rel of readsOf(allow.expr)) {
+            const field = model.fields?.find(f => f.name === rel)
+            const fks   = field?.attributes?.find(a => a.kind === 'relation')?.fields
+            if (field?.type?.kind !== 'relation' || field.type.array || !fks?.length || seen.has(rel)) continue
+            // `@system` and `@immutable` are refused by name in an update payload, so no caller moves them.
+            const movable = fks.filter(name => !model.fields.find(f => f.name === name)?.attributes
+              ?.some(a => a.kind === 'system' || a.kind === 'immutable'))
+            if (!movable.length) continue
+            seen.add(rel)
+            out.push({
+              model: model.name, field: movable[0],
+              message: `${model.name}.${movable[0]}: a policy reads ${rel} through ${movable.join(', ')}, which a caller ` +
+                `may write, and ${model.name} declares no @@allow('post-update', …). An 'update' policy grades the row ` +
+                `before the write, so a PATCH moving ${movable[0]} into another ${field.type.name} is admitted by the ` +
+                `${field.type.name} the row is leaving. Add @@allow('post-update', …) naming the same ${rel} condition, ` +
+                `or make ${movable[0]} @immutable.`,
+            })
+          }
+        }
+      }
+      return out
+    },
+  },
+  {
     id:       'anonymous-create-auth-default',
     severity: 'warn',
     title:    'a public create on a model whose required column defaults to auth()',

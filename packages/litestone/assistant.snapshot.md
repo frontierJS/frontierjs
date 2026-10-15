@@ -468,6 +468,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **an index over a Json column indexes the document, not anything inside it** (warn). The column holds one serialized document, so the index holds one entry per document — which answers *this exact document* and nothing else. A path filter cannot use it: json_extract() is opaque to the planner, so the query is a full scan with the index sitting beside it being written on every insert. What indexes a path is a @generated column over that path with an @@index on THAT.
 - **the unit is in the identifier, where nothing can read it** (info). timeoutSeconds Int states the unit and states it to a human only — no form renders it, no agent describing the model repeats it, and nothing checks that the value being written was measured in the same thing. @unit(s) puts the fact where those can reach it, and the name goes back to being the name. It changes no stored value: a unit declares what the number counts, it does not convert it.
 - **a bare check() in a write rule asks the parent the same write** (warn). check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.
+- **a create or update policy reads a parent through a key the caller can move, with no post-update beside it** (warn). An 'update' policy compiles to a WHERE over the row as it IS, so a PATCH moving the foreign key into somebody else's parent is graded against the parent the row is leaving and admitted. Only @@allow('post-update', …) reads the row as it WOULD BE, and 'all' includes it where 'update' and 'write' do not. A create policy naming the same parent is refused for a new row and bypassed by a move.
 - **a public create on a model whose required column defaults to auth()** (warn). A required column with @default(auth().id) is filled from the signed-in principal. With create at level 0 a visitor has none, so the runtime refuses the create (401, naming the field) unless the visitor states the column — and a visitor naming a user it cannot read is refused too. Raise the create level, or make the column optional.
 - **a create policy reaches through a relation the picker cannot be narrowed by** (warn). A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.
 
@@ -564,7 +565,7 @@ model Product {
 
 tier: **common**
 
-A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`.
+A SQL view, read-only, with its columns declared so everything downstream of the seed can see them. `@@materialized` makes it a real table, and `@@refreshOn` decides WHEN it is rebuilt rather than whether: naming source models installs triggers, which is a FULL rebuild per row written to one of them, so `litestone advise` notes the cost; naming none means the table is rebuilt when `db.<view>.refresh()` is called and at no other time, which requires `asSystem()` because the rebuild reads every source row with no policy applied. A view is a read path onto rows the models guard, so it carries the same access attributes they do, compiled against the columns the VIEW declares rather than inferred from `@@sql`: where the schema declares any access rule a view must state a `@@gate` (`@@gate("0")` says public on purpose), and under `strategy row` it must state `@@tenant` naming its own tenant column or `@@tenant(none)`. A column takes `@money`, `@scale` and `@unit` and no other field attribute, so a view summing a `@money` column can say its result is money.
 
 ```lite
 view accountStats {
@@ -1111,7 +1112,7 @@ phone String @phone
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: markdown, code, language, rich text
 
-Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite. No validation: a generated form offers the editor for it and a cell shows it highlighted.
+Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite, txt. No validation: a generated form offers the editor for it and a cell shows it highlighted; md and txt get a textarea, and txt is shown as written.
 
 ```lite
 query String @syntax(sql)
@@ -1311,7 +1312,7 @@ externalId Int @big
 
 #### `@scale` (<places>)
 
-tier: **situational** · legal in: on a model's field, on a trait's field · also called: precision · see also: `money`
+tier: **situational** · legal in: on a model's field, on a trait's field, on a view column · also called: precision · see also: `money`
 
 The column is an integer and the decimal point sits <places> places in — 1_500_000 at scale 6 is 1.5. Exact where a Float is not: SQLite has no fixed-point type, and the drift lands on multiplication and on comparing two derived numbers, which is what a reorder point or a projected on-hand IS. What a caller sends and reads back is the WHOLE number of minor units; a value with a fraction is refused by name. At most 9 places, or a 64-bit integer runs out of room in front of the point.
 
@@ -1321,7 +1322,7 @@ qty Int @scale(6)
 
 #### `@money` (<CURRENCY>) | (field: <column>)
 
-tier: **situational** · legal in: on a model's field, on a trait's field · also called: price, cents · see also: `scale`
+tier: **situational** · legal in: on a model's field, on a trait's field, on a view column · also called: price, cents · see also: `scale`
 
 An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. A bare @money is refused: with no currency there is no scale. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
 
@@ -1331,7 +1332,7 @@ total Int @money(USD)
 
 #### `@unit` (<symbol>)
 
-tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `scale`, `money`
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field, on a view column · see also: `scale`, `money`
 
 What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio %. mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
 
@@ -1599,11 +1600,11 @@ This dataset may leave in bulk. It adds NO way in: an export is a paginated scop
 @@export(ndjson, since: updatedAt)
 ```
 
-#### `@@allow` ('read'|'create'|'update'|'delete'|'all', <expression>[, message])
+#### `@@allow` ('read'|'create'|'update'|'post-update'|'delete'|'write'|'all', <expression>[, message])
 
 tier: **common** · legal in: in a model, in a trait · also called: rls, row level security · see also: `deny`, `gate`, `scope`
 
-A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand.
+A row policy: compiled into the WHERE. Allows OR together within one operation, so a wrong policy is an empty screen with a 200 rather than an error. Membership spells as `auth().id in memberIds`, the list always the right operand. `update` grades the row as it IS, before the write, so a PATCH moving a foreign key into somebody else's parent passes a rule reading that parent; `post-update` grades the row as it WOULD BE and rolls the write back when refused. `all` includes it and `write` (create, update, delete) does not.
 
 ```lite
 @@allow('read', ownerId == auth().id)

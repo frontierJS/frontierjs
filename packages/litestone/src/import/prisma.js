@@ -205,7 +205,14 @@ function emitField(model, fname, ptype, isList, isOpt, rest, gap, wide) {
     } else if (/^\[/.test(d)) {
       gap('array-default', model, fname, `${ptype}[] @default(${d})`,
           'dropped — .lite refuses every array default, the empty one included (FJS-564)')
-    } else extra.push(`@default(${d})`)
+    } else {
+      // SQLite Prisma has no Json type, so JSON is a String with an empty-container default
+      // that a hook parses. Nothing says so but the default; the Json column is the upgrade.
+      if (ptype === 'String' && !isList && /^"(\{\}|\[\])"$/.test(d))
+        gap('json-in-string-candidate', model, fname, `String @default(${d})`,
+            'emitted as an ordinary String — CANDIDATE for Json, which stores the same text but is read and validated as JSON; confirm the column only ever holds JSON')
+      extra.push(`@default(${d})`)
+    }
   }
 
   const t = type + (isList ? '[]' : '') + (isOpt ? '?' : '')

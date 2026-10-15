@@ -12,6 +12,7 @@
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
   import { ferry, FERRY, GANGWAY, hull } from '@/pieces/ferry.js'
+  import { plank } from '@/pieces/plank.js'
 
   // The island is an ellipse, and its land within `SHORE` of the sea is beach,
   // which keeps the band as wide at the tips as along the sides. Every cell
@@ -43,7 +44,6 @@
 
   const jetty = piece('jetty', [...Array(JETTY.h)].map(() => '='.repeat(JETTY.w)).join('\n'),
     [...Array(JETTY.h)].map(() => 'u'.repeat(JETTY.w)).join('\n'), { floor: true })
-  const plank = piece('plank', '='.repeat(PLANK.w), 'u'.repeat(PLANK.w), { floor: true })
 
   // The fronds are in the air and walked under; the trunk is a wall.
   const palm = piece('palm', String.raw`
@@ -98,7 +98,7 @@ lllll
   <Piece of={beach} x={2}  y={1} />
   <Piece of={jetty} x={20} y={3} />
   <Piece of={ferry} x={28} y={1} />
-  <Piece of={plank} x={26} y={5} />
+  <Piece of={plank(PLANK.w)} x={26} y={5} />
   <Door  x={29} y={5} to="/docks/" hidden />
   <Piece of={palm} x={30} y={12} />
   <Piece of={palm} x={44} y={11} />

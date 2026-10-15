@@ -282,10 +282,9 @@ export function generateTypeScript(schema, opts = {}) {
   // by name at the Data boundary, which is what `ViewClient` says in the type
   // system rather than restating.
   //
-  // View field AST carries no `attributes` array — a view column takes no field
-  // attributes, so the parser has nowhere to put one — and every spec helper
-  // below reads it, so it is backfilled here the same way `createClient` does
-  // for its view-as-model stubs.
+  // Every spec helper below reads `attributes`, and a schema built by hand may
+  // omit it on a view column, so it is backfilled here the same way
+  // `createClient` does for its view-as-model stubs.
   const views = (schema.views ?? []).map(v => ({
     ...v,
     fields: (v.fields ?? []).map(f => ({ ...f, attributes: f.attributes ?? [] })),

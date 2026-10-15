@@ -9517,6 +9517,7 @@ function assertClientOptions(rest) {
 
 // Said once per distinct set of ungraded claim names, for the life of the process.
 const UNGRADED_CLAIMS_SAID = new Set()
+const FILE_WITHOUT_STORAGE_SAID = new Set()
 
 export async function createClient({
   path:       schemaFilePath,  // path to .lite file  — e.g. './db/schema.lite'
@@ -10736,6 +10737,24 @@ function makeLockPrimitive(rawWriteDb) {
 
   // Plugin runner — orchestrates all installed plugins
   const pluginRunner = new PluginRunner(effectivePlugins)
+
+  // A File column with nothing to store it fails at the first upload
+  // (`refuseFileWithoutStorage`); advise reads the schema alone and cannot know
+  // the plugins, so the client is the first place both are in hand. A read-only
+  // client never uploads, and a tenant registry builds one client per tenant,
+  // so the notice is once per distinct set of columns (`FJS-2908`).
+  if (!pluginRunner.handles('File') && !readOnly) {
+    const unstored = schema.models.flatMap(m =>
+      m.fields.filter(f => f.type?.name === 'File').map(f => `${m.name}.${f.name}`))
+    const key = unstored.join(',')
+    if (unstored.length && !FILE_WITHOUT_STORAGE_SAID.has(key)) {
+      FILE_WITHOUT_STORAGE_SAID.add(key)
+      console.warn(
+        `[litestone] ${unstored.join(', ')} ${unstored.length > 1 ? 'are' : 'is a'} File column${unstored.length > 1 ? 's' : ''}, ` +
+        `and this client installs no FileStorage, so the first upload is refused. ` +
+        `Add FileStorage({ provider }) to createClient's plugins.`)
+    }
+  }
 
   // Shared context threaded through include resolution + table ops
   const ctx = {

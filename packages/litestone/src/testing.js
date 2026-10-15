@@ -3569,8 +3569,11 @@ function _shouldSkipField(field, model) {
   if (attrs.some(a => a.kind === 'updatedAt')) return true
 
   // @createdBy / @updatedBy are stamped from ctx.auth — a factory value would
-  // be overwritten under $setAuth and is meaningless without it
-  if (attrs.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy')) return true
+  // be overwritten under $setAuth. A REQUIRED one stays: a fixture built as
+  // SYSTEM has no principal to stamp, and leaving it out fails the required
+  // check for the model and every model below it (FJS-1487).
+  if (attrs.some(a => a.kind === 'createdBy' || a.kind === 'updatedBy') &&
+      (type.optional || defAttr)) return true
 
   // @version is owned by the client — always 1 on create, bumped by SQL after
   if (attrs.some(a => a.kind === 'version')) return true
@@ -3709,7 +3712,13 @@ function _satisfyChecks(schema, model, out, { fkFields = new Set(), seq = 1, now
       stamped[f.name] = at
   }
   const c = { schema, model, out, fkFields, seq, view: () => ({ ...stamped, ...out }) }
-  for (const attr of model.attributes ?? []) {
+  // A field `@check` is the same rule written beside a column, and a model
+  // that spells a discriminated union that way (`@check("type = 'todo' OR
+  // checked IS NULL")` on each variant column) refuses a row that filled the
+  // variant column on the default type -- at every level, which reads as a
+  // gate nobody can pass (FJS-1487).
+  const attrs = [...(model.attributes ?? []), ...model.fields.flatMap(f => f.attributes ?? [])]
+  for (const attr of attrs) {
     if (attr.kind !== 'check') continue
     let ast
     try { ast = parseSql(attr.expr) } catch { continue }

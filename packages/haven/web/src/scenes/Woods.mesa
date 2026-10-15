@@ -17,6 +17,8 @@
   import { frame } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
   import { quiver } from '@/pieces/archery.js'
+  import { shroom } from '@/pieces/shroom.js'
+  import { signpost } from '@/pieces/signpost.js'
 
   // The path is floor, walked on.
   const path = piece('path', [
@@ -45,16 +47,6 @@ uuuuu
 uuuuuuuuuu
 `)
 
-  const shroom = piece('shroom', String.raw`
- _
-(_)
- |
-`, String.raw`
- p
-ppp
- l
-`)
-
   const cabin = piece('cabin', String.raw`
     ~
    _||________
@@ -74,16 +66,6 @@ RRRRRRRRRRRRRRRRR
  WWWWWWuuuWWWWWW
  WWWWWWuduWWWWWW
 `)
-
-  const signpost = piece('signpost', String.raw`
-[square]>
-    |
-   _|_
-`, String.raw`
-eeeeeeeee
-    l
-   lll
-`, { floor: true })
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -126,7 +108,7 @@ eeeeeeeee
   <Piece of={shroom} x={34} y={4} />
   <Piece of={shroom} x={40} y={22} />
   <Piece of={shroom} x={76} y={9} />
-  <Piece of={signpost} x={84} y={6} />
+  <Piece of={signpost('[square]>')} x={84} y={6} />
   <Piece of={quiver} x={12} y={14} />
   <Piece of={quiver} x={31} y={11} />
   <Piece of={quiver} x={58} y={11} />

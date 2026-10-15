@@ -143,6 +143,12 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor({ type: 'string' })).toEqual({ control: 'input', task: 'text' })
   })
 
+  test('@syntax(txt) is a textarea shown as plain text — prose that is not Markdown (FJS-1657)', () => {
+    const rule = { type: 'string', 'x-syntax': 'txt' }
+    expect(controlFor(rule)).toEqual({ control: 'textarea', task: 'text' })
+    expect(displayFor(rule)).toEqual({ display: 'text' })
+  })
+
   test('any other @syntax is the code editor, carrying its language', () => {
     expect(controlFor({ type: 'string', 'x-syntax': 'sql' })).toEqual({ control: 'code', task: 'text', language: 'sql' })
     expect(displayFor({ type: 'string', 'x-syntax': 'sql' })).toEqual({ display: 'code', language: 'sql' })

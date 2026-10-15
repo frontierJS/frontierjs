@@ -112,9 +112,11 @@ test('the real scenes: the square is shaded at night except its light sources; t
   for (const name of ['Tavern', 'Cellar', 'Workshop']) {
     const stage = (await mountScene(name)).stage
     const own = named(stage)
+    // The cellar names `lamplight`, whose pool is warm at every hour; the night is what is asked here.
+    const pooled = (x, y) => stage.lights.some((l) => ((l.x - x) / 2) ** 2 + (l.y - y) ** 2 <= l.r * l.r)
     for (let y = 0; y < stage.height; y++) for (let x = 0; x < stage.width; x++) {
       const { ch, fg } = stage.look(x, y, MIDNIGHT)
-      if (ch !== ' ') expect({ name, x, y, own: own.has(fg) }).toEqual({ name, x, y, own: true })
+      if (ch !== ' ' && !pooled(x, y)) expect({ name, x, y, own: own.has(fg) }).toEqual({ name, x, y, own: true })
     }
   }
 }, 30_000)

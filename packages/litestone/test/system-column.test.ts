@@ -244,3 +244,44 @@ model Booking {
     expect(await env.verifyGateLadder()).toEqual([])
   })
 })
+
+// `FJS-1487`. The fixture is built as SYSTEM, which stamps nobody, and fills
+// every optional column on the default value of a discriminated model. A
+// required `@createdBy` and a variant column's field `@check` each took the
+// model's writes — and every model below it — off the ladder as ungraded.
+describe('fixtures the ladder can build for an ordinary schema', () => {
+  it('a required @createdBy and a field @check leave the ladder clean', async () => {
+    const { createTestEnv } = await import('../src/testing.js')
+    const env = await createTestEnv({ schema: `
+model Page {
+  id      Int    @id
+  ownerId String @createdBy
+  title   String
+  @@gate("0")
+}
+model Block {
+  id      Int      @id
+  type    String   @default("paragraph")
+  checked Boolean? @check("type = 'todo' OR checked IS NULL")
+  @@gate("0")
+}
+model Application {
+  id          Int    @id
+  candidateId Int    @immutable
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  @@gate("0")
+}
+model Candidate {
+  id   Int    @id
+  name String
+  @@gate("0")
+}
+model Document {
+  id   Int  @id
+  file File @accept("application/pdf")
+  @@gate("0")
+}
+` })
+    expect(await env.verifyGateLadder()).toEqual([])
+  })
+})

@@ -33,7 +33,7 @@ import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, lookup, typed
          SYNONYMS, synonymsFor, bySynonym, TIERS, tierFor, AXES, axisFor } from '../src/core/catalog.js'
 import { TRAIT_FORBIDDEN_FIELD_ATTRS, TRAIT_FORBIDDEN_MODEL_ATTRS,
          TYPE_FORBIDDEN_FIELD_ATTRS, ALLOWED_TOKENIZERS, SYNC_POLICIES, ON_DELETE_ACTIONS,
-         DATABASE_DRIVERS } from '../src/core/parser.js'
+         DATABASE_DRIVERS, VIEW_COLUMN_ATTRS } from '../src/core/parser.js'
 
 const PARSER_SRC = readFileSync(fileURLToPath(new URL('../src/core/parser.js', import.meta.url)), 'utf8')
 
@@ -182,6 +182,8 @@ describe('where a word is legal, not just which switch parses it', () => {
       .toEqual(known('field', TYPE_FORBIDDEN_FIELD_ATTRS))
     expect([...POSITION_RULES.traitField.excludes].sort())
       .toEqual(known('field', TRAIT_FORBIDDEN_FIELD_ATTRS))
+    expect([...POSITION_RULES.viewColumn.only].sort())
+      .toEqual(known('field', VIEW_COLUMN_ATTRS))
     expect([...POSITION_RULES.traitBlock.excludes].sort())
       .toEqual(known('model', TRAIT_FORBIDDEN_MODEL_ATTRS))
   })
@@ -211,6 +213,26 @@ describe('where a word is legal, not just which switch parses it', () => {
       const declared = positionsOf(row).includes('enumMember')
       expect({ word: row.word, acceptedOnAMember: onEnumMember(row) })
         .toEqual({ word: row.word, acceptedOnAMember: declared })
+    })
+  }
+
+  // The set above binds the names; this drives the parser, so a word the
+  // catalog lists for a view column and the parser refuses (or the reverse) fails.
+  const onViewColumn = (row: any) => {
+    const marker = '@' + row.word
+    const i = row.example.indexOf(marker)
+    if (i < 0) return false
+    const attr = row.example.slice(i).replace(/\n\s*/g, ' ')
+    const src  = (row.context ? row.context + '\n' : '')
+      + `view CatalogView { id Int  n Int ${attr}  @@sql("SELECT 1 AS id, 1 AS n") }`
+    try { return parse(src).valid } catch { return false }
+  }
+
+  for (const row of FIELD_ATTRS) {
+    test(`@${row.word} on a view column`, () => {
+      const declared = positionsOf(row).includes('viewColumn')
+      expect({ word: row.word, acceptedOnAColumn: onViewColumn(row) })
+        .toEqual({ word: row.word, acceptedOnAColumn: declared })
     })
   }
 

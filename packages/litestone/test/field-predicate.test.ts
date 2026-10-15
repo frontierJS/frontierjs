@@ -348,3 +348,24 @@ describe('a field write predicate crosses to the client', () => {
     expect(JSON.stringify(p.writeOnl)).not.toContain('owner')
   })
 })
+
+// A read policy says the value may be ABSENT on a read; the create form is built
+// from the same schema and a NOT NULL column is still owed there (`FJS-1674`).
+describe('a read-policied NOT NULL column stays required to create', () => {
+  const requiredOf = (mode: string, audience = 'client') => {
+    const parsed: any = parse(CROSSING)
+    return generateJsonSchema(parsed.schema ?? parsed, { audience, mode }).$defs.Thing.required
+  }
+
+  it('client create requires readOnl and both, as system create does', () => {
+    const client = requiredOf('create')
+    expect(client).toContain('readOnl')
+    expect(client).toContain('both')
+    expect(client).not.toContain('bothOpt')
+    expect([...client].sort()).toEqual([...requiredOf('create', 'system')].sort())
+  })
+
+  it('update requires nothing', () => {
+    expect(requiredOf('update') ?? []).toEqual([])
+  })
+})

@@ -67,9 +67,9 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@createdBy` | Record who and when | [(<authField>)] |  |  |  |
 | `@version` | Record who and when |  | on a model's field · on a trait's field |  |  |
 | `@big` | Shape the table |  | on a model's field · on a trait's field |  |  |
-| `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field |  |  |
-| `@money` | Shape the table | (<CURRENCY>) \| (field: <column>) | on a model's field · on a trait's field |  |  |
-| `@unit` | Shape the table | (<symbol>) |  |  |  |
+| `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field · on a view column |  |  |
+| `@money` | Shape the table | (<CURRENCY>) \| (field: <column>) | on a model's field · on a trait's field · on a view column |  |  |
+| `@unit` | Shape the table | (<symbol>) | on a model's field · on a type's field · on a trait's field · on a view column |  |  |
 | `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
 | `@vector` | Shape the table | (<dimensions>) |  |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
@@ -131,7 +131,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@commitment` | Shape the table | ([<relation>.]<transition>, on: <field> [+\|- <n><unit> \| <field>] [, while: <expr>]) |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |
 | `@@export` | Decide who may | (ndjson \| csv [, since: <column>]) |  |  |  |
-| `@@allow` | Decide who may | ('read'\|'create'\|'update'\|'delete'\|'all', <expression>[, message]) |  |  |  |
+| `@@allow` | Decide who may | ('read'\|'create'\|'update'\|'post-update'\|'delete'\|'write'\|'all', <expression>[, message]) |  |  |  |
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
@@ -164,6 +164,7 @@ A blank `legal` column above means the ordinary answer for that level.
 | on a trait's field | `id` |
 | in a trait | `id`, `map`, `db`, `fts` |
 | on an enum member | everything except `@label` |
+| on a view column | everything except `@money`, `@scale`, `@unit` |
 
 ## The visibility table
 
@@ -210,5 +211,6 @@ Shapes the parser accepts and something later refuses.
 | `index-over-a-json-document` | warn | an index over a Json column indexes the document, not anything inside it |
 | `unit-in-the-column-name` | info | the unit is in the identifier, where nothing can read it |
 | `check-without-an-operation-in-a-write-rule` | warn | a bare check() in a write rule asks the parent the same write |
+| `write-policy-reads-a-parent-without-post-update` | warn | a create or update policy reads a parent through a key the caller can move, with no post-update beside it |
 | `anonymous-create-auth-default` | warn | a public create on a model whose required column defaults to auth() |
 | `create-reaches-unpickable-relation` | warn | a create policy reaches through a relation the picker cannot be narrowed by |

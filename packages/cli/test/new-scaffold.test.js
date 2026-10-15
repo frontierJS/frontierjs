@@ -9,7 +9,8 @@
  */
 
 import { test, expect, afterAll } from 'bun:test'
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'fs'
+import { mkdtempSync, readFileSync, readdirSync, existsSync, rmSync } from 'fs'
+import { Database } from 'bun:sqlite'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
@@ -150,3 +151,23 @@ test('--template web-only writes web/ and nothing that needs an API or a databas
   expect(readFileSync(join(app, 'AGENTS.md'), 'utf8')).not.toContain('schema.lite\`: **Data')
   expect(readFileSync(join(app, 'README.md'), 'utf8')).not.toMatch(/api\/|schema\.lite/)
 }, 60_000)
+
+// FJS-1490 — a sub-command `fli new` composes opens a client before the initial
+// migration is written, so auto-DDL builds app.db and records no history; the
+// first `fli db:migrate` then refuses a database its own migration file builds.
+test('the database the scaffold leaves already has its initial migration recorded', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fjs-new-history-'))
+  roots.push(dir)
+  const r = spawnSync(process.execPath, [join(import.meta.dir, '../bin/fli.js'), 'new', 'history', '--full',
+    '--yes', '--no-git', '--no-ci', '--no-deploy', '--source', 'local'], { cwd: dir, encoding: 'utf8' })
+  expect(r.status).toBe(0)
+  const app = join(dir, 'history')
+  const files = readdirSync(join(app, 'db/migrations/main'))
+  expect(files.length).toBe(1)
+  const dbFile = join(app, 'db/app.db')
+  if (!existsSync(dbFile)) return // no database built, so no history owed
+  const db = new Database(dbFile, { readonly: true })
+  const recorded = db.query('select * from _litestone_migrations').all()
+  db.close()
+  expect(JSON.stringify(recorded)).toContain(files[0])
+}, 120_000)

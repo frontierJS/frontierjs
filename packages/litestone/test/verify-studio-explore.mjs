@@ -676,7 +676,7 @@ t('positions.servedPerRow', await evaluate(`
     named:  Object.keys(cat.positions).length,
   };
 `), { id: 'field', label: 'field typeField traitField enumMember',
-      length: 'field typeField traitField', named: 7 })
+      length: 'field typeField traitField', named: 8 })
 
 // The interesting answer is the NARROW one. A word legal everywhere its level
 // allows says nothing, or every card would carry a badge nobody reads.

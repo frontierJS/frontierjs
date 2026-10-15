@@ -27,7 +27,7 @@
 // Never imported by production code.
 
 import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, MOVE_WORDS, POSITIONS,
-         POSITION_RULES, positionsOf, typed, grouped, probeFor, docFor,synonymsFor } from '../core/catalog.js'
+         POSITION_RULES, positionsOf, hasOrdinaryPositions, typed, grouped, probeFor, docFor,synonymsFor } from '../core/catalog.js'
 import { VISIBILITY, PER_CALLER, RULES } from '../core/advise.js'
 
 /**
@@ -73,11 +73,9 @@ function acceptsLines(row) {
  * reads, which hides the four that differ — and those four are the whole reason
  * the question is asked separately from which switch parses the word.
  */
-const ORDINARY = { field: 3, model: 2, schema: 1, move: 1 }
-
 function legalLine(row) {
   const all = positionsOf(row)
-  if (all.length === ORDINARY[row.level]) return null
+  if (hasOrdinaryPositions(row)) return null
   return `- **Legal** — ${all.map(p => POSITIONS[p] ?? p).join(' · ')}`
 }
 
