@@ -5481,6 +5481,15 @@ function validate(schema) {
   const has = (field, k) => field.attributes.some(a => a.kind === k)
   const unstored = (field) =>
     ['computed', 'transient', 'from', 'derived', 'encrypted', 'secret', 'hashed'].find(k => has(field, k))
+  // A range end may be a to-one `@from(rel, column)`: the parent's own column,
+  // which the grade reads through the relation's key (`FJS-D989`). Every other
+  // @from is an aggregate with no column under it.
+  const unstoredEnd = (field) => {
+    const why = unstored(field)
+    return why === 'from' && field.attributes.find(a => a.kind === 'from').op === 'column'
+      ? ['computed', 'transient', 'derived', 'encrypted', 'secret', 'hashed'].find(k => has(field, k)) ?? null
+      : why
+  }
   // What orders as a range: a number, a DateTime, or a String whose format
   // makes its text order its value. Plain text sorts, but '10' < '9'.
   const rangeKind = (field) => {
@@ -5522,7 +5531,14 @@ function validate(schema) {
       ends.forEach((f, i) => {
         if (!f) errors.push(`${at} — ${model.name} has no field '${attr.range[i]}'`)
         else if (!rangeKind(f)) errors.push(`${at} — '${f.name}' is ${f.type.name}${f.type.array ? '[]' : ''}, which does not order as a range. Use Int, Float, DateTime, or a String with @date, @datetime or @time`)
-        else if (unstored(f)) errors.push(`${at} — '${f.name}' is @${unstored(f)}, so there is no plain column to compare ranges on`)
+        else if (unstoredEnd(f)) errors.push(`${at} — '${f.name}' is @${unstoredEnd(f)}, so there is no plain column to compare ranges on`)
+        else if (has(f, 'from')) {
+          const from = f.attributes.find(a => a.kind === 'from')
+          const hop  = inferToOneFrom(model, schema, from)
+          const pf   = hop.error ? null : hop.targetModel.fields.find(x => x.name === from.opValue)
+          if (pf && unstored(pf))
+            errors.push(`${at} — '${f.name}' reads ${hop.targetModel.name}.${pf.name}, which is @${unstored(pf)}, so there is no plain column to compare ranges on`)
+        }
       })
       if (ends[0] && ends[1] && rangeKind(ends[0]) && rangeKind(ends[1]) && rangeKind(ends[0]) !== rangeKind(ends[1]))
         errors.push(`${at} — '${ends[0].name}' is ${rangeKind(ends[0])} and '${ends[1].name}' is ${rangeKind(ends[1])}; a range is two fields of the same kind`)

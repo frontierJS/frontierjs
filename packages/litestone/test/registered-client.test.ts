@@ -169,3 +169,69 @@ describe('a read is typed by its include and select (FJS-2779)', () => {
     expect(ok).toBe(true)
   })
 })
+
+// FJS-2898 -- a nested select on an include narrows the relation's row, and a
+// create/update/upsert answers what it was asked for like a read does.
+const NESTED = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run() {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    const sys = db.asSystem()
+
+    // a nested select keeps only the columns it names, on a one and on a many
+    const one = await sys.event.findMany({ include: { location: { select: { key: true } } } })
+    const key: string | undefined = one[0].location?.key
+    // @ts-expect-error -- the nested select never fetched it
+    one[0].location?.name
+    const many = await sys.location.findFirstOrThrow({ include: { events: { select: { title: true } } } })
+    const title: string = many.events[0].title
+    // @ts-expect-error -- the nested select never fetched it
+    many.events[0].rank
+    const off = await sys.event.findFirstOrThrow({ include: { location: { select: { key: true, name: false } } } })
+    // @ts-expect-error -- false fetches nothing
+    off.location?.name
+    // a nested options object with no select keeps the full row
+    const wide = await sys.event.findFirstOrThrow({ include: { location: { where: { key: 'a' } } } })
+    const wideName: string | undefined = wide.location?.name
+    // a nested select under a select of the relation
+    const viaSelect = await sys.event.findFirstOrThrow({ select: { location: { select: { key: true } } } })
+    const sk: string | undefined = viaSelect.location?.key
+    // @ts-expect-error -- the nested select never fetched it
+    viaSelect.location?.name
+
+    // a write answers what it was asked for
+    const data = { title: 't', rank: 1 }
+    const made = await sys.event.create({ data, include: { location: true } })
+    const madeKey: string | undefined = made.location?.key
+    const plain = await sys.event.create({ data })
+    // @ts-expect-error -- not asked for
+    plain.location
+    const picked = await sys.event.create({ data, select: { id: true } })
+    const pid: number = picked.id
+    // @ts-expect-error -- never fetched
+    picked.title
+    const upd = await sys.event.update({ where: { id: 1 }, data, select: { id: true } })
+    const uid: number | undefined = upd?.id
+    // @ts-expect-error -- never fetched
+    upd?.title
+    const ups = await sys.event.upsert({ where: { id: 1 }, create: data, update: data, include: { location: { select: { key: true } } } })
+    const upk: string | undefined = ups.location?.key
+    // @ts-expect-error -- the nested select never fetched it
+    ups.location?.name
+    const none = await sys.event.create({ data, select: false })
+    const nothing: null = none
+    // @ts-expect-error -- no such relation
+    await sys.event.create({ data, include: { nope: true } })
+
+    return { key, title, wideName, sk, madeKey, pid, uid, upk, nothing }
+  }
+`
+
+describe('a nested select and a write are typed by what they asked for (FJS-2898)', () => {
+  test('a nested select narrows the relation; create/update/upsert follow include and select', () => {
+    const { ok, out } = compile('system', RELATED, NESTED)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})

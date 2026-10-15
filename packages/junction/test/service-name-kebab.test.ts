@@ -80,3 +80,29 @@ describe('the registry answers to the older spelling', () => {
     expect(registry.list()).not.toContain('product-variants')
   })
 })
+
+describe('the loader aliases a spelling of the name, not a different word', () => {
+  const load = async (file: string, name: string) => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir }                     = await import('node:os')
+    const { join }                       = await import('node:path')
+    const { autoloadServices }           = await import('../src/core/loader.ts')
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-2899-'))
+    writeFileSync(join(dir, file),
+      `export function createXService() { return { name: '${name}', find: async () => [] } }\n`)
+    const registry = new ServiceRegistry()
+    await autoloadServices({ dir, app: {}, registry })
+    return registry
+  }
+
+  test('a kebab file declaring its camelCase name still answers to the kebab', async () => {
+    const r = await load('product-variants.service.ts', 'productVariants')
+    expect(r.aliasesOf('productVariants')).toEqual(['product-variants'])
+  })
+
+  test('a file declaring a different word does not answer to its stem', async () => {
+    const r = await load('metrics.service.ts', 'metrics-store')
+    expect(r.has('metrics-store')).toBe(true)
+    expect(r.has('metrics')).toBe(false)
+  })
+})

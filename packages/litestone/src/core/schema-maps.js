@@ -941,9 +941,17 @@ export function buildCardinalityMap(schema, pluralize = false) {
 // The rows a member contributes are the ones a read would answer, for the
 // reason the cardinality map gives: a soft-deleted shift is not a shift, and a
 // template is not one either. Its own `where:` narrows them further.
+//
+// A range end may be a to-one `@from(rel, column)` — a roster's Assignment
+// reading its Shift's time (`FJS-D989`). The grade reads it through the
+// relation's key, and the PARENT gets a reverse edge: a write to the Shift's
+// time names no Assignment, yet moves every one under it, so it notes the keys
+// those children hold. An Assignment with no Shift row holds no time; read as
+// two nulls it would be *always, and still going*, and overlap everything.
 export function buildExclusionMap(schema, pluralize = false) {
-  const byModel = {}           // member model -> [scope name], writes that dirty a key
-  const scopes  = {}           // scope name   -> { name, fields, members: [member] }
+  const byModel  = {}          // member model -> [scope name], writes that dirty a key
+  const byParent = {}          // parent model -> [edge], writes to a range a member @froms
+  const scopes   = {}          // scope name   -> { name, fields, members: [member] }
 
   const declared = new Map((schema.scopes ?? []).map(s => [s.name, s]))
   for (const model of schema.models) {
@@ -963,25 +971,71 @@ export function buildExclusionMap(schema, pluralize = false) {
       // `where:` — a row outside it holds no time (`FJS-1569`).
       if (attr.whereSql)       filters.push(`(${mapExprCols(attr.whereSql, cols)})`)
 
+      const table = modelToTableName(model, pluralize)
+      const hops  = new Map()        // rel -> { parent, table, pairs, fields }
+      const reads = attr.range.map(n => {
+        const from = field(n)?.attributes.find(a => a.kind === 'from' && a.op === 'column')
+        const hop  = from ? inferToOneFrom(model, schema, from) : null
+        if (!hop || hop.error) return quoteIdent(col(n))     // validate() already named an error
+        const pcols = columnMapFor(hop.targetModel)
+        const pcol  = (f) => pcols[f] ?? f
+        const ptable = modelToTableName(hop.targetModel, pluralize)
+        const pairs  = hop.fkFields.map((f, i) => [col(f), pcol(hop.refFields[i])])
+        const on     = pairs.map(([c, r]) => `_to.${quoteIdent(r)} = ${quoteIdent(table)}.${quoteIdent(c)}`).join(' AND ')
+        // A soft-deleted or template parent is not a parent: its children hold no
+        // time, and the write that stamps or clears either regrades them.
+        const pht   = hop.targetModel.attributes.find(a => a.kind === 'hasTemplates')?.field ?? null
+        const live  = []
+        if (isSoftDelete(hop.targetModel)) live.push('deletedAt')
+        if (pht)                           live.push(pht)
+        const h = hops.get(from.rel) ?? {
+          parent: hop.targetModel.name, table: ptable, pairs, on, fkFields: hop.fkFields, refFields: hop.refFields,
+          fields: [...live],
+          filters: [
+            ...(live.includes('deletedAt') ? [`_to.${quoteIdent(pcol('deletedAt'))} IS NULL`] : []),
+            ...(pht ? [`_to.${quoteIdent(pcol(pht))} = 0`] : []),
+          ],
+        }
+        h.fields.push(from.opValue)
+        hops.set(from.rel, h)
+        return `(SELECT _to.${quoteIdent(pcol(from.opValue))} FROM ${quoteIdent(ptable)} _to WHERE ${on})`
+      })
+      for (const h of hops.values()) filters.push(`EXISTS (SELECT 1 FROM ${quoteIdent(h.table)} _to WHERE ${[h.on, ...h.filters].join(' AND ')})`)
+
       const s = (scopes[scope.name] ??= { name: scope.name, fields: scope.fields, members: [] })
       s.members.push({
         model:      model.name,
-        table:      modelToTableName(model, pluralize),
+        table,
         keyFields:  scope.fields,
         keyColumns: scope.fields.map(col),
         idColumn:   idField ? col(idField) : null,
         range:      attr.range,
-        columns:    attr.range.map(col),
+        reads,
         kinds:      attr.range.map(n => rangePointKind(field(n))),
         // A write naming one of these can move a row INTO the predicate — a
         // cancelled shift restored — so it notes the key like a range end does.
         whereFields: attr.whereFields ?? [],
+        // The key of a relation a range end is read through: an Assignment
+        // moved to another Shift takes that Shift's time.
+        viaFields:  [...hops.values()].flatMap(h => h.fkFields),
         filters,
       })
       ;(byModel[model.name] ??= []).push(scope.name)
+      for (const h of hops.values())
+        (byParent[h.parent] ??= []).push({
+          scope:      scope.name,
+          member:     model.name,
+          table,
+          keyFields:  scope.fields,
+          keyColumns: scope.fields.map(col),
+          fields:     h.fields,
+          // [member FK column, parent column], index-aligned with refFields.
+          pairs:      h.pairs,
+          refFields:  h.refFields,
+        })
     }
   }
-  return { byModel, scopes, any: Object.keys(byModel).length > 0 }
+  return { byModel, byParent, scopes, any: Object.keys(byModel).length > 0 }
 }
 
 // What one end of a range is as a POINT: a number, an instant, or a day. Two

@@ -407,6 +407,7 @@ function authStamped(row, modelName, ctx) {
  * @property {boolean} hasValidation
  * @property {{ byParent: any[], byChild: any[], requiresChildren: any[] | null }} cardinality
  * @property {any[]} exclusions                 this model's `@@exclude` memberships, each with its `scope` name
+ * @property {any[]} exclusionParents           members whose range `@from`s this model's columns
  * @property {any[]} valueSets                  the `@values` bindings its columns carry
  * @property {Map<string, any[]>} fieldLogs    `@trail` targets by field
  * @property {any[] | null} modelLogs           `@@trail` targets
@@ -2052,13 +2053,23 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // overlap, and grading the key would refuse a delete for an overlap it did
   // not cause.
   const _exclMembers = tx.exclusions ? shape.exclusions : []
-  const _exclNotes   = _exclMembers.length > 0
-  const _exclFields  = new Set(_exclMembers.flatMap(m => [...m.keyFields, ...m.range, ...m.whereFields]))
-  // Only a write naming the key, an end of the range or a field of `where:`
-  // can move a row into another's range; every other update keeps its fast path.
+  // A parent whose column some member's range `@from`s: a Shift's time moves
+  // every Assignment under it, and the write names none of them (`FJS-D989`).
+  const _exclParents = tx.exclusions ? shape.exclusionParents : []
+  const _exclNotes   = _exclMembers.length > 0 || _exclParents.length > 0
+  const _exclFields  = new Set([
+    ..._exclMembers.flatMap(m => [...m.keyFields, ...m.range, ...m.whereFields, ...m.viaFields]),
+    ..._exclParents.flatMap(p => p.fields),
+  ])
+  // Only a write naming the key, an end of the range, a field of `where:` or
+  // the relation a range is read through can move a row into another's range;
+  // every other update keeps its fast path.
   const exclTouched = (data) => _exclNotes && data != null && Object.keys(data).some(k => _exclFields.has(k))
+  const parentTouched = (p, data) => data == null || p.fields.some(f => Object.hasOwn(data, f))
   function noteExclusion(row) {
-    if (_exclNotes && row) tx.exclusions.note(modelName, row)
+    if (!_exclNotes || !row) return
+    if (_exclMembers.length) tx.exclusions.note(modelName, row)
+    for (const p of _exclParents) if (parentTouched(p, row)) tx.exclusions.noteThrough(p, [row])
   }
   // The key a row holds BEFORE an update: a write that leaves the key alone
   // still moves the range under it, and the payload does not name it. A scope
@@ -2067,12 +2078,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // over it.
   function noteExclusionBySql(whereSql, params, data) {
     if (!_exclNotes) return
-    const sel = [...new Map(_exclMembers.flatMap(m => m.keyColumns.map((c, i) => [c, m.keyFields[i]]))).entries()]
-      .map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
-    const sql = `SELECT DISTINCT ${sel} FROM "${tableName}"${whereSql ? ` WHERE ${whereSql}` : ''}`
-    for (const row of writeDb.query(sql).all(...params)) {
-      tx.exclusions.note(modelName, row)
-      if (data) tx.exclusions.note(modelName, { ...row, ...data })
+    const where = whereSql ? ` WHERE ${whereSql}` : ''
+    if (_exclMembers.length) {
+      const sel = [...new Map(_exclMembers.flatMap(m => m.keyColumns.map((c, i) => [c, m.keyFields[i]]))).entries()]
+        .map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
+      for (const row of writeDb.query(`SELECT DISTINCT ${sel} FROM "${tableName}"${where}`).all(...params)) {
+        tx.exclusions.note(modelName, row)
+        if (data) tx.exclusions.note(modelName, { ...row, ...data })
+      }
+    }
+    for (const p of _exclParents) {
+      if (!parentTouched(p, data)) continue
+      const sel = p.pairs.map(([, c], i) => `${quoteIdent(c)} AS ${quoteIdent(p.refFields[i])}`).join(', ')
+      tx.exclusions.noteThrough(p, writeDb.query(`SELECT DISTINCT ${sel} FROM ${quoteIdent(tableName)}${where}`).all(...params))
     }
   }
 
@@ -10273,6 +10291,7 @@ function makeLockPrimitive(rawWriteDb) {
                            requiresChildren: declared(cardinalityMap.requiresChildren, name, null) },
       exclusions:        declared(exclusionMap.byModel, name, []).flatMap(scope =>
                            exclusionMap.scopes[scope].members.filter(m => m.model === name).map(m => ({ scope, ...m }))),
+      exclusionParents:  declared(exclusionMap.byParent, name, []),
       valueSets:         declared(valueSetMap, name, []),
       fieldLogs,
       modelLogs:         declared(logMap.models, name, null),

@@ -518,3 +518,111 @@ describe('a two-field scope over an @time range — FJS-2781', () => {
     db.$close()
   })
 })
+
+// A roster: the person is on the Assignment, the time on the Shift it points at.
+// The range is brought onto the member by a to-one @from, so a write to the
+// Shift's time moves every Assignment under it (FJS-D989).
+const ROSTER = `
+  scope person(personId)
+
+  model Shift {
+    id          Int          @id @default(autoincrement())
+    startLocal  DateTime
+    endLocal    DateTime
+    note        String?
+    assignments Assignment[]
+    @@allow('all', true)
+  }
+
+  model Assignment {
+    id       Int      @id @default(autoincrement())
+    personId Int
+    shiftId  Int
+    shift    Shift    @relation(fields: [shiftId], references: [id])
+    startsAt DateTime @from(shift, startLocal)
+    endsAt   DateTime @from(shift, endLocal)
+    @@exclude(person, range: [startsAt, endsAt])
+    @@allow('all', true)
+  }
+`
+
+async function openRoster() {
+  const { createClient } = await import('../src/index.js')
+  const db = (await createClient({ db: ':memory:', schema: ROSTER })) as any
+  const sys = db.asSystem()
+  const gym  = await sys.shift.create({ data: { startLocal: at(9), endLocal: at(12) } })
+  const pool = await sys.shift.create({ data: { startLocal: at(12), endLocal: at(15) } })
+  return { db, sys, gym, pool }
+}
+
+describe('a range read through a to-one @from — FJS-2780', () => {
+  test('a to-one @from field is a range end, and an aggregate one is still refused', () => {
+    expect(errorsOf(ROSTER)).toEqual([])
+    const errs = errorsOf(`scope person(personId)
+      model Visit { id Int @id
+        personId Int
+        endsAt DateTime
+        startsAt DateTime @from(Visit, max: endsAt)
+        @@exclude(person, range: [startsAt, endsAt]) }`)
+    expect(errs.some(e => e.includes("'startsAt' is @from"))).toBe(true)
+  })
+
+  test('two Assignments for one person on overlapping Shifts are refused; a hand-off at 12:00 is not', async () => {
+    const { db, sys, gym, pool } = await openRoster()
+    await sys.assignment.create({ data: { personId: 1, shiftId: gym.id } })
+    await sys.assignment.create({ data: { personId: 1, shiftId: pool.id } })
+    const morning = await sys.shift.create({ data: { startLocal: at(9), endLocal: at(10) } })
+    const e = await refusal(sys.assignment.create({ data: { personId: 1, shiftId: morning.id } }))
+    expect(e?.name).toBe('OverlapConflictError')
+    await sys.assignment.create({ data: { personId: 2, shiftId: morning.id } })
+    expect(await sys.assignment.count()).toBe(3)
+    db.$close()
+  })
+
+  test('moving a Shift regrades every person on it, through update and updateMany', async () => {
+    const { db, sys, gym, pool } = await openRoster()
+    await sys.assignment.create({ data: { personId: 1, shiftId: gym.id } })
+    await sys.assignment.create({ data: { personId: 1, shiftId: pool.id } })
+    expect((await refusal(sys.shift.update({ where: { id: gym.id }, data: { endLocal: at(13) } })))?.name).toBe('OverlapConflictError')
+    expect((await refusal(sys.shift.update({ where: { id: pool.id }, data: { startLocal: at(11) }, select: false })))?.name).toBe('OverlapConflictError')
+    expect((await refusal(sys.shift.updateMany({ where: { id: pool.id }, data: { startLocal: at(11) } })))?.name).toBe('OverlapConflictError')
+    expect((await sys.shift.findUnique({ where: { id: gym.id } })).endLocal).toBe(at(12))
+    // A write naming no range column leaves the people alone, and an earlier start is no overlap.
+    await sys.shift.update({ where: { id: pool.id }, data: { note: 'lifeguard' } })
+    await sys.shift.update({ where: { id: gym.id }, data: { startLocal: at(8) } })
+    db.$close()
+  })
+
+  test('moving an Assignment to another Shift is graded under the new Shift\'s range', async () => {
+    const { db, sys, gym, pool } = await openRoster()
+    const late = await sys.shift.create({ data: { startLocal: at(14), endLocal: at(16) } })
+    await sys.assignment.create({ data: { personId: 1, shiftId: gym.id } })
+    const b = await sys.assignment.create({ data: { personId: 1, shiftId: late.id } })
+    expect((await refusal(sys.assignment.update({ where: { id: b.id }, data: { shiftId: gym.id } })))?.name).toBe('OverlapConflictError')
+    await sys.assignment.update({ where: { id: b.id }, data: { shiftId: pool.id } })
+    db.$close()
+  })
+})
+
+// A soft-deleted Shift is not a Shift: its Assignments hold no time, and a
+// restore of the Shift regrades them (FJS-2902).
+describe('a soft-deleted parent holds no time through @from — FJS-2902', () => {
+  const SOFT_ROSTER = ROSTER.replace(
+    '    note        String?\n',
+    '    note        String?\n    deletedAt   DateTime?\n',
+  ).replace('assignments Assignment[]\n    @@allow', 'assignments Assignment[] @keep\n    @@softDelete\n    @@allow')
+
+  test('a cancelled Shift stops refusing the person; restoring it regrades', async () => {
+    const { createClient } = await import('../src/index.js')
+    const db = (await createClient({ db: ':memory:', schema: SOFT_ROSTER })) as any
+    const sys = db.asSystem()
+    const gym = await sys.shift.create({ data: { startLocal: at(9), endLocal: at(12) } })
+    await sys.assignment.create({ data: { personId: 1, shiftId: gym.id } })
+    const clash = await sys.shift.create({ data: { startLocal: at(10), endLocal: at(11) } })
+    expect((await refusal(sys.assignment.create({ data: { personId: 1, shiftId: clash.id } })))?.name).toBe('OverlapConflictError')
+    await sys.shift.remove({ where: { id: gym.id } })
+    await sys.assignment.create({ data: { personId: 1, shiftId: clash.id } })
+    expect((await refusal(sys.shift.restore({ where: { id: gym.id } })))?.name).toBe('OverlapConflictError')
+    db.$close()
+  })
+})

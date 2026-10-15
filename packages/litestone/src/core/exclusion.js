@@ -35,6 +35,7 @@
 // `verifyConstraints`' question, not this one's.
 
 import { OverlapConflictError } from './errors.js'
+import { quoteIdent }           from './query.js'
 
 // The ledger is an ARRAY for the reason cardinality's is: a SAVEPOINT rollback
 // truncates it to a mark, and a key noted by a rolled-back write must go with it.
@@ -61,6 +62,22 @@ export function createExclusionLedger(map, connFor) {
       }
     },
 
+    // A parent row whose range a member reads through `@from` moved: every key
+    // its children hold is graded. `refs` are the parent rows' referenced
+    // values, read before the write by the caller's own WHERE.
+    noteThrough(edge, refs) {
+      const conn = connFor(edge.member)
+      if (!conn || !refs.length) return
+      const sel = edge.keyColumns.map((c, i) => `${quoteIdent(c)} AS ${quoteIdent(edge.keyFields[i])}`).join(', ')
+      const sql = `SELECT DISTINCT ${sel} FROM ${quoteIdent(edge.table)} WHERE ${edge.pairs.map(([c]) => `${quoteIdent(c)} = ?`).join(' AND ')}`
+      const stmt = conn.query(sql)
+      for (const ref of refs) {
+        const vals = edge.refFields.map(f => ref[f])
+        if (vals.some(v => v == null || typeof v === 'object')) continue
+        for (const row of stmt.all(...vals)) this.note(edge.member, row)
+      }
+    },
+
     grade() {
       if (!dirty.length) return
       const touched = new Map()
@@ -83,7 +100,7 @@ function gradeKey(scope, key, connFor, written) {
     const conn = connFor(m.model)
     if (!conn) continue
     const id  = m.idColumn ? `"${m.idColumn}"` : 'rowid'
-    const sql = `SELECT ${id} AS "id", "${m.columns[0]}" AS "a", "${m.columns[1]}" AS "b" ` +
+    const sql = `SELECT ${id} AS "id", ${m.reads[0]} AS "a", ${m.reads[1]} AS "b" ` +
                 `FROM "${m.table}" WHERE ${[...m.keyColumns.map(c => `"${c}" = ?`), ...m.filters].join(' AND ')}`
     for (const r of conn.query(sql).all(...key)) {
       const start = toPoint(r.a, m.kinds[0], -Infinity)

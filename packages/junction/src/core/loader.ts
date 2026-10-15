@@ -94,9 +94,12 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
 
       if (!registry.has(service.name)) {
         // The filename's own spelling stays reachable — a URL and an
-        // `app.service(…)` written against it are not the app's mistake.
+        // `app.service(…)` written against it are not the app's mistake. Only
+        // when it is a spelling of the declared name: `metrics.service.ts`
+        // declaring 'metrics-store' is a different word, and aliasing it claims
+        // 'metrics' for a service that never answered to it.
         const raw = rawStem(filename)
-        registry.register(service, raw === service.name ? [] : [raw])
+        registry.register(service, raw !== service.name && deriveName(filename) === service.name ? [raw] : [])
         registeredBy.set(service.name, file)
         // An inventory line, not news — `GET /manifest` answers the same
         // question on demand, and an app with 21 services printed 21 of these
