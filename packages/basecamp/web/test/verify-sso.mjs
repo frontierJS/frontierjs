@@ -94,7 +94,7 @@ idp = Bun.serve({
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'basecamp-sso-'))
 const DB      = join(SCRATCH, 'basecamp.db')
-const dbEnv   = { DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit/') }
+const dbEnv   = { DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit.db') }
 // Both processes read the SAME variables: the API for the provider list and
 // cookie mode, vite for the define that is cookie mode's twin in the page.
 const ssoEnv  = {

@@ -12,7 +12,8 @@
 // side of that closure, both pass with it unwired.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, renameSync, mkdirSync, rmdirSync } from 'fs'
+import { Database } from 'bun:sqlite'
+import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join }   from 'path'
 
@@ -23,17 +24,16 @@ import { createService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { bearerClaim, header } from '../index.ts'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
+import { auditDatabase } from './audit-trail-model.ts'
 
-// A trail database is a DIRECTORY of jsonl, so this one needs a real path —
-// `:memory:` has nowhere to append.
+// The trail is a table in its own SQLite file, so this one needs a real path.
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver trail }
+  ${auditDatabase(dir)}
   model Order { id Int @id  status String  @@trail(audit) }
 `
 
-// fireLog defers one tick and the jsonl driver appends synchronously, so
-// anything after an await sees the row. Yield once; there is no timer.
+// fireLog defers one tick, so anything after one yield sees the row. There is no timer.
 const tick = () => new Promise((r) => setImmediate(r))
 
 async function harness() {
@@ -140,7 +140,7 @@ describe('an audit row says where the write came from', () => {
         claims: ['cartOwner'],
         schema: `
           database main  { path ":memory:" }
-          database audit { path "${dir}/audit/" driver trail }
+          ${auditDatabase(dir)}
           model Grant { id Int @id @default(autoincrement())  cartId Int  tokenHash String @unique @guarded  @@gate("8") }
           model Note  { id Int @id @default(autoincrement())  cartId Int  body String
                         @@gate("0")
@@ -172,8 +172,8 @@ describe('an audit row says where the write came from', () => {
       const [row] = await (db as any).asSystem().auditTrail.findMany({})
 
       expect(row.actorType).toBe('bearer')
-      expect(row.actorId).toBe(1)     // the grant row
-      expect(row.subjectId).toBe(42)  // what the grant was for
+      expect(row.actorId).toBe('1')     // the grant row, as the digits of its key
+      expect(row.subjectId).toBe('42')  // what the grant was for
       // And the token is in none of it: what crossed was an id.
       expect(JSON.stringify(row)).not.toContain('tok')
     } finally { rmSync(dir, { recursive: true, force: true }) }
@@ -244,16 +244,8 @@ describe('an audit row says where the write came from', () => {
     // quiet app from a broken trail, so the drop has to be counted separately
     // and has to carry WHY.
     //
-    // Broken by putting a directory where the trail FILE is, so the write fails
-    // inside the deferred, swallowed path rather than at the call. A chmod of the
-    // file stopped working once the appender held its fd open (`FJS-665`).
-    //
-    // It used to chmod the DIRECTORY, and that stopped forcing a drop once the
-    // companion index moved to WAL (`FJS-665`): under a rollback journal the
-    // index needed to create a `-journal` file on every write, which a read-only
-    // directory refuses, and under WAL the `-wal` and `-shm` already exist so
-    // the write goes through. The trail now records where it used to lose rows —
-    // a better answer, and the wrong lever for this test.
+    // Broken by dropping the trail table under the open client, so the write
+    // fails inside the deferred, swallowed path rather than at the call.
     const h = await harness()
     try {
       await h.app.service('orders').create({ id: 1, status: 'new' })
@@ -261,16 +253,11 @@ describe('an audit row says where the write came from', () => {
       const before = (h.db as any).$logStats()
       expect(before.written).toBeGreaterThan(0)
 
-      const trail = join(h.dir, 'audit', 'AuditTrail.jsonl')
-      // The appender holds an open fd, which a chmod does not touch. Swapping
-      // the path for a directory fails its inode check and then its reopen.
-      const parked = `${trail}.parked`
-      renameSync(trail, parked)
-      mkdirSync(trail)
+      const raw = new Database(join(h.dir, 'audit.db'))
+      raw.run('DROP TABLE audit_trail')
+      raw.close()
       await h.app.service('orders').create({ id: 2, status: 'new' })
       await tick(); await tick()
-      rmdirSync(trail)
-      renameSync(parked, trail)
 
       const stats = (h.db as any).$logStats()
       expect(stats.dropped).toBeGreaterThan(0)

@@ -582,7 +582,7 @@ export interface AnyLitestoneClient {
   // whole failure this interface was added to end (FJS-018).
   readonly $schema: unknown
   asSystem(): AnyLitestoneClient
-  $close(): void
+  $close(): void | Promise<void>
 }
 
 /**
@@ -638,7 +638,7 @@ export interface LitestoneClient {
   $commitments: Array<{ model: string; accessor: string; transition: string }>
   $cacheSize:  { read: number; write: number } | Record<string, { read: number; write: number }>
   $enums:      Record<string, string[]>
-  $close():    void
+  $close():    void | Promise<void>
   /**
    * Is this a valid where key? Ask before you query — for a boundary that can
    * answer 400 rather than the ORM's warn-on-read / throw-on-write. An unknown

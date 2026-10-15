@@ -1,5 +1,5 @@
 /// schema.lite — Litestone example schema
-/// Demonstrates: multi-DB, JSONL, logger driver, row-level policies,
+/// Demonstrates: multi-DB, a SQL request log, a SQL audit trail, row-level policies,
 ///               field-level @allow, enums, functions, generated columns,
 ///               soft delete, FTS5, relations, gates
 ///
@@ -13,8 +13,8 @@
 //
 //   main       — core app database (accounts, users, products, etc.)
 //   analytics  — separate SQLite database for aggregated metrics
-//   logs       — JSONL append-only request log (no migrations, just write)
-//   audit      — logger driver, auto-managed schema, all @@trail / @trail writes here
+//   logs       — request log; `retention 30d` prunes it on startup
+//   audit      — the AuditTrail table, all @@trail / @trail writes here (FJS-D936)
 
 database main {
   path env("MAIN_DB_PATH", "./example.db")
@@ -25,16 +25,19 @@ database analytics {
 }
 
 database logs {
-  path      env("LOGS_PATH", "./logs/")
-  driver    jsonl
+  path      env("LOGS_PATH", "./logs.db")
   retention 30d
 }
 
+import "@frontierjs/litestone/references/AuditTrail.lite"
+
 database audit {
-  path      env("AUDIT_PATH", "./audit/")
-  driver    trail
+  path      env("AUDIT_PATH", "./audit.db")
   retention 90d
+  model     AuditTrail
 }
+
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -241,12 +244,11 @@ model DailyStat {
   @@allow('read', auth() != null)
 }
 
-// ─── Request log — JSONL database ─────────────────────────────────────────────
-// Append-only HTTP request log. No migrations needed — JSONL driver manages files.
+// ─── Request log — its own SQLite database ────────────────────────────────────
 // retention 30d prunes rows older than 30 days on startup.
-// Writes append to ./logs/apiRequest.jsonl
 
 model ApiRequest {
+  id        Int      @id @default(autoincrement())
   method    String
   path      String
   status    Int
@@ -262,6 +264,6 @@ model ApiRequest {
 }
 
 // ─── Audit log — trail database ─────────────────────────────────────────────
-// driver trail auto-creates auditTrail in audit.db with the unified log shape.
+// AuditTrail carries the unified log shape (references/AuditTrail.lite).
 // User model writes here via @secret (expands to @trail(audit)) and @@trail(audit).
 // Query via: db.auditTrail.findMany({ where: { model: 'User' } })

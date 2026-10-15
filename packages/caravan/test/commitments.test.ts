@@ -26,6 +26,7 @@ import { outbox }        from '../../junction/src/plugins/outbox/index.ts'
 import type { CommitmentHook } from '../../junction/src/plugins/commitments/index.ts'
 import type { App }      from '../../junction/index.ts'
 import { createCaravan } from '../src/index.ts'
+import { auditDatabase } from './audit-trail-model.ts'
 
 const SCHEMA = `
 database main { path "./app.db" }
@@ -163,7 +164,7 @@ describe('a due row is transitioned', () => {
     const dir    = mkdtempSync(join(tmpdir(), 'fjs-commit-audit-'))
     const logged = SCHEMA
       .replace('database main { path "./app.db" }',
-        `database main { path "./app.db" }\ndatabase audit { path "${dir}/audit/" driver trail }`)
+        `database main { path "./app.db" }\n${auditDatabase(dir)}`)
       .replace('@@db(main)', '@@db(main)\n  @@trail(audit)')
     const { app, db, advance, status } = await started(logged)
     const order = await db.order.create({ data: {} })

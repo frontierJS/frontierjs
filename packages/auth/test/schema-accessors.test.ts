@@ -25,13 +25,17 @@ import { join } from 'path'
 import { authSchemaFragments, authUserModel, authMachineryModels, retargetDb } from '../schema.ts'
 import { parse } from '@frontierjs/litestone/parser'
 import { modelToAccessor } from '@frontierjs/litestone/ddl'
+import { auditDatabase } from './audit-trail-model.ts'
 
 // The fragments are injected into a host schema; @@db(main) and @@trail(audit)
 // can't resolve standalone.
 const PREAMBLE = `
 database main  { path "./app.db" }
-database audit { path "./audit/"; driver trail; retention 90d }
+${auditDatabase('.')}
 `
+
+// The host's own AuditTrail is not one of the package's models.
+const ownModels = (models: any[]) => models.filter(m => m.name !== 'AuditTrail')
 
 function parsed() {
   const result = parse(PREAMBLE + authSchemaFragments('main'))
@@ -57,7 +61,7 @@ describe('authSchemaFragments', () => {
   })
 
   test('declares the six auth models, PascalCase singular', () => {
-    const names = parsed().schema.models.map(m => m.name).sort()
+    const names = ownModels(parsed().schema!.models).map(m => m.name).sort()
     expect(names).toEqual(['Credential', 'LoginChallenge', 'OauthFlow', 'Session', 'User', 'Verification'])
   })
 })
@@ -108,7 +112,7 @@ describe('table methods', () => {
 describe('accessor consistency', () => {
 
   test('every accessor the package calls exists in the schema it ships', () => {
-    const accessors = parsed().schema.models.map(m => modelToAccessor(m.name))
+    const accessors = ownModels(parsed().schema!.models).map(m => modelToAccessor(m.name))
 
     const src = ['auth.ts', 'cleanup.ts']
       .map(f => readFileSync(join(import.meta.dir, '..', f), 'utf8'))
@@ -147,7 +151,7 @@ describe('accessor consistency', () => {
 const modelsIn = (source: string) => {
   const result = parse(PREAMBLE + source)
   expect(result.errors ?? []).toEqual([])
-  return (result.schema as any).models as any[]
+  return ownModels((result.schema as any).models)
 }
 
 const gateOf = (model: any) => model.attributes.find((a: any) => a.kind === 'gate')?.value

@@ -11,6 +11,8 @@
   import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
+  import { palm } from '@/pieces/growth.js'
+  import { deck } from '@/pieces/water.js'
   import { ferry, FERRY, GANGWAY, hull } from '@/pieces/ferry.js'
   import { plank } from '@/pieces/plank.js'
 
@@ -42,23 +44,7 @@
   const sea   = block('sea', 'sea', '~', 'b')
   const beach = block('beach', 'beach', '.', 's', { floor: true })
 
-  const jetty = piece('jetty', [...Array(JETTY.h)].map(() => '='.repeat(JETTY.w)).join('\n'),
-    [...Array(JETTY.h)].map(() => 'u'.repeat(JETTY.w)).join('\n'), { floor: true })
-
-  // The fronds are in the air and walked under; the trunk is a wall.
-  const palm = piece('palm', String.raw`
-.-\|/-.
-  /|\
-   )
-   (
-  _)_
-`, String.raw`
-TTTTTTT
-  TTT
-   u
-   u
-  uuu
-`, { overhead: 2 })
+  const jetty = deck('jetty', JETTY.w, JETTY.h)
 
   const lighthouse = piece('lighthouse', String.raw`
  .-.

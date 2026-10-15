@@ -93,7 +93,7 @@ import { refuseUntrustedSchema } from './untrusted.js'
 import {
   checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter, defer,
 } from './hooks.js'
-import { makeLoggerAutoModel, trailModelName, buildLogMap, buildLogEntry, trailRowValues, fireLog, flushPendingLogs } from './audit-log.js'
+import { makeLoggerAutoModel, trailModelName, buildLogMap, buildLogEntry, trailRowValues, fireLog, drainPendingLogs } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
 // tools import it from here.
 export { buildRelationMap } from './schema-maps.js'
@@ -12096,11 +12096,14 @@ function makeLockPrimitive(rawWriteDb) {
     const dbName  = opts.database ?? loggers[0]
 
     if (!dbName)
-      throw new Error(`$audit: no database in this schema declares 'driver trail', so there is nowhere to write.`)
+      throw new Error(`$audit: no database in this schema declares an audit trail, so there is nowhere to write.`)
     if (!loggers.includes(dbName))
       throw new Error(`$audit: '${dbName}' is not a trail database. Declared: ${loggers.join(', ') || 'none'}.`)
 
-    const table = jsonlTableCache[ctx.trailDbMap[dbName].trailModel ?? trailModelName(dbName)]
+    const target = ctx.trailDbMap[dbName]
+    const table  = target.kind === 'sql'
+      ? ctx.sqlLogTableFor(target.trailModel)
+      : jsonlTableCache[target.trailModel ?? trailModelName(dbName)]
     if (!table) throw new Error(`$audit: the log table for '${dbName}' is not available.`)
 
     // The column holds the MODEL name for a @@trail write, so an event naming
@@ -13154,9 +13157,17 @@ function makeLockPrimitive(rawWriteDb) {
     return (t === 'Int' || t === 'BigInt' || t === 'Float') ? Number(raw) : raw
   }
 
+  // Synchronous unless a trail write is still in flight: a SQL trail's INSERT
+  // runs through the table pipeline and lands microtasks after it starts, so
+  // closing first would arm the closed-client throw under it (`FJS-2914`). Then
+  // it returns a promise a caller may await.
   function _closeAll() {
     _retentionStopped = true
-    flushPendingLogs()   // a queued audit line appends before its table closes
+    const draining = drainPendingLogs()   // a queued audit line lands before its table closes
+    return draining ? draining.then(_teardown) : _teardown()
+  }
+
+  function _teardown() {
     stopCrossProcessWatch()
     for (const a of _attached) {
       try { rawWriteDb.prepare(`DETACH DATABASE "${a}"`).run() } catch {}
@@ -13259,7 +13270,7 @@ function makeLockPrimitive(rawWriteDb) {
           migrationsDir: absSchema ? join(dirname(absSchema), 'migrations') : null,
         }
       }
-      if (prop === '$databases')      return Object.fromEntries(Object.entries(dbRegistry).map(([k, v]) => [k, { driver: v.driver, access: v.access, path: v.absPath }]))
+      if (prop === '$databases')      return Object.fromEntries(Object.entries(dbRegistry).map(([k, v]) => [k, { driver: v.driver, access: v.access, path: v.absPath, trailModel: v.trailModel }]))
       if (prop === '$rawDbs')         return Object.fromEntries(Object.entries(dbRegistry).map(([k, v]) => [k, v.rawWriteDb ?? null]))
       if (prop === '$db')             return rawWriteDb
       if (prop === '$tapQuery')       return (fn) => { ctx._queryListeners.add(fn); return () => ctx._queryListeners.delete(fn) }

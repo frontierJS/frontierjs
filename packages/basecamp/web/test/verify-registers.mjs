@@ -88,7 +88,7 @@ const DB        = join(SCRATCH, 'basecamp.db')
 const WORKBENCH = join(SCRATCH, 'workbench')
 const PROMPT    = join(SCRATCH, 'prompt.txt')
 const ARGV      = join(SCRATCH, 'argv.json')
-const dbEnv     = { DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit/') }
+const dbEnv     = { DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit.db') }
 
 const FAKE_CLAUDE = join(SCRATCH, 'fake-claude')
 writeFileSync(FAKE_CLAUDE, `#!/usr/bin/env node

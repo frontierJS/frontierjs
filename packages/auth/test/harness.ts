@@ -14,6 +14,7 @@ import { join } from 'path'
 import { authSchemaFragments } from '../schema.ts'
 import { createLitestoneAuth } from '../auth.ts'
 import type { LitestoneAuthOptions } from '../types.ts'
+import { auditDatabase } from './audit-trail-model.ts'
 
 // 64 hex chars = 32 bytes. Test-only.
 export const TEST_KEY =
@@ -64,7 +65,7 @@ export async function makeAuth(
 
   const source = `
 database main  { path "${dbPath}" }
-database audit { path "${dir}/audit/"; driver trail; retention 90d }
+${auditDatabase(dir)}
 ` + authSchemaFragments('main')
 
   const parsed = parse(source)

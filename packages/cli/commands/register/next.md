@@ -38,7 +38,8 @@ const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/register
 // package or a surface means the project's registers.
 const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 const sev  = flag.sev ? flag.sev.split(',').map(s => s.trim().replace(/^s(\d)$/, 'S$1')).filter(Boolean) : null
-const out  = rankNext(root, { pkg: flag.pkg || null, sev })
+const pkg  = flag.pkg ? String(flag.pkg).split(',').map(s => s.trim()).filter(Boolean) : null
+const out  = rankNext(root, { pkg, sev })
 
 if (flag.json) {
   echo(JSON.stringify(out, null, 2))
@@ -46,7 +47,7 @@ if (flag.json) {
 }
 
 const limit = Math.max(1, Number.parseInt(flag.limit ?? '10', 10) || 10)
-const scope = (flag.pkg ? ` in ${flag.pkg}` : '') + (sev ? ` at ${sev.join(', ')}` : '')
+const scope = (pkg ? ` in ${pkg.join(', ')}` : '') + (sev ? ` at ${sev.join(', ')}` : '')
 
 echo('')
 echo(`  fli register:next — ${out.ready.length} ready${scope} · ${out.blocked.length} blocked · ${out.decide.decidable} to decide`)

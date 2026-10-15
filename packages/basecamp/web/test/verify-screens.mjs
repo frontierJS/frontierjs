@@ -78,7 +78,7 @@ const DB      = join(SCRATCH, 'basecamp.db')
 // drive used to do: `database main` moved here and `database audit` followed
 // the CWD, which is `PKG`, so every audit row 83 checks generate landed in the
 // developer's own `db/audit/` and nothing failed either way (`FJS-633`).
-const AUDIT   = join(SCRATCH, 'audit/')
+const AUDIT   = join(SCRATCH, 'audit.db')
 
 console.log('\nBasecamp — the screens\n')
 console.log(`  seeding ${DB}`)

@@ -1,6 +1,9 @@
 // drivers/jsonl-index.js — the SQLite sidecar beside a .jsonl file, and the
 // lock that says who may change that file.
 //
+// NOT IN USE UNTIL FURTHER NOTICE (FJS-D936). The jsonl driver is its only caller. Parked, never deleted:
+// no schema declares `driver jsonl` or `driver trail`, and a parse warns on one.
+//
 // It is one module because TWO callers need it and they are not each other's:
 // the driver appends and reads through it, and `core/retention.js` compacts
 // through it. Compaction previously reached the sidecar the only way it could

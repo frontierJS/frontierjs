@@ -201,7 +201,7 @@ console.log(`  seeding ${DB}`)
 
 const seed = spawn('bun', ['db/seed.js'], {
   cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'],
-  env: { ...process.env, DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit/') },
+  env: { ...process.env, DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit.db') },
 })
 let seedErr = ''
 seed.stderr.on('data', d => { seedErr += d })
@@ -258,7 +258,7 @@ const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
   env: {
     ...process.env,
-    DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: join(SCRATCH, 'audit/'),
+    DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: join(SCRATCH, 'audit.db'),
     // What points the connector at the stand-in. Loopback, so `sendVia`'s
     // spend guard allows the POST without `ALLOW_CLOUD_SPEND` — which is the
     // guard's own claim and is asserted below rather than assumed.

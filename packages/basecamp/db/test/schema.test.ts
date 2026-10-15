@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { parseFile, generateDDL, createClient, GatePlugin, LEVELS, listMigrationFiles } from '../../../litestone/src/index.js'
+import { parseFile, generateDDLForDatabase, createClient, GatePlugin, LEVELS, listMigrationFiles } from '../../../litestone/src/index.js'
 import { createTestEnv } from '../../../litestone/src/testing.js'
 import { introspect }     from '../../../litestone/src/core/migrate.js'
 // The app's own resolver, not a stand-in. A gate test against a hand-written
@@ -121,27 +121,19 @@ function scratchDir(label: string): string {
 }
 
 /**
- * The rows a @@trail(audit) write produces, once they are on disk.
- *
- * POLLED, not slept. The writer buffers ~1s and a fixed wait against that is a
- * coin toss under load — this file failed once in a full run and passed on its
- * own immediately after, which is the worst way for a test to be wrong. Waits
- * for the rows the assertions are about, and gives up after ten seconds so a
- * genuine failure is still a failure. Every caller states a timeout above that.
+ * The rows a @@trail(audit) write produces. An entry lands one tick after its
+ * write, so this POLLS for the rows the assertions are about rather than
+ * sleeping a fixed time, and gives up after ten seconds so a genuine failure is
+ * still a failure. Every caller states a timeout above that.
  */
-async function auditEntries(dir: string, model: string, ops: string[]): Promise<any[]> {
-  const file = join(dir, 'AuditTrail.jsonl')
-  const read = () => {
-    try {
-      return readFileSync(file, 'utf8').trim().split('\n')
-        .filter(Boolean).map(l => JSON.parse(l)).filter((e: any) => e.model === model)
-    } catch { return [] }
-  }
+async function auditEntries(db: any, model: string, ops: string[]): Promise<any[]> {
+  const read = async () =>
+    (await db.asSystem().auditTrail.findMany({ where: { model } })) as any[]
   const deadline = Date.now() + 10_000
-  let entries = read()
+  let entries = await read()
   while (Date.now() < deadline && !ops.every(op => entries.some((e: any) => e.operation === op))) {
-    await new Promise(r => setTimeout(r, 100))
-    entries = read()
+    await new Promise(r => setTimeout(r, 50))
+    entries = await read()
   }
   return entries
 }
@@ -303,7 +295,17 @@ describe('generated migration', () => {
     // Same comparison `bun run db:check` makes — a hand-edit to the SQL fails here.
     const r      = parseFile(SCHEMA)
     const onDisk = readFileSync(MIGRATION, 'utf8')
-    expect(onDisk).toContain(generateDDL(r.schema))
+    expect(onDisk).toContain(generateDDLForDatabase(r.schema, 'main'))
+  })
+
+  test('the audit database has its own migration', () => {
+    // `migrate apply` reads each declared database from its own directory, so
+    // a trail table generated into the main file never reaches audit.db.
+    const r     = parseFile(SCHEMA)
+    const dir   = join(MIGRATIONS, 'audit')
+    const files = listMigrationFiles(dir)
+    expect(files.length).toBeGreaterThan(0)
+    expect(readFileSync(join(dir, files[0]), 'utf8')).toContain(generateDDLForDatabase(r.schema, 'audit'))
   })
 
   test('applies to a fresh database — 67 tables, FK-clean, all STRICT', () => {
@@ -367,7 +369,7 @@ describe('generated migration', () => {
   }, 30_000)
 
   test('the database the migrations build is the one schema.lite declares', async () => {
-    // The text check above compares the initial migration against generateDDL,
+    // The text check above compares the initial migration against generateDDLForDatabase,
     // which stops meaning anything the moment a second migration file exists —
     // a concatenation of two files does not contain the whole current DDL.
     // This asks the durable question instead: build a database each way and
@@ -458,7 +460,7 @@ describe('audit logging', () => {
   test('records that a secret was written without recording the secret', async () => {
     const auditDir = scratchDir('audit')
 
-    const db  = await client({ databases: { audit: { path: auditDir } } })
+    const db  = await client({ databases: { audit: { path: join(auditDir, 'audit.db') } } })
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
 
@@ -467,12 +469,9 @@ describe('audit logging', () => {
     })
     await sys.secret.update({ where: { id: s.id }, data: { data: '{"priv":"ROTATED-CANARY"}' } })
 
-    const entries = await auditEntries(auditDir, 'Secret',['create', 'update'])
+    const entries = await auditEntries(db, 'Secret', ['create', 'update'])
+    const log = JSON.stringify(await db.asSystem().auditTrail.findMany())
     db.$close()
-
-    const file = join(auditDir, 'AuditTrail.jsonl')
-    expect(existsSync(file)).toBe(true)
-    const log = readFileSync(file, 'utf8')
 
     // The access is recorded …
     expect(entries.map(e => e.operation)).toContain('create')
@@ -1587,7 +1586,7 @@ describe('ApiKey — the token Basecamp issues', () => {
     // and the hint is not a secret, so unlike Secret.data it may appear.
     const auditDir = scratchDir('audit-apikey')
 
-    const db  = await client({ databases: { audit: { path: auditDir } } })
+    const db  = await client({ databases: { audit: { path: join(auditDir, 'audit.db') } } })
     const sys = db.asSystem() as any
     const { key } = await seedKey(sys)
     await sys.apiKey.update({
@@ -1595,7 +1594,7 @@ describe('ApiKey — the token Basecamp issues', () => {
       data:  { revokedAt: new Date().toISOString(), credentialId: null },
     })
 
-    const entries = await auditEntries(auditDir, 'ApiKey',['create', 'update'])
+    const entries = await auditEntries(db, 'ApiKey', ['create', 'update'])
 
     db.$close()
     expect(entries.map(e => e.operation)).toContain('create')

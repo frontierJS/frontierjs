@@ -42,7 +42,7 @@ async function runSeed(dir: string, args: string[] = []): Promise<{ code: number
     cwd:   dir,
     env:   { ...process.env,
              DATABASE_URL: join(dir, 'db', 'basecamp.db'),
-             AUDIT_PATH:   join(dir, 'db', 'audit/') },
+             AUDIT_PATH:   join(dir, 'db', 'audit.db') },
     stdout: 'pipe',
     stderr: 'pipe',
   })

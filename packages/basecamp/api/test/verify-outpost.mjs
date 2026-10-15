@@ -63,7 +63,7 @@ let container  = null
 const ENV = {
   ...process.env,
   DATABASE_URL: join(SCRATCH, 'basecamp.db'),
-  AUDIT_PATH:   join(SCRATCH, 'audit/'),
+  AUDIT_PATH:   join(SCRATCH, 'audit.db'),
   PORT:         String(API_PORT),
   BASECAMP_URL: API,
   OUTPOST_CADDY_ADMIN: `http://127.0.0.1:${CADDY}`,

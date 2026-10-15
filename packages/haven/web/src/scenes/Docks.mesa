@@ -19,6 +19,7 @@
   import { plank }  from '@/pieces/plank.js'
   import { signpost, sign } from '@/pieces/signpost.js'
   import { ferry, FERRY, GANGWAY, hull } from '@/pieces/ferry.js'
+  import { water as makeWater, deck, bollard } from '@/pieces/water.js'
 
   // The water is one block with the pier, the ferry and its plank cut out of
   // it, since a cell has one owner; `BOAT` and `PLANK` are where the tree
@@ -30,18 +31,13 @@
   const dry = (x, y) => (y < 9 + PIER.rows && x >= PIER.x && x < PIER.x + PIER.w)
     || (y === PLANK.y && x >= PLANK.x && x < PLANK.x + PLANK.w)
     || aboard(x, y)
-  const rows = [...Array(16)].map((_, dy) => [...Array(92)].map((_, dx) => dry(3 + dx, 9 + dy) ? ' ' : '~').join(''))
-  const water = piece('water', rows.join('\n'), rows.map((r) => r.replace(/~/g, 'b')).join('\n'))
+  const water = makeWater(92, 16, (dx, dy) => dry(3 + dx, 9 + dy))
 
   const quay = (width) => piece('quay', '_'.repeat(width), 'q'.repeat(width))
   const quayW = quay(43)
   const quayE = quay(41)
 
-  const pier = piece('pier', [...Array(PIER.rows)].map(() => '='.repeat(PIER.w)).join('\n'),
-    [...Array(PIER.rows)].map(() => 'u'.repeat(PIER.w)).join('\n'),
-    { floor: true, crumbles: { ch: '~', key: 'b' } })
-
-  const bollard = piece('bollard', 'o', 'q')
+  const pier = deck('pier', PIER.w, PIER.rows, { crumbles: { ch: '~', key: 'b' } })
 
   const PALETTE = {
     f: { fg: '#6b7280' },

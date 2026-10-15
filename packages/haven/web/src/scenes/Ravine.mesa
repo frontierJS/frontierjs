@@ -15,6 +15,13 @@
   import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
+  import { campfire } from '@/pieces/campfire.js'
+  import { telescope } from '@/pieces/camp.js'
+  import { fence } from '@/pieces/town.js'
+  import { juniper } from '@/pieces/growth.js'
+  import { boulder } from '@/pieces/stone.js'
+
+  const railing = fence(7, 'e')
 
   // The canyon is one wall from the far rim to the near one. Each band is a
   // row, so a band's letter is its row's: a glyph moved off its row takes the
@@ -85,9 +92,7 @@ KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK
   // reads the piece a cast lands in (`api/src/fishing.ts`, `WATER`).
   const river = piece('river', '~'.repeat(94) + '\n' + '~'.repeat(94), 'w'.repeat(94) + '\n' + 'w'.repeat(94))
 
-  const fire = piece('fire', '^', 'h')
-
-  const sign = piece('sign', String.raw`
+  const signboard = piece('signboard', String.raw`
  ____________
 | THE RAVINE |
  '-||----||-'
@@ -105,32 +110,6 @@ eeeeeee
    l
 `, { floor: true })
 
-  const telescope = piece('telescope', String.raw`
- __
-[__]>
-  |
- /|\
-`, String.raw`
- qq
-qqqqq
-  q
- qqq
-`)
-
-  const railing = piece('railing', '|--'.repeat(7) + '|', 'e'.repeat(22))
-
-  const juniper = piece('juniper', String.raw`
- .%%.
-(%%%%)
-  ||
-`, String.raw`
- jJJj
-jJJJJj
-  uu
-`)
-
-  const boulder = piece('boulder', '(__)', 'bbbb')
-
   const PALETTE = {
     f: { fg: '#6b7280' },
     K: { fg: ['#f5deb3', '#fbe7c6', '#f5deb3', '#eed2a0'], ms: 2500, wave: true },
@@ -143,7 +122,6 @@ jJJJJj
     w: { fg: ['#0f766e', '#14b8a6', '#0d9488'], chars: '~-~', ms: 400, wave: true },
     n: { fg: '#e7c48a' },
     o: { fg: ['#a16207', '#854d0e', '#a16207'], ms: 2000, wave: true },
-    h: { fg: ['#f97316', '#fb923c', '#fde047', '#fb923c'], ms: 300, flicker: true, light: 3 },
     d: { fg: '#92400e' },
     s: { fg: '#fbbf24' },
     e: { fg: '#a16207' },
@@ -162,8 +140,8 @@ jJJJJj
   <Piece of={canyon} x={2} y={1} />
   <Piece of={river} x={2} y={11} />
   <Piece of={trail} x={2} y={13} />
-  <Piece of={fire} x={24} y={13} />
-  <Piece of={sign} x={8} y={20} />
+  <Piece of={campfire} x={24} y={13} />
+  <Piece of={signboard} x={8} y={20} />
   <Piece of={juniper} x={26} y={21} />
   <Piece of={boulder} x={36} y={22} />
   <Piece of={trailhead} x={48} y={20} />

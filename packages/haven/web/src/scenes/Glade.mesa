@@ -15,31 +15,8 @@
   import { frame } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
   import { shroom } from '@/pieces/shroom.js'
-
-  // The canopy is in the air and walked under; the trunk is a wall. The
-  // night door is on the trunk's foot, its fourteenth column, with floor
-  // under it to stand on coming up.
-  const oak = piece('oak', String.raw`
-        .&&&&&&&&&&.
-    .&&&&&&&&&&&&&&&&&&.
-  (&&&&&&&&&&&&&&&&&&&&&&)
- (&&&&&&&&&&&&&&&&&&&&&&&&)
-  '&&&&&&&&&&&&&&&&&&&&&&'
-     '&&&&&&||||&&&&&&'
-            ||||
-            ||||
-          _/||||\_
-`, String.raw`
-        tTTTTTTTTTTt
-    tTTTTTTTTTTTTTTTTTTt
-  tTTTTTTTTTTTTTTTTTTTTTTt
- tTTTTTTTTTTTTTTTTTTTTTTTTt
-  tTTTTTTTTTTTTTTTTTTTTTTt
-     tTTTTTTuuuuTTTTTTt
-            uuuu
-            uuuu
-          uuuuuuuu
-`, { overhead: 5 })
+  import { oak } from '@/pieces/growth.js'
+  import { stone } from '@/pieces/stone.js'
 
   const pond = piece('pond', String.raw`
    .-~~~~~~~~~~~~-.
@@ -53,16 +30,6 @@
 sbbbbbbbbbbbbbbbbbbbbs
  sbbbbbbbbbbbbbbbbbbs
    sbbbbbbbbbbbbbbs
-`)
-
-  const stone = piece('stone', String.raw`
- _
-| |
-|_|
-`, String.raw`
- s
-s s
-sss
 `)
 
   const PALETTE = {

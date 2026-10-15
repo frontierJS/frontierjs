@@ -123,7 +123,7 @@ export function createLitestoneAuth(
 
   const hasAuditLog = (() => {
     try {
-      return Object.values(db.$databases ?? {}).some((d: any) => d?.driver === 'trail')
+      return Object.values(db.$databases ?? {}).some((d: any) => d?.driver === 'trail' || d?.trailModel)
     } catch {
       // A Litestone client THROWS on an unknown property, so feature-detection
       // is itself a throwing expression on an older client.

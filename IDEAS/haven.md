@@ -1684,28 +1684,64 @@ scene that wants one has it.
   - `lantern` was already the dark scene's prop, which `stage.js` called
     "sight, not a lamp"; the prop is `sight={r}` now, so the word means one
     thing (owner's call).
-- [ ] 17.3 One name per thing: each piece in 17.1's list of namesakes is named
+- [x] 17.3 One name per thing: each piece in 17.1's list of namesakes is named
   for what it is (`wagon`, `minecart`, `wine rack`, `gun rack`, …), so a
   catalog key never means two drawings. `hedge` is a wall; Lane's that is
   walked through is a different piece or a bug, read from its scene first.
-- [ ] 17.4 Indoors. Furniture: `stool`, `chair`, `armchair` and `couch`
+  - Two things under one name, renamed: Road's `wagon`, Mine's `minecart`,
+    Market's `fruit-cart`; the cellar's `wine-rack`, Sheriff's `gun-rack` and
+    `pieces/home.js`'s `serverRack` (Jordan's, a third `rack` 17.1 missed);
+    Canal's vault `pillar` (the docks keep `pier`); Ravine's `signboard`
+    beside `signpost.js`'s `sign`. Every `*.frame.txt` is unchanged; each
+    `world.json` carries the new ids.
+  - Lane's hedge was the bug the square's had (`FJS-2875`): its gaps sit
+    under the cottage doors, so it meant a wall. One `pieces/hedge.js`, a
+    wall painting `G`, which each scene names (`<Row>` stamps no piece
+    palette); Lane's `world.json` now walls row 11 between the gaps.
+  - One thing drawn several ways keeps its name, since the name is right and
+    the drawings are the twins: `hearth` (Tavern, Sheriff, Lodge), `rug`
+    (Tavern, `home.js`), `bar` (Lodge, `pieces/bar.js`), `armchair` (Lodge,
+    `home.js`), `pond` (Glade, `home.js`), `water` (Canal, Docks) and the
+    square's four `house` fronts. `fishing.ts` reads `water` and `pond` by
+    name as a kind. Folding each into one sized piece is 17.4 or 17.5, which
+    list them. Bearskin and cowhide never shared a name.
+- [x] 17.4 Indoors. Furniture: `stool`, `chair`, `armchair` and `couch`
   (Lodge's), `cot` (Sheriff's), `bed`, `desk`, `counter`. Storage: `shelves`
   (Tavern's), `bookcase`, `chest` (the cellar's), `crates` (the cellar's
   stack), `wardrobe`. On a wall: `window` (Lodge's, by season), `poster`
-  (Sheriff's), `painting`, `neon` (Lodge's), `clock`. Sized: `rug(w, h)`,
-  `stage(w, h)` (Upstairs' boards), `hearth(w)`. The rest: `jukebox` (Lodge's),
-  `piano`, `potted plant`, `stove`, `bucket` (Sheriff's), `trapdoor` (a floor
-  piece under a `<Door>`).
+  (Sheriff's), `painting`, `neon` (Lodge's), `clock`. Sized: `rug(w, h)`
+  (Tavern's and the homes'), `stage(w, h)` (Upstairs' boards), `hearth(w)`
+  (Tavern's, Sheriff's, Lodge's), `bar(stools)` (Lodge's and `pieces/bar.js`).
+  The rest: `jukebox` (Lodge's), `piano`, `potted plant`, `stove`, `bucket`
+  (Sheriff's), `trapdoor` (a floor piece under a `<Door>`).
+  - Moved, every `*.frame.txt` and `*.world.json` unchanged: `pieces/storage.js`
+    (`shelves`, `wineRack`, `crates`, `chest`, `gunRack`), `pieces/wall.js`
+    (`window`, `poster(face, inks, sum)`, `neon`) and `pieces/furniture.js`
+    (`couch`, `cot`, `bucket`, `jukebox`, `rug(w, h, marks)` -- the tavern's
+    two ornaments are `marks`, the homes' is `homeRug` in `home.js`). `inked`
+    and `seats` live in `pieces/index.js`, one copy for Lodge and Sheriff.
+  - Not moved: `bookcase`, `potted plant` and `stove` are `home.js`'s
+    `bookshelf`, `plant` and `stove` already; `stool`, `chair`, `counter`,
+    `wardrobe`, `painting`, `clock`, `piano` and `trapdoor` no scene places yet.
+    `stage(w, h)` is Upstairs' boards, cut round the band's cells, so it stays
+    with the band.
+  - Kept scene-local (owner's call): three `hearth`s (Tavern 27 wide with a
+    crest, Sheriff 18, Lodge 32 in fieldstone with a moose), two `bar`s
+    (Lodge's carries taps and glasses over a counter) and two `armchair`s
+    (Lodge's `.[__].` club chair with a seat, Colin's wing chair). One sized
+    piece each would redraw a picture, and 17.7 compares art, so a shared
+    name over different drawings does not trip it.
 - [ ] 17.5 Out of doors. Lights: `torch`, `brazier`, `campfire` (Ravine's
   `fire`). Growing: the tree's kinds — `oak` (Glade's), `palm` (Island's),
   `juniper` (Ravine's), `cactus` (Sheriff's) — `stump` and `log` (Woods'),
   `bush`, `reeds`. Stone: `rock(size)` for Mine's `rock`, Glade's `stone` and
-  Ravine's `boulder`. Water: `water(w, h)` for Canal's and Docks', `bridge`,
-  `bollard` (Docks'), `rowboat` (Canal's `boat`). Town: `well` (Square's),
-  `fence(w)` (Road's), `gate`, `milestone` (Road's), `stall` (Square's and
-  Market's), `fountain`, `flag` (Range's). Work: `bales` (Range's),
-  `woodpile` (Lodge's `firewood`), `rails(w)` (Mine's), `wheelbarrow`,
-  `scarecrow`. Camp: `tent`, `bedroll`, `telescope` (Ravine's).
+  Ravine's `boulder`. Water: `water(w, h)` for Canal's and Docks',
+  `pond(size)` for Glade's and the lane's, `bridge`, `bollard` (Docks'),
+  `rowboat` (Canal's `boat`). Town: `house(sign)` (the square's four fronts),
+  `well` (Square's), `fence(w)` (Road's), `gate`, `milestone` (Road's),
+  `stall` (Square's and Market's), `fountain`, `flag` (Range's). Work: `bales`
+  (Range's), `woodpile` (Lodge's `firewood`), `rails(w)` (Mine's),
+  `wheelbarrow`, `scarecrow`. Camp: `tent`, `bedroll`, `telescope` (Ravine's).
 - [ ] 17.6 What grows has seasons: `hedge`, `bush` and `flower` each stand on
   the same cells in every season, as `tree` does (`checkSeasons`).
 - [ ] 17.7 A twin is refused: `scenes.test.js` fails a scene-local piece whose

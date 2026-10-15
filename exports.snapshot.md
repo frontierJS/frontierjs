@@ -219,7 +219,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./transform (import)` | `src/transform/framework.js` | yes |
 | exports | `./transform (types)` | `src/transform/framework.d.ts` | yes |
 | exports | `./external-ref (import)` | `src/plugins/external-ref.js` | yes |
-| exports | `./references/*` | `references/*` | 11 files |
+| exports | `./references/*` | `references/*` | 12 files |
 | bin | `litestone` | `src/tools/cli.js` | yes |
 | main | `main` | `src/index.js` | yes |
 | types | `types` | `src/index.d.ts` | yes |

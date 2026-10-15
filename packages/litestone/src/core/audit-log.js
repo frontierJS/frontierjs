@@ -303,6 +303,7 @@ export function trailRowValues(entry) {
 // purpose is being there afterwards, so the first loss per log table says so.
 // Once, because the failure that produces one produces thousands.
 const _loggedLogFailure = new Set()
+const _inFlightLog = new Set()
 
 // The warning is once per model, because the failure that produces one produces
 // thousands. That is right for a human reading stderr and useless to anything
@@ -374,9 +375,11 @@ function writeLog(write, entries, stats, fallback) {
     )
   }
   try {
-    Promise.resolve(write())
+    const settled = Promise.resolve(write())
       .then(() => { if (stats) { stats.written += entries.length; stats.lastWrittenAt = new Date().toISOString() } })
       .catch(swallow)
+      .finally(() => _inFlightLog.delete(settled))
+    _inFlightLog.add(settled)
   }
   catch (err) { swallow(err) }   // a driver that throws before its first await
 }
@@ -386,6 +389,21 @@ function writeLog(write, entries, stats, fallback) {
 // can end on it.
 export function flushPendingLogs() {
   for (const logTable of [..._pendingLog.keys()]) flushLog(logTable)
+}
+
+// A SQL trail's `create` runs the table's pipeline, so its INSERT lands a few
+// microtasks after `flushPendingLogs` started it. A client that closes in
+// between arms its throw first, and the row is dropped with 'This Litestone
+// client is closed'. Null when nothing is in flight, so a close with no trail
+// work stays synchronous. A batch that fails retries entry by entry, and those
+// writes register while the first settles, hence the loop.
+/** @returns {Promise<void> | null} */
+export function drainPendingLogs() {
+  flushPendingLogs()
+  if (!_inFlightLog.size) return null
+  return (async () => {
+    while (_inFlightLog.size) await Promise.allSettled([..._inFlightLog])
+  })()
 }
 
 function armExitFlush() {

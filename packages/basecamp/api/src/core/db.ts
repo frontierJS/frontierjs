@@ -39,16 +39,16 @@
 // That is why the two drives disagreed — db/test/seed.test.ts gave the seeder a
 // scratch CWD and got both moved, web/test/verify-screens.mjs redirected
 // DATABASE_URL and ran with `cwd: PKG`, so its audit rows landed in the
-// developer's own db/audit/ with nothing failing either way (`FJS-633`).
+// developer's own db/audit.db with nothing failing either way (`FJS-633`).
 //
 // Anchoring is only safe once both are STATED, which is what changed: every
 // caller that redirects one now names the other. `FJS-449` is the failure that
 // made the CWD load-bearing in the first place — an anchored audit log going
-// back to the shared db/audit/ and the suite locking on it — and it cannot
+// back to the shared db/audit.db and the suite locking on it — and it cannot
 // happen to a caller that names AUDIT_PATH.
 //
 // A deployment is unaffected — it binds both absolutely (/data/basecamp.db,
-// /data/audit/) and an absolute path has no anchor.
+// /data/audit.db) and an absolute path has no anchor.
 
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'

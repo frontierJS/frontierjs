@@ -100,6 +100,22 @@ function checkSpots(piece, spots) {
   }
 }
 
+/**
+ * Paint for art that is one color, or two by glyph: every glyph in `by` takes
+ * its letter, the rest `rest`.
+ * @param {string} art
+ * @param {string} rest
+ * @param {Record<string, string>} [by]
+ */
+export const inked = (art, rest, by = {}) => art.replace(/\S/g, (c) => by[c] ?? rest)
+
+/**
+ * Solo seats on row `dy` at each of `xs`, standing up to the row `up` away --
+ * cushions face one way, so a figure stands up toward it.
+ * @param {number[]} xs
+ */
+export const seats = (xs, dy, up) => Object.fromEntries(xs.map((dx, i) => [`seat-${i}`, { kind: 'seat', dx, dy, stand: { dx, dy: dy + up }, solo: true }]))
+
 /** A piece's spots, in the order it names them: `{ name, dx, dy, … }`, only those of `kind` when one is given. */
 export function spotsOf(piece, kind) {
   return Object.entries(piece.spots ?? {}).filter(([, s]) => kind === undefined || s.kind === kind).map(([name, s]) => ({ name, ...s }))

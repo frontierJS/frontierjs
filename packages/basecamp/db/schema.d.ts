@@ -411,6 +411,10 @@ export type CredentialOrderBy =
   | { [K in keyof Omit<Credential, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Credential, never>]?: OrderDir }>
 
+export interface CredentialRelations {
+  user: User | null
+}
+
 // ─── Session ─────────────────────────────────────────────────────
 
 export interface Session {
@@ -504,6 +508,10 @@ export interface SessionWhere extends WhereBase {
 export type SessionOrderBy =
   | { [K in keyof Omit<Session, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Session, never>]?: OrderDir }>
+
+export interface SessionRelations {
+  user: User | null
+}
 
 // ─── Verification ────────────────────────────────────────────────
 
@@ -626,6 +634,9 @@ export type VerificationOrderBy =
   | { [K in keyof Omit<Verification, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Verification, never>]?: OrderDir }>
 
+export interface VerificationRelations {
+}
+
 // ─── LoginChallenge ──────────────────────────────────────────────
 
 /**
@@ -705,6 +716,9 @@ export interface LoginChallengeWhere extends WhereBase {
 export type LoginChallengeOrderBy =
   | { [K in keyof Omit<LoginChallenge, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<LoginChallenge, never>]?: OrderDir }>
+
+export interface LoginChallengeRelations {
+}
 
 // ─── OauthFlow ───────────────────────────────────────────────────
 
@@ -813,6 +827,9 @@ export type OauthFlowOrderBy =
   | { [K in keyof Omit<OauthFlow, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<OauthFlow, never>]?: OrderDir }>
 
+export interface OauthFlowRelations {
+}
+
 // ─── MetricSeries ────────────────────────────────────────────────
 
 export interface MetricSeries {
@@ -864,6 +881,11 @@ export type MetricSeriesOrderBy =
   | { [K in keyof Omit<MetricSeries, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<MetricSeries, never>]?: OrderDir }>
 
+export interface MetricSeriesRelations {
+  points: MetricPoint[]
+  hours: MetricHour[]
+}
+
 // ─── MetricPoint ─────────────────────────────────────────────────
 
 export interface MetricPoint {
@@ -896,6 +918,10 @@ export interface MetricPointWhere extends WhereBase {
 export type MetricPointOrderBy =
   | { [K in keyof Omit<MetricPoint, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<MetricPoint, never>]?: OrderDir }>
+
+export interface MetricPointRelations {
+  series: MetricSeries | null
+}
 
 // ─── MetricHour ──────────────────────────────────────────────────
 
@@ -945,6 +971,10 @@ export interface MetricHourWhere extends WhereBase {
 export type MetricHourOrderBy =
   | { [K in keyof Omit<MetricHour, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<MetricHour, never>]?: OrderDir }>
+
+export interface MetricHourRelations {
+  series: MetricSeries | null
+}
 
 // ─── Flow ────────────────────────────────────────────────────────
 
@@ -1007,6 +1037,11 @@ export type FlowOrderBy =
   | { [K in keyof Omit<Flow, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Flow, never>]?: OrderDir }>
 
+export interface FlowRelations {
+  versions: FlowVersion[]
+  layout: FlowLayout | null
+}
+
 // ─── FlowVersion ─────────────────────────────────────────────────
 
 export interface FlowVersion {
@@ -1050,6 +1085,11 @@ export type FlowVersionOrderBy =
   | { [K in keyof Omit<FlowVersion, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<FlowVersion, never>]?: OrderDir }>
 
+export interface FlowVersionRelations {
+  flow: Flow | null
+  runs: Run[]
+}
+
 // ─── FlowLayout ──────────────────────────────────────────────────
 
 export interface FlowLayout {
@@ -1084,6 +1124,10 @@ export interface FlowLayoutWhere extends WhereBase {
 export type FlowLayoutOrderBy =
   | { [K in keyof Omit<FlowLayout, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<FlowLayout, never>]?: OrderDir }>
+
+export interface FlowLayoutRelations {
+  flow: Flow | null
+}
 
 // ─── Run ─────────────────────────────────────────────────────────
 
@@ -1153,6 +1197,12 @@ export type RunOrderBy =
   | { [K in keyof Omit<Run, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Run, never>]?: OrderDir }>
 
+export interface RunRelations {
+  flowVersion: FlowVersion | null
+  steps: RunStep[]
+  waits: Wait[]
+}
+
 // ─── RunStep ─────────────────────────────────────────────────────
 
 export interface RunStep {
@@ -1218,6 +1268,10 @@ export type RunStepOrderBy =
   | { [K in keyof Omit<RunStep, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<RunStep, never>]?: OrderDir }>
 
+export interface RunStepRelations {
+  run: Run | null
+}
+
 // ─── Wait ────────────────────────────────────────────────────────
 
 export interface Wait {
@@ -1260,6 +1314,10 @@ export interface WaitWhere extends WhereBase {
 export type WaitOrderBy =
   | { [K in keyof Omit<Wait, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Wait, never>]?: OrderDir }>
+
+export interface WaitRelations {
+  run: Run | null
+}
 
 // ─── FlowCredential ──────────────────────────────────────────────
 
@@ -1323,6 +1381,9 @@ export type FlowCredentialOrderBy =
   | { [K in keyof Omit<FlowCredential, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<FlowCredential, never>]?: OrderDir }>
 
+export interface FlowCredentialRelations {
+}
+
 // ─── KvEntry ─────────────────────────────────────────────────────
 
 export interface KvEntry {
@@ -1369,6 +1430,143 @@ export interface KvEntryWhere extends WhereBase {
 export type KvEntryOrderBy =
   | { [K in keyof Omit<KvEntry, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<KvEntry, never>]?: OrderDir }>
+
+export interface KvEntryRelations {
+}
+
+// ─── AuditTrail ──────────────────────────────────────────────────
+
+export interface AuditTrail {
+  operation: string
+  model: string
+  field?: string | null
+  /**
+   * WHICH named move an update was, where it was one. Two moves between the
+   * same states write identical images; only this separates them.
+   */
+  transition?: string | null
+  records: unknown
+  /**
+   * Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed`
+   * land as `[redacted]`, `@personal` as `[personal]`.
+   */
+  before?: unknown | null
+  after?: unknown | null
+  /**
+   * Text, because the actor is whatever the host's users are keyed by; an Int
+   * key reads back as its digits in a string.
+   */
+  actorId?: string | null
+  actorType?: string | null
+  /**
+   * Support mode: `actorId` is the operator and `subjectId` the principal the
+   * boundary enforced as.
+   */
+  subjectId?: string | null
+  episodeId?: string | null
+  correlationId?: string | null
+  source?: string | null
+  origin?: string | null
+  ip?: string | null
+  userAgent?: string | null
+  tenant?: string | null
+  meta?: unknown | null
+  createdAt: string
+  id: number
+}
+
+export interface AuditTrailCreate {
+  operation: string
+  model: string
+  field?: string | null
+  /**
+   * WHICH named move an update was, where it was one. Two moves between the
+   * same states write identical images; only this separates them.
+   */
+  transition?: string | null
+  records: unknown
+  /**
+   * Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed`
+   * land as `[redacted]`, `@personal` as `[personal]`.
+   */
+  before?: unknown | null
+  after?: unknown | null
+  /**
+   * Text, because the actor is whatever the host's users are keyed by; an Int
+   * key reads back as its digits in a string.
+   */
+  actorId?: string | null
+  actorType?: string | null
+  /**
+   * Support mode: `actorId` is the operator and `subjectId` the principal the
+   * boundary enforced as.
+   */
+  subjectId?: string | null
+  episodeId?: string | null
+  correlationId?: string | null
+  source?: string | null
+  origin?: string | null
+  ip?: string | null
+  userAgent?: string | null
+  tenant?: string | null
+  meta?: unknown | null
+  id?: number
+}
+
+export interface AuditTrailUpdate {
+  operation?: string
+  model?: string
+  field?: string | null
+  transition?: string | null
+  records?: unknown
+  before?: unknown | null
+  after?: unknown | null
+  actorId?: string | null
+  actorType?: string | null
+  subjectId?: string | null
+  episodeId?: string | null
+  correlationId?: string | null
+  source?: string | null
+  origin?: string | null
+  ip?: string | null
+  userAgent?: string | null
+  tenant?: string | null
+  meta?: unknown | null
+  id?: number
+}
+
+export interface AuditTrailWhere extends WhereBase {
+  operation?: string | WhereOp<string> | null
+  model?: string | WhereOp<string> | null
+  field?: string | WhereOp<string> | null
+  transition?: string | WhereOp<string> | null
+  records?: unknown | WhereOp<unknown> | null
+  before?: unknown | WhereOp<unknown> | null
+  after?: unknown | WhereOp<unknown> | null
+  actorId?: string | WhereOp<string> | null
+  actorType?: string | WhereOp<string> | null
+  subjectId?: string | WhereOp<string> | null
+  episodeId?: string | WhereOp<string> | null
+  correlationId?: string | WhereOp<string> | null
+  source?: string | WhereOp<string> | null
+  origin?: string | WhereOp<string> | null
+  ip?: string | WhereOp<string> | null
+  userAgent?: string | WhereOp<string> | null
+  tenant?: string | WhereOp<string> | null
+  meta?: unknown | WhereOp<unknown> | null
+  createdAt?: string | WhereOp<string> | null
+  id?: number | WhereOp<number> | null
+  AND?: AuditTrailWhere[]
+  OR?:  AuditTrailWhere[]
+  NOT?: AuditTrailWhere
+}
+
+export type AuditTrailOrderBy =
+  | { [K in keyof Omit<AuditTrail, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<AuditTrail, never>]?: OrderDir }>
+
+export interface AuditTrailRelations {
+}
 
 // ─── User ────────────────────────────────────────────────────────
 
@@ -1449,6 +1647,13 @@ export type UserOrderBy =
   | { [K in keyof Omit<User, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<User, never>]?: OrderDir }>
 
+export interface UserRelations {
+  account: Account | null
+  memberships: WorkspaceMember[]
+  deployments: Deployment[]
+  apiKeys: ApiKey[]
+}
+
 // ─── Account ─────────────────────────────────────────────────────
 
 export interface Account {
@@ -1499,6 +1704,11 @@ export interface AccountWhere extends WhereBase {
 export type AccountOrderBy =
   | { [K in keyof Omit<Account, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Account, never>]?: OrderDir }>
+
+export interface AccountRelations {
+  users: User[]
+  workspaces: Workspace[]
+}
 
 // ─── Workspace ───────────────────────────────────────────────────
 
@@ -1570,6 +1780,22 @@ export interface WorkspaceWhere extends WhereBase {
 export type WorkspaceOrderBy =
   | { [K in keyof Omit<Workspace, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Workspace, never>]?: OrderDir }>
+
+export interface WorkspaceRelations {
+  account: Account | null
+  members: WorkspaceMember[]
+  invitations: Invitation[]
+  projects: Project[]
+  servers: Server[]
+  secrets: Secret[]
+  apiKeys: ApiKey[]
+  jobs: Job[]
+  alertRules: AlertRule[]
+  monitors: Monitor[]
+  channels: NotificationChannel[]
+  flags: FeatureFlag[]
+  auditEvents: AuditEvent[]
+}
 
 // ─── WorkspaceMember ─────────────────────────────────────────────
 
@@ -1652,6 +1878,11 @@ export type WorkspaceMemberOrderBy =
   | { [K in keyof Omit<WorkspaceMember, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<WorkspaceMember, never>]?: OrderDir }>
 
+export interface WorkspaceMemberRelations {
+  workspace: Workspace | null
+  user: User | null
+}
+
 // ─── Invitation ──────────────────────────────────────────────────
 
 export interface Invitation {
@@ -1705,6 +1936,10 @@ export interface InvitationWhere extends WhereBase {
 export type InvitationOrderBy =
   | { [K in keyof Omit<Invitation, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Invitation, never>]?: OrderDir }>
+
+export interface InvitationRelations {
+  workspace: Workspace | null
+}
 
 // ─── Secret ──────────────────────────────────────────────────────
 
@@ -1796,6 +2031,10 @@ export type SecretOrderBy =
   | { [K in keyof Omit<Secret, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Secret, never>]?: OrderDir }>
 
+export interface SecretRelations {
+  workspace: Workspace | null
+}
+
 // ─── ApiKey ──────────────────────────────────────────────────────
 
 export interface ApiKey {
@@ -1876,6 +2115,11 @@ export interface ApiKeyWhere extends WhereBase {
 export type ApiKeyOrderBy =
   | { [K in keyof Omit<ApiKey, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<ApiKey, never>]?: OrderDir }>
+
+export interface ApiKeyRelations {
+  workspace: Workspace | null
+  user: User | null
+}
 
 // ─── Server ──────────────────────────────────────────────────────
 
@@ -2089,6 +2333,14 @@ export type ServerOrderBy =
   | { [K in keyof Omit<Server, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Server, never>]?: OrderDir }>
 
+export interface ServerRelations {
+  workspace: Workspace | null
+  events: ServerEvent[]
+  volumes: Volume[]
+  appServers: AppServer[]
+  serverNetworks: ServerNetwork[]
+}
+
 // ─── ServerEvent ─────────────────────────────────────────────────
 
 export interface ServerEvent {
@@ -2132,6 +2384,10 @@ export type ServerEventOrderBy =
   | { [K in keyof Omit<ServerEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<ServerEvent, never>]?: OrderDir }>
 
+export interface ServerEventRelations {
+  server: Server | null
+}
+
 // ─── OutpostNonce ────────────────────────────────────────────────
 
 export interface OutpostNonce {
@@ -2160,6 +2416,9 @@ export interface OutpostNonceWhere extends WhereBase {
 export type OutpostNonceOrderBy =
   | { [K in keyof Omit<OutpostNonce, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<OutpostNonce, never>]?: OrderDir }>
+
+export interface OutpostNonceRelations {
+}
 
 // ─── Volume ──────────────────────────────────────────────────────
 
@@ -2226,6 +2485,10 @@ export type VolumeOrderBy =
   | { [K in keyof Omit<Volume, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Volume, never>]?: OrderDir }>
 
+export interface VolumeRelations {
+  server: Server | null
+}
+
 // ─── Network ─────────────────────────────────────────────────────
 
 export interface Network {
@@ -2289,6 +2552,11 @@ export type NetworkOrderBy =
   | { [K in keyof Omit<Network, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Network, never>]?: OrderDir }>
 
+export interface NetworkRelations {
+  appNetworks: AppNetwork[]
+  serverNetworks: ServerNetwork[]
+}
+
 // ─── ServerNetwork ───────────────────────────────────────────────
 
 export interface ServerNetwork {
@@ -2329,6 +2597,11 @@ export interface ServerNetworkWhere extends WhereBase {
 export type ServerNetworkOrderBy =
   | { [K in keyof Omit<ServerNetwork, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<ServerNetwork, never>]?: OrderDir }>
+
+export interface ServerNetworkRelations {
+  server: Server | null
+  network: Network | null
+}
 
 // ─── Project ─────────────────────────────────────────────────────
 
@@ -2393,6 +2666,12 @@ export type ProjectOrderBy =
   | { [K in keyof Omit<Project, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Project, never>]?: OrderDir }>
 
+export interface ProjectRelations {
+  workspace: Workspace | null
+  environments: Environment[]
+  dependencyUses: DependencyUse[]
+}
+
 // ─── Environment ─────────────────────────────────────────────────
 
 export interface Environment {
@@ -2451,6 +2730,15 @@ export interface EnvironmentWhere extends WhereBase {
 export type EnvironmentOrderBy =
   | { [K in keyof Omit<Environment, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Environment, never>]?: OrderDir }>
+
+export interface EnvironmentRelations {
+  project: Project | null
+  apps: App[]
+  deployments: Deployment[]
+  jobs: Job[]
+  flagOverrides: FlagOverride[]
+  variables: Variable[]
+}
 
 // ─── App ─────────────────────────────────────────────────────────
 
@@ -2543,6 +2831,17 @@ export type AppOrderBy =
   | { [K in keyof Omit<App, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<App, never>]?: OrderDir }>
 
+export interface AppRelations {
+  environment: Environment | null
+  blueprint: Blueprint | null
+  deployments: Deployment[]
+  jobs: Job[]
+  appServers: AppServer[]
+  appNetworks: AppNetwork[]
+  domains: Domain[]
+  variables: Variable[]
+}
+
 // ─── Variable ────────────────────────────────────────────────────
 
 export interface Variable {
@@ -2606,6 +2905,11 @@ export interface VariableWhere extends WhereBase {
 export type VariableOrderBy =
   | { [K in keyof Omit<Variable, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Variable, never>]?: OrderDir }>
+
+export interface VariableRelations {
+  environment: Environment | null
+  app: App | null
+}
 
 // ─── Domain ──────────────────────────────────────────────────────
 
@@ -2690,6 +2994,10 @@ export type DomainOrderBy =
   | { [K in keyof Omit<Domain, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Domain, never>]?: OrderDir }>
 
+export interface DomainRelations {
+  app: App | null
+}
+
 // ─── AppServer ───────────────────────────────────────────────────
 
 export interface AppServer {
@@ -2747,6 +3055,11 @@ export type AppServerOrderBy =
   | { [K in keyof Omit<AppServer, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AppServer, never>]?: OrderDir }>
 
+export interface AppServerRelations {
+  app: App | null
+  server: Server | null
+}
+
 // ─── AppNetwork ──────────────────────────────────────────────────
 
 export interface AppNetwork {
@@ -2791,6 +3104,11 @@ export interface AppNetworkWhere extends WhereBase {
 export type AppNetworkOrderBy =
   | { [K in keyof Omit<AppNetwork, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AppNetwork, never>]?: OrderDir }>
+
+export interface AppNetworkRelations {
+  app: App | null
+  network: Network | null
+}
 
 // ─── Deployment ──────────────────────────────────────────────────
 
@@ -2897,6 +3215,13 @@ export type DeploymentOrderBy =
   | { [K in keyof Omit<Deployment, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Deployment, never>]?: OrderDir }>
 
+export interface DeploymentRelations {
+  app: App | null
+  environment: Environment | null
+  triggeredByUser: User | null
+  steps: DeploymentStep[]
+}
+
 // ─── DeploymentStep ──────────────────────────────────────────────
 
 export interface DeploymentStep {
@@ -2953,6 +3278,10 @@ export interface DeploymentStepWhere extends WhereBase {
 export type DeploymentStepOrderBy =
   | { [K in keyof Omit<DeploymentStep, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<DeploymentStep, never>]?: OrderDir }>
+
+export interface DeploymentStepRelations {
+  deployment: Deployment | null
+}
 
 // ─── Job ─────────────────────────────────────────────────────────
 
@@ -3045,6 +3374,13 @@ export type JobOrderBy =
   | { [K in keyof Omit<Job, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Job, never>]?: OrderDir }>
 
+export interface JobRelations {
+  workspace: Workspace | null
+  app: App | null
+  environment: Environment | null
+  runs: JobRun[]
+}
+
 // ─── JobRun ──────────────────────────────────────────────────────
 
 export interface JobRun {
@@ -3107,6 +3443,10 @@ export interface JobRunWhere extends WhereBase {
 export type JobRunOrderBy =
   | { [K in keyof Omit<JobRun, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<JobRun, never>]?: OrderDir }>
+
+export interface JobRunRelations {
+  job: Job | null
+}
 
 // ─── Recipe ──────────────────────────────────────────────────────
 
@@ -3174,6 +3514,11 @@ export interface RecipeWhere extends WhereBase {
 export type RecipeOrderBy =
   | { [K in keyof Omit<Recipe, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Recipe, never>]?: OrderDir }>
+
+export interface RecipeRelations {
+  workspace: Workspace | null
+  runs: RecipeRun[]
+}
 
 // ─── RecipeRun ───────────────────────────────────────────────────
 
@@ -3250,6 +3595,11 @@ export type RecipeRunOrderBy =
   | { [K in keyof Omit<RecipeRun, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<RecipeRun, never>]?: OrderDir }>
 
+export interface RecipeRunRelations {
+  recipe: Recipe | null
+  server: Server | null
+}
+
 // ─── DiskUsage ───────────────────────────────────────────────────
 
 export interface DiskUsage {
@@ -3323,6 +3673,10 @@ export type DiskUsageOrderBy =
   | { [K in keyof Omit<DiskUsage, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<DiskUsage, never>]?: OrderDir }>
 
+export interface DiskUsageRelations {
+  server: Server | null
+}
+
 // ─── ServerPosture ───────────────────────────────────────────────
 
 export interface ServerPosture {
@@ -3373,6 +3727,10 @@ export interface ServerPostureWhere extends WhereBase {
 export type ServerPostureOrderBy =
   | { [K in keyof Omit<ServerPosture, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<ServerPosture, never>]?: OrderDir }>
+
+export interface ServerPostureRelations {
+  server: Server | null
+}
 
 // ─── CleanupRun ──────────────────────────────────────────────────
 
@@ -3445,6 +3803,10 @@ export type CleanupRunOrderBy =
   | { [K in keyof Omit<CleanupRun, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<CleanupRun, never>]?: OrderDir }>
 
+export interface CleanupRunRelations {
+  server: Server | null
+}
+
 // ─── FeatureFlag ─────────────────────────────────────────────────
 
 export interface FeatureFlag {
@@ -3516,6 +3878,11 @@ export type FeatureFlagOrderBy =
   | { [K in keyof Omit<FeatureFlag, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<FeatureFlag, never>]?: OrderDir }>
 
+export interface FeatureFlagRelations {
+  workspace: Workspace | null
+  overrides: FlagOverride[]
+}
+
 // ─── FlagOverride ────────────────────────────────────────────────
 
 export interface FlagOverride {
@@ -3564,6 +3931,11 @@ export interface FlagOverrideWhere extends WhereBase {
 export type FlagOverrideOrderBy =
   | { [K in keyof Omit<FlagOverride, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<FlagOverride, never>]?: OrderDir }>
+
+export interface FlagOverrideRelations {
+  flag: FeatureFlag | null
+  environment: Environment | null
+}
 
 // ─── NotificationChannel ─────────────────────────────────────────
 
@@ -3638,6 +4010,12 @@ export type NotificationChannelOrderBy =
   | { [K in keyof Omit<NotificationChannel, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<NotificationChannel, never>]?: OrderDir }>
 
+export interface NotificationChannelRelations {
+  workspace: Workspace | null
+  rules: AlertRuleChannel[]
+  monitors: MonitorChannel[]
+}
+
 // ─── AlertRule ───────────────────────────────────────────────────
 
 export interface AlertRule {
@@ -3711,6 +4089,12 @@ export type AlertRuleOrderBy =
   | { [K in keyof Omit<AlertRule, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AlertRule, never>]?: OrderDir }>
 
+export interface AlertRuleRelations {
+  workspace: Workspace | null
+  events: AlertEvent[]
+  channels: AlertRuleChannel[]
+}
+
 // ─── AlertRuleChannel ────────────────────────────────────────────
 
 export interface AlertRuleChannel {
@@ -3745,6 +4129,11 @@ export interface AlertRuleChannelWhere extends WhereBase {
 export type AlertRuleChannelOrderBy =
   | { [K in keyof Omit<AlertRuleChannel, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AlertRuleChannel, never>]?: OrderDir }>
+
+export interface AlertRuleChannelRelations {
+  rule: AlertRule | null
+  channel: NotificationChannel | null
+}
 
 // ─── AlertEvent ──────────────────────────────────────────────────
 
@@ -3814,6 +4203,10 @@ export interface AlertEventWhere extends WhereBase {
 export type AlertEventOrderBy =
   | { [K in keyof Omit<AlertEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AlertEvent, never>]?: OrderDir }>
+
+export interface AlertEventRelations {
+  rule: AlertRule | null
+}
 
 // ─── Monitor ─────────────────────────────────────────────────────
 
@@ -3932,6 +4325,13 @@ export type MonitorOrderBy =
   | { [K in keyof Omit<Monitor, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Monitor, never>]?: OrderDir }>
 
+export interface MonitorRelations {
+  workspace: Workspace | null
+  checks: MonitorCheck[]
+  events: MonitorEvent[]
+  channels: MonitorChannel[]
+}
+
 // ─── MonitorCheck ────────────────────────────────────────────────
 
 export interface MonitorCheck {
@@ -3981,6 +4381,10 @@ export type MonitorCheckOrderBy =
   | { [K in keyof Omit<MonitorCheck, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<MonitorCheck, never>]?: OrderDir }>
 
+export interface MonitorCheckRelations {
+  monitor: Monitor | null
+}
+
 // ─── MonitorEvent ────────────────────────────────────────────────
 
 export interface MonitorEvent {
@@ -4026,6 +4430,10 @@ export type MonitorEventOrderBy =
   | { [K in keyof Omit<MonitorEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<MonitorEvent, never>]?: OrderDir }>
 
+export interface MonitorEventRelations {
+  monitor: Monitor | null
+}
+
 // ─── MonitorChannel ──────────────────────────────────────────────
 
 export interface MonitorChannel {
@@ -4060,6 +4468,11 @@ export interface MonitorChannelWhere extends WhereBase {
 export type MonitorChannelOrderBy =
   | { [K in keyof Omit<MonitorChannel, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<MonitorChannel, never>]?: OrderDir }>
+
+export interface MonitorChannelRelations {
+  monitor: Monitor | null
+  channel: NotificationChannel | null
+}
 
 // ─── Dashboard ───────────────────────────────────────────────────
 
@@ -4124,6 +4537,11 @@ export type DashboardOrderBy =
   | { [K in keyof Omit<Dashboard, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Dashboard, never>]?: OrderDir }>
 
+export interface DashboardRelations {
+  workspace: Workspace | null
+  widgets: DashboardWidget[]
+}
+
 // ─── DashboardWidget ─────────────────────────────────────────────
 
 export interface DashboardWidget {
@@ -4180,6 +4598,12 @@ export interface DashboardWidgetWhere extends WhereBase {
 export type DashboardWidgetOrderBy =
   | { [K in keyof Omit<DashboardWidget, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<DashboardWidget, never>]?: OrderDir }>
+
+export interface DashboardWidgetRelations {
+  dashboard: Dashboard | null
+  server: Server | null
+  app: App | null
+}
 
 // ─── AuditEvent ──────────────────────────────────────────────────
 
@@ -4261,6 +4685,10 @@ export interface AuditEventWhere extends WhereBase {
 export type AuditEventOrderBy =
   | { [K in keyof Omit<AuditEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AuditEvent, never>]?: OrderDir }>
+
+export interface AuditEventRelations {
+  workspace: Workspace | null
+}
 
 // ─── Blueprint ───────────────────────────────────────────────────
 
@@ -4363,6 +4791,11 @@ export type BlueprintOrderBy =
   | { [K in keyof Omit<Blueprint, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Blueprint, never>]?: OrderDir }>
 
+export interface BlueprintRelations {
+  params: BlueprintParam[]
+  apps: App[]
+}
+
 // ─── BlueprintParam ──────────────────────────────────────────────
 
 export interface BlueprintParam {
@@ -4423,6 +4856,10 @@ export interface BlueprintParamWhere extends WhereBase {
 export type BlueprintParamOrderBy =
   | { [K in keyof Omit<BlueprintParam, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<BlueprintParam, never>]?: OrderDir }>
+
+export interface BlueprintParamRelations {
+  blueprint: Blueprint | null
+}
 
 // ─── RegistryImage ───────────────────────────────────────────────
 
@@ -4485,6 +4922,10 @@ export type RegistryImageOrderBy =
   | { [K in keyof Omit<RegistryImage, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<RegistryImage, never>]?: OrderDir }>
 
+export interface RegistryImageRelations {
+  workspace: Workspace | null
+}
+
 // ─── Dependency ──────────────────────────────────────────────────
 
 export interface Dependency {
@@ -4541,6 +4982,11 @@ export interface DependencyWhere extends WhereBase {
 export type DependencyOrderBy =
   | { [K in keyof Omit<Dependency, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Dependency, never>]?: OrderDir }>
+
+export interface DependencyRelations {
+  workspace: Workspace | null
+  uses: DependencyUse[]
+}
 
 // ─── DependencyUse ───────────────────────────────────────────────
 
@@ -4606,6 +5052,11 @@ export interface DependencyUseWhere extends WhereBase {
 export type DependencyUseOrderBy =
   | { [K in keyof Omit<DependencyUse, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<DependencyUse, never>]?: OrderDir }>
+
+export interface DependencyUseRelations {
+  project: Project | null
+  dependency: Dependency | null
+}
 
 // ─── Backup ──────────────────────────────────────────────────────
 
@@ -4673,6 +5124,9 @@ export interface BackupWhere extends WhereBase {
 export type BackupOrderBy =
   | { [K in keyof Omit<Backup, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Backup, never>]?: OrderDir }>
+
+export interface BackupRelations {
+}
 
 // ─── HubConfig ───────────────────────────────────────────────────
 
@@ -4757,6 +5211,9 @@ export type HubConfigOrderBy =
   | { [K in keyof Omit<HubConfig, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<HubConfig, never>]?: OrderDir }>
 
+export interface HubConfigRelations {
+}
+
 // ─── Notification ────────────────────────────────────────────────
 
 export interface Notification {
@@ -4812,6 +5269,10 @@ export type NotificationOrderBy =
   | { [K in keyof Omit<Notification, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Notification, never>]?: OrderDir }>
 
+export interface NotificationRelations {
+  user: User | null
+}
+
 // ─── NotificationPreference ──────────────────────────────────────
 
 export interface NotificationPreference {
@@ -4854,6 +5315,10 @@ export interface NotificationPreferenceWhere extends WhereBase {
 export type NotificationPreferenceOrderBy =
   | { [K in keyof Omit<NotificationPreference, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<NotificationPreference, never>]?: OrderDir }>
+
+export interface NotificationPreferenceRelations {
+  user: User | null
+}
 
 // ── Views ────────────────────────────────────────────────────────────────────
 
@@ -4926,6 +5391,7 @@ export interface ServiceTypes {
   waits: Wait
   flowCredentials: FlowCredential
   kvEntries: KvEntry
+  auditTrails: AuditTrail
   users: User
   accounts: Account
   workspaces: Workspace
@@ -4999,21 +5465,53 @@ export interface CursorResult<T> {
 
 // ── Table client interface ───────────────────────────────────────────────────
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
-  findMany(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<TRow[]>
-  findFirst(args?: { where?: TWhere; orderBy?: any; include?: any; select?: any }): Promise<TRow | null>
-  findUnique(args: { where: TWhere; include?: any; select?: any }): Promise<TRow | null>
-  findFirstOrThrow(args?: { where?: TWhere }): Promise<TRow>
-  findUniqueOrThrow(args: { where: TWhere }): Promise<TRow>
+// Read through a generic signature (a factory inferring its row), I and S arrive as
+// their constraints: the whole row, no relation, no _count.
+type __Off = false | null | undefined
+type __Flat<T> = { [K in keyof T]: T[K] }
+
+/** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
+export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
+/** What `select` may name: a column or a relation, `true` or an options object. */
+export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions }
+// A nested `select` is typed as booleans so an inferred `false` stays `false`, which a
+// bare Record<string, unknown> widens to boolean and ReadShape would then read as on.
+type __RelOptions = { select?: Record<string, boolean>; [option: string]: unknown }
+
+/**
+ * The row a read answers: the whole row, or only the columns `select` named, and
+ * in either case the relations `include` (or `select`) named. A relation takes its
+ * own nested `select` to only the columns that names; a nested `include` adds nothing.
+ */
+export type ReadShape<TRow, TRel, I, S> = __Flat<
+  (undefined extends S ? TRow : __SelectedColumns<TRow, S>)
+  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>> }
+  & (__On<I, '_count'> extends true ? { _count: Record<string, number> } : {})
+>
+/** What a create, update or upsert answers: a read of the row written, or `null` under `select: false`. */
+export type WriteShape<TRow, TRel, I, S> = S extends false ? null : ReadShape<TRow, TRel, I, S>
+type __On<A, K> = K extends keyof A ? (A[K] extends true | Record<string, unknown> ? true : false) : false
+type __RelOpts<I, S, K> = K extends keyof I ? (I[K] extends Record<string, unknown> ? I[K] : __RelOptsOf<S, K>) : __RelOptsOf<S, K>
+type __RelOptsOf<S, K> = K extends keyof S ? S[K] : {}
+type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T
+type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>
+type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
+
+export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}> {
+  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
+  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>
+  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S> | null>
+  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S>>
+  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S }): Promise<ReadShape<TRow, TRel, I, S>>
   findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
   count(args?: { where?: TWhere }): Promise<number>
-  create(args: { data: TCreate; include?: any; select?: any }): Promise<TRow>
+  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { data: TCreate; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>
   createMany(args: { data: TCreate[] }): Promise<{ count: number }>
-  update(args: { where: TWhere; data: TUpdate; include?: any; select?: any }): Promise<TRow | null>
+  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; data: TUpdate; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S> | null>
   updateMany(args: { where?: TWhere; data: TUpdate }): Promise<{ count: number }>
-  upsert(args: { where: TWhere; create: TCreate; update: TUpdate; include?: any; select?: any }): Promise<TRow>
+  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined>(args: { where: TWhere; create: TCreate; update: TUpdate; include?: I; select?: S }): Promise<WriteShape<TRow, TRel, I, S>>
   upsertMany(args: { data: TCreate[]; conflictTarget?: string[]; update?: string[] }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args?: { where?: TWhere }): Promise<{ count: number }>
@@ -5026,7 +5524,7 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
   // Reads whose shape is not one row or a count. Emitted because an app
   // calls them: leaving one out types a real call as an error, which is
   // the failure that makes a generated .d.ts worse than no types at all.
-  findManyAndCount(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any }): Promise<{ rows: TRow[]; total: number }>
+  findManyAndCount<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S }): Promise<{ rows: ReadShape<TRow, TRel, I, S>[]; total: number }>
   exists(args?: { where?: TWhere }): Promise<boolean>
   aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>
   groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>
@@ -5097,74 +5595,75 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$inTransaction' | '$now'>> {
-  readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
-  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
-  readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
-  readonly loginChallenge: TableClient<LoginChallenge, LoginChallengeCreate, LoginChallengeUpdate, LoginChallengeWhere>
-  readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere>
-  readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere>
-  readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere>
-  readonly metricHour: TableClient<MetricHour, MetricHourCreate, MetricHourUpdate, MetricHourWhere>
-  readonly flow: TableClient<Flow, FlowCreate, FlowUpdate, FlowWhere>
-  readonly flowVersion: TableClient<FlowVersion, FlowVersionCreate, FlowVersionUpdate, FlowVersionWhere>
-  readonly flowLayout: TableClient<FlowLayout, FlowLayoutCreate, FlowLayoutUpdate, FlowLayoutWhere>
-  readonly run: TableClient<Run, RunCreate, RunUpdate, RunWhere>
-  readonly runStep: TableClient<RunStep, RunStepCreate, RunStepUpdate, RunStepWhere>
-  readonly wait: TableClient<Wait, WaitCreate, WaitUpdate, WaitWhere>
-  readonly flowCredential: TableClient<FlowCredential, FlowCredentialCreate, FlowCredentialUpdate, FlowCredentialWhere>
-  readonly kvEntry: TableClient<KvEntry, KvEntryCreate, KvEntryUpdate, KvEntryWhere>
-  readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>
-  readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere>
-  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere>
-  readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere>
-  readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere>
-  readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere>
-  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere>
-  readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere>
-  readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere>
-  readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere>
-  readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere>
-  readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere>
-  readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere>
-  readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere>
-  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere>
-  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere>
-  readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere>
-  readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere>
-  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere>
-  readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere>
-  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere>
-  readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere>
-  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere>
-  readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere>
-  readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere>
-  readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere>
-  readonly cleanupRun: TableClient<CleanupRun, CleanupRunCreate, CleanupRunUpdate, CleanupRunWhere>
-  readonly featureFlag: TableClient<FeatureFlag, FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagWhere>
-  readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere>
-  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere>
-  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere>
-  readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere>
-  readonly alertEvent: TableClient<AlertEvent, AlertEventCreate, AlertEventUpdate, AlertEventWhere>
-  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere>
-  readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere>
-  readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere>
-  readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere>
-  readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere>
-  readonly dashboardWidget: TableClient<DashboardWidget, DashboardWidgetCreate, DashboardWidgetUpdate, DashboardWidgetWhere>
-  readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere>
-  readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere>
-  readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere>
-  readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere>
-  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere>
-  readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere>
-  readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere>
-  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere>
-  readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere>
-  readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere>
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'domain' | 'appServer' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'cleanupRun' | 'featureFlag' | 'flagOverride' | 'notificationChannel' | 'alertRule' | 'alertRuleChannel' | 'alertEvent' | 'monitor' | 'monitorCheck' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardWidget' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'backup' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$inTransaction' | '$now'>> {
+  readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations>
+  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations>
+  readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations>
+  readonly loginChallenge: TableClient<LoginChallenge, LoginChallengeCreate, LoginChallengeUpdate, LoginChallengeWhere, LoginChallengeRelations>
+  readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere, OauthFlowRelations>
+  readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere, MetricSeriesRelations>
+  readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere, MetricPointRelations>
+  readonly metricHour: TableClient<MetricHour, MetricHourCreate, MetricHourUpdate, MetricHourWhere, MetricHourRelations>
+  readonly flow: TableClient<Flow, FlowCreate, FlowUpdate, FlowWhere, FlowRelations>
+  readonly flowVersion: TableClient<FlowVersion, FlowVersionCreate, FlowVersionUpdate, FlowVersionWhere, FlowVersionRelations>
+  readonly flowLayout: TableClient<FlowLayout, FlowLayoutCreate, FlowLayoutUpdate, FlowLayoutWhere, FlowLayoutRelations>
+  readonly run: TableClient<Run, RunCreate, RunUpdate, RunWhere, RunRelations>
+  readonly runStep: TableClient<RunStep, RunStepCreate, RunStepUpdate, RunStepWhere, RunStepRelations>
+  readonly wait: TableClient<Wait, WaitCreate, WaitUpdate, WaitWhere, WaitRelations>
+  readonly flowCredential: TableClient<FlowCredential, FlowCredentialCreate, FlowCredentialUpdate, FlowCredentialWhere, FlowCredentialRelations>
+  readonly kvEntry: TableClient<KvEntry, KvEntryCreate, KvEntryUpdate, KvEntryWhere, KvEntryRelations>
+  readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations>
+  readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations>
+  readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations>
+  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations>
+  readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations>
+  readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations>
+  readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations>
+  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations>
+  readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations>
+  readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations>
+  readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations>
+  readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations>
+  readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations>
+  readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations>
+  readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations>
+  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations>
+  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations>
+  readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations>
+  readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations>
+  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations>
+  readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations>
+  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations>
+  readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations>
+  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations>
+  readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere, RecipeRunRelations>
+  readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere, DiskUsageRelations>
+  readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere, ServerPostureRelations>
+  readonly cleanupRun: TableClient<CleanupRun, CleanupRunCreate, CleanupRunUpdate, CleanupRunWhere, CleanupRunRelations>
+  readonly featureFlag: TableClient<FeatureFlag, FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagWhere, FeatureFlagRelations>
+  readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations>
+  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations>
+  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations>
+  readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations>
+  readonly alertEvent: TableClient<AlertEvent, AlertEventCreate, AlertEventUpdate, AlertEventWhere, AlertEventRelations>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations>
+  readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations>
+  readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations>
+  readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere, MonitorChannelRelations>
+  readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere, DashboardRelations>
+  readonly dashboardWidget: TableClient<DashboardWidget, DashboardWidgetCreate, DashboardWidgetUpdate, DashboardWidgetWhere, DashboardWidgetRelations>
+  readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere, AuditEventRelations>
+  readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere, BlueprintRelations>
+  readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere, BlueprintParamRelations>
+  readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations>
+  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations>
+  readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations>
+  readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere, BackupRelations>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations>
+  readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations>
+  readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations>
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>
 
   // Auth scoping

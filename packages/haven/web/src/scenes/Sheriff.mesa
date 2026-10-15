@@ -10,14 +10,14 @@
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'
-  import { piece } from '@/pieces/index.js'
+  import { piece, inked } from '@/pieces/index.js'
   import { halves } from '@/pieces/halves.js'
   import { frame } from '@/pieces/frame.js'
+  import { cactus } from '@/pieces/growth.js'
   import { desk, bed } from '@/pieces/home.js'
-
-  // Paint for art that is one color, or two by glyph: every glyph in `by`
-  // takes its letter, the rest `rest`.
-  const inked = (art, rest, by = {}) => art.replace(/\S/g, (c) => by[c] ?? rest)
+  import { gunRack } from '@/pieces/storage.js'
+  import { poster } from '@/pieces/wall.js'
+  import { cot, bucket } from '@/pieces/furniture.js'
 
   const STAR = String.raw`
      .
@@ -29,27 +29,6 @@
  '--' '--'
 `
   const star = piece('star', STAR, inked(STAR, 's'))
-
-  // A poster is 14 wide: WANTED, four rows of face, the reward. The border is
-  // `u`, the word `k`, the reward `s`, and a face row takes the letter its
-  // `inks` gives it.
-  const poster = (face, inks, sum) => {
-    const left = Math.floor((12 - sum.length) / 2)
-    const rows = [
-      '.------------.',
-      '|   WANTED   |',
-      ...face.map((r) => `|${r}|`),
-      `|${' '.repeat(left)}${sum}${' '.repeat(12 - left - sum.length)}|`,
-      "'------------'",
-    ]
-    const ink = (row, letter) => [...row].map((c, x) => c === ' ' ? ' ' : x === 0 || x === 13 ? 'u' : letter).join('')
-    const paint = rows.map((row, y) =>
-      y === 0 || y === rows.length - 1 ? 'u'.repeat(14)
-        : y === 1 ? ink(row, 'k')
-        : y === rows.length - 2 ? ink(row, 's')
-        : ink(row, inks[y - 2]))
-    return piece('poster', rows.join('\n'), paint.join('\n'))
-  }
 
   const blackHat  = poster(['  _/====\\_  ', '   (o  o)   ', '   (-~~-)   ', "    '--'    "], ['d', 'q', 'q', 'q'], '$500')
   const grayBeard = poster(['  _.-==-._  ', '   (o  o)   ', '  ((~~~~))  ', '   )~~~~(   '], ['u', 'q', 'q', 'q'], '$1000')
@@ -104,31 +83,6 @@ kbbbbbbbbbbk
 `
   const cowhide = piece('cowhide', COWHIDE, inked(COWHIDE, 'p', { '#': 'K' }), { floor: true })
 
-  const CACTUS = String.raw`
-  ,_,
-_ | | _
-| | | |
-|_| | |
-  | |_|
-  | |
- [___]
-`
-  const cactus = piece('cactus', CACTUS, inked(CACTUS, 'G', { '[': 'T', ']': 'T', '_': 'T' }))
-
-  const rack = piece('rack', String.raw`
-.------------.
-| |  |  |  | |
-| |  |  |  | |
-| o  o  o  o |
-'------------'
-`, String.raw`
-wwwwwwwwwwwwww
-w q  q  q  q w
-w q  q  q  q w
-w u  u  u  u w
-wwwwwwwwwwwwww
-`)
-
   // The cell's bars along its west and south sides, the frame its other two,
   // and a gap in the south bars to walk in by.
   const bars = piece('bars', [
@@ -138,9 +92,6 @@ wwwwwwwwwwwwww
     ...Array(10).fill('l'),
     'llllllll   lllllllllll',
   ].join('\n'))
-
-  const cot    = piece('cot', '[========]', 'uQQQQQQQQu')
-  const bucket = piece('bucket', '\\_/', 'qqq')
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -174,7 +125,7 @@ wwwwwwwwwwwwww
   <Piece of={bars}    x={74} y={1} />
   <Piece of={cot}     x={84} y={3} />
   <Piece of={bucket}  x={91} y={9} />
-  <Piece of={rack}    x={22} y={12} />
+  <Piece of={gunRack} x={22} y={12} />
   <Piece of={hearth}  x={3}  y={14} />
   <Piece of={fire}    x={6}  y={17} />
   <Piece of={cowhide} x={36} y={15} />

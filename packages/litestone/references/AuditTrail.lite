@@ -1,0 +1,67 @@
+/// The table a SQLite audit trail writes into (`FJS-D936`).
+///
+/// `driver trail` and `driver jsonl` are parked. A trail is an ordinary model on
+/// an ordinary database, so it can carry a gate, an index and a migration, and
+/// `@@trail(audit)` on any model writes here:
+///
+/// ```lite
+/// import "@frontierjs/litestone/references/AuditTrail.lite"
+///
+/// database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
+///
+/// model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") @@tenant(none) }
+/// ```
+///
+/// Naming the model `AuditTrail` keeps the accessor the jsonl trail had,
+/// `db.asSystem().auditTrail`.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `id`.** A trait may not declare a primary key; the host owns it.
+///
+/// **No `@@db`.** Which database holds the trail is the host's answer, and a
+/// file that names `audit` fails to parse in a schema that calls it anything
+/// else.
+///
+/// **No `@@gate`.** Written by the host, as above: the trail
+/// holds the before- and after-image of every audited write, every tenant's
+/// included, so the host states who may read it. `@@gate("8")` is the system
+/// level the auth models use.
+trait AuditTrail {
+  operation     String
+  model         String
+  field         String?
+
+  /// WHICH named move an update was, where it was one. Two moves between the
+  /// same states write identical images; only this separates them.
+  transition    String?
+  records       Json
+
+  /// Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed`
+  /// land as `[redacted]`, `@personal` as `[personal]`.
+  before        Json?
+  after         Json?
+
+  /// Text, because the actor is whatever the host's users are keyed by; an Int
+  /// key reads back as its digits in a string.
+  actorId       String?
+  actorType     String?
+
+  /// Support mode: `actorId` is the operator and `subjectId` the principal the
+  /// boundary enforced as.
+  subjectId     String?
+  episodeId     String?
+  correlationId String?
+  source        String?
+  origin        String?
+  ip            String?
+  userAgent     String?
+  tenant        String?
+  meta          Json?
+  createdAt     DateTime @default(now())
+
+  @@index([actorId])
+  @@index([model])
+  @@index([correlationId])
+  @@index([episodeId])
+}

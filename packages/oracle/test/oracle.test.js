@@ -8,13 +8,14 @@ import { create, apply } from '@frontierjs/litestone/migrations'
 import { createTestEnv } from '@frontierjs/litestone/testing'
 import { ACTORS, ENTITIES, ENTITY, TYPES, RULES, brief, checkAnswer, emit } from '../src/index.js'
 import hiring from './fixtures/hiring.json'
+import { auditDatabase } from './audit-trail-model.js'
 
 // What `fli new` declares that the emitted models lean on: the two databases
 // (`@@trail(audit)` names one) and an `@@auth` User. The real scaffold imports
 // @frontierjs/auth for the rest, which this package does not depend on.
 const SCAFFOLD = `
 database main  { path ":memory:" }
-database audit { path "./audit/" driver trail }
+${auditDatabase(".")}
 
 model User {
   id     String  @id @default(uuid())

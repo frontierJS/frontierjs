@@ -2,6 +2,7 @@
 // db/generate.js — regenerate the initial migration from schema.lite.
 //
 //   bun db/generate.js            write db/migrations/main/20260801000000_initial_schema.sql
+//                                 and db/migrations/audit/20260801000000_audit_trail.sql
 //   bun db/generate.js --check    exit 1 if the file on disk is stale (CI)
 //   bun db/generate.js --print    dump the DDL to stdout, write nothing
 //
@@ -20,10 +21,15 @@
 // `bun run db:ddl`. It has no dependencies beyond the workspace's litestone
 // source, so it runs today, uninstalled.
 
-import { parseFile, generateDDL } from '../../litestone/src/index.js'
+import { parseFile, generateDDLForDatabase } from '../../litestone/src/index.js'
 
 const SCHEMA = new URL('./schema.lite', import.meta.url).pathname
-const OUT    = new URL('./migrations/main/20260801000000_initial_schema.sql', import.meta.url).pathname
+// One file per declared SQLite database: `migrate apply` reads each database's
+// migrations from its own subdirectory.
+const OUTS   = {
+  main:  new URL('./migrations/main/20260801000000_initial_schema.sql', import.meta.url).pathname,
+  audit: new URL('./migrations/audit/20260801000000_audit_trail.sql', import.meta.url).pathname,
+}
 
 const HEADER = `-- ============================================================
 -- Basecamp — initial schema
@@ -48,23 +54,30 @@ if (result.errors?.length) {
 
 for (const w of result.warnings ?? []) console.warn('warning:', w)
 
-const sql = HEADER + generateDDL(result.schema)
+const sqls = Object.fromEntries(
+  Object.keys(OUTS).map(db => [db, HEADER + generateDDLForDatabase(result.schema, db)]))
 
 if (process.argv.includes('--print')) {
-  console.log(sql)
+  console.log(sqls.main)
   process.exit(0)
 }
 
 if (process.argv.includes('--check')) {
-  const current = await Bun.file(OUT).text().catch(() => null)
-  if (current === sql) {
+  const stale = []
+  for (const [db, out] of Object.entries(OUTS)) {
+    const current = await Bun.file(out).text().catch(() => null)
+    if (current !== sqls[db]) stale.push(out)
+  }
+  if (!stale.length) {
     console.log('up to date —', result.schema.models.length, 'models')
     process.exit(0)
   }
-  console.error('STALE: 20260801000000_initial_schema.sql does not match schema.lite. Run: bun db/generate.js')
+  console.error(`STALE: ${stale.join(', ')} does not match schema.lite. Run: bun db/generate.js`)
   process.exit(1)
 }
 
-await Bun.write(OUT, sql)
-console.log(`wrote ${OUT}`)
+for (const [db, out] of Object.entries(OUTS)) {
+  await Bun.write(out, sqls[db])
+  console.log(`wrote ${out}`)
+}
 console.log(`${result.schema.models.length} models, ${result.schema.enums.length} enums`)

@@ -95,6 +95,7 @@ Detail: `references/the-audit-trail-and-the-log.md`
 - **An audit row names the TABLE, not the model**
 - **An effective-dated write BACKWARDS overwrites the prior belief, and only the log holds it.**
 - **`@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws.**
+- **"Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`.**
 
 ## Reads and windows
 Detail: `references/reads-and-windows.md`

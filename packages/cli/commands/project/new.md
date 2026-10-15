@@ -354,11 +354,11 @@ function makeEnvExample(useAuth) {
     '# Database file. Use :memory: for tests.',
     'DATABASE_URL=./db/app.db',
     '',
-    '# Where the audit trail is written. A logger-driver database is a',
-    '# DIRECTORY of JSONL, and it is a variable for the same reason DATABASE_URL',
-    '# is: a deploy mounts a volume, and a literal path here writes the trail',
-    '# inside the container, where the next swap takes it.',
-    'AUDIT_PATH=./db/audit/',
+    '# Where the audit trail is written. It is a SQLite file, and a variable for',
+    '# the same reason DATABASE_URL is: a deploy mounts a volume, and a literal',
+    '# path here writes the trail inside the container, where the next swap',
+    '# takes it.',
+    'AUDIT_PATH=./db/audit.db',
     '',
     '# App. PORT and APP_URL default to FLI_PORT_BE (the port the broker hands a',
     '# session, and the one web/ proxies /api to) and then to 8100. Set here, they',
@@ -755,10 +755,10 @@ export const env = defineEnv({
   // Database file path. Use ':memory:' for tests.
   DATABASE_URL: { type: 'string', default: './db/app.db' },
 
-  // The audit trail's directory. Declared for the same reason DATABASE_URL is:
-  // a logger-driver database is a directory of JSONL on disk, and a deploy has
-  // to be able to put it on the mounted volume without editing the schema.
-  AUDIT_PATH: { type: 'string', default: './db/audit/' },
+  // The audit trail's file. Declared for the same reason DATABASE_URL is: a
+  // deploy has to be able to put it on the mounted volume without editing the
+  // schema.
+  AUDIT_PATH: { type: 'string', default: './db/audit.db' },
 
   // fli auth:install generates this into .env. Declared so defineEnv can see it
   // — the name is one of three it warns about for length and placeholder values
@@ -1275,7 +1275,11 @@ function makeSchemaLiteEmpty() {
 
 database main  { path env("DATABASE_URL", "./db/app.db") }
 
-database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
+import "@frontierjs/litestone/references/AuditTrail.lite"
+
+database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
+
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
 
 `
 }

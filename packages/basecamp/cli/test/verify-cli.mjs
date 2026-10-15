@@ -48,7 +48,7 @@ const OWNER = 'sam@example.com', ADMIN = 'kim@example.com', DEVELOPER = 'remy@ex
 const ENV = {
   ...process.env,
   DATABASE_URL: DB_PATH,
-  AUDIT_PATH:   join(SCRATCH, 'audit/'),
+  AUDIT_PATH:   join(SCRATCH, 'audit.db'),
   PORT:         String(API_PORT),
   FJS_BUILD:    'verify-cli-build-1',
 }

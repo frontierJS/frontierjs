@@ -51,7 +51,7 @@ const OWNER = 'sam@example.com', ADMIN = 'kim@example.com', DEVELOPER = 'remy@ex
 const ENV = {
   ...process.env,
   DATABASE_URL: DB_PATH,
-  AUDIT_PATH:   join(SCRATCH, 'audit/'),
+  AUDIT_PATH:   join(SCRATCH, 'audit.db'),
   PORT:         String(API_PORT),
   // The workbench is offered here, so withholding it is not the refusal every
   // non-local API gives. A stand-in that exits at once, so a hole costs no run.

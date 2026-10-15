@@ -17,12 +17,13 @@ import { createClient }  from '@frontierjs/litestone'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcpPlugin } from '../src/plugin.ts'
+import { auditDatabase } from './audit-trail-model.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'mcp-calls-'))
 // The shop, with the trail database an app's `fli auth:install` declares.
 const SCHEMA =
   `database main  { path "${join(dir, 'main.db')}" }\n` +
-  `database audit { path "${join(dir, 'audit')}/" driver trail }\n` +
+  `${auditDatabase(dir)}\n` +
   readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
 let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>

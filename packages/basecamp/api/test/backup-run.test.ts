@@ -2,7 +2,7 @@
  * backup-run.test.ts — what a backup archive holds (FJS-1766).
  *
  * `VACUUM INTO` over the main database copied one file of three. The schema
- * declares `database audit` (a trail driver, a directory) and the app opens a
+ * declares `database audit` (a second SQLite file) and the app opens a
  * second SQLite file for the job queue, so an archive restored from the old job
  * had every row and none of the audit trail or the pending jobs.
  */
@@ -50,7 +50,7 @@ describe('a backup archives every database the app keeps', () => {
     expect(statSync(dir).isDirectory()).toBe(true)
     expect(existsSync(join(dir, 'main.db'))).toBe(true)
     expect(existsSync(join(dir, 'jobs.db'))).toBe(true)
-    expect(existsSync(join(dir, 'audit'))).toBe(true)
+    expect(existsSync(join(dir, 'audit.db'))).toBe(true)
 
     // The archive opens and carries the row it was asked about.
     const copy = new Database(join(dir, 'main.db'), { readonly: true })

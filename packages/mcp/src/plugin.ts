@@ -136,7 +136,7 @@ export function mcpPlugin(opts: McpOptions = {}): Plugin {
     async boot(app: App) {
       views     = await buildViews(app)
       shapes    = describeAll(app)
-      trail     = trailOf((app as { db?: unknown }).db)
+      trail     = trailOf((app as { db?: unknown }).db, (await import('@frontierjs/litestone/ddl')).modelToAccessor)
       documents = opts.ui ? readDocuments(opts.ui.root) : null
       if (views) disclose(app, projectTools(shapes, views, 8), documents)
     },
@@ -639,18 +639,21 @@ interface TrailRow {
 /**
  * The log model of the app's first trail database — the one `$audit` writes
  * to when no `database` is named — or null when it declares none. A logger
- * database's model is always `<name>Trail`; only a SQL one may rename it.
+ * database's model is always `<name>Trail`; a SQL one names its own, and the
+ * accessor is that model's.
  *
  * Asked of the app-wide client at boot: a scoped client answers `$databases`
  * by throwing. Under `tenancy { strategy database }` there is none, so calls
  * there go unrecorded and `/calls` says so.
  */
-function trailOf(db: unknown): string | null {
-  let dbs: Record<string, { driver?: string }> = {}
+function trailOf(db: unknown, accessorOf: (model: string) => string): string | null {
+  let dbs: Record<string, { driver?: string, trailModel?: string }> = {}
   // A Litestone client THROWS on an unknown property (`FJS-673`).
   try { dbs = (db as { $databases?: typeof dbs }).$databases ?? {} } catch { return null }
-  const name = Object.entries(dbs).find(([, d]) => d?.driver === 'trail')?.[0]
-  return name ? `${name}Trail` : null
+  const found = Object.entries(dbs).find(([, d]) => d?.driver === 'trail' || d?.trailModel)
+  if (!found) return null
+  const [name, d] = found
+  return d.trailModel ? accessorOf(d.trailModel) : `${name}Trail`
 }
 
 /**

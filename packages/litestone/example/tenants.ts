@@ -10,8 +10,8 @@
 //       acme.db             ← per-tenant SQLite (main + analytics)
 //       globex.db
 //       initech.db
-//     logs/                 ← GLOBAL — shared across all tenants
-//     audit/                ← GLOBAL — shared across all tenants
+//     logs.db               ← GLOBAL — shared across all tenants
+//     audit.db              ← GLOBAL — shared across all tenants
 //
 // Run:  bun example/tenants.ts
 

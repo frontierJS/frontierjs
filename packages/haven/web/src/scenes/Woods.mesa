@@ -15,6 +15,7 @@
   import Pacer from '@/components/Pacer.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
+  import { stump, log } from '@/pieces/growth.js'
   import { tree }  from '@/pieces/tree.js'
   import { quiver } from '@/pieces/archery.js'
   import { shroom } from '@/pieces/shroom.js'
@@ -28,24 +29,6 @@
     ' o '.repeat(31),
     'o  '.repeat(31),
   ].join('\n'), { floor: true })
-
-  const stump = piece('stump', String.raw`
- ___
-(___)
- |_|
-`, String.raw`
- uuu
-uuuuu
- uuu
-`)
-
-  const log = piece('log', String.raw`
- ________
-(________)
-`, String.raw`
- uuuuuuuu
-uuuuuuuuuu
-`)
 
   const cabin = piece('cabin', String.raw`
     ~

@@ -19,6 +19,7 @@ import { join }   from 'path'
 import { createClient } from '../../litestone/src/index.js'
 import { createApp }    from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
+import { auditDatabase } from './audit-trail-model.ts'
 
 const tick = () => new Promise((r) => setImmediate(r))
 
@@ -28,7 +29,7 @@ async function harness() {
     resolveFrom: dir,
     schema: `
       database main  { path ":memory:" }
-      database audit { path "${dir}/audit/" driver trail }
+      ${auditDatabase(dir)}
       model Order { id Int @id  status String  @@trail(audit) }
     `,
   })

@@ -12,7 +12,7 @@
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import { frame } from '@/pieces/frame.js'
-  import { corkboard, screen, desk, calendar, bell, doormat, bed, rug, bookshelf, rack, stove, plant } from '@/pieces/home.js'
+  import { corkboard, screen, desk, calendar, bell, doormat, bed, homeRug, bookshelf, serverRack, stove, plant } from '@/pieces/home.js'
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -47,9 +47,9 @@
   <Piece of={calendar}  x={3}  y={13} />
   <Piece of={bell}      x={41} y={21} />
   <Piece of={doormat}   x={44} y={24} />
-  <Piece of={rug}       x={40} y={15} />
+  <Piece of={homeRug}   x={40} y={15} />
   <Piece of={bed}       x={76} y={20} />
-  <Piece of={rack}      x={88} y={11} />
+  <Piece of={serverRack} x={88} y={11} />
   <Piece of={bookshelf} x={23} y={13} />
   <Piece of={stove}     x={24} y={20} />
   <Piece of={plant}     x={91} y={17} />

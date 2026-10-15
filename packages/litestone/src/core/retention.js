@@ -4,6 +4,9 @@
 //   SQLite:  DELETE WHERE createdAt < cutoff   (runs on createClient startup)
 //   JSONL:   compact file by filtering old/excess lines (runs on makeJsonlTable init)
 //
+// The JSONL half (`compactJsonl` and what it calls) is NOT IN USE UNTIL FURTHER
+// NOTICE (FJS-D936): parked, never deleted. The SQLite half is the live one.
+//
 // Both are driven by database block declarations in schema.lite:
 //
 //   database logs {

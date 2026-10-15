@@ -1,5 +1,8 @@
 // drivers/jsonl.js — append-only JSONL database driver
 //
+// NOT IN USE UNTIL FURTHER NOTICE (FJS-D936). The audit trail is a SQLite table. Parked, never deleted:
+// no schema declares `driver jsonl` or `driver trail`, and a parse warns on one.
+//
 // Models with @@db(name) where `name` has driver: jsonl route through here.
 //
 // Write path:  append JSON line to file

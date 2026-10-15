@@ -125,12 +125,10 @@
 // ============================================================
 // DATABASES
 // ============================================================
-// The audit logger. Every write to a @@trail(audit) model lands in
-// db/audit/AuditTrail.jsonl with before/after images, queryable through the
-// `auditTrail` accessor. Two things to know:
-//   • The path is resolved relative to the PROCESS CWD, not this file — it
-//     assumes the API is started from the package root.
-//   • Entries flush on a ~1s timer and on exit — a read in the same session
+// The audit logger. Every write to a @@trail(audit) model lands in the
+// AuditTrail table of db/audit.db with before/after images, queryable through
+// the `auditTrail` accessor. One thing to know:
+//   • Entries land one tick after the write — a read in the same tick
 //     immediately after a write sees nothing. That is lag, not data loss.
 // @encrypted / @guarded / @secret fields are REDACTED in log entries — the
 // trail records that the field was written, never what it holds. That is why
@@ -156,14 +154,18 @@
 // launch was assumed. Writing them relative to `db/` instead moves both.
 //
 // A deployment is unaffected either way: it binds both absolutely
-// (`/data/basecamp.db`, `/data/audit/`), and an absolute path has no anchor.
+// (`/data/basecamp.db`, `/data/audit.db`), and an absolute path has no anchor.
 //
 // NOTE: this declaration WINS over `createClient({ db })`. Passing both is not
 // an error and produces no warning — the option is simply ignored — so core/db.ts
 // deliberately does not pass one.
 database main { path env("DATABASE_URL", "./db/basecamp.db") }
 
-database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
+import "@frontierjs/litestone/references/AuditTrail.lite"
+
+database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
+
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") @@tenant(none) }
 
 // ============================================================
 // TENANCY

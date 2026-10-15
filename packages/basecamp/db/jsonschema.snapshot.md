@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-139 definitions · 67 models · 1 view · 28 types · 43 enums · 0 other
+140 definitions · 68 models · 1 view · 28 types · 43 enums · 0 other
 ```
 
 ## Definitions
@@ -41,6 +41,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Wait` | model |
 | `FlowCredential` | model |
 | `KvEntry` | model |
+| `AuditTrail` | model |
 | `User` | model |
 | `Account` | model |
 | `Workspace` | model |
@@ -488,6 +489,34 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `scope`, `key`, `value` · not accepted — `id`
+
+### `AuditTrail`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `operation` | `string` | yes | — | — | — |
+| `model` | `string` | yes | — | — | — |
+| `field` | `string`? | — | — | — | — |
+| `transition` | `string`? | — | — | — | — |
+| `records` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `before` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `after` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `actorId` | `string`? | — | — | — | — |
+| `actorType` | `string`? | — | — | — | — |
+| `subjectId` | `string`? | — | — | — | — |
+| `episodeId` | `string`? | — | — | — | — |
+| `correlationId` | `string`? | — | — | — | — |
+| `source` | `string`? | — | — | — | — |
+| `origin` | `string`? | — | — | — | — |
+| `ip` | `string`? | — | — | — | — |
+| `userAgent` | `string`? | — | — | — | — |
+| `tenant` | `string`? | — | — | — | — |
+| `meta` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `id` | `integer` | — | — | — | — |
+
+**On create**: required — `operation`, `model`, `records` · not accepted — `id`
 
 ### `User`
 

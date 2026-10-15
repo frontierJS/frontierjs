@@ -13,46 +13,10 @@
   import Piece from '@/components/Piece.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'
-  import { piece }  from '@/pieces/index.js'
   import { frame }  from '@/pieces/frame.js'
   import { lantern } from '@/pieces/lantern.js'
   import { barrel } from '@/pieces/barrel.js'
-
-  const rack = piece('rack', String.raw`
-.----------------------------.
-|o o o o o o o o o o o o o o |
-|----------------------------|
-| o o o o o o o o o o o o o o|
-'----------------------------'
-`, String.raw`
-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
-ugrgrgrgrgrgrgrgrgrgrgrgrgrg u
-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
-u grgrgrgrgrgrgrgrgrgrgrgrgrgu
-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
-`)
-
-  const crates = piece('crates', String.raw`
-.------.
-|[]  []|
-|[]  []|
-'------'
-`, String.raw`
-uuuuuuuu
-uuuuuuuu
-uuuuuuuu
-uuuuuuuu
-`)
-
-  const chest = piece('chest', String.raw`
- .-------.
- |  [=]  |
- '-------'
-`, String.raw`
- uuuuuuuuu
- uuucccuuu
- uuuuuuuuu
-`)
+  import { wineRack, crates, chest } from '@/pieces/storage.js'
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -70,8 +34,8 @@ uuuuuuuu
   <Door  x={48} y={0} to="/tavern/" />
   <Door  x={1}  y={12} to="/glade/" night />
   <Door  x={48} y={25} to="/canal/" />
-  <Piece of={rack}   x={4}  y={3} />
-  <Piece of={rack}   x={62} y={3} />
+  <Piece of={wineRack} x={4}  y={3} />
+  <Piece of={wineRack} x={62} y={3} />
   <Piece of={lantern} x={30} y={9} />
   <Piece of={lantern} x={66} y={9} />
   <Piece of={crates} x={14} y={12} />

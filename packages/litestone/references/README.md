@@ -101,6 +101,7 @@ replace.
 | IDENTITY & ACCESS | `Organization` (+ `Member`) | **written** — derived from nine instances (linear, notion, connectteam, remnant, portal, basecamp, trigger.dev, documenso, cal.com); the role enum and the second level stay the host's, and the file says why |
 | IDENTITY & ACCESS | `Grant` | **written, a trait** — eleven instances under six names; the claim and the row policy stay the host's |
 | IDENTITY & ACCESS | `Group` · `Role` · `Invitation` | not written — an `Invitation` is a `Grant` with an email and a role, and basecamp's is the instance |
+| AUDIT | `AuditTrail` | **written, a trait** — the table a SQLite trail writes into (`FJS-D936`); the database, the gate and the name stay the host's |
 | TIME | `Interval` | **written, a trait** — the derived UTC pair under `@@exclude`; the local input stays the host's |
 | TIME | `Window` (+ `enum Weekday`) | **written, a trait** — the recurring slot; the enum ships because the weekday was encoded three ways |
 | LIFECYCLE | `Decision` | **written, a trait** — who settled it and when, `@system`, one pair under one name where the corpus had four spellings; wants to become an attribute on the transition |

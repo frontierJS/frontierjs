@@ -1,6 +1,6 @@
 <script>
   // Road.mesa — the road east of the square: a dirt road across the middle,
-  // fenced on both sides with a gap in each, a milestone, a cart pulled up
+  // fenced on both sides with a gap in each, a milestone, a wagon pulled up
   // on the verge, trees, the pithead of the mine (`Mine.mesa`), and the
   // signpost back. The west edge is a border
   // into the square (`IDEAS/haven.md` 6.2), and the square's east edge is
@@ -14,6 +14,7 @@
   import { frame } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
   import { signpost } from '@/pieces/signpost.js'
+  import { fence, milestone } from '@/pieces/town.js'
 
   // The road is floor, walked on: its edges are a line of dust and its
   // middle a scatter, so a figure on it stands on the art.
@@ -29,21 +30,10 @@
     'o'.repeat(93),
   ].join('\n'), { floor: true })
 
-  const fence = (posts) => piece('fence', '|--'.repeat(posts) + '|', 'fff'.repeat(posts) + 'f')
   const fenceW = fence(12)
   const fenceE = fence(14)
 
-  const milestone = piece('milestone', String.raw`
- .-.
- |I|
- |_|
-`, String.raw`
- qqq
- qeq
- qqq
-`)
-
-  const cart = piece('cart', String.raw`
+  const wagon = piece('wagon', String.raw`
    ___________
   /___________\
   |  ,  ,  ,  |
@@ -120,7 +110,7 @@ ddddddddddudddddddddd
   <Piece of={tree} x={40} y={17} />
   <Piece of={tree} x={75} y={17} />
   <Piece of={milestone} x={60} y={5} />
-  <Piece of={cart} x={24} y={4} />
+  <Piece of={wagon} x={24} y={4} />
   <Piece of={signpost('<[square]')} x={5} y={18} />
   <Piece of={office} x={17} y={18} />
   <Door  x={27} y={23} to="/sheriff/" />

@@ -15,7 +15,7 @@
   import Row   from '@/components/Row.mesa'
   import Door  from '@/components/Door.mesa'
   import Pacer from '@/components/Pacer.mesa'
-  import { piece, lines } from '@/pieces/index.js'
+  import { piece } from '@/pieces/index.js'
   import { framed } from '@/pieces/frame.js'
   import { tree }  from '@/pieces/tree.js'
   import { lamp }  from '@/pieces/lamp.js'
@@ -23,6 +23,8 @@
   import { noticeBoard } from '@/pieces/board.js'
   import { flower } from '@/pieces/flower.js'
   import { signpost } from '@/pieces/signpost.js'
+  import { hedge } from '@/pieces/hedge.js'
+  import { house, well, stall, fountain, basin } from '@/pieces/town.js'
 
   // No two houses are one size, so each is its own block; the tavern's sign
   // is part of its house.
@@ -50,51 +52,10 @@ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
  wwwwwwwwwwwwwwdddwwwwwwwwwwwww
 `)
 
-  const workshop = piece('house', String.raw`
-   ~'
-   ||
-  _||_____________
- //\/\/\/\/\/\/\/\\
-/__________________\
- |  [ WORKSHOP ]  |
- |                |
- |  []   .-.  []  |
- |_______|n|______|
-`, String.raw`
-   kk
-   cc
-  rccrrrrrrrrrrrrr
- rRRRRRRRRRRRRRRRRr
-rrrrrrrrrrrrrrrrrrrr
- w  S ssssssss S  w
- w                w
- w  yy   ddd  yy  w
- wwwwwwwwdddwwwwwww
-`)
-
-  // The town hall (`IDEAS/haven.md` Phase 15), the first house east of the
-  // first screen, its sign over the door as the workshop's is.
-  const townhall = piece('house', String.raw`
-   ~'
-   ||
-  _||_____________
- //\/\/\/\/\/\/\/\\
-/__________________\
- | [ TOWN HALL ]  |
- |                |
- |  []   .-.  []  |
- |_______|n|______|
-`, String.raw`
-   kk
-   cc
-  rccrrrrrrrrrrrrr
- rRRRRRRRRRRRRRRRRr
-rrrrrrrrrrrrrrrrrrrr
- w S ssss ssss S  w
- w                w
- w  yy   ddd  yy  w
- wwwwwwwwdddwwwwwww
-`)
+  // The workshop and the town hall (`IDEAS/haven.md` Phase 15, the first
+  // house east of the first screen) are one house with another sign.
+  const workshop = house('WORKSHOP')
+  const townhall = house('TOWN HALL')
 
   const houseB = piece('house', String.raw`
    ~'
@@ -142,68 +103,16 @@ rrrrrrrrrrrrrr
  wwwwwdddwwww
 `)
 
-  const FOUNTAIN = [String.raw`
-      .  :  .
-       ' | '
-   .-----=-----.
- .'~~~~~~~~~~~~~'.
-(~~~~~~~~~~~~~~~~~)
- '.~~~~~~~~~~~~~.'
-   '----~~~----'
-`, String.raw`
-      j  j  j
-       j j j
-   sssssssssssss
- ssbbbbbbbbbbbbbss
-sbbbbbbbbbbbbbbbbbs
- ssbbbbbbbbbbbbbss
-   sssssbbbsssss
-`]
-
   // One drawing, two pieces: the rim is a wall, the water inside
   // is walked through, and three cells of water break the front rim as the
   // way in. A cell has one owner, so each takes its own paint keys. The jet is
   // the top two rows and floor like the water: a figure stands on the spray,
   // drawn over it rather than hidden under it.
-  const carve = (name, keys, options) => {
-    const [art, paint] = FOUNTAIN.map(lines)
-    const keep = (row, dy) => [...row].map((ch, dx) => keys.includes(paint[dy]?.[dx]) ? ch : ' ').join('')
-    return piece(name, art.map(keep).join('\n'), paint.map((r, dy) => [...r].map((k, dx) => keys.includes(k) ? k : ' ').join('')).join('\n'), options)
-  }
-  const fountain = carve('fountain', 's')
-  const basin = carve('fountain water', 'bj', { floor: true })
-
   // The square's own frame: two and a third screens wide, where the shared
   // `frame` is one screen. The houses stand a long stride apart and the plaza
   // between them is bare floor, so it is a place to cross rather than a row to
   // squeeze along.
   const frame = framed(223, 26)
-
-  const well = piece('well', String.raw`
-   __
-  /||\
- |~~~~|
- |____|
-`, String.raw`
-   uu
-  uwwu
- wbbbbw
- wwwwww
-`)
-
-  const stall = piece('stall', String.raw`
- _________
-/_________\
- |  o  o  |
- |________|
-`, String.raw`
- rrrrrrrrr
-rrrrrrrrrrr
- w  p  p  w
- wwwwwwwwww
-`)
-
-  const hedge  = piece('hedge', ',', 'g')
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -223,7 +132,7 @@ rrrrrrrrrrr
     e: { fg: '#a16207' },
     j: { fg: ['#e0f2fe', '#7dd3fc', '#bae6fd'], chars: ".':'", ms: 180, flicker: true },
     b: { fg: ['#38bdf8', '#7dd3fc', '#0ea5e9'], chars: '~-~', ms: 350, wave: true },
-    g: { fg: ['#22c55e', '#16a34a', '#15803d'], ms: 1100, wave: true },
+    G: { fg: ['#22c55e', '#16a34a', '#15803d'], ms: 1100, wave: true },
     p: { fg: ['#f472b6', '#facc15', '#c084fc', '#fb7185'], ms: 1500, flicker: true, dye: true },
     m: { fg: ['#c4b5fd', '#a78bfa', '#e9d5ff'], chars: '♪♫', ms: 800, flicker: true },
   }

@@ -16,7 +16,7 @@ bun db/generate.js --print   # dump DDL to stdout
 
 ```
 database main { path env("DATABASE_URL", "./db/basecamp.db") }
-database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
 ```
 
 Both paths resolve against the **app root**, not the process CWD —
@@ -28,7 +28,7 @@ directory named `db`, which is where this schema lives, so both paths keep the
 to `db/` moves the database and the trail, and litestone migrates whatever it
 finds — so the app works, against a file nobody meant.
 
-A deployment binds both absolutely (`/data/basecamp.db`, `/data/audit/`) and an
+A deployment binds both absolutely (`/data/basecamp.db`, `/data/audit.db`) and an
 absolute path has no anchor, so it is unaffected either way.
 
 **`createClient({ db })` overrides the declared `database main` path.** It
@@ -274,10 +274,14 @@ char) key.` It fails closed, which is what we want, but the API pass has to add
 ## Audit logging
 
 ```lite
-database audit { path "./audit/" driver trail retention 90d }
+import "@frontierjs/litestone/references/AuditTrail.lite"
+
+database audit { path "./audit.db" retention 90d model AuditTrail }
+
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") @@tenant(none) }
 ```
 
-Every write to a `@@trail(audit)` model lands in `./audit/auditTrail.jsonl` with
+Every write to a `@@trail(audit)` model lands in the `AuditTrail` table of `./audit.db` with
 before/after images and actor attribution, and is queryable through the
 `auditTrail` accessor (`sys.auditTrail.findMany()`). **All 16 non-event models
 carry it**, including `Secret`, `Credential`, `Session` and `Verification` —
@@ -300,18 +304,14 @@ file**.
 
 The trap the redaction closes: `@@trail(audit)` on a
 model with an `@encrypted` column would otherwise write the plaintext into the
-JSONL while the database row is correctly ciphertext, which is why these models
+trail while the database row is correctly ciphertext, which is why these models
 could not be
 logged at all. **Basecamp now requires a Litestone with that fix**; on an older
 one, the four identity models and `Secret` would leak.
 
-**2. Reads lag writes within a session.** Entries flush on a ~1s timer and on
-process exit. Immediately after a write, `auditTrail.findMany()` returns 0 rows
-and the JSONL file may not exist yet; the next process sees everything. Measured:
-1 write → 0 rows visible, +2s → 1 row, +50 more writes → still 1 row, next
-process → 51 rows. **Nothing is lost** — this is visibility lag, not data loss,
-and it is the whole explanation for the "audit logger writes 0 rows" note that
-sat unexplained in the root `CLAUDE.md`.
+**2. Reads lag writes by a tick.** An entry lands one tick after the write, so
+`auditTrail.findMany()` in the same tick returns 0 rows. **Nothing is lost** —
+this is visibility lag, not data loss.
 
 **3. A database here is TWO paths, and stating one of them looks complete.**
 `database main` and `database audit` are separate declarations with separate env

@@ -10,8 +10,8 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-67 model(s) · 43 enum(s) · 2 database(s)
-audit → trail · main → sqlite
+68 model(s) · 43 enum(s) · 2 database(s)
+audit → sqlite · main → sqlite
 ```
 
 ## Enums
@@ -346,6 +346,40 @@ table `audit_event` · db `main` · gate `5.8.9.9`
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+```
+
+### `AuditTrail`
+
+table `audit_trail` · db `audit` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `actorId` | `String` | yes | — | — |
+| `actorType` | `String` | yes | — | — |
+| `after` | `Json` | yes | — | — |
+| `before` | `Json` | yes | — | — |
+| `correlationId` | `String` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `episodeId` | `String` | yes | — | — |
+| `field` | `String` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `ip` | `String` | yes | — | — |
+| `meta` | `Json` | yes | — | — |
+| `model` | `String` | no | — | **required on write** |
+| `operation` | `String` | no | — | **required on write** |
+| `origin` | `String` | yes | — | — |
+| `records` | `Json` | no | — | **required on write** |
+| `source` | `String` | yes | — | — |
+| `subjectId` | `String` | yes | — | — |
+| `tenant` | `String` | yes | — | — |
+| `transition` | `String` | yes | — | — |
+| `userAgent` | `String` | yes | — | — |
+
+```
+@@index(actorId)
+@@index(correlationId)
+@@index(episodeId)
+@@index(model)
 ```
 
 ### `Backup`

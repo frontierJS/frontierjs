@@ -32,10 +32,13 @@
 /// carry the column.
 
 import "@frontierjs/litestone/references/Grant.lite"
+import "@frontierjs/litestone/references/AuditTrail.lite"
 
 database main  { path env("DATABASE_URL", "./db/haven.db") }
 
-database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit.db") retention 90d model AuditTrail }
+
+model AuditTrail { id Int @id @default(autoincrement())  @@trait(AuditTrail) @@db(audit) @@gate("8") }
 
 model Member {
   id        Int       @id

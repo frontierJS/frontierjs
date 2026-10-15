@@ -13,6 +13,9 @@
 // put the trail here instead.
 
 import { describe, test, expect } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createClient, autoMigrate } from '../src/index.js'
 import { parse } from '../src/core/parser.js'
 
@@ -380,5 +383,76 @@ describe('a logged read names its rows whatever it selects (FJS-1422)', () => {
     await tick()
     expect((await lastRead(db)).records).toEqual([3])
     db.$close()
+  })
+})
+
+// FJS-2753 — `driver jsonl` and `driver trail` are parked (FJS-D936): the parse
+// says so, which is the artifact that keeps a new schema from picking one up.
+describe('a parked driver', () => {
+  const names = (src: string) => parse(src).warnings.filter((w: string) => w.includes('FJS-D936'))
+
+  test('driver jsonl and driver trail each warn, naming FJS-D936', () => {
+    expect(names('database main { path ":memory:" }\ndatabase logs { path "./l/" driver jsonl }\nmodel A { id Int @id }')).toHaveLength(1)
+    expect(names('database main { path ":memory:" }\ndatabase audit { path "./a/" driver trail }\nmodel A { id Int @id }')).toHaveLength(1)
+  })
+
+  test('a SQLite trail database does not', () => {
+    expect(names(`database main { path ":memory:" model AuditRow }\nmodel AuditRow { ${TRAIL} }\nmodel A { id Int @id @@trail(main) }`)).toHaveLength(0)
+  })
+})
+
+// FJS-2913 — moving a schema off `driver trail` must leave `$audit` and the
+// feature probes working: auth and mcp record sign-ins and tool calls through
+// them, and both went quiet on a SQLite trail with nothing failing.
+describe('an event recorded on a SQLite trail', () => {
+  const SCHEMA = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Thing { id Int @id  name String  @@trail(main) }
+  `
+
+  test('$audit writes into the declared model', async () => {
+    const db = await client(SCHEMA)
+    await db.asSystem().$audit({ operation: 'login.succeeded', model: 'Thing', actorId: 'u1', meta: { via: 'password' } })
+    const [row] = await db.asSystem().auditRow.findMany({})
+    expect(row.operation).toBe('login.succeeded')
+    expect(row.actorId).toBe('u1')
+    db.$close()
+  })
+
+  test('$databases names the trail model, so a consumer can tell a trail from a plain database', async () => {
+    const db = await client(SCHEMA)
+    expect(db.$databases.main.trailModel).toBe('AuditRow')
+    db.$close()
+  })
+
+  test('$close lands the trail writes still queued instead of dropping them (FJS-2914)', async () => {
+    // The jsonl append is synchronous once the tick runs; a SQL insert is not,
+    // so a client closed in the same tick as its last write armed the closed
+    // throw under the insert. The model name is unique because a lost-write
+    // warning is once per model for the life of the process.
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-2914-'))
+    const schema = `
+      database main { path "${dir}/main.db" model AuditRow }
+      model AuditRow { ${TRAIL} }
+      model CloseRace { id Int @id  name String  @@trail(main) }
+    `
+    const warns: string[] = []
+    const warn = console.warn
+    console.warn = (...a: unknown[]) => { warns.push(a.join(' ')) }
+    try {
+      const db: any = await createClient({ schema })
+      await autoMigrate(db)
+      await db.asSystem().closeRace.create({ data: { id: 1, name: 'one' } })
+      await db.$close()
+      expect(warns).toEqual([])
+      const again: any = await createClient({ schema })
+      const rows = await again.asSystem().auditRow.findMany({})
+      expect(rows.map((r: any) => r.model)).toEqual(['CloseRace'])
+      again.$close()
+    } finally {
+      console.warn = warn
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

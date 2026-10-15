@@ -6,7 +6,7 @@
 //   bun seed.ts --studio     (seed then open studio)
 
 import { createClient }    from '../src/index.js'
-import { parse, generateDDLForDatabase } from '../src/index.js'
+import { parseFile, generateDDLForDatabase } from '../src/index.js'
 import { splitStatements } from '../src/core/migrate.js'
 import { existsSync, unlinkSync, rmSync, readFileSync } from 'fs'
 import { Database } from 'bun:sqlite'
@@ -16,7 +16,7 @@ const OPEN_STUDIO = process.argv.includes('--studio')
 
 // ─── Parse schema ─────────────────────────────────────────────────────────────
 
-const parseResult = parse(readFileSync(`${__dir}/schema.lite`, 'utf8'))
+const parseResult = parseFile(`${__dir}/schema.lite`)
 if (!parseResult.valid) {
   for (const e of parseResult.errors) console.error('  ✗', e)
   process.exit(1)
@@ -26,7 +26,7 @@ for (const w of parseResult.warnings ?? [])
 
 // ─── Fresh start — remove all existing databases ───────────────────────────────
 
-const toRemove = ['./example.db', './analytics.db', './logs', './audit']
+const toRemove = ['./example.db', './analytics.db', './logs.db', './audit.db']
 for (const p of toRemove.map(p => `${__dir}/${p}`)) {
   if (!existsSync(p)) continue
   if (p.endsWith('.db')) unlinkSync(p)
@@ -64,8 +64,8 @@ console.log()
 // opens the same files that initSqliteDb created — regardless of cwd.
 process.env.MAIN_DB_PATH      = `${__dir}/example.db`
 process.env.ANALYTICS_DB_PATH = `${__dir}/analytics.db`
-process.env.LOGS_PATH         = `${__dir}/logs/`
-process.env.AUDIT_PATH        = `${__dir}/audit/`
+process.env.LOGS_PATH         = `${__dir}/logs.db`
+process.env.AUDIT_PATH        = `${__dir}/audit.db`
 
 // Dev key — 64 hex chars = 32 bytes. In production use process.env.ENCRYPTION_KEY.
 const DEV_KEY = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'
@@ -193,7 +193,7 @@ const statsResult = await sys.dailyStat.createMany({ data: [
 ] })
 console.log(`  ✓  dailyStats (analytics): ${statsResult.count} created`)
 
-// ─── JSONL database — append-only request log ─────────────────────────────────
+// ─── Request log — its own SQLite database ─────────────────────────────────
 
 await sys.apiRequest.createMany({ data: [
   { method: 'GET',  path: '/api/users',    status: 200, duration: 4,   userId: 1, accountId: 1, ip: '10.0.0.1' },
@@ -205,7 +205,7 @@ await sys.apiRequest.createMany({ data: [
   { method: 'DELETE', path: '/api/users/7', status: 200, duration: 9,  userId: 6, accountId: 3, ip: '10.0.0.4' },
 ] })
 const logCount = await sys.apiRequest.count()
-console.log(`  ✓  apiRequests (logs):    ${logCount} appended to JSONL`)
+console.log(`  ✓  apiRequests (logs):    ${logCount} appended`)
 
 // Read logs back — query by status, duration
 const errors = await sys.apiRequest.findMany({ where: { status: { gte: 400 } } })
@@ -227,6 +227,7 @@ await sys.user.remove({ where: { id: 8 } })
 // @secret defaults to reads:false — reads are high-volume and opt-in.
 // To audit apiKey reads, declare: apiKey Text? @secret @trail(audit, reads: true)
 // The 3 write ops above (create + update + remove) still fire audit entries.
+await new Promise(r => setImmediate(r))   // an entry lands one tick after its write
 const auditCount = await sys.auditTrail.count()
 console.log(`  ✓  auditTrail (audit):  ${auditCount} entries (create + update + delete)`)
 
@@ -236,8 +237,8 @@ console.log()
 console.log('  Databases:')
 console.log(`    main       ./example.db`)
 console.log(`    analytics  ./analytics.db`)
-console.log(`    logs       ./logs/apiRequest.jsonl`)
-console.log(`    audit      ./audit/AuditTrail.jsonl  (logger driver — auto-populated)`)
+console.log(`    logs       ./logs.db`)
+console.log(`    audit      ./audit.db  (AuditTrail — auto-populated)`)
 console.log()
 
 const counts = {

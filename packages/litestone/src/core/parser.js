@@ -3840,7 +3840,7 @@ function validateTypes(schema) {
 }
 
 function expandSecretAttributes(schema) {
-  const trailDb = schema.databases.find(db => db.driver === 'trail')
+  const trailDb = schema.databases.find(db => db.driver === 'trail' || (db.driver !== 'jsonl' && db.trailModel))
 
   for (const model of schema.models) {
     for (const field of model.fields) {
@@ -5868,6 +5868,8 @@ function validate(schema) {
   for (const db of schema.databases) {
     if (seenDb.has(db.name)) errors.push(`Duplicate database name '${db.name}'`)
     seenDb.add(db.name)
+    if (db.driver === 'jsonl' || db.driver === 'trail')
+      warnings.push(`database '${db.name}': 'driver ${db.driver}' is NOT IN USE UNTIL FURTHER NOTICE (FJS-D936) — declare the audit trail as a SQLite database with 'model <Name>' naming a model that carries the trail columns`)
     // maxSize only valid on jsonl
     if (db.maxSize && db.driver !== 'jsonl')
       errors.push(`database '${db.name}': maxSize is only valid for jsonl databases`)
@@ -6094,8 +6096,8 @@ function validate(schema) {
         errors.push(`Model '${model.name}', field '${field.name}': @secret (and @encrypted) are not supported on jsonl databases`)
 
       // Warn if no trail database exists — @trail won't be synthesized
-      if (!schema.databases.some(db => db.driver === 'trail'))
-        warnings.push(`Model '${model.name}', field '${field.name}': @secret has no trail database declared — audit logging will not be active. Add a 'database audit { driver trail }' block to enable it.`)
+      if (!logTargets.size)
+        warnings.push(`Model '${model.name}', field '${field.name}': @secret has no trail database declared — audit logging will not be active. Add a 'database audit { model AuditTrail }' block to enable it.`)
     }
   }
 

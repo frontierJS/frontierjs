@@ -14,19 +14,16 @@
   import Carousel from '@/components/Carousel.mesa'
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
+  import { flag } from '@/pieces/town.js'
+  import { bales } from '@/pieces/work.js'
   import { housing, quiver, scoreboard, target } from '@/pieces/archery.js'
 
   // Chalked on the grass and walked on.
   const line = piece('firing line', Array(22).fill(':').join('\n'), Array(22).fill('c').join('\n'), { floor: true })
 
-  // A wind flag at the head of the line, flapping.
-  const flag = piece('flag', '|>\n|\n|', 'lF\nl\nl')
-
   // The carousel's columns are 9 apart from x 72, between housings 18 wide from x 71.
   const lid  = housing(18, 4, 9, true)
   const base = housing(18, 4, 9, false)
-
-  const bales = piece('bales', Array(22).fill('%%').join('\n'), Array(22).fill('hH').join('\n'))
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -49,7 +46,7 @@
   <Piece of={lid}    x={71} y={2} />
   <Carousel name="carousel" of={target} x={72} apart={9} top={4} bottom={21} ms={250} n={4} rail="l" />
   <Piece of={base}   x={71} y={22} />
-  <Piece of={bales}  x={90} y={2} />
+  <Piece of={bales(22)}  x={90} y={2} />
   <Piece of={quiver} x={8}  y={18} />
   <Piece of={quiver} x={24} y={21} />
   <slot />

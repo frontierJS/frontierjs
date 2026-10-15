@@ -17,40 +17,12 @@
   import { barrel } from '@/pieces/barrel.js'
   import { bar }    from '@/pieces/bar.js'
   import { stairs } from '@/pieces/stairs.js'
+  import { shelves } from '@/pieces/storage.js'
+  import { rug } from '@/pieces/furniture.js'
 
-  // The shelves, the hearth and its rug are the tavern's own; the
-  // bar is a piece of its own (`pieces/bar.js`), since `components/Bar.mesa`
-  // finds it by import; the tables and barrels are pieces any scene may use.
-  // The shelves are the wall behind the bar, as wide as the bar: three rows of
-  // bottles, a bottle every third cell, so the board chalked over them
-  // (`components/Bar.mesa`) has the room to be read.
-  const SHELF_W = 92
-  const INNER = SHELF_W - 2
-  const BOTTLES = Array.from({ length: 30 }, (_, i) => 1 + i * 3)
-  const shelfRow = (pick) => {
-    const r = Array(INNER).fill(' ')
-    BOTTLES.forEach((x, i) => { r[x] = pick(i) })
-    return `|${r.join('')}|`
-  }
-  const edge = (l, r) => `${l}${'-'.repeat(INNER)}${r}`
-  const ink = (shift) => (i) => 'cep'[(i + shift) % 3]
-  const shelves = piece('shelves', [
-    edge('.', '.'),
-    shelfRow((i) => (i % 2 ? '0' : 'U')),
-    edge('|', '|'),
-    shelfRow((i) => (i % 2 ? '!' : 'i')),
-    edge('|', '|'),
-    shelfRow((i) => (i % 2 ? '0' : 'U')),
-    edge("'", "'"),
-  ].join('\n'), [
-    'w'.repeat(SHELF_W),
-    shelfRow(ink(0)).replace(/\|/g, 'w'),
-    'w'.repeat(SHELF_W),
-    shelfRow(ink(1)).replace(/\|/g, 'w'),
-    'w'.repeat(SHELF_W),
-    shelfRow(ink(2)).replace(/\|/g, 'w'),
-    'w'.repeat(SHELF_W),
-  ].join('\n'))
+  // The hearth and its rug are the tavern's own; the bar is a piece of its
+  // own (`pieces/bar.js`), since `components/Bar.mesa` finds it by import; the
+  // shelves behind it, the tables and barrels are pieces any scene may use.
 
   const hearth = piece('hearth', String.raw`
   _______________________
@@ -70,18 +42,7 @@
 sssssssssssssssssssssssssss
 `)
 
-  // The rug is floor, walked on, and painted all the same.
-  const rug = piece('rug', String.raw`
-;;;;;;;;;;;;;;;;;;;;;;;
-;::❦::::::::::::::::::;
-;::::::::::::::::::❦::;
-;;;;;;;;;;;;;;;;;;;;;;;
-`, String.raw`
-mmmmmmmmmmmmmmmmmmmmmmm
-mMMMMMMMMMMMMMMMMMMMMMm
-mMMMMMMMMMMMMMMMMMMMMMm
-mmmmmmmmmmmmmmmmmmmmmmm
-`, { floor: true })
+  const hearthRug = rug(23, 4, [{ at: [3, 1], ch: '❦' }, { at: [19, 2], ch: '❦' }])
 
   const PALETTE = {
     f: { fg: '#6b7280' },
@@ -108,7 +69,7 @@ mmmmmmmmmmmmmmmmmmmmmmm
   <Piece of={shelves} x={3}  y={1} />
   <Piece of={bar}     x={3}  y={9} />
   <Piece of={hearth}  x={63} y={18} />
-  <Piece of={rug}     x={65} y={14} />
+  <Piece of={hearthRug} x={65} y={14} />
   <Door  x={75} y={15} to="/cellar/" hidden />
   <Piece of={table}   x={9}  y={14} />
   <Piece of={table}   x={29} y={14} />

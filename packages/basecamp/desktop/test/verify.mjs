@@ -90,7 +90,7 @@ writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
 
 console.log('\nBasecamp — the desktop shell\n')
 
-const dbEnv = { DATABASE_URL: DB, AUDIT_PATH: join(scratch, 'audit/') }
+const dbEnv = { DATABASE_URL: DB, AUDIT_PATH: join(scratch, 'audit.db') }
 const seeded = spawnSync('bun', ['db/seed.js'], { cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, ...dbEnv } })
 if (seeded.status !== 0) {
   console.error(`\n✗ db/seed.js exited ${seeded.status}\n${seeded.stderr}`)

@@ -74,7 +74,7 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'basecamp-pages-'))
 const DB      = join(SCRATCH, 'basecamp.db')
-const dbEnv   = { DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit/') }
+const dbEnv   = { DATABASE_URL: DB, AUDIT_PATH: join(SCRATCH, 'audit.db') }
 
 const seed = spawn('bun', ['db/seed.js'], { cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, ...dbEnv } })
 let seedErr = ''

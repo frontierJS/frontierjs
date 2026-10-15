@@ -66,7 +66,8 @@ describe('a one-to-one back-reference', () => {
     expect(first(`model A { userId Int
       eventTypeId Int
       id String @id
-      loc L? }
+      loc L?
+      @@unique([userId, eventTypeId]) }
     model L { id String @id
       userId Int
       eventTypeId Int

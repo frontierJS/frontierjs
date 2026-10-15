@@ -70,9 +70,9 @@ WORKDIR /app
 COPY --from=build /app /app
 
 # The live database is a bind mount, never the image: point DATABASE_URL at
-# /data or every write is lost on the next container swap. Audit is a directory
-# for the same reason — @@trail(audit) writes jsonl beside it.
-RUN mkdir -p /data /data/audit
+# /data or every write is lost on the next container swap. The audit trail is
+# /data/audit.db for the same reason.
+RUN mkdir -p /data
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

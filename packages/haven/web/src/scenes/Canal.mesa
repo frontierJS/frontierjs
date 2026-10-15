@@ -19,39 +19,28 @@
   import { frame } from '@/pieces/frame.js'
   import { ladder } from '@/pieces/ladder.js'
   import { sign } from '@/pieces/signpost.js'
+  import { water as makeWater, deck, rowboat } from '@/pieces/water.js'
 
   // The water fills the vault wall to wall, so the bridge is the one way
   // across; the bridge and the boat are cut out of it, since a cell has one
   // owner, and the boat brings its own water round it.
   const BOAT   = { x: 12, y: 1, w: 14, h: 2 }
   const BRIDGE = { x: 46, w: 6 }
-  const waterRow = (dy) => [...Array(94)].map((_, dx) => {
+  const dry = (dx, dy) => {
     const x = 2 + dx
-    if (x >= BRIDGE.x && x < BRIDGE.x + BRIDGE.w) return ' '
-    if (dy >= BOAT.y && dy < BOAT.y + BOAT.h && x >= BOAT.x && x < BOAT.x + BOAT.w) return ' '
-    return '~'
-  }).join('')
-  const rows = [...Array(4)].map((_, dy) => waterRow(dy))
-  const water = piece('water', rows.join('\n'), rows.map((r) => r.replace(/~/g, 'b')).join('\n'))
+    return (x >= BRIDGE.x && x < BRIDGE.x + BRIDGE.w)
+      || (dy >= BOAT.y && dy < BOAT.y + BOAT.h && x >= BOAT.x && x < BOAT.x + BOAT.w)
+  }
+  const water = makeWater(94, 4, dry)
+  const bridge = deck('bridge', BRIDGE.w, 6)
 
   const edge = (ch) => piece('edge', ch.repeat(44), 'q'.repeat(44))
   const edgeN = edge('_')
   const edgeS = edge('-')
 
-  const bridge = piece('bridge', [...Array(6)].map(() => '='.repeat(BRIDGE.w)).join('\n'),
-    [...Array(6)].map(() => 'u'.repeat(BRIDGE.w)).join('\n'), { floor: true })
-
-  const boat = piece('boat', String.raw`
-~~\____|____/~
-~~~\________/~
-`, String.raw`
-bbuuuuuuuuuuub
-bbbuuuuuuuuuub
-`)
-
-  // A pier of the vault: brick from the floor to the roof, so a figure's
+  // A pillar of the vault: brick from the floor to the roof, so a figure's
   // sight stops at it and the towpath is walked to be seen.
-  const pier = piece('pier', '[#]\n[#]', 'ppp\nppp')
+  const pillar = piece('pillar', '[#]\n[#]', 'ppp\nppp')
 
 
   const PALETTE = {
@@ -81,14 +70,14 @@ bbbuuuuuuuuuub
   <Piece of={edgeS} x={2}  y={15} />
   <Piece of={edgeS} x={52} y={15} />
   <Piece of={bridge} x={46} y={10} />
-  <Piece of={boat} x={12} y={12} />
-  <Piece of={pier} x={10} y={3} />
-  <Piece of={pier} x={34} y={3} />
-  <Piece of={pier} x={60} y={3} />
-  <Piece of={pier} x={84} y={3} />
-  <Piece of={pier} x={22} y={19} />
-  <Piece of={pier} x={46} y={19} />
-  <Piece of={pier} x={70} y={19} />
+  <Piece of={rowboat} x={12} y={12} />
+  <Piece of={pillar} x={10} y={3} />
+  <Piece of={pillar} x={34} y={3} />
+  <Piece of={pillar} x={60} y={3} />
+  <Piece of={pillar} x={84} y={3} />
+  <Piece of={pillar} x={22} y={19} />
+  <Piece of={pillar} x={46} y={19} />
+  <Piece of={pillar} x={70} y={19} />
   <Piece of={sign('docks >')} x={86} y={21} />
   <Piece of={sign('v mine')} x={32} y={23} />
   <Pacer name="rat" y={22} from={40} to={80} ms={180} rest={30} flee={40} fg="#a8a29e"

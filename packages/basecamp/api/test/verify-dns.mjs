@@ -47,7 +47,7 @@ const SCRATCH  = mkdtempSync(join(tmpdir(), 'basecamp-dns-'))
 const ENV = {
   ...process.env,
   DATABASE_URL:          join(SCRATCH, 'basecamp.db'),
-  AUDIT_PATH:            join(SCRATCH, 'audit/'),
+  AUDIT_PATH:            join(SCRATCH, 'audit.db'),
   PORT:                  String(API_PORT),
   BASECAMP_URL:          API,
   CLOUDFLARE_URL:        CF,

@@ -1,6 +1,6 @@
 <script>
   // Mine.mesa — the mine under the road: a shaft down from the pithead, a
-  // gallery with rails along its floor and a cart left on them, a drop west
+  // gallery with rails along its floor and a minecart left on them, a drop west
   // to the ore room, a low crawl east, the flooded chamber, and the way on
   // down to the underground canal. It is pitch dark (`IDEAS/haven.md`, the
   // mine): a figure sees only its `sight` round itself, and another member
@@ -16,6 +16,7 @@
   import { piece } from '@/pieces/index.js'
   import { frame } from '@/pieces/frame.js'
   import { ladder } from '@/pieces/ladder.js'
+  import { rails } from '@/pieces/work.js'
 
   // The rock is one block with the tunnels left out of it, so a cell of
   // tunnel is a cell nothing claims. An ore seam is a glint in the rock, not
@@ -72,9 +73,7 @@ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrorrrrrrrrrrrrrrrrrrrrrrorrrrrrrrrrrrrrrrrrrrr
 rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr     rrrrr
 `)
 
-  const rails = piece('rails', '='.repeat(73), 'l'.repeat(73), { floor: true })
-
-  const cart = piece('cart', String.raw`
+  const minecart = piece('minecart', String.raw`
  ____
 [____]
 `, String.raw`
@@ -98,8 +97,8 @@ uuuuuu
   <Door  x={88} y={25} to="/canal/" />
   <Piece of={rock} x={2} y={1} />
   <Piece of={ladder(4)} x={48} y={1} />
-  <Piece of={rails} x={10} y={7} />
-  <Piece of={cart} x={30} y={5} />
+  <Piece of={rails(73)} x={10} y={7} />
+  <Piece of={minecart} x={30} y={5} />
   <Pacer name="bat" y={6} from={40} to={80} ms={260} rest={14} fg="#a8a29e"
     right={['^v^', '-v-']}
     left={['^v^', '-v-']}

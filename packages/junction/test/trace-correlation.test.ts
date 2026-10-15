@@ -19,13 +19,14 @@ import { join }                 from 'path'
 import { createClient }                      from '../../litestone/src/index.js'
 import { createApp, createService, defaultConfig, $ } from '../index.ts'
 import { createLogger, type LogEntry }       from '../src/core/logger.ts'
+import { auditDatabase } from './audit-trail-model.ts'
 
 const TRACE  = '4bf92f3577b34da6a3ce929d0e0e4736'
 const PARENT = `00-${TRACE}-00f067aa0ba902b7-01`
 
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver trail }
+  ${auditDatabase(dir)}
   model Order { id Int @id  status String  @@trail(audit) }
 `
 

@@ -18,36 +18,17 @@
   import { barrel } from '@/pieces/barrel.js'
   import { crate } from '@/pieces/crate.js'
   import { signpost } from '@/pieces/signpost.js'
+  import { marketStall } from '@/pieces/town.js'
 
-  // `wares` and `inks` are the nine cells of the counter between its posts,
-  // the lantern at their middle.
-  const stall = (name, awning, wares, inks) => piece(name, String.raw`
- ___________
-/_/_/_/_/_/_\
- |    o    |
- |${wares}|
-      o
-`, String.raw`
- ${awning.repeat(11)}
-${awning}${('W' + awning).repeat(6)}
- l    s    l
- l${inks}l
-      s
-`, { overhead: 2, spots: {
-    keeper:   { kind: 'seat', dx: 6, dy: 2, stand: { dx: 5, dy: 2 }, mate: 'customer' },
-    customer: { kind: 'seat', dx: 6, dy: 4, stand: { dx: 5, dy: 4 }, mate: 'keeper' },
-    lantern:  { kind: 'burn', dx: 6, dy: 3 },
-  } })
+  const fruit   = marketStall('fruit-stall',   'r', '@o@oio@o@', 'rOrOyOrOr')
+  const fish    = marketStall('fish-stall',    'b', '><> i <><', 'BBB y BBB')
+  const cloth   = marketStall('cloth-stall',   'v', '#=#=i=#=#', 'vmvmymvmv')
+  const pots    = marketStall('pot-stall',     'o', 'uUuUiUuUu', 'uUuUyUuUu')
+  const flowers = marketStall('flower-stall',  'g', '*%*%i%*%*', 'pPpPyPpPp')
+  const bread   = marketStall('bread-stall',   'k', '()()i()()', 'kkkkykkkk')
+  const books   = marketStall('book-stall',    'c', '[][]i[][]', 'cCcCyCcCc')
 
-  const fruit   = stall('fruit-stall',   'r', '@o@oio@o@', 'rOrOyOrOr')
-  const fish    = stall('fish-stall',    'b', '><> i <><', 'BBB y BBB')
-  const cloth   = stall('cloth-stall',   'v', '#=#=i=#=#', 'vmvmymvmv')
-  const pots    = stall('pot-stall',     'o', 'uUuUiUuUu', 'uUuUyUuUu')
-  const flowers = stall('flower-stall',  'g', '*%*%i%*%*', 'pPpPyPpPp')
-  const bread   = stall('bread-stall',   'k', '()()i()()', 'kkkkykkkk')
-  const books   = stall('book-stall',    'c', '[][]i[][]', 'cCcCyCcCc')
-
-  const cart = piece('cart', String.raw`
+  const fruitCart = piece('fruit-cart', String.raw`
  ______
 |@o@o@o|
  O    O
@@ -101,7 +82,7 @@ wrOrOrOw
   <Piece of={barrel} x={70} y={14} />
   <Piece of={crate}  x={84} y={14} />
   <Piece of={crate}  x={84} y={10} />
-  <Piece of={cart}   x={20} y={20} />
+  <Piece of={fruitCart} x={20} y={20} />
   <Pacer name="hen" y={24} from={3} to={90} ms={380} rest={24} flee={50} fg="#f5f5f4"
     right={["('>", "('>"]}
     left={["<')", "<')"]}

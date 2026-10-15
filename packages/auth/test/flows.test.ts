@@ -771,7 +771,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
     expect(row.actorId).toBe(u.userId)
 
     // Beside the @@trail row, not instead of it.
-    expect(rows.some((r: any) => r.operation === 'create' && r.model === 'session')).toBe(true)
+    expect(rows.some((r: any) => r.operation === 'create' && r.model === 'Session')).toBe(true)
     h.cleanup()
   })
 

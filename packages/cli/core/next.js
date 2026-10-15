@@ -145,7 +145,8 @@ export function rankNext(root, { pkg = null, sev = null, touched = null } = {}) 
     }
   })
 
-  const inPkg = r => !pkg || r.pkg.includes(pkg)
+  const pkgs  = pkg ? [pkg].flat() : null
+  const inPkg = r => !pkgs || pkgs.some(p => r.pkg.includes(p))
   const inSev = r => !sev || sev.includes(r.severity)
   // Ties keep file order, which is the register's own order within a severity.
   const ranked = scored.filter(r => inPkg(r) && inSev(r)).sort((a, b) => b.score - a.score)

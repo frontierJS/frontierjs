@@ -8,6 +8,7 @@
 // spaces in the art, so a visitor, whose screen has no board, sees an empty
 // frame — a cork board with nothing pinned, a dark screen.
 import { piece } from './index.js'
+import { rug } from './furniture.js'
 
 // ─── the lane ────────────────────────────────────────────────────────────────
 
@@ -174,8 +175,8 @@ wepwcepweecpwcpw
 wwwwwwwwwwwwwwww
 `)
 
-/** A server rack, its lights blinking `L`. */
-export const rack = piece('rack', String.raw`
+/** Its lights blink `L`. */
+export const serverRack = piece('server-rack', String.raw`
 .-----.
 |===o |
 |===o |
@@ -250,14 +251,5 @@ qhhhhq
 qqqqqq
 `)
 
-export const rug = piece('rug', String.raw`
-;;;;;;;;;;;;;;;;;;;;;;;;
-;::::::::::::::::::::::;
-;::::::::::::::::::::::;
-;;;;;;;;;;;;;;;;;;;;;;;;
-`, String.raw`
-mmmmmmmmmmmmmmmmmmmmmmmm
-mMMMMMMMMMMMMMMMMMMMMMMm
-mMMMMMMMMMMMMMMMMMMMMMMm
-mmmmmmmmmmmmmmmmmmmmmmmm
-`, { floor: true })
+/** The rug before the bed, the same in every home. */
+export const homeRug = rug(24, 4)
